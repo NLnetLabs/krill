@@ -1,0 +1,17 @@
+{
+  "actor": "testbed",
+  "time": "2022-08-15T08:31:20.777066889Z",
+  "handle": "0",
+  "version": 40,
+  "sequence": 44,
+  "details": {
+    "type": "add_publisher",
+    "name": "some_ca"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      40
+    ]
+  }
+}

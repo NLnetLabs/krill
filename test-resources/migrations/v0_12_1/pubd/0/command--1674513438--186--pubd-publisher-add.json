@@ -1,0 +1,15 @@
+{
+  "actor": "testbed",
+  "time": "2023-01-23T22:37:18.600785525Z",
+  "handle": "0",
+  "version": 158,
+  "sequence": 186,
+  "details": {
+    "type": "add_publisher",
+    "name": "rpki-testnet"
+  },
+  "effect": {
+    "result": "error",
+    "msg": "Duplicate publisher 'rpki-testnet'"
+  }
+}

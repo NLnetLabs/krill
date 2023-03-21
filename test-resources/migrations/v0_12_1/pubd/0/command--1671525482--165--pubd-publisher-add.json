@@ -1,0 +1,17 @@
+{
+  "actor": "testbed",
+  "time": "2022-12-20T08:38:02.319494594Z",
+  "handle": "0",
+  "version": 139,
+  "sequence": 165,
+  "details": {
+    "type": "add_publisher",
+    "name": "localca"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      139
+    ]
+  }
+}

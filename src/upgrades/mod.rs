@@ -12,13 +12,15 @@ use crate::{
     commons::{
         crypto::KrillSignerBuilder,
         error::{Error, KrillIoError},
-        eventsourcing::{AggregateStoreError, CommandKey, KeyStoreKey, KeyValueError, KeyValueStore, StoredValueInfo},
+        eventsourcing::{
+            AggregateStoreError, CommandKey, KeyStoreKey, KeyValueError, KeyValueStore, StoredValueInfo, WalStore,
+        },
         util::{file, KrillVersion},
         KrillResult,
     },
     constants::{CASERVER_DIR, CA_OBJECTS_DIR, PUBSERVER_CONTENT_DIR, PUBSERVER_DIR, UPGRADE_REISSUE_ROAS_CAS_LIMIT},
     daemon::{config::Config, krillserver::KrillServer},
-    pubd,
+    pubd::{self, RepositoryContent},
 };
 
 #[cfg(feature = "hsm")]
@@ -29,6 +31,8 @@ use crate::{
     commons::crypto::SignerHandle,
     constants::{KEYS_DIR, SIGNERS_DIR},
 };
+
+use self::pre_0_13_0::OldRepositoryContent;
 
 pub mod pre_0_10_0;
 pub mod pre_0_13_0;
@@ -61,7 +65,7 @@ impl UpgradeReport {
 
 //------------ KrillUpgradeVersions ------------------------------------------
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct UpgradeVersions {
     from: KrillVersion,
     to: KrillVersion,
@@ -385,6 +389,9 @@ pub fn prepare_upgrade_data_migrations(mode: UpgradeMode, config: Arc<Config>) -
                 );
                 let pubd_objects_migrated = migrate_pre_0_12_pubd_objects(&config)?;
                 Ok(Some(UpgradeReport::new(pubd_objects_migrated, versions)))
+            } else if versions.from < KrillVersion::candidate(0, 13, 0, 0) {
+                let pubd_objects_migrated = migrate_0_12_pubd_objects(&config)?;
+                Ok(Some(UpgradeReport::new(pubd_objects_migrated, versions)))
             } else {
                 Ok(Some(UpgradeReport::new(false, versions)))
             }
@@ -392,19 +399,38 @@ pub fn prepare_upgrade_data_migrations(mode: UpgradeMode, config: Arc<Config>) -
     }
 }
 
+/// Migrate v0.12.x RepositoryContent to the new 0.13.0+ format.
+/// Apply any open WAL changes to the source first.
+fn migrate_0_12_pubd_objects(config: &Config) -> KrillResult<bool> {
+    let old_repo_content_dir = config.data_dir.join(PUBSERVER_CONTENT_DIR);
+    if old_repo_content_dir.exists() {
+        let repo_content_handle = MyHandle::new("0".into());
+        let old_store: WalStore<OldRepositoryContent> = WalStore::disk(&config.data_dir, PUBSERVER_CONTENT_DIR)?;
+        let old_repo_content = old_store.get_latest(&repo_content_handle)?.as_ref().clone();
+        let repo_content: pubd::RepositoryContent = old_repo_content.into();
+
+        let new_key = KeyStoreKey::scoped("0".to_string(), "snapshot.json".to_string());
+        let upgrade_store = KeyValueStore::disk(&config.upgrade_data_dir(), PUBSERVER_CONTENT_DIR)?;
+        upgrade_store.store(&new_key, &repo_content)?;
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
 /// The format of the RepositoryContent did not change in 0.12, but
 /// the location and way of storing it did. So, migrate if present.
 fn migrate_pre_0_12_pubd_objects(config: &Config) -> KrillResult<bool> {
-    let old_repo_content_dir = config.data_dir.join("pubd_objects");
+    let old_repo_content_dir = config.data_dir.join(PUBSERVER_CONTENT_DIR);
     if old_repo_content_dir.exists() {
-        let old_store = KeyValueStore::disk(&config.data_dir, "pubd_objects")?;
+        let old_store = KeyValueStore::disk(&config.data_dir, PUBSERVER_CONTENT_DIR)?;
         let old_key = KeyStoreKey::simple("0.json".to_string());
         if let Ok(Some(old_repo_content)) = old_store.get::<pre_0_13_0::OldRepositoryContent>(&old_key) {
             info!("Found pre 0.12.0 RC2 publication server data. Migrating..");
             let repo_content: pubd::RepositoryContent = old_repo_content.into();
 
             let new_key = KeyStoreKey::scoped("0".to_string(), "snapshot.json".to_string());
-            let upgrade_store = KeyValueStore::disk(&config.upgrade_data_dir(), "pubd_objects")?;
+            let upgrade_store = KeyValueStore::disk(&config.upgrade_data_dir(), PUBSERVER_CONTENT_DIR)?;
             upgrade_store.store(&new_key, &repo_content)?;
             Ok(true)
         } else {
@@ -610,28 +636,29 @@ pub async fn post_start_upgrade(upgrade_versions: &UpgradeVersions, server: &Kri
 /// in practice in case one of the two did not have their version updated in the past,
 /// as there can be only one version running.
 fn upgrade_versions(config: &Config) -> Option<UpgradeVersions> {
-    let cas_version = upgrade_versions_ns(&config.data_dir, CASERVER_DIR);
-    let pubd_version = upgrade_versions_ns(&config.data_dir, PUBSERVER_DIR);
+    let cas_version = key_store_version(&config.data_dir, CASERVER_DIR);
+    let pubd_version = key_store_version(&config.data_dir, PUBSERVER_DIR);
+    let pubd_objects_version = key_store_version(&config.data_dir, PUBSERVER_CONTENT_DIR);
 
-    match (cas_version, pubd_version) {
-        (None, None) => None,
-        (Some(upgrade), None) | (None, Some(upgrade)) => Some(upgrade),
-        (Some(upgrade_cas), Some(upgrade_pubd)) => {
-            if upgrade_cas.from() >= upgrade_pubd.from() {
-                Some(upgrade_cas)
-            } else {
-                Some(upgrade_pubd)
-            }
-        }
+    if cas_version.is_none() && pubd_version.is_none() {
+        None
+    } else {
+        // get the highest version as the krill version for the data dirs.
+        let cas_version = cas_version.unwrap_or(KrillVersion::v0_5_0_or_before());
+        let pubd_version = pubd_version.unwrap_or(KrillVersion::v0_5_0_or_before());
+        let pubd_objects_version = pubd_objects_version.unwrap_or(KrillVersion::v0_5_0_or_before());
+        let versions = [cas_version, pubd_version, pubd_objects_version];
+        let current = versions.iter().max().unwrap();
+
+        UpgradeVersions::for_current(current.clone())
     }
 }
 
-fn upgrade_versions_ns(work_dir: &Path, ns: &str) -> Option<UpgradeVersions> {
+fn key_store_version(work_dir: &Path, ns: &str) -> Option<KrillVersion> {
     let keystore_path = work_dir.join(ns);
     if keystore_path.exists() {
         let version_path = keystore_path.join("version");
-        let current = file::load_json(&version_path).unwrap_or_else(|_| KrillVersion::v0_5_0_or_before());
-        UpgradeVersions::for_current(current)
+        Some(file::load_json(&version_path).unwrap_or_else(|_| KrillVersion::v0_5_0_or_before()))
     } else {
         None
     }
@@ -673,6 +700,12 @@ mod tests {
     #[tokio::test]
     async fn prepare_then_upgrade_0_9_5() {
         let source = PathBuf::from("test-resources/migrations/v0_9_5/");
+        test_upgrade(source).await;
+    }
+
+    #[tokio::test]
+    async fn prepare_then_upgrade_0_12_1() {
+        let source = PathBuf::from("test-resources/migrations/v0_12_1/");
         test_upgrade(source).await;
     }
 

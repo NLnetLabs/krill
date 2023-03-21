@@ -1,0 +1,17 @@
+{
+  "actor": "testbed",
+  "time": "2022-10-12T11:48:55.340060612Z",
+  "handle": "0",
+  "version": 99,
+  "sequence": 104,
+  "details": {
+    "type": "add_publisher",
+    "name": "us-spacex"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      99
+    ]
+  }
+}

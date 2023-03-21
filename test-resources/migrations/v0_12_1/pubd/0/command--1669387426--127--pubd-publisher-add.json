@@ -1,0 +1,17 @@
+{
+  "actor": "testbed",
+  "time": "2022-11-25T14:43:46.951901156Z",
+  "handle": "0",
+  "version": 114,
+  "sequence": 127,
+  "details": {
+    "type": "add_publisher",
+    "name": "krill-testbed-cloud1669387426840"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      114
+    ]
+  }
+}

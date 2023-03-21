@@ -1,0 +1,15 @@
+{
+  "actor": "testbed",
+  "time": "2022-06-16T14:17:24.883429630Z",
+  "handle": "0",
+  "version": 16,
+  "sequence": 18,
+  "details": {
+    "type": "add_publisher",
+    "name": "krill-testbed-prepdev"
+  },
+  "effect": {
+    "result": "error",
+    "msg": "Duplicate publisher 'krill-testbed-prepdev'"
+  }
+}

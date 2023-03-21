@@ -1,0 +1,17 @@
+{
+  "actor": "testbed",
+  "time": "2023-02-15T07:49:00.636293833Z",
+  "handle": "0",
+  "version": 167,
+  "sequence": 196,
+  "details": {
+    "type": "add_publisher",
+    "name": "NE0-MATRIX"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      167
+    ]
+  }
+}
