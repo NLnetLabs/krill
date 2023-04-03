@@ -859,7 +859,7 @@ impl StagedElements {
             match self.0.get_mut(&uri) {
                 Some(DeltaElement::Publish(staged_publish)) => {
                     // An update that follows a staged publish, should be fresh publish.
-                    // So we can just update hte content of the existing publish
+                    // So we can just update the content of the existing publish
                     // to match this update.
                     staged_publish.with_updated_content(upd.into_base64());
                 }
