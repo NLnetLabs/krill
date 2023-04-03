@@ -953,8 +953,8 @@ impl RrdpServer {
     /// to migrate. The new server will use a new RRDP session, because
     /// of the (remote, but existing) possibility that the content in
     /// both places was out of sync. I.e. it would be hard to work out
-    /// what the exact delta would in this case, but a session reset will
-    /// ensure the RPs get the latest (now correct) content.
+    /// what the exact delta would be in this case, but a session reset
+    /// will ensure the RPs get the latest (now correct) content.
     pub fn migrate_old_content(
         rrdp_base_uri: uri::Https,
         rrdp_base_dir: PathBuf,
