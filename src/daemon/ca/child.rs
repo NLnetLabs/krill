@@ -8,15 +8,12 @@ use rpki::{
 
 use crate::{
     commons::{
-        api::{ChildCaInfo, ChildState, IdCertInfo, IssuedCertificate, SuspendedCert, UnsuspendedCert},
+        api::{ChildCaInfo, ChildState, IdCertInfo, IssuedCertificate, ReceivedCert, SuspendedCert, UnsuspendedCert},
         crypto::{KrillSigner, SignSupport},
         error::Error,
         KrillResult,
     },
-    daemon::{
-        ca::{CertifiedKey, ChildCertificateUpdates},
-        config::IssuanceTimingConfig,
-    },
+    daemon::{ca::ChildCertificateUpdates, config::IssuanceTimingConfig},
 };
 
 //------------ UsedKeyState ------------------------------------------------
@@ -193,18 +190,18 @@ impl ChildCertificates {
     /// Re-issue everything when activating a new key
     pub fn activate_key(
         &self,
-        new_key: &CertifiedKey,
+        signing_cert: &ReceivedCert,
         issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<ChildCertificateUpdates> {
         let mut updates = ChildCertificateUpdates::default();
         for issued in self.issued.values() {
-            updates.issue(self.re_issue(issued, None, new_key, issuance_timing, signer)?);
+            updates.issue(self.re_issue(issued, None, signing_cert, issuance_timing, signer)?);
         }
         // Also re-issue suspended certificates, they may yet become unsuspended at some point
         for suspended in self.suspended.values() {
             updates.suspend(
-                self.re_issue(&suspended.convert(), None, new_key, issuance_timing, signer)?
+                self.re_issue(&suspended.convert(), None, signing_cert, issuance_timing, signer)?
                     .into_converted(),
             );
         }
@@ -218,13 +215,13 @@ impl ChildCertificates {
     ///       with those resources.
     pub fn shrink_overclaiming(
         &self,
-        updated_key: &CertifiedKey,
+        received_cert: &ReceivedCert,
         issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<ChildCertificateUpdates> {
         let mut updates = ChildCertificateUpdates::default();
 
-        let updated_resources = updated_key.incoming_cert().resources();
+        let updated_resources = received_cert.resources();
 
         for issued in self.issued.values() {
             if let Some(reduced_set) = issued.reduced_applicable_resources(updated_resources) {
@@ -233,7 +230,7 @@ impl ChildCertificates {
                     updates.remove(issued.key_identifier());
                 } else {
                     // re-issue
-                    updates.issue(self.re_issue(issued, Some(reduced_set), updated_key, issuance_timing, signer)?);
+                    updates.issue(self.re_issue(issued, Some(reduced_set), received_cert, issuance_timing, signer)?);
                 }
             }
         }
@@ -254,7 +251,7 @@ impl ChildCertificates {
                         self.re_issue(
                             &suspended.convert(),
                             Some(reduced_set),
-                            updated_key,
+                            received_cert,
                             issuance_timing,
                             signer,
                         )?
@@ -273,7 +270,7 @@ impl ChildCertificates {
         &self,
         previous: &IssuedCertificate,
         updated_resources: Option<ResourceSet>,
-        signing_key: &CertifiedKey,
+        signing_cert: &ReceivedCert,
         issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<IssuedCertificate> {
@@ -285,7 +282,7 @@ impl ChildCertificates {
             csr_info,
             &resource_set,
             limit,
-            signing_key,
+            signing_cert,
             issuance_timing.new_child_cert_validity(),
             signer,
         )?;

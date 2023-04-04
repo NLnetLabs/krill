@@ -125,10 +125,10 @@ impl BgpAnalyser {
             // Check all ROAs.. and report ROA state in relation to validated announcements
             let validated_tree = make_validated_announcement_tree(validated.as_slice());
             for roa in roas_held {
-                let covered = validated_tree.matching_or_more_specific(&roa.prefix());
+                let covered = validated_tree.matching_or_more_specific(roa.prefix());
 
                 let other_roas_covering_this_prefix: Vec<_> = roa_tree
-                    .matching_or_less_specific(&roa.prefix())
+                    .matching_or_less_specific(roa.prefix())
                     .into_iter()
                     .filter(|other| roa.payload() != **other)
                     .cloned()

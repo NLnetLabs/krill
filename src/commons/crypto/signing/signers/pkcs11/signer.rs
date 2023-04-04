@@ -11,7 +11,7 @@ use backoff::ExponentialBackoff;
 use bytes::Bytes;
 use cryptoki::{
     context::Info,
-    error::Error as Pkcs11Error,
+    error::{Error as Pkcs11Error, RvError},
     mechanism::Mechanism,
     object::{Attribute, AttributeType, ObjectClass, ObjectHandle},
     session::UserType,
@@ -42,6 +42,23 @@ use crate::commons::crypto::{
 
 use serde::{de::Visitor, Deserialize};
 
+/// How should public key access be controlled?
+/// See: http://docs.oasis-open.org/pkcs11/pkcs11-base/v2.40/os/pkcs11-base-v2.40-os.html#_Toc416959705
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
+pub enum PubKeyAccess {
+    /// User may not access the object until the user has been authenticated to the token.
+    #[serde(alias = "authenticated")]
+    Authenticated,
+
+    /// User may access the object without having been authenticated to the token.
+    #[serde(alias = "unauthenticated")]
+    Unauthenticated,
+
+    /// Default value is token-specific, and may depend on the values of other attributes of the object.
+    #[serde(alias = "token-default")]
+    TokenDefault,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct Pkcs11SignerConfig {
     pub lib_path: String,
@@ -53,6 +70,9 @@ pub struct Pkcs11SignerConfig {
 
     #[serde(default = "Pkcs11SignerConfig::default_login")]
     pub login: bool,
+
+    #[serde(default = "Pkcs11SignerConfig::default_pubkey_access")]
+    pub pubkey_access: PubKeyAccess,
 
     #[serde(default = "Pkcs11SignerConfig::default_retry_seconds")]
     pub retry_seconds: u64,
@@ -111,6 +131,10 @@ pub struct Pkcs11ConfigurablePrivateKeyAttributes {
 impl Pkcs11SignerConfig {
     pub fn default_login() -> bool {
         true
+    }
+
+    pub fn default_pubkey_access() -> PubKeyAccess {
+        PubKeyAccess::Authenticated
     }
 
     pub fn default_retry_seconds() -> u64 {
@@ -358,8 +382,22 @@ impl Pkcs11Signer {
     }
 
     pub fn create_registration_key(&self) -> Result<(PublicKey, String), SignerError> {
-        let (public_key, _, _, internal_key_id) = self.build_key(PublicKeyFormat::Rsa)?;
-        Ok((public_key, internal_key_id))
+        match self.build_key_internal(PublicKeyFormat::Rsa) {
+            Ok((public_key, _, _, internal_key_id)) => Ok((public_key, internal_key_id)),
+
+            Err(err @ InternalConnError::Pkcs11Error(Pkcs11Error::Pkcs11(RvError::TemplateInconsistent))) => {
+                // https://github.com/NLnetLabs/krill/issues/1019
+                let err_msg = format!(
+                    "{} [Note: This error can occur if the signer does not support authenticated \
+                    access to public keys. Setting `pubkey_access` in krill.conf to \"token-default\"` or \
+                    `\"unauthenticated\"` may help]",
+                    err
+                );
+                Err(SignerError::Pkcs11Error(err_msg))
+            }
+
+            Err(err) => Err(err.into()),
+        }
     }
 
     pub fn sign_registration_challenge<D: AsRef<[u8]> + ?Sized>(
@@ -706,7 +744,7 @@ impl Pkcs11Signer {
 
 impl Pkcs11Signer {
     /// Get a connection to the server, if the server is usable.
-    fn connect(&self) -> Result<Pkcs11Session, SignerError> {
+    fn connect(&self) -> Result<Pkcs11Session, InternalConnError> {
         let conn = self.server.status(Self::probe_server)?.state()?.get_connection()?;
         Ok(conn)
     }
@@ -715,7 +753,7 @@ impl Pkcs11Signer {
     ///
     /// Fails if the PKCS#11 server is not [Usable]. If the operation fails due to a transient connection error, retry
     /// with backoff upto a defined retry limit.
-    fn with_conn<T, F>(&self, desc: &str, mut do_something_with_conn: F) -> Result<T, SignerError>
+    fn with_conn<T, F>(&self, desc: &str, mut do_something_with_conn: F) -> Result<T, InternalConnError>
     where
         F: FnMut(&Pkcs11Session) -> Result<T, Pkcs11Error>,
     {
@@ -735,7 +773,7 @@ impl Pkcs11Signer {
         // Define an operation to (re)try
         let op = || {
             // First get a (possibly already existing) connection from the pool
-            let conn = self.connect().map_err(retry_on_transient_signer_error)?;
+            let conn = self.connect().map_err(retry_on_transient_error)?;
 
             // Next, try to execute the callers operation using the connection. If it fails, examine the cause of
             // failure to determine if it should be a hard-fail (no more retries) or if we should try again.
@@ -798,6 +836,13 @@ impl Pkcs11Signer {
         &self,
         algorithm: PublicKeyFormat,
     ) -> Result<(PublicKey, ObjectHandle, ObjectHandle, String), SignerError> {
+        Ok(self.build_key_internal(algorithm)?)
+    }
+
+    fn build_key_internal(
+        &self,
+        algorithm: PublicKeyFormat,
+    ) -> Result<(PublicKey, ObjectHandle, ObjectHandle, String), InternalConnError> {
         // https://tools.ietf.org/html/rfc6485#section-3: Asymmetric Key Pair Formats
         //   "The RSA key pairs used to compute the signatures MUST have a 2048-bit
         //    modulus and a public exponent (e) of 65,537."
@@ -806,7 +851,7 @@ impl Pkcs11Signer {
             return Err(SignerError::Pkcs11Error(format!(
                 "Algorithm {:?} not supported while creating key",
                 &algorithm
-            )));
+            )))?;
         }
 
         let mech = Mechanism::RsaPkcsKeyPairGen;
@@ -943,14 +988,16 @@ impl Pkcs11Signer {
 
         let cka_id = hex::decode(cka_id_hex_str).map_err(|_| KeyError::Signer(SignerError::DecodeError))?;
 
-        let results = self.with_conn("find key", |conn| {
-            // Find at most one result that matches the given key class (public or private) and the given PKCS#11
-            // CKA_ID bytes.
+        let results = self
+            .with_conn("find key", |conn| {
+                // Find at most one result that matches the given key class (public or private) and the given PKCS#11
+                // CKA_ID bytes.
 
-            // A PKCS#11 session can have at most one active search operation at a time. A search must be initialized,
-            // results fetched, and then finalized, only then can the session perform another search.
-            conn.find_objects(&[Attribute::Class(key_class), Attribute::Id(cka_id.clone())])
-        })?;
+                // A PKCS#11 session can have at most one active search operation at a time. A search must be initialized,
+                // results fetched, and then finalized, only then can the session perform another search.
+                conn.find_objects(&[Attribute::Class(key_class), Attribute::Id(cka_id.clone())])
+            })
+            .map_err(SignerError::from)?;
 
         match results.len() {
             0 => Err(KeyError::KeyNotFound),
@@ -964,7 +1011,7 @@ impl Pkcs11Signer {
 
     pub(super) fn destroy_key_by_handle(&self, key_handle: ObjectHandle) -> Result<(), SignerError> {
         trace!("[{}] Destroying key with PKCS#11 handle {}", self.name, key_handle);
-        self.with_conn("destroy", |conn| conn.destroy_object(key_handle))
+        Ok(self.with_conn("destroy", |conn| conn.destroy_object(key_handle))?)
     }
 }
 
@@ -1086,7 +1133,52 @@ impl Pkcs11Signer {
 // Retry with backoff related helper impls/fns:
 // --------------------------------------------------------------------------------------------------------------------
 
-fn retry_on_transient_pkcs11_error(err: Pkcs11Error) -> backoff::Error<SignerError> {
+#[derive(Debug)]
+enum InternalConnError {
+    Pkcs11Error(Pkcs11Error),
+    SignerError(SignerError),
+}
+
+impl std::fmt::Display for InternalConnError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            InternalConnError::Pkcs11Error(v) => v.fmt(f),
+            InternalConnError::SignerError(v) => v.fmt(f),
+        }
+    }
+}
+
+impl From<Pkcs11Error> for InternalConnError {
+    fn from(v: Pkcs11Error) -> Self {
+        InternalConnError::Pkcs11Error(v)
+    }
+}
+
+impl From<SignerError> for InternalConnError {
+    fn from(v: SignerError) -> Self {
+        InternalConnError::SignerError(v)
+    }
+}
+
+impl From<InternalConnError> for SignerError {
+    fn from(v: InternalConnError) -> Self {
+        match v {
+            InternalConnError::Pkcs11Error(v) => SignerError::Pkcs11Error(v.to_string()),
+            InternalConnError::SignerError(v) => v,
+        }
+    }
+}
+
+impl From<backoff::Error<InternalConnError>> for InternalConnError {
+    fn from(v: backoff::Error<InternalConnError>) -> Self {
+        match v {
+            backoff::Error::Permanent(err) => err,
+            backoff::Error::Transient(err) => err,
+        }
+    }
+}
+
+fn retry_on_transient_pkcs11_error(err: Pkcs11Error) -> backoff::Error<InternalConnError> {
     if is_transient_error(&err) {
         backoff::Error::Transient(err.into())
     } else {
@@ -1094,10 +1186,17 @@ fn retry_on_transient_pkcs11_error(err: Pkcs11Error) -> backoff::Error<SignerErr
     }
 }
 
-fn retry_on_transient_signer_error(err: SignerError) -> backoff::Error<SignerError> {
+fn retry_on_transient_signer_error(err: SignerError) -> backoff::Error<InternalConnError> {
     match err {
-        SignerError::TemporarilyUnavailable => backoff::Error::Transient(err),
-        _ => backoff::Error::Permanent(err),
+        SignerError::TemporarilyUnavailable => backoff::Error::Transient(err.into()),
+        _ => backoff::Error::Permanent(err.into()),
+    }
+}
+
+fn retry_on_transient_error(err: InternalConnError) -> backoff::Error<InternalConnError> {
+    match err {
+        InternalConnError::Pkcs11Error(err) => retry_on_transient_pkcs11_error(err),
+        InternalConnError::SignerError(err) => retry_on_transient_signer_error(err),
     }
 }
 
@@ -1250,16 +1349,9 @@ impl From<Pkcs11Error> for SignerError {
     }
 }
 
-impl From<ProbeError<SignerError>> for SignerError {
+impl From<ProbeError<SignerError>> for InternalConnError {
     fn from(err: ProbeError<SignerError>) -> Self {
-        match err {
-            ProbeError::WrongState => {
-                SignerError::Other("Internal error: probe is not in the expected state".to_string())
-            }
-            ProbeError::AwaitingNextProbe => SignerError::TemporarilyUnavailable,
-            ProbeError::CompletedUnusable => SignerError::PermanentlyUnusable,
-            ProbeError::CallbackFailed(err) => err,
-        }
+        err.into()
     }
 }
 
@@ -1317,7 +1409,9 @@ where
 }
 
 #[cfg(test)]
-mod tes {
+mod tests {
+    use crate::test;
+
     use super::*;
 
     #[test]

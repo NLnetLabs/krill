@@ -73,6 +73,10 @@ impl CsrInfo {
         (self.ca_repository, self.rpki_manifest, self.rpki_notify, self.key)
     }
 
+    pub fn key(&self) -> &PublicKey {
+        &self.key
+    }
+
     pub fn key_id(&self) -> KeyIdentifier {
         self.key.key_identifier()
     }
@@ -113,11 +117,10 @@ impl SignSupport {
         csr: CsrInfo,
         resources: &ResourceSet,
         limit: RequestResourceLimit,
-        signing_key: &CertifiedKey,
+        signing_cert: &ReceivedCert,
         validity: Validity,
         signer: &KrillSigner,
     ) -> KrillResult<IssuedCertificate> {
-        let signing_cert = signing_key.incoming_cert();
         let resources = limit.apply_to(resources)?;
         if !signing_cert.resources().contains(&resources) {
             return Err(Error::MissingResources);
@@ -126,7 +129,7 @@ impl SignSupport {
         let request = CertRequest::Ca(csr, validity);
 
         let tbs = Self::make_tbs_cert(&resources, signing_cert, request, signer)?;
-        let cert = signer.sign_cert(tbs, signing_key.key_id())?;
+        let cert = signer.sign_cert(tbs, &signing_cert.key_identifier())?;
 
         let uri = signing_cert.uri_for_object(&cert);
 
@@ -221,6 +224,14 @@ impl SignSupport {
         }
 
         Ok(cert)
+    }
+
+    /// Returns a validity period from 5 minutes ago (in case of NTP mess-up), to
+    /// X weeks from now.
+    pub fn sign_validity_years(years: i32) -> Validity {
+        let from = Time::five_minutes_ago();
+        let until = Time::years_from_now(years);
+        Validity::new(from, until)
     }
 
     /// Returns a validity period from 5 minutes ago (in case of NTP mess-up), to

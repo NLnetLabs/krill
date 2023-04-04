@@ -10,12 +10,17 @@ use crate::{
         api::{
             AllCertAuthIssues, AspaDefinitionList, BgpSecCsrInfoList, CaCommandDetails, CaRepoDetails, CertAuthInfo,
             CertAuthIssues, CertAuthList, ChildCaInfo, ChildrenConnectionStats, CommandHistory, ConfiguredRoas,
-            ParentCaContact, ParentStatuses, PublisherDetails, PublisherList, RepoStatus, RtaList, RtaPrepResponse,
-            ServerInfo,
+            IdCertInfo, ParentCaContact, ParentStatuses, PublisherDetails, PublisherList, RepoStatus,
+            RepositoryContact, RtaList, RtaPrepResponse, ServerInfo,
         },
         bgp::{BgpAnalysisAdvice, BgpAnalysisReport, BgpAnalysisSuggestion},
     },
-    daemon::ca::ResourceTaggedAttestation,
+    daemon::{
+        ca::ResourceTaggedAttestation,
+        ta::{
+            TrustAnchorProxySignerExchanges, TrustAnchorSignedRequest, TrustAnchorSignedResponse, TrustAnchorSignerInfo,
+        },
+    },
     pubd::RepoStats,
 };
 
@@ -162,7 +167,7 @@ impl fmt::Display for ReportError {
 
 /// This trait should be implemented by all api responses, so that the
 /// response can be formatted for users.
-trait Report: Serialize + ToString {
+pub trait Report: Serialize + ToString {
     fn text(&self) -> Result<String, ReportError> {
         Ok(self.to_string())
     }
@@ -182,6 +187,8 @@ trait Report: Serialize + ToString {
 
 impl Report for CertAuthList {}
 impl Report for CertAuthInfo {}
+impl Report for IdCertInfo {}
+impl Report for RepositoryContact {}
 
 impl Report for ChildCaInfo {}
 
@@ -244,3 +251,8 @@ impl Report for ServerInfo {}
 impl Report for ResourceTaggedAttestation {}
 impl Report for RtaList {}
 impl Report for RtaPrepResponse {}
+
+impl Report for TrustAnchorSignerInfo {}
+impl Report for TrustAnchorSignedRequest {}
+impl Report for TrustAnchorSignedResponse {}
+impl Report for TrustAnchorProxySignerExchanges {}

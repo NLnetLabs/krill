@@ -104,10 +104,9 @@ async fn add_and_remove_certificate_authority() {
     add_parent_to_ca(&dummy_ca_handle, parent_ca_req).await;
 
     // verify that the child CA now has the correct parent
-    let parent_contact_for_child = ParentCaContact::for_rfc8183_parent_response(parent_response).unwrap();
     let dummy_ca = ca_details(&dummy_ca_handle).await;
     let dummy_ca_parents = dummy_ca.parents();
-    let expected_parent_info = ParentInfo::new(testbed_ca_handle.convert(), parent_contact_for_child);
+    let expected_parent_info = ParentInfo::new(testbed_ca_handle.convert());
     let actual_parent_info = &dummy_ca_parents[0];
     assert_eq!(1, dummy_ca_parents.len());
     assert_eq!(&expected_parent_info, actual_parent_info);

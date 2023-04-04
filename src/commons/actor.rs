@@ -138,6 +138,15 @@ impl PartialEq<ActorDef> for Actor {
 }
 
 impl Actor {
+    /// Only for krillta
+    ///
+    /// Mo authorizer framework exists for krillta. It is designed as a
+    /// CLI. Sysadmins should ensure that only trusted people can execute
+    /// the CLI (and/or read / write its data).
+    pub fn krillta() -> Actor {
+        Self::test_from_def(crate::constants::ACTOR_DEF_KRILLTA)
+    }
+
     /// Only for use in testing
     pub fn test_from_def(actor_def: ActorDef) -> Actor {
         Actor {

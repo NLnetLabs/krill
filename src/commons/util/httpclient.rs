@@ -189,19 +189,28 @@ pub async fn post_json_with_opt_response<T: DeserializeOwned>(
 
 /// Performs a POST with no data to the given URI and expects and empty 200 OK response.
 pub async fn post_empty(uri: &str, token: Option<&Token>) -> Result<(), Error> {
+    let res = do_empty_post(uri, token).await?;
+    empty_response(uri, res).await
+}
+
+/// Performs a POST with no data to the given URI and expects a response.
+pub async fn post_empty_with_response<T: DeserializeOwned>(uri: &str, token: Option<&Token>) -> Result<T, Error> {
+    let res = do_empty_post(uri, token).await?;
+    process_json_response(uri, res).await
+}
+
+async fn do_empty_post(uri: &str, token: Option<&Token>) -> Result<Response, Error> {
     if env::var(KRILL_CLI_API_ENV).is_ok() {
         report_post_and_exit(uri, None, token, "<empty>");
     }
 
     let headers = headers(uri, Some(JSON_CONTENT), token)?;
-    let res = client(uri)?
+    client(uri)?
         .post(uri)
         .headers(headers)
         .send()
         .await
-        .map_err(|e| Error::execute(uri, e))?;
-
-    empty_response(uri, res).await
+        .map_err(|e| Error::execute(uri, e))
 }
 
 /// Posts binary data, and expects a binary response. Includes the full krill version
@@ -271,6 +280,7 @@ pub async fn delete(uri: &str, token: Option<&Token>) -> Result<(), Error> {
     }
 }
 
+#[allow(clippy::result_large_err)]
 fn load_root_cert(path_str: &str) -> Result<reqwest::Certificate, Error> {
     let path = PathBuf::from_str(path_str).map_err(|e| Error::request_build_https_cert(path_str, e))?;
     let file = file::read(&path).map_err(|e| Error::request_build_https_cert(path_str, e))?;
@@ -278,11 +288,13 @@ fn load_root_cert(path_str: &str) -> Result<reqwest::Certificate, Error> {
 }
 
 /// Default client for Krill use cases.
+#[allow(clippy::result_large_err)]
 pub fn client(uri: &str) -> Result<reqwest::Client, Error> {
     client_with_tweaks(uri, Duration::from_secs(HTTP_CLIENT_TIMEOUT_SECS), true)
 }
 
 /// Client with tweaks - in particular needed by the openid connect client
+#[allow(clippy::result_large_err)]
 pub fn client_with_tweaks(uri: &str, timeout: Duration, allow_redirects: bool) -> Result<reqwest::Client, Error> {
     let mut builder = reqwest::ClientBuilder::new().timeout(timeout);
 
@@ -305,6 +317,7 @@ pub fn client_with_tweaks(uri: &str, timeout: Duration, allow_redirects: bool) -
     .map_err(|e| Error::request_build(uri, e))
 }
 
+#[allow(clippy::result_large_err)]
 fn headers(uri: &str, content_type: Option<&str>, token: Option<&Token>) -> Result<HeaderMap, Error> {
     let mut headers = HeaderMap::new();
     headers.insert(USER_AGENT, HeaderValue::from_static("krill"));
@@ -390,7 +403,7 @@ pub enum Error {
     Response(ErrorUri, ErrorMessage),
     Forbidden(ErrorUri),
     ErrorResponseWithBody(ErrorUri, StatusCode, String),
-    ErrorResponseWithJson(ErrorUri, StatusCode, ErrorResponse),
+    ErrorResponseWithJson(ErrorUri, StatusCode, Box<ErrorResponse>),
 }
 
 impl fmt::Display for Error {
@@ -458,7 +471,7 @@ impl Error {
                     Self::response_unexpected_status(uri, status)
                 } else {
                     match serde_json::from_str::<ErrorResponse>(&body) {
-                        Ok(res) => Error::ErrorResponseWithJson(uri.to_string(), status, res),
+                        Ok(res) => Error::ErrorResponseWithJson(uri.to_string(), status, Box::new(res)),
                         Err(_) => Error::ErrorResponseWithBody(uri.to_string(), status, body),
                     }
                 }
