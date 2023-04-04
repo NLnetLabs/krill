@@ -529,8 +529,11 @@ impl SnapshotData {
                 self.current_objects.remove(publisher);
             }
         } else {
+            // This is a new publisher without existing objects. So, just create
+            // an default -empty- object set for it, so we can apply the delta
+            // to it.
             let mut objects = CurrentObjects::default();
-            objects.apply_delta(delta); // Can only happen for new publishers
+            objects.apply_delta(delta);
             self.current_objects.insert(publisher.clone(), objects);
         }
     }
