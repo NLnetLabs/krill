@@ -20,7 +20,7 @@ use crate::{
     },
     constants::{CASERVER_DIR, CA_OBJECTS_DIR, PUBSERVER_CONTENT_DIR, PUBSERVER_DIR, UPGRADE_REISSUE_ROAS_CAS_LIMIT},
     daemon::{config::Config, krillserver::KrillServer},
-    pubd::{self, RepositoryContent},
+    pubd,
 };
 
 #[cfg(feature = "hsm")]
