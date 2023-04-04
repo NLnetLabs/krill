@@ -839,13 +839,15 @@ impl StagedElements {
                         pbl.base64().to_hash(),
                         staged_update.base64().to_hash()
                     );
-                    staged_update.with_updated_content(staged_update.base64().clone());
+                    let (_, base64) = pbl.unpack();
+                    staged_update.with_updated_content(base64);
                 }
                 Some(DeltaElement::Withdraw(staged_withdraw)) => {
                     // A new publish that follows a withdraw for the same URI should be
                     // an Update of the original file.
                     let hash = *staged_withdraw.hash();
-                    let update = UpdateElement::new(uri.clone(), hash, pbl.base64().clone());
+                    let (_, base64) = pbl.unpack();
+                    let update = UpdateElement::new(uri.clone(), hash, base64);
                     self.0.insert(uri, DeltaElement::Update(update));
                 }
                 None => {
