@@ -814,29 +814,31 @@ impl StagedElements {
     /// problematic (e.g. double withdraw of an object), we will largely
     /// ignore such issues here. We need to do this, because we get these
     /// changes as write-ahead-log (WAL) changes and therefore applying
-    /// them is not allowed to fail.
+    /// them is not allowed to fail. In these cases we will log a warning
+    /// that a "publish merge conflict" was found and resolved.
     fn merge_new_elements(&mut self, elements: DeltaElements) {
         let (publishes, updates, withdraws) = elements.unpack();
+
+        let general_merge_message = "Non-critical publish merge conflict resolved. Please contact rpki-team@nlnetlabs.nl if this happens more frequently.";
 
         for pbl in publishes {
             let uri = pbl.uri().clone();
             match self.0.get_mut(&uri) {
-                Some(DeltaElement::Publish(_)) => {
-                    // This should never happen as the new publish would have
-                    // been an update instead. This will have been checked
-                    // at this point. Still, rather than failing which is
-                    // not allowed in this code path, we can use the publish
-                    // instead of the staged publish.
+                Some(DeltaElement::Publish(staged_publish)) => {
+                    error!(
+                        "{general_merge_message} Received new publish element for {uri} with content hash {} while another publish element with content hash {} was already staged. Expected new *update* element instead. Will use new publish.",
+                        pbl.base64().to_hash(),
+                        staged_publish.base64().to_hash()
+                    );
                     self.0.insert(uri, DeltaElement::Publish(pbl));
                 }
 
                 Some(DeltaElement::Update(staged_update)) => {
-                    // This should never happen as the new publish would have
-                    // been an update instead. This will have been checked
-                    // at this point. Still, rather than failing which is
-                    // not allowed in this code path, we can update the
-                    // existing update with the content of the new publish
-                    // element.
+                    error!(
+                        "{general_merge_message} Received new publish element for {uri} with content hash {} while an *update* with content hash {} was already staged. Expected new *update* element instead. Will merge content of publish into staged update.",
+                        pbl.base64().to_hash(),
+                        staged_update.base64().to_hash()
+                    );
                     staged_update.with_updated_content(staged_update.base64().clone());
                 }
                 Some(DeltaElement::Withdraw(staged_withdraw)) => {
@@ -858,23 +860,30 @@ impl StagedElements {
             let uri = upd.uri().clone();
             match self.0.get_mut(&uri) {
                 Some(DeltaElement::Publish(staged_publish)) => {
-                    // An update that follows a staged publish, should be fresh publish.
-                    // So we can just update the content of the existing publish
-                    // to match this update.
+                    // An update that follows a *staged* publish, should be merged
+                    // into a fresh new publish with the updated content.
+                    //
+                    // To the outside world (RRDP delta in particular) this will
+                    // look like a single publish.
                     staged_publish.with_updated_content(upd.into_base64());
                 }
                 Some(DeltaElement::Update(staged_update)) => {
-                    // An update that follows a staged update, should use the hash from
-                    // the previous update, but have the new content. So we can just
-                    // update the content of the staged update.
+                    // An update that follows a *staged* update, should be merged
+                    // into an update with the updated content, but it should keep
+                    // the hash (i.e. object it replaces) from the existing staged
+                    // update.
+                    //
+                    // To the outside world (RRDP delta in particular) this will
+                    // look like a single update.
                     staged_update.with_updated_content(upd.into_base64());
                 }
                 Some(DeltaElement::Withdraw(staged_withdraw)) => {
-                    // This should not happen. We would have a expected a fresh publish
-                    // if a withdraw was staged. Still, if we are going to merge this
-                    // rather than fail - which is not allowed at this point - then
-                    // the intent of the last message should count. So, we should have
-                    // an update then with the hash that was used in the withdraw.
+                    error!(
+                        "{general_merge_message} Received new update element for {uri} with content hash {} and replacing object hash {}, while a *withdraw* for content hash {} was already staged. Expected new *update* element instead. Will stage the update instead of withdraw.",
+                        upd.base64().to_hash(),
+                        upd.hash(),
+                        staged_withdraw.hash()
+                    );
                     upd.with_updated_hash(*staged_withdraw.hash());
                     self.0.insert(uri, DeltaElement::Update(upd));
                 }
@@ -904,7 +913,7 @@ impl StagedElements {
                 Some(DeltaElement::Withdraw(staged_wdr)) => {
                     // This should never happen. But leave the original withdraw in place because
                     // that already matches the current file in public RRDP.
-                    error!("We received a withdraw for an object that was already withdrawn.\nExisting withdraw: {} {}\nReceived withdraw: {} {}\n", staged_wdr.hash(), staged_wdr.uri(), wdr.hash(), wdr.uri())
+                    error!("{general_merge_message} We received a withdraw for an object that was already withdrawn.\nExisting withdraw: {} {}\nReceived withdraw: {} {}\n", staged_wdr.hash(), staged_wdr.uri(), wdr.hash(), wdr.uri())
                 }
                 None => {
                     // No staged changes for this element, so we can just add the withdraw
