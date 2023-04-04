@@ -826,7 +826,9 @@ impl StagedElements {
             match self.0.get_mut(&uri) {
                 Some(DeltaElement::Publish(staged_publish)) => {
                     error!(
-                        "{general_merge_message} Received new publish element for {uri} with content hash {} while another publish element with content hash {} was already staged. Expected new *update* element instead. Will use new publish.",
+                        "{} Received new publish element for {} with content hash {} while another publish element with content hash {} was already staged. Expected new *update* element instead. Will use new publish.",
+                        general_merge_message,
+                        uri,
                         pbl.base64().to_hash(),
                         staged_publish.base64().to_hash()
                     );
@@ -835,7 +837,9 @@ impl StagedElements {
 
                 Some(DeltaElement::Update(staged_update)) => {
                     error!(
-                        "{general_merge_message} Received new publish element for {uri} with content hash {} while an *update* with content hash {} was already staged. Expected new *update* element instead. Will merge content of publish into staged update.",
+                        "{} Received new publish element for {} with content hash {} while an *update* with content hash {} was already staged. Expected new *update* element instead. Will merge content of publish into staged update.",
+                        general_merge_message,
+                        uri,
                         pbl.base64().to_hash(),
                         staged_update.base64().to_hash()
                     );
@@ -881,7 +885,9 @@ impl StagedElements {
                 }
                 Some(DeltaElement::Withdraw(staged_withdraw)) => {
                     error!(
-                        "{general_merge_message} Received new update element for {uri} with content hash {} and replacing object hash {}, while a *withdraw* for content hash {} was already staged. Expected new *update* element instead. Will stage the update instead of withdraw.",
+                        "{} Received new update element for {} with content hash {} and replacing object hash {}, while a *withdraw* for content hash {} was already staged. Expected new *update* element instead. Will stage the update instead of withdraw.",
+                        general_merge_message,
+                        uri,
                         upd.base64().to_hash(),
                         upd.hash(),
                         staged_withdraw.hash()
@@ -915,7 +921,7 @@ impl StagedElements {
                 Some(DeltaElement::Withdraw(staged_wdr)) => {
                     // This should never happen. But leave the original withdraw in place because
                     // that already matches the current file in public RRDP.
-                    error!("{general_merge_message} We received a withdraw for an object that was already withdrawn.\nExisting withdraw: {} {}\nReceived withdraw: {} {}\n", staged_wdr.hash(), staged_wdr.uri(), wdr.hash(), wdr.uri())
+                    error!("{} We received a withdraw for an object that was already withdrawn.\nExisting withdraw: {} {}\nReceived withdraw: {} {}\n", general_merge_message, staged_wdr.hash(), staged_wdr.uri(), wdr.hash(), wdr.uri())
                 }
                 None => {
                     // No staged changes for this element, so we can just add the withdraw
