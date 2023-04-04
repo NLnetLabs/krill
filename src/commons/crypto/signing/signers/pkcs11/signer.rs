@@ -42,23 +42,6 @@ use crate::commons::crypto::{
 
 use serde::{de::Visitor, Deserialize};
 
-/// How should public key access be controlled?
-/// See: http://docs.oasis-open.org/pkcs11/pkcs11-base/v2.40/os/pkcs11-base-v2.40-os.html#_Toc416959705
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
-pub enum PubKeyAccess {
-    /// User may not access the object until the user has been authenticated to the token.
-    #[serde(alias = "authenticated")]
-    Authenticated,
-
-    /// User may access the object without having been authenticated to the token.
-    #[serde(alias = "unauthenticated")]
-    Unauthenticated,
-
-    /// Default value is token-specific, and may depend on the values of other attributes of the object.
-    #[serde(alias = "token-default")]
-    TokenDefault,
-}
-
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct Pkcs11SignerConfig {
     pub lib_path: String,
@@ -70,9 +53,6 @@ pub struct Pkcs11SignerConfig {
 
     #[serde(default = "Pkcs11SignerConfig::default_login")]
     pub login: bool,
-
-    #[serde(default = "Pkcs11SignerConfig::default_pubkey_access")]
-    pub pubkey_access: PubKeyAccess,
 
     #[serde(default = "Pkcs11SignerConfig::default_retry_seconds")]
     pub retry_seconds: u64,
@@ -131,10 +111,6 @@ pub struct Pkcs11ConfigurablePrivateKeyAttributes {
 impl Pkcs11SignerConfig {
     pub fn default_login() -> bool {
         true
-    }
-
-    pub fn default_pubkey_access() -> PubKeyAccess {
-        PubKeyAccess::Authenticated
     }
 
     pub fn default_retry_seconds() -> u64 {
@@ -389,8 +365,7 @@ impl Pkcs11Signer {
                 // https://github.com/NLnetLabs/krill/issues/1019
                 let err_msg = format!(
                     "{} [Note: This error can occur if the signer does not support authenticated \
-                    access to public keys. Setting `pubkey_access` in krill.conf to \"token-default\"` or \
-                    `\"unauthenticated\"` may help]",
+                    access to public keys. Setting `CKA_PRIVATE` in krill.conf to \"false\"` may help]",
                     err
                 );
                 Err(SignerError::Pkcs11Error(err_msg))
