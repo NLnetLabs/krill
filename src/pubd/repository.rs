@@ -793,14 +793,14 @@ impl StagedElements {
     /// The new StagedElements is assumed to be verified against the current
     /// snapshot after *this* existing StagedElements has been applied.
     ///
-    /// The reason for this merging is that while publishing CAs will always
-    /// see all their objects as reflected by the latest snapshot with any
-    /// existing, but unpublished, updates applied to it. So, they may wish
-    /// to make further updates before the staged updates are actually published.
+    /// We keep a single StagedElements per CA, for simplicity. The StagedElements
+    /// contains all changes that the CA published at the Publication Server,
+    /// which are not *yet* published in the public RPKI repository.
     ///
-    /// But if they do, then the new elements should be merged into this existing
-    /// StagedElements so that it can be applied to the current snapshot. This
-    /// way we can have a single RRDP delta that combines all changes.
+    /// CAs may wish to publish further changes, even before the staged
+    /// changes become visible in the public RPKI repository. When merging
+    /// these changes we need to take care to ensure that the changes make
+    /// sense in relation to the current published *snapshot*.
     ///
     /// This operation is not entirely trivial as we need to make sure that
     /// any hashes in updates and withdraws after merge match the current
