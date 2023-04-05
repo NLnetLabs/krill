@@ -349,9 +349,9 @@ pub struct RrdpSessionReset {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RrdpUpdated {
-    time: Time,
-    random: RrdpFileRandom,
-    deltas_truncate: usize,
+    pub time: Time,
+    pub random: RrdpFileRandom,
+    pub deltas_truncate: usize,
 }
 
 impl fmt::Display for RepositoryContentChange {
