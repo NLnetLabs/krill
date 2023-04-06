@@ -2,7 +2,7 @@
 //! - Updating the format of commands or events
 //! - Export / Import data
 
-use std::{fmt, path::Path, str::FromStr, sync::Arc, time::Duration};
+use std::{convert::TryInto, fmt, path::Path, str::FromStr, sync::Arc, time::Duration};
 
 use serde::de::DeserializeOwned;
 
@@ -35,6 +35,7 @@ use crate::{
 use self::pre_0_13_0::OldRepositoryContent;
 
 pub mod pre_0_10_0;
+#[allow(clippy::mutable_key_type)]
 pub mod pre_0_13_0;
 
 pub type UpgradeResult<T> = Result<T, PrepareUpgradeError>;
@@ -407,7 +408,7 @@ fn migrate_0_12_pubd_objects(config: &Config) -> KrillResult<bool> {
         let repo_content_handle = MyHandle::new("0".into());
         let old_store: WalStore<OldRepositoryContent> = WalStore::disk(&config.data_dir, PUBSERVER_CONTENT_DIR)?;
         let old_repo_content = old_store.get_latest(&repo_content_handle)?.as_ref().clone();
-        let repo_content: pubd::RepositoryContent = old_repo_content.into();
+        let repo_content: pubd::RepositoryContent = old_repo_content.try_into()?;
 
         let new_key = KeyStoreKey::scoped("0".to_string(), "snapshot.json".to_string());
         let upgrade_store = KeyValueStore::disk(&config.upgrade_data_dir(), PUBSERVER_CONTENT_DIR)?;
@@ -427,7 +428,7 @@ fn migrate_pre_0_12_pubd_objects(config: &Config) -> KrillResult<bool> {
         let old_key = KeyStoreKey::simple("0.json".to_string());
         if let Ok(Some(old_repo_content)) = old_store.get::<pre_0_13_0::OldRepositoryContent>(&old_key) {
             info!("Found pre 0.12.0 RC2 publication server data. Migrating..");
-            let repo_content: pubd::RepositoryContent = old_repo_content.into();
+            let repo_content: pubd::RepositoryContent = old_repo_content.try_into()?;
 
             let new_key = KeyStoreKey::scoped("0".to_string(), "snapshot.json".to_string());
             let upgrade_store = KeyValueStore::disk(&config.upgrade_data_dir(), PUBSERVER_CONTENT_DIR)?;

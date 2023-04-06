@@ -332,6 +332,45 @@ impl CurrentObjects {
         CurrentObjects(map)
     }
 
+    pub fn extend(&mut self, other: Self) {
+        self.0.extend(other.0)
+    }
+
+    /// Returns the DeltaElements needed to turn this into other.
+    pub fn diff(&self, other: &Self) -> KrillResult<DeltaElements> {
+        let mut publishes = vec![];
+        let mut updates = vec![];
+        let mut withdraws = vec![];
+
+        // find new and updated stuff
+        for (uri_key, base64) in &other.0 {
+            let uri = uri_key.try_into()?;
+            match self.0.get(uri_key) {
+                None => {
+                    let pbl = PublishElement::new(base64.clone(), uri);
+                    publishes.push(pbl);
+                }
+                Some(existing_b64) => {
+                    let hash = existing_b64.to_hash();
+                    let upd = UpdateElement::new(uri, hash, base64.clone());
+                    updates.push(upd);
+                }
+            }
+        }
+
+        // find removed stuff
+        for (uri_key, base64) in &self.0 {
+            let uri = uri_key.try_into()?;
+            if !other.0.contains_key(uri_key) {
+                let hash = base64.to_hash();
+                let wdr = WithdrawElement::new(uri, hash);
+                withdraws.push(wdr);
+            }
+        }
+
+        Ok(DeltaElements::new(publishes, updates, withdraws))
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = (&CurrentObjectUri, &Base64)> {
         self.0.iter()
     }
@@ -533,14 +572,14 @@ pub struct SnapshotData {
 
     // We keep objects per publisher so that we can respond to
     // list and publication queries more efficiently.
-    current_objects: HashMap<PublisherHandle, CurrentObjects>,
+    publishers_current_objects: HashMap<PublisherHandle, CurrentObjects>,
 }
 
 impl SnapshotData {
-    pub fn new(random: RrdpFileRandom, current_objects: HashMap<PublisherHandle, CurrentObjects>) -> Self {
+    pub fn new(random: RrdpFileRandom, publishers_current_objects: HashMap<PublisherHandle, CurrentObjects>) -> Self {
         SnapshotData {
             random,
-            current_objects,
+            publishers_current_objects,
         }
     }
 
@@ -554,27 +593,27 @@ impl SnapshotData {
     /// but using a new session and resetting the serial.
     pub fn with_new_random(&self) -> Self {
         let random = RrdpFileRandom::default();
-        let current_objects = self.current_objects.clone();
+        let current_objects = self.publishers_current_objects.clone();
         SnapshotData::new(random, current_objects)
     }
 
     pub fn unpack(self) -> HashMap<PublisherHandle, CurrentObjects> {
-        self.current_objects
+        self.publishers_current_objects
     }
 
     // Get the approximate size for all current objects held by all publishers.
     pub fn size_approx(&self) -> usize {
-        self.current_objects
+        self.publishers_current_objects
             .values()
             .fold(0, |tot, objects| tot + objects.size_approx())
     }
 
     pub fn current_objects_for(&self, publisher: &PublisherHandle) -> Option<&CurrentObjects> {
-        self.current_objects.get(publisher)
+        self.publishers_current_objects.get(publisher)
     }
 
     pub fn publishers_current_objects(&self) -> &HashMap<PublisherHandle, CurrentObjects> {
-        &self.current_objects
+        &self.publishers_current_objects
     }
 
     pub fn set_random(&mut self, random: RrdpFileRandom) {
@@ -586,10 +625,10 @@ impl SnapshotData {
     /// This assumes that the delta had been checked before. This should not be
     /// any issue as deltas are verified when they are submitted.
     pub fn apply_delta(&mut self, publisher: &PublisherHandle, delta: DeltaElements) {
-        if let Some(objects) = self.current_objects.get_mut(publisher) {
+        if let Some(objects) = self.publishers_current_objects.get_mut(publisher) {
             objects.apply_delta(delta);
             if objects.is_empty() {
-                self.current_objects.remove(publisher);
+                self.publishers_current_objects.remove(publisher);
             }
         } else {
             // This is a new publisher without existing objects. So, just create
@@ -597,7 +636,7 @@ impl SnapshotData {
             // to it.
             let mut objects = CurrentObjects::default();
             objects.apply_delta(delta);
-            self.current_objects.insert(publisher.clone(), objects);
+            self.publishers_current_objects.insert(publisher.clone(), objects);
         }
     }
 
@@ -605,7 +644,7 @@ impl SnapshotData {
     ///
     /// This is a no-op in case the publisher already exists.
     pub fn apply_publisher_added(&mut self, publisher: PublisherHandle) {
-        self.current_objects
+        self.publishers_current_objects
             .entry(publisher)
             .or_insert(CurrentObjects::default());
     }
@@ -614,7 +653,7 @@ impl SnapshotData {
     ///
     /// This is a no-op in case the publisher does not exists.
     pub fn apply_publisher_removed(&mut self, publisher: &PublisherHandle) {
-        self.current_objects.remove(publisher);
+        self.publishers_current_objects.remove(publisher);
     }
 
     fn rel_path(&self, session: RrdpSession, serial: u64) -> String {
@@ -665,7 +704,7 @@ impl SnapshotData {
             .attr("session_id", &session)?
             .attr("serial", &serial)?
             .content(|content| {
-                for publisher_objects in self.current_objects.values() {
+                for publisher_objects in self.publishers_current_objects.values() {
                     for (uri, base64) in publisher_objects.iter() {
                         content
                             .element(PUBLISH)?

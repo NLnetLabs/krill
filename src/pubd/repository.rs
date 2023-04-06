@@ -951,34 +951,23 @@ pub enum DeltaElement {
 }
 
 impl RrdpServer {
-    /// Migrate pre 0.13.0 repository content.
+    /// Create a new instance.
     ///
-    /// The old RepositoryContent kept the published files both
-    /// in a publishers map owned by RepositoryContent, and inside
-    /// the old RrdpServer.
-    ///
-    /// In the current set up we keep this data only in the RrdpServer.
-    ///
-    /// The old publishers map is authoritative with regards to objects
-    /// to migrate. The new server will use a new RRDP session, because
-    /// of the (remote, but existing) possibility that the content in
-    /// both places was out of sync. I.e. it would be hard to work out
-    /// what the exact delta would be in this case, but a session reset
-    /// will ensure the RPs get the latest (now correct) content.
-    pub fn migrate_old_content(
+    /// Intended to be used by migration code only and therefore
+    /// marked as deprecated.
+    #[deprecated]
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
         rrdp_base_uri: uri::Https,
         rrdp_base_dir: PathBuf,
         rrdp_archive_dir: PathBuf,
-        publishers: HashMap<PublisherHandle, CurrentObjects>,
+        session: RrdpSession,
+        serial: u64,
+        last_update: Time,
+        snapshot: SnapshotData,
+        deltas: VecDeque<DeltaData>,
+        staged_elements: HashMap<PublisherHandle, StagedElements>,
     ) -> Self {
-        let session = RrdpSession::default();
-        let serial = RRDP_FIRST_SERIAL;
-        let last_update = Time::now();
-
-        let snapshot = SnapshotData::new(RrdpFileRandom::default(), publishers);
-        let deltas = VecDeque::new();
-        let staged_elements = HashMap::new();
-
         RrdpServer {
             rrdp_base_uri,
             rrdp_base_dir,

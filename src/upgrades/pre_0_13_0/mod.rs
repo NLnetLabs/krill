@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, VecDeque},
+    convert::TryFrom,
     fmt,
     path::PathBuf,
 };
@@ -10,7 +11,7 @@ use crate::{
     commons::{
         api::rrdp::{
             CurrentObjectUri, CurrentObjects, DeltaData, DeltaElements, PublishElement, RrdpFileRandom, RrdpSession,
-            UpdateElement, WithdrawElement,
+            SnapshotData, UpdateElement, WithdrawElement,
         },
         error::Error,
         eventsourcing::{WalChange, WalSupport},
@@ -213,7 +214,6 @@ impl OldRrdpServer {
     }
 }
 
-/// This type is used to combine staged delta elements for publishers.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct OldStagedElements(HashMap<uri::Rsync, OldDeltaElement>);
 
@@ -334,17 +334,92 @@ impl WalSupport for OldRepositoryContent {
     }
 }
 
-impl From<OldRepositoryContent> for RepositoryContent {
-    fn from(old: OldRepositoryContent) -> Self {
-        let rrdp = RrdpServer::migrate_old_content(
-            old.rrdp.rrdp_base_uri,
-            old.rrdp.rrdp_base_dir,
-            old.rrdp.rrdp_archive_dir,
-            old.publishers
-                .into_iter()
-                .map(|(p, old_objects)| (p, old_objects.into()))
-                .collect(),
+impl TryFrom<OldRepositoryContent> for RepositoryContent {
+    type Error = Error;
+
+    fn try_from(old: OldRepositoryContent) -> Result<Self, Error> {
+        // Make a new RepositoryContent
+        //
+        // - Make a new snapshot, with content from old.publishers
+        // - Keep the old deltas, session and serial
+        // - Work out what the difference between the *old* snapshot
+        //   and the *new* snapshot. If there *is* a difference:
+        //     - update the snapshot random
+        //     - increment serial and last_update time
+        //     - add a delta to get from old snapshot to current
+        //
+        // Note that we can ignore staged elements in this migration. The staged
+        // elements for the new RrdpServer will be empty as the snapshot will
+        // contain all current objects. The old staged elements can be ignored:
+        // we will work out what the delta is and publish. This delta will include
+        // the old staged elements.
+        //
+        // Additionally, because the old RrdpServer kept the data in two places
+        // there could have been an inconsistency between the sets (however
+        // unlikely). The delta will include compensating fixes for any such
+        // issue. And because there is no more duplication of data in the new
+        // RrdpServer we cannot have this issue anymore after the migration.
+
+        let rrdp_base_uri = old.rrdp.rrdp_base_uri;
+        let rrdp_base_dir = old.rrdp.rrdp_base_dir;
+        let rrdp_archive_dir = old.rrdp.rrdp_archive_dir;
+
+        let session = old.rrdp.session;
+        let mut serial = old.rrdp.serial;
+        let mut last_update = old.rrdp.last_update;
+
+        let publishers_current_objects = old
+            .publishers
+            .into_iter()
+            .map(|(p, old_objects)| (p, old_objects.into()))
+            .collect();
+        let mut snapshot = SnapshotData::new(old.rrdp.snapshot.random, publishers_current_objects);
+        let mut deltas = old.rrdp.deltas;
+
+        // Check if there is a difference between the new snapshot data
+        // and the old snapshot data.
+        let delta_elements = {
+            let old_snapshot_objects = old.rrdp.snapshot.current_objects;
+            let old_snapshot_objects = CurrentObjects::from(old_snapshot_objects);
+
+            let mut all_new_snapshot_objects = CurrentObjects::default();
+            for objects in snapshot.publishers_current_objects().values() {
+                all_new_snapshot_objects.extend(objects.clone());
+            }
+            old_snapshot_objects.diff(&all_new_snapshot_objects)?
+        };
+
+        // And if there is a (non empty) difference:
+        if !delta_elements.is_empty() {
+            //     - update the snapshot random
+            snapshot.set_random(RrdpFileRandom::default());
+
+            //     - increment serial and last_update time
+            last_update = Time::now();
+            serial += 1;
+
+            //     - add a delta to get from old snapshot to current
+            let delta = DeltaData::new(serial, Time::now(), RrdpFileRandom::default(), delta_elements);
+            deltas.push_front(delta);
+        }
+
+        // We start with a fully updated snapshot. No staged elements exist.
+        // But.. we ought to write the changes.
+        let staged_elements = HashMap::new();
+
+        #[allow(deprecated)]
+        let rrdp = RrdpServer::new(
+            rrdp_base_uri,
+            rrdp_base_dir,
+            rrdp_archive_dir,
+            session,
+            serial,
+            last_update,
+            snapshot,
+            deltas,
+            staged_elements,
         );
-        RepositoryContent::new(rrdp, old.rsync)
+
+        Ok(RepositoryContent::new(rrdp, old.rsync))
     }
 }
