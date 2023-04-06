@@ -9,7 +9,7 @@ use rpki::{ca::idexchange::PublisherHandle, repository::x509::Time, rrdp::Hash, 
 use crate::{
     commons::{
         api::rrdp::{
-            CurrentObjectKey, CurrentObjects, DeltaData, DeltaElements, PublishElement, RrdpFileRandom, RrdpSession,
+            CurrentObjectUri, CurrentObjects, DeltaData, DeltaElements, PublishElement, RrdpFileRandom, RrdpSession,
             UpdateElement, WithdrawElement,
         },
         error::Error,
@@ -75,7 +75,10 @@ impl From<OldCurrentObjects> for CurrentObjects {
         CurrentObjects::new(
             old.0
                 .into_values()
-                .map(|el| (CurrentObjectKey::from(el.uri()), el))
+                .map(|el| {
+                    let (uri, base64) = el.unpack();
+                    (CurrentObjectUri::from(&uri), base64)
+                })
                 .collect(),
         )
     }

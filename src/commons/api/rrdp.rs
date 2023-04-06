@@ -4,7 +4,7 @@
 use std::{
     convert::{TryFrom, TryInto},
     fmt, io,
-    ops::{Add, AddAssign},
+    ops::{Add, AddAssign, Deref},
     path::PathBuf,
     sync::Arc,
     {collections::HashMap, path::Path},
@@ -109,6 +109,10 @@ impl PublishElement {
         PublishElement { base64, uri }
     }
 
+    pub fn unpack(self) -> (uri::Rsync, Base64) {
+        (self.uri, self.base64)
+    }
+
     pub fn base64(&self) -> &Base64 {
         &self.base64
     }
@@ -132,19 +136,6 @@ impl PublishElement {
             uri: self.uri.clone(),
             hash: self.base64.to_hash(),
         }
-    }
-
-    pub fn unpack(self) -> (uri::Rsync, Base64) {
-        (self.uri, self.base64)
-    }
-
-    /// Writes the publish element’s XML.
-    fn write_xml(&self, content: &mut rpki::xml::encode::Content<impl io::Write>) -> Result<(), io::Error> {
-        content
-            .element(PUBLISH)?
-            .attr("uri", &self.uri)?
-            .content(|content| content.raw(self.base64().as_str()))?;
-        Ok(())
     }
 }
 
@@ -172,6 +163,11 @@ impl UpdateElement {
     pub fn new(uri: uri::Rsync, hash: Hash, base64: Base64) -> Self {
         UpdateElement { uri, hash, base64 }
     }
+
+    pub fn unpack(self) -> (uri::Rsync, Hash, Base64) {
+        (self.uri, self.hash, self.base64)
+    }
+
     pub fn uri(&self) -> &uri::Rsync {
         &self.uri
     }
@@ -280,44 +276,95 @@ impl From<publication::Withdraw> for WithdrawElement {
 /// We use an inner Arc<str> so that we can clone this cheaply. We provide
 /// no way to create this type other than by providing a valid uri::Rsync.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-pub struct CurrentObjectKey(Arc<str>);
+pub struct CurrentObjectUri(Arc<str>);
 
-impl TryFrom<&CurrentObjectKey> for uri::Rsync {
-    type Error = Error;
-
-    fn try_from(key: &CurrentObjectKey) -> Result<Self, Self::Error> {
-        uri::Rsync::from_slice(key.0.as_bytes())
-            .map_err(|e| Error::Custom(format!("Found invalid object key: {}. Error: {}", key.0, e)))
+impl CurrentObjectUri {
+    pub fn as_str(&self) -> &str {
+        self.as_ref()
     }
 }
 
-impl From<&uri::Rsync> for CurrentObjectKey {
+impl TryFrom<&CurrentObjectUri> for uri::Rsync {
+    type Error = Error;
+
+    fn try_from(key: &CurrentObjectUri) -> Result<Self, Self::Error> {
+        uri::Rsync::from_slice(key.0.as_bytes())
+            .map_err(|e| Error::Custom(format!("Found invalid object uri: {}. Error: {}", key.0, e)))
+    }
+}
+
+impl TryFrom<CurrentObjectUri> for uri::Rsync {
+    type Error = Error;
+
+    fn try_from(key: CurrentObjectUri) -> Result<Self, Self::Error> {
+        uri::Rsync::try_from(&key)
+    }
+}
+
+impl From<&uri::Rsync> for CurrentObjectUri {
     fn from(value: &uri::Rsync) -> Self {
-        CurrentObjectKey(value.as_str().into())
+        // use canonical scheme and hostname (converts to lowercase if needed)
+        let s = format!("{}{}", value.canonical_module(), value.path());
+        CurrentObjectUri(s.into())
+    }
+}
+
+impl Deref for CurrentObjectUri {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl AsRef<str> for CurrentObjectUri {
+    fn as_ref(&self) -> &str {
+        &self.0
     }
 }
 
 /// Defines a current set of published elements.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-pub struct CurrentObjects(HashMap<CurrentObjectKey, PublishElement>);
+pub struct CurrentObjects(HashMap<CurrentObjectUri, Base64>);
 
 impl CurrentObjects {
-    pub fn new(map: HashMap<CurrentObjectKey, PublishElement>) -> Self {
+    pub fn new(map: HashMap<CurrentObjectUri, Base64>) -> Self {
         CurrentObjects(map)
     }
 
-    pub fn elements_iter(&self) -> impl Iterator<Item = &PublishElement> {
-        self.0.values()
+    pub fn iter(&self) -> impl Iterator<Item = (&CurrentObjectUri, &Base64)> {
+        self.0.iter()
     }
 
-    pub fn into_publish_elements(self) -> Vec<PublishElement> {
-        self.0.into_values().collect()
+    pub fn try_into_publish_elements(self) -> KrillResult<Vec<PublishElement>> {
+        let mut elements = vec![];
+
+        for (uri_key, base64) in self.0.into_iter() {
+            let uri = uri_key.try_into()?;
+            let el = PublishElement::new(base64, uri);
+            elements.push(el);
+        }
+
+        Ok(elements)
+    }
+
+    pub fn to_withdraw_elements(&self) -> KrillResult<Vec<WithdrawElement>> {
+        let mut elements = vec![];
+
+        for (uri_key, base64) in self.0.iter() {
+            let uri = uri_key.try_into()?;
+            let hash = base64.to_hash();
+            let el = WithdrawElement::new(uri, hash);
+            elements.push(el);
+        }
+
+        Ok(elements)
     }
 
     fn has_match(&self, hash: Hash, uri: &uri::Rsync) -> bool {
-        let key = CurrentObjectKey::from(uri);
+        let key = CurrentObjectUri::from(uri);
         match self.0.get(&key) {
-            Some(el) => el.base64().to_hash() == hash,
+            Some(base64) => base64.to_hash() == hash,
             None => false,
         }
     }
@@ -327,7 +374,7 @@ impl CurrentObjects {
             if !jail.is_parent_of(p.uri()) {
                 return Err(PublicationDeltaError::outside(jail, p.uri()));
             }
-            let key = CurrentObjectKey::from(p.uri());
+            let key = CurrentObjectUri::from(p.uri());
             if self.0.contains_key(&key) {
                 return Err(PublicationDeltaError::present(p.uri()));
             }
@@ -361,43 +408,40 @@ impl CurrentObjects {
         let (publishes, updates, withdraws) = delta.unpack();
 
         for p in publishes {
-            let key = CurrentObjectKey::from(p.uri());
-            self.0.insert(key, p);
+            let (uri, base64) = p.unpack();
+            let key = CurrentObjectUri::from(&uri);
+            self.0.insert(key, base64);
         }
 
         for u in updates {
-            let key = CurrentObjectKey::from(u.uri());
-            let p: PublishElement = u.into();
-            self.0.insert(key, p);
+            // we ignore the hash of the old object when inserting
+            // the update, as it has already been verified.
+            let (uri, _hash, base64) = u.unpack();
+            let key = CurrentObjectUri::from(&uri);
+            self.0.insert(key, base64);
         }
 
         for w in withdraws {
-            let key = CurrentObjectKey::from(w.uri());
+            let key = CurrentObjectUri::from(w.uri());
             self.0.remove(&key);
         }
     }
 
-    /// Returns a copy of self where elements matching the given URI
-    /// are removed if there are any matches. Otherwise, returns None.
-    pub fn with_matching_uri_deleted(&self, uri: &uri::Rsync) -> Option<Self> {
+    /// Returns a vec with withdraws for elements matching the given URI.
+    pub fn make_matching_withdraws(&self, match_uri: &uri::Rsync) -> KrillResult<Vec<WithdrawElement>> {
+        let match_uri = CurrentObjectUri::from(match_uri);
+
         let mut withdraws = vec![];
-
-        // We first loop through the elements to avoid having to clone in case there is no work
-        for (hash, el) in &self.0 {
-            if el.uri() == uri || (uri.as_str().ends_with('/') && el.uri().as_str().starts_with(uri.as_str())) {
-                withdraws.push(hash)
+        for (uri_key, base64) in &self.0 {
+            if uri_key == &match_uri || (match_uri.ends_with('/') && uri_key.starts_with(match_uri.as_ref())) {
+                let uri = uri_key.try_into()?;
+                let hash = base64.to_hash();
+                let wdr = WithdrawElement::new(uri, hash);
+                withdraws.push(wdr);
             }
         }
 
-        if withdraws.is_empty() {
-            None
-        } else {
-            let mut copy_of_self = self.clone();
-            for hash in withdraws {
-                copy_of_self.0.remove(hash);
-            }
-            Some(copy_of_self)
-        }
+        Ok(withdraws)
     }
 
     pub fn len(&self) -> usize {
@@ -415,9 +459,9 @@ impl CurrentObjects {
     pub fn to_list_reply(&self) -> KrillResult<publication::ListReply> {
         let mut elements = vec![];
 
-        for (key, object) in &self.0 {
+        for (key, base64) in &self.0 {
             let uri = key.try_into()?;
-            let hash = object.base64().to_hash();
+            let hash = base64.to_hash();
             elements.push(publication::ListElement::new(uri, hash));
         }
 
@@ -622,8 +666,11 @@ impl SnapshotData {
             .attr("serial", &serial)?
             .content(|content| {
                 for publisher_objects in self.current_objects.values() {
-                    for el in publisher_objects.elements_iter() {
-                        el.write_xml(content)?;
+                    for (uri, base64) in publisher_objects.iter() {
+                        content
+                            .element(PUBLISH)?
+                            .attr("uri", uri.as_str())?
+                            .content(|content| content.raw(base64.as_str()))?;
                     }
                 }
                 Ok(())

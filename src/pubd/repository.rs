@@ -516,7 +516,7 @@ impl RepositoryContent {
         // withdraw objects if any
         let objects = self.objects_for_publisher(&publisher);
         if !objects.is_empty() {
-            let withdraws = objects.elements_iter().map(|e| e.as_withdraw()).collect();
+            let withdraws = objects.to_withdraw_elements()?;
             let delta = DeltaElements::new(vec![], vec![], withdraws);
             res.push(RepositoryContentChange::RrdpDeltaStaged { publisher, delta });
         }
@@ -539,15 +539,8 @@ impl RepositoryContent {
             let current_objects = self.objects_for_publisher(&publisher);
 
             // withdraw objects if any
-            let mut withdraws = vec![];
-            for el in current_objects.elements_iter() {
-                // URI of el is exact match, or uri for delete ends with / and el uri is more specific.
-                if el.uri() == &del_uri
-                    || (del_uri.as_str().ends_with('/') && el.uri().as_str().starts_with(del_uri.as_str()))
-                {
-                    withdraws.push(el.as_withdraw())
-                }
-            }
+            let withdraws = current_objects.make_matching_withdraws(&del_uri)?;
+
             if !withdraws.is_empty() {
                 info!(
                     "  removing {} matching files from repository for publisher: {}.",
@@ -678,18 +671,18 @@ impl RsyncdStore {
         })?;
 
         for current in snapshot.publishers_current_objects().values() {
-            for el in current.elements_iter() {
+            for (uri_key, base64) in current.iter() {
                 // Note that this check should not be needed here, as the content
                 // already verified before it was accepted into the snapshot.
-                let rel = el
-                    .uri()
+                let uri = uri::Rsync::try_from(uri_key)?;
+                let rel = uri
                     .relative_to(&self.base_uri)
-                    .ok_or_else(|| Error::publishing_outside_jail(el.uri(), &self.base_uri))?;
+                    .ok_or_else(|| Error::publishing_outside_jail(&uri, &self.base_uri))?;
 
                 let mut path = new_dir.clone();
                 path.push(rel);
 
-                file::save(&el.base64().to_bytes(), &path)?;
+                file::save(&base64.to_bytes(), &path)?;
             }
         }
 
@@ -1979,11 +1972,11 @@ impl PublisherStats {
 impl From<&CurrentObjects> for PublisherStats {
     fn from(objects: &CurrentObjects) -> Self {
         let mut manifests = vec![];
-        for el in objects.elements_iter() {
+        for (uri_key, base64) in objects.iter() {
             // Add all manifests - as long as they are syntactically correct - do not
             // crash on incorrect objects.
-            if el.uri().ends_with("mft") {
-                if let Ok(mft) = Manifest::decode(el.base64().to_bytes().as_ref(), false) {
+            if uri_key.ends_with("mft") {
+                if let Ok(mft) = Manifest::decode(base64.to_bytes().as_ref(), false) {
                     if let Ok(stats) = PublisherManifestStats::try_from(&mft) {
                         manifests.push(stats)
                     }
