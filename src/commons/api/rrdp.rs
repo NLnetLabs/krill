@@ -2,9 +2,11 @@
 //! withdraw elements, as well as the notification, snapshot and delta file
 //! definitions.
 use std::{
+    convert::{TryFrom, TryInto},
     fmt, io,
     ops::{Add, AddAssign},
     path::PathBuf,
+    sync::Arc,
     {collections::HashMap, path::Path},
 };
 
@@ -21,7 +23,11 @@ use rpki::{
     xml::decode::Name,
 };
 
-use crate::commons::{error::KrillIoError, util::file};
+use crate::commons::{
+    error::{Error, KrillIoError},
+    util::file,
+    KrillResult,
+};
 
 const VERSION: &str = "1";
 const NS: &str = "http://www.ripe.net/rpki/rrdp";
@@ -169,8 +175,8 @@ impl UpdateElement {
     pub fn uri(&self) -> &uri::Rsync {
         &self.uri
     }
-    pub fn hash(&self) -> &Hash {
-        &self.hash
+    pub fn hash(&self) -> Hash {
+        self.hash
     }
 
     pub fn base64(&self) -> &Base64 {
@@ -242,8 +248,8 @@ impl WithdrawElement {
     pub fn uri(&self) -> &uri::Rsync {
         &self.uri
     }
-    pub fn hash(&self) -> &Hash {
-        &self.hash
+    pub fn hash(&self) -> Hash {
+        self.hash
     }
 
     /// Changes this WithdrawElement hash to that of the previous
@@ -261,45 +267,57 @@ impl From<publication::Withdraw> for WithdrawElement {
     }
 }
 
-//------------ CurrentObjects ------------------------------------------------
+//------------ CurrentObjectKey ----------------------------------------------
+
+/// Maps to the URI for the object.
+///
+/// We use this separate type rather than rpki::uri::Rsync because the
+/// latter is not very suitable for use in HashMaps: it is mutable and
+/// its hash function is slow due to the fact that it needs
+/// to accommodate for the fact that the URI scheme and hostname are
+/// case insensitive.
+///
+/// We use an inner Arc<str> so that we can clone this cheaply. We provide
+/// no way to create this type other than by providing a valid uri::Rsync.
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct CurrentObjectKey(Arc<str>);
+
+impl TryFrom<&CurrentObjectKey> for uri::Rsync {
+    type Error = Error;
+
+    fn try_from(key: &CurrentObjectKey) -> Result<Self, Self::Error> {
+        uri::Rsync::from_slice(key.0.as_bytes())
+            .map_err(|e| Error::Custom(format!("Found invalid object key: {}. Error: {}", key.0, e)))
+    }
+}
+
+impl From<&uri::Rsync> for CurrentObjectKey {
+    fn from(value: &uri::Rsync) -> Self {
+        CurrentObjectKey(value.as_str().into())
+    }
+}
 
 /// Defines a current set of published elements.
-///
-// Note this is mapped internally by hash, rather than uri, because:
-//
-// PublishedElement maps to the RFC 8182 publish element, and that does
-// not contain the hash for the object, just the uri and content. Yet,
-// we need to compare hashes for update and delete, so keeping it around
-// means that do not need to recalculate it for objects.
-//
-// Secondly, we could map things by uri, but then we would not only have
-// to recalculate that hash.. things would also slow down because the
-// hashing for rpki::uri::Rsync is slow due to the fact that it needs
-// to accommodate for the fact that the URI scheme and hostname are
-// case insensitive.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-pub struct CurrentObjects(HashMap<Hash, PublishElement>);
+pub struct CurrentObjects(HashMap<CurrentObjectKey, PublishElement>);
 
 impl CurrentObjects {
-    pub fn new(map: HashMap<Hash, PublishElement>) -> Self {
+    pub fn new(map: HashMap<CurrentObjectKey, PublishElement>) -> Self {
         CurrentObjects(map)
     }
 
-    pub fn elements(&self) -> Vec<&PublishElement> {
-        let mut res = vec![];
-        for el in self.0.values() {
-            res.push(el)
-        }
-        res
+    pub fn elements_iter(&self) -> impl Iterator<Item = &PublishElement> {
+        self.0.values()
     }
 
-    pub fn into_elements(self) -> Vec<PublishElement> {
+    pub fn into_publish_elements(self) -> Vec<PublishElement> {
         self.0.into_values().collect()
     }
 
-    fn has_match(&self, hash: &Hash, uri: &uri::Rsync) -> bool {
-        match self.0.get(hash) {
-            Some(el) => el.uri() == uri,
+    fn has_match(&self, hash: Hash, uri: &uri::Rsync) -> bool {
+        let key = CurrentObjectKey::from(uri);
+        match self.0.get(&key) {
+            Some(el) => el.base64().to_hash() == hash,
             None => false,
         }
     }
@@ -309,7 +327,8 @@ impl CurrentObjects {
             if !jail.is_parent_of(p.uri()) {
                 return Err(PublicationDeltaError::outside(jail, p.uri()));
             }
-            if self.0.values().any(|existing| existing.uri() == p.uri()) {
+            let key = CurrentObjectKey::from(p.uri());
+            if self.0.contains_key(&key) {
                 return Err(PublicationDeltaError::present(p.uri()));
             }
         }
@@ -336,23 +355,25 @@ impl CurrentObjects {
     }
 
     /// Applies a delta to CurrentObjects.
+    ///
+    /// Assumes that the delta was checked using [`verify_delta`].
     pub fn apply_delta(&mut self, delta: DeltaElements) {
         let (publishes, updates, withdraws) = delta.unpack();
 
         for p in publishes {
-            let hash = p.base64().to_hash();
-            self.0.insert(hash, p);
+            let key = CurrentObjectKey::from(p.uri());
+            self.0.insert(key, p);
         }
 
         for u in updates {
-            self.0.remove(u.hash());
+            let key = CurrentObjectKey::from(u.uri());
             let p: PublishElement = u.into();
-            let hash = p.base64().to_hash();
-            self.0.insert(hash, p);
+            self.0.insert(key, p);
         }
 
         for w in withdraws {
-            self.0.remove(w.hash());
+            let key = CurrentObjectKey::from(w.uri());
+            self.0.remove(&key);
         }
     }
 
@@ -391,18 +412,16 @@ impl CurrentObjects {
         self.0.is_empty()
     }
 
-    pub fn to_list_reply(&self) -> publication::ListReply {
-        let elements = self
-            .0
-            .iter()
-            .map(|el| {
-                let hash = *el.0;
-                let uri = el.1.uri().clone();
-                publication::ListElement::new(uri, hash)
-            })
-            .collect();
+    pub fn to_list_reply(&self) -> KrillResult<publication::ListReply> {
+        let mut elements = vec![];
 
-        publication::ListReply::new(elements)
+        for (key, object) in &self.0 {
+            let uri = key.try_into()?;
+            let hash = object.base64().to_hash();
+            elements.push(publication::ListElement::new(uri, hash));
+        }
+
+        Ok(publication::ListReply::new(elements))
     }
 }
 
@@ -603,7 +622,7 @@ impl SnapshotData {
             .attr("serial", &serial)?
             .content(|content| {
                 for publisher_objects in self.current_objects.values() {
-                    for el in publisher_objects.elements() {
+                    for el in publisher_objects.elements_iter() {
                         el.write_xml(content)?;
                     }
                 }
@@ -832,14 +851,14 @@ impl DeltaData {
                     content
                         .element(PUBLISH.into_unqualified())?
                         .attr("uri", el.uri())?
-                        .attr("hash", el.hash())?
+                        .attr("hash", &el.hash())?
                         .content(|content| content.raw(el.base64().as_str()))?;
                 }
                 for el in self.elements().withdraws() {
                     content
                         .element(WITHDRAW.into_unqualified())?
                         .attr("uri", el.uri())?
-                        .attr("hash", el.hash())?;
+                        .attr("hash", &el.hash())?;
                 }
                 Ok(())
             })?;

@@ -4,13 +4,13 @@ use std::{
     path::PathBuf,
 };
 
-use rpki::{ca::idexchange::PublisherHandle, repository::x509::Time, uri};
+use rpki::{ca::idexchange::PublisherHandle, repository::x509::Time, rrdp::Hash, uri};
 
 use crate::{
     commons::{
         api::rrdp::{
-            CurrentObjects, DeltaData, DeltaElements, PublishElement, RrdpFileRandom, RrdpSession, UpdateElement,
-            WithdrawElement,
+            CurrentObjectKey, CurrentObjects, DeltaData, DeltaElements, PublishElement, RrdpFileRandom, RrdpSession,
+            UpdateElement, WithdrawElement,
         },
         error::Error,
         eventsourcing::{WalChange, WalSupport},
@@ -40,9 +40,45 @@ pub struct OldRepositoryContent {
     // that does keep track of which publisher owns the files in the
     // repository. We will use the old publisher map as the authoritative
     // source to regenerate that data.
-    pub publishers: HashMap<PublisherHandle, CurrentObjects>,
+    pub publishers: HashMap<PublisherHandle, OldCurrentObjects>,
     pub rrdp: OldRrdpServer,
     pub rsync: RsyncdStore,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct OldCurrentObjects(pub HashMap<Hash, PublishElement>);
+
+impl OldCurrentObjects {
+    /// Applies a delta to CurrentObjects.
+    fn apply_delta(&mut self, delta: DeltaElements) {
+        let (publishes, updates, withdraws) = delta.unpack();
+
+        for p in publishes {
+            let hash = p.base64().to_hash();
+            self.0.insert(hash, p);
+        }
+
+        for u in updates {
+            let p: PublishElement = u.into();
+            let hash = p.base64().to_hash();
+            self.0.insert(hash, p);
+        }
+
+        for w in withdraws {
+            self.0.remove(&w.hash());
+        }
+    }
+}
+
+impl From<OldCurrentObjects> for CurrentObjects {
+    fn from(old: OldCurrentObjects) -> Self {
+        CurrentObjects::new(
+            old.0
+                .into_values()
+                .map(|el| (CurrentObjectKey::from(el.uri()), el))
+                .collect(),
+        )
+    }
 }
 
 /// The Old RRDP server used by a Repository instance.
@@ -132,7 +168,7 @@ impl OldRrdpServer {
             let uri = pbl.uri().clone();
             // A publish that follows a withdraw for the same URI should be Update.
             if let Some(OldDeltaElement::Withdraw(staged_withdraw)) = self.staged_elements.0.get(&uri) {
-                let hash = *staged_withdraw.hash();
+                let hash = staged_withdraw.hash();
                 let update = UpdateElement::new(uri.clone(), hash, pbl.base64().clone());
                 self.staged_elements.0.insert(uri, OldDeltaElement::Update(update));
             } else {
@@ -156,7 +192,7 @@ impl OldRrdpServer {
                     .0
                     .insert(uri, OldDeltaElement::Publish(upd.into_publish()));
             } else if let Some(OldDeltaElement::Update(staged_update)) = self.staged_elements.0.get(&uri) {
-                upd.with_updated_hash(*staged_update.hash()); // set hash to previous update hash
+                upd.with_updated_hash(staged_update.hash()); // set hash to previous update hash
                 self.staged_elements.0.insert(uri, OldDeltaElement::Update(upd));
             } else {
                 self.staged_elements.0.insert(uri, OldDeltaElement::Update(upd));
@@ -196,7 +232,7 @@ pub struct OldSnapshotData {
     #[serde(default)]
     random: RrdpFileRandom,
 
-    current_objects: CurrentObjects,
+    current_objects: OldCurrentObjects,
 }
 
 impl OldSnapshotData {
@@ -214,10 +250,7 @@ impl OldSnapshotData {
     }
 
     fn size(&self) -> usize {
-        self.current_objects
-            .elements()
-            .iter()
-            .fold(0, |sum, p| sum + p.size_approx())
+        self.current_objects.0.values().fold(0, |sum, p| sum + p.size_approx())
     }
 }
 
@@ -239,7 +272,7 @@ pub enum OldRepositoryContentChange {
     },
     PublishedObjects {
         publisher: PublisherHandle,
-        current_objects: CurrentObjects,
+        current_objects: OldCurrentObjects,
     },
     RrdpDeltaStaged {
         delta: DeltaElements,
@@ -277,7 +310,7 @@ impl WalSupport for OldRepositoryContent {
                 OldRepositoryContentChange::RrdpUpdated { update } => self.rrdp.apply_rrdp_updated(update),
                 OldRepositoryContentChange::RrdpDeltaStaged { delta } => self.rrdp.apply_rrdp_staged(delta),
                 OldRepositoryContentChange::PublisherAdded { publisher } => {
-                    self.publishers.insert(publisher, CurrentObjects::default());
+                    self.publishers.insert(publisher, OldCurrentObjects::default());
                 }
                 OldRepositoryContentChange::PublisherRemoved { publisher } => {
                     self.publishers.remove(&publisher);
@@ -304,7 +337,10 @@ impl From<OldRepositoryContent> for RepositoryContent {
             old.rrdp.rrdp_base_uri,
             old.rrdp.rrdp_base_dir,
             old.rrdp.rrdp_archive_dir,
-            old.publishers,
+            old.publishers
+                .into_iter()
+                .map(|(p, old_objects)| (p, old_objects.into()))
+                .collect(),
         );
         RepositoryContent::new(rrdp, old.rsync)
     }

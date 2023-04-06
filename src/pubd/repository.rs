@@ -204,7 +204,7 @@ impl RepositoryContentProxy {
 
     /// Create a list reply containing all current objects for a publisher
     pub fn list_reply(&self, publisher: &PublisherHandle) -> KrillResult<ListReply> {
-        self.get_default_content().map(|content| content.list_reply(publisher))
+        self.get_default_content()?.list_reply(publisher)
     }
 
     // Get all current objects for a publisher
@@ -487,7 +487,7 @@ impl RepositoryContent {
     }
 
     /// Gets a list reply containing all objects for this publisher.
-    pub fn list_reply(&self, publisher: &PublisherHandle) -> ListReply {
+    pub fn list_reply(&self, publisher: &PublisherHandle) -> KrillResult<ListReply> {
         self.objects_for_publisher(publisher).to_list_reply()
     }
 
@@ -516,7 +516,7 @@ impl RepositoryContent {
         // withdraw objects if any
         let objects = self.objects_for_publisher(&publisher);
         if !objects.is_empty() {
-            let withdraws = objects.elements().iter().map(|e| e.as_withdraw()).collect();
+            let withdraws = objects.elements_iter().map(|e| e.as_withdraw()).collect();
             let delta = DeltaElements::new(vec![], vec![], withdraws);
             res.push(RepositoryContentChange::RrdpDeltaStaged { publisher, delta });
         }
@@ -540,7 +540,7 @@ impl RepositoryContent {
 
             // withdraw objects if any
             let mut withdraws = vec![];
-            for el in current_objects.elements() {
+            for el in current_objects.elements_iter() {
                 // URI of el is exact match, or uri for delete ends with / and el uri is more specific.
                 if el.uri() == &del_uri
                     || (del_uri.as_str().ends_with('/') && el.uri().as_str().starts_with(del_uri.as_str()))
@@ -678,7 +678,7 @@ impl RsyncdStore {
         })?;
 
         for current in snapshot.publishers_current_objects().values() {
-            for el in current.elements() {
+            for el in current.elements_iter() {
                 // Note that this check should not be needed here, as the content
                 // already verified before it was accepted into the snapshot.
                 let rel = el
@@ -849,7 +849,7 @@ impl StagedElements {
                 Some(DeltaElement::Withdraw(staged_withdraw)) => {
                     // A new publish that follows a withdraw for the same URI should be
                     // an Update of the original file.
-                    let hash = *staged_withdraw.hash();
+                    let hash = staged_withdraw.hash();
                     let (_, base64) = pbl.unpack();
                     let update = UpdateElement::new(uri.clone(), hash, base64);
                     self.0.insert(uri, DeltaElement::Update(update));
@@ -892,7 +892,7 @@ impl StagedElements {
                         upd.hash(),
                         staged_withdraw.hash()
                     );
-                    upd.with_updated_hash(*staged_withdraw.hash());
+                    upd.with_updated_hash(staged_withdraw.hash());
                     self.0.insert(uri, DeltaElement::Update(upd));
                 }
                 None => {
@@ -1979,7 +1979,7 @@ impl PublisherStats {
 impl From<&CurrentObjects> for PublisherStats {
     fn from(objects: &CurrentObjects) -> Self {
         let mut manifests = vec![];
-        for el in objects.elements() {
+        for el in objects.elements_iter() {
             // Add all manifests - as long as they are syntactically correct - do not
             // crash on incorrect objects.
             if el.uri().ends_with("mft") {
