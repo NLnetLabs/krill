@@ -351,9 +351,11 @@ impl CurrentObjects {
                     publishes.push(pbl);
                 }
                 Some(existing_b64) => {
-                    let hash = existing_b64.to_hash();
-                    let upd = UpdateElement::new(uri, hash, base64.clone());
-                    updates.push(upd);
+                    if base64 != existing_b64 {
+                        let hash = existing_b64.to_hash();
+                        let upd = UpdateElement::new(uri, hash, base64.clone());
+                        updates.push(upd);
+                    }
                 }
             }
         }
@@ -1032,5 +1034,112 @@ mod tests {
             withdraws: vec![WithdrawElement::new(file1_uri, file1_content_2.to_hash())],
         };
         assert!(objects.verify_delta(&withdraw_file1_updated, &jail).is_ok());
+    }
+
+    #[test]
+    fn current_objects_deltas() {
+        fn file_rsync_uri(name: &str) -> uri::Rsync {
+            let jail = rsync("rsync://example.krill.cloud/repo/publisher");
+            jail.join(name.as_bytes()).unwrap()
+        }
+
+        fn file_uri(name: &str) -> CurrentObjectUri {
+            CurrentObjectUri(format!("rsync://example.krill.cloud/repo/publisher/{name}").into())
+        }
+
+        fn random_content() -> Base64 {
+            let mut bytes = [0; 8];
+            openssl::rand::rand_bytes(&mut bytes).unwrap();
+            Base64::from_content(&bytes)
+        }
+
+        // True if the delta contains the same content, even if the ordering
+        // is different.
+        pub fn equivalent(this: DeltaElements, other: DeltaElements) -> bool {
+            let (mut this_publishes, mut this_updates, mut this_withdraws) = this.unpack();
+            let (mut other_publishes, mut other_updates, mut other_withdraws) = other.unpack();
+
+            this_publishes.sort_by(|a, b| a.uri().as_str().cmp(b.uri().as_str()));
+            other_publishes.sort_by(|a, b| a.uri().as_str().cmp(b.uri().as_str()));
+            this_updates.sort_by(|a, b| a.uri().as_str().cmp(b.uri().as_str()));
+            other_updates.sort_by(|a, b| a.uri().as_str().cmp(b.uri().as_str()));
+            this_withdraws.sort_by(|a, b| a.uri().as_str().cmp(b.uri().as_str()));
+            other_withdraws.sort_by(|a, b| a.uri().as_str().cmp(b.uri().as_str()));
+
+            this_publishes == other_publishes && this_updates == other_updates && this_withdraws == other_withdraws
+        }
+
+        let mut objects: HashMap<CurrentObjectUri, Base64> = HashMap::new();
+        objects.insert(file_uri("file1"), random_content());
+        objects.insert(file_uri("file2"), random_content());
+        objects.insert(file_uri("file3"), random_content());
+        objects.insert(file_uri("file4"), random_content());
+
+        let publishes = vec![
+            PublishElement::new(random_content(), file_rsync_uri("file5")),
+            PublishElement::new(random_content(), file_rsync_uri("file6")),
+        ];
+
+        let updates = vec![
+            UpdateElement::new(
+                file_rsync_uri("file1"),
+                objects.get(&file_uri("file1")).unwrap().to_hash(),
+                random_content(),
+            ),
+            UpdateElement::new(
+                file_rsync_uri("file2"),
+                objects.get(&file_uri("file2")).unwrap().to_hash(),
+                random_content(),
+            ),
+        ];
+
+        let withdraws = vec![WithdrawElement::new(
+            file_rsync_uri("file3"),
+            objects.get(&file_uri("file3")).unwrap().to_hash(),
+        )];
+
+        let delta_a_b = DeltaElements::new(publishes, updates, withdraws);
+        let objects_a = CurrentObjects::new(objects);
+
+        let mut objects_b = objects_a.clone();
+        objects_b.apply_delta(delta_a_b.clone());
+        let derived_delta_a_b = objects_a.diff(&objects_b).unwrap();
+
+        // eprintln!("-----------------GIVEN--------------------");
+        // eprintln!("objects: ");
+        // eprintln!("{}", serde_json::to_string_pretty(&objects_a).unwrap());
+        // eprintln!("delta: ");
+        // eprintln!("{}", serde_json::to_string_pretty(&delta_a_b).unwrap());
+        // eprintln!("------------------------------------------");
+
+        // eprintln!();
+
+        // eprintln!("-----------------RESULT B------------------");
+        // eprintln!("{}", serde_json::to_string_pretty(&objects_b).unwrap());
+        // eprintln!("------------------------------------------");
+
+        // eprintln!();
+
+        // eprintln!("-----------------DERIVE A -> B -----------");
+        // eprintln!("{}", serde_json::to_string_pretty(&derived_delta_a_b).unwrap());
+        // eprintln!("------------------------------------------");
+
+        assert!(equivalent(delta_a_b, derived_delta_a_b));
+
+        let derived_delta_b_a = objects_b.diff(&objects_a).unwrap();
+        // eprintln!();
+        // eprintln!("-----------------DERIVE B -> A -----------");
+        // eprintln!("{}", serde_json::to_string_pretty(&derived_delta_b_a).unwrap());
+        // eprintln!("------------------------------------------");
+
+        let mut objects_a_from_b = objects_b.clone();
+        objects_a_from_b.apply_delta(derived_delta_b_a);
+
+        // eprintln!();
+        // eprintln!("-----------------RESULT B------------------");
+        // eprintln!("{}", serde_json::to_string_pretty(&objects_a_from_b).unwrap());
+        // eprintln!("------------------------------------------");
+
+        assert_eq!(objects_a, objects_a_from_b);
     }
 }
