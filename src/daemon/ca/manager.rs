@@ -1348,11 +1348,10 @@ impl CaManager {
             // Set up a logger for CMS exchanges. Note that this logger is always set
             // up and used, but.. it will only actually save files in case the given
             // rfc6492_log_dir is Some.
-            let cms_logger = CmsLogger::for_rfc6492_sent(
-                self.config.rfc6492_log_dir.as_ref(),
-                message.sender(),
-                message.recipient(),
-            );
+            let sender = message.sender().clone();
+            let recipient = message.recipient().clone();
+
+            let cms_logger = CmsLogger::for_rfc6492_sent(self.config.rfc6492_log_dir.as_ref(), &sender, &recipient);
 
             let cms = self.signer.create_rfc6492_cms(message, signing_key)?.to_bytes();
 
@@ -1362,11 +1361,19 @@ impl CaManager {
 
             match ProvisioningCms::decode(&res_bytes) {
                 Err(e) => {
+                    error!(
+                        "Could not decode response from parent (handle): {}, for ca (handle): {}, at URI: {}. Error: {}",
+                        recipient, sender, service_uri, e
+                    );
                     cms_logger.err(format!("Could not decode CMS: {}", e))?;
                     Err(Error::Rfc6492(e))
                 }
                 Ok(cms) => match cms.validate(server_info.id_cert().public_key()) {
                     Err(e) => {
+                        error!(
+                            "Could not validate response from parent (handle): {}, for ca (handle): {}, at URI: {}. Error: {}",
+                            recipient, sender, service_uri, e
+                        );
                         cms_logger.err(format!("Response invalid: {}", e))?;
                         Err(Error::Rfc6492(e))
                     }
@@ -1389,7 +1396,7 @@ impl CaManager {
 
         match httpclient::post_binary_with_full_ua(service_uri.as_str(), msg, content_type, timeout).await {
             Err(e) => {
-                cms_logger.err(format!("Error posting CMS: {}", e))?;
+                cms_logger.err(format!("Error posting CMS to {}: {}", service_uri, e))?;
                 Err(Error::HttpClientError(e))
             }
             Ok(bytes) => {
@@ -1732,11 +1739,19 @@ impl CaManager {
 
             match publication::PublicationCms::decode(&res_bytes) {
                 Err(e) => {
+                    error!(
+                        "Could not decode response from publication server at: {}, for ca: {}. Error: {}",
+                        repo_service_uri, ca_handle, e
+                    );
                     cms_logger.err(format!("Could not decode CMS: {}", e))?;
                     Err(Error::Rfc8181(e))
                 }
                 Ok(cms) => match cms.validate(server_info.public_key()) {
                     Err(e) => {
+                        error!(
+                            "Could not validate response from publication server at: {}, for ca: {}. Error: {}",
+                            repo_service_uri, ca_handle, e
+                        );
                         cms_logger.err(format!("Response invalid: {}", e))?;
                         Err(Error::Rfc8181(e))
                     }
