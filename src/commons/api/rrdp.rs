@@ -1044,7 +1044,7 @@ mod tests {
         }
 
         fn file_uri(name: &str) -> CurrentObjectUri {
-            CurrentObjectUri(format!("rsync://example.krill.cloud/repo/publisher/{name}").into())
+            CurrentObjectUri(format!("rsync://example.krill.cloud/repo/publisher/{}", name).into())
         }
 
         fn random_content() -> Base64 {
