@@ -251,7 +251,7 @@ impl KrillSigner {
         let signed_and_encoded_csr = Csr::construct_rpki_ca(
             &self.router,
             key,
-            &base_repo.ca_repository(name_space).join(&[]).unwrap(), // force trailing slash
+            &base_repo.ca_repository(name_space),
             &base_repo.resolve(name_space, mft_file_name.as_ref()),
             base_repo.rpki_notify(),
         )
