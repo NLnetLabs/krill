@@ -49,8 +49,8 @@ rand                  = "^0.8"
 regex                 = { version = "1.5.5", optional = true, default_features = false, features = ["std"] }
 reqwest               = { version = "0.11", features = ["json"] }
 rpassword             = { version = "^5.0", optional = true }
-rpki                  = { version = "0.15.9", features = [ "ca", "compat", "rrdp" ] }
-# rpki                  = { version = "0.15.8-dev", git = "https://github.com/nLnetLabs/rpki-rs", features = [ "ca", "compat", "rrdp" ] }
+# rpki                  = { version = "0.15.9", features = [ "ca", "compat", "rrdp" ] }
+rpki                  = { version = "0.16.0-dev", git = "https://github.com/nLnetLabs/rpki-rs", branch = "csr-ca-repo-trailing-slash", features = [ "ca", "compat", "rrdp" ] }
 scrypt                = { version = "^0.6", optional = true, default-features = false }
 serde                 = { version = "^1.0", features = ["derive", "rc"] }
 serde_json            = "^1.0"
