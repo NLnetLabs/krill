@@ -204,7 +204,7 @@ impl RepositoryContentProxy {
 
     /// Create a list reply containing all current objects for a publisher
     pub fn list_reply(&self, publisher: &PublisherHandle) -> KrillResult<ListReply> {
-        self.get_default_content().map(|content| content.list_reply(publisher))
+        self.get_default_content()?.list_reply(publisher)
     }
 
     // Get all current objects for a publisher
@@ -349,9 +349,9 @@ pub struct RrdpSessionReset {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RrdpUpdated {
-    time: Time,
-    random: RrdpFileRandom,
-    deltas_truncate: usize,
+    pub time: Time,
+    pub random: RrdpFileRandom,
+    pub deltas_truncate: usize,
 }
 
 impl fmt::Display for RepositoryContentChange {
@@ -487,7 +487,7 @@ impl RepositoryContent {
     }
 
     /// Gets a list reply containing all objects for this publisher.
-    pub fn list_reply(&self, publisher: &PublisherHandle) -> ListReply {
+    pub fn list_reply(&self, publisher: &PublisherHandle) -> KrillResult<ListReply> {
         self.objects_for_publisher(publisher).to_list_reply()
     }
 
@@ -516,7 +516,7 @@ impl RepositoryContent {
         // withdraw objects if any
         let objects = self.objects_for_publisher(&publisher);
         if !objects.is_empty() {
-            let withdraws = objects.elements().iter().map(|e| e.as_withdraw()).collect();
+            let withdraws = objects.to_withdraw_elements()?;
             let delta = DeltaElements::new(vec![], vec![], withdraws);
             res.push(RepositoryContentChange::RrdpDeltaStaged { publisher, delta });
         }
@@ -539,15 +539,8 @@ impl RepositoryContent {
             let current_objects = self.objects_for_publisher(&publisher);
 
             // withdraw objects if any
-            let mut withdraws = vec![];
-            for el in current_objects.elements() {
-                // URI of el is exact match, or uri for delete ends with / and el uri is more specific.
-                if el.uri() == &del_uri
-                    || (del_uri.as_str().ends_with('/') && el.uri().as_str().starts_with(del_uri.as_str()))
-                {
-                    withdraws.push(el.as_withdraw())
-                }
-            }
+            let withdraws = current_objects.make_matching_withdraws(&del_uri)?;
+
             if !withdraws.is_empty() {
                 info!(
                     "  removing {} matching files from repository for publisher: {}.",
@@ -678,18 +671,18 @@ impl RsyncdStore {
         })?;
 
         for current in snapshot.publishers_current_objects().values() {
-            for el in current.elements() {
+            for (uri_key, base64) in current.iter() {
                 // Note that this check should not be needed here, as the content
                 // already verified before it was accepted into the snapshot.
-                let rel = el
-                    .uri()
+                let uri = uri::Rsync::try_from(uri_key)?;
+                let rel = uri
                     .relative_to(&self.base_uri)
-                    .ok_or_else(|| Error::publishing_outside_jail(el.uri(), &self.base_uri))?;
+                    .ok_or_else(|| Error::publishing_outside_jail(&uri, &self.base_uri))?;
 
                 let mut path = new_dir.clone();
                 path.push(rel);
 
-                file::save(&el.base64().to_bytes(), &path)?;
+                file::save(&base64.to_bytes(), &path)?;
             }
         }
 
@@ -849,7 +842,7 @@ impl StagedElements {
                 Some(DeltaElement::Withdraw(staged_withdraw)) => {
                     // A new publish that follows a withdraw for the same URI should be
                     // an Update of the original file.
-                    let hash = *staged_withdraw.hash();
+                    let hash = staged_withdraw.hash();
                     let (_, base64) = pbl.unpack();
                     let update = UpdateElement::new(uri.clone(), hash, base64);
                     self.0.insert(uri, DeltaElement::Update(update));
@@ -892,7 +885,7 @@ impl StagedElements {
                         upd.hash(),
                         staged_withdraw.hash()
                     );
-                    upd.with_updated_hash(*staged_withdraw.hash());
+                    upd.with_updated_hash(staged_withdraw.hash());
                     self.0.insert(uri, DeltaElement::Update(upd));
                 }
                 None => {
@@ -958,34 +951,23 @@ pub enum DeltaElement {
 }
 
 impl RrdpServer {
-    /// Migrate pre 0.13.0 repository content.
+    /// Create a new instance.
     ///
-    /// The old RepositoryContent kept the published files both
-    /// in a publishers map owned by RepositoryContent, and inside
-    /// the old RrdpServer.
-    ///
-    /// In the current set up we keep this data only in the RrdpServer.
-    ///
-    /// The old publishers map is authoritative with regards to objects
-    /// to migrate. The new server will use a new RRDP session, because
-    /// of the (remote, but existing) possibility that the content in
-    /// both places was out of sync. I.e. it would be hard to work out
-    /// what the exact delta would be in this case, but a session reset
-    /// will ensure the RPs get the latest (now correct) content.
-    pub fn migrate_old_content(
+    /// Intended to be used by migration code only and therefore
+    /// marked as deprecated.
+    #[deprecated]
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
         rrdp_base_uri: uri::Https,
         rrdp_base_dir: PathBuf,
         rrdp_archive_dir: PathBuf,
-        publishers: HashMap<PublisherHandle, CurrentObjects>,
+        session: RrdpSession,
+        serial: u64,
+        last_update: Time,
+        snapshot: SnapshotData,
+        deltas: VecDeque<DeltaData>,
+        staged_elements: HashMap<PublisherHandle, StagedElements>,
     ) -> Self {
-        let session = RrdpSession::default();
-        let serial = RRDP_FIRST_SERIAL;
-        let last_update = Time::now();
-
-        let snapshot = SnapshotData::new(RrdpFileRandom::default(), publishers);
-        let deltas = VecDeque::new();
-        let staged_elements = HashMap::new();
-
         RrdpServer {
             rrdp_base_uri,
             rrdp_base_dir,
@@ -1979,11 +1961,11 @@ impl PublisherStats {
 impl From<&CurrentObjects> for PublisherStats {
     fn from(objects: &CurrentObjects) -> Self {
         let mut manifests = vec![];
-        for el in objects.elements() {
+        for (uri_key, base64) in objects.iter() {
             // Add all manifests - as long as they are syntactically correct - do not
             // crash on incorrect objects.
-            if el.uri().ends_with("mft") {
-                if let Ok(mft) = Manifest::decode(el.base64().to_bytes().as_ref(), false) {
+            if uri_key.ends_with("mft") {
+                if let Ok(mft) = Manifest::decode(base64.to_bytes().as_ref(), false) {
                     if let Ok(stats) = PublisherManifestStats::try_from(&mft) {
                         manifests.push(stats)
                     }

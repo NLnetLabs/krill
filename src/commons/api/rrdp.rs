@@ -2,9 +2,11 @@
 //! withdraw elements, as well as the notification, snapshot and delta file
 //! definitions.
 use std::{
+    convert::{TryFrom, TryInto},
     fmt, io,
-    ops::{Add, AddAssign},
+    ops::{Add, AddAssign, Deref},
     path::PathBuf,
+    sync::Arc,
     {collections::HashMap, path::Path},
 };
 
@@ -21,7 +23,11 @@ use rpki::{
     xml::decode::Name,
 };
 
-use crate::commons::{error::KrillIoError, util::file};
+use crate::commons::{
+    error::{Error, KrillIoError},
+    util::file,
+    KrillResult,
+};
 
 const VERSION: &str = "1";
 const NS: &str = "http://www.ripe.net/rpki/rrdp";
@@ -103,6 +109,10 @@ impl PublishElement {
         PublishElement { base64, uri }
     }
 
+    pub fn unpack(self) -> (uri::Rsync, Base64) {
+        (self.uri, self.base64)
+    }
+
     pub fn base64(&self) -> &Base64 {
         &self.base64
     }
@@ -126,19 +136,6 @@ impl PublishElement {
             uri: self.uri.clone(),
             hash: self.base64.to_hash(),
         }
-    }
-
-    pub fn unpack(self) -> (uri::Rsync, Base64) {
-        (self.uri, self.base64)
-    }
-
-    /// Writes the publish element’s XML.
-    fn write_xml(&self, content: &mut rpki::xml::encode::Content<impl io::Write>) -> Result<(), io::Error> {
-        content
-            .element(PUBLISH)?
-            .attr("uri", &self.uri)?
-            .content(|content| content.raw(self.base64().as_str()))?;
-        Ok(())
     }
 }
 
@@ -166,11 +163,16 @@ impl UpdateElement {
     pub fn new(uri: uri::Rsync, hash: Hash, base64: Base64) -> Self {
         UpdateElement { uri, hash, base64 }
     }
+
+    pub fn unpack(self) -> (uri::Rsync, Hash, Base64) {
+        (self.uri, self.hash, self.base64)
+    }
+
     pub fn uri(&self) -> &uri::Rsync {
         &self.uri
     }
-    pub fn hash(&self) -> &Hash {
-        &self.hash
+    pub fn hash(&self) -> Hash {
+        self.hash
     }
 
     pub fn base64(&self) -> &Base64 {
@@ -242,8 +244,8 @@ impl WithdrawElement {
     pub fn uri(&self) -> &uri::Rsync {
         &self.uri
     }
-    pub fn hash(&self) -> &Hash {
-        &self.hash
+    pub fn hash(&self) -> Hash {
+        self.hash
     }
 
     /// Changes this WithdrawElement hash to that of the previous
@@ -261,45 +263,149 @@ impl From<publication::Withdraw> for WithdrawElement {
     }
 }
 
-//------------ CurrentObjects ------------------------------------------------
+//------------ CurrentObjectKey ----------------------------------------------
+
+/// Maps to the URI for the object.
+///
+/// We use this separate type rather than rpki::uri::Rsync because the
+/// latter is not very suitable for use in HashMaps: it is mutable and
+/// its hash function is slow due to the fact that it needs
+/// to accommodate for the fact that the URI scheme and hostname are
+/// case insensitive.
+///
+/// We use an inner Arc<str> so that we can clone this cheaply. We provide
+/// no way to create this type other than by providing a valid uri::Rsync.
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct CurrentObjectUri(Arc<str>);
+
+impl CurrentObjectUri {
+    pub fn as_str(&self) -> &str {
+        self.as_ref()
+    }
+}
+
+impl TryFrom<&CurrentObjectUri> for uri::Rsync {
+    type Error = Error;
+
+    fn try_from(key: &CurrentObjectUri) -> Result<Self, Self::Error> {
+        uri::Rsync::from_slice(key.0.as_bytes())
+            .map_err(|e| Error::Custom(format!("Found invalid object uri: {}. Error: {}", key.0, e)))
+    }
+}
+
+impl TryFrom<CurrentObjectUri> for uri::Rsync {
+    type Error = Error;
+
+    fn try_from(key: CurrentObjectUri) -> Result<Self, Self::Error> {
+        uri::Rsync::try_from(&key)
+    }
+}
+
+impl From<&uri::Rsync> for CurrentObjectUri {
+    fn from(value: &uri::Rsync) -> Self {
+        // use canonical scheme and hostname (converts to lowercase if needed)
+        let s = format!("{}{}", value.canonical_module(), value.path());
+        CurrentObjectUri(s.into())
+    }
+}
+
+impl Deref for CurrentObjectUri {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl AsRef<str> for CurrentObjectUri {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
 
 /// Defines a current set of published elements.
-///
-// Note this is mapped internally by hash, rather than uri, because:
-//
-// PublishedElement maps to the RFC 8182 publish element, and that does
-// not contain the hash for the object, just the uri and content. Yet,
-// we need to compare hashes for update and delete, so keeping it around
-// means that do not need to recalculate it for objects.
-//
-// Secondly, we could map things by uri, but then we would not only have
-// to recalculate that hash.. things would also slow down because the
-// hashing for rpki::uri::Rsync is slow due to the fact that it needs
-// to accommodate for the fact that the URI scheme and hostname are
-// case insensitive.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-pub struct CurrentObjects(HashMap<Hash, PublishElement>);
+pub struct CurrentObjects(HashMap<CurrentObjectUri, Base64>);
 
 impl CurrentObjects {
-    pub fn new(map: HashMap<Hash, PublishElement>) -> Self {
+    pub fn new(map: HashMap<CurrentObjectUri, Base64>) -> Self {
         CurrentObjects(map)
     }
 
-    pub fn elements(&self) -> Vec<&PublishElement> {
-        let mut res = vec![];
-        for el in self.0.values() {
-            res.push(el)
+    pub fn extend(&mut self, other: Self) {
+        self.0.extend(other.0)
+    }
+
+    /// Returns the DeltaElements needed to turn this into other.
+    pub fn diff(&self, other: &Self) -> KrillResult<DeltaElements> {
+        let mut publishes = vec![];
+        let mut updates = vec![];
+        let mut withdraws = vec![];
+
+        // find new and updated stuff
+        for (uri_key, base64) in &other.0 {
+            let uri = uri_key.try_into()?;
+            match self.0.get(uri_key) {
+                None => {
+                    let pbl = PublishElement::new(base64.clone(), uri);
+                    publishes.push(pbl);
+                }
+                Some(existing_b64) => {
+                    if base64 != existing_b64 {
+                        let hash = existing_b64.to_hash();
+                        let upd = UpdateElement::new(uri, hash, base64.clone());
+                        updates.push(upd);
+                    }
+                }
+            }
         }
-        res
+
+        // find removed stuff
+        for (uri_key, base64) in &self.0 {
+            let uri = uri_key.try_into()?;
+            if !other.0.contains_key(uri_key) {
+                let hash = base64.to_hash();
+                let wdr = WithdrawElement::new(uri, hash);
+                withdraws.push(wdr);
+            }
+        }
+
+        Ok(DeltaElements::new(publishes, updates, withdraws))
     }
 
-    pub fn into_elements(self) -> Vec<PublishElement> {
-        self.0.into_values().collect()
+    pub fn iter(&self) -> impl Iterator<Item = (&CurrentObjectUri, &Base64)> {
+        self.0.iter()
     }
 
-    fn has_match(&self, hash: &Hash, uri: &uri::Rsync) -> bool {
-        match self.0.get(hash) {
-            Some(el) => el.uri() == uri,
+    pub fn try_into_publish_elements(self) -> KrillResult<Vec<PublishElement>> {
+        let mut elements = vec![];
+
+        for (uri_key, base64) in self.0.into_iter() {
+            let uri = uri_key.try_into()?;
+            let el = PublishElement::new(base64, uri);
+            elements.push(el);
+        }
+
+        Ok(elements)
+    }
+
+    pub fn to_withdraw_elements(&self) -> KrillResult<Vec<WithdrawElement>> {
+        let mut elements = vec![];
+
+        for (uri_key, base64) in self.0.iter() {
+            let uri = uri_key.try_into()?;
+            let hash = base64.to_hash();
+            let el = WithdrawElement::new(uri, hash);
+            elements.push(el);
+        }
+
+        Ok(elements)
+    }
+
+    fn has_match(&self, hash: Hash, uri: &uri::Rsync) -> bool {
+        let key = CurrentObjectUri::from(uri);
+        match self.0.get(&key) {
+            Some(base64) => base64.to_hash() == hash,
             None => false,
         }
     }
@@ -309,7 +415,8 @@ impl CurrentObjects {
             if !jail.is_parent_of(p.uri()) {
                 return Err(PublicationDeltaError::outside(jail, p.uri()));
             }
-            if self.0.values().any(|existing| existing.uri() == p.uri()) {
+            let key = CurrentObjectUri::from(p.uri());
+            if self.0.contains_key(&key) {
                 return Err(PublicationDeltaError::present(p.uri()));
             }
         }
@@ -336,47 +443,46 @@ impl CurrentObjects {
     }
 
     /// Applies a delta to CurrentObjects.
+    ///
+    /// Assumes that the delta was checked using [`verify_delta`].
     pub fn apply_delta(&mut self, delta: DeltaElements) {
         let (publishes, updates, withdraws) = delta.unpack();
 
         for p in publishes {
-            let hash = p.base64().to_hash();
-            self.0.insert(hash, p);
+            let (uri, base64) = p.unpack();
+            let key = CurrentObjectUri::from(&uri);
+            self.0.insert(key, base64);
         }
 
         for u in updates {
-            self.0.remove(u.hash());
-            let p: PublishElement = u.into();
-            let hash = p.base64().to_hash();
-            self.0.insert(hash, p);
+            // we ignore the hash of the old object when inserting
+            // the update, as it has already been verified.
+            let (uri, _hash, base64) = u.unpack();
+            let key = CurrentObjectUri::from(&uri);
+            self.0.insert(key, base64);
         }
 
         for w in withdraws {
-            self.0.remove(w.hash());
+            let key = CurrentObjectUri::from(w.uri());
+            self.0.remove(&key);
         }
     }
 
-    /// Returns a copy of self where elements matching the given URI
-    /// are removed if there are any matches. Otherwise, returns None.
-    pub fn with_matching_uri_deleted(&self, uri: &uri::Rsync) -> Option<Self> {
+    /// Returns a vec with withdraws for elements matching the given URI.
+    pub fn make_matching_withdraws(&self, match_uri: &uri::Rsync) -> KrillResult<Vec<WithdrawElement>> {
+        let match_uri = CurrentObjectUri::from(match_uri);
+
         let mut withdraws = vec![];
-
-        // We first loop through the elements to avoid having to clone in case there is no work
-        for (hash, el) in &self.0 {
-            if el.uri() == uri || (uri.as_str().ends_with('/') && el.uri().as_str().starts_with(uri.as_str())) {
-                withdraws.push(hash)
+        for (uri_key, base64) in &self.0 {
+            if uri_key == &match_uri || (match_uri.ends_with('/') && uri_key.starts_with(match_uri.as_ref())) {
+                let uri = uri_key.try_into()?;
+                let hash = base64.to_hash();
+                let wdr = WithdrawElement::new(uri, hash);
+                withdraws.push(wdr);
             }
         }
 
-        if withdraws.is_empty() {
-            None
-        } else {
-            let mut copy_of_self = self.clone();
-            for hash in withdraws {
-                copy_of_self.0.remove(hash);
-            }
-            Some(copy_of_self)
-        }
+        Ok(withdraws)
     }
 
     pub fn len(&self) -> usize {
@@ -391,18 +497,16 @@ impl CurrentObjects {
         self.0.is_empty()
     }
 
-    pub fn to_list_reply(&self) -> publication::ListReply {
-        let elements = self
-            .0
-            .iter()
-            .map(|el| {
-                let hash = *el.0;
-                let uri = el.1.uri().clone();
-                publication::ListElement::new(uri, hash)
-            })
-            .collect();
+    pub fn to_list_reply(&self) -> KrillResult<publication::ListReply> {
+        let mut elements = vec![];
 
-        publication::ListReply::new(elements)
+        for (key, base64) in &self.0 {
+            let uri = key.try_into()?;
+            let hash = base64.to_hash();
+            elements.push(publication::ListElement::new(uri, hash));
+        }
+
+        Ok(publication::ListReply::new(elements))
     }
 }
 
@@ -470,14 +574,14 @@ pub struct SnapshotData {
 
     // We keep objects per publisher so that we can respond to
     // list and publication queries more efficiently.
-    current_objects: HashMap<PublisherHandle, CurrentObjects>,
+    publishers_current_objects: HashMap<PublisherHandle, CurrentObjects>,
 }
 
 impl SnapshotData {
-    pub fn new(random: RrdpFileRandom, current_objects: HashMap<PublisherHandle, CurrentObjects>) -> Self {
+    pub fn new(random: RrdpFileRandom, publishers_current_objects: HashMap<PublisherHandle, CurrentObjects>) -> Self {
         SnapshotData {
             random,
-            current_objects,
+            publishers_current_objects,
         }
     }
 
@@ -491,27 +595,27 @@ impl SnapshotData {
     /// but using a new session and resetting the serial.
     pub fn with_new_random(&self) -> Self {
         let random = RrdpFileRandom::default();
-        let current_objects = self.current_objects.clone();
+        let current_objects = self.publishers_current_objects.clone();
         SnapshotData::new(random, current_objects)
     }
 
     pub fn unpack(self) -> HashMap<PublisherHandle, CurrentObjects> {
-        self.current_objects
+        self.publishers_current_objects
     }
 
     // Get the approximate size for all current objects held by all publishers.
     pub fn size_approx(&self) -> usize {
-        self.current_objects
+        self.publishers_current_objects
             .values()
             .fold(0, |tot, objects| tot + objects.size_approx())
     }
 
     pub fn current_objects_for(&self, publisher: &PublisherHandle) -> Option<&CurrentObjects> {
-        self.current_objects.get(publisher)
+        self.publishers_current_objects.get(publisher)
     }
 
     pub fn publishers_current_objects(&self) -> &HashMap<PublisherHandle, CurrentObjects> {
-        &self.current_objects
+        &self.publishers_current_objects
     }
 
     pub fn set_random(&mut self, random: RrdpFileRandom) {
@@ -523,10 +627,10 @@ impl SnapshotData {
     /// This assumes that the delta had been checked before. This should not be
     /// any issue as deltas are verified when they are submitted.
     pub fn apply_delta(&mut self, publisher: &PublisherHandle, delta: DeltaElements) {
-        if let Some(objects) = self.current_objects.get_mut(publisher) {
+        if let Some(objects) = self.publishers_current_objects.get_mut(publisher) {
             objects.apply_delta(delta);
             if objects.is_empty() {
-                self.current_objects.remove(publisher);
+                self.publishers_current_objects.remove(publisher);
             }
         } else {
             // This is a new publisher without existing objects. So, just create
@@ -534,7 +638,7 @@ impl SnapshotData {
             // to it.
             let mut objects = CurrentObjects::default();
             objects.apply_delta(delta);
-            self.current_objects.insert(publisher.clone(), objects);
+            self.publishers_current_objects.insert(publisher.clone(), objects);
         }
     }
 
@@ -542,7 +646,7 @@ impl SnapshotData {
     ///
     /// This is a no-op in case the publisher already exists.
     pub fn apply_publisher_added(&mut self, publisher: PublisherHandle) {
-        self.current_objects
+        self.publishers_current_objects
             .entry(publisher)
             .or_insert(CurrentObjects::default());
     }
@@ -551,7 +655,7 @@ impl SnapshotData {
     ///
     /// This is a no-op in case the publisher does not exists.
     pub fn apply_publisher_removed(&mut self, publisher: &PublisherHandle) {
-        self.current_objects.remove(publisher);
+        self.publishers_current_objects.remove(publisher);
     }
 
     fn rel_path(&self, session: RrdpSession, serial: u64) -> String {
@@ -602,9 +706,12 @@ impl SnapshotData {
             .attr("session_id", &session)?
             .attr("serial", &serial)?
             .content(|content| {
-                for publisher_objects in self.current_objects.values() {
-                    for el in publisher_objects.elements() {
-                        el.write_xml(content)?;
+                for publisher_objects in self.publishers_current_objects.values() {
+                    for (uri, base64) in publisher_objects.iter() {
+                        content
+                            .element(PUBLISH)?
+                            .attr("uri", uri.as_str())?
+                            .content(|content| content.raw(base64.as_str()))?;
                     }
                 }
                 Ok(())
@@ -832,14 +939,14 @@ impl DeltaData {
                     content
                         .element(PUBLISH.into_unqualified())?
                         .attr("uri", el.uri())?
-                        .attr("hash", el.hash())?
+                        .attr("hash", &el.hash())?
                         .content(|content| content.raw(el.base64().as_str()))?;
                 }
                 for el in self.elements().withdraws() {
                     content
                         .element(WITHDRAW.into_unqualified())?
                         .attr("uri", el.uri())?
-                        .attr("hash", el.hash())?;
+                        .attr("hash", &el.hash())?;
                 }
                 Ok(())
             })?;
@@ -927,5 +1034,112 @@ mod tests {
             withdraws: vec![WithdrawElement::new(file1_uri, file1_content_2.to_hash())],
         };
         assert!(objects.verify_delta(&withdraw_file1_updated, &jail).is_ok());
+    }
+
+    #[test]
+    fn current_objects_deltas() {
+        fn file_rsync_uri(name: &str) -> uri::Rsync {
+            let jail = rsync("rsync://example.krill.cloud/repo/publisher");
+            jail.join(name.as_bytes()).unwrap()
+        }
+
+        fn file_uri(name: &str) -> CurrentObjectUri {
+            CurrentObjectUri(format!("rsync://example.krill.cloud/repo/publisher/{}", name).into())
+        }
+
+        fn random_content() -> Base64 {
+            let mut bytes = [0; 8];
+            openssl::rand::rand_bytes(&mut bytes).unwrap();
+            Base64::from_content(&bytes)
+        }
+
+        // True if the delta contains the same content, even if the ordering
+        // is different.
+        pub fn equivalent(this: DeltaElements, other: DeltaElements) -> bool {
+            let (mut this_publishes, mut this_updates, mut this_withdraws) = this.unpack();
+            let (mut other_publishes, mut other_updates, mut other_withdraws) = other.unpack();
+
+            this_publishes.sort_by(|a, b| a.uri().as_str().cmp(b.uri().as_str()));
+            other_publishes.sort_by(|a, b| a.uri().as_str().cmp(b.uri().as_str()));
+            this_updates.sort_by(|a, b| a.uri().as_str().cmp(b.uri().as_str()));
+            other_updates.sort_by(|a, b| a.uri().as_str().cmp(b.uri().as_str()));
+            this_withdraws.sort_by(|a, b| a.uri().as_str().cmp(b.uri().as_str()));
+            other_withdraws.sort_by(|a, b| a.uri().as_str().cmp(b.uri().as_str()));
+
+            this_publishes == other_publishes && this_updates == other_updates && this_withdraws == other_withdraws
+        }
+
+        let mut objects: HashMap<CurrentObjectUri, Base64> = HashMap::new();
+        objects.insert(file_uri("file1"), random_content());
+        objects.insert(file_uri("file2"), random_content());
+        objects.insert(file_uri("file3"), random_content());
+        objects.insert(file_uri("file4"), random_content());
+
+        let publishes = vec![
+            PublishElement::new(random_content(), file_rsync_uri("file5")),
+            PublishElement::new(random_content(), file_rsync_uri("file6")),
+        ];
+
+        let updates = vec![
+            UpdateElement::new(
+                file_rsync_uri("file1"),
+                objects.get(&file_uri("file1")).unwrap().to_hash(),
+                random_content(),
+            ),
+            UpdateElement::new(
+                file_rsync_uri("file2"),
+                objects.get(&file_uri("file2")).unwrap().to_hash(),
+                random_content(),
+            ),
+        ];
+
+        let withdraws = vec![WithdrawElement::new(
+            file_rsync_uri("file3"),
+            objects.get(&file_uri("file3")).unwrap().to_hash(),
+        )];
+
+        let delta_a_b = DeltaElements::new(publishes, updates, withdraws);
+        let objects_a = CurrentObjects::new(objects);
+
+        let mut objects_b = objects_a.clone();
+        objects_b.apply_delta(delta_a_b.clone());
+        let derived_delta_a_b = objects_a.diff(&objects_b).unwrap();
+
+        // eprintln!("-----------------GIVEN--------------------");
+        // eprintln!("objects: ");
+        // eprintln!("{}", serde_json::to_string_pretty(&objects_a).unwrap());
+        // eprintln!("delta: ");
+        // eprintln!("{}", serde_json::to_string_pretty(&delta_a_b).unwrap());
+        // eprintln!("------------------------------------------");
+
+        // eprintln!();
+
+        // eprintln!("-----------------RESULT B------------------");
+        // eprintln!("{}", serde_json::to_string_pretty(&objects_b).unwrap());
+        // eprintln!("------------------------------------------");
+
+        // eprintln!();
+
+        // eprintln!("-----------------DERIVE A -> B -----------");
+        // eprintln!("{}", serde_json::to_string_pretty(&derived_delta_a_b).unwrap());
+        // eprintln!("------------------------------------------");
+
+        assert!(equivalent(delta_a_b, derived_delta_a_b));
+
+        let derived_delta_b_a = objects_b.diff(&objects_a).unwrap();
+        // eprintln!();
+        // eprintln!("-----------------DERIVE B -> A -----------");
+        // eprintln!("{}", serde_json::to_string_pretty(&derived_delta_b_a).unwrap());
+        // eprintln!("------------------------------------------");
+
+        let mut objects_a_from_b = objects_b.clone();
+        objects_a_from_b.apply_delta(derived_delta_b_a);
+
+        // eprintln!();
+        // eprintln!("-----------------RESULT B------------------");
+        // eprintln!("{}", serde_json::to_string_pretty(&objects_a_from_b).unwrap());
+        // eprintln!("------------------------------------------");
+
+        assert_eq!(objects_a, objects_a_from_b);
     }
 }
