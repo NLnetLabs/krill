@@ -9,15 +9,15 @@ pub async fn statics(req: Request) -> RoutingResult {
             "/" => Ok(HttpResponse::new(
                 hyper::Response::builder()
                     .status(StatusCode::FOUND)
-                    .header("location", "/index.html")
+                    .header("location", "/ui")
                     .body(hyper::Body::empty())
                     .unwrap(),
             )),
-            "/index.html" => Ok(HttpResponse::html(INDEX)),
+            "/ui" => Ok(HttpResponse::html(INDEX)),
 
             "/assets/favicon-f84116cb.ico" => Ok(HttpResponse::fav(FAVICON)),
 
-            "/assets/index-b4c362de.js" => Ok(HttpResponse::js(JS_INDEX)),
+            "/assets/index-e25f2a11.js" => Ok(HttpResponse::js(JS_INDEX)),
 
             "/assets/en-43584d30.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_ENGLISH)),
             "/assets/de-d79537b0.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_GERMAN)),
@@ -68,7 +68,7 @@ pub static INDEX: &[u8] = include_bytes!("../../../ui/index.html");
 
 static FAVICON: &[u8] = include_bytes!("../../../ui/assets/favicon-f84116cb.ico");
 
-static JS_INDEX: &[u8] = include_bytes!("../../../ui/assets/index-b4c362de.js");
+static JS_INDEX: &[u8] = include_bytes!("../../../ui/assets/index-e25f2a11.js");
 
 static JS_TRANSLATIONS_GERMAN: &[u8] = include_bytes!("../../../ui/assets/de-d79537b0.js");
 static JS_TRANSLATIONS_ENGLISH: &[u8] = include_bytes!("../../../ui/assets/en-43584d30.js");
