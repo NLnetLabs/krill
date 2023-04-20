@@ -1,0 +1,17 @@
+{
+  "actor": "testbed",
+  "time": "2023-02-10T10:26:39.552452944Z",
+  "handle": "0",
+  "version": 160,
+  "sequence": 189,
+  "details": {
+    "type": "remove_publisher",
+    "name": "pub-test"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      160
+    ]
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "actor": "admin-token",
+  "time": "2022-08-09T19:50:05.219720610Z",
+  "handle": "0",
+  "version": 29,
+  "sequence": 32,
+  "details": {
+    "type": "add_publisher",
+    "name": "some_ca"
+  },
+  "effect": {
+    "result": "error",
+    "msg": "Duplicate publisher 'some_ca'"
+  }
+}

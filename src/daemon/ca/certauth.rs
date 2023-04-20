@@ -586,9 +586,23 @@ impl CertAuth {
 impl CertAuth {
     pub fn verify_rfc6492(&self, cms: ProvisioningCms) -> KrillResult<provisioning::Message> {
         let child_handle = cms.message().sender().convert();
-        let child = self.get_child(&child_handle)?;
+        let child = self.get_child(&child_handle).map_err(|e| {
+            Error::Custom(format!(
+                "CA {} has issue with request by child {}: {}",
+                self.handle(),
+                child_handle,
+                e
+            ))
+        })?;
 
-        cms.validate(child.id_cert().public_key()).map_err(Error::Rfc6492)?;
+        cms.validate(child.id_cert().public_key()).map_err(|e| {
+            Error::Custom(format!(
+                "CA {} cannot validate request by child {}: {}",
+                self.handle(),
+                child_handle,
+                e
+            ))
+        })?;
 
         Ok(cms.into_message())
     }

@@ -1,0 +1,15 @@
+{
+  "actor": "testbed",
+  "time": "2022-10-12T15:25:04.799499828Z",
+  "handle": "0",
+  "version": 101,
+  "sequence": 106,
+  "details": {
+    "type": "add_publisher",
+    "name": "94017295-0594-4fe7-a797-3917a848c668-0"
+  },
+  "effect": {
+    "result": "error",
+    "msg": "Duplicate publisher '94017295-0594-4fe7-a797-3917a848c668-0'"
+  }
+}

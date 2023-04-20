@@ -814,7 +814,6 @@ impl Options {
         app.subcommand(sub)
     }
 
-    #[cfg(feature = "aspa")]
     fn make_cas_aspas_add_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("add").about("Add or replace an ASPA configuration");
 
@@ -832,7 +831,6 @@ impl Options {
         app.subcommand(sub)
     }
 
-    #[cfg(feature = "aspa")]
     fn make_cas_aspas_remove_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("remove").about("Remove the ASPA for a customer ASN");
 
@@ -850,7 +848,6 @@ impl Options {
         app.subcommand(sub)
     }
 
-    #[cfg(feature = "aspa")]
     fn make_cas_aspas_update_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("update").about("Update an existing ASPA configuration");
 
@@ -886,7 +883,6 @@ impl Options {
         app.subcommand(sub)
     }
 
-    #[cfg(feature = "aspa")]
     fn make_cas_aspas_list_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("list").about("Show current ASPA configurations");
 
@@ -896,7 +892,6 @@ impl Options {
         app.subcommand(sub)
     }
 
-    #[cfg(feature = "aspa")]
     fn make_cas_aspas_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("aspas").about("Manage ASPAs for a CA (experimental)");
 
@@ -1363,11 +1358,7 @@ impl Options {
         app = Self::make_cas_repo_sc(app);
         app = Self::make_cas_issues_sc(app);
         app = Self::make_pubserver_sc(app);
-
-        #[cfg(feature = "aspa")]
-        {
-            app = Self::make_cas_aspas_sc(app);
-        }
+        app = Self::make_cas_aspas_sc(app);
 
         #[cfg(feature = "rta")]
         {

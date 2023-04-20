@@ -1,0 +1,15 @@
+{
+  "actor": "testbed",
+  "time": "2023-02-23T09:14:57.320652523Z",
+  "handle": "0",
+  "version": 170,
+  "sequence": 199,
+  "details": {
+    "type": "remove_publisher",
+    "name": "Test"
+  },
+  "effect": {
+    "result": "error",
+    "msg": "Unknown publisher 'Test'"
+  }
+}

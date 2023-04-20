@@ -1,0 +1,15 @@
+{
+  "actor": "testbed",
+  "time": "2022-11-23T09:14:46.463075237Z",
+  "handle": "0",
+  "version": 113,
+  "sequence": 124,
+  "details": {
+    "type": "add_publisher",
+    "name": "ca"
+  },
+  "effect": {
+    "result": "error",
+    "msg": "Duplicate publisher 'ca'"
+  }
+}

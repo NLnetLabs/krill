@@ -1,0 +1,15 @@
+{
+  "actor": "testbed",
+  "time": "2022-12-20T08:22:14.263716633Z",
+  "handle": "0",
+  "version": 138,
+  "sequence": 163,
+  "details": {
+    "type": "add_publisher",
+    "name": "tdekockpro"
+  },
+  "effect": {
+    "result": "error",
+    "msg": "Duplicate publisher 'tdekockpro'"
+  }
+}

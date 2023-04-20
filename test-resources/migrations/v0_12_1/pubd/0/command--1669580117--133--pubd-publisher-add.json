@@ -1,0 +1,17 @@
+{
+  "actor": "testbed",
+  "time": "2022-11-27T20:15:17.163943523Z",
+  "handle": "0",
+  "version": 120,
+  "sequence": 133,
+  "details": {
+    "type": "add_publisher",
+    "name": "mpi"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      120
+    ]
+  }
+}

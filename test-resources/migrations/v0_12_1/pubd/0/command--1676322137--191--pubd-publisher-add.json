@@ -1,0 +1,17 @@
+{
+  "actor": "testbed",
+  "time": "2023-02-13T21:02:17.553346813Z",
+  "handle": "0",
+  "version": 162,
+  "sequence": 191,
+  "details": {
+    "type": "add_publisher",
+    "name": "New-CA-Name"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      162
+    ]
+  }
+}

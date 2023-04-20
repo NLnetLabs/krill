@@ -42,23 +42,6 @@ use crate::commons::crypto::{
 
 use serde::{de::Visitor, Deserialize};
 
-/// How should public key access be controlled?
-/// See: http://docs.oasis-open.org/pkcs11/pkcs11-base/v2.40/os/pkcs11-base-v2.40-os.html#_Toc416959705
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
-pub enum PubKeyAccess {
-    /// User may not access the object until the user has been authenticated to the token.
-    #[serde(alias = "authenticated")]
-    Authenticated,
-
-    /// User may access the object without having been authenticated to the token.
-    #[serde(alias = "unauthenticated")]
-    Unauthenticated,
-
-    /// Default value is token-specific, and may depend on the values of other attributes of the object.
-    #[serde(alias = "token-default")]
-    TokenDefault,
-}
-
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct Pkcs11SignerConfig {
     pub lib_path: String,
@@ -71,9 +54,6 @@ pub struct Pkcs11SignerConfig {
     #[serde(default = "Pkcs11SignerConfig::default_login")]
     pub login: bool,
 
-    #[serde(default = "Pkcs11SignerConfig::default_pubkey_access")]
-    pub pubkey_access: PubKeyAccess,
-
     #[serde(default = "Pkcs11SignerConfig::default_retry_seconds")]
     pub retry_seconds: u64,
 
@@ -82,15 +62,55 @@ pub struct Pkcs11SignerConfig {
 
     #[serde(default = "Pkcs11SignerConfig::default_max_retry_seconds")]
     pub max_retry_seconds: u64,
+
+    #[serde(default)]
+    pub public_key_attributes: Pkcs11ConfigurablePublicKeyAttributes,
+
+    #[serde(default)]
+    pub private_key_attributes: Pkcs11ConfigurablePrivateKeyAttributes,
+}
+
+impl Eq for Pkcs11SignerConfig {}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct Pkcs11ConfigurablePublicKeyAttributes {
+    /// PKCS#11 v2.40 4.4: "CK_TRUE if object can be modified. Default is
+    /// CK_TRUE."
+    #[serde(alias = "CKA_MODIFIABLE")]
+    cka_modifiable: Option<bool>,
+
+    /// PKCS#11 v2.40 4.4: "CK_TRUE if object is a private object; CK_FALSE
+    /// if object is a public object. Default value is token-specific, and may
+    /// depend on the values of other attributes of the object."
+    #[serde(alias = "CKA_PRIVATE")]
+    cka_private: Option<bool>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct Pkcs11ConfigurablePrivateKeyAttributes {
+    /// PKCS#11 v2.40 4.9: "CK_TRUE if key is extractable and can be wrapped."
+    #[serde(alias = "CKA_EXTRACTABLE")]
+    cka_extractable: Option<bool>,
+
+    /// PKCS#11 v2.40 4.4: "CK_TRUE if object can be modified. Default is
+    /// CK_TRUE."
+    #[serde(alias = "CKA_MODIFIABLE")]
+    cka_modifiable: Option<bool>,
+
+    /// PKCS#11 v2.40 4.4: "CK_TRUE if object is a private object; CK_FALSE
+    /// if object is a public object. Default value is token-specific, and may
+    /// depend on the values of other attributes of the object."
+    #[serde(alias = "CKA_PRIVATE")]
+    cka_private: Option<bool>,
+
+    /// PKCS#11 v2.40 4.9: "CK_TRUE if key is sensitive."
+    #[serde(alias = "CKA_SENSITIVE")]
+    cka_sensitive: Option<bool>,
 }
 
 impl Pkcs11SignerConfig {
     pub fn default_login() -> bool {
         true
-    }
-
-    pub fn default_pubkey_access() -> PubKeyAccess {
-        PubKeyAccess::Authenticated
     }
 
     pub fn default_retry_seconds() -> u64 {
@@ -106,7 +126,76 @@ impl Pkcs11SignerConfig {
     }
 }
 
-impl Eq for Pkcs11SignerConfig {}
+impl Default for Pkcs11ConfigurablePublicKeyAttributes {
+    fn default() -> Self {
+        // These values are backward compatible with the hard-coded values
+        // used by Krill before they were made configurable for #1018.
+        // See: https://github.com/NLnetLabs/krill/issues/1018
+        Self {
+            cka_modifiable: None,
+            cka_private: Some(true),
+        }
+    }
+}
+
+impl Pkcs11ConfigurablePublicKeyAttributes {
+    pub fn to_vec(&self) -> Vec<Attribute> {
+        let mut attrs = vec![];
+        if let Some(attr_value) = self.cka_modifiable {
+            attrs.push(Attribute::Modifiable(attr_value));
+        }
+        if let Some(attr_value) = self.cka_private {
+            attrs.push(Attribute::Private(attr_value));
+        }
+        attrs
+    }
+}
+
+impl Default for Pkcs11ConfigurablePrivateKeyAttributes {
+    fn default() -> Self {
+        // These values are backward compatible with the hard-coded values
+        // used by Krill before they were made configurable for #1018.
+        //
+        // The original values chosen were partly informed by a SafeNet article:
+        //
+        //   "Follow best practices when setting sensitive key attributes: If you have secret or private keys
+        //    that are particularly sensitive and you want to prevent them from being wrapped off, they can be
+        //    generated with their template attributes: CKA_SENSITIVE and CKA_PRIVATE set to True and
+        //    CKA_EXTRACTABLE and CKA_MODIFIABLE both set to False. This way, the keys are only
+        //    accessible by a user who is logged in, and key values cannot be read by anyone. Also, the keys
+        //    cannot be wrapped off and the attribute values cannot be changed at some later time to invalidate
+        //    the original settings."
+        //
+        // See:
+        //   - https://github.com/NLnetLabs/krill/issues/1018
+        //   - http://secgroup.dais.unive.it/wp-content/uploads/2010/10/Reponse-by-SafeNet.pdf
+        Self {
+            cka_extractable: Some(false),
+            cka_modifiable: None,
+            cka_private: Some(true),
+            cka_sensitive: Some(true),
+        }
+    }
+}
+
+impl Pkcs11ConfigurablePrivateKeyAttributes {
+    pub fn to_vec(&self) -> Vec<Attribute> {
+        let mut attrs = vec![];
+        if let Some(attr_value) = self.cka_extractable {
+            attrs.push(Attribute::Extractable(attr_value));
+        }
+        if let Some(attr_value) = self.cka_modifiable {
+            attrs.push(Attribute::Modifiable(attr_value));
+        }
+        if let Some(attr_value) = self.cka_private {
+            attrs.push(Attribute::Private(attr_value));
+        }
+        if let Some(attr_value) = self.cka_sensitive {
+            attrs.push(Attribute::Sensitive(attr_value));
+        }
+        attrs
+    }
+}
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum LoginMode {
@@ -196,7 +285,9 @@ pub struct Pkcs11Signer {
     /// A probe dependent interface to the PKCS#11 server.
     server: Arc<StatefulProbe<ConnectionSettings, SignerError, UsableServerState>>,
 
-    pubkey_access: PubKeyAccess,
+    extra_public_key_attributes: Vec<Attribute>,
+
+    extra_private_key_attributes: Vec<Attribute>,
 }
 
 impl Pkcs11Signer {
@@ -230,12 +321,16 @@ impl Pkcs11Signer {
             probe_interval,
         ));
 
+        let extra_public_key_attributes = conf.public_key_attributes.to_vec();
+        let extra_private_key_attributes = conf.private_key_attributes.to_vec();
+
         let s = Pkcs11Signer {
             name: name.to_string(),
             handle: RwLock::new(None),
             mapper,
             server,
-            pubkey_access: conf.pubkey_access,
+            extra_public_key_attributes,
+            extra_private_key_attributes,
         };
 
         Ok(s)
@@ -270,8 +365,7 @@ impl Pkcs11Signer {
                 // https://github.com/NLnetLabs/krill/issues/1019
                 let err_msg = format!(
                     "{} [Note: This error can occur if the signer does not support authenticated \
-                    access to public keys. Setting `pubkey_access` in krill.conf to \"token-default\"` or \
-                    `\"unauthenticated\"` may help]",
+                    access to public keys. Setting `CKA_PRIVATE` in krill.conf to \"false\"` may help]",
                     err
                 );
                 Err(SignerError::Pkcs11Error(err_msg))
@@ -741,7 +835,8 @@ impl Pkcs11Signer {
         openssl::rand::rand_bytes(&mut cka_id)
             .map_err(|_| SignerError::Pkcs11Error("Internal error while generating a random number".to_string()))?;
 
-        let (pub_template, priv_template) = self.mk_keygen_templates(&cka_id);
+        let pub_template = self.mk_public_key_template(&cka_id, &self.extra_public_key_attributes);
+        let priv_template = self.mk_private_key_template(&cka_id, &self.extra_private_key_attributes);
 
         let (pub_handle, priv_handle) = self.with_conn("generate key pair", |conn| {
             // The Krill functional test once failed under GitHub Actions with error:
@@ -760,7 +855,20 @@ impl Pkcs11Signer {
         Ok((public_key, pub_handle, priv_handle, hex::encode(cka_id)))
     }
 
-    fn mk_keygen_templates(&self, cka_id: &[u8]) -> (Vec<Attribute>, Vec<Attribute>) {
+    fn mk_private_key_template(&self, cka_id: &[u8], extra_attrs: &[Attribute]) -> Vec<Attribute> {
+        let mut priv_template = vec![
+            Attribute::Id(cka_id.to_vec()),
+            Attribute::Sign(true),
+            Attribute::Decrypt(false),
+            Attribute::Unwrap(false),
+            Attribute::Token(true),
+            Attribute::Label("Krill".to_string().into_bytes()),
+        ];
+        priv_template.extend_from_slice(extra_attrs);
+        priv_template
+    }
+
+    fn mk_public_key_template(&self, cka_id: &[u8], extra_attrs: &[Attribute]) -> Vec<Attribute> {
         let mut pub_template = vec![
             Attribute::Id(cka_id.to_vec()),
             Attribute::Verify(true),
@@ -771,34 +879,8 @@ impl Pkcs11Signer {
             Attribute::PublicExponent(vec![0x01, 0x00, 0x01]),
             Attribute::Label("Krill".to_string().into_bytes()),
         ];
-
-        // https://github.com/NLnetLabs/krill/issues/1019
-        match self.pubkey_access {
-            PubKeyAccess::Authenticated => {
-                pub_template.push(Attribute::Private(true));
-            }
-            PubKeyAccess::Unauthenticated => {
-                pub_template.push(Attribute::Private(false));
-            }
-            PubKeyAccess::TokenDefault => {
-                // Do not supply a value for the CKA_PRIVATE attribute.
-            }
-        }
-
-        let priv_template = vec![
-            Attribute::Id(cka_id.to_vec()),
-            Attribute::Sign(true),
-            Attribute::Decrypt(false),
-            Attribute::Unwrap(false),
-            Attribute::Sensitive(true),
-            Attribute::Token(true),
-            Attribute::Private(true),
-            Attribute::Extractable(false),
-            Attribute::Modifiable(false),
-            Attribute::Label("Krill".to_string().into_bytes()),
-        ];
-
-        (pub_template, priv_template)
+        pub_template.extend_from_slice(extra_attrs);
+        pub_template
     }
 
     pub(super) fn get_public_key_from_handle(&self, pub_handle: ObjectHandle) -> Result<PublicKey, SignerError> {
@@ -1329,7 +1411,7 @@ mod tests {
     }
 
     #[test]
-    fn configure_using_negative_slot_id() {
+    fn disallow_configure_using_negative_slot_id() {
         let config_str = r#"
             lib_path = "dummy path"
             slot = -1234
@@ -1342,75 +1424,75 @@ mod tests {
     }
 
     #[test]
-    fn test_pubkey_access() {
-        // Default behaviour for backward compatibility should be that the lack of the new config setting is equivalent
-        // to specifying that the public key generation template should have Attribute::Private(true).
-        with_pubkey_access(None, Some(true));
+    fn default_key_attributes_are_backward_compatible() {
+        let config_str = r#"
+            lib_path = "dummy path"
+            slot = 1234
+        "#;
+        let config = toml::from_str::<Pkcs11SignerConfig>(config_str).unwrap();
 
-        // Which should be the same as using the new config setting with value false.
-        with_pubkey_access(Some(PubKeyAccess::Authenticated), Some(true));
+        let attrs = config.public_key_attributes.to_vec();
+        assert!(!attrs.iter().any(|attr| matches!(attr, Attribute::Modifiable(_))));
+        assert!(attrs.iter().any(|attr| matches!(attr, Attribute::Private(true))));
+        assert!(!attrs.iter().any(|attr| matches!(attr, Attribute::Private(false))));
 
-        // Or we can explicity request unauthenticated access which should cause the public key generation template to
-        // contain a single occurence of Attribute::Private(false).
-        with_pubkey_access(Some(PubKeyAccess::Unauthenticated), Some(false));
-
-        // Or we can request the token default access control behaviour which should result in there NOT being any
-        // occurences of Attribute::Private(_) in the public key generation template.
-        with_pubkey_access(Some(PubKeyAccess::TokenDefault), None);
+        let attrs = config.private_key_attributes.to_vec();
+        assert!(attrs.iter().any(|attr| matches!(attr, Attribute::Extractable(false))));
+        assert!(!attrs.iter().any(|attr| matches!(attr, Attribute::Extractable(true))));
+        assert!(!attrs.iter().any(|attr| matches!(attr, Attribute::Modifiable(_))));
+        assert!(attrs.iter().any(|attr| matches!(attr, Attribute::Private(true))));
+        assert!(!attrs.iter().any(|attr| matches!(attr, Attribute::Private(false))));
+        assert!(attrs.iter().any(|attr| matches!(attr, Attribute::Sensitive(true))));
+        assert!(!attrs.iter().any(|attr| matches!(attr, Attribute::Sensitive(false))));
     }
 
-    fn with_pubkey_access(flag: Option<PubKeyAccess>, expected_attr: Option<bool>) {
-        test::test_under_tmp(|d| {
-            let mut config_str = r#"
-                lib_path = "dummy path"
-                slot = 1234
-            "#
-            .to_string();
+    #[test]
+    fn default_key_attributes_can_be_overriden() {
+        let config_str = r#"
+            lib_path = "dummy path"
+            slot = 1234
 
-            match flag {
-                Some(PubKeyAccess::Authenticated) => {
-                    config_str.push_str("pubkey_access = \"authenticated\"");
-                }
-                Some(PubKeyAccess::Unauthenticated) => {
-                    config_str.push_str("pubkey_access = \"unauthenticated\"");
-                }
-                Some(PubKeyAccess::TokenDefault) => {
-                    config_str.push_str("pubkey_access = \"token-default\"");
-                }
-                None => {
-                    // don't add any configuration setting to the config file
-                }
-            }
+            [public_key_attributes]
+            CKA_MODIFIABLE = true
+            CKA_PRIVATE = false
 
-            let config: Pkcs11SignerConfig = toml::from_str(&config_str).unwrap();
-            let mapper = Arc::new(SignerMapper::build(&d).unwrap());
-            let signer = Pkcs11Signer::build("dummy", &config, Duration::from_secs(600), mapper).unwrap();
-            let (pub_template, priv_template) = signer.mk_keygen_templates(&[0, 0, 0]);
+            [private_key_attributes]
+            CKA_EXTRACTABLE = true
+            CKA_MODIFIABLE = false
+            CKA_SENSITIVE = false
+            CKA_PRIVATE = false 
+        "#;
+        let config = toml::from_str::<Pkcs11SignerConfig>(config_str).unwrap();
 
-            assert_eq!(
-                1,
-                priv_template
-                    .iter()
-                    .filter(|attr| matches!(attr, Attribute::Private(true)))
-                    .count()
-            );
+        let attrs = config.public_key_attributes.to_vec();
+        assert!(attrs.iter().any(|attr| matches!(attr, Attribute::Modifiable(true))));
+        assert!(attrs.iter().any(|attr| matches!(attr, Attribute::Private(false))));
 
-            match expected_attr {
-                Some(expected_v) => {
-                    // The the set of public key template attributes should contain a single
-                    // occurence of Attribute::Private with inner value expected_v.
-                    let count = pub_template
-                        .iter()
-                        .filter(|attr| matches!(attr, Attribute::Private(v) if *v == expected_v))
-                        .count();
-                    assert_eq!(count, 1);
-                }
-                None => {
-                    // The public key template attributes should NOT contain any occurences of
-                    // Attribute::Private(_).
-                    assert!(!pub_template.iter().any(|attr| matches!(attr, Attribute::Private(_))));
-                }
-            }
-        });
+        let attrs = config.private_key_attributes.to_vec();
+        assert!(attrs.iter().any(|attr| matches!(attr, Attribute::Extractable(true))));
+        assert!(attrs.iter().any(|attr| matches!(attr, Attribute::Modifiable(false))));
+        assert!(attrs.iter().any(|attr| matches!(attr, Attribute::Private(false))));
+        assert!(attrs.iter().any(|attr| matches!(attr, Attribute::Sensitive(false))));
+    }
+
+    #[test]
+    fn overriding_key_attributes_sets_others_to_pkcs11_default_if_not_specified() {
+        let config_str = r#"
+            lib_path = "dummy path"
+            slot = 1234
+            public_key_attributes = {}
+            private_key_attributes = {}
+        "#;
+        let config = toml::from_str::<Pkcs11SignerConfig>(config_str).unwrap();
+
+        let attrs = config.public_key_attributes.to_vec();
+        assert!(!attrs.iter().any(|attr| matches!(attr, Attribute::Modifiable(_))));
+        assert!(!attrs.iter().any(|attr| matches!(attr, Attribute::Private(_))));
+
+        let attrs = config.private_key_attributes.to_vec();
+        assert!(!attrs.iter().any(|attr| matches!(attr, Attribute::Extractable(_))));
+        assert!(!attrs.iter().any(|attr| matches!(attr, Attribute::Private(_))));
+        assert!(!attrs.iter().any(|attr| matches!(attr, Attribute::Sensitive(_))));
+        assert!(!attrs.iter().any(|attr| matches!(attr, Attribute::Modifiable(_))));
     }
 }
