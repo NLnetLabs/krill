@@ -1,7 +1,0 @@
-{
-  "id": "ca",
-  "version": 7,
-  "details": {
-    "route_authorization_added": "192.168.1.0/24 => 64496"
-  }
-}

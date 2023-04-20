@@ -5,7 +5,6 @@
 
 [![](https://img.shields.io/discord/818584154278199396?label=rpki%20on%20discord&logo=discord)](https://discord.gg/8dvKB5Ykhy)
 [![Mastodon Follow](https://img.shields.io/mastodon/follow/109262826617293067?domain=https%3A%2F%2Ffosstodon.org&style=social)](https://fosstodon.org/@nlnetlabs)
-[![](https://img.shields.io/twitter/follow/krillrpki.svg?label=Follow&style=social)](https://twitter.com/krillrpki)
 
 # Krill
 
@@ -37,6 +36,27 @@ We removed the repository next update time from the stats and metrics output.
 It was inaccurate (usually 8 hours off), and not very informative. More useful
 metrics are still provided: last exchange and last successful exchange. If these
 times differ, then there is an issue that may need attention.
+
+## 0.12.3 'Sakura'
+
+This release contains a feature that enables Publication Server operators to
+remove unwanted, surplus, files from their repository. This feature was cherry
+picked from the upcoming major release branch so that Publication Server
+operators can use this without delay.
+
+Note that if you do not use Krill to operate a Publication Server, then there
+is no need to upgrade to this version now.
+
+For more details see: https://github.com/NLnetLabs/krill/pull/1022
+
+## 0.12.2 'Dijkstra'
+
+This release fixes a locking issue that can affect a Krill Publication Server
+with a large number of concurrent publishers. See PR #1007.
+
+If you only use Krill as an RPKI Certificate Authority and publish elsewhere,
+e.g. in an RPKI Publication Server provided by your RIR or NIR, then there is
+no need to update to this release.
 
 ## 0.12.1 'Safety Belts'
 

@@ -1,0 +1,17 @@
+{
+  "actor": "testbed",
+  "time": "2022-09-08T14:24:23.585104821Z",
+  "handle": "0",
+  "version": 94,
+  "sequence": 99,
+  "details": {
+    "type": "add_publisher",
+    "name": "cudaqa-ca"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      94
+    ]
+  }
+}

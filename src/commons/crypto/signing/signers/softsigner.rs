@@ -381,7 +381,7 @@ pub mod tests {
     #[test]
     fn import_existing_pkcs1_openssl_key() {
         test::test_under_tmp(|d| {
-            // The following key was generated using openssl on the command
+            // The following key was generated using OpenSSL on the command line
             let pem = include_str!("../../../../../test-resources/ta/example-pkcs1.pem");
             let signer = OpenSslSigner::build(&d, "dummy", None).unwrap();
 
@@ -394,7 +394,7 @@ pub mod tests {
     #[test]
     fn import_existing_pkcs8_openssl_key() {
         test::test_under_tmp(|d| {
-            // The following key was generated using openssl on the command
+            // The following key was generated using OpenSSL on the command line
             let pem = include_str!("../../../../../test-resources/ta/example-pkcs8.pem");
             let signer = OpenSslSigner::build(&d, "dummy", None).unwrap();
 

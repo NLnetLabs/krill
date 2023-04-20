@@ -3,6 +3,7 @@
 pkg:
   - "krill"
   - "krillup"
+  - "krillta"
 image:
   - "ubuntu:xenial" # ubuntu/16.04
   - "ubuntu:bionic" # ubuntu/18.04

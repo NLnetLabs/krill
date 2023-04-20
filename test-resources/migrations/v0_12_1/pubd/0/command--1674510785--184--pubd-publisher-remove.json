@@ -1,0 +1,17 @@
+{
+  "actor": "testbed",
+  "time": "2023-01-23T21:53:05.851946989Z",
+  "handle": "0",
+  "version": 156,
+  "sequence": 184,
+  "details": {
+    "type": "remove_publisher",
+    "name": "AS65001"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      156
+    ]
+  }
+}

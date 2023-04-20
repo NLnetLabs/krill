@@ -1,0 +1,17 @@
+{
+  "actor": "testbed",
+  "time": "2022-11-17T10:15:02.314230069Z",
+  "handle": "0",
+  "version": 109,
+  "sequence": 120,
+  "details": {
+    "type": "add_publisher",
+    "name": "94017295-0594-4fe7-a797-3917a848c668-01668680102222"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      109
+    ]
+  }
+}

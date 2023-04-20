@@ -242,7 +242,7 @@ enum IdentifyResult {
 enum RegisterResult {
     NotReady,
     ReadyVerified(SignerHandle),
-    ReadyUnusable,
+    ReadyUnusable(String),
 }
 
 #[cfg(not(feature = "hsm"))]
@@ -337,16 +337,19 @@ impl SignerRouter {
                                         // And remove it from the pending set
                                         false
                                     }
-                                    RegisterResult::ReadyUnusable => {
+                                    RegisterResult::ReadyUnusable(err) => {
                                         // Signer registration failed, remove it from the pending set
-                                        warn!("Signer '{}' could not be registered: signer is not usable", signer_name);
+                                        error!(
+                                            "Signer '{}' could not be registered: signer is not usable: {}",
+                                            signer_name, err
+                                        );
                                         false
                                     }
                                 })
                         }
                         IdentifyResult::Unusable => {
                             // Signer is ready and unusable, remove it from the pending set
-                            warn!("Signer '{}' could not be identified: signer is not usable", signer_name);
+                            error!("Signer '{}' could not be identified: signer is not usable", signer_name);
                             Ok(false)
                         }
                         IdentifyResult::Corrupt => {
@@ -544,20 +547,21 @@ impl SignerRouter {
 
         let (public_key, signer_private_key_id) = match signer_provider.create_registration_key() {
             Err(SignerError::TemporarilyUnavailable) => return Ok(RegisterResult::NotReady),
-            Err(_) => return Ok(RegisterResult::ReadyUnusable),
+            Err(err) => return Ok(RegisterResult::ReadyUnusable(err.to_string())),
             Ok(res) => res,
         };
 
         let challenge = "Krill signer verification challenge".as_bytes();
         let signature = match signer_provider.sign_registration_challenge(&signer_private_key_id, challenge) {
             Err(SignerError::TemporarilyUnavailable) => return Ok(RegisterResult::NotReady),
-            Err(_) => return Ok(RegisterResult::ReadyUnusable),
+            Err(err) => return Ok(RegisterResult::ReadyUnusable(err.to_string())),
             Ok(res) => res,
         };
 
         if public_key.verify(challenge, &signature).is_err() {
-            error!("Signer '{}' challenge signature is invalid", signer_name);
-            return Ok(RegisterResult::ReadyUnusable);
+            return Ok(RegisterResult::ReadyUnusable(
+                "Challenge signature is invalid".to_string(),
+            ));
         }
 
         debug!("Signer '{}' is ready and new, binding", signer_name);

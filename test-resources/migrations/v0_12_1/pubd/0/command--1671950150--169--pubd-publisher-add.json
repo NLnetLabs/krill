@@ -1,0 +1,17 @@
+{
+  "actor": "testbed",
+  "time": "2022-12-25T06:35:50.991346962Z",
+  "handle": "0",
+  "version": 143,
+  "sequence": 169,
+  "details": {
+    "type": "add_publisher",
+    "name": "krill1"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      143
+    ]
+  }
+}

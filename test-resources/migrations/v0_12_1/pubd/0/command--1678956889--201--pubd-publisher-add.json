@@ -1,0 +1,17 @@
+{
+  "actor": "testbed",
+  "time": "2023-03-16T08:54:49.180672683Z",
+  "handle": "0",
+  "version": 171,
+  "sequence": 201,
+  "details": {
+    "type": "add_publisher",
+    "name": "gs"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      171
+    ]
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "actor": "testbed",
+  "time": "2023-02-20T12:30:10.445549020Z",
+  "handle": "0",
+  "version": 168,
+  "sequence": 197,
+  "details": {
+    "type": "add_publisher",
+    "name": "Arjen"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      168
+    ]
+  }
+}

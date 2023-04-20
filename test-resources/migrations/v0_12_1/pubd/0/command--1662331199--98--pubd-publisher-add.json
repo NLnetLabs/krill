@@ -1,0 +1,17 @@
+{
+  "actor": "testbed",
+  "time": "2022-09-04T22:39:59.279901122Z",
+  "handle": "0",
+  "version": 93,
+  "sequence": 98,
+  "details": {
+    "type": "add_publisher",
+    "name": "AS300"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      93
+    ]
+  }
+}

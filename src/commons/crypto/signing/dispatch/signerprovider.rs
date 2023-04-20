@@ -188,11 +188,11 @@ impl SignerProvider {
         match self {
             SignerProvider::OpenSsl(_, signer) => signer.import_key(pem),
             #[cfg(feature = "hsm")]
-            SignerProvider::Kmip(_, _) => Err(SignerError::other("import key not supported for kmip")),
+            SignerProvider::Kmip(_, _) => Err(SignerError::other("import key not supported for KMIP signers")),
             #[cfg(feature = "hsm")]
-            SignerProvider::Pkcs11(_, _) => Err(SignerError::other("import key not supported for Pkcs11")),
+            SignerProvider::Pkcs11(_, _) => Err(SignerError::other("import key not supported for PKCS#11 signers")),
             #[cfg(all(test, feature = "hsm"))]
-            SignerProvider::Mock(_, _) => Err(SignerError::other("import key not supported for mock signer")),
+            SignerProvider::Mock(_, _) => Err(SignerError::other("import key not supported for the mock signer")),
         }
     }
 

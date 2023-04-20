@@ -1,0 +1,17 @@
+{
+  "actor": "testbed",
+  "time": "2023-01-17T21:02:40.401325899Z",
+  "handle": "0",
+  "version": 153,
+  "sequence": 181,
+  "details": {
+    "type": "remove_publisher",
+    "name": "ASN400"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      153
+    ]
+  }
+}

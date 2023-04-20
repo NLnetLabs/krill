@@ -43,14 +43,14 @@ jobs:
       matrix:
         os: [ubuntu-latest]
 
-        # Test against Rust 1.56.0 because in build.rs we say that is the oldest supported version.
+        # Test against Rust 1.65.0 because that is the oldest supported version.
         # Test against beta Rust to get early warning of any problems that might occur with the upcoming Rust release.
         # Order: oldest Rust to newest Rust.
-        rust: [1.56.0, stable, beta]
+        rust: [1.65.0, stable, beta]
 
         # Test with no features, default features ("") and all except UI tests.
         # Order: fewest features to most features.
-        args: ["--no-default-features", "", "--features all-except-ui-tests"]
+        args: ["--no-default-features", "", "--features all"]
     steps:
     - name: Checkout repository
       uses: actions/checkout@v2
@@ -60,20 +60,13 @@ jobs:
         rust-version: ${{ matrix.rust }}
     - run: cargo build --verbose ${{ matrix.args }} --locked
     - run: cargo test --verbose ${{ matrix.args }} -- --test-threads=1 2>&1
-    - name: Archive Cypress UI test image & video captures
-      if: ${{ always() }}
-      uses: actions/upload-artifact@v2
-      with:
-        name: cypress-ui-test-captures ${{ matrix.os }} ${{ matrix.rust }}
-        path: target/ui/
-        if-no-files-found: ignore
 
   pykmip-test:
     name: pykmip-test
     runs-on: ubuntu-20.04
     strategy:
       matrix:
-        rust: [1.56.0, stable, beta]
+        rust: [1.65.0, stable, beta]
         features: ["hsm", "hsm,hsm-tests-kmip"]
     steps:
     - name: Checkout repository
@@ -92,6 +85,7 @@ jobs:
       uses: BSFishy/pip-action@v1
       with:
         packages: pykmip
+        constraints: test-resources/pykmip/constraints.txt
 
     - name: Compile the tests
       run: |
@@ -118,7 +112,7 @@ jobs:
     runs-on: ubuntu-20.04
     strategy:
       matrix:
-        rust: [1.56.0, stable, beta]
+        rust: [1.65.0, stable, beta]
         features: ["hsm,hsm-tests-pkcs11"]
     steps:
     - name: Checkout repository

@@ -19,13 +19,13 @@ use super::OldRepositoryAccessIni;
 
 /// Migrates the events, snapshots and info for the event-sourced RepositoryAccess.
 /// There is no need to migrate the mutable RepositoryContent structure for this migration.
-pub struct PublicationServerMigration {
+pub struct PublicationServerRepositoryAccessMigration {
     current_kv_store: KeyValueStore,
     new_kv_store: KeyValueStore,
     new_agg_store: AggregateStore<RepositoryAccess>,
 }
 
-impl PublicationServerMigration {
+impl PublicationServerRepositoryAccessMigration {
     pub fn prepare(mode: UpgradeMode, config: &Config) -> UpgradeResult<()> {
         let upgrade_data_dir = config.upgrade_data_dir();
 
@@ -33,7 +33,7 @@ impl PublicationServerMigration {
         let new_kv_store = KeyValueStore::disk(&upgrade_data_dir, PUBSERVER_DIR)?;
         let new_agg_store = AggregateStore::disk(&upgrade_data_dir, PUBSERVER_DIR)?;
 
-        let store_migration = PublicationServerMigration {
+        let store_migration = PublicationServerRepositoryAccessMigration {
             current_kv_store,
             new_kv_store,
             new_agg_store,
@@ -47,7 +47,7 @@ impl PublicationServerMigration {
     }
 }
 
-impl UpgradeStore for PublicationServerMigration {
+impl UpgradeStore for PublicationServerRepositoryAccessMigration {
     fn needs_migrate(&self) -> Result<bool, crate::upgrades::PrepareUpgradeError> {
         if !self.current_kv_store.has_scope("0".to_string())? {
             Ok(false)

@@ -394,7 +394,6 @@ type ErrorMessage = String;
 
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
-#[allow(clippy::result_large_err)]
 pub enum Error {
     RequestBuild(ErrorUri, ErrorMessage),
     RequestBuildHttpsCert(RootCertPath, ErrorMessage),
@@ -404,7 +403,7 @@ pub enum Error {
     Response(ErrorUri, ErrorMessage),
     Forbidden(ErrorUri),
     ErrorResponseWithBody(ErrorUri, StatusCode, String),
-    ErrorResponseWithJson(ErrorUri, StatusCode, ErrorResponse),
+    ErrorResponseWithJson(ErrorUri, StatusCode, Box<ErrorResponse>),
 }
 
 impl fmt::Display for Error {
@@ -472,7 +471,7 @@ impl Error {
                     Self::response_unexpected_status(uri, status)
                 } else {
                     match serde_json::from_str::<ErrorResponse>(&body) {
-                        Ok(res) => Error::ErrorResponseWithJson(uri.to_string(), status, res),
+                        Ok(res) => Error::ErrorResponseWithJson(uri.to_string(), status, Box::new(res)),
                         Err(_) => Error::ErrorResponseWithBody(uri.to_string(), status, body),
                     }
                 }

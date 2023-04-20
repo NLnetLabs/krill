@@ -1,0 +1,17 @@
+{
+  "actor": "testbed",
+  "time": "2022-05-10T11:24:04.010876569Z",
+  "handle": "0",
+  "version": 7,
+  "sequence": 8,
+  "details": {
+    "type": "add_publisher",
+    "name": "TOP"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      7
+    ]
+  }
+}

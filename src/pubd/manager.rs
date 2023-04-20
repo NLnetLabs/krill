@@ -1,4 +1,4 @@
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use bytes::Bytes;
 
@@ -35,8 +35,6 @@ use super::RrdpUpdateNeeded;
 pub struct RepositoryManager {
     access: Arc<RepositoryAccessProxy>,
     content: Arc<RepositoryContentProxy>,
-    // We can use a single lock for updates because there is at most one repo.
-    default_repo_lock: RwLock<()>,
 
     // shared task queue, use to schedule RRDP updates when content is updated.
     tasks: Arc<TaskQueue>,
@@ -53,12 +51,10 @@ impl RepositoryManager {
     pub fn build(config: Arc<Config>, tasks: Arc<TaskQueue>, signer: Arc<KrillSigner>) -> Result<Self, Error> {
         let access_proxy = Arc::new(RepositoryAccessProxy::disk(&config)?);
         let content_proxy = Arc::new(RepositoryContentProxy::disk(&config)?);
-        let default_repo_lock = RwLock::new(());
 
         Ok(RepositoryManager {
             access: access_proxy,
             content: content_proxy,
-            default_repo_lock,
             tasks,
             config,
             signer,
@@ -111,7 +107,15 @@ impl RepositoryManager {
     pub fn rfc8181(&self, publisher_handle: PublisherHandle, msg_bytes: Bytes) -> KrillResult<Bytes> {
         let cms_logger = CmsLogger::for_rfc8181_rcvd(self.config.rfc8181_log_dir.as_ref(), &publisher_handle);
 
-        let cms = self.access.decode_and_validate(&publisher_handle, &msg_bytes)?;
+        let cms = self
+            .access
+            .decode_and_validate(&publisher_handle, &msg_bytes)
+            .map_err(|e| {
+                Error::Custom(format!(
+                    "Issue with publication request by publisher '{}': {}",
+                    publisher_handle, e
+                ))
+            })?;
         let message = cms.into_message();
         let query = message.as_query()?;
 
@@ -168,8 +172,6 @@ impl RepositoryManager {
 
     /// Let a known publisher publish in a repository.
     pub fn publish(&self, publisher_handle: &PublisherHandle, delta: PublishDelta) -> KrillResult<()> {
-        let _lock = self.default_repo_lock.write().unwrap();
-
         let publisher = self.access.get_publisher(publisher_handle)?;
 
         self.content
@@ -185,7 +187,6 @@ impl RepositoryManager {
     pub fn update_rrdp_if_needed(&self) -> KrillResult<Option<Time>> {
         // See if an update is needed
         {
-            let _lock = self.default_repo_lock.read().unwrap();
             match self.content.rrdp_update_needed(self.config.rrdp_updates_config)? {
                 RrdpUpdateNeeded::No => return Ok(None),
                 RrdpUpdateNeeded::Later(time) => return Ok(Some(time)),
@@ -193,13 +194,7 @@ impl RepositoryManager {
             }
         }
 
-        let content = {
-            let _lock = self.default_repo_lock.write().unwrap();
-
-            self.content.update_rrdp(self.config.rrdp_updates_config)?
-        };
-
-        // Write the updated repository - NOTE: we no longer lock it.
+        let content = self.content.update_rrdp(self.config.rrdp_updates_config)?;
         content.write_repository(self.config.rrdp_updates_config)?;
 
         Ok(None)
@@ -207,18 +202,14 @@ impl RepositoryManager {
 
     /// Purge URI(s) from the server.
     pub fn delete_matching_files(&self, criteria: RepoFileDeleteCriteria) -> KrillResult<()> {
-        let content = {
-            let _lock = self.default_repo_lock.write().unwrap();
+        // update RRDP first so we apply any staged deltas.
+        self.content.update_rrdp(self.config.rrdp_updates_config)?;
 
-            // update RRDP first so we apply any staged deltas.
-            self.content.update_rrdp(self.config.rrdp_updates_config)?;
+        // delete matching files using the updated snapshot and stage a delta if needed.
+        self.content.delete_matching_files(criteria.into())?;
 
-            // delete matching files using the updated snapshot and stage a delta if needed.
-            self.content.delete_matching_files(criteria.into())?;
-
-            // update RRDP again to make the delta effective immediately.
-            self.content.update_rrdp(self.config.rrdp_updates_config)?
-        };
+        // update RRDP again to make the delta effective immediately.
+        let content = self.content.update_rrdp(self.config.rrdp_updates_config)?;
 
         // Write the updated repository - NOTE: we no longer lock it.
         content.write_repository(self.config.rrdp_updates_config)?;
@@ -232,8 +223,6 @@ impl RepositoryManager {
 
     /// Returns a list reply for a known publisher in a repository.
     pub fn list(&self, publisher: &PublisherHandle) -> KrillResult<ListReply> {
-        let _lock = self.default_repo_lock.read().unwrap();
-
         self.content.list_reply(publisher)
     }
 }
@@ -251,7 +240,7 @@ impl RepositoryManager {
         let id_cert = publisher.id_cert().clone();
         let base_uri = publisher.base_uri().clone();
 
-        let current = self.content.current_objects(name)?.into_elements();
+        let current = self.content.current_objects(name)?.try_into_publish_elements()?;
 
         Ok(PublisherDetails::new(name, id_cert, base_uri, current))
     }

@@ -242,6 +242,7 @@ impl KrillServer {
                 let startup_structure = api::import::Structure::new(
                     testbed.ta_aia().clone(),
                     testbed.ta_uri().clone(),
+                    None,
                     testbed.publication_server_uris(),
                     import_cas,
                 );
@@ -576,47 +577,43 @@ impl KrillServer {
         }
         structure.validate_ca_hierarchy(existing_cas)?;
 
-        if !self.config.ta_proxy_enabled() {
-            Err(Error::custom(
-                "Import CAs is only possible when ta_support_enabled = true",
-            ))
-        } else if !self.config.ta_signer_enabled() {
-            Err(Error::custom(
-                "Import CAs is only possible when ta_signer_enabled = true",
-            ))
-        } else {
-            if let Some(publication_server_uris) = structure.publication_server.clone() {
-                info!("Initialising publication server");
-                self.repo_manager.init(publication_server_uris)?;
-            }
-
-            if let Some(import_ta) = structure.ta.clone() {
-                info!("Creating embedded Trust Anchor");
-                let (ta_aia, ta_uris) = import_ta.into_uris();
-                self.ca_manager
-                    .ta_init_fully_embedded(ta_aia, ta_uris, &self.repo_manager, &actor)
-                    .await?;
-            }
-
-            info!("Bulk import {} CAs", structure.cas.len());
-            // Set up each online TA child with local repo, do this in parallel.
-            let mut import_fns = vec![];
-            let service_uri = Arc::new(self.config.service_uri());
-            for ca in structure.into_cas() {
-                import_fns.push(tokio::spawn(Self::import_ca(
-                    ca,
-                    self.ca_manager.clone(),
-                    self.repo_manager.clone(),
-                    service_uri.clone(),
-                    actor.clone(),
-                )));
-            }
-            try_join_all(import_fns)
-                .await
-                .map_err(|e| Error::Custom(format!("Could not import CAs: {}", e)))?;
-
-            Ok(())
+        if let Some(publication_server_uris) = structure.publication_server.clone() {
+            info!("Initialising publication server");
+            self.repo_manager.init(publication_server_uris)?;
         }
+
+        if let Some(import_ta) = structure.ta.clone() {
+            if self.config.ta_proxy_enabled() && self.config.ta_signer_enabled() {
+                info!("Creating embedded Trust Anchor");
+                let (ta_aia, ta_uris, ta_key_pem) = import_ta.unpack();
+                self.ca_manager
+                    .ta_init_fully_embedded(ta_aia, ta_uris, ta_key_pem, &self.repo_manager, &actor)
+                    .await?;
+            } else {
+                return Err(Error::custom(
+                    "Import TA requires ta_support_enabled = true and ta_signer_enabled = true",
+                ));
+            }
+        }
+
+        info!("Bulk import {} CAs", structure.cas.len());
+        // Set up each online TA child with local repo, do this in parallel.
+        let mut import_fns = vec![];
+        let service_uri = Arc::new(self.config.service_uri());
+        for ca in structure.into_cas() {
+            import_fns.push(tokio::spawn(Self::import_ca(
+                ca,
+                self.ca_manager.clone(),
+                self.repo_manager.clone(),
+                service_uri.clone(),
+                actor.clone(),
+            )));
+        }
+        try_join_all(import_fns)
+            .await
+            .map_err(|e| Error::Custom(format!("Could not import CAs: {}", e)))?;
+
+        Ok(())
     }
 
     async fn import_ca(
