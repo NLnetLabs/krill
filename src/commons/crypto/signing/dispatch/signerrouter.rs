@@ -559,7 +559,9 @@ impl SignerRouter {
         };
 
         if public_key.verify(challenge, &signature).is_err() {
-            return Ok(RegisterResult::ReadyUnusable(format!("Challenge signature is invalid")));
+            return Ok(RegisterResult::ReadyUnusable(
+                "Challenge signature is invalid".to_string(),
+            ));
         }
 
         debug!("Signer '{}' is ready and new, binding", signer_name);

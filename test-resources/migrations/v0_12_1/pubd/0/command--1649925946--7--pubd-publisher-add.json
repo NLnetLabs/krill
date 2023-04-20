@@ -1,0 +1,17 @@
+{
+  "actor": "testbed",
+  "time": "2022-04-14T08:45:46.325871968Z",
+  "handle": "0",
+  "version": 6,
+  "sequence": 7,
+  "details": {
+    "type": "add_publisher",
+    "name": "nlnetlabs-testbed-client"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      6
+    ]
+  }
+}

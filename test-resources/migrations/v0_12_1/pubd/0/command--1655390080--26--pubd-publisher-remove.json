@@ -1,0 +1,17 @@
+{
+  "actor": "testbed",
+  "time": "2022-06-16T14:34:40.878371947Z",
+  "handle": "0",
+  "version": 23,
+  "sequence": 26,
+  "details": {
+    "type": "remove_publisher",
+    "name": "krill-testbed-prepdev"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      23
+    ]
+  }
+}

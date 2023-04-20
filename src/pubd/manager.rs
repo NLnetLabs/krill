@@ -240,7 +240,7 @@ impl RepositoryManager {
         let id_cert = publisher.id_cert().clone();
         let base_uri = publisher.base_uri().clone();
 
-        let current = self.content.current_objects(name)?.into_elements();
+        let current = self.content.current_objects(name)?.try_into_publish_elements()?;
 
         Ok(PublisherDetails::new(name, id_cert, base_uri, current))
     }

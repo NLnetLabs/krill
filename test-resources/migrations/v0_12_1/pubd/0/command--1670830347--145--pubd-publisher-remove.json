@@ -1,0 +1,15 @@
+{
+  "actor": "testbed",
+  "time": "2022-12-12T07:32:27.186721781Z",
+  "handle": "0",
+  "version": 126,
+  "sequence": 145,
+  "details": {
+    "type": "remove_publisher",
+    "name": "hello"
+  },
+  "effect": {
+    "result": "error",
+    "msg": "Unknown publisher 'hello'"
+  }
+}

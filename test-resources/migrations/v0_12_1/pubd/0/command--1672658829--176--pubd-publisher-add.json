@@ -1,0 +1,17 @@
+{
+  "actor": "testbed",
+  "time": "2023-01-02T11:27:09.886438310Z",
+  "handle": "0",
+  "version": 149,
+  "sequence": 176,
+  "details": {
+    "type": "add_publisher",
+    "name": "tg"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      149
+    ]
+  }
+}

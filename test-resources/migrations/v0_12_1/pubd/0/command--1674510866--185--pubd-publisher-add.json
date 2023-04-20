@@ -1,0 +1,17 @@
+{
+  "actor": "testbed",
+  "time": "2023-01-23T21:54:26.796581534Z",
+  "handle": "0",
+  "version": 157,
+  "sequence": 185,
+  "details": {
+    "type": "add_publisher",
+    "name": "rpki-testnet"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      157
+    ]
+  }
+}

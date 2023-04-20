@@ -1,0 +1,15 @@
+{
+  "actor": "testbed",
+  "time": "2022-10-14T07:10:04.671888202Z",
+  "handle": "0",
+  "version": 102,
+  "sequence": 108,
+  "details": {
+    "type": "add_publisher",
+    "name": "us-spacex"
+  },
+  "effect": {
+    "result": "error",
+    "msg": "Duplicate publisher 'us-spacex'"
+  }
+}

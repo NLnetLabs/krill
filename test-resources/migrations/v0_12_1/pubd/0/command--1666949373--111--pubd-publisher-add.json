@@ -1,0 +1,17 @@
+{
+  "actor": "testbed",
+  "time": "2022-10-28T09:29:33.562581904Z",
+  "handle": "0",
+  "version": 104,
+  "sequence": 111,
+  "details": {
+    "type": "add_publisher",
+    "name": "NFT-CA"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      104
+    ]
+  }
+}

@@ -11,7 +11,7 @@ use rpki::repository::resources::ResourceSet;
 
 use krill::{
     commons::{
-        api::{ObjectName, RepoFileDeleteCriteria, RoaConfigurationUpdates, RoaPayload},
+        api::{ObjectName, RoaConfigurationUpdates, RoaPayload},
         util::httpclient,
     },
     test::*,

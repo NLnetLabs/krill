@@ -1,0 +1,14 @@
+{
+  "revision": 6280,
+  "summary": "create next RRDP delta for repository 0",
+  "changes": [
+    {
+      "type": "rrdp_updated",
+      "update": {
+        "time": "2023-03-20T09:59:37.290010927Z",
+        "random": "0b6b2a79258df6a0",
+        "deltas_truncate": 5
+      }
+    }
+  ]
+}

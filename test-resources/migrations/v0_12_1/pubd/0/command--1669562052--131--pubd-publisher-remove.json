@@ -1,0 +1,17 @@
+{
+  "actor": "testbed",
+  "time": "2022-11-27T15:14:12.201152123Z",
+  "handle": "0",
+  "version": 118,
+  "sequence": 131,
+  "details": {
+    "type": "remove_publisher",
+    "name": "test-zues"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      118
+    ]
+  }
+}

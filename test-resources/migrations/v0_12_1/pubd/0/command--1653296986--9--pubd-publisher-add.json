@@ -1,0 +1,17 @@
+{
+  "actor": "testbed",
+  "time": "2022-05-23T09:09:46.200476010Z",
+  "handle": "0",
+  "version": 8,
+  "sequence": 9,
+  "details": {
+    "type": "add_publisher",
+    "name": "localkrill"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      8
+    ]
+  }
+}

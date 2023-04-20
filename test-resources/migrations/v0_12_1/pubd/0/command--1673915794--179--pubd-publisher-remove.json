@@ -1,0 +1,15 @@
+{
+  "actor": "testbed",
+  "time": "2023-01-17T00:36:34.434915934Z",
+  "handle": "0",
+  "version": 152,
+  "sequence": 179,
+  "details": {
+    "type": "remove_publisher",
+    "name": "ASN400"
+  },
+  "effect": {
+    "result": "error",
+    "msg": "Unknown publisher 'ASN400'"
+  }
+}
