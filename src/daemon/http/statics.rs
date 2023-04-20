@@ -17,14 +17,14 @@ pub async fn statics(req: Request) -> RoutingResult {
 
             "/assets/favicon-f84116cb.ico" => Ok(HttpResponse::fav(FAVICON)),
 
-            "/assets/index-e25f2a11.js" => Ok(HttpResponse::js(JS_INDEX)),
+            "/assets/index-16de9d58.js" => Ok(HttpResponse::js(JS_INDEX)),
 
-            "/assets/en-43584d30.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_ENGLISH)),
-            "/assets/de-d79537b0.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_GERMAN)),
+            "/assets/en-39d6a66b.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_ENGLISH)),
+            "/assets/de-534b3264.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_GERMAN)),
             "/assets/es-584ff7ee.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_SPANISH)),
             "/assets/fr-bff17240.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_FRENCH)),
-            "/assets/gr-89fafdbf.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_GREEK)),
-            "/assets/nl-e8abd02c.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_DUTCH)),
+            "/assets/gr-0672e068.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_GREEK)),
+            "/assets/nl-399af27b.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_DUTCH)),
             "/assets/pt-46f88ab2.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_PORTUGUESE)),
 
             "/assets/index-52409a7e.css" => Ok(HttpResponse::css(CSS)),
@@ -68,14 +68,14 @@ pub static INDEX: &[u8] = include_bytes!("../../../ui/index.html");
 
 static FAVICON: &[u8] = include_bytes!("../../../ui/assets/favicon-f84116cb.ico");
 
-static JS_INDEX: &[u8] = include_bytes!("../../../ui/assets/index-e25f2a11.js");
+static JS_INDEX: &[u8] = include_bytes!("../../../ui/assets/index-16de9d58.js");
 
-static JS_TRANSLATIONS_GERMAN: &[u8] = include_bytes!("../../../ui/assets/de-d79537b0.js");
-static JS_TRANSLATIONS_ENGLISH: &[u8] = include_bytes!("../../../ui/assets/en-43584d30.js");
+static JS_TRANSLATIONS_GERMAN: &[u8] = include_bytes!("../../../ui/assets/de-534b3264.js");
+static JS_TRANSLATIONS_ENGLISH: &[u8] = include_bytes!("../../../ui/assets/en-39d6a66b.js");
 static JS_TRANSLATIONS_SPANISH: &[u8] = include_bytes!("../../../ui/assets/es-584ff7ee.js");
 static JS_TRANSLATIONS_FRENCH: &[u8] = include_bytes!("../../../ui/assets/fr-bff17240.js");
-static JS_TRANSLATIONS_GREEK: &[u8] = include_bytes!("../../../ui/assets/gr-89fafdbf.js");
-static JS_TRANSLATIONS_DUTCH: &[u8] = include_bytes!("../../../ui/assets/nl-e8abd02c.js");
+static JS_TRANSLATIONS_GREEK: &[u8] = include_bytes!("../../../ui/assets/gr-0672e068.js");
+static JS_TRANSLATIONS_DUTCH: &[u8] = include_bytes!("../../../ui/assets/nl-399af27b.js");
 static JS_TRANSLATIONS_PORTUGUESE: &[u8] = include_bytes!("../../../ui/assets/pt-46f88ab2.js");
 
 static CSS: &[u8] = include_bytes!("../../../ui/assets/index-52409a7e.css");
