@@ -30,7 +30,9 @@ When diagnosing issues with the OpenID Connect integration the following setup c
 1. Set the `SSLKEYLOGFILE=/some/path` variable in the environment before running Krill to cause Krill to record the TLS
 keys in use for communication e.g. with the client browser and/or an OpenID Connect provider (if in use).
 
-2. Disable HTTP/2 and HTTP/3 in your browser (as these are harder to follow and filter on in Wireshark), e.g. with Firefox go to about:config and set `network.http.http2.enabled` and `network.http.http3.enable` both to false.
+2. Disable HTTP/2 and HTTP/3 in your browser (as these are harder to follow and filter on in Wireshark), e.g.
+  - With Firefox go to about:config and set `network.http.http2.enabled` and `network.http.http3.enable` both to false.
+  - With Google Chrome run it with `--disable-http2` AND browse to chrome://flags and set "Experimental QUIC protocol" (HTTP/3) to Disabled.
 
 3. Configure Krill to use the OIDC provider via HTTP rather than HTTPS by setting `insecure = true` in `krill.conf` in the OpenID Connect provider section. If using KeyCloak via Docker no special action needs to be taken as it listens on both HTTP (8080) and HTTPS (8443) by default.
 
@@ -49,4 +51,6 @@ keys in use for communication e.g. with the client browser and/or an OpenID Conn
 
 9. Start Krill.
 
-10. Browse to https://localhost:3000/ to login to Krill. Follow the HTTP flow in Wireshark.
+10. Open your browser and clear cookies and browser local storage relating to Krill and KeyCloak.
+
+12. Browse to https://localhost:3000/ to login to Krill. Follow the HTTP flow in Wireshark.
