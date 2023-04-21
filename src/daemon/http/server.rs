@@ -336,9 +336,6 @@ async fn map_requests(req: hyper::Request<hyper::Body>, state: State) -> Result<
         res = rfc6492(req).await;
     }
     if let Err(req) = res {
-        res = statics(req).await;
-    }
-    if let Err(req) = res {
         res = ta(req).await;
     }
     if let Err(req) = res {
@@ -348,13 +345,18 @@ async fn map_requests(req: hyper::Request<hyper::Body>, state: State) -> Result<
         res = testbed(req).await;
     }
     if let Err(req) = res {
-        res = render_not_found(req).await;
+        res = statics(req).await;
     }
 
+    if res.is_err() {
+        // catch all to the UI
+        res = Ok(HttpResponse::html(super::statics::INDEX));
+    }
+
+    // Not found responses are actually a special Ok result..
     let res = res.map_err(|_| Error::custom("should have received not found response"));
 
-    // Augment the response with any updated auth details that were determined
-    // above.
+    // Augment the response with any updated auth details that were determined above.
     let res = add_new_auth_to_response(res, new_auth);
 
     // Log the request and the response.
@@ -377,7 +379,7 @@ pub fn render_error_redirect(err: Error) -> RoutingResult {
         ))
     })?;
     let b64 = base64::encode(json);
-    let location = format!("/index.html#/login?error={}", b64);
+    let location = format!("/ui/login?error={}", b64);
     Ok(HttpResponse::found(&location))
 }
 

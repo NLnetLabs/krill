@@ -33,7 +33,7 @@ fn build_auth_redirect_location(user: LoggedInUser) -> Result<String, Error> {
     let attributes = b64_encode_attributes_with_mapped_error(&user.attributes)?;
 
     Ok(format!(
-        "/index.html#/login?token={}&id={}&attributes={}",
+        "/ui/login?token={}&id={}&attributes={}",
         &url_encode(user.token)?,
         &url_encode(user.id)?,
         &url_encode(attributes)?
