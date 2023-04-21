@@ -136,17 +136,12 @@ impl fmt::Display for IdCertInfo {
 
 //------------ ChildState ----------------------------------------------------
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ChildState {
+    #[default]
     Active,
     Suspended,
-}
-
-impl Default for ChildState {
-    fn default() -> Self {
-        ChildState::Active
-    }
 }
 
 impl fmt::Display for ChildState {
