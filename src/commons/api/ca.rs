@@ -1553,7 +1553,11 @@ impl Timestamp {
 
 impl From<Timestamp> for Time {
     fn from(timestamp: Timestamp) -> Self {
-        Time::new(Utc.timestamp(timestamp.0, 0))
+        Time::new(
+            Utc.timestamp_opt(timestamp.0, 0)
+                .single()
+                .expect("timestamp out-of-range"),
+        )
     }
 }
 

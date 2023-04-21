@@ -159,7 +159,7 @@ pub struct CommandHistoryRecord {
 impl CommandHistoryRecord {
     pub fn time(&self) -> Time {
         let seconds = self.timestamp / 1000;
-        let time = NaiveDateTime::from_timestamp(seconds, 0);
+        let time = NaiveDateTime::from_timestamp_opt(seconds, 0).expect("timestamp out-of-range");
         Time::from(DateTime::from_utc(time, Utc))
     }
 
