@@ -1,0 +1,17 @@
+{
+  "actor": "testbed",
+  "time": "2022-12-02T13:43:01.205493335Z",
+  "handle": "0",
+  "version": 125,
+  "sequence": 144,
+  "details": {
+    "type": "add_publisher",
+    "name": "test-CA-afr"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      125
+    ]
+  }
+}

@@ -18,7 +18,7 @@ where
     D: Deserializer<'de>,
 {
     let some = String::deserialize(d)?;
-    let dec = base64::decode(&some).map_err(de::Error::custom)?;
+    let dec = base64::decode(some).map_err(de::Error::custom)?;
     Ok(Bytes::from(dec))
 }
 

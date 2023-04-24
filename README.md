@@ -25,6 +25,61 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 # Changelog
 
+## 0.13.0 RC1
+
+### Updated User Interface
+
+A lot of changes were introduced in this release. For most users the following
+improvements will be most visible and relevant:
+- Updated UI to new and smaller code base (#995)
+- Allow ROA comments in UI (#995)
+- Enable ASPA support in CLI (#1031)
+
+You can read more about ASPA support here:
+https://krill.docs.nlnetlabs.nl/en/0.13.0-rc1/manage-aspas.html
+
+### API Changes
+
+We removed the repository next update time from the stats and metrics output.
+It was inaccurate (usually 8 hours off), and not very informative. More useful
+metrics are still provided: last exchange and last successful exchange. If these
+times differ, then there is an issue that may need attention.
+
+### Krill as a Trust Anchor
+
+A lot of work has been done to support using Krill as a Trust Anchor. If you
+are not an RIR, then you will not need to run your own RPKI TA for normal
+RPKI operations. That said, some users may want to operate their own TA outside
+of the TAs provided by the RIRs for testing, study or research reasons. Or
+perhaps even to manage private use address space.
+
+You can read more about this here:
+https://krill.docs.nlnetlabs.nl/en/0.13.0-rc1/trust-anchor.html
+
+Implemented issues:
+- Support offline TA (#976)
+- Support initialising offline TA with existing key (#979)
+- Bulk import/configure CAs with ROAs (#968, #969) 
+- Support migration of existing TAs (#978)
+- Use new TA for embedded (test) TA (#977)
+
+### Other Changes
+
+Publication Server Improvements:
+- Remove published object data duplication (#1023)
+- Delete repository files by URI (#991)
+
+Miscellaneous improvements and fixes:
+- Log for which child / parent / publisher CMS validation failed (#1027)
+- Permit setting CKA_PRIVATE to CK_FALSE on PKCS#11 RSA public keys (#1019)
+- Ensure that the CSR uses a trailing slash for id-ad-caRepository (#1030)
+- Accept id-cert with path len constraints (#966)
+- Publication Server should check uri, not hash, in publish elements (#981)
+
+The overview of all issues for this release can be found here:
+https://github.com/NLnetLabs/krill/projects/24
+
+
 ## 0.12.3 'Sakura'
 
 This release contains a feature that enables Publication Server operators to

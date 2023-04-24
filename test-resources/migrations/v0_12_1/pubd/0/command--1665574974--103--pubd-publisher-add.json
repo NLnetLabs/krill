@@ -1,0 +1,17 @@
+{
+  "actor": "testbed",
+  "time": "2022-10-12T11:42:54.769049456Z",
+  "handle": "0",
+  "version": 98,
+  "sequence": 103,
+  "details": {
+    "type": "add_publisher",
+    "name": "First_CA_test"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      98
+    ]
+  }
+}

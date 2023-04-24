@@ -39,7 +39,7 @@ impl fmt::Display for SignerError {
             SignerError::OpenSslError(e) => write!(f, "OpenSSL Error: {}", e),
             SignerError::Other(e) => write!(f, "Signer error: {}", e),
             SignerError::PermanentlyUnusable => write!(f, "Signer is unusable"),
-            SignerError::Pkcs11Error(e) => write!(f, "PKCS#11 Error: {}", e),
+            SignerError::Pkcs11Error(e) => write!(f, "{}", e), // Cryptoki prefixes e with "PKCS11 error"
             SignerError::TemporarilyUnavailable => write!(f, "Signer is unavailable"),
             SignerError::UnsupportedSigningAlg(key_format) => match key_format {
                 SigningAlgorithm::RsaSha256 => write!(f, "Signing with RSA not supported"),

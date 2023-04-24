@@ -5,7 +5,7 @@ use rpki::ca::idexchange::PublisherHandle;
 use crate::{
     constants::ACTOR_DEF_TESTBED,
     daemon::{
-        ca::{ta_handle, testbed_ca_handle},
+        ca::testbed_ca_handle,
         http::{
             server::{
                 api_add_pbl, api_ca_add_child, api_ca_child_remove, api_ca_parent_res_xml, api_remove_pbl,
@@ -13,6 +13,7 @@ use crate::{
             },
             HttpResponse, Request, RequestPath, RoutingResult,
         },
+        ta::ta_handle,
     },
 };
 

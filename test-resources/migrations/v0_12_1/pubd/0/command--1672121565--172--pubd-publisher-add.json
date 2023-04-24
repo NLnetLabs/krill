@@ -1,0 +1,15 @@
+{
+  "actor": "testbed",
+  "time": "2022-12-27T06:12:45.471818359Z",
+  "handle": "0",
+  "version": 146,
+  "sequence": 172,
+  "details": {
+    "type": "add_publisher",
+    "name": "child1"
+  },
+  "effect": {
+    "result": "error",
+    "msg": "Duplicate publisher 'child1'"
+  }
+}

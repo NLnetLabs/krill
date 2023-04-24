@@ -1,0 +1,17 @@
+{
+  "actor": "testbed",
+  "time": "2022-07-22T02:52:14.189286320Z",
+  "handle": "0",
+  "version": 27,
+  "sequence": 30,
+  "details": {
+    "type": "remove_publisher",
+    "name": "IGWAN"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      27
+    ]
+  }
+}

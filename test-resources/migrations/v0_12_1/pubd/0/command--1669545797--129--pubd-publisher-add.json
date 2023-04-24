@@ -1,0 +1,17 @@
+{
+  "actor": "testbed",
+  "time": "2022-11-27T10:43:17.483433787Z",
+  "handle": "0",
+  "version": 116,
+  "sequence": 129,
+  "details": {
+    "type": "add_publisher",
+    "name": "jupiter"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      116
+    ]
+  }
+}

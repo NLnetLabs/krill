@@ -1,34 +1,76 @@
+# See: https://github.com/NLnetLabs/ploutos/blob/main/docs/os_packaging.md#package-build-rules
 ---
 pkg:
   - "krill"
   - "krillup"
+  - "krillta"
 image:
   - "ubuntu:xenial" # ubuntu/16.04
   - "ubuntu:bionic" # ubuntu/18.04
   - "ubuntu:focal" # ubuntu/20.04
   - "ubuntu:jammy" # ubuntu/22.04
-  # - 'debian:stretch'  # debian/9 - LXC image is no longer available on images.linuxcontainers.org
+  - "debian:stretch" # debian/9
   - "debian:buster" # debian/10
   - "debian:bullseye" # debian/11
   - "centos:7"
-  - "centos:8"
+  - "rockylinux:8" # compatible with EOL centos:8
+target:
+  - "x86_64"
 mode:
   - "fresh-install"
   - "upgrade-from-published"
-target:
-  - "x86_64"
-# if we later add a new O/S or variant we won't have yet ever published the package so can't do a test upgrade
-# over last published version. In that case add lines here like so to disable the upgrade from published test
-# for that O/S (remember to change debian:bullseye to the correct O/S name!):
-#
-# exclude:
-#   - image: 'debian:bullseye'
-#     mode: 'upgrade-from-published'
-exclude:
-  - pkg: "krill"
-    mode: "upgrade-from-published"
-    image: "ubuntu:jammy"
-  - pkg: "krillup"
-    mode: "upgrade-from-published"
-    image: "ubuntu:jammy" # ubuntu/22.04
+include:
+  # cargo-generate-rpm doesn't support specifying feature variations in Cargo.toml so we have to do it via
+  # custom build arguments instead.
+  # For CentOS 7 we want to statically link with OpenSSL, but `cargo generate-rpm` doesn't build the code for
+  # us unlike `cargo deb`, so we have to control the feature set used for building ourselves rather than in
+  # `Cargo.toml`.
+  - image: "centos:7"
+    extra_build_args: "--features static-openssl"
+    rpm_systemd_service_unit_file: pkg/common/krill-ubuntu-xenial.krill.service
 
+  # CentOS 8 became EOL and is in theory still usable as a build container as there is still a Docker image
+  # available, and package installation can be done by switching the yum config in the container to use packages
+  # from the CentOS 8 vault rather than the now offline actual CentOS 8 repository. However, due to experiencing
+  # lots of timed out connections to the vault we will build the CentOS 8 compatible package in a Rocky Linux
+  # container instead, as Rocky Linux is 100% compatible with CentOS 8. The server at packages.nlnetlabs.nl
+  # however has a repo for CentOS 8, not Rocky Linux, and determines the repo to publish in based on the name of
+  # the archive that we produce below which is in turn based by default on the container image used to build. We
+  # therefore in this case need to specify that the O/S we are building for has a different name than the Docker
+  # image we are building it in.
+  - image: "rockylinux:8"
+    os: "centos:8"
+    rpm_systemd_service_unit_file: "pkg/common/krill-ubuntu-focal.krill.service"
+
+  # package for the Raspberry Pi 4b as an ARMv7 cross compiled variant of the Debian Bullseye upon which
+  # Raspbian 11 is based.
+  - pkg: "krill"
+    image: "debian:bullseye"
+    target: "armv7-unknown-linux-gnueabihf"
+  - pkg: "krillup"
+    image: "debian:bullseye"
+    target: "armv7-unknown-linux-gnueabihf"
+
+  # package for the Raspberry Pi 1b as an ARMv6 cross compiled variant of the Debian Buster upon which
+  # Raspbian 10 is based.
+  - pkg: "krill"
+    image: "debian:buster"
+    target: "arm-unknown-linux-gnueabihf"
+  - pkg: "krillup"
+    image: "debian:buster"
+    target: "arm-unknown-linux-gnueabihf"
+
+  # package for the ROCK64 as an AARCH64 cross compiled variant of Debian Buster upon which Armbian 21 is
+  # based.
+  - pkg: "krill"
+    image: "debian:buster"
+    target: "aarch64-unknown-linux-gnu"
+  - pkg: "krillup"
+    image: "debian:buster"
+    target: "aarch64-unknown-linux-gnu"
+
+# For all target, exclude upgrade testing of the krillta package as no prior released version exists to
+# test upgrading from.
+exclude:
+  - pkg: "krillta"
+    mode: "upgrade-from-published"

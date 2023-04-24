@@ -506,10 +506,10 @@ In no particular order:
 
 #### Testing
 
-Testing the provider code in isolation cannot ensure that the chain of communication from Lagosta
-via Krill to the OP and back again works as expected and yields an acceptable end user experience. Therefore the
-majority of the tests use Cypress to drive Lagosta in a browser connected to an instance of Krill which in turn connects
-to a locally deployed mock OP.
+Testing of the UI interaction is handled by dedicated tests in the UI repository. Further tests are implemented
+inline in the Oso rule files, with a few explicit Oso tests also invoked by Krill immediately after Oso is
+initialized and rule files have been loaded.
+
 #### Flow
 
 This implementation supports the [OpenID Connect Authorization Code Flow](https://openid.net/specs/openid-connect-core-1_0.html#CodeFlowAuth) 

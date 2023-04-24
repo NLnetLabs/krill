@@ -9,6 +9,7 @@ use rpki::{
     },
     crypto::KeyIdentifier,
     repository::{resources::ResourceSet, x509::Time},
+    rrdp::Hash,
 };
 
 use crate::{
@@ -158,7 +159,7 @@ pub struct CommandHistoryRecord {
 impl CommandHistoryRecord {
     pub fn time(&self) -> Time {
         let seconds = self.timestamp / 1000;
-        let time = NaiveDateTime::from_timestamp(seconds, 0);
+        let time = NaiveDateTime::from_timestamp_opt(seconds, 0).expect("timestamp out-of-range");
         Time::from(DateTime::from_utc(time, Utc))
     }
 
@@ -259,6 +260,10 @@ impl CommandSummary {
 
     pub fn with_key(self, ki: KeyIdentifier) -> Self {
         self.with_arg("key", ki)
+    }
+
+    pub fn with_id_cert_hash(self, hash: &Hash) -> Self {
+        self.with_arg("id_cert_hash", hash)
     }
 
     pub fn with_parent_contact(self, contact: &StorableParentContact) -> Self {
@@ -407,7 +412,6 @@ impl Default for CommandHistoryCriteria {
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
 pub enum StorableCaCommand {
-    MakeTrustAnchor,
     ChildAdd {
         child: ChildHandle,
         ski: String,
@@ -513,17 +517,16 @@ pub struct StorableRcEntitlement {
 impl WithStorableDetails for StorableCaCommand {
     fn summary(&self) -> CommandSummary {
         match self {
-            StorableCaCommand::MakeTrustAnchor => CommandSummary::new("cmd-ca-make-ta", &self),
-            StorableCaCommand::ChildAdd { child, ski, resources } => CommandSummary::new("cmd-ca-child-add", &self)
+            StorableCaCommand::ChildAdd { child, ski, resources } => CommandSummary::new("cmd-ca-child-add", self)
                 .with_child(child)
                 .with_id_ski(ski.as_ref())
                 .with_resources(resources),
             StorableCaCommand::ChildUpdateResources { child, resources } => {
-                CommandSummary::new("cmd-ca-child-update-res", &self)
+                CommandSummary::new("cmd-ca-child-update-res", self)
                     .with_child(child)
                     .with_resources(resources)
             }
-            StorableCaCommand::ChildUpdateId { child, ski } => CommandSummary::new("cmd-ca-child-update-id", &self)
+            StorableCaCommand::ChildUpdateId { child, ski } => CommandSummary::new("cmd-ca-child-update-id", self)
                 .with_child(child)
                 .with_id_ski(ski),
             StorableCaCommand::ChildCertify {
@@ -531,96 +534,92 @@ impl WithStorableDetails for StorableCaCommand {
                 resource_class_name,
                 ki,
                 ..
-            } => CommandSummary::new("cmd-ca-child-certify", &self)
+            } => CommandSummary::new("cmd-ca-child-certify", self)
                 .with_child(child)
                 .with_rcn(resource_class_name)
                 .with_key(*ki),
             StorableCaCommand::ChildRemove { child } => {
-                CommandSummary::new("cmd-ca-child-remove", &self).with_child(child)
+                CommandSummary::new("cmd-ca-child-remove", self).with_child(child)
             }
             StorableCaCommand::ChildSuspendInactive { child } => {
-                CommandSummary::new("cmd-ca-child-suspend-inactive", &self).with_child(child)
+                CommandSummary::new("cmd-ca-child-suspend-inactive", self).with_child(child)
             }
             StorableCaCommand::ChildUnsuspend { child } => {
-                CommandSummary::new("cmd-ca-child-unsuspend", &self).with_child(child)
+                CommandSummary::new("cmd-ca-child-unsuspend", self).with_child(child)
             }
-            StorableCaCommand::ChildRevokeKey { child, revoke_req } => {
-                CommandSummary::new("cmd-ca-child-revoke", &self)
-                    .with_child(child)
-                    .with_rcn(revoke_req.class_name())
-                    .with_key(revoke_req.key())
-            }
-            StorableCaCommand::GenerateNewIdKey => CommandSummary::new("cmd-ca-generate-new-id", &self),
-            StorableCaCommand::AddParent { parent, contact } => CommandSummary::new("cmd-ca-parent-add", &self)
+            StorableCaCommand::ChildRevokeKey { child, revoke_req } => CommandSummary::new("cmd-ca-child-revoke", self)
+                .with_child(child)
+                .with_rcn(revoke_req.class_name())
+                .with_key(revoke_req.key()),
+            StorableCaCommand::GenerateNewIdKey => CommandSummary::new("cmd-ca-generate-new-id", self),
+            StorableCaCommand::AddParent { parent, contact } => CommandSummary::new("cmd-ca-parent-add", self)
                 .with_parent(parent)
                 .with_parent_contact(contact),
             StorableCaCommand::UpdateParentContact { parent, contact } => {
-                CommandSummary::new("cmd-ca-parent-update", &self)
+                CommandSummary::new("cmd-ca-parent-update", self)
                     .with_parent(parent)
                     .with_parent_contact(contact)
             }
             StorableCaCommand::RemoveParent { parent } => {
-                CommandSummary::new("cmd-ca-parent-remove", &self).with_parent(parent)
+                CommandSummary::new("cmd-ca-parent-remove", self).with_parent(parent)
             }
             StorableCaCommand::UpdateResourceEntitlements { parent, .. } => {
-                CommandSummary::new("cmd-ca-parent-entitlements", &self).with_parent(parent)
+                CommandSummary::new("cmd-ca-parent-entitlements", self).with_parent(parent)
             }
             StorableCaCommand::UpdateRcvdCert {
                 resource_class_name,
                 resources,
-            } => CommandSummary::new("cmd-ca-rcn-receive", &self)
+            } => CommandSummary::new("cmd-ca-rcn-receive", self)
                 .with_rcn(resource_class_name)
                 .with_resources(resources),
             StorableCaCommand::DropResourceClass {
                 resource_class_name,
                 reason,
-            } => CommandSummary::new("cmd-ca-rc-drop", &self)
+            } => CommandSummary::new("cmd-ca-rc-drop", self)
                 .with_rcn(resource_class_name)
                 .with_arg("reason", reason),
 
             // Key rolls
             StorableCaCommand::KeyRollInitiate { older_than_seconds } => {
-                CommandSummary::new("cmd-ca-keyroll-init", &self).with_seconds(*older_than_seconds)
+                CommandSummary::new("cmd-ca-keyroll-init", self).with_seconds(*older_than_seconds)
             }
             StorableCaCommand::KeyRollActivate { staged_for_seconds } => {
-                CommandSummary::new("cmd-ca-keyroll-activate", &self).with_seconds(*staged_for_seconds)
+                CommandSummary::new("cmd-ca-keyroll-activate", self).with_seconds(*staged_for_seconds)
             }
             StorableCaCommand::KeyRollFinish { resource_class_name } => {
-                CommandSummary::new("cmd-ca-keyroll-finish", &self).with_rcn(resource_class_name)
+                CommandSummary::new("cmd-ca-keyroll-finish", self).with_rcn(resource_class_name)
             }
 
             // ROA
-            StorableCaCommand::RoaDefinitionUpdates { updates } => CommandSummary::new("cmd-ca-roas-updated", &self)
+            StorableCaCommand::RoaDefinitionUpdates { updates } => CommandSummary::new("cmd-ca-roas-updated", self)
                 .with_added(updates.added().len())
                 .with_removed(updates.removed().len()),
 
             // ASPA
-            StorableCaCommand::AspasUpdate { .. } => CommandSummary::new("cmd-ca-aspas-update", &self),
-            StorableCaCommand::AspasUpdateExisting { .. } => CommandSummary::new("cmd-ca-aspas-update-existing", &self),
-            StorableCaCommand::AspaRemove { .. } => CommandSummary::new("cmd-ca-aspas-remove", &self),
+            StorableCaCommand::AspasUpdate { .. } => CommandSummary::new("cmd-ca-aspas-update", self),
+            StorableCaCommand::AspasUpdateExisting { .. } => CommandSummary::new("cmd-ca-aspas-update-existing", self),
+            StorableCaCommand::AspaRemove { .. } => CommandSummary::new("cmd-ca-aspas-remove", self),
 
             // BGPSec
-            StorableCaCommand::BgpSecDefinitionUpdates => CommandSummary::new("cmd-bgpsec-update", &self),
+            StorableCaCommand::BgpSecDefinitionUpdates => CommandSummary::new("cmd-bgpsec-update", self),
 
             // REPO
             StorableCaCommand::RepoUpdate { service_uri } => {
-                CommandSummary::new("cmd-ca-repo-update", &self).with_service_uri(service_uri)
+                CommandSummary::new("cmd-ca-repo-update", self).with_service_uri(service_uri)
             }
 
-            StorableCaCommand::ReissueBeforeExpiring => CommandSummary::new("cmd-ca-reissue-before-expiring", &self),
-            StorableCaCommand::ForceReissue => CommandSummary::new("cmd-ca-force-reissue", &self),
+            StorableCaCommand::ReissueBeforeExpiring => CommandSummary::new("cmd-ca-reissue-before-expiring", self),
+            StorableCaCommand::ForceReissue => CommandSummary::new("cmd-ca-force-reissue", self),
 
             // RTA
             StorableCaCommand::RtaPrepare { name } => {
-                CommandSummary::new("cmd-ca-rta-prepare", &self).with_rta_name(name)
+                CommandSummary::new("cmd-ca-rta-prepare", self).with_rta_name(name)
             }
-            StorableCaCommand::RtaSign { name } => CommandSummary::new("cmd-ca-rta-sign", &self).with_rta_name(name),
-            StorableCaCommand::RtaCoSign { name } => {
-                CommandSummary::new("cmd-ca-rta-cosign", &self).with_rta_name(name)
-            }
+            StorableCaCommand::RtaSign { name } => CommandSummary::new("cmd-ca-rta-sign", self).with_rta_name(name),
+            StorableCaCommand::RtaCoSign { name } => CommandSummary::new("cmd-ca-rta-cosign", self).with_rta_name(name),
 
             // Deactivation
-            StorableCaCommand::Deactivate => CommandSummary::new("cmd-ca-deactivate", &self),
+            StorableCaCommand::Deactivate => CommandSummary::new("cmd-ca-deactivate", self),
         }
     }
 }
@@ -628,11 +627,6 @@ impl WithStorableDetails for StorableCaCommand {
 impl fmt::Display for StorableCaCommand {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            // ------------------------------------------------------------
-            // Becoming a trust anchor
-            // ------------------------------------------------------------
-            StorableCaCommand::MakeTrustAnchor => write!(f, "Turn into Trust Anchor"),
-
             // ------------------------------------------------------------
             // Being a parent
             // ------------------------------------------------------------
@@ -811,10 +805,10 @@ impl WithStorableDetails for StorableRepositoryCommand {
     fn summary(&self) -> CommandSummary {
         match self {
             StorableRepositoryCommand::AddPublisher { name } => {
-                CommandSummary::new("pubd-publisher-add", &self).with_publisher(name)
+                CommandSummary::new("pubd-publisher-add", self).with_publisher(name)
             }
             StorableRepositoryCommand::RemovePublisher { name } => {
-                CommandSummary::new("pubd-publisher-remove", &self).with_publisher(name)
+                CommandSummary::new("pubd-publisher-remove", self).with_publisher(name)
             }
         }
     }

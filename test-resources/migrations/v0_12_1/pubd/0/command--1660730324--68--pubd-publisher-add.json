@@ -1,0 +1,17 @@
+{
+  "actor": "admin-token",
+  "time": "2022-08-17T09:58:44.401471819Z",
+  "handle": "0",
+  "version": 63,
+  "sequence": 68,
+  "details": {
+    "type": "add_publisher",
+    "name": "some_ca"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      63
+    ]
+  }
+}

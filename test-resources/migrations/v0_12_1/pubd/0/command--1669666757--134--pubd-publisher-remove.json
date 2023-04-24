@@ -1,0 +1,17 @@
+{
+  "actor": "testbed",
+  "time": "2022-11-28T20:19:17.327893996Z",
+  "handle": "0",
+  "version": 121,
+  "sequence": 134,
+  "details": {
+    "type": "remove_publisher",
+    "name": "mpi"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      121
+    ]
+  }
+}

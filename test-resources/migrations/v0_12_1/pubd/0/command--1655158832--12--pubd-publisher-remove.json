@@ -1,0 +1,17 @@
+{
+  "actor": "testbed",
+  "time": "2022-06-13T22:20:32.419006499Z",
+  "handle": "0",
+  "version": 11,
+  "sequence": 12,
+  "details": {
+    "type": "remove_publisher",
+    "name": "ximon_test_ca"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      11
+    ]
+  }
+}

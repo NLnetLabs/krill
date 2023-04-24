@@ -24,8 +24,6 @@ The feature adds several related but distinct capabilities to Krill:
     - (De)Serialization
     - (En/De)cryption _(powered by [rust-openssl](https://crates.io/crates/openssl))_
   
-  - Automated browser based testing _(powered by [Cypress](https://www.cypress.io/))_
-  
   - Password hashing support in `krillc`
   
   - Propagation of the current identity all the way down to the event history

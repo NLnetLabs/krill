@@ -20,4 +20,4 @@ pub mod policy {
     }
 }
 
-pub use authorizer::{Auth, AuthProvider, Authorizer, LoggedInUser, Handle};
+pub use authorizer::{Auth, AuthProvider, Authorizer, Handle, LoggedInUser};

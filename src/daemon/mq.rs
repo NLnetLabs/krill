@@ -20,8 +20,13 @@ use crate::{
         api::Timestamp,
         eventsourcing::{self, Event},
     },
-    daemon::ca::{CaEvt, CaEvtDet, CertAuth},
+    daemon::{
+        ca::{CaEvt, CaEvtDet, CertAuth},
+        ta::{ta_handle, TrustAnchorProxyEventDetails},
+    },
 };
+
+use super::ta::{TrustAnchorProxy, TrustAnchorProxyEvent};
 
 //------------ Task ---------------------------------------------------------
 
@@ -39,6 +44,8 @@ pub enum Task {
         ca: CaHandle,
         parent: ParentHandle,
     },
+
+    SyncTrustAnchorProxySignerIfPossible,
 
     SuspendChildrenIfNeeded {
         ca: CaHandle,
@@ -75,6 +82,7 @@ impl fmt::Display for Task {
             Task::QueueStartTasks => write!(f, "Server just started"),
             Task::SyncRepo { ca } => write!(f, "synchronize repo for '{}'", ca),
             Task::SyncParent { ca, parent } => write!(f, "synchronize CA '{}' with parent '{}'", ca, parent),
+            Task::SyncTrustAnchorProxySignerIfPossible => write!(f, "sync TA Proxy and Signer if both in this server."),
             Task::SuspendChildrenIfNeeded { ca } => write!(f, "verify if CA '{}' has children to suspend", ca),
             Task::RepublishIfNeeded => write!(f, "let CAs republish their mft/crls if needed"),
             Task::RenewObjectsIfNeeded => write!(f, "let CAs renew their signed objects if needed"),
@@ -217,6 +225,10 @@ impl TaskQueue {
         self.schedule(Task::SyncParent { ca, parent }, priority);
     }
 
+    pub fn sync_ta_proxy_signer_if_possible(&self) {
+        self.schedule(Task::SyncTrustAnchorProxySignerIfPossible, now())
+    }
+
     pub fn suspend_children(&self, ca: CaHandle, priority: Priority) {
         self.schedule(Task::SuspendChildrenIfNeeded { ca }, priority);
     }
@@ -253,7 +265,7 @@ impl TaskQueue {
     }
 }
 
-/// Implement listening for CertAuth Published events.
+/// Implement listening for CertAuth events.
 impl eventsourcing::PostSaveEventListener<CertAuth> for TaskQueue {
     fn listen(&self, ca: &CertAuth, events: &[CaEvt]) {
         for event in events {
@@ -344,6 +356,37 @@ impl eventsourcing::PostSaveEventListener<CertAuth> for TaskQueue {
                 }
 
                 _ => {}
+            }
+        }
+    }
+}
+
+/// Implement listening for TrustAnchorProxy events.
+impl eventsourcing::PostSaveEventListener<TrustAnchorProxy> for TaskQueue {
+    fn listen(&self, _proxy: &TrustAnchorProxy, events: &[TrustAnchorProxyEvent]) {
+        for event in events {
+            trace!("Seen TrustAnchorProxy event '{}'", event);
+            match event.details() {
+                TrustAnchorProxyEventDetails::ChildRequestAdded(_child, _request) => {
+                    // schedule proxy -> signer sync
+                    self.sync_ta_proxy_signer_if_possible();
+                }
+                TrustAnchorProxyEventDetails::SignerResponseReceived(response) => {
+                    // schedule publication for the TA
+                    self.sync_repo(ta_handle(), now());
+                    // Schedule child->ta sync(s) now that there is a response.
+                    for ca in response.content().child_responses.keys() {
+                        debug!("Received signed response for TA child {}", ca);
+                        self.sync_parent(ca.convert(), ta_handle().into_converted(), now());
+                    }
+                }
+                TrustAnchorProxyEventDetails::RepositoryAdded(_)
+                | TrustAnchorProxyEventDetails::SignerAdded(_)
+                | TrustAnchorProxyEventDetails::SignerRequestMade(_)
+                | TrustAnchorProxyEventDetails::ChildAdded(_)
+                | TrustAnchorProxyEventDetails::ChildResponseGiven(_, _) => {
+                    // No triggered actions needed
+                }
             }
         }
     }

@@ -97,6 +97,12 @@ impl CertifiedKey {
         new_resources: &ResourceSet,
         new_not_after: Time,
     ) -> bool {
+        // If we did not have a trailing slash for the id-ad-caRepository, then
+        // we should make a new CSR which will include it. See issue #1030.
+        if !self.incoming_cert().ca_repository().ends_with("/") {
+            return true;
+        }
+
         // If resources have changed, then we need to request a new certificate.
         let resources_diff = new_resources.difference(self.incoming_cert.resources());
 
@@ -573,12 +579,16 @@ impl KeyState {
         signer: &KrillSigner,
     ) -> KrillResult<CaEvtDet> {
         match self {
-            KeyState::RollNew(_new, current) => {
-                let revoke_req = Self::revoke_key(parent_class_name, current.key_id(), signer)?;
-                Ok(CaEvtDet::KeyRollActivated {
-                    resource_class_name,
-                    revoke_req,
-                })
+            KeyState::RollNew(new, current) => {
+                if new.request().is_some() || current.request().is_some() {
+                    Err(Error::KeyRollActivatePendingRequests)
+                } else {
+                    let revoke_req = Self::revoke_key(parent_class_name, current.key_id(), signer)?;
+                    Ok(CaEvtDet::KeyRollActivated {
+                        resource_class_name,
+                        revoke_req,
+                    })
+                }
             }
             _ => Err(Error::KeyUseNoNewKey),
         }

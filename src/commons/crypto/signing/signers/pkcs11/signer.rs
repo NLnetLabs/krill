@@ -11,7 +11,7 @@ use backoff::ExponentialBackoff;
 use bytes::Bytes;
 use cryptoki::{
     context::Info,
-    error::Error as Pkcs11Error,
+    error::{Error as Pkcs11Error, RvError},
     mechanism::Mechanism,
     object::{Attribute, AttributeType, ObjectClass, ObjectHandle},
     session::UserType,
@@ -62,6 +62,50 @@ pub struct Pkcs11SignerConfig {
 
     #[serde(default = "Pkcs11SignerConfig::default_max_retry_seconds")]
     pub max_retry_seconds: u64,
+
+    #[serde(default)]
+    pub public_key_attributes: Pkcs11ConfigurablePublicKeyAttributes,
+
+    #[serde(default)]
+    pub private_key_attributes: Pkcs11ConfigurablePrivateKeyAttributes,
+}
+
+impl Eq for Pkcs11SignerConfig {}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct Pkcs11ConfigurablePublicKeyAttributes {
+    /// PKCS#11 v2.40 4.4: "CK_TRUE if object can be modified. Default is
+    /// CK_TRUE."
+    #[serde(alias = "CKA_MODIFIABLE")]
+    cka_modifiable: Option<bool>,
+
+    /// PKCS#11 v2.40 4.4: "CK_TRUE if object is a private object; CK_FALSE
+    /// if object is a public object. Default value is token-specific, and may
+    /// depend on the values of other attributes of the object."
+    #[serde(alias = "CKA_PRIVATE")]
+    cka_private: Option<bool>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct Pkcs11ConfigurablePrivateKeyAttributes {
+    /// PKCS#11 v2.40 4.9: "CK_TRUE if key is extractable and can be wrapped."
+    #[serde(alias = "CKA_EXTRACTABLE")]
+    cka_extractable: Option<bool>,
+
+    /// PKCS#11 v2.40 4.4: "CK_TRUE if object can be modified. Default is
+    /// CK_TRUE."
+    #[serde(alias = "CKA_MODIFIABLE")]
+    cka_modifiable: Option<bool>,
+
+    /// PKCS#11 v2.40 4.4: "CK_TRUE if object is a private object; CK_FALSE
+    /// if object is a public object. Default value is token-specific, and may
+    /// depend on the values of other attributes of the object."
+    #[serde(alias = "CKA_PRIVATE")]
+    cka_private: Option<bool>,
+
+    /// PKCS#11 v2.40 4.9: "CK_TRUE if key is sensitive."
+    #[serde(alias = "CKA_SENSITIVE")]
+    cka_sensitive: Option<bool>,
 }
 
 impl Pkcs11SignerConfig {
@@ -82,7 +126,76 @@ impl Pkcs11SignerConfig {
     }
 }
 
-impl Eq for Pkcs11SignerConfig {}
+impl Default for Pkcs11ConfigurablePublicKeyAttributes {
+    fn default() -> Self {
+        // These values are backward compatible with the hard-coded values
+        // used by Krill before they were made configurable for #1018.
+        // See: https://github.com/NLnetLabs/krill/issues/1018
+        Self {
+            cka_modifiable: None,
+            cka_private: Some(true),
+        }
+    }
+}
+
+impl Pkcs11ConfigurablePublicKeyAttributes {
+    pub fn to_vec(&self) -> Vec<Attribute> {
+        let mut attrs = vec![];
+        if let Some(attr_value) = self.cka_modifiable {
+            attrs.push(Attribute::Modifiable(attr_value));
+        }
+        if let Some(attr_value) = self.cka_private {
+            attrs.push(Attribute::Private(attr_value));
+        }
+        attrs
+    }
+}
+
+impl Default for Pkcs11ConfigurablePrivateKeyAttributes {
+    fn default() -> Self {
+        // These values are backward compatible with the hard-coded values
+        // used by Krill before they were made configurable for #1018.
+        //
+        // The original values chosen were partly informed by a SafeNet article:
+        //
+        //   "Follow best practices when setting sensitive key attributes: If you have secret or private keys
+        //    that are particularly sensitive and you want to prevent them from being wrapped off, they can be
+        //    generated with their template attributes: CKA_SENSITIVE and CKA_PRIVATE set to True and
+        //    CKA_EXTRACTABLE and CKA_MODIFIABLE both set to False. This way, the keys are only
+        //    accessible by a user who is logged in, and key values cannot be read by anyone. Also, the keys
+        //    cannot be wrapped off and the attribute values cannot be changed at some later time to invalidate
+        //    the original settings."
+        //
+        // See:
+        //   - https://github.com/NLnetLabs/krill/issues/1018
+        //   - http://secgroup.dais.unive.it/wp-content/uploads/2010/10/Reponse-by-SafeNet.pdf
+        Self {
+            cka_extractable: Some(false),
+            cka_modifiable: None,
+            cka_private: Some(true),
+            cka_sensitive: Some(true),
+        }
+    }
+}
+
+impl Pkcs11ConfigurablePrivateKeyAttributes {
+    pub fn to_vec(&self) -> Vec<Attribute> {
+        let mut attrs = vec![];
+        if let Some(attr_value) = self.cka_extractable {
+            attrs.push(Attribute::Extractable(attr_value));
+        }
+        if let Some(attr_value) = self.cka_modifiable {
+            attrs.push(Attribute::Modifiable(attr_value));
+        }
+        if let Some(attr_value) = self.cka_private {
+            attrs.push(Attribute::Private(attr_value));
+        }
+        if let Some(attr_value) = self.cka_sensitive {
+            attrs.push(Attribute::Sensitive(attr_value));
+        }
+        attrs
+    }
+}
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum LoginMode {
@@ -171,6 +284,10 @@ pub struct Pkcs11Signer {
 
     /// A probe dependent interface to the PKCS#11 server.
     server: Arc<StatefulProbe<ConnectionSettings, SignerError, UsableServerState>>,
+
+    extra_public_key_attributes: Vec<Attribute>,
+
+    extra_private_key_attributes: Vec<Attribute>,
 }
 
 impl Pkcs11Signer {
@@ -204,11 +321,16 @@ impl Pkcs11Signer {
             probe_interval,
         ));
 
+        let extra_public_key_attributes = conf.public_key_attributes.to_vec();
+        let extra_private_key_attributes = conf.private_key_attributes.to_vec();
+
         let s = Pkcs11Signer {
             name: name.to_string(),
             handle: RwLock::new(None),
             mapper,
             server,
+            extra_public_key_attributes,
+            extra_private_key_attributes,
         };
 
         Ok(s)
@@ -236,8 +358,21 @@ impl Pkcs11Signer {
     }
 
     pub fn create_registration_key(&self) -> Result<(PublicKey, String), SignerError> {
-        let (public_key, _, _, internal_key_id) = self.build_key(PublicKeyFormat::Rsa)?;
-        Ok((public_key, internal_key_id))
+        match self.build_key_internal(PublicKeyFormat::Rsa) {
+            Ok((public_key, _, _, internal_key_id)) => Ok((public_key, internal_key_id)),
+
+            Err(err @ InternalConnError::Pkcs11Error(Pkcs11Error::Pkcs11(RvError::TemplateInconsistent))) => {
+                // https://github.com/NLnetLabs/krill/issues/1019
+                let err_msg = format!(
+                    "{} [Note: This error can occur if the signer does not support authenticated \
+                    access to public keys. Setting `CKA_PRIVATE` in krill.conf to \"false\"` may help]",
+                    err
+                );
+                Err(SignerError::Pkcs11Error(err_msg))
+            }
+
+            Err(err) => Err(err.into()),
+        }
     }
 
     pub fn sign_registration_challenge<D: AsRef<[u8]> + ?Sized>(
@@ -584,7 +719,7 @@ impl Pkcs11Signer {
 
 impl Pkcs11Signer {
     /// Get a connection to the server, if the server is usable.
-    fn connect(&self) -> Result<Pkcs11Session, SignerError> {
+    fn connect(&self) -> Result<Pkcs11Session, InternalConnError> {
         let conn = self.server.status(Self::probe_server)?.state()?.get_connection()?;
         Ok(conn)
     }
@@ -593,7 +728,7 @@ impl Pkcs11Signer {
     ///
     /// Fails if the PKCS#11 server is not [Usable]. If the operation fails due to a transient connection error, retry
     /// with backoff upto a defined retry limit.
-    fn with_conn<T, F>(&self, desc: &str, mut do_something_with_conn: F) -> Result<T, SignerError>
+    fn with_conn<T, F>(&self, desc: &str, mut do_something_with_conn: F) -> Result<T, InternalConnError>
     where
         F: FnMut(&Pkcs11Session) -> Result<T, Pkcs11Error>,
     {
@@ -613,7 +748,7 @@ impl Pkcs11Signer {
         // Define an operation to (re)try
         let op = || {
             // First get a (possibly already existing) connection from the pool
-            let conn = self.connect().map_err(retry_on_transient_signer_error)?;
+            let conn = self.connect().map_err(retry_on_transient_error)?;
 
             // Next, try to execute the callers operation using the connection. If it fails, examine the cause of
             // failure to determine if it should be a hard-fail (no more retries) or if we should try again.
@@ -676,6 +811,13 @@ impl Pkcs11Signer {
         &self,
         algorithm: PublicKeyFormat,
     ) -> Result<(PublicKey, ObjectHandle, ObjectHandle, String), SignerError> {
+        Ok(self.build_key_internal(algorithm)?)
+    }
+
+    fn build_key_internal(
+        &self,
+        algorithm: PublicKeyFormat,
+    ) -> Result<(PublicKey, ObjectHandle, ObjectHandle, String), InternalConnError> {
         // https://tools.ietf.org/html/rfc6485#section-3: Asymmetric Key Pair Formats
         //   "The RSA key pairs used to compute the signatures MUST have a 2048-bit
         //    modulus and a public exponent (e) of 65,537."
@@ -684,7 +826,7 @@ impl Pkcs11Signer {
             return Err(SignerError::Pkcs11Error(format!(
                 "Algorithm {:?} not supported while creating key",
                 &algorithm
-            )));
+            )))?;
         }
 
         let mech = Mechanism::RsaPkcsKeyPairGen;
@@ -693,29 +835,8 @@ impl Pkcs11Signer {
         openssl::rand::rand_bytes(&mut cka_id)
             .map_err(|_| SignerError::Pkcs11Error("Internal error while generating a random number".to_string()))?;
 
-        let pub_template = vec![
-            Attribute::Id(cka_id.to_vec()),
-            Attribute::Verify(true),
-            Attribute::Encrypt(false),
-            Attribute::Wrap(false),
-            Attribute::Token(true),
-            Attribute::Private(true),
-            Attribute::ModulusBits(2048.into()),
-            Attribute::PublicExponent(vec![0x01, 0x00, 0x01]),
-            Attribute::Label("Krill".to_string().into_bytes()),
-        ];
-
-        let priv_template = vec![
-            Attribute::Id(cka_id.to_vec()),
-            Attribute::Sign(true),
-            Attribute::Decrypt(false),
-            Attribute::Unwrap(false),
-            Attribute::Sensitive(true),
-            Attribute::Token(true),
-            Attribute::Private(true),
-            Attribute::Extractable(false),
-            Attribute::Label("Krill".to_string().into_bytes()),
-        ];
+        let pub_template = self.mk_public_key_template(&cka_id, &self.extra_public_key_attributes);
+        let priv_template = self.mk_private_key_template(&cka_id, &self.extra_private_key_attributes);
 
         let (pub_handle, priv_handle) = self.with_conn("generate key pair", |conn| {
             // The Krill functional test once failed under GitHub Actions with error:
@@ -732,6 +853,34 @@ impl Pkcs11Signer {
         let public_key = self.get_public_key_from_handle(pub_handle)?;
 
         Ok((public_key, pub_handle, priv_handle, hex::encode(cka_id)))
+    }
+
+    fn mk_private_key_template(&self, cka_id: &[u8], extra_attrs: &[Attribute]) -> Vec<Attribute> {
+        let mut priv_template = vec![
+            Attribute::Id(cka_id.to_vec()),
+            Attribute::Sign(true),
+            Attribute::Decrypt(false),
+            Attribute::Unwrap(false),
+            Attribute::Token(true),
+            Attribute::Label("Krill".to_string().into_bytes()),
+        ];
+        priv_template.extend_from_slice(extra_attrs);
+        priv_template
+    }
+
+    fn mk_public_key_template(&self, cka_id: &[u8], extra_attrs: &[Attribute]) -> Vec<Attribute> {
+        let mut pub_template = vec![
+            Attribute::Id(cka_id.to_vec()),
+            Attribute::Verify(true),
+            Attribute::Encrypt(false),
+            Attribute::Wrap(false),
+            Attribute::Token(true),
+            Attribute::ModulusBits(2048.into()),
+            Attribute::PublicExponent(vec![0x01, 0x00, 0x01]),
+            Attribute::Label("Krill".to_string().into_bytes()),
+        ];
+        pub_template.extend_from_slice(extra_attrs);
+        pub_template
     }
 
     pub(super) fn get_public_key_from_handle(&self, pub_handle: ObjectHandle) -> Result<PublicKey, SignerError> {
@@ -814,14 +963,16 @@ impl Pkcs11Signer {
 
         let cka_id = hex::decode(cka_id_hex_str).map_err(|_| KeyError::Signer(SignerError::DecodeError))?;
 
-        let results = self.with_conn("find key", |conn| {
-            // Find at most one result that matches the given key class (public or private) and the given PKCS#11
-            // CKA_ID bytes.
+        let results = self
+            .with_conn("find key", |conn| {
+                // Find at most one result that matches the given key class (public or private) and the given PKCS#11
+                // CKA_ID bytes.
 
-            // A PKCS#11 session can have at most one active search operation at a time. A search must be initialized,
-            // results fetched, and then finalized, only then can the session perform another search.
-            conn.find_objects(&[Attribute::Class(key_class), Attribute::Id(cka_id.clone())])
-        })?;
+                // A PKCS#11 session can have at most one active search operation at a time. A search must be initialized,
+                // results fetched, and then finalized, only then can the session perform another search.
+                conn.find_objects(&[Attribute::Class(key_class), Attribute::Id(cka_id.clone())])
+            })
+            .map_err(SignerError::from)?;
 
         match results.len() {
             0 => Err(KeyError::KeyNotFound),
@@ -835,7 +986,7 @@ impl Pkcs11Signer {
 
     pub(super) fn destroy_key_by_handle(&self, key_handle: ObjectHandle) -> Result<(), SignerError> {
         trace!("[{}] Destroying key with PKCS#11 handle {}", self.name, key_handle);
-        self.with_conn("destroy", |conn| conn.destroy_object(key_handle))
+        Ok(self.with_conn("destroy", |conn| conn.destroy_object(key_handle))?)
     }
 }
 
@@ -957,7 +1108,52 @@ impl Pkcs11Signer {
 // Retry with backoff related helper impls/fns:
 // --------------------------------------------------------------------------------------------------------------------
 
-fn retry_on_transient_pkcs11_error(err: Pkcs11Error) -> backoff::Error<SignerError> {
+#[derive(Debug)]
+enum InternalConnError {
+    Pkcs11Error(Pkcs11Error),
+    SignerError(SignerError),
+}
+
+impl std::fmt::Display for InternalConnError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            InternalConnError::Pkcs11Error(v) => v.fmt(f),
+            InternalConnError::SignerError(v) => v.fmt(f),
+        }
+    }
+}
+
+impl From<Pkcs11Error> for InternalConnError {
+    fn from(v: Pkcs11Error) -> Self {
+        InternalConnError::Pkcs11Error(v)
+    }
+}
+
+impl From<SignerError> for InternalConnError {
+    fn from(v: SignerError) -> Self {
+        InternalConnError::SignerError(v)
+    }
+}
+
+impl From<InternalConnError> for SignerError {
+    fn from(v: InternalConnError) -> Self {
+        match v {
+            InternalConnError::Pkcs11Error(v) => SignerError::Pkcs11Error(v.to_string()),
+            InternalConnError::SignerError(v) => v,
+        }
+    }
+}
+
+impl From<backoff::Error<InternalConnError>> for InternalConnError {
+    fn from(v: backoff::Error<InternalConnError>) -> Self {
+        match v {
+            backoff::Error::Permanent(err) => err,
+            backoff::Error::Transient(err) => err,
+        }
+    }
+}
+
+fn retry_on_transient_pkcs11_error(err: Pkcs11Error) -> backoff::Error<InternalConnError> {
     if is_transient_error(&err) {
         backoff::Error::Transient(err.into())
     } else {
@@ -965,10 +1161,17 @@ fn retry_on_transient_pkcs11_error(err: Pkcs11Error) -> backoff::Error<SignerErr
     }
 }
 
-fn retry_on_transient_signer_error(err: SignerError) -> backoff::Error<SignerError> {
+fn retry_on_transient_signer_error(err: SignerError) -> backoff::Error<InternalConnError> {
     match err {
-        SignerError::TemporarilyUnavailable => backoff::Error::Transient(err),
-        _ => backoff::Error::Permanent(err),
+        SignerError::TemporarilyUnavailable => backoff::Error::Transient(err.into()),
+        _ => backoff::Error::Permanent(err.into()),
+    }
+}
+
+fn retry_on_transient_error(err: InternalConnError) -> backoff::Error<InternalConnError> {
+    match err {
+        InternalConnError::Pkcs11Error(err) => retry_on_transient_pkcs11_error(err),
+        InternalConnError::SignerError(err) => retry_on_transient_signer_error(err),
     }
 }
 
@@ -1121,16 +1324,9 @@ impl From<Pkcs11Error> for SignerError {
     }
 }
 
-impl From<ProbeError<SignerError>> for SignerError {
+impl From<ProbeError<SignerError>> for InternalConnError {
     fn from(err: ProbeError<SignerError>) -> Self {
-        match err {
-            ProbeError::WrongState => {
-                SignerError::Other("Internal error: probe is not in the expected state".to_string())
-            }
-            ProbeError::AwaitingNextProbe => SignerError::TemporarilyUnavailable,
-            ProbeError::CompletedUnusable => SignerError::PermanentlyUnusable,
-            ProbeError::CallbackFailed(err) => err,
-        }
+        err.into()
     }
 }
 
@@ -1188,7 +1384,7 @@ where
 }
 
 #[cfg(test)]
-mod tes {
+mod tests {
     use super::*;
 
     #[test]
@@ -1213,7 +1409,7 @@ mod tes {
     }
 
     #[test]
-    fn configure_using_negative_slot_id() {
+    fn disallow_configure_using_negative_slot_id() {
         let config_str = r#"
             lib_path = "dummy path"
             slot = -1234
@@ -1223,5 +1419,78 @@ mod tes {
             err.to_string(),
             "not a valid PKCS#11 slot ID for key `slot` at line 3 column 20"
         )
+    }
+
+    #[test]
+    fn default_key_attributes_are_backward_compatible() {
+        let config_str = r#"
+            lib_path = "dummy path"
+            slot = 1234
+        "#;
+        let config = toml::from_str::<Pkcs11SignerConfig>(config_str).unwrap();
+
+        let attrs = config.public_key_attributes.to_vec();
+        assert!(!attrs.iter().any(|attr| matches!(attr, Attribute::Modifiable(_))));
+        assert!(attrs.iter().any(|attr| matches!(attr, Attribute::Private(true))));
+        assert!(!attrs.iter().any(|attr| matches!(attr, Attribute::Private(false))));
+
+        let attrs = config.private_key_attributes.to_vec();
+        assert!(attrs.iter().any(|attr| matches!(attr, Attribute::Extractable(false))));
+        assert!(!attrs.iter().any(|attr| matches!(attr, Attribute::Extractable(true))));
+        assert!(!attrs.iter().any(|attr| matches!(attr, Attribute::Modifiable(_))));
+        assert!(attrs.iter().any(|attr| matches!(attr, Attribute::Private(true))));
+        assert!(!attrs.iter().any(|attr| matches!(attr, Attribute::Private(false))));
+        assert!(attrs.iter().any(|attr| matches!(attr, Attribute::Sensitive(true))));
+        assert!(!attrs.iter().any(|attr| matches!(attr, Attribute::Sensitive(false))));
+    }
+
+    #[test]
+    fn default_key_attributes_can_be_overriden() {
+        let config_str = r#"
+            lib_path = "dummy path"
+            slot = 1234
+
+            [public_key_attributes]
+            CKA_MODIFIABLE = true
+            CKA_PRIVATE = false
+
+            [private_key_attributes]
+            CKA_EXTRACTABLE = true
+            CKA_MODIFIABLE = false
+            CKA_SENSITIVE = false
+            CKA_PRIVATE = false 
+        "#;
+        let config = toml::from_str::<Pkcs11SignerConfig>(config_str).unwrap();
+
+        let attrs = config.public_key_attributes.to_vec();
+        assert!(attrs.iter().any(|attr| matches!(attr, Attribute::Modifiable(true))));
+        assert!(attrs.iter().any(|attr| matches!(attr, Attribute::Private(false))));
+
+        let attrs = config.private_key_attributes.to_vec();
+        assert!(attrs.iter().any(|attr| matches!(attr, Attribute::Extractable(true))));
+        assert!(attrs.iter().any(|attr| matches!(attr, Attribute::Modifiable(false))));
+        assert!(attrs.iter().any(|attr| matches!(attr, Attribute::Private(false))));
+        assert!(attrs.iter().any(|attr| matches!(attr, Attribute::Sensitive(false))));
+    }
+
+    #[test]
+    fn overriding_key_attributes_sets_others_to_pkcs11_default_if_not_specified() {
+        let config_str = r#"
+            lib_path = "dummy path"
+            slot = 1234
+            public_key_attributes = {}
+            private_key_attributes = {}
+        "#;
+        let config = toml::from_str::<Pkcs11SignerConfig>(config_str).unwrap();
+
+        let attrs = config.public_key_attributes.to_vec();
+        assert!(!attrs.iter().any(|attr| matches!(attr, Attribute::Modifiable(_))));
+        assert!(!attrs.iter().any(|attr| matches!(attr, Attribute::Private(_))));
+
+        let attrs = config.private_key_attributes.to_vec();
+        assert!(!attrs.iter().any(|attr| matches!(attr, Attribute::Extractable(_))));
+        assert!(!attrs.iter().any(|attr| matches!(attr, Attribute::Private(_))));
+        assert!(!attrs.iter().any(|attr| matches!(attr, Attribute::Sensitive(_))));
+        assert!(!attrs.iter().any(|attr| matches!(attr, Attribute::Modifiable(_))));
     }
 }

@@ -3,12 +3,13 @@ use std::{collections::HashMap, path::Path, str::FromStr, sync::RwLock};
 use rpki::ca::{
     idexchange::{CaHandle, ChildHandle, ParentHandle, ServiceUri},
     provisioning::ResourceClassListResponse as Entitlements,
+    publication::PublishDelta,
 };
 
 use crate::commons::{
     api::{
-        rrdp::PublishElement, ChildConnectionStats, ChildStatus, ChildrenConnectionStats, ErrorResponse, ParentStatus,
-        ParentStatuses, RepoStatus, Timestamp,
+        ChildConnectionStats, ChildStatus, ChildrenConnectionStats, ErrorResponse, ParentStatus, ParentStatuses,
+        RepoStatus,
     },
     error::Error,
     eventsourcing::{KeyStoreKey, KeyValueStore},
@@ -285,18 +286,12 @@ impl StatusStore {
         self.update_repo_status(ca, |status| status.set_failure(uri, error_response))
     }
 
-    pub fn set_status_repo_success(&self, ca: &CaHandle, uri: ServiceUri, next_update: Timestamp) -> KrillResult<()> {
-        self.update_repo_status(ca, |status| status.set_last_updated(uri, next_update))
+    pub fn set_status_repo_success(&self, ca: &CaHandle, uri: ServiceUri) -> KrillResult<()> {
+        self.update_repo_status(ca, |status| status.set_last_updated(uri))
     }
 
-    pub fn set_status_repo_published(
-        &self,
-        ca: &CaHandle,
-        uri: ServiceUri,
-        published: Vec<PublishElement>,
-        next_update: Timestamp,
-    ) -> KrillResult<()> {
-        self.update_repo_status(ca, |status| status.set_published(uri, published, next_update))
+    pub fn set_status_repo_published(&self, ca: &CaHandle, uri: ServiceUri, delta: PublishDelta) -> KrillResult<()> {
+        self.update_repo_status(ca, |status| status.update_published(uri, delta))
     }
 
     fn update_repo_status<F>(&self, ca: &CaHandle, op: F) -> KrillResult<()>
@@ -370,7 +365,7 @@ impl StatusStore {
 
     fn error_to_error_res(error: &Error) -> ErrorResponse {
         match error {
-            Error::HttpClientError(httpclient::Error::ErrorResponseWithJson(_, _, res)) => res.clone(),
+            Error::HttpClientError(httpclient::Error::ErrorResponseWithJson(_, _, res)) => *res.clone(),
             _ => error.to_error_response(),
         }
     }

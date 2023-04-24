@@ -15,12 +15,11 @@ use rpki::{
     },
     crypto::{KeyIdentifier, PublicKey},
     repository::{
-        cert::{Cert, KeyUsage, Overclaim, TbsCert},
+        cert::Cert,
         resources::ResourceSet,
         rta::RtaBuilder,
-        x509::{Serial, Time, Validity},
+        x509::{Time, Validity},
     },
-    uri,
 };
 
 use crate::{
@@ -29,8 +28,7 @@ use crate::{
             AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates, AspaProvidersUpdate, BgpSecAsnKey,
             BgpSecCsrInfoList, BgpSecDefinitionUpdates, CertAuthInfo, ConfiguredRoa, IdCertInfo, IssuedCertificate,
             ObjectName, ParentCaContact, ReceivedCert, RepositoryContact, Revocation, RoaConfiguration,
-            RoaConfigurationUpdates, RtaList, RtaName, RtaPrepResponse, StorableCaCommand, TaCertDetails,
-            TrustAnchorLocator,
+            RoaConfigurationUpdates, RtaList, RtaName, RtaPrepResponse, StorableCaCommand,
         },
         crypto::{CsrInfo, KrillSigner},
         error::{Error, RoaDeltaError},
@@ -40,10 +38,9 @@ use crate::{
     constants::test_mode_enabled,
     daemon::{
         ca::{
-            events::ChildCertificateUpdates, ta_handle, AspaDefinitions, BgpSecDefinitions, CaEvt, CaEvtDet,
-            ChildDetails, Cmd, CmdDet, DropReason, Ini, PreparedRta, ResourceClass, ResourceTaggedAttestation,
-            Rfc8183Id, RoaPayloadJsonMapKey, Routes, RtaContentRequest, RtaPrepareRequest, Rtas, SignedRta,
-            StoredBgpSecCsr,
+            events::ChildCertificateUpdates, AspaDefinitions, BgpSecDefinitions, CaEvt, CaEvtDet, ChildDetails, Cmd,
+            CmdDet, DropReason, Ini, PreparedRta, ResourceClass, ResourceTaggedAttestation, Rfc8183Id,
+            RoaPayloadJsonMapKey, Routes, RtaContentRequest, RtaPrepareRequest, Rtas, SignedRta, StoredBgpSecCsr,
         },
         config::{Config, IssuanceTimingConfig},
     },
@@ -133,18 +130,6 @@ impl Aggregate for CertAuth {
     fn apply(&mut self, event: CaEvt) {
         self.version += 1;
         match event.into_details() {
-            //-----------------------------------------------------------------------
-            // Being a trust anchor
-            //-----------------------------------------------------------------------
-            CaEvtDet::TrustAnchorMade { ta_cert_details } => {
-                let key_id = ta_cert_details.cert().key_identifier();
-                self.parents
-                    .insert(ta_handle().into_converted(), ParentCaContact::Ta(ta_cert_details));
-                let rcn = ResourceClassName::from(self.next_class_name);
-                self.next_class_name += 1;
-                self.resources.insert(rcn.clone(), ResourceClass::for_ta(rcn, key_id));
-            }
-
             //-----------------------------------------------------------------------
             // Being a parent
             //-----------------------------------------------------------------------
@@ -416,9 +401,6 @@ impl Aggregate for CertAuth {
         }
 
         match command.into_details() {
-            // trust anchor
-            CmdDet::MakeTrustAnchor(uris, rsync_uri, signer) => self.trust_anchor_make(uris, rsync_uri, signer),
-
             // being a parent
             CmdDet::ChildAdd(child, id_cert, resources) => self.child_add(child, id_cert, resources),
             CmdDet::ChildUpdateResources(child, res) => self.child_update_resources(&child, res),
@@ -599,83 +581,28 @@ impl CertAuth {
     }
 }
 
-/// # Being a Trust Anchor
-///
-impl CertAuth {
-    fn trust_anchor_make(
-        &self,
-        uris: Vec<uri::Https>,
-        rsync_uri: uri::Rsync,
-        signer: Arc<KrillSigner>,
-    ) -> KrillResult<Vec<CaEvt>> {
-        if !self.resources.is_empty() {
-            return Err(Error::custom("Cannot turn CA with resources into TA"));
-        }
-
-        let repo_info = self.repository_contact()?.repo_info();
-
-        let key = signer.create_key()?;
-
-        let resources = ResourceSet::all();
-
-        let cert = {
-            let serial: Serial = signer.random_serial()?;
-
-            let pub_key = signer.get_key_info(&key).map_err(Error::signer)?;
-            let name = pub_key.to_subject_name();
-
-            let mut cert = TbsCert::new(
-                serial,
-                name.clone(),
-                Validity::new(Time::five_minutes_ago(), Time::years_from_now(100)),
-                Some(name),
-                pub_key.clone(),
-                KeyUsage::Ca,
-                Overclaim::Refuse,
-            );
-
-            cert.set_basic_ca(Some(true));
-
-            let ns = ResourceClassName::default().to_string();
-
-            cert.set_ca_repository(Some(repo_info.ca_repository(&ns)));
-            cert.set_rpki_manifest(Some(
-                repo_info.resolve(&ns, ObjectName::mft_for_key(&pub_key.key_identifier()).as_ref()),
-            ));
-            cert.set_rpki_notify(repo_info.rpki_notify().cloned());
-
-            cert.set_as_resources(resources.to_as_resources());
-            cert.set_v4_resources(resources.to_ip_resources_v4());
-            cert.set_v6_resources(resources.to_ip_resources_v6());
-
-            signer.sign_cert(cert, &key)?
-        };
-
-        let tal = TrustAnchorLocator::new(uris, rsync_uri.clone(), cert.subject_public_key_info());
-
-        let rcvd_cert =
-            ReceivedCert::create(cert, rsync_uri, resources, RequestResourceLimit::default()).map_err(Error::custom)?;
-
-        let ta_cert_details = TaCertDetails::new(rcvd_cert, tal);
-
-        info!("Created Trust Anchor");
-
-        Ok(vec![StoredEvent::new(
-            &self.handle,
-            self.version,
-            CaEvtDet::TrustAnchorMade { ta_cert_details },
-        )])
-    }
-}
-
 /// # Being a parent
 ///
 impl CertAuth {
     pub fn verify_rfc6492(&self, cms: ProvisioningCms) -> KrillResult<provisioning::Message> {
         let child_handle = cms.message().sender().convert();
-        let child = self.get_child(&child_handle)?;
+        let child = self.get_child(&child_handle).map_err(|e| {
+            Error::Custom(format!(
+                "CA {} has issue with request by child {}: {}",
+                self.handle(),
+                child_handle,
+                e
+            ))
+        })?;
 
-        cms.validate(child.id_cert().public_key()).map_err(Error::Rfc6492)?;
+        cms.validate(child.id_cert().public_key()).map_err(|e| {
+            Error::Custom(format!(
+                "CA {} cannot validate request by child {}: {}",
+                self.handle(),
+                child_handle,
+                e
+            ))
+        })?;
 
         Ok(cms.into_message())
     }
@@ -1215,17 +1142,6 @@ impl CertAuth {
         None
     }
 
-    /// Returns true if this CertAuth is set up as a TA.
-    pub fn is_ta(&self) -> bool {
-        for info in self.parents.values() {
-            if let ParentCaContact::Ta(_) = info {
-                return true;
-            }
-        }
-
-        false
-    }
-
     /// Gets the ParentCaContact for this ParentHandle. Returns an Err when the
     /// parent does not exist.
     pub fn parent(&self, parent: &ParentHandle) -> KrillResult<&ParentCaContact> {
@@ -1251,8 +1167,6 @@ impl CertAuth {
             Err(Error::CaParentDuplicateName(self.handle.clone(), parent))
         } else if let Some(other) = self.parent_for_info(&info) {
             Err(Error::CaParentDuplicateInfo(self.handle.clone(), other.clone()))
-        } else if self.is_ta() {
-            Err(Error::TaNotAllowed)
         } else {
             info!("CA '{}' added parent '{}'", self.handle, parent);
             Ok(vec![CaEvtDet::parent_added(&self.handle, self.version, parent, info)])
@@ -1289,8 +1203,6 @@ impl CertAuth {
     fn update_parent(&self, parent: ParentHandle, info: ParentCaContact) -> KrillResult<Vec<CaEvt>> {
         if !self.parent_known(&parent) {
             Err(Error::CaParentUnknown(self.handle.clone(), parent))
-        } else if self.is_ta() {
-            Err(Error::TaNotAllowed)
         } else {
             info!("CA '{}' updated contact info for parent '{}'", self.handle, parent);
             Ok(vec![CaEvtDet::parent_updated(&self.handle, self.version, parent, info)])
@@ -1300,12 +1212,9 @@ impl CertAuth {
     /// Maps a parent and parent's resource class name to a ResourceClassName and
     /// ResourceClass of our own.
     fn find_parent_rc(&self, parent: &ParentHandle, parent_rcn: &ResourceClassName) -> Option<&ResourceClass> {
-        for rc in self.resources.values() {
-            if rc.parent_handle() == parent && rc.parent_rc_name() == parent_rcn {
-                return Some(rc);
-            }
-        }
-        None
+        self.resources
+            .values()
+            .find(|&rc| rc.parent_handle() == parent && rc.parent_rc_name() == parent_rcn)
     }
 
     /// Get all the current open certificate requests for a parent.
@@ -1526,10 +1435,6 @@ impl CertAuth {
 ///
 impl CertAuth {
     fn keyroll_initiate(&self, duration: Duration, signer: Arc<KrillSigner>) -> KrillResult<Vec<CaEvt>> {
-        if self.is_ta() {
-            return Ok(vec![]);
-        }
-
         let mut version = self.version;
         let mut res = vec![];
 
@@ -1561,10 +1466,6 @@ impl CertAuth {
         config: Arc<Config>,
         signer: Arc<KrillSigner>,
     ) -> KrillResult<Vec<CaEvt>> {
-        if self.is_ta() {
-            return Ok(vec![]);
-        }
-
         let mut version = self.version;
         let mut res = vec![];
 
@@ -1594,9 +1495,6 @@ impl CertAuth {
     }
 
     fn keyroll_finish(&self, rcn: ResourceClassName, _response: RevocationResponse) -> KrillResult<Vec<CaEvt>> {
-        if self.is_ta() {
-            return Ok(vec![]);
-        }
         let my_rc = self
             .resources
             .get(&rcn)
@@ -1637,7 +1535,7 @@ impl CertAuth {
                 if !rc.key_roll_possible() {
                     // If we can't roll... well then we have to bail out.
                     // Note: none of these events are committed in that case.
-                    return Err(Error::KeyRollNotAllowed);
+                    return Err(Error::KeyRollInProgress);
                 }
 
                 evt_dets.append(&mut rc.keyroll_initiate(&info, Duration::seconds(0), signer)?);

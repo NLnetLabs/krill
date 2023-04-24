@@ -194,7 +194,7 @@ impl LoginSessionCache {
         let unencrypted_bytes = session_json_str.as_bytes();
 
         let encrypted_bytes = (self.encrypt_fn)(&crypt_state.key, unencrypted_bytes, &crypt_state.nonce)?;
-        let token = Token::from(base64::encode(&encrypted_bytes));
+        let token = Token::from(base64::encode(encrypted_bytes));
 
         self.cache_session(&token, &session);
         Ok(token)

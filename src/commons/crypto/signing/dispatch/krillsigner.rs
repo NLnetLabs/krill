@@ -1,11 +1,13 @@
 use std::{path::Path, sync::Arc, time::Duration};
 
+use bytes::Bytes;
 use rpki::{
     ca::{
         csr::{Csr, RpkiCaCsr},
         idcert::IdCert,
         idexchange::RepoInfo,
         provisioning, publication,
+        sigmsg::SignedMessage,
     },
     crypto::{KeyIdentifier, PublicKey, PublicKeyFormat, RpkiSignature, RpkiSignatureAlgorithm, Signer},
     repository::{
@@ -31,13 +33,16 @@ use crate::{
                 signerprovider::{SignerFlags, SignerProvider},
                 signerrouter::SignerRouter,
             },
-            CryptoResult, OpenSslSigner,
+            CryptoResult, OpenSslSigner, SignSupport,
         },
         error::Error,
         KrillResult,
     },
     constants::ID_CERTIFICATE_VALIDITY_YEARS,
-    daemon::config::{SignerConfig, SignerType},
+    daemon::{
+        config::{SignerConfig, SignerType},
+        ta::TA_SIGNED_MESSAGE_DAYS,
+    },
 };
 
 #[cfg(feature = "hsm")]
@@ -199,6 +204,10 @@ impl KrillSigner {
             .map_err(crypto::Error::signer)
     }
 
+    pub fn import_key(&self, pem: &str) -> CryptoResult<KeyIdentifier> {
+        self.router.import_key(pem).map_err(crypto::Error::signer)
+    }
+
     /// Creates a new self-signed (TA) IdCert
     pub fn create_self_signed_id_cert(&self) -> CryptoResult<IdCert> {
         let key = self.create_key()?;
@@ -242,7 +251,7 @@ impl KrillSigner {
         let signed_and_encoded_csr = Csr::construct_rpki_ca(
             &self.router,
             key,
-            &base_repo.ca_repository(name_space).join(&[]).unwrap(), // force trailing slash
+            &base_repo.ca_repository(name_space),
             &base_repo.resolve(name_space, mft_file_name.as_ref()),
             base_repo.rpki_notify(),
         )
@@ -315,6 +324,12 @@ impl KrillSigner {
         signing_key: &KeyIdentifier,
     ) -> CryptoResult<publication::PublicationCms> {
         publication::PublicationCms::create(message, signing_key, &self.router).map_err(crypto::Error::signing)
+    }
+
+    pub fn create_ta_signed_message(&self, data: Bytes, signing_key: &KeyIdentifier) -> CryptoResult<SignedMessage> {
+        let validity = SignSupport::sign_validity_days(TA_SIGNED_MESSAGE_DAYS);
+
+        SignedMessage::create(data, validity, signing_key, &self.router).map_err(crypto::Error::signing)
     }
 }
 

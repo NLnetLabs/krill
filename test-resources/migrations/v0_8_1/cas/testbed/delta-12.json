@@ -1,7 +1,0 @@
-{
-  "id": "testbed",
-  "version": 12,
-  "details": {
-    "route_authorization_added": "192.168.0.0/24-24 => 65000"
-  }
-}

@@ -1,0 +1,17 @@
+{
+  "actor": "testbed",
+  "time": "2023-01-07T12:16:36.962064929Z",
+  "handle": "0",
+  "version": 150,
+  "sequence": 177,
+  "details": {
+    "type": "add_publisher",
+    "name": "rapdodge-ca"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      150
+    ]
+  }
+}

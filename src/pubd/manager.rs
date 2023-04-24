@@ -107,7 +107,15 @@ impl RepositoryManager {
     pub fn rfc8181(&self, publisher_handle: PublisherHandle, msg_bytes: Bytes) -> KrillResult<Bytes> {
         let cms_logger = CmsLogger::for_rfc8181_rcvd(self.config.rfc8181_log_dir.as_ref(), &publisher_handle);
 
-        let cms = self.access.decode_and_validate(&publisher_handle, &msg_bytes)?;
+        let cms = self
+            .access
+            .decode_and_validate(&publisher_handle, &msg_bytes)
+            .map_err(|e| {
+                Error::Custom(format!(
+                    "Issue with publication request by publisher '{}': {}",
+                    publisher_handle, e
+                ))
+            })?;
         let message = cms.into_message();
         let query = message.as_query()?;
 
@@ -232,7 +240,7 @@ impl RepositoryManager {
         let id_cert = publisher.id_cert().clone();
         let base_uri = publisher.base_uri().clone();
 
-        let current = self.content.current_objects(name)?.into_elements();
+        let current = self.content.current_objects(name)?.try_into_publish_elements()?;
 
         Ok(PublisherDetails::new(name, id_cert, base_uri, current))
     }
