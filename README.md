@@ -35,6 +35,9 @@ improvements will be most visible and relevant:
 - Allow ROA comments in UI (#995)
 - Enable ASPA support in CLI (#1031)
 
+You can read more about ASPA support here:
+https://krill.docs.nlnetlabs.nl/en/0.13.0-rc1/manage-aspas.html
+
 ### API Changes
 
 We removed the repository next update time from the stats and metrics output.
@@ -51,7 +54,7 @@ of the TAs provided by the RIRs for testing, study or research reasons. Or
 perhaps even to manage private use address space.
 
 You can read more about this here:
-https://krill.docs.nlnetlabs.nl/en/ta-support/trust-anchor.html
+https://krill.docs.nlnetlabs.nl/en/0.13.0-rc1/trust-anchor.html
 
 Implemented issues:
 - Support offline TA (#976)
