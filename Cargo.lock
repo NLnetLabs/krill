@@ -1048,7 +1048,7 @@ dependencies = [
 
 [[package]]
 name = "krill"
-version = "0.13.0-rc1"
+version = "0.13.0-rc2"
 dependencies = [
  "backoff",
  "base64 0.13.1",
@@ -1776,9 +1776,9 @@ checksum = "3582f63211428f83597b51b2ddb88e2a91a9d52d12831f9d08f5e624e8977422"
 
 [[package]]
 name = "routecore"
-version = "0.2.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9afd872857e85411c0ba7d18dfe650fc4864b292c02cde997e86c511314fdfc3"
+checksum = "f8e2f02d8dd21010b44bf2ca4502cca2fbb2a8ddfd982a18feff149279dc236c"
 dependencies = [
  "bcder",
  "serde",
@@ -1796,9 +1796,9 @@ dependencies = [
 
 [[package]]
 name = "rpki"
-version = "0.16.0"
+version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e574c3dfe052c4378b7fe4f3ce72f9604e023f708507df62ceb76c0a8443455d"
+checksum = "207f773b99ae73e14f8e8ab0f789a5892fc46548b1b79caccec8f33e2d303c40"
 dependencies = [
  "base64 0.13.1",
  "bcder",

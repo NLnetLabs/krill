@@ -44,7 +44,7 @@ ARG MODE=build
 # ========
 #
 # Only used when MODE=build.
-ARG BASE_IMG=alpine:3.15
+ARG BASE_IMG=alpine:3.17
 
 
 # CARGO_ARGS
@@ -135,7 +135,7 @@ RUN chmod a+x /tmp/out/bin/*
 #
 # The previous build stage from which binaries are copied is controlled by the
 # MODE ARG (see above).
-FROM alpine:3.15 AS final
+FROM alpine:3.17 AS final
 
 # Copy binaries from the 'source' build stage into the image we are building
 COPY --from=source /tmp/out/bin/* /usr/local/bin/
@@ -150,7 +150,7 @@ RUN apk add --no-cache bash libgcc openssl tini tzdata util-linux
 
 # Create the user and group to run the application as
 RUN addgroup -g ${RUN_USER_GID} ${RUN_USER} && \
-    adduser -D -u ${RUN_USER_UID} -G ${RUN_USER} ${RUN_USER}
+  adduser -D -u ${RUN_USER_UID} -G ${RUN_USER} ${RUN_USER}
 
 # Create the data directory structure and install a config file that uses it
 WORKDIR /var/krill/data

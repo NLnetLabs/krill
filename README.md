@@ -25,7 +25,10 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 # Changelog
 
-## 0.13.0 RC1
+## 0.13.0 RC2
+
+RC2 fixes the following issue:
+- Do not migrate non-existing 0.12.x publication server (#1040)
 
 ### Updated User Interface
 
