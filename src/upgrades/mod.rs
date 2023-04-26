@@ -405,11 +405,10 @@ pub fn prepare_upgrade_data_migrations(mode: UpgradeMode, config: Arc<Config>) -
 fn migrate_0_12_pubd_objects(config: &Config) -> KrillResult<bool> {
     let old_repo_content_dir = config.data_dir.join(PUBSERVER_CONTENT_DIR);
     if old_repo_content_dir.exists() {
+        let old_store = WalStore::<OldRepositoryContent>::disk(&config.data_dir, PUBSERVER_CONTENT_DIR)?;
         let repo_content_handle = MyHandle::new("0".into());
-        if let Ok(old_store) = WalStore::<OldRepositoryContent>::disk(&config.data_dir, PUBSERVER_CONTENT_DIR) {
-            let old_repo_content = old_store.get_latest(&repo_content_handle)?.as_ref().clone();
-            let repo_content: pubd::RepositoryContent = old_repo_content.try_into()?;
-
+        if let Ok(old_repo_content) = old_store.get_latest(&repo_content_handle) {
+            let repo_content: pubd::RepositoryContent = old_repo_content.as_ref().clone().try_into()?;
             let new_key = KeyStoreKey::scoped("0".to_string(), "snapshot.json".to_string());
             let upgrade_store = KeyValueStore::disk(&config.upgrade_data_dir(), PUBSERVER_CONTENT_DIR)?;
             upgrade_store.store(&new_key, &repo_content)?;
