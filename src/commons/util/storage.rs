@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use url::Url;
 
-use crate::commons::KrillResult;
+use crate::commons::{error::Error, KrillResult};
 
 pub fn data_dir_from_storage_uri(storage_uri: &Url) -> KrillResult<PathBuf> {
     assert!(storage_uri.scheme() == "local");
@@ -16,7 +16,7 @@ pub fn data_dir_from_storage_uri(storage_uri: &Url) -> KrillResult<PathBuf> {
 // TODO mark as test only
 // #[cfg(test)]
 pub fn storage_uri_from_data_dir(data_dir: &Path) -> KrillResult<Url> {
-    Ok(Url::parse(&format!("local://{}/", data_dir.to_string_lossy()))?)
+    Ok(Url::parse(&format!("local://{}/", data_dir.to_string_lossy())).map_err(|e| Error::custom(e.to_string()))?)
 }
 
 #[cfg(test)]
