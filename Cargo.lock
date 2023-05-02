@@ -310,9 +310,9 @@ dependencies = [
 
 [[package]]
 name = "cryptoki"
-version = "0.3.1"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "570006e51d08ec89ce5bbfdcf428ad96111636d524bf2447bee6377fd0e1d889"
+checksum = "503aa2bd88796da9bc6baf2c47696da40f135721b3d6680c7c6cee0b7d1f7a59"
 dependencies = [
  "cryptoki-sys",
  "derivative",
@@ -322,9 +322,9 @@ dependencies = [
 
 [[package]]
 name = "cryptoki-sys"
-version = "0.1.5"
+version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d12231889cbf7e11d2965a063d9518bc7aac60c5b125dc61c8ff2111a160eae"
+checksum = "1e4895bb04269df9a14f2692c6499dc2769e9a93caa33ef37c4df134f76956d2"
 dependencies = [
  "libloading",
  "target-lexicon",
@@ -1057,6 +1057,7 @@ dependencies = [
  "chrono",
  "clap",
  "cryptoki",
+ "cryptoki-sys",
  "fern",
  "fslock",
  "futures",
