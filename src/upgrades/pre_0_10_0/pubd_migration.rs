@@ -6,10 +6,12 @@ use rpki::{ca::idexchange::MyHandle, repository::x509::Time};
 use crate::{
     commons::{
         api::StorableRepositoryCommand,
-        eventsourcing::{AggregateStore, KeyStoreKey, KeyValueStore, StoredCommand, StoredEvent, StoredValueInfo},
+        eventsourcing::{
+            segment, AggregateStore, Key, KeyValueStore, Scope, StoredCommand, StoredEvent, StoredValueInfo,
+        },
         util::KrillVersion,
     },
-    constants::{KRILL_VERSION, PUBSERVER_DIR},
+    constants::{KRILL_VERSION, PUBSERVER_NS},
     daemon::config::Config,
     pubd::{RepositoryAccess, RepositoryAccessEvent, RepositoryAccessInitDetails},
     upgrades::{pre_0_10_0::OldRepositoryAccessEvent, PrepareUpgradeError, UpgradeMode, UpgradeResult, UpgradeStore},
@@ -27,11 +29,9 @@ pub struct PublicationServerRepositoryAccessMigration {
 
 impl PublicationServerRepositoryAccessMigration {
     pub fn prepare(mode: UpgradeMode, config: &Config) -> UpgradeResult<()> {
-        let upgrade_data_dir = config.upgrade_data_dir();
-
-        let current_kv_store = KeyValueStore::disk(&config.data_dir, PUBSERVER_DIR)?;
-        let new_kv_store = KeyValueStore::disk(&upgrade_data_dir, PUBSERVER_DIR)?;
-        let new_agg_store = AggregateStore::disk(&upgrade_data_dir, PUBSERVER_DIR)?;
+        let current_kv_store = KeyValueStore::create(&config.storage_uri, PUBSERVER_NS)?;
+        let new_kv_store = KeyValueStore::create(config.upgrade_storage_uri(), PUBSERVER_NS)?;
+        let new_agg_store = AggregateStore::create(config.upgrade_storage_uri(), PUBSERVER_NS)?;
 
         let store_migration = PublicationServerRepositoryAccessMigration {
             current_kv_store,
@@ -49,7 +49,7 @@ impl PublicationServerRepositoryAccessMigration {
 
 impl UpgradeStore for PublicationServerRepositoryAccessMigration {
     fn needs_migrate(&self) -> Result<bool, crate::upgrades::PrepareUpgradeError> {
-        if !self.current_kv_store.has_scope("0".to_string())? {
+        if !self.current_kv_store.has_scope(&Scope::from_segment(segment!("0")))? {
             Ok(false)
         } else {
             Ok(self.current_kv_store.version()? >= KrillVersion::release(0, 9, 0)
@@ -64,19 +64,20 @@ impl UpgradeStore for PublicationServerRepositoryAccessMigration {
         self.preparation_store_prepare()?;
 
         // we only have 1 pubserver '0'
-        let scope = "0";
-        let handle = MyHandle::from_str(scope).unwrap(); // "0" is always safe
+        let segment = segment!("0");
+        let scope = Scope::from_segment(segment);
+        let handle = MyHandle::from_str(segment.as_str()).unwrap(); // "0" is always safe
 
         // Get the info from the current store to see where we are
-        let mut data_upgrade_info = self.data_upgrade_info(scope)?;
+        let mut data_upgrade_info = self.data_upgrade_info(&scope)?;
 
         // Get the list of commands to prepare, starting with the last_command we got to (may be 0)
-        let old_cmd_keys = self.command_keys(scope, data_upgrade_info.last_command)?;
+        let old_cmd_keys = self.command_keys(&scope, data_upgrade_info.last_command)?;
 
         // Migrate the initialisation event, if not done in a previous run. This
         // is a special event that has no command, so we need to do this separately.
         if data_upgrade_info.last_event == 0 {
-            let init_key = Self::event_key(scope, 0);
+            let init_key = Self::event_key(scope.clone(), 0);
 
             let old_init: OldRepositoryAccessIni = self
                 .current_kv_store
@@ -101,7 +102,7 @@ impl UpgradeStore for PublicationServerRepositoryAccessMigration {
         }
 
         // Get the old info file. We will only migrate commands in the info file
-        let info_key = KeyStoreKey::scoped(scope.to_string(), "info.json".to_string());
+        let info_key = Key::new_scoped(scope.clone(), segment!("info"));
         let old_info: StoredValueInfo = self
             .current_kv_store
             .get(&info_key)?
@@ -131,7 +132,7 @@ impl UpgradeStore for PublicationServerRepositoryAccessMigration {
             // again in the migration scope.
             if let Some(event_versions) = cmd.effect().events() {
                 for v in event_versions {
-                    let event_key = Self::event_key(scope, *v);
+                    let event_key = Self::event_key(scope.clone(), *v);
                     trace!("  +- event: {}", event_key);
                     let evt: OldRepositoryAccessEvent = self
                         .current_kv_store
@@ -152,7 +153,7 @@ impl UpgradeStore for PublicationServerRepositoryAccessMigration {
             // Update and save data_upgrade_info for progress tracking
             data_upgrade_info.last_command += 1;
             data_upgrade_info.last_update = cmd.time();
-            self.update_data_upgrade_info(scope, &data_upgrade_info)?;
+            self.update_data_upgrade_info(&scope, &data_upgrade_info)?;
 
             // Report progress and expected time to finish on every 100 commands evaluated.
             total_migrated += 1;

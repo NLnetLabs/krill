@@ -39,7 +39,7 @@ use crate::{
         util::{cmslogger::CmsLogger, httpclient},
         KrillResult,
     },
-    constants::{CASERVER_DIR, STATUS_DIR, TA_PROXY_SERVER_DIR, TA_SIGNER_SERVER_DIR},
+    constants::{CASERVER_NS, STATUS_NS, TA_PROXY_SERVER_NS, TA_SIGNER_SERVER_NS},
     daemon::{
         auth::common::permissions::Permission,
         auth::Handle,
@@ -107,7 +107,7 @@ impl CaManager {
     ) -> KrillResult<Self> {
         // Create the AggregateStore for the event-sourced `CertAuth` structures that handle
         // most CA functions.
-        let mut ca_store = AggregateStore::<CertAuth>::disk(&config.data_dir, CASERVER_DIR)?;
+        let mut ca_store = AggregateStore::<CertAuth>::create(&config.storage_uri, CASERVER_NS)?;
 
         if config.always_recover_data {
             // If the user chose to 'always recover data' then do so.
@@ -131,8 +131,8 @@ impl CaManager {
         // Create the `CaObjectStore` that is responsible for maintaining CA objects: the `CaObjects`
         // for a CA gets copies of all ROAs and issued certificates from the `CertAuth` and is responsible
         // for manifests and CRL generation.
-        let ca_objects_store = Arc::new(CaObjectsStore::disk(
-            &config.data_dir,
+        let ca_objects_store = Arc::new(CaObjectsStore::create(
+            &config.storage_uri,
             config.issuance_timing.clone(),
             signer.clone(),
         )?);
@@ -149,7 +149,8 @@ impl CaManager {
 
         // Create TA proxy store if we need it.
         let ta_proxy_store = if config.ta_proxy_enabled() {
-            let mut store = AggregateStore::<TrustAnchorProxy>::disk(&config.data_dir, TA_PROXY_SERVER_DIR)?;
+            let mut store =
+                AggregateStore::<TrustAnchorProxy>::create(&config.storage_uri, TA_PROXY_SERVER_NS)?;
 
             // We need to listen for proxy events so that we can schedule:
             // 1. publication on updates
@@ -162,14 +163,17 @@ impl CaManager {
         };
 
         let ta_signer_store = if config.ta_signer_enabled() {
-            Some(AggregateStore::disk(&config.data_dir, TA_SIGNER_SERVER_DIR)?)
+            Some(AggregateStore::create(
+                &config.storage_uri,
+                TA_SIGNER_SERVER_NS,
+            )?)
         } else {
             None
         };
 
         // Create the status store which will maintain the last known connection status between each CA
         // and their parent(s) and repository.
-        let status_store = StatusStore::new(&config.data_dir, STATUS_DIR)?;
+        let status_store = StatusStore::create(&config.storage_uri, STATUS_NS)?;
 
         Ok(CaManager {
             ca_store,

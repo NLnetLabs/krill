@@ -15,6 +15,7 @@ pub mod cmslogger;
 pub mod ext_serde;
 pub mod file;
 pub mod httpclient;
+pub mod storage;
 
 //------------ KrillVersion --------------------------------------------------
 

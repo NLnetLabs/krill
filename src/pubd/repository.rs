@@ -40,8 +40,8 @@ use crate::{
         KrillResult,
     },
     constants::{
-        PUBSERVER_CONTENT_DIR, PUBSERVER_DFLT, PUBSERVER_DIR, REPOSITORY_DIR, REPOSITORY_RRDP_ARCHIVE_DIR,
-        REPOSITORY_RRDP_DIR, REPOSITORY_RSYNC_DIR, RRDP_FIRST_SERIAL,
+        PUBSERVER_CONTENT_NS, PUBSERVER_DFLT, PUBSERVER_NS, REPOSITORY_RRDP_ARCHIVE_DIR, REPOSITORY_RRDP_DIR,
+        REPOSITORY_RSYNC_DIR, RRDP_FIRST_SERIAL,
     },
     daemon::{
         config::{Config, RrdpUpdatesConfig},
@@ -65,9 +65,8 @@ pub struct RepositoryContentProxy {
 }
 
 impl RepositoryContentProxy {
-    pub fn disk(config: &Config) -> KrillResult<Self> {
-        let work_dir = &config.data_dir;
-        let store = Arc::new(WalStore::disk(work_dir, PUBSERVER_CONTENT_DIR)?);
+    pub fn create(config: &Config) -> KrillResult<Self> {
+        let store = Arc::new(WalStore::create(&config.storage_uri, PUBSERVER_CONTENT_NS)?);
         store.warm()?;
 
         let default_handle = MyHandle::new("0".into());
@@ -76,7 +75,7 @@ impl RepositoryContentProxy {
     }
 
     /// Initialize
-    pub fn init(&self, work_dir: &Path, uris: PublicationServerUris) -> KrillResult<()> {
+    pub fn init(&self, repo_dir: &Path, uris: PublicationServerUris) -> KrillResult<()> {
         if self.store.has(&self.default_handle)? {
             Err(Error::RepositoryServerAlreadyInitialized)
         } else {
@@ -86,11 +85,8 @@ impl RepositoryContentProxy {
 
                 let session = RrdpSession::default();
 
-                let mut repo_dir = work_dir.to_path_buf();
-                repo_dir.push(REPOSITORY_DIR);
-
-                let rrdp = RrdpServer::create(rrdp_base_uri, &repo_dir, session);
-                let rsync = RsyncdStore::new(rsync_jail, &repo_dir);
+                let rrdp = RrdpServer::create(rrdp_base_uri, repo_dir, session);
+                let rsync = RsyncdStore::new(rsync_jail, repo_dir);
 
                 RepositoryContent::new(rrdp, rsync)
             };
@@ -1516,8 +1512,8 @@ pub struct RepositoryAccessProxy {
 }
 
 impl RepositoryAccessProxy {
-    pub fn disk(config: &Config) -> KrillResult<Self> {
-        let store = AggregateStore::<RepositoryAccess>::disk(&config.data_dir, PUBSERVER_DIR)?;
+    pub fn create(config: &Config) -> KrillResult<Self> {
+        let store = AggregateStore::<RepositoryAccess>::create(&config.storage_uri, PUBSERVER_NS)?;
         let key = MyHandle::from_str(PUBSERVER_DFLT).unwrap();
 
         if store.has(&key)? {

@@ -1,5 +1,4 @@
-use std::convert::TryInto;
-use std::str::FromStr;
+use std::{convert::TryInto, str::FromStr};
 
 use chrono::Duration;
 use rpki::{ca::idexchange::CaHandle, repository::x509::Time};
@@ -8,9 +7,11 @@ use crate::daemon::ca::CaObjects;
 use crate::{
     commons::{
         api::StorableCaCommand,
-        eventsourcing::{AggregateStore, KeyStoreKey, KeyValueStore, StoredCommand, StoredValueInfo},
+        eventsourcing::{
+            segment, AggregateStore, Key, KeyValueStore, Segment, SegmentExt, StoredCommand, StoredValueInfo,
+        },
     },
-    constants::{CASERVER_DIR, CA_OBJECTS_DIR, KRILL_VERSION},
+    constants::{CASERVER_NS, CA_OBJECTS_NS, KRILL_VERSION},
     daemon::{
         ca::{CaEvt, CertAuth, IniDet},
         config::Config,
@@ -33,8 +34,8 @@ struct CaObjectsMigration {
 
 impl CaObjectsMigration {
     fn create(config: &Config) -> Result<Self, PrepareUpgradeError> {
-        let current_store = KeyValueStore::disk(&config.data_dir, CA_OBJECTS_DIR)?;
-        let new_store = KeyValueStore::disk(&config.upgrade_data_dir(), CA_OBJECTS_DIR)?;
+        let current_store = KeyValueStore::create(&config.storage_uri, CA_OBJECTS_NS)?;
+        let new_store = KeyValueStore::create(config.upgrade_storage_uri(), CA_OBJECTS_NS)?;
         Ok(CaObjectsMigration {
             current_store,
             new_store,
@@ -42,7 +43,8 @@ impl CaObjectsMigration {
     }
 
     fn prepare_new_data_for(&self, ca: &CaHandle) -> Result<(), PrepareUpgradeError> {
-        let key = KeyStoreKey::simple(format!("{}.json", ca));
+        let key = Key::new_global(Segment::parse_lossy(ca.as_str())); // ca should always be a valid Segment
+
         if let Some(old_objects) = self.current_store.get::<OldCaObjects>(&key)? {
             let converted: CaObjects = old_objects.try_into()?;
             self.new_store.store(&key, &converted)?;
@@ -64,9 +66,9 @@ pub struct CasMigration {
 
 impl CasMigration {
     pub fn prepare(mode: UpgradeMode, config: &Config) -> UpgradeResult<()> {
-        let current_kv_store = KeyValueStore::disk(&config.data_dir, CASERVER_DIR)?;
-        let new_kv_store = KeyValueStore::disk(&config.upgrade_data_dir(), CASERVER_DIR)?;
-        let new_agg_store = AggregateStore::<CertAuth>::disk(&config.upgrade_data_dir(), CASERVER_DIR)?;
+        let current_kv_store = KeyValueStore::create(&config.storage_uri, CASERVER_NS)?;
+        let new_kv_store = KeyValueStore::create(config.upgrade_storage_uri(), CASERVER_NS)?;
+        let new_agg_store = AggregateStore::<CertAuth>::create(config.upgrade_storage_uri(), CASERVER_NS)?;
         let ca_objects_migration = CaObjectsMigration::create(config)?;
 
         CasMigration {
@@ -96,7 +98,7 @@ impl UpgradeStore for CasMigration {
         // Migrate the event sourced data for each CA and create new snapshots
         for scope in self.current_kv_store.scopes()? {
             // Getting the Handle should never fail, but if it does then we should bail out asap.
-            let handle = CaHandle::from_str(&scope)
+            let handle = CaHandle::from_str(&scope.to_string())
                 .map_err(|_| PrepareUpgradeError::Custom(format!("Found invalid CA handle '{}'", scope)))?;
 
             // Get the info from the current store to see where we are
@@ -106,8 +108,8 @@ impl UpgradeStore for CasMigration {
             // is a special event that has no command, so we need to do this separately.
             if data_upgrade_info.last_event == 0 {
                 // Make a new init event.
-                let init_key = Self::event_key(&scope, 0);
-                let old_init: OldCaIni = self.get(&init_key)?;
+                let init_key = Self::event_key(scope.clone(), 0);
+                let old_init: OldCaIni = self.get(&init_key).unwrap();
                 let (id, _, old_ini_det) = old_init.unpack();
                 let ini = IniDet::new(&id, old_ini_det.into());
                 self.new_kv_store.store(&init_key, &ini)?;
@@ -128,7 +130,7 @@ impl UpgradeStore for CasMigration {
             }
 
             // Get the old info file. We will only migrate commands in the info file
-            let info_key = KeyStoreKey::scoped(scope.to_string(), "info.json".to_string());
+            let info_key = Key::new_scoped(scope.clone(), segment!("info"));
             let old_info: StoredValueInfo = self
                 .current_kv_store
                 .get(&info_key)?
@@ -148,7 +150,7 @@ impl UpgradeStore for CasMigration {
                 // again in the migration scope.
                 if let Some(event_versions) = cmd.effect().events() {
                     for v in event_versions {
-                        let event_key = Self::event_key(&scope, *v);
+                        let event_key = Self::event_key(scope.clone(), *v);
                         trace!("  +- event: {}", event_key);
                         let evt: OldCaEvt = self.current_kv_store.get(&event_key)?.ok_or_else(|| {
                             PrepareUpgradeError::Custom(format!("Cannot parse old event: {}", event_key))
@@ -256,7 +258,7 @@ impl UpgradeStore for CasMigration {
 
                 // For each CA clean up the saved data upgrade info file.
                 for scope in self.current_kv_store.scopes()? {
-                    self.remove_data_upgrade_info(&scope)?;
+                    self.remove_data_upgrade_info(scope)?;
                 }
             }
         }

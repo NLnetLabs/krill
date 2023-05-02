@@ -23,26 +23,22 @@ pub const HTTPS_SUB_DIR: &str = "ssl";
 pub const KEY_FILE: &str = "key.pem";
 pub const CERT_FILE: &str = "cert.pem";
 
-pub fn key_file_path(data_dir: &Path) -> PathBuf {
-    let mut https_dir = data_dir.to_path_buf();
-    https_dir.push(HTTPS_SUB_DIR);
-    file::file_path(&https_dir, KEY_FILE)
+pub fn key_file_path(tls_keys_dir: &Path) -> PathBuf {
+    file::file_path(tls_keys_dir, KEY_FILE)
 }
 
-pub fn cert_file_path(data_dir: &Path) -> PathBuf {
-    let mut https_dir = data_dir.to_path_buf();
-    https_dir.push(HTTPS_SUB_DIR);
-    file::file_path(&https_dir, CERT_FILE)
+pub fn cert_file_path(tls_keys_dir: &Path) -> PathBuf {
+    file::file_path(tls_keys_dir, CERT_FILE)
 }
 
 /// Creates a new private key and certificate file if either is found to be
 /// missing in the base_path directory.
-pub fn create_key_cert_if_needed(data_dir: &Path) -> Result<(), Error> {
-    let key_file_path = key_file_path(data_dir);
-    let cert_file_path = cert_file_path(data_dir);
+pub fn create_key_cert_if_needed(tls_keys_dir: &Path) -> Result<(), Error> {
+    let key_file_path = key_file_path(tls_keys_dir);
+    let cert_file_path = cert_file_path(tls_keys_dir);
 
     if !key_file_path.exists() || !cert_file_path.exists() {
-        create_key_and_cert(data_dir)
+        create_key_and_cert(tls_keys_dir)
     } else {
         Ok(())
     }
@@ -51,10 +47,10 @@ pub fn create_key_cert_if_needed(data_dir: &Path) -> Result<(), Error> {
 /// Creates a new private key and certificate to be used when serving HTTPS.
 /// Only call this in case there is no current key and certificate file
 /// present, or have your files ruthlessly overwritten!
-fn create_key_and_cert(data_dir: &Path) -> Result<(), Error> {
+fn create_key_and_cert(tls_keys_dir: &Path) -> Result<(), Error> {
     let mut signer = HttpsSigner::build()?;
-    signer.save_private_key(data_dir)?;
-    signer.save_certificate(data_dir)?;
+    signer.save_private_key(tls_keys_dir)?;
+    signer.save_certificate(tls_keys_dir)?;
 
     Ok(())
 }
@@ -113,8 +109,8 @@ impl HttpsSigner {
     }
 
     /// Saves the private key in PEM format so that hyper can use it.
-    fn save_private_key(&self, data_dir: &Path) -> Result<(), Error> {
-        let key_file_path = key_file_path(data_dir);
+    fn save_private_key(&self, tls_keys_dir: &Path) -> Result<(), Error> {
+        let key_file_path = key_file_path(tls_keys_dir);
         let bytes = Bytes::from(self.private.private_key_to_pem_pkcs8()?);
         file::save(&bytes, &key_file_path)?;
         Ok(())
@@ -151,14 +147,14 @@ impl HttpsSigner {
     }
 
     /// Saves a self-signed certificate so that hyper can use it.
-    fn save_certificate(&mut self, data_dir: &Path) -> Result<(), Error> {
+    fn save_certificate(&mut self, tls_keys_dir: &Path) -> Result<(), Error> {
         let validity = Validity::new(Time::five_minutes_ago(), Time::years_from_now(100));
         let pub_key = self.public_key_info()?;
 
         let id_cert = IdCert::new_ta(validity, &pub_key.key_identifier(), self).map_err(Error::signer)?;
         let id_cert_pem = IdCertInfo::from(&id_cert);
 
-        let path = cert_file_path(data_dir);
+        let path = cert_file_path(tls_keys_dir);
 
         file::save(id_cert_pem.pem().as_bytes(), &path)?;
 
@@ -223,14 +219,14 @@ impl std::error::Error for Error {}
 
 #[cfg(test)]
 mod tests {
-    use crate::test;
-
     use super::*;
+
+    use crate::test;
 
     #[test]
     fn should_create_key_and_cert() {
-        test::test_under_tmp(|d| {
-            create_key_cert_if_needed(&d).unwrap();
+        test::test_under_tmp(|tls_keys_dir| {
+            create_key_cert_if_needed(&tls_keys_dir).unwrap();
         });
     }
 }

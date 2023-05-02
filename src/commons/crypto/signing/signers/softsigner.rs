@@ -1,36 +1,30 @@
 //! Support for signing things using software keys (through openssl) and
 //! storing them unencrypted on disk.
 use std::{
-    fs,
-    fs::File,
-    io::Write,
-    path::{Path, PathBuf},
     str::FromStr,
-    sync::Arc,
-    sync::RwLock,
+    sync::{Arc, RwLock},
 };
 
 use bytes::Bytes;
-use serde::{de, ser, Deserialize, Deserializer, Serialize, Serializer};
-
 use openssl::{
     hash::MessageDigest,
     pkey::{PKey, PKeyRef, Private},
     rsa::Rsa,
 };
-
 use rpki::crypto::{
     signer::{KeyError, SigningAlgorithm},
     KeyIdentifier, PublicKey, PublicKeyFormat, RpkiSignature, RpkiSignatureAlgorithm, Signature, SignatureAlgorithm,
     SigningError,
 };
+use serde::{de, ser, Deserialize, Deserializer, Serialize, Serializer};
+use url::Url;
 
 use crate::{
     commons::{
         crypto::{dispatch::signerinfo::SignerMapper, signers::error::SignerError, SignerHandle},
-        error::KrillIoError,
+        eventsourcing::{Key, KeyValueStore, Segment, SegmentExt},
     },
-    constants::KEYS_DIR,
+    constants::KEYS_NS,
 };
 
 //------------ OpenSslSigner -------------------------------------------------
@@ -38,13 +32,13 @@ use crate::{
 #[derive(Clone, Debug, Default, Deserialize, Hash, PartialEq, Eq)]
 pub struct OpenSslSignerConfig {
     #[serde(default)]
-    pub keys_path: Option<PathBuf>,
+    pub keys_storage_uri: Option<Url>,
 }
 
 impl OpenSslSignerConfig {
-    pub fn new(path: &Path) -> Self {
+    pub fn new(storage_uri: Url) -> Self {
         Self {
-            keys_path: Some(path.into()),
+            keys_storage_uri: Some(storage_uri),
         }
     }
 }
@@ -52,7 +46,7 @@ impl OpenSslSignerConfig {
 /// An openssl based signer.
 #[derive(Debug)]
 pub struct OpenSslSigner {
-    keys_dir: Arc<Path>,
+    keys_store: KeyValueStore,
 
     name: String,
 
@@ -67,19 +61,19 @@ impl OpenSslSigner {
     /// The OpenSslSigner can be used with or without a SignerMapper. Without a SignerMapper a caller that needs to
     /// dispatch requests to the Signer that owns a given KeyIdentifier will be unable to do so as the SignerMapper
     /// only knows about keys created by the OpenSslSigner if the OpenSslSigner registers the new keys in the mapper.
-    pub fn build(work_dir: &Path, name: &str, mapper: Option<Arc<SignerMapper>>) -> Result<Self, SignerError> {
-        let keys_dir = Self::init_keys_dir(work_dir)?;
+    pub fn build(storage_uri: &Url, name: &str, mapper: Option<Arc<SignerMapper>>) -> Result<Self, SignerError> {
+        let keys_store = Self::init_keys_store(storage_uri)?;
 
         let s = OpenSslSigner {
             name: name.to_string(),
             info: Some(format!(
-                "OpenSSL Soft Signer [version: {}, keys dir: {}]",
+                "OpenSSL Soft Signer [version: {}, keys store: {}]",
                 openssl::version::version(),
-                keys_dir.as_path().display()
+                storage_uri,
             )),
             handle: RwLock::new(None), // will be set later
             mapper,
-            keys_dir: keys_dir.into(),
+            keys_store,
         };
 
         Ok(s)
@@ -123,31 +117,10 @@ impl OpenSslSigner {
 }
 
 impl OpenSslSigner {
-    fn init_keys_dir(work_dir: &Path) -> Result<PathBuf, SignerError> {
-        let meta_data = fs::metadata(work_dir).map_err(|e| {
-            KrillIoError::new(
-                format!("Could not get metadata from '{}'", work_dir.to_string_lossy()),
-                e,
-            )
-        })?;
-        if meta_data.is_dir() {
-            let mut keys_dir = work_dir.to_path_buf();
-            keys_dir.push(KEYS_DIR);
-            if !keys_dir.is_dir() {
-                fs::create_dir_all(&keys_dir).map_err(|e| {
-                    KrillIoError::new(
-                        format!(
-                            "Could not create dir(s) '{}' for key storage",
-                            keys_dir.to_string_lossy()
-                        ),
-                        e,
-                    )
-                })?;
-            }
-            Ok(keys_dir)
-        } else {
-            Err(SignerError::InvalidWorkDir(work_dir.to_path_buf()))
-        }
+    fn init_keys_store(storage_uri: &Url) -> Result<KeyValueStore, SignerError> {
+        let store = KeyValueStore::create(storage_uri, KEYS_NS)
+            .map_err(|_| SignerError::InvalidStorage(storage_uri.clone()))?;
+        Ok(store)
     }
 
     fn build_key(&self) -> Result<KeyIdentifier, SignerError> {
@@ -159,15 +132,15 @@ impl OpenSslSigner {
         let pk = &kp.subject_public_key_info()?;
         let key_id = pk.key_identifier();
 
-        let path = self.key_path(&key_id);
-        let json = serde_json::to_string(&kp)?;
-
-        let mut f = File::create(&path)
-            .map_err(|e| KrillIoError::new(format!("Could not create key file '{}'", path.to_string_lossy()), e))?;
-        f.write_all(json.as_ref())
-            .map_err(|e| KrillIoError::new(format!("Could write to key file '{}'", path.to_string_lossy()), e))?;
-
-        Ok(key_id)
+        // TODO encrypt key before storing
+        let json = serde_json::to_value(&kp)?;
+        match self
+            .keys_store
+            .store(&Key::new_global(Segment::parse_lossy(&key_id.to_string())), &json) // key_id should always be a valid Segment
+        {
+            Ok(_) => Ok(key_id),
+            Err(err) => Err(SignerError::Other(format!("Failed to store key: {}:", err))),
+        }
     }
 
     fn sign_with_key<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
@@ -188,22 +161,16 @@ impl OpenSslSigner {
         Ok(signature)
     }
 
-    fn load_key(&self, id: &KeyIdentifier) -> Result<OpenSslKeyPair, SignerError> {
-        let path = self.key_path(id);
-        if path.exists() {
-            let f = File::open(&path)
-                .map_err(|e| KrillIoError::new(format!("Could not read key file '{}'", path.to_string_lossy()), e))?;
-            let kp: OpenSslKeyPair = serde_json::from_reader(f)?;
-            Ok(kp)
-        } else {
-            Err(SignerError::KeyNotFound)
+    fn load_key(&self, key_id: &KeyIdentifier) -> Result<OpenSslKeyPair, SignerError> {
+        // TODO decrypt key after read
+        match self
+            .keys_store
+            .get(&Key::new_global(Segment::parse_lossy(&key_id.to_string()))) // key_id should always be a valid Segment
+        {
+            Ok(Some(kp)) => Ok(kp),
+            Ok(None) => Err(SignerError::KeyNotFound),
+            Err(err) => Err(SignerError::Other(format!("Failed to get key: {}", err))),
         }
-    }
-
-    fn key_path(&self, key_id: &KeyIdentifier) -> PathBuf {
-        let mut path = self.keys_dir.to_path_buf();
-        path.push(&key_id.to_string());
-        path
     }
 
     fn remember_key_id(&self, key_id: &KeyIdentifier) -> Result<(), SignerError> {
@@ -250,16 +217,9 @@ impl OpenSslSigner {
     }
 
     pub fn destroy_key(&self, key_id: &KeyIdentifier) -> Result<(), KeyError<SignerError>> {
-        let path = self.key_path(key_id);
-        if path.exists() {
-            fs::remove_file(&path).map_err(|e| {
-                SignerError::IoError(KrillIoError::new(
-                    format!("Could not remove key file '{}'", path.to_string_lossy()),
-                    e,
-                ))
-            })?;
-        }
-        Ok(())
+        self.keys_store
+            .drop_key(&Key::new_global(Segment::parse_lossy(&key_id.to_string()))) // key_id should always be a valid Segment
+            .map_err(|_| KeyError::Signer(SignerError::KeyNotFound))
     }
 
     pub fn sign<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
@@ -358,8 +318,8 @@ pub mod tests {
 
     #[test]
     fn should_return_subject_public_key_info() {
-        test::test_under_tmp(|d| {
-            let s = OpenSslSigner::build(&d, "dummy", None).unwrap();
+        test::test_in_memory(|storage_uri| {
+            let s = OpenSslSigner::build(storage_uri, "dummy", None).unwrap();
             let ki = s.create_key(PublicKeyFormat::Rsa).unwrap();
             s.get_key_info(&ki).unwrap();
             s.destroy_key(&ki).unwrap();
@@ -380,10 +340,10 @@ pub mod tests {
 
     #[test]
     fn import_existing_pkcs1_openssl_key() {
-        test::test_under_tmp(|d| {
+        test::test_in_memory(|storage_uri| {
             // The following key was generated using OpenSSL on the command line
             let pem = include_str!("../../../../../test-resources/ta/example-pkcs1.pem");
-            let signer = OpenSslSigner::build(&d, "dummy", None).unwrap();
+            let signer = OpenSslSigner::build(storage_uri, "dummy", None).unwrap();
 
             let ki = signer.import_key(pem).unwrap();
             signer.get_key_info(&ki).unwrap();
@@ -393,10 +353,10 @@ pub mod tests {
 
     #[test]
     fn import_existing_pkcs8_openssl_key() {
-        test::test_under_tmp(|d| {
+        test::test_in_memory(|storage_uri| {
             // The following key was generated using OpenSSL on the command line
             let pem = include_str!("../../../../../test-resources/ta/example-pkcs8.pem");
-            let signer = OpenSslSigner::build(&d, "dummy", None).unwrap();
+            let signer = OpenSslSigner::build(storage_uri, "dummy", None).unwrap();
 
             let ki = signer.import_key(pem).unwrap();
             signer.get_key_info(&ki).unwrap();

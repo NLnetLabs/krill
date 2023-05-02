@@ -1,14 +1,16 @@
 use std::{
     collections::HashMap,
-    fmt::{self},
-    path::Path,
+    fmt,
     str::FromStr,
     sync::{Arc, RwLock},
 };
 
 use rpki::ca::idexchange::MyHandle;
+use url::Url;
 
-use crate::commons::eventsourcing::{locks::HandleLocks, KeyStoreKey, KeyValueError, KeyValueStore, Storable};
+use crate::commons::eventsourcing::{
+    locks::HandleLocks, segment, Key, KeyValueError, KeyValueStore, Scope, Segment, SegmentBuf, SegmentExt, Storable,
+};
 
 //------------ WalSupport ----------------------------------------------------
 
@@ -126,11 +128,8 @@ pub struct WalStore<T: WalSupport> {
 impl<T: WalSupport> WalStore<T> {
     /// Creates a new store using a disk based keystore for the given data
     /// directory and namespace (directory).
-    pub fn disk(krill_data_dir: &Path, name_space: &str) -> WalStoreResult<Self> {
-        let mut path = krill_data_dir.to_path_buf();
-        path.push(name_space);
-
-        let kv = KeyValueStore::disk(krill_data_dir, name_space)?;
+    pub fn create(storage_uri: &Url, name_space: impl Into<SegmentBuf>) -> WalStoreResult<Self> {
+        let kv = KeyValueStore::create(storage_uri, name_space)?;
         let cache = RwLock::new(HashMap::new());
         let locks = HandleLocks::default();
 
@@ -156,7 +155,8 @@ impl<T: WalSupport> WalStore<T> {
 
         let instance = Arc::new(instance);
         let key = Self::key_for_snapshot(handle);
-        self.kv.store_new(&key, &instance)?; // Fails if this key exists
+        // TODO rewrite as transaction, this was `.store_new`
+        self.kv.store(&key, &instance)?; // Should fail if this key exists
         self.cache.write().unwrap().insert(handle.clone(), instance);
         Ok(())
     }
@@ -231,7 +231,9 @@ impl<T: WalSupport> WalStore<T> {
                 let handle_lock = self.locks.for_handle(handle.clone());
                 let _write = handle_lock.write();
                 self.cache.write().unwrap().remove(handle);
-                self.kv.drop_scope(handle.as_str())?;
+                self.kv
+                    .drop_scope(&Scope::from_segment(Segment::parse_lossy(handle.as_str())))?;
+                // handle should always be a valid Segment
             }
 
             // Then drop the lock for it as well. We could not do this
@@ -259,7 +261,7 @@ impl<T: WalSupport> WalStore<T> {
         let mut res = vec![];
 
         for scope in self.kv.scopes()? {
-            if let Ok(handle) = MyHandle::from_str(&scope) {
+            if let Ok(handle) = MyHandle::from_str(&scope.to_string()) {
                 res.push(handle)
             }
         }
@@ -303,8 +305,9 @@ impl<T: WalSupport> WalStore<T> {
             };
 
             let key_for_wal_set = Self::key_for_wal_set(&handle, revision);
+            // TODO rewrite as transaction, this was `.store_new`
             self.kv
-                .store_new(&key_for_wal_set, &set)
+                .store(&key_for_wal_set, &set)
                 .map_err(WalStoreError::KeyStoreError)?;
 
             let latest = Arc::make_mut(&mut latest);
@@ -338,19 +341,21 @@ impl<T: WalSupport> WalStore<T> {
         self.kv.store(&key, &latest)?;
 
         // Archive or delete old wal sets
-        for key in self.kv.keys(Some(handle.to_string()), "wal-")? {
+        for key in self
+            .kv
+            .keys(&Scope::from_segment(Segment::parse_lossy(handle.as_str())), "wal-")?
+        // handle should always be a valid Segment
+        {
             // Carefully inspect the key, just ignore keys
             // following a format that is not expected.
             // Who knows what people write in this dir?
-            if let Some(remaining) = key.name().strip_prefix("wal-") {
-                if let Some(number) = remaining.strip_suffix(".json") {
-                    if let Ok(revision) = u64::from_str(number) {
-                        if revision < latest.revision() {
-                            if archive {
-                                self.kv.archive(&key)?;
-                            } else {
-                                self.kv.drop_key(&key)?;
-                            }
+            if let Some(number) = key.name().as_str().strip_prefix("wal-") {
+                if let Ok(revision) = u64::from_str(number) {
+                    if revision < latest.revision() {
+                        if archive {
+                            self.kv.archive(&key)?;
+                        } else {
+                            self.kv.drop_key(&key)?;
                         }
                     }
                 }
@@ -360,12 +365,18 @@ impl<T: WalSupport> WalStore<T> {
         Ok(())
     }
 
-    fn key_for_snapshot(handle: &MyHandle) -> KeyStoreKey {
-        KeyStoreKey::scoped(handle.to_string(), "snapshot.json".to_string())
+    fn key_for_snapshot(handle: &MyHandle) -> Key {
+        Key::new_scoped(
+            Scope::from_segment(Segment::parse_lossy(handle.as_str())), // handle should always be a valid Segment
+            segment!("snapshot"),
+        )
     }
 
-    fn key_for_wal_set(handle: &MyHandle, revision: u64) -> KeyStoreKey {
-        KeyStoreKey::scoped(handle.to_string(), format!("wal-{}.json", revision))
+    fn key_for_wal_set(handle: &MyHandle, revision: u64) -> Key {
+        Key::new_scoped(
+            Scope::from_segment(Segment::parse_lossy(handle.as_str())), // handle should always be a valid Segment
+            Segment::parse(&format!("wal-{}", revision)).unwrap(), // cannot panic as a u64 cannot contain a Scope::SEPARATOR
+        )
     }
 }
 

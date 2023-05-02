@@ -1,8 +1,9 @@
 //! An event sourcing aggregate store for capturing information about signer backends and set of keys they possess.
 
-use std::{collections::HashMap, fmt, path::Path, str::FromStr};
+use std::{collections::HashMap, fmt, str::FromStr};
 
 use rpki::crypto::{KeyIdentifier, PublicKey};
+use url::Url;
 
 use crate::{
     commons::{
@@ -13,7 +14,7 @@ use crate::{
         eventsourcing::{Aggregate, AggregateStore, CommandDetails, SentCommand, StoredEvent, WithStorableDetails},
         KrillResult,
     },
-    constants::{ACTOR_DEF_KRILL, SIGNERS_DIR},
+    constants::{ACTOR_DEF_KRILL, SIGNERS_NS},
 };
 
 //------------ InitSignerInfoEvent -----------------------------------------------------------------------------
@@ -326,8 +327,8 @@ impl std::fmt::Debug for SignerMapper {
 
 impl SignerMapper {
     /// Build a SignerMapper that will read/write its data in a subdirectory of the given work dir.
-    pub fn build(work_dir: &Path) -> KrillResult<SignerMapper> {
-        let store = AggregateStore::<SignerInfo>::disk(work_dir, SIGNERS_DIR)?;
+    pub fn build(storage_uri: &Url) -> KrillResult<SignerMapper> {
+        let store = AggregateStore::<SignerInfo>::create(storage_uri, SIGNERS_NS)?;
         Ok(SignerMapper { store })
     }
 
