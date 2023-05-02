@@ -1,14 +1,13 @@
 use std::{
     collections::HashMap,
     fmt,
-    path::Path,
     str::FromStr,
     sync::{Arc, RwLock},
 };
 
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
-
 use rpki::{ca::idexchange::MyHandle, repository::x509::Time};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use url::Url;
 
 use crate::commons::{
     api::{CommandHistory, CommandHistoryCriteria, CommandHistoryRecord, Label},
@@ -16,8 +15,8 @@ use crate::commons::{
     eventsourcing::{
         cmd::{Command, StoredCommandBuilder},
         locks::HandleLocks,
-        Aggregate, Event, KeyStoreKey, KeyValueError, KeyValueStore, PostSaveEventListener, PreSaveEventListener,
-        StoredCommand, WithStorableDetails,
+        segment, Aggregate, Event, Key, KeyValueError, KeyValueStore, PostSaveEventListener, PreSaveEventListener,
+        Scope, Segment, SegmentBuf, SegmentExt, StoredCommand, WithStorableDetails,
     },
     util::KrillVersion,
 };
@@ -94,15 +93,7 @@ impl FromStr for CommandKey {
             let timestamp_secs = i64::from_str(parts[1]).map_err(|_| CommandKeyError(s.to_string()))?;
             let sequence = u64::from_str(parts[2]).map_err(|_| CommandKeyError(s.to_string()))?;
             // strip .json if present on the label part
-            let label = {
-                let end = parts[3].to_string();
-                let last = if end.ends_with(".json") {
-                    end.len() - 5
-                } else {
-                    end.len()
-                };
-                (end[0..last]).to_string()
-            };
+            let label = parts[3].to_string();
 
             Ok(CommandKey {
                 sequence,
@@ -142,12 +133,8 @@ where
     A::Error: From<AggregateStoreError>,
 {
     /// Creates an AggregateStore using a disk based KeyValueStore
-    pub fn disk(work_dir: &Path, name_space: &str) -> StoreResult<Self> {
-        let mut path = work_dir.to_path_buf();
-        path.push(name_space);
-        let existed = path.exists();
-
-        let kv = KeyValueStore::disk(work_dir, name_space)?;
+    pub fn create(storage_uri: &Url, name_space: impl Into<SegmentBuf>) -> StoreResult<Self> {
+        let kv = KeyValueStore::create(storage_uri, name_space)?;
         let cache = RwLock::new(HashMap::new());
         let pre_save_listeners = vec![];
         let post_save_listeners = vec![];
@@ -160,10 +147,6 @@ where
             post_save_listeners,
             locks,
         };
-
-        if !existed {
-            store.set_version(&KrillVersion::code_version())?;
-        }
 
         Ok(store)
     }
@@ -531,7 +514,7 @@ where
     /// Returns true if an instance exists for the id
     pub fn has(&self, id: &MyHandle) -> Result<bool, AggregateStoreError> {
         self.kv
-            .has_scope(id.to_string())
+            .has_scope(&Scope::from_segment(Segment::parse_lossy(id.as_str()))) // id should always be a valid Segment
             .map_err(AggregateStoreError::KeyStoreError)
     }
 
@@ -680,39 +663,54 @@ impl<A: Aggregate> AggregateStore<A>
 where
     A::Error: From<AggregateStoreError>,
 {
-    fn key_version() -> KeyStoreKey {
-        KeyStoreKey::simple("version".to_string())
+    fn key_version() -> Key {
+        Key::new_global(segment!("version"))
     }
 
-    fn key_for_info(agg: &MyHandle) -> KeyStoreKey {
-        KeyStoreKey::scoped(agg.to_string(), "info.json".to_string())
+    fn key_for_info(agg: &MyHandle) -> Key {
+        Key::new_scoped(
+            Scope::from_segment(Segment::parse_lossy(agg.as_str())),
+            segment!("info"),
+        ) // agg should always be a valid Segment
     }
 
-    fn key_for_snapshot(agg: &MyHandle) -> KeyStoreKey {
-        KeyStoreKey::scoped(agg.to_string(), "snapshot.json".to_string())
+    fn key_for_snapshot(agg: &MyHandle) -> Key {
+        Key::new_scoped(
+            Scope::from_segment(Segment::parse_lossy(agg.as_str())), // agg should always be a valid Segment
+            segment!("snapshot"),
+        )
     }
 
-    fn key_for_backup_snapshot(agg: &MyHandle) -> KeyStoreKey {
-        KeyStoreKey::scoped(agg.to_string(), "snapshot-bk.json".to_string())
+    fn key_for_backup_snapshot(agg: &MyHandle) -> Key {
+        Key::new_scoped(
+            Scope::from_segment(Segment::parse_lossy(agg.as_str())), // agg should always be a valid Segment
+            segment!("snapshot-bk"),
+        )
     }
 
-    fn key_for_new_snapshot(agg: &MyHandle) -> KeyStoreKey {
-        KeyStoreKey::scoped(agg.to_string(), "snapshot-new.json".to_string())
+    fn key_for_new_snapshot(agg: &MyHandle) -> Key {
+        Key::new_scoped(
+            Scope::from_segment(Segment::parse_lossy(agg.as_str())), // agg should always be a valid Segment
+            segment!("snapshot-new"),
+        )
     }
 
-    fn key_for_event(agg: &MyHandle, version: u64) -> KeyStoreKey {
-        KeyStoreKey::scoped(agg.to_string(), format!("delta-{}.json", version))
+    fn key_for_event(agg: &MyHandle, version: u64) -> Key {
+        Key::new_scoped(
+            Scope::from_segment(Segment::parse_lossy(agg.as_str())), // agg should always be a valid Segment
+            Segment::parse(&format!("delta-{}", version)).unwrap(), // cannot panic as a u64 cannot contain a Scope::SEPARATOR
+        )
     }
 
-    fn key_for_command(agg: &MyHandle, command: &CommandKey) -> KeyStoreKey {
-        KeyStoreKey::scoped(agg.to_string(), format!("{}.json", command))
+    fn key_for_command(agg: &MyHandle, command: &CommandKey) -> Key {
+        Key::new_scoped(
+            Scope::from_segment(Segment::parse_lossy(agg.as_str())), // agg should always be a valid Segment
+            Segment::parse_lossy(&command.to_string()),              // command should always be a valid Segment
+        )
     }
 
     pub fn get_version(&self) -> Result<KrillVersion, AggregateStoreError> {
-        match self.kv.get::<KrillVersion>(&Self::key_version())? {
-            Some(version) => Ok(version),
-            None => Ok(KrillVersion::v0_5_0_or_before()),
-        }
+        Ok(self.kv.version()?)
     }
 
     pub fn set_version(&self, version: &KrillVersion) -> Result<(), AggregateStoreError> {
@@ -727,8 +725,12 @@ where
     ) -> Result<Vec<CommandKey>, AggregateStoreError> {
         let mut command_keys = vec![];
 
-        for key in self.kv.keys(Some(id.to_string()), "command--")? {
-            match CommandKey::from_str(key.name()) {
+        for key in self
+            .kv
+            .keys(&Scope::from_segment(Segment::parse_lossy(id.as_str())), "command--")?
+        // id should always be a valid Segment
+        {
+            match CommandKey::from_str(key.name().as_str()) {
                 Ok(command_key) => {
                     if command_key.matches_crit(crit) {
                         command_keys.push(command_key);
@@ -750,7 +752,7 @@ where
         let mut res = vec![];
 
         for scope in self.kv.scopes()? {
-            if let Ok(handle) = MyHandle::from_str(&scope) {
+            if let Ok(handle) = MyHandle::from_str(&scope.to_string()) {
                 res.push(handle)
             }
         }
@@ -760,13 +762,16 @@ where
 
     /// Clean surplus events
     fn archive_surplus_events(&self, id: &MyHandle, from: u64) -> Result<(), AggregateStoreError> {
-        for key in self.kv.keys(Some(id.to_string()), "delta-")? {
-            let name = key.name();
-            if name.starts_with("delta-") && name.ends_with(".json") {
+        for key in self
+            .kv
+            .keys(&Scope::from_segment(Segment::parse_lossy(id.as_str())), "delta-")?
+        // id should always be a valid Segment
+        {
+            let name = key.name().as_str();
+            if name.starts_with("delta-") {
                 let start = 6;
-                let end = name.len() - 5;
-                if end > start {
-                    if let Ok(v) = u64::from_str(&name[start..end]) {
+                if name.len() > start {
+                    if let Ok(v) = u64::from_str(&name[start..]) {
                         if v >= from {
                             let key = Self::key_for_event(id, v);
                             warn!("Archiving surplus event for '{}': {}", id, key);
@@ -979,7 +984,9 @@ where
             let _write_lock = agg_lock.write();
 
             self.cache_remove(id);
-            self.kv.drop_scope(id.as_str())?;
+            self.kv
+                .drop_scope(&Scope::from_segment(Segment::parse_lossy(id.as_str())))?;
+            // id should always be a valid Segment
         }
 
         // Then drop the lock for this aggregate immediately. The write lock is
@@ -1108,7 +1115,7 @@ mod tests {
         let key = CommandKey::from_str(key_str).unwrap();
         assert_eq!(key_str, &key.to_string());
 
-        let key_with_dot_json_str = "command--1576389600--87--cmd-ca-publish.json";
+        let key_with_dot_json_str = "command--1576389600--87--cmd-ca-publish";
         let key_with_dot_json = CommandKey::from_str(key_with_dot_json_str).unwrap();
 
         assert_eq!(key, key_with_dot_json);

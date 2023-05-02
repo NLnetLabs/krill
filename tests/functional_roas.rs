@@ -1,7 +1,5 @@
 //! Perform functional tests on a Krill instance, using the API
 //!
-use std::fs;
-
 use hyper::StatusCode;
 use rpki::repository::resources::ResourceSet;
 
@@ -9,7 +7,7 @@ use krill::{commons::api::RoaConfigurationUpdates, test::*};
 
 #[tokio::test]
 async fn functional_roas() {
-    let krill_dir = start_krill_with_default_test_config(true, false, false, false).await;
+    let cleanup = start_krill_with_default_test_config(true, false, false, false).await;
 
     info("##################################################################");
     info("#                                                                #");
@@ -192,5 +190,5 @@ async fn functional_roas() {
         assert_http_status(krill_anon_http_get("rrdp/").await, StatusCode::NOT_FOUND);
     }
 
-    let _ = fs::remove_dir_all(krill_dir);
+    cleanup();
 }

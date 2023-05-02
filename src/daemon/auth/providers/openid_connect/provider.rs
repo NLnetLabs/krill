@@ -54,7 +54,7 @@ use crate::{
         actor::ActorDef,
         api::Token,
         error::Error,
-        util::{httpclient, sha256},
+        util::{httpclient, sha256, storage::data_dir_from_storage_uri},
         KrillResult,
     },
     daemon::{
@@ -153,7 +153,9 @@ pub struct OpenIDConnectAuthProvider {
 
 impl OpenIDConnectAuthProvider {
     pub fn new(config: Arc<Config>, session_cache: Arc<LoginSessionCache>) -> KrillResult<Self> {
-        let session_key = Self::init_session_key(&config.data_dir)?;
+        // TODO rewrite this
+        let data_dir = data_dir_from_storage_uri(&config.storage_uri).unwrap();
+        let session_key = Self::init_session_key(&data_dir)?;
 
         Ok(OpenIDConnectAuthProvider {
             config,
@@ -731,6 +733,7 @@ impl OpenIDConnectAuthProvider {
     }
 
     fn init_session_key(data_dir: &Path) -> KrillResult<CryptState> {
+        // TODO rewrite this
         let key_path = data_dir.join(LOGIN_SESSION_STATE_KEY_PATH);
         info!("Initializing session encryption key {}", &key_path.display());
         crypt::crypt_init(key_path.as_path())

@@ -3,13 +3,11 @@
 use std::{
     borrow::BorrowMut,
     collections::HashMap,
-    path::Path,
     str::FromStr,
     sync::{Arc, RwLock},
 };
 
 use chrono::Duration;
-
 use rpki::{
     ca::{idexchange::CaHandle, provisioning::ResourceClassName, publication::Base64},
     crypto::{DigestAlgorithm, KeyIdentifier},
@@ -22,6 +20,7 @@ use rpki::{
     rrdp::Hash,
     uri,
 };
+use url::Url;
 
 use crate::{
     commons::{
@@ -31,10 +30,10 @@ use crate::{
         },
         crypto::KrillSigner,
         error::Error,
-        eventsourcing::{KeyStoreKey, KeyValueStore, PreSaveEventListener},
+        eventsourcing::{Key, KeyValueStore, PreSaveEventListener, Scope, Segment, SegmentExt},
         KrillResult,
     },
-    constants::CA_OBJECTS_DIR,
+    constants::CA_OBJECTS_NS,
     daemon::{
         ca::{CaEvt, CertAuth, CertifiedKey, ChildCertificateUpdates, RoaUpdates},
         config::IssuanceTimingConfig,
@@ -65,8 +64,12 @@ pub struct CaObjectsStore {
 
 /// # Construct
 impl CaObjectsStore {
-    pub fn disk(work_dir: &Path, issuance_timing: IssuanceTimingConfig, signer: Arc<KrillSigner>) -> KrillResult<Self> {
-        let store = KeyValueStore::disk(work_dir, CA_OBJECTS_DIR)?;
+    pub fn create(
+        storage_uri: &Url,
+        issuance_timing: IssuanceTimingConfig,
+        signer: Arc<KrillSigner>,
+    ) -> KrillResult<Self> {
+        let store = KeyValueStore::create(storage_uri, CA_OBJECTS_NS)?;
         let store = Arc::new(RwLock::new(store));
         Ok(CaObjectsStore {
             store,
@@ -170,8 +173,8 @@ impl PreSaveEventListener<CertAuth> for CaObjectsStore {
 }
 
 impl CaObjectsStore {
-    fn key(ca: &CaHandle) -> KeyStoreKey {
-        KeyStoreKey::simple(format!("{}.json", ca))
+    fn key(ca: &CaHandle) -> Key {
+        Key::new_global(Segment::parse_lossy(ca.as_str())) // ca should always be a valid Segment
     }
 
     fn cas(&self) -> KrillResult<Vec<CaHandle>> {
@@ -179,15 +182,13 @@ impl CaObjectsStore {
             .store
             .read()
             .unwrap()
-            .keys(None, ".json")?
+            .keys(&Scope::global(), "")?
             .iter()
             .flat_map(|k| {
-                // Only add entries that end with .json AND for which the first part can be parsed as a handle
+                // Only add entries for which the first part can be parsed as a handle
                 let mut res = None;
-                if let Some(name) = k.name().strip_suffix(".json") {
-                    if let Ok(handle) = CaHandle::from_str(name) {
-                        res = Some(handle)
-                    }
+                if let Ok(handle) = CaHandle::from_str(k.name().as_str()) {
+                    res = Some(handle)
                 }
                 res
             })

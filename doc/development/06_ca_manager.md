@@ -57,7 +57,7 @@ impl CaManager {
     pub async fn build(config: Arc<Config>, mq: Arc<TaskQueue>, signer: Arc<KrillSigner>) -> KrillResult<Self> {
         // Create the AggregateStore for the event-sourced `CertAuth` structures that handle
         // most CA functions.
-        let mut ca_store = AggregateStore::<CertAuth>::disk(&config.data_dir, CASERVER_DIR)?;
+        let mut ca_store = AggregateStore::<CertAuth>::disk(&config.data_dir, CASERVER_NS)?;
 
         if config.always_recover_data {
             // If the user chose to 'always recover data' then do so.
@@ -95,7 +95,7 @@ impl CaManager {
 
         // Create the status store which will maintain the last known connection status between each CA
         // and their parent(s) and repository.
-        let status_store = StatusStore::new(&config.data_dir, STATUS_DIR)?;
+        let status_store = StatusStore::new(&config.data_dir, STATUS_NS)?;
 
         // Create the per-CA lock structure so that we can guarantee safe access to each CA, while allowing
         // multiple CAs in a single Krill instance to interact: e.g. a child can talk to its parent and they

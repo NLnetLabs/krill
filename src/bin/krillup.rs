@@ -52,7 +52,7 @@ async fn main() {
                                 "Prepared and verified upgrade from {} to {}. Prepared data was saved to: {}",
                                 from,
                                 to,
-                                config.upgrade_data_dir().to_string_lossy()
+                                config.upgrade_storage_uri()
                             );
                         } else {
                             info!("No preparation is needed for the upgrade from {} to {}.", from, to)

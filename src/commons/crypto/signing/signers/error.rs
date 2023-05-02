@@ -1,14 +1,15 @@
-use std::{fmt, path::PathBuf};
+use std::fmt;
 
 use openssl::error::ErrorStack;
 use rpki::crypto::signer::SigningAlgorithm;
+use url::Url;
 
 use crate::commons::error::KrillIoError;
 
 #[derive(Debug)]
 pub enum SignerError {
     DecodeError,
-    InvalidWorkDir(PathBuf),
+    InvalidStorage(Url),
     IoError(KrillIoError),
     JsonError(serde_json::Error),
     KeyNotFound,
@@ -31,7 +32,7 @@ impl fmt::Display for SignerError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             SignerError::DecodeError => write!(f, "Could not decode key"),
-            SignerError::InvalidWorkDir(path) => write!(f, "Invalid base path: {}", path.to_string_lossy()),
+            SignerError::InvalidStorage(url) => write!(f, "Invalid storage url: {}", url),
             SignerError::IoError(e) => e.fmt(f),
             SignerError::JsonError(e) => write!(f, "Could not decode public key info: {}", e),
             SignerError::KeyNotFound => write!(f, "Could not find key"),

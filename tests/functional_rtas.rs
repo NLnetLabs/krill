@@ -1,14 +1,12 @@
 //! Perform functional tests on a Krill instance, using the API
 //!
-use std::fs;
-
 use bytes::Bytes;
 use krill::{commons::api::RtaList, test::*};
 use rpki::repository::resources::ResourceSet;
 
 #[tokio::test]
 async fn functional_rtas() {
-    let krill_dir = start_krill_with_default_test_config(true, false, false, false).await;
+    let cleanup = start_krill_with_default_test_config(true, false, false, false).await;
 
     info("##################################################################");
     info("#                                                                #");
@@ -127,5 +125,5 @@ async fn functional_rtas() {
         let _multi_signed = rta_show(ca1.clone(), multi_rta_name).await;
     }
 
-    let _ = fs::remove_dir_all(krill_dir);
+    cleanup();
 }
