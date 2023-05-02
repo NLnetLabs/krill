@@ -1130,8 +1130,9 @@ dependencies = [
 
 [[package]]
 name = "kvx"
-version = "0.3.0"
-source = "git+https://github.com/tweedegolf/kvx.git?rev=6a0210625e3b8dbfb9670caf9b489fd194fe23f3#6a0210625e3b8dbfb9670caf9b489fd194fe23f3"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "80d1e586ca411e94535eb33725dfd179fa58f6251db46f29b57850cf4bee1fe3"
 dependencies = [
  "kvx_macros",
  "kvx_types",
@@ -1147,8 +1148,9 @@ dependencies = [
 
 [[package]]
 name = "kvx_macros"
-version = "0.3.0"
-source = "git+https://github.com/tweedegolf/kvx.git?rev=6a0210625e3b8dbfb9670caf9b489fd194fe23f3#6a0210625e3b8dbfb9670caf9b489fd194fe23f3"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4b5af3f5d5e56865b9afca8457922bbe0d5caba16c3837cc113aaaa909879932"
 dependencies = [
  "kvx_types",
  "proc-macro-error",
@@ -1159,8 +1161,9 @@ dependencies = [
 
 [[package]]
 name = "kvx_types"
-version = "0.1.0"
-source = "git+https://github.com/tweedegolf/kvx.git?rev=6a0210625e3b8dbfb9670caf9b489fd194fe23f3#6a0210625e3b8dbfb9670caf9b489fd194fe23f3"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f92920ce38be651b89fa2bac91febba9d3ec4eede5b4f4ab5c38653550677de6"
 dependencies = [
  "postgres",
  "postgres-types",
