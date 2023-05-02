@@ -297,7 +297,7 @@ mod tests {
         test_under_tmp(|data_dir| {
             let counter = Arc::new(EventCounter::default());
             let storage_uri = storage_uri_from_data_dir(&data_dir).unwrap();
-            let mut manager = AggregateStore::<Person>::new(&storage_uri, segment!("person")).unwrap();
+            let mut manager = AggregateStore::<Person>::create(&storage_uri, segment!("person")).unwrap();
             manager.add_post_save_listener(counter.clone());
 
             let id_alice = MyHandle::from_str("alice").unwrap();
@@ -329,7 +329,7 @@ mod tests {
             assert_eq!(21, alice.age());
 
             // Should read state from disk
-            let manager = AggregateStore::<Person>::new(&storage_uri, segment!("person")).unwrap();
+            let manager = AggregateStore::<Person>::create(&storage_uri, segment!("person")).unwrap();
 
             let alice = manager.get_latest(&id_alice).unwrap();
             assert_eq!("alice smith-doe", alice.name());

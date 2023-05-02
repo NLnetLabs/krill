@@ -419,7 +419,7 @@ mod tests {
                 serde_json::from_str(status_testbed_before_migration).unwrap();
 
             let storage_uri = storage_uri_from_data_dir(&data_dir).unwrap();
-            let store = StatusStore::new(&storage_uri, segment!("status")).unwrap();
+            let store = StatusStore::create(&storage_uri, segment!("status")).unwrap();
             let testbed = CaHandle::from_str("testbed").unwrap();
 
             let status_testbed_migrated = store.get_ca_status(&testbed);
