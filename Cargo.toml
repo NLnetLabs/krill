@@ -21,7 +21,7 @@ exclude = [
 ]
 
 [dependencies]
-kvx                   = { git = "https://github.com/tweedegolf/kvx.git" }
+kvx                   = { version = "0.4.0", features = ["macros"] }
 backoff               = { version = "0.3.0", optional = true }
 base64                = "^0.13"
 basic-cookies         = { version = "^0.1", optional = true }
