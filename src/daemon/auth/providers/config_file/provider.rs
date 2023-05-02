@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use urlparse::{urlparse, GetQuery};
+use unicode_normalization::UnicodeNormalization;
 
 use crate::{
     commons::{actor::ActorDef, api::Token, error::Error, util::httpclient, KrillResult},
@@ -88,15 +88,18 @@ impl ConfigFileAuthProvider {
         crypt::crypt_init(key_path.as_path())
     }
 
+    /// Parse HTTP Basic Authorization header
     fn get_auth(&self, request: &hyper::Request<hyper::Body>) -> Option<Auth> {
-        if let Some(password_hash) = httpclient::get_bearer_token(request) {
-            if let Some(query) = urlparse(request.uri().to_string()).get_parsed_query() {
-                if let Some(id) = query.get_first_from_str("id") {
-                    return Some(Auth::IdAndPasswordHash { id, password_hash });
-                }
-            }
-        }
-        None
+        let header = request.headers().get(hyper::http::header::AUTHORIZATION)?;
+        let auth = header.to_str().ok()?.strip_prefix("Basic ")?;
+        let auth = base64::decode(auth).ok()?;
+        let auth = String::from_utf8(auth).ok()?;
+        let (username, password) = auth.split_once(':')?;
+
+        return Some(Auth::UsernameAndPassword {
+            username: username.to_string(),
+            password: password.to_string(),
+        });
     }
 }
 
@@ -132,53 +135,60 @@ impl ConfigFileAuthProvider {
     }
 
     pub fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
-        if let Some(Auth::IdAndPasswordHash { id, password_hash }) = self.get_auth(request) {
+        if let Some(Auth::UsernameAndPassword { username, password }) = self.get_auth(request) {
             use scrypt::scrypt;
 
             // Do NOT bail out if the user is not known because then the unknown user path would return very quickly
             // compared to the known user path and timing differences can aid attackers.
-            let (user_password_hash, user_salt) = match self.users.get(&id) {
+            let (user_password_hash, user_salt) = match self.users.get(&username) {
                 Some(user) => (user.password_hash.to_string(), user.salt.clone()),
                 None => (self.fake_password_hash.clone(), self.fake_salt.clone()),
             };
 
-            // The password has already been hashed once with a weak salt (weak because it is known to the
-            // client browser and is trivially based on the users id and a site/Krill specific value). Now hash the
-            // given hash again using a locally stored strong salt and compare the resulting hash to the hash we
-            // have stored locally for the user.
-            let params = scrypt::Params::new(PW_HASH_LOG_N, PW_HASH_R, PW_HASH_P).unwrap();
+            let username = username.trim().nfkc().collect::<String>();
+            let password = password.trim().nfkc().collect::<String>();
 
-            let password_hash_bytes = hex::decode(password_hash.as_ref()).unwrap();
-            let strong_salt = hex::decode(user_salt).unwrap();
+            // hash twice with two different salts
+            // legacy hashing strategy to be compatible with lagosta
+            let params = scrypt::Params::new(PW_HASH_LOG_N, PW_HASH_R, PW_HASH_P).unwrap();
+            let weak_salt = format!("krill-lagosta-{username}");
+            let weak_salt = weak_salt.nfkc().collect::<String>();
+
+            let mut interim_hash: [u8; 32] = [0; 32];
+            scrypt(password.as_bytes(), weak_salt.as_bytes(), &params, &mut interim_hash).unwrap();
+
+            let strong_salt: Vec<u8> = hex::decode(user_salt).unwrap();
             let mut hashed_hash: [u8; 32] = [0; 32];
             scrypt(
-                password_hash_bytes.as_slice(),
+                &interim_hash,
                 strong_salt.as_slice(),
                 &params,
                 &mut hashed_hash,
             )
             .unwrap();
 
-            if hex::encode(hashed_hash) == user_password_hash {
+            let encoded_hash = hex::encode(hashed_hash);
+
+            if encoded_hash == user_password_hash {
                 // And now finally check the user, so that both known and unknown user code paths do the same work
                 // and don't result in an obvious timing difference between the two scenarios which could potentially
                 // be used to discover user names.
-                if let Some(user) = self.users.get(&id) {
+                if let Some(user) = self.users.get(&username) {
                     let api_token =
                         self.session_cache
-                            .encode(&id, &user.attributes, HashMap::new(), &self.session_key, None)?;
+                            .encode(&username, &user.attributes, HashMap::new(), &self.session_key, None)?;
 
                     Ok(LoggedInUser {
                         token: api_token,
-                        id: id.to_string(),
+                        id: username.to_string(),
                         attributes: user.attributes.clone(),
                     })
                 } else {
-                    trace!("Incorrect password for user {}", id);
+                    trace!("Incorrect password for user {}", username);
                     Err(Error::ApiInvalidCredentials("Incorrect credentials".to_string()))
                 }
             } else {
-                trace!("Unknown user {}", id);
+                trace!("Unknown user {}", username);
                 Err(Error::ApiInvalidCredentials("Incorrect credentials".to_string()))
             }
         } else {
