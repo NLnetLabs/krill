@@ -25,7 +25,13 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 # Changelog
 
-## 0.13.0 RC2
+## 0.13.0 RC3
+
+RC3 fixes the following issues:
+- ROA IPv4 prefixes longer than 24 are now accepted again. (krill-ui #32)
+- Krill UI should show max length tool tip (krill-ui 34)
+- Username/password logins on Firefox/Chrome/others now work again. (krill-ui #35)
+- Pin cryptoki-sys to v0.1.4 (#1045)
 
 RC2 fixes the following issue:
 - Do not migrate non-existing 0.12.x publication server (#1040)
@@ -40,6 +46,9 @@ improvements will be most visible and relevant:
 
 You can read more about ASPA support here:
 https://krill.docs.nlnetlabs.nl/en/0.13.0-rc1/manage-aspas.html
+
+The new krill-ui project has its own repository where issues can be tracked:
+https://github.com/NLnetLabs/krill-ui
 
 ### API Changes
 
