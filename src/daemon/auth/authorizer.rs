@@ -271,9 +271,9 @@ pub enum Auth {
         nonce: String,
         csrf_token_hash: String,
     },
-    IdAndPasswordHash {
-        id: String,
-        password_hash: Token,
+    UsernameAndPassword {
+        username: String,
+        password: String,
     },
 }
 
@@ -290,8 +290,8 @@ impl Auth {
         }
     }
 
-    pub fn id_and_password_hash(id: String, password_hash: Token) -> Self {
-        Auth::IdAndPasswordHash { id, password_hash }
+    pub fn username_and_password_hash(username: String, password: String) -> Self {
+        Auth::UsernameAndPassword { username, password }
     }
 }
 
