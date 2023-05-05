@@ -17,7 +17,7 @@ pub async fn statics(req: Request) -> RoutingResult {
 
             "/assets/favicon-f84116cb.ico" => Ok(HttpResponse::fav(FAVICON)),
 
-            "/assets/index-cbbd7778.js" => Ok(HttpResponse::js(JS_INDEX)),
+            "/assets/index-cc8bde15.js" => Ok(HttpResponse::js(JS_INDEX)),
 
             "/assets/en-6862b1fd.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_ENGLISH)),
             "/assets/de-a07fd626.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_GERMAN)),
@@ -68,7 +68,7 @@ pub static INDEX: &[u8] = include_bytes!("../../../ui/index.html");
 
 static FAVICON: &[u8] = include_bytes!("../../../ui/assets/favicon-f84116cb.ico");
 
-static JS_INDEX: &[u8] = include_bytes!("../../../ui/assets/index-cbbd7778.js");
+static JS_INDEX: &[u8] = include_bytes!("../../../ui/assets/index-cc8bde15.js");
 
 static JS_TRANSLATIONS_GERMAN: &[u8] = include_bytes!("../../../ui/assets/de-a07fd626.js");
 static JS_TRANSLATIONS_ENGLISH: &[u8] = include_bytes!("../../../ui/assets/en-6862b1fd.js");
