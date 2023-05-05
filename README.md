@@ -29,6 +29,7 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 RC4 fixes the following UI issues:
 - Do not cache request XML (krill-ui #41)
+- Do not show CA drop down if there is only 1 CA (krill-ui #40)
 - Revalidate ROA form fields (krill-ui #39)
 
 RC3 fixes the following issues:
