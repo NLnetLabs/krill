@@ -25,7 +25,11 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 # Changelog
 
-## 0.13.0 RC3
+## 0.13.0 RC4
+
+RC4 fixes the following UI issues:
+- Do not cache request XML (krill-ui #41)
+- Revalidate ROA form fields (krill-ui #39)
 
 RC3 fixes the following issues:
 - ROA IPv4 prefixes longer than 24 are now accepted again. (krill-ui #32)
