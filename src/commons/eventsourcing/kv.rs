@@ -54,14 +54,12 @@ impl KeyValueStore {
 
     /// Stores a key value pair, serialized as json, fails if existing
     pub fn store_new<V: Serialize>(&self, key: &Key, value: &V) -> Result<(), KeyValueError> {
-        let key_clone = key.clone();
-        let value_clone = serde_json::to_value(value)?;
         Ok(self.inner.transaction(
             key.scope(),
-            Box::new(move |kv: &dyn KeyValueStoreBackend| match kv.get(&key_clone)? {
-                None => kv.store(&key_clone, value_clone.clone()),
+            &mut move |kv: &dyn KeyValueStoreBackend| match kv.get(key)? {
+                None => kv.store(key, serde_json::to_value(value)?),
                 _ => Err(kvx::Error::Unknown),
-            }),
+            },
         )?)
     }
 
@@ -73,6 +71,22 @@ impl KeyValueStore {
         } else {
             Ok(None)
         }
+    }
+
+    /// Transactional `get`.
+    pub fn get_transactional<V: DeserializeOwned>(&self, key: &Key) -> Result<Option<V>, KeyValueError> {
+        let mut result: Option<V> = None;
+        let result_ref = &mut result;
+        self.inner
+            .transaction(key.scope(), &mut move |kv: &dyn KeyValueStoreBackend| {
+                if let Some(value) = kv.get(key)? {
+                    *result_ref = Some(serde_json::from_value(value)?)
+                }
+
+                Ok(())
+            })?;
+
+        Ok(result)
     }
 
     /// Returns whether a key exists
@@ -316,6 +330,19 @@ mod tests {
 
         store.store(&key, &content).unwrap();
         assert_eq!(store.get(&key).unwrap(), Some(content));
+    }
+
+    #[test]
+    fn test_get_transactional() {
+        let storage_uri = get_storage_uri();
+
+        let store = KeyValueStore::create(&storage_uri, random_segment()).unwrap();
+        let content = "content".to_owned();
+        let key = Key::new_global(random_segment());
+        assert_eq!(store.get_transactional::<String>(&key).unwrap(), None);
+
+        store.store(&key, &content).unwrap();
+        assert_eq!(store.get_transactional(&key).unwrap(), Some(content));
     }
 
     #[test]
