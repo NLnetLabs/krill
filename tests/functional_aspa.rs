@@ -15,7 +15,7 @@ use krill::{
 use rpki::repository::aspa::ProviderAs;
 
 #[tokio::test]
-async fn functional_aspa() {
+pub async fn functional_aspa() {
     let krill_dir = start_krill_with_default_test_config(true, false, false, false).await;
 
     info("##################################################################");
@@ -70,6 +70,23 @@ async fn functional_aspa() {
         }
 
         assert!(will_publish_embedded("published ASPAs do not match expectations", ca, &expected_files).await);
+    }
+
+    {
+        info("##################################################################");
+        info("#                                                                #");
+        info("# Reject ASPA without providers                                  #");
+        info("#                                                                #");
+        info("##################################################################");
+        info("");
+
+        let aspa_65000 = AspaDefinition::from_str("AS65000 => <none>").unwrap();
+
+        ca_aspas_add_expect_error(&ca, aspa_65000.clone()).await;
+
+        let expected_aspas = vec![];
+        expect_aspa_objects(&ca, &expected_aspas).await;
+        expect_aspa_definitions(&ca, AspaDefinitionList::new(expected_aspas)).await;
     }
 
     {
