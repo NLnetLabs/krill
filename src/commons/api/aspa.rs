@@ -93,37 +93,32 @@ impl AspaDefinition {
         &self.providers
     }
 
-    pub fn verify_update(&self, update: &AspaProvidersUpdate) -> Result<(), AspaProvidersUpdateConflict> {
-        let mut error = AspaProvidersUpdateConflict::default();
+    pub fn update_needed(&self, update: &AspaProvidersUpdate) -> bool {
         for removed in update.removed() {
-            if !self.providers.contains(removed) {
-                error.add_unknown(*removed)
+            if self.providers.contains(removed) {
+                return true;
             }
         }
         for added in update.added() {
-            if self
-                .providers
-                .iter()
-                .any(|existing| existing.provider() == added.provider())
-            {
-                error.add_duplicate(*added)
+            if !self.providers.contains(added) {
+                return true;
             }
         }
 
-        if error.is_empty() {
-            Ok(())
-        } else {
-            Err(error)
-        }
+        // apparently none of the updates would change this
+        false
     }
 
-    /// Applies an update. This assumes that the update was verified.
+    /// Applies an update. This is a no-op in case there is no
+    /// actual change needed (i.e. this is idempotent).
     pub fn apply_update(&mut self, update: &AspaProvidersUpdate) {
         for removed in update.removed() {
             self.providers.retain(|provider| provider != removed);
         }
         for added in update.added() {
-            self.providers.push(*added);
+            if !self.providers.contains(added) {
+                self.providers.push(*added);
+            }
         }
         self.providers.sort_by_key(|p| p.provider());
     }
@@ -285,50 +280,6 @@ impl fmt::Display for AspaProvidersUpdate {
                 write!(f, " {}", removed)?;
             }
         }
-        Ok(())
-    }
-}
-
-//------------ AspaProvidersUpdateConflict -------------------------------
-
-/// This type contains details on AspaProvidersUpdate entries which
-/// could not be applied.
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-pub struct AspaProvidersUpdateConflict {
-    duplicates: Vec<ProviderAs>,
-    unknowns: Vec<ProviderAs>,
-}
-
-impl AspaProvidersUpdateConflict {
-    pub fn add_duplicate(&mut self, provider: ProviderAs) {
-        self.duplicates.push(provider);
-    }
-
-    pub fn add_unknown(&mut self, provider: ProviderAs) {
-        self.unknowns.push(provider);
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.duplicates.is_empty() && self.unknowns.is_empty()
-    }
-}
-
-impl fmt::Display for AspaProvidersUpdateConflict {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if !self.duplicates.is_empty() {
-            writeln!(f, "Cannot add the following duplicate provider(s): ")?;
-            for dup in &self.duplicates {
-                writeln!(f, "  {}", dup)?;
-            }
-        }
-
-        if !self.unknowns.is_empty() {
-            writeln!(f, "Cannot remove the following unknown provider(s): ")?;
-            for unk in &self.unknowns {
-                writeln!(f, "  {}", unk)?;
-            }
-        }
-
         Ok(())
     }
 }

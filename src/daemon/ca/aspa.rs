@@ -88,13 +88,21 @@ impl AspaDefinitions {
 
     // Applies an update. This assumes that the update was verified beforehand.
     pub fn apply_update(&mut self, customer: AspaCustomer, update: &AspaProvidersUpdate) {
-        let current = self.attestations.get_mut(&customer).unwrap();
-        current.apply_update(update);
+        if let Some(current) = self.attestations.get_mut(&customer) {
+            current.apply_update(update);
 
-        // If there are no remaining providers for this AspaDefinition, then
-        // remove it so that its ASPA object will also be removed.
-        if current.providers().is_empty() {
-            self.attestations.remove(&customer);
+            // If there are no remaining providers for this AspaDefinition, then
+            // remove it so that its ASPA object will also be removed.
+            if current.providers().is_empty() {
+                self.attestations.remove(&customer);
+            }
+        } else {
+            // There was no AspaDefinition. So create an empty definition, apply
+            // the update and then add it.
+            let mut def = AspaDefinition::new(customer, vec![]);
+            def.apply_update(update);
+
+            self.attestations.insert(customer, def);
         }
     }
 
