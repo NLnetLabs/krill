@@ -1732,6 +1732,9 @@ impl CertAuth {
 
         for aspa_config in add_or_replace {
             let customer = aspa_config.customer();
+            if aspa_config.providers().is_empty() {
+                return Err(Error::AspaProvidersEmpty(self.handle().clone(), customer));
+            }
 
             if !self.all_resources().contains_asn(customer) {
                 return Err(Error::AspaCustomerAsNotEntitled(self.handle().clone(), customer));
