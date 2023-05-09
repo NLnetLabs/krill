@@ -1976,9 +1976,12 @@ impl Options {
         let aspa_config_str = matches.value_of("aspa").unwrap(); // required argument
         let aspa = AspaDefinition::from_str(aspa_config_str)?;
 
-        let command = Command::CertAuth(CaCommand::AspasAddOrReplace(my_ca, aspa));
-
-        Ok(Options::make(general_args, command))
+        if aspa.providers().is_empty() {
+            Err(Error::general("At least one provider MUST be specified."))
+        } else {
+            let command = Command::CertAuth(CaCommand::AspasAddOrReplace(my_ca, aspa));
+            Ok(Options::make(general_args, command))
+        }
     }
 
     fn parse_matches_cas_aspas_remove(matches: &ArgMatches) -> Result<Options, Error> {
