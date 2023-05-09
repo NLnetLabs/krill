@@ -158,20 +158,65 @@ pub async fn functional_aspa() {
     {
         info("##################################################################");
         info("#                                                                #");
+        info("# Add provider to non-existing definition, this should create a  #");
+        info("# a new AspaDefinition. This is useful for two reasons:          #");
+        info("# 1) it allows for automation using just updates                 #");
+        info("# 2) because empty provider lists were accepted in Krill <0.13.0 #");
+        info("#    we need the code to deal with removing all providers, which #");
+        info("#    will remove the AspaConfig when replayed, and then adding   #");
+        info("#    some provider again.                                        #");
+        info("#                                                                #");
+        info("##################################################################");
+
+        let customer = AspaCustomer::from_str("AS65000").unwrap();
+        let aspa_update = AspaProvidersUpdate::new(
+            vec![
+                ProviderAs::from_str("AS65003(v4)").unwrap(),
+                ProviderAs::from_str("AS65005(v6)").unwrap(),
+                ProviderAs::from_str("AS65006").unwrap(),
+            ],
+            vec![],
+        );
+
+        ca_aspas_update(&ca, customer, aspa_update).await;
+
+        let updated_aspa = AspaDefinition::from_str("AS65000 => AS65003(v4), AS65005(v6), AS65006").unwrap();
+        let aspas = vec![updated_aspa.clone()];
+
+        expect_aspa_objects(&ca, &aspas).await;
+        expect_aspa_definitions(&ca, AspaDefinitionList::new(aspas)).await;
+    }
+
+    {
+        info("##################################################################");
+        info("#                                                                #");
+        info("# Adding an existing provider, and removing a non-existing       #");
+        info("# provider to/from an AspaDefinition should be a no-op.          #");
+        info("#                                                                #");
+        info("##################################################################");
+
+        let customer = AspaCustomer::from_str("AS65000").unwrap();
+        let aspa_update = AspaProvidersUpdate::new(
+            vec![ProviderAs::from_str("AS65006").unwrap()], // adding, but was already present
+            vec![ProviderAs::from_str("AS65007").unwrap()], // removing, but was not present
+        );
+
+        ca_aspas_update(&ca, customer, aspa_update).await;
+
+        let updated_aspa = AspaDefinition::from_str("AS65000 => AS65003(v4), AS65005(v6), AS65006").unwrap();
+        let aspas = vec![updated_aspa.clone()];
+
+        expect_aspa_objects(&ca, &aspas).await;
+        expect_aspa_definitions(&ca, AspaDefinitionList::new(aspas)).await;
+    }
+
+    {
+        info("##################################################################");
+        info("#                                                                #");
         info("# Delete an existing ASPA                                        #");
         info("#                                                                #");
         info("##################################################################");
         info("");
-
-        // Add the ASPA again first, otherwise there is nothing to delete.
-        {
-            let aspa_65000 = AspaDefinition::from_str("AS65000 => AS65002, AS65003(v4), AS65005(v6)").unwrap();
-            ca_aspas_add(&ca, aspa_65000.clone()).await;
-
-            let aspas = vec![aspa_65000];
-            expect_aspa_objects(&ca, &aspas).await;
-            expect_aspa_definitions(&ca, AspaDefinitionList::new(aspas)).await;
-        }
 
         let customer = AspaCustomer::from_str("AS65000").unwrap();
         ca_aspas_remove(&ca, customer).await;

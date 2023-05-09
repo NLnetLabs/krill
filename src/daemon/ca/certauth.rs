@@ -1782,15 +1782,17 @@ impl CertAuth {
         config: &Config,
         signer: &KrillSigner,
     ) -> KrillResult<Vec<CaEvt>> {
-        self.verify_update(customer, &update)?;
+        if self.updated_needed(customer, &update)? {
+            let mut all_aspas = self.aspas.clone();
+            all_aspas.apply_update(customer, &update);
 
-        let mut all_aspas = self.aspas.clone();
-        all_aspas.apply_update(customer, &update);
+            let mut res = self.create_updated_aspa_objects(&all_aspas, config, signer)?;
+            res.push(CaEvtDet::AspaConfigUpdated { customer, update });
 
-        let mut res = self.create_updated_aspa_objects(&all_aspas, config, signer)?;
-        res.push(CaEvtDet::AspaConfigUpdated { customer, update });
-
-        Ok(self.events_from_details(res))
+            Ok(self.events_from_details(res))
+        } else {
+            Ok(vec![])
+        }
     }
 
     /// Renew existing ASPA objects if needed.
@@ -1835,26 +1837,22 @@ impl CertAuth {
         Ok(update_events)
     }
 
-    /// Verifies whether the update can be applied.
-    fn verify_update(&self, customer: AspaCustomer, update: &AspaProvidersUpdate) -> KrillResult<()> {
+    /// Verifies whether the update needs to be applied
+    ///
+    /// The update does not need to be applied if there would be no change in
+    /// the configured AspaDefinition. I.e. this gives us idempotence and e.g. allows
+    /// an operator just issue a command to add a provider for a customer ASN, and
+    /// if it was already authorised then no work is needed.
+    fn updated_needed(&self, customer: AspaCustomer, update: &AspaProvidersUpdate) -> KrillResult<bool> {
         if update.is_empty() {
-            return Err(Error::AspaProvidersUpdateEmpty(self.handle().clone(), customer));
-        }
-
-        if !self.all_resources().contains_asn(customer) {
+            Ok(false)
+        } else if !self.all_resources().contains_asn(customer) {
             return Err(Error::AspaCustomerAsNotEntitled(self.handle().clone(), customer));
+        } else if let Some(current) = self.aspas.get(customer) {
+            Ok(current.update_needed(update))
+        } else {
+            Ok(true)
         }
-
-        let current = self
-            .aspas
-            .get(customer)
-            .ok_or_else(|| Error::AspaCustomerUnknown(self.handle().clone(), customer))?;
-
-        current
-            .verify_update(update)
-            .map_err(|conflict| Error::AspaProvidersUpdateConflict(self.handle().clone(), conflict))?;
-
-        Ok(())
     }
 }
 
