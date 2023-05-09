@@ -18,7 +18,7 @@ use rpki::{
 
 use crate::{
     commons::{
-        api::{rrdp::PublicationDeltaError, AspaCustomer, AspaProvidersUpdateConflict, ErrorResponse, RoaPayload},
+        api::{rrdp::PublicationDeltaError, AspaCustomer, ErrorResponse, RoaPayload},
         crypto::SignerError,
         eventsourcing::{AggregateStoreError, KeyValueError},
         util::httpclient,
@@ -274,8 +274,6 @@ pub enum Error {
     AspaCustomerAlreadyPresent(CaHandle, AspaCustomer),
     AspaCustomerUnknown(CaHandle, AspaCustomer),
     AspaProvidersEmpty(CaHandle, AspaCustomer),
-    AspaProvidersUpdateEmpty(CaHandle, AspaCustomer),
-    AspaProvidersUpdateConflict(CaHandle, AspaProvidersUpdateConflict),
 
     //-----------------------------------------------------------------
     // BGP Sec
@@ -464,9 +462,7 @@ impl fmt::Display for Error {
             Error::AspaCustomerAlreadyPresent(_ca, asn) => write!(f, "ASPA already exists for customer AS '{}'", asn),
             Error::AspaProvidersEmpty(_ca, asn) => write!(f, "ASPA for customer AS '{}' requires at least one provider", asn),
             Error::AspaCustomerUnknown(_ca, asn) => write!(f, "No current ASPA exists for customer AS '{}'", asn),
-            Error::AspaProvidersUpdateEmpty(_ca, asn) => write!(f, "Received empty update for ASPA for customer AS '{}'", asn),
-            Error::AspaProvidersUpdateConflict(_ca, e) => write!(f, "ASPA delta rejected:\n\n'{}'", e),
-
+            
             //-----------------------------------------------------------------
             // BGPSec
             //-----------------------------------------------------------------
@@ -882,12 +878,6 @@ impl Error {
             Error::AspaCustomerUnknown(ca, asn) => ErrorResponse::new("ca-aspa-unknown-customer-as", self)
                 .with_ca(ca)
                 .with_asn(*asn),
-            Error::AspaProvidersUpdateEmpty(ca, asn) => ErrorResponse::new("ca-aspa-delta-empty", self)
-                .with_ca(ca)
-                .with_asn(*asn),
-            Error::AspaProvidersUpdateConflict(ca, conflict) => ErrorResponse::new("ca-aspa-delta-error", self)
-                .with_ca(ca)
-                .with_aspa_providers_conflict(conflict),
 
             //-----------------------------------------------------------------
             // BGP Sec
