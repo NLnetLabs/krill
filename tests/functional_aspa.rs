@@ -132,7 +132,7 @@ pub async fn functional_aspa() {
     {
         info("##################################################################");
         info("#                                                                #");
-        info("# Update ASPA to have no providers (explicit empty list)         #");
+        info("# Update ASPA to have no providers                               #");
         info("#                                                                #");
         info("##################################################################");
 
@@ -148,11 +148,11 @@ pub async fn functional_aspa() {
 
         ca_aspas_update(&ca, customer, aspa_update).await;
 
-        let updated_aspa = AspaDefinition::from_str("AS65000 => <none>").unwrap();
-        let aspas = vec![updated_aspa];
-
-        expect_aspa_objects(&ca, &aspas).await;
-        expect_aspa_definitions(&ca, AspaDefinitionList::new(aspas)).await;
+        // expect that the ASPA definition and object will be removed
+        // when all providers are removed from the existing definition.
+        let expected_aspas = vec![];
+        expect_aspa_objects(&ca, &expected_aspas).await;
+        expect_aspa_definitions(&ca, AspaDefinitionList::new(expected_aspas)).await;
     }
 
     {
@@ -162,6 +162,16 @@ pub async fn functional_aspa() {
         info("#                                                                #");
         info("##################################################################");
         info("");
+
+        // Add the ASPA again first, otherwise there is nothing to delete.
+        {
+            let aspa_65000 = AspaDefinition::from_str("AS65000 => AS65002, AS65003(v4), AS65005(v6)").unwrap();
+            ca_aspas_add(&ca, aspa_65000.clone()).await;
+
+            let aspas = vec![aspa_65000];
+            expect_aspa_objects(&ca, &aspas).await;
+            expect_aspa_definitions(&ca, AspaDefinitionList::new(aspas)).await;
+        }
 
         let customer = AspaCustomer::from_str("AS65000").unwrap();
         ca_aspas_remove(&ca, customer).await;

@@ -90,6 +90,12 @@ impl AspaDefinitions {
     pub fn apply_update(&mut self, customer: AspaCustomer, update: &AspaProvidersUpdate) {
         let current = self.attestations.get_mut(&customer).unwrap();
         current.apply_update(update);
+
+        // If there are no remaining providers for this AspaDefinition, then
+        // remove it so that its ASPA object will also be removed.
+        if current.providers().is_empty() {
+            self.attestations.remove(&customer);
+        }
     }
 
     pub fn all(&self) -> impl Iterator<Item = &AspaDefinition> {
