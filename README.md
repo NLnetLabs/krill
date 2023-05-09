@@ -25,7 +25,10 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 # Changelog
 
-## 0.13.0 RC4
+## 0.13.0 RC5
+
+RC5 fixes the following open issue:
+- Do not create ASPA objects without providers #1050
 
 RC4 fixes the following UI issues:
 - Do not cache request XML (krill-ui #41)
