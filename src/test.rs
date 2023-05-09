@@ -550,6 +550,10 @@ pub async fn ca_aspas_add(ca: &CaHandle, aspa: AspaDefinition) {
     krill_admin(Command::CertAuth(CaCommand::AspasAddOrReplace(ca.clone(), aspa))).await;
 }
 
+pub async fn ca_aspas_add_expect_error(ca: &CaHandle, aspa: AspaDefinition) {
+    krill_admin_expect_error(Command::CertAuth(CaCommand::AspasAddOrReplace(ca.clone(), aspa))).await;
+}
+
 pub async fn expect_aspa_definitions(ca: &CaHandle, expected_aspas: AspaDefinitionList) {
     let res = krill_admin(Command::CertAuth(CaCommand::AspasList(ca.clone()))).await;
 

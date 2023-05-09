@@ -273,6 +273,7 @@ pub enum Error {
     AspaCustomerAsNotEntitled(CaHandle, AspaCustomer),
     AspaCustomerAlreadyPresent(CaHandle, AspaCustomer),
     AspaCustomerUnknown(CaHandle, AspaCustomer),
+    AspaProvidersEmpty(CaHandle, AspaCustomer),
     AspaProvidersUpdateEmpty(CaHandle, AspaCustomer),
     AspaProvidersUpdateConflict(CaHandle, AspaProvidersUpdateConflict),
 
@@ -461,6 +462,7 @@ impl fmt::Display for Error {
             //-----------------------------------------------------------------
             Error::AspaCustomerAsNotEntitled(_ca, asn) => write!(f, "Customer AS '{}' is not held by you", asn),
             Error::AspaCustomerAlreadyPresent(_ca, asn) => write!(f, "ASPA already exists for customer AS '{}'", asn),
+            Error::AspaProvidersEmpty(_ca, asn) => write!(f, "ASPA for customer AS '{}' requires at least one provider", asn),
             Error::AspaCustomerUnknown(_ca, asn) => write!(f, "No current ASPA exists for customer AS '{}'", asn),
             Error::AspaProvidersUpdateEmpty(_ca, asn) => write!(f, "Received empty update for ASPA for customer AS '{}'", asn),
             Error::AspaProvidersUpdateConflict(_ca, e) => write!(f, "ASPA delta rejected:\n\n'{}'", e),
@@ -872,6 +874,9 @@ impl Error {
                 .with_ca(ca)
                 .with_asn(*asn),
             Error::AspaCustomerAlreadyPresent(ca, asn) => ErrorResponse::new("ca-aspa-customer-as-duplicate", self)
+                .with_ca(ca)
+                .with_asn(*asn),
+            Error::AspaProvidersEmpty(ca, asn) => ErrorResponse::new("ca-aspa-provider-as-empty", self)
                 .with_ca(ca)
                 .with_asn(*asn),
             Error::AspaCustomerUnknown(ca, asn) => ErrorResponse::new("ca-aspa-unknown-customer-as", self)
