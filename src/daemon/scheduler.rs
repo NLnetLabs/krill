@@ -222,21 +222,31 @@ impl Scheduler {
 
     /// Try to synchronize a CA with a specific parent, reschedule if this fails
     async fn sync_parent(&self, ca: CaHandle, parent: ParentHandle) -> KrillResult<()> {
-        info!("Synchronize CA '{}' with its parent '{}'", ca, parent);
-        if let Err(e) = self.ca_manager.ca_sync_parent(&ca, &parent, &self.system_actor).await {
-            let next = self.config.requeue_remote_failed();
+        if self.ca_manager.has_ca(&ca)? {
+            info!("Synchronize CA '{}' with its parent '{}'", ca, parent);
+            if let Err(e) = self.ca_manager.ca_sync_parent(&ca, &parent, &self.system_actor).await {
+                let next = self.config.requeue_remote_failed();
 
-            error!(
-                "Failed to synchronize CA '{}' with its parent '{}'. Will reschedule to: '{}'. Error: {}",
-                ca, parent, next, e
-            );
-            self.tasks.sync_parent(ca, parent, next);
+                error!(
+                    "Failed to synchronize CA '{}' with its parent '{}'. Will reschedule to: '{}'. Error: {}",
+                    ca, parent, next, e
+                );
+                self.tasks.sync_parent(ca, parent, next);
+            } else {
+                let next = self.config.ca_refresh_next();
+                self.tasks.sync_parent(ca, parent, next);
+            }
+
+            Ok(())
         } else {
-            let next = self.config.ca_refresh_next();
-            self.tasks.sync_parent(ca, parent, next);
+            // Note: if one day we can have a notification extension to RFC 6492 then we will
+            //       also be able to alert remote children.
+            debug!(
+                "Skipping parent sync fo CA '{}'. It is either a remote child, or a local CA that has been removed",
+                ca
+            );
+            Ok(())
         }
-
-        Ok(())
     }
 
     /// Try to synchronise the Trust Anchor Proxy with the *local* Signer - if it exists
