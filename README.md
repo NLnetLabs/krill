@@ -27,8 +27,9 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 ## 0.13.0 RC5
 
-RC5 fixes the following open issue:
+RC5 fixes the following issues:
 - Do not create ASPA objects without providers #1050
+- Trigger sync for local child CA when resources change #1052
 
 RC4 fixes the following UI issues:
 - Do not cache request XML (krill-ui #41)
