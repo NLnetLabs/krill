@@ -354,6 +354,10 @@ impl eventsourcing::PostSaveEventListener<CertAuth> for TaskQueue {
                         self.sync_parent(handle.clone(), parent.clone(), now());
                     }
                 }
+                CaEvtDet::ChildUpdatedResources { child, .. } => {
+                    debug!("Schedule a sync from the child to this CA as their parent. This will be a no-op for remote children.");
+                    self.sync_parent(child.convert(), handle.convert(), now());
+                }
 
                 _ => {}
             }
