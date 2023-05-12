@@ -191,19 +191,25 @@ pub async fn functional_aspa() {
         info("##################################################################");
         info("#                                                                #");
         info("# Adding an existing provider, and removing a non-existing       #");
-        info("# provider to/from an AspaDefinition should be a no-op.          #");
+        info("# provider to/from an AspaDefinition should be idempotent.       #");
         info("#                                                                #");
         info("##################################################################");
 
         let customer = AspaCustomer::from_str("AS65000").unwrap();
         let aspa_update = AspaProvidersUpdate::new(
-            vec![ProviderAs::from_str("AS65006").unwrap()], // adding, but was already present
-            vec![ProviderAs::from_str("AS65007").unwrap()], // removing, but was not present
+            vec![
+                ProviderAs::from_str("AS65003(v6)").unwrap(), // should add v6 to existing v4
+                ProviderAs::from_str("AS65005(v6)").unwrap(), // adding, but was already present
+            ],
+            vec![
+                ProviderAs::from_str("AS65006(v4)").unwrap(), // removing v4, should retain v6
+                ProviderAs::from_str("AS65007").unwrap(),     // removing, but was not present
+            ],
         );
 
         ca_aspas_update(&ca, customer, aspa_update).await;
 
-        let updated_aspa = AspaDefinition::from_str("AS65000 => AS65003(v4), AS65005(v6), AS65006").unwrap();
+        let updated_aspa = AspaDefinition::from_str("AS65000 => AS65003, AS65005(v6), AS65006(v6)").unwrap();
         let aspas = vec![updated_aspa.clone()];
 
         expect_aspa_objects(&ca, &aspas).await;

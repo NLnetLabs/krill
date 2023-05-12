@@ -1849,7 +1849,7 @@ impl CertAuth {
         } else if !self.all_resources().contains_asn(customer) {
             return Err(Error::AspaCustomerAsNotEntitled(self.handle().clone(), customer));
         } else if let Some(current) = self.aspas.get(customer) {
-            Ok(current.update_needed(update))
+            Ok(current.needs_update(update))
         } else {
             Ok(true)
         }
