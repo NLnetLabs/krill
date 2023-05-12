@@ -9,7 +9,7 @@ use std::fmt;
 use std::str::FromStr;
 
 use rpki::repository::aspa::*;
-use rpki::repository::resources::Asn;
+use rpki::repository::resources::{AddressFamily, Asn};
 
 pub type AspaCustomer = Asn;
 
@@ -93,15 +93,65 @@ impl AspaDefinition {
         &self.providers
     }
 
-    pub fn update_needed(&self, update: &AspaProvidersUpdate) -> bool {
+    /// Returns true if the update would change this AspaDefinition
+    /// in any way. I.e. including a change in afiLimit for currently
+    /// configured ProviderAs entries.
+    pub fn needs_update(&self, update: &AspaProvidersUpdate) -> bool {
         for removed in update.removed() {
-            if self.providers.contains(removed) {
-                return true;
+            match removed.afi_limit() {
+                None => {
+                    // if removed uses no limit, then we need an update if
+                    // we have any entry for the asn
+                    if self.providers.iter().any(|e| e.provider() == removed.provider()) {
+                        return true;
+                    }
+                }
+                Some(removed_limit) => {
+                    // removed wants a limit, so we only need to remove if
+                    // we currently have no limit, or the same limit.
+                    if let Some(existing) = self.providers.iter().find(|e| e.provider() == removed.provider()) {
+                        match existing.afi_limit() {
+                            None => {
+                                // we will need to shrink the afiLime
+                                return true;
+                            }
+                            Some(existing_limit) => {
+                                if removed_limit == existing_limit {
+                                    // there is a match to remove
+                                    return true;
+                                }
+                                // else -> there is no match to remove
+                            }
+                        }
+                    }
+                }
             }
         }
+
         for added in update.added() {
-            if !self.providers.contains(added) {
-                return true;
+            match added.afi_limit() {
+                None => {
+                    // There is no limit used in the provider AS to be added.
+                    // We need an update in case we did not have this exact
+                    // provider ASN (i.e. without limit)
+                    if !self.providers.contains(added) {
+                        return true;
+                    }
+                }
+                Some(limit) => {
+                    // The added provider is for a specific limit only. We
+                    // need an update if:
+                    // - we did not yet have a provider AS for this asn
+                    // - we had one, but it did not cover this limit
+                    if let Some(existing) = self.providers.iter().find(|e| e.provider() == added.provider()) {
+                        if existing.afi_limit().is_some() && existing.afi_limit() != Some(limit) {
+                            return true;
+                        }
+                    } else {
+                        // the is a new entry
+                        return true;
+                    }
+                }
             }
         }
 
@@ -113,10 +163,66 @@ impl AspaDefinition {
     /// actual change needed (i.e. this is idempotent).
     pub fn apply_update(&mut self, update: &AspaProvidersUpdate) {
         for removed in update.removed() {
-            self.providers.retain(|provider| provider != removed);
+            // If the operators tries to remove a provider for a specific AFI limit
+            // only, and we have an existing provider without limit, then we should
+            // keep the provider with the remaining limit.
+            if let Some(limit) = removed.afi_limit() {
+                if let Some(existing) = self
+                    .providers
+                    .iter()
+                    .find(|existing| existing.provider() == removed.provider())
+                {
+                    match existing.afi_limit() {
+                        None => {
+                            let remaining = match limit {
+                                AddressFamily::Ipv4 => ProviderAs::new_v6(existing.provider()),
+                                AddressFamily::Ipv6 => ProviderAs::new_v4(existing.provider()),
+                            };
+
+                            self.providers.retain(|p| p.provider() != remaining.provider());
+                            self.providers.push(remaining);
+                        }
+                        Some(_) => {
+                            // retain all other ProviderAS, this will retain
+                            // a possible ProviderAS for the removed ASN if
+                            // its afiLimit was different.
+                            self.providers.retain(|p| p != removed);
+                        }
+                    }
+                }
+            } else {
+                // there is no limit in the removal, we should remove any existing
+                // ProviderAS for the removed provider ASN regardless of limit.
+                self.providers
+                    .retain(|provider| provider.provider() != removed.provider());
+            }
         }
+
         for added in update.added() {
-            if !self.providers.contains(added) {
+            if let Some(existing) = self
+                .providers
+                .iter()
+                .find(|e| e.provider() == added.provider())
+                .copied()
+            {
+                // If there is any existing provider for the added, and if
+                // that was using an afiLimit which was different, then we
+                // need to merge this into an entry without a limit.
+                //
+                // In other words, if we hade provider listed for IPv4 and
+                // the operator now adds the same provider for IPv6, then
+                // we need to have this provider without afiLimit.
+                //
+                // And, if we hade provider listed for IPv4 and the operator
+                // now adds the same provider without afiLimit, then we need
+                // to have this provider without afiLimit.
+                if existing.afi_limit().is_some() && existing.afi_limit() != added.afi_limit() {
+                    // remove the existing entry, then add a new entry without limit
+                    self.providers.retain(|p| p != &existing);
+                    self.providers.push(ProviderAs::new(added.provider()));
+                }
+            } else {
+                // no entry for this new provider ASN, add it as-is
                 self.providers.push(*added);
             }
         }
