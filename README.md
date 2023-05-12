@@ -25,7 +25,10 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 # Changelog
 
-## 0.13.0 RC5
+## 0.13.0 RC6
+
+RC6 fixes the following issues:
+- Updating an existing provider should update AFI limit choice #1055
 
 RC5 fixes the following issues:
 - Do not create ASPA objects without providers #1050
