@@ -1977,6 +1977,8 @@ impl Options {
         let aspa = AspaDefinition::from_str(aspa_config_str)?;
         if aspa.customer_used_as_provider() {
             Err(Error::general("Customer AS may not be used as provider."))
+        } else if aspa.contains_duplicate_providers() {
+            Err(Error::general("ASPA may not have duplicate providers."))
         } else if aspa.providers().is_empty() {
             Err(Error::general("At least one provider MUST be specified."))
         } else {

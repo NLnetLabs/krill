@@ -100,6 +100,20 @@ impl AspaDefinition {
         self.providers.iter().any(|p| p.provider() == self.customer)
     }
 
+    /// Returns true if there are duplicate provider ASNs. This
+    /// is not allowed by spec and these definitions should be
+    /// rejected by Krill.
+    pub fn contains_duplicate_providers(&self) -> bool {
+        let mut providers: Vec<Asn> = self.providers.iter().map(|p| p.provider()).collect();
+
+        let len_before_duplicates = providers.len();
+
+        providers.sort();
+        providers.dedup();
+
+        len_before_duplicates > providers.len()
+    }
+
     /// Returns true if the update would change this AspaDefinition
     /// in any way. I.e. including a change in afiLimit for currently
     /// configured ProviderAs entries.
