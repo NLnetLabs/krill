@@ -25,9 +25,12 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 # Changelog
 
-## 0.13.0 RC6
+## 0.13.0 RC7
 
-RC6 fixes the following issues:
+RC7 fixes the following issue:
+- Prevent adding customer AS as provider on ASPA objects #1058
+
+RC6 fixes the following issue:
 - Updating an existing provider should update AFI limit choice #1055
 
 RC5 fixes the following issues:
