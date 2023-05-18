@@ -1975,8 +1975,9 @@ impl Options {
 
         let aspa_config_str = matches.value_of("aspa").unwrap(); // required argument
         let aspa = AspaDefinition::from_str(aspa_config_str)?;
-
-        if aspa.providers().is_empty() {
+        if aspa.customer_used_as_provider() {
+            Err(Error::general("Customer AS may not be used as provider."))
+        } else if aspa.providers().is_empty() {
             Err(Error::general("At least one provider MUST be specified."))
         } else {
             let command = Command::CertAuth(CaCommand::AspasAddOrReplace(my_ca, aspa));
@@ -2008,6 +2009,11 @@ impl Options {
         if let Some(add) = matches.values_of("add") {
             for provider_str in add {
                 let provider = ProviderAs::from_str(provider_str).map_err(|_| Error::invalid_asn(provider_str))?;
+
+                if provider.provider() == customer {
+                    return Err(Error::general("Customer AS may not be added as provider."));
+                }
+
                 added.push(provider);
             }
         }

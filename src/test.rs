@@ -561,6 +561,10 @@ pub async fn ca_aspas_update(ca: &CaHandle, customer: AspaCustomer, update: Aspa
     krill_admin(Command::CertAuth(CaCommand::AspasUpdate(ca.clone(), customer, update))).await;
 }
 
+pub async fn ca_aspas_update_expect_error(ca: &CaHandle, customer: AspaCustomer, update: AspaProvidersUpdate) {
+    krill_admin_expect_error(Command::CertAuth(CaCommand::AspasUpdate(ca.clone(), customer, update))).await;
+}
+
 pub async fn ca_aspas_remove(ca: &CaHandle, customer: AspaCustomer) {
     krill_admin(Command::CertAuth(CaCommand::AspasRemove(ca.clone(), customer))).await;
 }

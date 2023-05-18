@@ -1736,6 +1736,10 @@ impl CertAuth {
                 return Err(Error::AspaProvidersEmpty(self.handle().clone(), customer));
             }
 
+            if aspa_config.customer_used_as_provider() {
+                return Err(Error::AspaCustomerAsProvider(self.handle.clone(), customer));
+            }
+
             if !self.all_resources().contains_asn(customer) {
                 return Err(Error::AspaCustomerAsNotEntitled(self.handle().clone(), customer));
             }
@@ -1848,6 +1852,8 @@ impl CertAuth {
             Ok(false)
         } else if !self.all_resources().contains_asn(customer) {
             return Err(Error::AspaCustomerAsNotEntitled(self.handle().clone(), customer));
+        } else if update.added().iter().any(|p| p.provider() == customer) {
+            return Err(Error::AspaCustomerAsProvider(self.handle().clone(), customer));
         } else if let Some(current) = self.aspas.get(customer) {
             Ok(current.needs_update(update))
         } else {

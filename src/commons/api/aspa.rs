@@ -93,6 +93,13 @@ impl AspaDefinition {
         &self.providers
     }
 
+    /// Returns true if the customer is used in the provider list.
+    /// This is not allowed by spec, and these definitions should
+    /// be rejected by Krill.
+    pub fn customer_used_as_provider(&self) -> bool {
+        self.providers.iter().any(|p| p.provider() == self.customer)
+    }
+
     /// Returns true if the update would change this AspaDefinition
     /// in any way. I.e. including a change in afiLimit for currently
     /// configured ProviderAs entries.
