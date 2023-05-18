@@ -92,6 +92,23 @@ pub async fn functional_aspa() {
     {
         info("##################################################################");
         info("#                                                                #");
+        info("# Reject ASPA using customer as provider                         #");
+        info("#                                                                #");
+        info("##################################################################");
+        info("");
+
+        let aspa_65000 = AspaDefinition::from_str("AS65000 => AS65000, AS65003(v4), AS65005(v6)").unwrap();
+
+        ca_aspas_add_expect_error(&ca, aspa_65000.clone()).await;
+
+        let aspas = vec![];
+        expect_aspa_objects(&ca, &aspas).await;
+        expect_aspa_definitions(&ca, AspaDefinitionList::new(aspas)).await;
+    }
+
+    {
+        info("##################################################################");
+        info("#                                                                #");
         info("# Add an ASPA under CA                                           #");
         info("#                                                                #");
         info("##################################################################");
@@ -124,6 +141,26 @@ pub async fn functional_aspa() {
 
         let updated_aspa = AspaDefinition::from_str("AS65000 => AS65003(v4), AS65005(v6), AS65006").unwrap();
         let aspas = vec![updated_aspa.clone()];
+
+        expect_aspa_objects(&ca, &aspas).await;
+        expect_aspa_definitions(&ca, AspaDefinitionList::new(aspas)).await;
+    }
+
+    {
+        info("##################################################################");
+        info("#                                                                #");
+        info("# Reject update that adds customer as provider                   #");
+        info("#                                                                #");
+        info("##################################################################");
+        info("");
+
+        let customer = AspaCustomer::from_str("AS65000").unwrap();
+        let aspa_update = AspaProvidersUpdate::new(vec![ProviderAs::from_str("AS65000").unwrap()], vec![]);
+
+        ca_aspas_update_expect_error(&ca, customer, aspa_update).await;
+
+        let unmodified_aspa = AspaDefinition::from_str("AS65000 => AS65003(v4), AS65005(v6), AS65006").unwrap();
+        let aspas = vec![unmodified_aspa.clone()];
 
         expect_aspa_objects(&ca, &aspas).await;
         expect_aspa_definitions(&ca, AspaDefinitionList::new(aspas)).await;
