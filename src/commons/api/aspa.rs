@@ -100,11 +100,12 @@ impl AspaDefinition {
         self.providers.iter().any(|p| p.provider() == self.customer)
     }
 
-    /// Returns true if this is a single AFI AspaDefinition. Technically,
-    /// it is allowed to omit one address family entirely, but this will
-    /// be interpreted as thought the user specified an AS0 provider for
-    /// the omitted AFI. This may be counterintuitive, so we'd better
-    /// force people to make an explicit choice.
+    /// Returns true if this contains both IPv4 and IPv6 providers.
+    ///
+    /// Technically,it is allowed to omit one address family entirely,
+    /// but this will be interpreted as though the user specified an
+    /// AS0 provider for the omitted AFI. This may be counterintuitive,
+    /// so we'd better force people to make an explicit choice.
     pub fn providers_has_both_afis(&self) -> bool {
         let mut v4 = false;
         let mut v6 = false;
