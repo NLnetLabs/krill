@@ -25,7 +25,7 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates, AspaProvidersUpdate, BgpSecAsnKey,
+            AspaCustomer, AspaDefinition, AspaDefinitionList, AspaDefinitionUpdates, AspaProvidersUpdate, BgpSecAsnKey,
             BgpSecCsrInfoList, BgpSecDefinitionUpdates, CertAuthInfo, ConfiguredRoa, IdCertInfo, IssuedCertificate,
             ObjectName, ParentCaContact, ReceivedCert, RepositoryContact, Revocation, RoaConfiguration,
             RoaConfigurationUpdates, RtaList, RtaName, RtaPrepResponse, StorableCaCommand,
@@ -1740,6 +1740,10 @@ impl CertAuth {
                 return Err(Error::AspaCustomerAsProvider(self.handle.clone(), customer));
             }
 
+            if !aspa_config.providers_has_both_afis() {
+                return Err(Error::AspaProvidersSingleAfi(self.handle.clone(), customer));
+            }
+
             if aspa_config.contains_duplicate_providers() {
                 return Err(Error::AspaProvidersDuplicates(self.handle.clone(), customer));
             }
@@ -1790,7 +1794,7 @@ impl CertAuth {
         config: &Config,
         signer: &KrillSigner,
     ) -> KrillResult<Vec<CaEvt>> {
-        if self.updated_needed(customer, &update)? {
+        if self.updated_allowed_and_needed(customer, &update)? {
             let mut all_aspas = self.aspas.clone();
             all_aspas.apply_update(customer, &update);
 
@@ -1845,21 +1849,40 @@ impl CertAuth {
         Ok(update_events)
     }
 
-    /// Verifies whether the update needs to be applied
+    /// Verifies whether the update is allowed and needs to be applied.
     ///
     /// The update does not need to be applied if there would be no change in
     /// the configured AspaDefinition. I.e. this gives us idempotence and e.g. allows
     /// an operator just issue a command to add a provider for a customer ASN, and
     /// if it was already authorised then no work is needed.
-    fn updated_needed(&self, customer: AspaCustomer, update: &AspaProvidersUpdate) -> KrillResult<bool> {
-        if update.is_empty() {
+    fn updated_allowed_and_needed(&self, customer: AspaCustomer, update: &AspaProvidersUpdate) -> KrillResult<bool> {
+        // The easiest way to check this is by getting the existing definition,
+        // or a default empty one if we did not have one, then apply the update
+        // on a copy and verify if it's actually changed, and if so if the
+        // the result would be acceptable.
+
+        let existing = self
+            .aspas
+            .get(customer)
+            .cloned()
+            .unwrap_or_else(|| AspaDefinition::new(customer, vec![]));
+
+        let mut updated = existing.clone();
+        updated.apply_update(update);
+
+        if updated == existing {
             Ok(false)
+        } else if updated.providers().is_empty() {
+            // this update will remove the definition
+            Ok(true)
         } else if !self.all_resources().contains_asn(customer) {
-            return Err(Error::AspaCustomerAsNotEntitled(self.handle().clone(), customer));
-        } else if update.added().iter().any(|p| p.provider() == customer) {
-            return Err(Error::AspaCustomerAsProvider(self.handle().clone(), customer));
-        } else if let Some(current) = self.aspas.get(customer) {
-            Ok(current.needs_update(update))
+            // removal would have been okay, but for all other changes the CA
+            // still needs to hold the customer AS
+            Err(Error::AspaCustomerAsNotEntitled(self.handle().clone(), customer))
+        } else if updated.customer_used_as_provider() {
+            Err(Error::AspaCustomerAsProvider(self.handle().clone(), customer))
+        } else if !updated.providers_has_both_afis() {
+            Err(Error::AspaProvidersSingleAfi(self.handle().clone(), customer))
         } else {
             Ok(true)
         }

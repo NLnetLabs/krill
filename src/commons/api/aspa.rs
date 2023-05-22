@@ -114,70 +114,29 @@ impl AspaDefinition {
         len_before_duplicates > providers.len()
     }
 
-    /// Returns true if the update would change this AspaDefinition
-    /// in any way. I.e. including a change in afiLimit for currently
-    /// configured ProviderAs entries.
-    pub fn needs_update(&self, update: &AspaProvidersUpdate) -> bool {
-        for removed in update.removed() {
-            match removed.afi_limit() {
-                None => {
-                    // if removed uses no limit, then we need an update if
-                    // we have any entry for the asn
-                    if self.providers.iter().any(|e| e.provider() == removed.provider()) {
-                        return true;
-                    }
-                }
-                Some(removed_limit) => {
-                    // removed wants a limit, so we only need to remove if
-                    // we currently have no limit, or the same limit.
-                    if let Some(existing) = self.providers.iter().find(|e| e.provider() == removed.provider()) {
-                        match existing.afi_limit() {
-                            None => {
-                                // we will need to shrink the afiLime
-                                return true;
-                            }
-                            Some(existing_limit) => {
-                                if removed_limit == existing_limit {
-                                    // there is a match to remove
-                                    return true;
-                                }
-                                // else -> there is no match to remove
-                            }
-                        }
-                    }
-                }
+    /// Returns true if this contains both IPv4 and IPv6 providers.
+    ///
+    /// Technically,it is allowed to omit one address family entirely,
+    /// but this will be interpreted as though the user specified an
+    /// AS0 provider for the omitted AFI. This may be counterintuitive,
+    /// so we'd better force people to make an explicit choice.
+    pub fn providers_has_both_afis(&self) -> bool {
+        let mut v4 = false;
+        let mut v6 = false;
+        for p in &self.providers {
+            if !v4 {
+                v4 = p.includes_v4();
+            }
+            if !v6 {
+                v6 = p.includes_v6();
+            }
+
+            if v4 && v6 {
+                break;
             }
         }
 
-        for added in update.added() {
-            match added.afi_limit() {
-                None => {
-                    // There is no limit used in the provider AS to be added.
-                    // We need an update in case we did not have this exact
-                    // provider ASN (i.e. without limit)
-                    if !self.providers.contains(added) {
-                        return true;
-                    }
-                }
-                Some(limit) => {
-                    // The added provider is for a specific limit only. We
-                    // need an update if:
-                    // - we did not yet have a provider AS for this asn
-                    // - we had one, but it did not cover this limit
-                    if let Some(existing) = self.providers.iter().find(|e| e.provider() == added.provider()) {
-                        if existing.afi_limit().is_some() && existing.afi_limit() != Some(limit) {
-                            return true;
-                        }
-                    } else {
-                        // the is a new entry
-                        return true;
-                    }
-                }
-            }
-        }
-
-        // apparently none of the updates would change this
-        false
+        v4 && v6
     }
 
     /// Applies an update. This is a no-op in case there is no
