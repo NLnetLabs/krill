@@ -1977,6 +1977,8 @@ impl Options {
         let aspa = AspaDefinition::from_str(aspa_config_str)?;
         if aspa.customer_used_as_provider() {
             Err(Error::general("Customer AS may not be used as provider."))
+        } else if !aspa.providers_has_both_afis() {
+            Err(Error::general("Definition has providers for one address family only. Please include an explicit AS0 provider for the missing address family if this is intentional."))
         } else if aspa.providers().is_empty() {
             Err(Error::general("At least one provider MUST be specified."))
         } else {
