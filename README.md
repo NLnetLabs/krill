@@ -25,36 +25,52 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 # Changelog
 
-## 0.13.0 RC6
+## 0.13.0 'DRY'
 
-RC6 fixes the following issues:
-- Updating an existing provider should update AFI limit choice #1055
+### Summary
 
-RC5 fixes the following issues:
-- Do not create ASPA objects without providers #1050
-- Trigger sync for local child CA when resources change #1052
+This release contains an important fix for an issue affecting v0.12.x Publication
+Servers (see PR #1023). It is recommended that affected installations are upgraded
+as soon as possible.
 
-RC4 fixes the following UI issues:
-- Do not cache request XML (krill-ui #41)
-- Do not show CA drop down if there is only 1 CA (krill-ui #40)
-- Revalidate ROA form fields (krill-ui #39)
+The user interface was completely re-implemented in this release resulting in
+a smaller browser footprint. Functionality is mostly unchanged, except that users
+can now have an optional comment with each of their ROA configurations. These
+comments are not part of published ROA objects - they are meant for local bookkeeping
+only.
 
-RC3 fixes the following issues:
-- ROA IPv4 prefixes longer than 24 are now accepted again. (krill-ui #32)
-- Krill UI should show max length tool tip (krill-ui 34)
-- Username/password logins on Firefox/Chrome/others now work again. (krill-ui #35)
-- Pin cryptoki-sys to v0.1.4 (#1045)
+ASPA objects are now supported through the CLI by default. We hope to add UI support
+later this year. NOTE: because of the urgency of the Publication Server issue
+mentioned above we decided to make this release available, even though the following
+issues found in the release candidate phase have not yet been fixed:
+- Krill MUST NOT create only a single AFI ASPA #1063
+- ASPA object MUST NOT allow the customer AS in the provider AS list #1058
 
-RC2 fixes the following issue:
-- Do not migrate non-existing 0.12.x publication server (#1040)
+We will make a minor follow up release to address these issues in the coming weeks.
+
+Krill can now be used as a full RPKI Trust Anchor, using a detached (possibly offline)
+signer for Trust Anchor key operations.
+
+### Publication Server
+
+Krill 0.12.x Publication servers suffer from an issue where multiple entries
+for the same URI, but with different hashes can appear in a single RRDP snapshot.
+
+This problem was solved by removing published objects data duplication in the
+Krill architecture and ensuring that the URI rather than an object's hash is
+used as its primary key internally. More information can be found in pull
+request #1023.
+
+We recommend that existing 0.12.x Publication Server installations are upgraded
+to this version.
 
 ### Updated User Interface
 
 A lot of changes were introduced in this release. For most users the following
 improvements will be most visible and relevant:
-- Updated UI to new and smaller code base (#995)
-- Allow ROA comments in UI (#995)
-- Enable ASPA support in CLI (#1031)
+- Updated UI to new and smaller code base #995
+- Allow ROA comments in UI #995
+- Enable ASPA support in CLI #1031
 
 You can read more about ASPA support here:
 https://krill.docs.nlnetlabs.nl/en/0.13.0-rc1/manage-aspas.html
@@ -81,19 +97,19 @@ You can read more about this here:
 https://krill.docs.nlnetlabs.nl/en/0.13.0-rc1/trust-anchor.html
 
 Implemented issues:
-- Support offline TA (#976)
-- Support initialising offline TA with existing key (#979)
-- Bulk import/configure CAs with ROAs (#968, #969) 
-- Support migration of existing TAs (#978)
-- Use new TA for embedded (test) TA (#977)
+- Support offline TA #976
+- Support initialising offline TA with existing key #979
+- Bulk import/configure CAs with ROAs #968, #969 
+- Support migration of existing TAs #978
+- Use new TA for embedded (test) TA #977
 
 ### Other Changes
 
-Publication Server Improvements:
-- Remove published object data duplication (#1023)
-- Delete repository files by URI (#991)
-
 Miscellaneous improvements and fixes:
+- Updating an existing ASPA provider should update AFI limit choice #1055
+- Do not create ASPA objects without providers #1050
+- Trigger sync for local child CA when resources change #1052
+- Pin cryptoki-sys to v0.1.4 (#1045)
 - Log for which child / parent / publisher CMS validation failed (#1027)
 - Permit setting CKA_PRIVATE to CK_FALSE on PKCS#11 RSA public keys (#1019)
 - Ensure that the CSR uses a trailing slash for id-ad-caRepository (#1030)
