@@ -275,6 +275,7 @@ pub enum Error {
     AspaCustomerUnknown(CaHandle, AspaCustomer),
     AspaCustomerAsProvider(CaHandle, AspaCustomer),
     AspaProvidersEmpty(CaHandle, AspaCustomer),
+    AspaProvidersSingleAfi(CaHandle, AspaCustomer),
 
     //-----------------------------------------------------------------
     // BGP Sec
@@ -464,6 +465,7 @@ impl fmt::Display for Error {
             Error::AspaProvidersEmpty(_ca, asn) => write!(f, "ASPA for customer AS '{}' requires at least one provider", asn),
             Error::AspaCustomerAsProvider(_ca, asn) => write!(f, "ASPA for customer AS '{}' cannot have that AS as provider", asn),
             Error::AspaCustomerUnknown(_ca, asn) => write!(f, "No current ASPA exists for customer AS '{}'", asn),
+            Error::AspaProvidersSingleAfi(_ca, asn) => write!(f, "ASPA for customer AS '{}' only has providers for one address family. Please include an explicit AS0 provider for the missing address family if this is intentional.", asn),
             
             //-----------------------------------------------------------------
             // BGPSec
@@ -881,6 +883,9 @@ impl Error {
                 .with_ca(ca)
                 .with_asn(*asn),
             Error::AspaCustomerUnknown(ca, asn) => ErrorResponse::new("ca-aspa-unknown-customer-as", self)
+                .with_ca(ca)
+                .with_asn(*asn),
+            Error::AspaProvidersSingleAfi(ca, asn) => ErrorResponse::new("ca-aspa-providers-single-afi", self)
                 .with_ca(ca)
                 .with_asn(*asn),
 
