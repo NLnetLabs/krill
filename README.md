@@ -25,31 +25,38 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 # Changelog
 
-## 0.13.0 RC7
+## 0.13.0 'DRY'
 
-RC7 fixes the following issue:
-- Prevent adding customer AS as provider on ASPA objects #1058
+### Summary
 
-RC6 fixes the following issue:
-- Updating an existing provider should update AFI limit choice #1055
+This release contains an important fix for an issue affecting v0.12.x Publication
+Servers (see PR #1023). It is recommended that affected installations are upgraded
+as soon as possible.
 
-RC5 fixes the following issues:
-- Do not create ASPA objects without providers #1050
-- Trigger sync for local child CA when resources change #1052
+The user interface was completely re-implemented in this release resulting in
+a smaller browser footprint. Functionality is mostly unchanged, except that users
+can now have an optional comment with each of their ROA configurations. These
+comments are not part of published ROA objects - they are meant for local bookkeeping
+only.
 
-RC4 fixes the following UI issues:
-- Do not cache request XML (krill-ui #41)
-- Do not show CA drop down if there is only 1 CA (krill-ui #40)
-- Revalidate ROA form fields (krill-ui #39)
+ASPA objects are now supported through the CLI by default. We hope to add UI support
+later this year.
 
-RC3 fixes the following issues:
-- ROA IPv4 prefixes longer than 24 are now accepted again. (krill-ui #32)
-- Krill UI should show max length tool tip (krill-ui 34)
-- Username/password logins on Firefox/Chrome/others now work again. (krill-ui #35)
-- Pin cryptoki-sys to v0.1.4 (#1045)
+Krill can now be used as a full RPKI Trust Anchor, using a detached (possibly offline)
+signer for Trust Anchor key operations.
 
-RC2 fixes the following issue:
-- Do not migrate non-existing 0.12.x publication server (#1040)
+### Publication Server
+
+Krill 0.12.x Publication servers suffer from an issue where multiple entries
+for the same URI, but with different hashes can appear in a single RRDP snapshot.
+
+This problem was solved by removing published objects data duplication in the
+Krill architecture and ensuring that the URI rather than an object's hash is
+used as its primary key internally. More information can be found in pull
+request #1023.
+
+We recommend that existing 0.12.x Publication Server installations are upgraded
+to this version.
 
 ### Updated User Interface
 
@@ -57,13 +64,21 @@ A lot of changes were introduced in this release. For most users the following
 improvements will be most visible and relevant:
 - Updated UI to new and smaller code base (#995)
 - Allow ROA comments in UI (#995)
-- Enable ASPA support in CLI (#1031)
-
-You can read more about ASPA support here:
-https://krill.docs.nlnetlabs.nl/en/0.13.0-rc1/manage-aspas.html
 
 The new krill-ui project has its own repository where issues can be tracked:
 https://github.com/NLnetLabs/krill-ui
+
+### ASPA Support
+
+ASPA support is now enabled in the CLI (#1031). We hope to add UI support
+later this year.
+
+We added a number of new restrictions 
+- Krill MUST NOT create only a single AFI ASPA (#1063)
+- ASPA object MUST NOT allow the customer AS in the provider AS list (#1058)
+
+You can read more about ASPA support here:
+https://krill.docs.nlnetlabs.nl/en/0.13.0/manage-aspas.html
 
 ### API Changes
 
