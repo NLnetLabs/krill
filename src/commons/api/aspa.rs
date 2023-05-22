@@ -100,6 +100,20 @@ impl AspaDefinition {
         self.providers.iter().any(|p| p.provider() == self.customer)
     }
 
+    /// Returns true if there are duplicate provider ASNs. This
+    /// is not allowed by spec and these definitions should be
+    /// rejected by Krill.
+    pub fn contains_duplicate_providers(&self) -> bool {
+        let mut providers: Vec<Asn> = self.providers.iter().map(|p| p.provider()).collect();
+
+        let len_before_duplicates = providers.len();
+
+        providers.sort();
+        providers.dedup();
+
+        len_before_duplicates > providers.len()
+    }
+
     /// Returns true if this contains both IPv4 and IPv6 providers.
     ///
     /// Technically,it is allowed to omit one address family entirely,

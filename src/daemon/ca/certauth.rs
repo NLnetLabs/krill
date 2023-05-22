@@ -1744,6 +1744,10 @@ impl CertAuth {
                 return Err(Error::AspaProvidersSingleAfi(self.handle.clone(), customer));
             }
 
+            if aspa_config.contains_duplicate_providers() {
+                return Err(Error::AspaProvidersDuplicates(self.handle.clone(), customer));
+            }
+
             if !self.all_resources().contains_asn(customer) {
                 return Err(Error::AspaCustomerAsNotEntitled(self.handle().clone(), customer));
             }
