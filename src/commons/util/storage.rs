@@ -3,14 +3,19 @@ use url::Url;
 
 use crate::commons::{error::Error, KrillResult};
 
-pub fn data_dir_from_storage_uri(storage_uri: &Url) -> KrillResult<PathBuf> {
-    assert!(storage_uri.scheme() == "local");
-    Ok(Path::new(&format!(
-        "{}{}",
-        storage_uri.host_str().unwrap_or(""),
-        storage_uri.path()
-    ))
-    .to_path_buf())
+pub fn data_dir_from_storage_uri(storage_uri: &Url) -> Option<PathBuf> {
+    if storage_uri.scheme() != "local" {
+        None
+    } else {
+        Some(
+            Path::new(&format!(
+                "{}{}",
+                storage_uri.host_str().unwrap_or(""),
+                storage_uri.path()
+            ))
+            .to_path_buf(),
+        )
+    }
 }
 
 // TODO mark as test only

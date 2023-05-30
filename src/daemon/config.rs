@@ -8,6 +8,7 @@ use std::{
 };
 
 use chrono::Duration;
+use kvx::SegmentBuf;
 use log::{error, LevelFilter};
 use rpki::{
     ca::idexchange::PublisherHandle,
@@ -24,11 +25,13 @@ use crate::{
     commons::{
         api::{PublicationServerUris, Token},
         crypto::{OpenSslSignerConfig, SignSupport},
-        error::KrillIoError,
+        error::{Error, KrillIoError},
+        eventsourcing::KeyValueStore,
         util::{
             ext_serde,
             storage::{data_dir_from_storage_uri, storage_uri_from_data_dir},
         },
+        KrillResult,
     },
     constants::*,
     daemon::{
@@ -805,12 +808,12 @@ pub struct Benchmark {
 
 /// # Accessors
 impl Config {
-    pub fn set_storage_uri(&mut self, storage_uri: &Url) {
-        self.storage_uri = storage_uri.clone();
-    }
-
     pub fn upgrade_storage_uri(&self) -> &Url {
         self.upgrade_storage_uri.as_ref().unwrap() // should not panic, as it is always set
+    }
+
+    pub fn key_value_store(&self, name_space: impl Into<SegmentBuf>) -> KrillResult<KeyValueStore> {
+        KeyValueStore::create(&self.storage_uri, name_space).map_err(Error::KeyValueError)
     }
 
     pub fn tls_keys_dir(&self) -> &PathBuf {
@@ -953,7 +956,7 @@ impl Config {
         let https_mode = HttpsMode::Generate;
         let always_recover_data = false;
 
-        let log_level = LevelFilter::Off;
+        let log_level = LevelFilter::Debug;
         let log_type = LogType::Stderr;
         let syslog_facility = ConfigDefaults::syslog_facility();
         let auth_type = AuthType::AdminToken;
@@ -1193,30 +1196,30 @@ impl Config {
         }
 
         if self.tls_keys_dir.is_none() {
-            if self.storage_uri.scheme() != "local" {
+            if let Some(mut data_dir) = data_dir_from_storage_uri(&self.storage_uri) {
+                data_dir.push(HTTPS_SUB_DIR);
+                self.tls_keys_dir = Some(data_dir);
+            } else {
                 return Err(ConfigError::other("'tls_keys_dir' is not configured, but 'storage_uri' is not a local directory, please configure an 'tls_keys_dir'"));
             }
-            let mut data_dir = data_dir_from_storage_uri(&self.storage_uri).unwrap();
-            data_dir.push(HTTPS_SUB_DIR);
-            self.tls_keys_dir = Some(data_dir);
         }
 
         if self.repo_dir.is_none() {
-            if self.storage_uri.scheme() != "local" {
+            if let Some(mut data_dir) = data_dir_from_storage_uri(&self.storage_uri) {
+                data_dir.push(REPOSITORY_DIR);
+                self.repo_dir = Some(data_dir);
+            } else {
                 return Err(ConfigError::other("'repo_dir' is not configured, but 'storage_uri' is not a local directory, please configure an 'repo_dir'"));
             }
-            let mut data_dir = data_dir_from_storage_uri(&self.storage_uri).unwrap();
-            data_dir.push(REPOSITORY_DIR);
-            self.repo_dir = Some(data_dir);
         }
 
         if self.pid_file.is_none() {
-            if self.storage_uri.scheme() != "local" {
+            if let Some(mut data_dir) = data_dir_from_storage_uri(&self.storage_uri) {
+                data_dir.push("krill.pid");
+                self.pid_file = Some(data_dir);
+            } else {
                 return Err(ConfigError::other("'pid_file' is not configured, but 'storage_uri' is not a local directory, please configure an 'pid_file'"));
             }
-            let mut data_dir = data_dir_from_storage_uri(&self.storage_uri).unwrap();
-            data_dir.push("krill.pid");
-            self.pid_file = Some(data_dir);
         }
 
         let half_refresh = self.ca_refresh_seconds / 2;

@@ -149,7 +149,7 @@ pub fn init_config(config: &mut Config) {
 /// adjusts the config to use it and returns it. Be sure to clean it up when the test is done.
 pub async fn start_krill_with_custom_config(mut config: Config) -> Url {
     let storage_uri = tmp_storage();
-    config.set_storage_uri(&storage_uri);
+    config.storage_uri = storage_uri.clone();
     start_krill(config).await;
     storage_uri
 }

@@ -319,11 +319,21 @@ pub trait UpgradeStore {
 /// be called multiple times and it will resume the migration from the point it got
 /// to earlier. The idea is that this will allow operators to prepare the work for
 /// a migration and (a) verify that the migration worked, and (b) minimize the downtime
-/// when Krill is restarted into a new version. When a new version Krill deamon is
+/// when Krill is restarted into a new version. When a new version Krill daemon is
 /// started, it will call this again - to do the final preparation for a migration -
 /// knowing that no changes are added to the event history at this time. After this,
 /// the migration will be finalised.
 pub fn prepare_upgrade_data_migrations(mode: UpgradeMode, config: Arc<Config>) -> UpgradeResult<Option<UpgradeReport>> {
+    // Up until version 0.14.0 only local disk was supported. In order to use
+    // postgresql (i.e. the other kvx option) users must first upgrade to 0.14.0
+    // using the existing disk based storage. And only then migrate the data.
+    //
+    // This means that until this krill version we can assume that version upgrades
+    // will always be done using disk.
+    if data_dir_from_storage_uri(&config.storage_uri).is_none() {
+        return Ok(None);
+    }
+
     // First of all ALWAYS check the existing keys if the hsm feature is enabled.
     // Remember that this feature - although enabled by default from 0.10.x - may be enabled by installing
     // a new krill binary of the same Krill version as the the previous binary. In other words, we cannot
@@ -337,14 +347,9 @@ pub fn prepare_upgrade_data_migrations(mode: UpgradeMode, config: Arc<Config>) -
     // or benchmark set up that uses the old deprecated trust anchor set up. These TAs cannot easily
     // be migrated to the new setup in 0.13.0. Well.. it could be done, if there would be a strong use
     // case to put in the effort, but there really isn't.
-    // TODO do we still need the .exists() check?
-    let data_dir = data_dir_from_storage_uri(&config.storage_uri).unwrap();
-    let ca_store_path = data_dir.join(CASERVER_NS.as_str());
-    if ca_store_path.exists() {
-        let ca_kv_store = KeyValueStore::create(&config.storage_uri, CASERVER_NS)?;
-        if ca_kv_store.has_scope(&Scope::from_segment(segment!("ta")))? {
-            return Err(PrepareUpgradeError::OldTaMigration);
-        }
+    let ca_kv_store = KeyValueStore::create(&config.storage_uri, CASERVER_NS)?;
+    if ca_kv_store.has_scope(&Scope::from_segment(segment!("ta")))? {
+        return Err(PrepareUpgradeError::OldTaMigration);
     }
 
     match upgrade_versions(config.as_ref()) {

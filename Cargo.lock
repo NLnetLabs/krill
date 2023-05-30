@@ -1130,9 +1130,9 @@ dependencies = [
 
 [[package]]
 name = "kvx"
-version = "0.4.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "80d1e586ca411e94535eb33725dfd179fa58f6251db46f29b57850cf4bee1fe3"
+checksum = "3dcecb4bacfa390bcf5bc0a441adeb6e11417bdd26c6ccecb9e620f75e0e0e75"
 dependencies = [
  "kvx_macros",
  "kvx_types",
@@ -1148,9 +1148,9 @@ dependencies = [
 
 [[package]]
 name = "kvx_macros"
-version = "0.4.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4b5af3f5d5e56865b9afca8457922bbe0d5caba16c3837cc113aaaa909879932"
+checksum = "8e49ee443cae3cb69043329641920bfa3e684e790ceb8f1e12302ca02b5fad72"
 dependencies = [
  "kvx_types",
  "proc-macro-error",
@@ -1161,9 +1161,9 @@ dependencies = [
 
 [[package]]
 name = "kvx_types"
-version = "0.4.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f92920ce38be651b89fa2bac91febba9d3ec4eede5b4f4ab5c38653550677de6"
+checksum = "91747870335ea97c2b0595fb002772508fd5c8abacf88335050656837867d03a"
 dependencies = [
  "postgres",
  "postgres-types",

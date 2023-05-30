@@ -39,6 +39,8 @@ pub struct KeyValueStore {
 }
 
 impl KeyValueStore {
+    /// Creates a new KeyValueStore and initializes the version if it had
+    /// not been set.
     pub fn create(storage_uri: &Url, name_space: impl Into<SegmentBuf>) -> Result<Self, KeyValueError> {
         let store = KeyValueStore {
             inner: kvx::KeyValueStore::new(storage_uri, name_space)?,
