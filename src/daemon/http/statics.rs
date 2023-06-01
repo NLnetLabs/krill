@@ -17,7 +17,7 @@ pub async fn statics(req: Request) -> RoutingResult {
 
             "/assets/favicon-f84116cb.ico" => Ok(HttpResponse::fav(FAVICON)),
 
-            "/assets/index-26056008.js" => Ok(HttpResponse::js(JS_INDEX)),
+            "/assets/index-f2114f92.js" => Ok(HttpResponse::js(JS_INDEX)),
 
             "/assets/en-6862b1fd.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_ENGLISH)),
             "/assets/de-a07fd626.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_GERMAN)),
@@ -27,7 +27,7 @@ pub async fn statics(req: Request) -> RoutingResult {
             "/assets/nl-ac928f6f.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_DUTCH)),
             "/assets/pt-108a6a72.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_PORTUGUESE)),
 
-            "/assets/index-52409a7e.css" => Ok(HttpResponse::css(CSS)),
+            "/assets/index-3c0611ee.css" => Ok(HttpResponse::css(CSS)),
 
             "/assets/check-3e734f78.svg" => Ok(HttpResponse::svg(SVG_CHECK)),
             "/assets/check-green-4525c79c.svg" => Ok(HttpResponse::svg(SVG_CHECK_GREEN)),
@@ -68,7 +68,7 @@ pub static INDEX: &[u8] = include_bytes!("../../../ui/index.html");
 
 static FAVICON: &[u8] = include_bytes!("../../../ui/assets/favicon-f84116cb.ico");
 
-static JS_INDEX: &[u8] = include_bytes!("../../../ui/assets/index-26056008.js");
+static JS_INDEX: &[u8] = include_bytes!("../../../ui/assets/index-f2114f92.js");
 
 static JS_TRANSLATIONS_GERMAN: &[u8] = include_bytes!("../../../ui/assets/de-a07fd626.js");
 static JS_TRANSLATIONS_ENGLISH: &[u8] = include_bytes!("../../../ui/assets/en-6862b1fd.js");
@@ -78,7 +78,7 @@ static JS_TRANSLATIONS_GREEK: &[u8] = include_bytes!("../../../ui/assets/gr-094d
 static JS_TRANSLATIONS_DUTCH: &[u8] = include_bytes!("../../../ui/assets/nl-ac928f6f.js");
 static JS_TRANSLATIONS_PORTUGUESE: &[u8] = include_bytes!("../../../ui/assets/pt-108a6a72.js");
 
-static CSS: &[u8] = include_bytes!("../../../ui/assets/index-52409a7e.css");
+static CSS: &[u8] = include_bytes!("../../../ui/assets/index-3c0611ee.css");
 
 static SVG_CHECK: &[u8] = include_bytes!("../../../ui/assets/check-3e734f78.svg");
 static SVG_CHECK_GREEN: &[u8] = include_bytes!("../../../ui/assets/check-green-4525c79c.svg");
