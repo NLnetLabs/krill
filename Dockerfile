@@ -44,7 +44,7 @@ ARG MODE=build
 # ========
 #
 # Only used when MODE=build.
-ARG BASE_IMG=alpine:3.17
+ARG BASE_IMG=alpine:3.18
 
 
 # CARGO_ARGS
@@ -135,7 +135,7 @@ RUN chmod a+x /tmp/out/bin/*
 #
 # The previous build stage from which binaries are copied is controlled by the
 # MODE ARG (see above).
-FROM alpine:3.17 AS final
+FROM alpine:3.18 AS final
 
 # Copy binaries from the 'source' build stage into the image we are building
 COPY --from=source /tmp/out/bin/* /usr/local/bin/
