@@ -36,8 +36,11 @@ async fn main() {
             let config = Arc::new(config);
             match prepare_upgrade_data_migrations(UpgradeMode::PrepareOnly, config.clone()) {
                 Err(e) => {
+                    eprintln!("*** Error Preparing Date Migration ***");
+                    eprintln!("{}", e);
                     eprintln!();
-                    eprintln!("*** ERROR *** {}", e);
+                    eprintln!("Note that your server data has NOT been modified. Do not upgrade krill itself yet!");
+                    eprintln!("If you did upgrade krill, then downgrade it to your previous installed version.");
                     ::std::process::exit(1);
                 }
                 Ok(opt) => match opt {

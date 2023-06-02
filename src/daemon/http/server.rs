@@ -127,7 +127,9 @@ pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
     test_data_dirs_or_die(&config);
 
     // Call upgrade, this will only do actual work if needed.
-    let upgrade_report = prepare_upgrade_data_migrations(UpgradeMode::PrepareToFinalise, config.clone())?;
+    let upgrade_report = prepare_upgrade_data_migrations(UpgradeMode::PrepareToFinalise, config.clone())
+        .map_err(|e| Error::Custom(format!("Upgrade data migration failed with error: {}\n\nNOTE: your data was not changed. Please downgrade your krill instance to your previous version.", e)))?;
+
     if let Some(report) = &upgrade_report {
         if report.data_migration() {
             finalise_data_migration(report.versions(), config.as_ref()).map_err(|e| {
