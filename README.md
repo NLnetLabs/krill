@@ -25,6 +25,16 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 # Changelog
 
+## 0.14.0-rc1
+
+- Improve upgrade failed error: tell users to downgrade #1042
+
+## 0.13.1 'Scrollbars!'
+
+The Krill UI includes a CA selection dropdown in case you have multiple CAs.
+This dropdown used to have a scrollbar, which accidentally got lost in the
+UI overhaul we did in version 0.13.0. This is now fixed (#1071)
+
 ## 0.13.0 'DRY'
 
 ### Summary
