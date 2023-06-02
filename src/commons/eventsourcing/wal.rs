@@ -206,6 +206,7 @@ impl<T: WalSupport> WalStore<T> {
             let instance = Arc::make_mut(&mut instance);
 
             loop {
+                debug!("Get changeset for {} revision {}", handle, instance.revision());
                 let wal_set_key = Self::key_for_wal_set(handle, instance.revision());
                 if let Some(set) = self.kv.get(&wal_set_key)? {
                     instance.apply(set)
@@ -247,6 +248,7 @@ impl<T: WalSupport> WalStore<T> {
     }
 
     fn get_snapshot(&self, handle: &MyHandle) -> WalStoreResult<T> {
+        debug!("Load WAL snapshot for {}", handle);
         self.kv
             .get(&Self::key_for_snapshot(handle))?
             .ok_or_else(|| WalStoreError::Unknown(handle.clone()))
