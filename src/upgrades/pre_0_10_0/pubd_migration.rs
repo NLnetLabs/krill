@@ -29,7 +29,7 @@ pub struct PublicationServerRepositoryAccessMigration {
 
 impl PublicationServerRepositoryAccessMigration {
     pub fn prepare(mode: UpgradeMode, config: &Config) -> UpgradeResult<()> {
-        let current_kv_store = KeyValueStore::create(&config.storage_uri, PUBSERVER_NS)?;
+        let current_kv_store = KeyValueStore::create_no_init(&config.storage_uri, PUBSERVER_NS)?;
         let new_kv_store = KeyValueStore::create(config.upgrade_storage_uri(), PUBSERVER_NS)?;
         let new_agg_store = AggregateStore::create(config.upgrade_storage_uri(), PUBSERVER_NS)?;
 
@@ -102,7 +102,7 @@ impl UpgradeStore for PublicationServerRepositoryAccessMigration {
         }
 
         // Get the old info file. We will only migrate commands in the info file
-        let info_key = Key::new_scoped(scope.clone(), segment!("info"));
+        let info_key = Key::new_scoped(scope.clone(), segment!("info.json"));
         let old_info: StoredValueInfo = self
             .current_kv_store
             .get(&info_key)?

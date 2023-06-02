@@ -49,6 +49,14 @@ impl KeyValueStore {
         Ok(store)
     }
 
+    /// Creates a new KeyValueStore and does NOT initializes the version
+    pub fn create_no_init(storage_uri: &Url, name_space: impl Into<SegmentBuf>) -> Result<Self, KeyValueError> {
+        let store = KeyValueStore {
+            inner: kvx::KeyValueStore::new(storage_uri, name_space)?,
+        };
+        Ok(store)
+    }
+
     /// Stores a key value pair, serialized as json, overwrite existing
     pub fn store<V: Serialize>(&self, key: &Key, value: &V) -> Result<(), KeyValueError> {
         Ok(self.inner.store(key, serde_json::to_value(value)?)?)

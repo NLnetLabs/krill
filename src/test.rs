@@ -164,6 +164,7 @@ pub async fn start_krill_with_default_test_config(
 ) -> impl FnOnce() {
     let (data_dir, cleanup) = tmp_dir();
     let storage_uri = tmp_storage();
+    // let storage_uri = storage_uri_from_data_dir(&data_dir).unwrap();
     let config = test_config(
         &storage_uri,
         Some(&data_dir),

@@ -93,7 +93,15 @@ impl FromStr for CommandKey {
             let timestamp_secs = i64::from_str(parts[1]).map_err(|_| CommandKeyError(s.to_string()))?;
             let sequence = u64::from_str(parts[2]).map_err(|_| CommandKeyError(s.to_string()))?;
             // strip .json if present on the label part
-            let label = parts[3].to_string();
+            let label = {
+                let end = parts[3].to_string();
+                let last = if end.ends_with(".json") {
+                    end.len() - 5
+                } else {
+                    end.len()
+                };
+                (end[0..last]).to_string()
+            };
 
             Ok(CommandKey {
                 sequence,
@@ -670,35 +678,35 @@ where
     fn key_for_info(agg: &MyHandle) -> Key {
         Key::new_scoped(
             Scope::from_segment(Segment::parse_lossy(agg.as_str())),
-            segment!("info"),
+            segment!("info.json"),
         ) // agg should always be a valid Segment
     }
 
     fn key_for_snapshot(agg: &MyHandle) -> Key {
         Key::new_scoped(
             Scope::from_segment(Segment::parse_lossy(agg.as_str())), // agg should always be a valid Segment
-            segment!("snapshot"),
+            segment!("snapshot.json"),
         )
     }
 
     fn key_for_backup_snapshot(agg: &MyHandle) -> Key {
         Key::new_scoped(
             Scope::from_segment(Segment::parse_lossy(agg.as_str())), // agg should always be a valid Segment
-            segment!("snapshot-bk"),
+            segment!("snapshot-bk.json"),
         )
     }
 
     fn key_for_new_snapshot(agg: &MyHandle) -> Key {
         Key::new_scoped(
             Scope::from_segment(Segment::parse_lossy(agg.as_str())), // agg should always be a valid Segment
-            segment!("snapshot-new"),
+            segment!("snapshot-new.json"),
         )
     }
 
     fn key_for_event(agg: &MyHandle, version: u64) -> Key {
         Key::new_scoped(
             Scope::from_segment(Segment::parse_lossy(agg.as_str())), // agg should always be a valid Segment
-            Segment::parse(&format!("delta-{}", version)).unwrap(), // cannot panic as a u64 cannot contain a Scope::SEPARATOR
+            Segment::parse(&format!("delta-{}.json", version)).unwrap(), // cannot panic as a u64 cannot contain a Scope::SEPARATOR
         )
     }
 

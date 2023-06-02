@@ -1131,8 +1131,7 @@ dependencies = [
 [[package]]
 name = "kvx"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3dcecb4bacfa390bcf5bc0a441adeb6e11417bdd26c6ccecb9e620f75e0e0e75"
+source = "git+https://github.com/tweedegolf/kvx/?branch=integrate-krill-0.14#92459a5f601386942b7d510332c3ca08fe8dc5fb"
 dependencies = [
  "kvx_macros",
  "kvx_types",
@@ -1149,8 +1148,7 @@ dependencies = [
 [[package]]
 name = "kvx_macros"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e49ee443cae3cb69043329641920bfa3e684e790ceb8f1e12302ca02b5fad72"
+source = "git+https://github.com/tweedegolf/kvx/?branch=integrate-krill-0.14#92459a5f601386942b7d510332c3ca08fe8dc5fb"
 dependencies = [
  "kvx_types",
  "proc-macro-error",
@@ -1162,8 +1160,7 @@ dependencies = [
 [[package]]
 name = "kvx_types"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "91747870335ea97c2b0595fb002772508fd5c8abacf88335050656837867d03a"
+source = "git+https://github.com/tweedegolf/kvx/?branch=integrate-krill-0.14#92459a5f601386942b7d510332c3ca08fe8dc5fb"
 dependencies = [
  "postgres",
  "postgres-types",

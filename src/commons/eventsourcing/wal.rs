@@ -349,13 +349,15 @@ impl<T: WalSupport> WalStore<T> {
             // Carefully inspect the key, just ignore keys
             // following a format that is not expected.
             // Who knows what people write in this dir?
-            if let Some(number) = key.name().as_str().strip_prefix("wal-") {
-                if let Ok(revision) = u64::from_str(number) {
-                    if revision < latest.revision() {
-                        if archive {
-                            self.kv.archive(&key)?;
-                        } else {
-                            self.kv.drop_key(&key)?;
+            if let Some(remaining) = key.name().as_str().strip_prefix("wal-") {
+                if let Some(number) = remaining.strip_suffix(".json") {
+                    if let Ok(revision) = u64::from_str(number) {
+                        if revision < latest.revision() {
+                            if archive {
+                                self.kv.archive(&key)?;
+                            } else {
+                                self.kv.drop_key(&key)?;
+                            }
                         }
                     }
                 }
@@ -368,14 +370,14 @@ impl<T: WalSupport> WalStore<T> {
     fn key_for_snapshot(handle: &MyHandle) -> Key {
         Key::new_scoped(
             Scope::from_segment(Segment::parse_lossy(handle.as_str())), // handle should always be a valid Segment
-            segment!("snapshot"),
+            segment!("snapshot.json"),
         )
     }
 
     fn key_for_wal_set(handle: &MyHandle, revision: u64) -> Key {
         Key::new_scoped(
             Scope::from_segment(Segment::parse_lossy(handle.as_str())), // handle should always be a valid Segment
-            Segment::parse(&format!("wal-{}", revision)).unwrap(), // cannot panic as a u64 cannot contain a Scope::SEPARATOR
+            Segment::parse(&format!("wal-{}.json", revision)).unwrap(), // cannot panic as a u64 cannot contain a Scope::SEPARATOR
         )
     }
 }

@@ -20,6 +20,7 @@ use crate::commons::{
 
 const PARENTS_PREFIX: &Segment = segment!("parents-");
 const CHILDREN_PREFIX: &Segment = segment!("children-");
+const JSON_SUFFIX: &str = ".json";
 
 //------------ CaStatus ------------------------------------------------------
 
@@ -112,6 +113,7 @@ impl StatusStore {
                 .name()
                 .as_str()
                 .strip_prefix(PARENTS_PREFIX.as_str())
+                .and_then(|pfx_stripped| pfx_stripped.strip_suffix(JSON_SUFFIX))
                 .and_then(|handle_str| ParentHandle::from_str(handle_str).ok())
             {
                 // try to read the status, if there is any issue, e.g. because
@@ -139,6 +141,7 @@ impl StatusStore {
                 .name()
                 .as_str()
                 .strip_prefix(CHILDREN_PREFIX.as_str())
+                .and_then(|pfx_stripped| pfx_stripped.strip_suffix(JSON_SUFFIX))
                 .and_then(|handle_str| ChildHandle::from_str(handle_str).ok())
             {
                 // try to read the status, if there is any issue, e.g. because
@@ -168,7 +171,7 @@ impl StatusStore {
     fn convert_pre_0_9_5_full_status_if_present(&self, ca: &CaHandle) -> KrillResult<()> {
         let key = Key::new_scoped(
             Scope::from_segment(Segment::parse_lossy(ca.as_str())),
-            segment!("status"),
+            segment!("status.json"),
         ); // ca should always be a valid Segment
 
         let status = self.store.get::<CaStatus>(&key).ok().flatten();
@@ -200,21 +203,21 @@ impl StatusStore {
         // we may need to support multiple repos in future
         Key::new_scoped(
             Scope::from_segment(Segment::parse_lossy(ca.as_str())), // ca should always be a valid Segment
-            segment!("repos-main"),
+            segment!("repos-main.json"),
         )
     }
 
     fn parent_status_key(ca: &CaHandle, parent: &ParentHandle) -> Key {
         Key::new_scoped(
             Scope::from_segment(Segment::parse_lossy(ca.as_str())), // ca should always be a valid Segment
-            Segment::concat(PARENTS_PREFIX, Segment::parse_lossy(parent.as_str())),
+            Segment::parse_lossy(&format!("{}{}{}", PARENTS_PREFIX, parent, JSON_SUFFIX)),
         )
     }
 
     fn child_status_key(ca: &CaHandle, child: &ChildHandle) -> Key {
         Key::new_scoped(
             Scope::from_segment(Segment::parse_lossy(ca.as_str())), // ca should always be a valid Segment
-            Segment::concat(CHILDREN_PREFIX, Segment::parse_lossy(child.as_str())),
+            Segment::parse_lossy(&format!("{}{}{}", CHILDREN_PREFIX, child, JSON_SUFFIX)),
         )
     }
 

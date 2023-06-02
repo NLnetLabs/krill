@@ -34,7 +34,7 @@ struct CaObjectsMigration {
 
 impl CaObjectsMigration {
     fn create(config: &Config) -> Result<Self, PrepareUpgradeError> {
-        let current_store = KeyValueStore::create(&config.storage_uri, CA_OBJECTS_NS)?;
+        let current_store = KeyValueStore::create_no_init(&config.storage_uri, CA_OBJECTS_NS)?;
         let new_store = KeyValueStore::create(config.upgrade_storage_uri(), CA_OBJECTS_NS)?;
         Ok(CaObjectsMigration {
             current_store,
@@ -66,7 +66,7 @@ pub struct CasMigration {
 
 impl CasMigration {
     pub fn prepare(mode: UpgradeMode, config: &Config) -> UpgradeResult<()> {
-        let current_kv_store = KeyValueStore::create(&config.storage_uri, CASERVER_NS)?;
+        let current_kv_store = KeyValueStore::create_no_init(&config.storage_uri, CASERVER_NS)?;
         let new_kv_store = KeyValueStore::create(config.upgrade_storage_uri(), CASERVER_NS)?;
         let new_agg_store = AggregateStore::<CertAuth>::create(config.upgrade_storage_uri(), CASERVER_NS)?;
         let ca_objects_migration = CaObjectsMigration::create(config)?;
@@ -130,7 +130,7 @@ impl UpgradeStore for CasMigration {
             }
 
             // Get the old info file. We will only migrate commands in the info file
-            let info_key = Key::new_scoped(scope.clone(), segment!("info"));
+            let info_key = Key::new_scoped(scope.clone(), segment!("info.json"));
             let old_info: StoredValueInfo = self
                 .current_kv_store
                 .get(&info_key)?

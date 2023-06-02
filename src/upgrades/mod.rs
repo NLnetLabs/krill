@@ -246,7 +246,7 @@ pub trait UpgradeStore {
     }
 
     fn data_upgrade_info_key(scope: Scope) -> Key {
-        Key::new_scoped(scope, segment!("upgrade_info"))
+        Key::new_scoped(scope, segment!("upgrade_info.json"))
     }
 
     /// Return the DataUpgradeInfo telling us to where we got to with this migration.
@@ -290,7 +290,7 @@ pub trait UpgradeStore {
         cmd_keys.sort_by_key(|k| k.sequence);
         let cmd_keys = cmd_keys
             .into_iter()
-            .map(|ck| Key::new_scoped(scope.clone(), Segment::parse_lossy(&ck.to_string()))) // ck should always be a valid Segment
+            .map(|ck| Key::new_scoped(scope.clone(), Segment::parse_lossy(&format!("{}.json", ck)))) // ck should always be a valid Segment
             .collect();
 
         Ok(cmd_keys)
@@ -304,7 +304,7 @@ pub trait UpgradeStore {
 
     fn event_key(scope: Scope, nr: u64) -> Key {
         // cannot panic as a u64 cannot contain a Scope::SEPARATOR
-        Key::new_scoped(scope, Segment::parse(&format!("delta-{nr}")).unwrap())
+        Key::new_scoped(scope, Segment::parse(&format!("delta-{nr}.json")).unwrap())
     }
 }
 
@@ -343,19 +343,20 @@ pub fn prepare_upgrade_data_migrations(mode: UpgradeMode, config: Arc<Config>) -
     #[cfg(feature = "hsm")]
     record_preexisting_openssl_keys_in_signer_mapper(config.clone())?;
 
-    // Check if there is any CA named "ta". If so, then we are trying to upgrade a Krill testbed
-    // or benchmark set up that uses the old deprecated trust anchor set up. These TAs cannot easily
-    // be migrated to the new setup in 0.13.0. Well.. it could be done, if there would be a strong use
-    // case to put in the effort, but there really isn't.
-    let ca_kv_store = KeyValueStore::create(&config.storage_uri, CASERVER_NS)?;
-    if ca_kv_store.has_scope(&Scope::from_segment(segment!("ta")))? {
-        return Err(PrepareUpgradeError::OldTaMigration);
-    }
-
     match upgrade_versions(config.as_ref()) {
         None => Ok(None),
         Some(versions) => {
             info!("Preparing upgrade from {} to {}", versions.from(), versions.to());
+
+            // Check if there is any CA named "ta". If so, then we are trying to upgrade a Krill testbed
+            // or benchmark set up that uses the old deprecated trust anchor set up. These TAs cannot easily
+            // be migrated to the new setup in 0.13.0. Well.. it could be done, if there would be a strong use
+            // case to put in the effort, but there really isn't.
+            let ca_kv_store = KeyValueStore::create_no_init(&config.storage_uri, CASERVER_NS)?;
+            if ca_kv_store.has_scope(&Scope::from_segment(segment!("ta")))? {
+                return Err(PrepareUpgradeError::OldTaMigration);
+            }
+
             if versions.from < KrillVersion::release(0, 6, 0) {
                 let msg = "Cannot upgrade Krill installations from before version 0.6.0. Please upgrade to 0.8.1 first, then upgrade to 0.12.3, and then upgrade to this version.";
                 error!("{}", msg);
@@ -420,7 +421,7 @@ fn migrate_0_12_pubd_objects(config: &Config) -> KrillResult<bool> {
         if old_store.has(&repo_content_handle)? {
             let old_repo_content = old_store.get_latest(&repo_content_handle)?.as_ref().clone();
             let repo_content: pubd::RepositoryContent = old_repo_content.try_into()?;
-            let new_key = Key::new_scoped(Scope::from_segment(segment!("0")), segment!("snapshot"));
+            let new_key = Key::new_scoped(Scope::from_segment(segment!("0")), segment!("snapshot.json"));
             let upgrade_store = KeyValueStore::create(config.upgrade_storage_uri(), PUBSERVER_CONTENT_NS)?;
             upgrade_store.store(&new_key, &repo_content)?;
             Ok(true)
@@ -438,13 +439,13 @@ fn migrate_pre_0_12_pubd_objects(config: &Config) -> KrillResult<bool> {
     let data_dir = data_dir_from_storage_uri(&config.storage_uri).unwrap();
     let old_repo_content_dir = data_dir.join(PUBSERVER_CONTENT_NS.as_str());
     if old_repo_content_dir.exists() {
-        let old_store = KeyValueStore::create(&config.storage_uri, PUBSERVER_CONTENT_NS)?;
-        let old_key = Key::new_global(segment!("0"));
+        let old_store = KeyValueStore::create_no_init(&config.storage_uri, PUBSERVER_CONTENT_NS)?;
+        let old_key = Key::new_global(segment!("0.json"));
         if let Ok(Some(old_repo_content)) = old_store.get::<pre_0_13_0::OldRepositoryContent>(&old_key) {
             info!("Found pre 0.12.0 RC2 publication server data. Migrating..");
             let repo_content: pubd::RepositoryContent = old_repo_content.try_into()?;
 
-            let new_key = Key::new_scoped(Scope::from_segment(segment!("0")), segment!("snapshot"));
+            let new_key = Key::new_scoped(Scope::from_segment(segment!("0")), segment!("snapshot.json"));
             let upgrade_store = KeyValueStore::create(config.upgrade_storage_uri(), PUBSERVER_CONTENT_NS)?;
             upgrade_store.store(&new_key, &repo_content)?;
             Ok(true)
@@ -585,10 +586,7 @@ fn record_preexisting_openssl_keys_in_signer_mapper(config: Arc<Config>) -> Resu
 
                 if entry.path().is_file() {
                     // Is it a key identifier?
-                    // TODO rewrite this to not have to strip the suffix?
-                    if let Ok(key_id) =
-                        KeyIdentifier::from_str(entry.file_name().to_string_lossy().strip_suffix(".json").unwrap())
-                    {
+                    if let Ok(key_id) = KeyIdentifier::from_str(&entry.file_name().to_string_lossy()) {
                         // Is the key already recorded in the mapper? It shouldn't be, but asking will cause the initial
                         // registration of the OpenSSL signer to occur and for it to be assigned a handle. We need the
                         // handle so that we can register keys with the mapper.
@@ -658,6 +656,7 @@ pub async fn post_start_upgrade(upgrade_versions: &UpgradeVersions, server: &Kri
 /// as there can be only one version running.
 fn upgrade_versions(config: &Config) -> Option<UpgradeVersions> {
     // TODO do we need to rewrite this?
+    // Yes: #1074
     let data_dir = data_dir_from_storage_uri(&config.storage_uri).unwrap();
     let cas_version = key_store_version(&data_dir, CASERVER_NS.as_str());
     let pubd_version = key_store_version(&data_dir, PUBSERVER_NS.as_str());

@@ -174,7 +174,7 @@ impl PreSaveEventListener<CertAuth> for CaObjectsStore {
 
 impl CaObjectsStore {
     fn key(ca: &CaHandle) -> Key {
-        Key::new_global(Segment::parse_lossy(ca.as_str())) // ca should always be a valid Segment
+        Key::new_global(Segment::parse_lossy(&format!("{}.json", ca))) // ca should always be a valid Segment
     }
 
     fn cas(&self) -> KrillResult<Vec<CaHandle>> {
@@ -182,7 +182,7 @@ impl CaObjectsStore {
             .store
             .read()
             .unwrap()
-            .keys(&Scope::global(), "")?
+            .keys(&Scope::global(), ".json")?
             .iter()
             .flat_map(|k| {
                 // Only add entries for which the first part can be parsed as a handle
