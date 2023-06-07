@@ -1,13 +1,14 @@
 //! Perform functional tests on a Krill instance, using the API
 //!
-use krill::{
-    commons::api::{self, ObjectName},
-    test::*,
-};
 
 #[cfg(not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11")))]
 #[tokio::test]
 async fn functional_ca_import() {
+    use krill::{
+        commons::api::{self, ObjectName},
+        test::*,
+    };
+
     // Start an empty Krill instance.
     let (data_dir, cleanup) = tmp_dir();
     let krill_storage = tmp_storage();

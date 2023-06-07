@@ -28,7 +28,7 @@ use crate::{
         api::{AddChildRequest, ApiRepositoryContact, CertAuthInfo, IdCertInfo, RepositoryContact, Token},
         crypto::{KrillSigner, KrillSignerBuilder, OpenSslSignerConfig},
         error::Error as KrillError,
-        eventsourcing::{segment, AggregateStore, AggregateStoreError},
+        eventsourcing::{segment, AggregateStore, AggregateStoreError, Segment},
         util::{file, httpclient},
     },
     constants::{
@@ -1001,8 +1001,8 @@ struct TrustAnchorSignerManager {
 
 impl TrustAnchorSignerManager {
     fn create(config: Config) -> Result<Self, Error> {
-        let store = AggregateStore::create(&config.storage_uri, segment!("signer"))
-            .map_err(KrillError::AggregateStoreError)?;
+        let store =
+            AggregateStore::create(&config.storage_uri, segment!("signer")).map_err(KrillError::AggregateStoreError)?;
         let ta_handle = TrustAnchorHandle::new("ta".into());
         let signer = config.signer()?;
         let actor = Actor::krillta();

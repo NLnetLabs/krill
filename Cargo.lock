@@ -1131,7 +1131,7 @@ dependencies = [
 [[package]]
 name = "kvx"
 version = "0.5.0"
-source = "git+https://github.com/tweedegolf/kvx/?branch=integrate-krill-0.14#92459a5f601386942b7d510332c3ca08fe8dc5fb"
+source = "git+https://github.com/nlnetlabs/kvx#fca37f25f963d4881202b479266718d828f80b77"
 dependencies = [
  "kvx_macros",
  "kvx_types",
@@ -1148,7 +1148,7 @@ dependencies = [
 [[package]]
 name = "kvx_macros"
 version = "0.5.0"
-source = "git+https://github.com/tweedegolf/kvx/?branch=integrate-krill-0.14#92459a5f601386942b7d510332c3ca08fe8dc5fb"
+source = "git+https://github.com/nlnetlabs/kvx#fca37f25f963d4881202b479266718d828f80b77"
 dependencies = [
  "kvx_types",
  "proc-macro-error",
@@ -1160,7 +1160,7 @@ dependencies = [
 [[package]]
 name = "kvx_types"
 version = "0.5.0"
-source = "git+https://github.com/tweedegolf/kvx/?branch=integrate-krill-0.14#92459a5f601386942b7d510332c3ca08fe8dc5fb"
+source = "git+https://github.com/nlnetlabs/kvx#fca37f25f963d4881202b479266718d828f80b77"
 dependencies = [
  "postgres",
  "postgres-types",

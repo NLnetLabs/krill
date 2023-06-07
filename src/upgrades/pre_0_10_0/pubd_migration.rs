@@ -7,7 +7,7 @@ use crate::{
     commons::{
         api::StorableRepositoryCommand,
         eventsourcing::{
-            segment, AggregateStore, Key, KeyValueStore, Scope, StoredCommand, StoredEvent, StoredValueInfo,
+            segment, AggregateStore, Key, KeyValueStore, Scope, Segment, StoredCommand, StoredEvent, StoredValueInfo,
         },
         util::KrillVersion,
     },

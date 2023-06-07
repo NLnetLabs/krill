@@ -39,7 +39,7 @@ mod tests {
         commons::{
             api::{PublicationServerInfo, RepositoryContact},
             crypto::KrillSignerBuilder,
-            eventsourcing::{segment, AggregateStore},
+            eventsourcing::{segment, AggregateStore, Segment},
         },
         daemon::config::ConfigDefaults,
         test,
