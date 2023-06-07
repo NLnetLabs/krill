@@ -43,10 +43,10 @@ jobs:
       matrix:
         os: [ubuntu-latest]
 
-        # Test against Rust 1.63.0 because that is the oldest supported version.
+        # Test against the oldest supported version.
         # Test against beta Rust to get early warning of any problems that might occur with the upcoming Rust release.
         # Order: oldest Rust to newest Rust.
-        rust: [1.64.0, stable, beta]
+        rust: [1.65.0, stable, beta]
 
         # Test with no features, default features ("") and all except UI tests.
         # Order: fewest features to most features.
@@ -66,7 +66,7 @@ jobs:
     runs-on: ubuntu-20.04
     strategy:
       matrix:
-        rust: [1.64.0, stable, beta]
+        rust: [1.65.0, stable, beta]
         features: ["hsm", "hsm,hsm-tests-kmip"]
     steps:
     - name: Checkout repository
@@ -112,7 +112,7 @@ jobs:
     runs-on: ubuntu-20.04
     strategy:
       matrix:
-        rust: [1.64.0, stable, beta]
+        rust: [1.65.0, stable, beta]
         features: ["hsm,hsm-tests-pkcs11"]
     steps:
     - name: Checkout repository
