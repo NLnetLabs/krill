@@ -13,9 +13,12 @@ use rpki::{
 };
 
 use krill::{
-    commons::api::{
-        AspaDefinition, BgpSecDefinition, ObjectName, ReceivedCert, RoaConfiguration, RoaConfigurationUpdates,
-        RoaPayload,
+    commons::{
+        api::{
+            AspaDefinition, BgpSecDefinition, ObjectName, ReceivedCert, RoaConfiguration, RoaConfigurationUpdates,
+            RoaPayload,
+        },
+        util::storage::storage_uri_from_data_dir,
     },
     test::*,
 };
@@ -24,6 +27,7 @@ use krill::{
 async fn functional_keyroll() {
     let (data_dir, cleanup) = tmp_dir();
     let storage_uri = tmp_storage();
+    // let storage_uri = storage_uri_from_data_dir(&data_dir).unwrap();
     let config = test_config(&storage_uri, Some(&data_dir), true, false, false, false);
     start_krill(config).await;
 
@@ -200,16 +204,16 @@ async fn functional_keyroll() {
     }
 
     {
-        // info("##################################################################");
-        // info("#                                                                #");
-        // info("#                  renew MFT/CRL should update both keys         #");
-        // info("#                                                                #");
-        // info("##################################################################");
-        // info("");
+        info("##################################################################");
+        info("#                                                                #");
+        info("#                  renew MFT/CRL should update both keys         #");
+        info("#                                                                #");
+        info("##################################################################");
+        info("");
 
-        // cas_force_publish_all().await;
-        // assert_manifest_number_current_key("testbed should re-issue mft for current key", &testbed, 6).await;
-        // assert_manifest_number_new_key("testbed should re-issue mft for new key", &testbed, 2).await;
+        cas_force_publish_all().await;
+        assert_manifest_number_current_key("testbed should re-issue mft for current key", &testbed, 6).await;
+        assert_manifest_number_new_key("testbed should re-issue mft for new key", &testbed, 2).await;
     }
 
     {
@@ -241,7 +245,7 @@ async fn functional_keyroll() {
         assert_manifest_number_current_key(
             "testbed should issue new mft under promoted key, with all objects, as a single update.",
             &testbed,
-            2,
+            3,
         )
         .await;
     }

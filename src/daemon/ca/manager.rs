@@ -149,8 +149,7 @@ impl CaManager {
 
         // Create TA proxy store if we need it.
         let ta_proxy_store = if config.ta_proxy_enabled() {
-            let mut store =
-                AggregateStore::<TrustAnchorProxy>::create(&config.storage_uri, TA_PROXY_SERVER_NS)?;
+            let mut store = AggregateStore::<TrustAnchorProxy>::create(&config.storage_uri, TA_PROXY_SERVER_NS)?;
 
             // We need to listen for proxy events so that we can schedule:
             // 1. publication on updates
@@ -163,10 +162,7 @@ impl CaManager {
         };
 
         let ta_signer_store = if config.ta_signer_enabled() {
-            Some(AggregateStore::create(
-                &config.storage_uri,
-                TA_SIGNER_SERVER_NS,
-            )?)
+            Some(AggregateStore::create(&config.storage_uri, TA_SIGNER_SERVER_NS)?)
         } else {
             None
         };

@@ -187,8 +187,10 @@ impl CaObjectsStore {
             .flat_map(|k| {
                 // Only add entries for which the first part can be parsed as a handle
                 let mut res = None;
-                if let Ok(handle) = CaHandle::from_str(k.name().as_str()) {
-                    res = Some(handle)
+                if let Some(name) = k.name().as_str().strip_suffix(".json") {
+                    if let Ok(handle) = CaHandle::from_str(name) {
+                        res = Some(handle)
+                    }
                 }
                 res
             })
@@ -244,6 +246,7 @@ impl CaObjectsStore {
     pub fn reissue_all(&self, force: bool) -> KrillResult<Vec<CaHandle>> {
         let mut res = vec![];
         for ca in self.cas()? {
+            debug!("Re-issue for CA {} using force: {}", ca, force);
             self.with_ca_objects(&ca, |objects| {
                 if objects.re_issue(force, &self.issuance_timing, &self.signer)? {
                     res.push(ca.clone())
@@ -1006,6 +1009,13 @@ impl KeyObjectSet {
     }
 
     fn reissue(&mut self, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<()> {
+        debug!(
+            "Will re-issue for key: {}. Current revision: {} and next update: {}",
+            self.signing_cert.key_identifier(),
+            self.revision.number,
+            self.revision.next_update.to_rfc3339()
+        );
+
         self.revision.next(timing.publish_next());
 
         self.revocations.remove_expired();
