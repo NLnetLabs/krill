@@ -27,7 +27,7 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 ## 0.14.0-rc1
 
-- Improve upgrade failed error: tell users to downgrade #1042
+- Improve upgrade failed error: tell users to downgrade #1042 
 
 ## 0.13.1 'Scrollbars!'
 
