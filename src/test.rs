@@ -1,7 +1,6 @@
 //! Helper functions for testing Krill.
 
 use std::{
-    fs,
     fs::File,
     io::Write,
     path::{Path, PathBuf},
@@ -11,10 +10,7 @@ use std::{
 };
 
 use bytes::Bytes;
-
 use hyper::StatusCode;
-use tokio::time::{sleep, timeout};
-
 use rpki::{
     ca::{
         idexchange,
@@ -25,6 +21,8 @@ use rpki::{
     repository::resources::ResourceSet,
     uri,
 };
+use tokio::time::{sleep, timeout};
+use url::Url;
 
 use crate::{
     cli::{
@@ -51,6 +49,9 @@ use crate::{
     },
 };
 
+// #[cfg(test)]
+use std::fs;
+
 #[cfg(test)]
 use rpki::ca::idcert::IdCert;
 
@@ -58,10 +59,13 @@ pub const KRILL_SERVER_URI: &str = "https://localhost:3000/";
 pub const KRILL_PUBD_SERVER_URI: &str = "https://localhost:3001/";
 pub const KRILL_SECOND_SERVER_URI: &str = "https://localhost:3002/";
 
-pub fn init_logging() {
+pub fn init_logging() -> impl FnOnce() {
     // Just creates a test config so we can initialize logging, then forgets about it
-    let d = PathBuf::from(".");
-    let _ = Config::test(&d, false, false, false, false).init_logging();
+    let storage = tmp_storage();
+    let (dir, cleanup) = tmp_dir();
+    let _ = Config::test(&storage, Some(&dir), false, false, false, false).init_logging();
+
+    cleanup
 }
 
 pub fn info(msg: impl std::fmt::Display) {
@@ -113,7 +117,8 @@ pub async fn server_ready(uri: &str) -> bool {
 }
 
 pub fn test_config(
-    dir: &Path,
+    uri: &Url,
+    dir: Option<&Path>,
     enable_testbed: bool,
     enable_ca_refresh: bool,
     enable_suspend: bool,
@@ -123,7 +128,14 @@ pub fn test_config(
         crate::constants::enable_test_mode();
         crate::constants::enable_test_announcements();
     }
-    Config::test(dir, enable_testbed, enable_ca_refresh, enable_suspend, second_signer)
+    Config::test(
+        uri,
+        dir,
+        enable_testbed,
+        enable_ca_refresh,
+        enable_suspend,
+        second_signer,
+    )
 }
 
 pub fn init_config(config: &mut Config) {
@@ -135,11 +147,11 @@ pub fn init_config(config: &mut Config) {
 
 /// Starts krill server for testing using the given configuration. Creates a random base directory in the 'work' folder,
 /// adjusts the config to use it and returns it. Be sure to clean it up when the test is done.
-pub async fn start_krill_with_custom_config(mut config: Config) -> PathBuf {
-    let dir = tmp_dir();
-    config.set_data_dir(dir.clone());
+pub async fn start_krill_with_custom_config(mut config: Config) -> Url {
+    let storage_uri = tmp_storage();
+    config.storage_uri = storage_uri.clone();
     start_krill(config).await;
-    dir
+    storage_uri
 }
 
 /// Starts krill server for testing using the default test configuration, and optionally with testbed mode enabled.
@@ -149,21 +161,33 @@ pub async fn start_krill_with_default_test_config(
     enable_ca_refresh: bool,
     enable_suspend: bool,
     second_signer: bool,
-) -> PathBuf {
-    let dir = tmp_dir();
-    let config = test_config(&dir, enable_testbed, enable_ca_refresh, enable_suspend, second_signer);
+) -> impl FnOnce() {
+    let (data_dir, cleanup) = tmp_dir();
+    let storage_uri = tmp_storage();
+    // let storage_uri = storage_uri_from_data_dir(&data_dir).unwrap();
+    let config = test_config(
+        &storage_uri,
+        Some(&data_dir),
+        enable_testbed,
+        enable_ca_refresh,
+        enable_suspend,
+        second_signer,
+    );
     start_krill(config).await;
-    dir
+
+    cleanup
 }
 
 /// Starts a Krill server with a testbed and an RRDP interval, so that we can test that
 /// RRDP delta delays work properly.
-pub async fn start_krill_testbed_with_rrdp_interval(interval: u32) -> PathBuf {
-    let dir = tmp_dir();
-    let mut config = test_config(&dir, true, false, false, false);
+pub async fn start_krill_testbed_with_rrdp_interval(interval: u32) -> impl FnOnce() {
+    let (data_dir, cleanup) = tmp_dir();
+    let storage_uri = tmp_storage();
+    let mut config = test_config(&storage_uri, Some(&data_dir), true, false, false, false);
     config.rrdp_updates_config.rrdp_delta_interval_min_seconds = interval;
     start_krill(config).await;
-    dir
+
+    cleanup
 }
 
 pub async fn start_krill(mut config: Config) {
@@ -180,9 +204,10 @@ async fn start_krill_with_error_trap(config: Arc<Config>) {
 
 /// Starts a krill pubd for testing on its own port, and its
 /// own temp dir for storage.
-pub async fn start_krill_pubd(rrdp_delta_rrdp_delta_min_interval_seconds: u32) -> PathBuf {
-    let dir = tmp_dir();
-    let mut config = test_config(&dir, false, false, false, true);
+pub async fn start_krill_pubd(rrdp_delta_rrdp_delta_min_interval_seconds: u32) -> impl FnOnce() {
+    let (data_dir, cleanup) = tmp_dir();
+    let storage_uri = tmp_storage();
+    let mut config = test_config(&storage_uri, Some(&data_dir), false, false, false, true);
     config.rrdp_updates_config.rrdp_delta_interval_min_seconds = rrdp_delta_rrdp_delta_min_interval_seconds;
     init_config(&mut config);
     config.port = 3001;
@@ -199,21 +224,22 @@ pub async fn start_krill_pubd(rrdp_delta_rrdp_delta_min_interval_seconds: u32) -
     let command = PubServerCommand::RepositoryInit(uris);
     krill_dedicated_pubd_admin(command).await;
 
-    dir
+    cleanup
 }
 
 /// Starts a krill pubd for testing on its own port, and its
 /// own temp dir for storage.
-pub async fn start_second_krill() -> PathBuf {
-    let dir = tmp_dir();
-    let mut config = test_config(&dir, false, false, false, true);
+pub async fn start_second_krill() -> impl FnOnce() {
+    let (data_dir, cleanup) = tmp_dir();
+    let storage_uri = tmp_storage();
+    let mut config = test_config(&storage_uri, Some(&data_dir), false, false, false, true);
     init_config(&mut config);
     config.port = 3002;
 
     tokio::spawn(start_krill_with_error_trap(Arc::new(config)));
     assert!(krill_second_server_ready().await);
 
-    dir
+    cleanup
 }
 
 pub fn assert_http_status<T>(res: Result<T, httpclient::Error>, status: StatusCode) {
@@ -790,36 +816,64 @@ pub async fn publisher_request_krill2(ca: &CaHandle) -> idexchange::PublisherReq
     }
 }
 
+/// This method returns an in-memory Key-Value store and then runs the test
+/// provided in the closure using it
+#[cfg(test)]
+pub fn test_in_memory<F>(op: F)
+where
+    F: FnOnce(&Url),
+{
+    let storage_uri = tmp_storage();
+
+    op(&storage_uri);
+}
+
 /// This method sets up a test directory with a random name (a number)
 /// under 'work', relative to where cargo is running. It then runs the
 /// test provided in the closure, and finally it cleans up the test
 /// directory.
 ///
 /// Note that if your test fails the directory is not cleaned up.
+#[cfg(test)]
 pub fn test_under_tmp<F>(op: F)
 where
     F: FnOnce(PathBuf),
 {
-    let dir = sub_dir(&PathBuf::from("work"));
-    let path = PathBuf::from(&dir);
+    let (dir, cleanup) = tmp_dir();
 
     op(dir);
 
-    let _result = fs::remove_dir_all(path);
+    cleanup()
 }
 
-pub fn tmp_dir() -> PathBuf {
-    sub_dir(&PathBuf::from("work"))
+// #[cfg(test)]
+pub fn tmp_dir() -> (PathBuf, impl FnOnce()) {
+    let dir = random_sub_dir(&PathBuf::from("./work"));
+
+    (dir.clone(), || {
+        fs::remove_dir_all(dir).unwrap();
+    })
+}
+
+fn random_hex_string() -> String {
+    let mut bytes = [0; 8];
+    openssl::rand::rand_bytes(&mut bytes).unwrap();
+    hex::encode(bytes)
+}
+
+pub fn tmp_storage() -> Url {
+    let mut bytes = [0; 8];
+    openssl::rand::rand_bytes(&mut bytes).unwrap();
+
+    Url::parse(&format!("memory://{}", random_hex_string())).unwrap()
 }
 
 /// This method sets up a random subdirectory and returns it. It is
 /// assumed that the caller will clean this directory themselves.
-pub fn sub_dir(base_dir: &Path) -> PathBuf {
-    let mut bytes = [0; 8];
-    openssl::rand::rand_bytes(&mut bytes).unwrap();
-
+// #[cfg(test)]
+pub fn random_sub_dir(base_dir: &Path) -> PathBuf {
     let mut dir = base_dir.to_path_buf();
-    dir.push(hex::encode(bytes));
+    dir.push(random_hex_string());
 
     let full_path = PathBuf::from(&dir);
     fs::create_dir_all(&full_path).unwrap();

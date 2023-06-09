@@ -2194,8 +2194,8 @@ mod test {
 
     #[test]
     fn mft_uri() {
-        test::test_under_tmp(|d| {
-            let signer = OpenSslSigner::build(&d, "dummy", None).unwrap();
+        test::test_in_memory(|storage_uri| {
+            let signer = OpenSslSigner::build(storage_uri, "dummy", None).unwrap();
             let key_id = signer.create_key(PublicKeyFormat::Rsa).unwrap();
             let pub_key = signer.get_key_info(&key_id).unwrap();
 

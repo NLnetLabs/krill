@@ -1,7 +1,5 @@
 //! Perform functional tests on a Krill instance, using the API
 //!
-use std::fs;
-
 use bytes::Bytes;
 use rpki::{
     ca::{csr::BgpsecCsr, idexchange::CaHandle, provisioning::ResourceClassName},
@@ -15,7 +13,7 @@ use krill::{
 
 #[tokio::test]
 async fn functional_bgpsec() {
-    let krill_dir = start_krill_with_default_test_config(true, false, false, false).await;
+    let cleanup = start_krill_with_default_test_config(true, false, false, false).await;
 
     info("##################################################################");
     info("#                                                                #");
@@ -143,5 +141,5 @@ async fn functional_bgpsec() {
         expect_bgpsec_objects(&ca, &[]).await;
     }
 
-    let _ = fs::remove_dir_all(krill_dir);
+    cleanup();
 }

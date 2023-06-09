@@ -1,6 +1,6 @@
 //! Perform functional tests on a Krill instance, using the API
 //!
-use std::{fs, path::Path, str::FromStr, time::Duration};
+use std::{path::Path, str::FromStr, time::Duration};
 
 use hyper::StatusCode;
 use regex::Regex;
@@ -19,7 +19,7 @@ use krill::{
 
 #[tokio::test]
 async fn migrate_repository() {
-    init_logging();
+    let cleanup_logging = init_logging();
 
     info("##################################################################");
     info("#                                                                #");
@@ -35,7 +35,7 @@ async fn migrate_repository() {
     info("");
     // Use a 5 second RRDP update interval for the Krill server, so that we can also
     // test here that the re-scheduling of delayed RRDP deltas works.
-    let krill_dir = start_krill_testbed_with_rrdp_interval(5).await;
+    let cleanup_krill_dir = start_krill_testbed_with_rrdp_interval(5).await;
 
     info("##################################################################");
     info("#                                                                #");
@@ -43,7 +43,7 @@ async fn migrate_repository() {
     info("#                                                                #");
     info("##################################################################");
     info("");
-    let pubd_dir = start_krill_pubd(5).await;
+    let cleanup_pubd_dir = start_krill_pubd(5).await;
 
     let testbed = ca_handle("testbed");
 
@@ -248,6 +248,7 @@ async fn migrate_repository() {
         }
     }
 
-    let _ = fs::remove_dir_all(krill_dir);
-    let _ = fs::remove_dir_all(pubd_dir);
+    cleanup_logging();
+    cleanup_krill_dir();
+    cleanup_pubd_dir();
 }

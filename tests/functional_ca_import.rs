@@ -1,18 +1,18 @@
 //! Perform functional tests on a Krill instance, using the API
 //!
+
 #[cfg(not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11")))]
 #[tokio::test]
 async fn functional_ca_import() {
-    use std::fs;
-
     use krill::{
         commons::api::{self, ObjectName},
         test::*,
     };
 
     // Start an empty Krill instance.
-    let krill_dir = tmp_dir();
-    let mut config = test_config(&krill_dir, false, false, false, false);
+    let (data_dir, cleanup) = tmp_dir();
+    let krill_storage = tmp_storage();
+    let mut config = test_config(&krill_storage, Some(&data_dir), false, false, false, false);
     config.ta_support_enabled = true;
     config.ta_signer_enabled = true;
 
@@ -132,5 +132,5 @@ async fn functional_ca_import() {
         );
     }
 
-    let _ = fs::remove_dir_all(krill_dir);
+    cleanup();
 }
