@@ -6,7 +6,6 @@ extern crate krill;
 
 #[tokio::test]
 async fn add_and_remove_certificate_authority() {
-    use std::fs;
     use std::str::FromStr;
 
     use rpki::{
@@ -19,7 +18,7 @@ async fn add_and_remove_certificate_authority() {
     use krill::daemon::ca::testbed_ca_handle;
     use krill::test::*;
 
-    let dir = start_krill_with_default_test_config(true, true, false, false).await;
+    let cleanup = start_krill_with_default_test_config(true, true, false, false).await;
 
     // -------------------------------------------------------------------------
     // establish/verify starting conditions
@@ -208,5 +207,5 @@ async fn add_and_remove_certificate_authority() {
         .unwrap();
     assert_eq!(org_tal, renamed_tal);
 
-    let _ = fs::remove_dir_all(dir);
+    cleanup();
 }

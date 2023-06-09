@@ -656,13 +656,13 @@ pub mod tests {
 
     #[test]
     pub fn verify_that_a_usable_signer_is_registered_and_can_be_used() {
-        test::test_under_tmp(|d| {
+        test::test_in_memory(|storage_uri| {
             #[allow(non_snake_case)]
             let DEF_SIG_ALG = RpkiSignatureAlgorithm::default();
 
             // Build a mock signer that is contactable and usable for the SignerRouter
             let call_counts = Arc::new(MockSignerCallCounts::new());
-            let signer_mapper = Arc::new(SignerMapper::build(&d).unwrap());
+            let signer_mapper = Arc::new(SignerMapper::build(storage_uri).unwrap());
             let mock_signer = MockSigner::new("mock signer", signer_mapper.clone(), call_counts.clone(), None, None);
             let mock_signer = Arc::new(SignerProvider::Mock(SignerFlags::default(), mock_signer));
 
@@ -825,9 +825,9 @@ pub mod tests {
             ]
         }
 
-        test::test_under_tmp(|d| {
+        test::test_in_memory(|storage_uri| {
             let call_counts = Arc::new(MockSignerCallCounts::new());
-            let signer_mapper = Arc::new(SignerMapper::build(&d).unwrap());
+            let signer_mapper = Arc::new(SignerMapper::build(storage_uri).unwrap());
             let broken_signers = create_broken_signers(signer_mapper.clone(), call_counts.clone());
 
             // Create a SignerRouter that has access to all of the broken signers
@@ -880,9 +880,9 @@ pub mod tests {
             }
         }
 
-        test::test_under_tmp(|d| {
+        test::test_in_memory(|storage_uri| {
             let call_counts = Arc::new(MockSignerCallCounts::new());
-            let signer_mapper = Arc::new(SignerMapper::build(&d).unwrap());
+            let signer_mapper = Arc::new(SignerMapper::build(storage_uri).unwrap());
 
             let temp_unavail_signer = Arc::new(SignerProvider::Mock(
                 SignerFlags::default(),

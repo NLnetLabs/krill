@@ -1,4 +1,10 @@
-use crate::{commons::actor::ActorDef, daemon::auth::common::NoResourceType};
+use crate::{
+    commons::{
+        actor::ActorDef,
+        eventsourcing::{segment, Segment},
+    },
+    daemon::auth::common::NoResourceType,
+};
 
 pub const KRILL_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const KRILL_VERSION_MAJOR: &str = env!("CARGO_PKG_VERSION_MAJOR");
@@ -21,6 +27,7 @@ pub const KRILL_ENV_ADMIN_TOKEN: &str = "KRILL_ADMIN_TOKEN";
 pub const KRILL_ENV_ADMIN_TOKEN_DEPRECATED: &str = "KRILL_AUTH_TOKEN";
 pub const KRILL_ENV_SERVER_PORT: &str = "KRILL_SERVER_PORT";
 pub const KRILL_ENV_HTTP_LOG_INFO: &str = "KRILL_HTTP_LOG_INFO";
+pub const KRILL_ENV_STORAGE_URI: &str = "KRILL_STORAGE_URI";
 
 pub fn enable_test_mode() {
     std::env::set_var(KRILL_ENV_TEST, "1");
@@ -38,17 +45,21 @@ pub fn test_announcements_enabled() -> bool {
     std::env::var(KRILL_ENV_TEST_ANN).is_ok()
 }
 
-pub const KEYS_DIR: &str = "keys";
-pub const SIGNERS_DIR: &str = "signers";
+// until const fn's are more versatile for str's, we need to use lazy_static to be able to expand the segment macro at
+// compile time, while running the expanded code, which actually makes it a Segment, at runtime
+pub const KEYS_NS: &Segment = segment!("keys");
+pub const SIGNERS_NS: &Segment = segment!("signers");
+pub const CASERVER_NS: &Segment = segment!("cas");
+pub const TA_PROXY_SERVER_NS: &Segment = segment!("ta_proxy");
+pub const TA_SIGNER_SERVER_NS: &Segment = segment!("ta_signer");
+pub const CA_OBJECTS_NS: &Segment = segment!("ca_objects");
+pub const PUBSERVER_NS: &Segment = segment!("pubd");
+pub const PUBSERVER_CONTENT_NS: &Segment = segment!("pubd_objects");
+pub const STATUS_NS: &Segment = segment!("status");
 
-pub const CASERVER_DIR: &str = "cas";
-pub const TA_PROXY_SERVER_DIR: &str = "ta_proxy";
-pub const TA_SIGNER_SERVER_DIR: &str = "ta_signer";
-pub const CA_OBJECTS_DIR: &str = "ca_objects";
+pub const UPGRADE_DIR: &str = "upgrade-data";
 
 pub const PUBSERVER_DFLT: &str = "0";
-pub const PUBSERVER_DIR: &str = "pubd";
-pub const PUBSERVER_CONTENT_DIR: &str = "pubd_objects";
 pub const PUBSERVER_BACKUP_DIR: &str = "pubd_bk";
 
 pub const REPOSITORY_DIR: &str = "repo";
@@ -56,8 +67,6 @@ pub const REPOSITORY_RRDP_DIR: &str = "rrdp";
 pub const REPOSITORY_RRDP_ARCHIVE_DIR: &str = "archive";
 pub const RRDP_FIRST_SERIAL: u64 = 1; // RFC 8182 says we MUST use 1 as the first serial
 pub const REPOSITORY_RSYNC_DIR: &str = "rsync";
-
-pub const STATUS_DIR: &str = "status";
 
 pub const KRILL_CLI_SERVER_ARG: &str = "server";
 pub const KRILL_CLI_SERVER_ENV: &str = "KRILL_CLI_SERVER";

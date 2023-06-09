@@ -1,10 +1,11 @@
-use std::{collections::HashMap, path::Path, str::FromStr, sync::RwLock};
+use std::{collections::HashMap, str::FromStr, sync::RwLock};
 
 use rpki::ca::{
     idexchange::{CaHandle, ChildHandle, ParentHandle, ServiceUri},
     provisioning::ResourceClassListResponse as Entitlements,
     publication::PublishDelta,
 };
+use url::Url;
 
 use crate::commons::{
     api::{
@@ -12,13 +13,13 @@ use crate::commons::{
         RepoStatus,
     },
     error::Error,
-    eventsourcing::{KeyStoreKey, KeyValueStore},
+    eventsourcing::{segment, Key, KeyValueStore, Scope, Segment, SegmentBuf, SegmentExt},
     util::httpclient,
     KrillResult,
 };
 
-const PARENTS_PREFIX: &str = "parents-";
-const CHILDREN_PREFIX: &str = "children-";
+const PARENTS_PREFIX: &Segment = segment!("parents-");
+const CHILDREN_PREFIX: &Segment = segment!("children-");
 const JSON_SUFFIX: &str = ".json";
 
 //------------ CaStatus ------------------------------------------------------
@@ -66,8 +67,8 @@ pub struct StatusStore {
 }
 
 impl StatusStore {
-    pub fn new(work_dir: &Path, namespace: &str) -> KrillResult<Self> {
-        let store = KeyValueStore::disk(work_dir, namespace)?;
+    pub fn create(storage_uri: &Url, namespace: impl Into<SegmentBuf>) -> KrillResult<Self> {
+        let store = KeyValueStore::create(storage_uri, namespace)?;
         let cache = RwLock::new(HashMap::new());
 
         let store = StatusStore { store, cache };
@@ -80,7 +81,7 @@ impl StatusStore {
     /// convert it if needed.
     fn warm(&self) -> KrillResult<()> {
         for scope in self.store.scopes()? {
-            if let Ok(ca) = CaHandle::from_str(&scope) {
+            if let Ok(ca) = CaHandle::from_str(&scope.to_string()) {
                 self.convert_pre_0_9_5_full_status_if_present(&ca)?;
                 self.load_full_status(&ca)?;
             }
@@ -102,11 +103,16 @@ impl StatusStore {
 
         // parents
         let mut parents = ParentStatuses::default();
-        for parent_key in self.store.keys(Some(ca.to_string()), PARENTS_PREFIX)? {
+        let keys = self.store.keys(
+            &Scope::from_segment(Segment::parse_lossy(ca.as_str())), // ca should always be a valid Segment
+            PARENTS_PREFIX.as_str(),
+        )?;
+        for parent_key in keys {
             // Try to parse the key to get a parent handle
             if let Some(parent) = parent_key
                 .name()
-                .strip_prefix(PARENTS_PREFIX)
+                .as_str()
+                .strip_prefix(PARENTS_PREFIX.as_str())
                 .and_then(|pfx_stripped| pfx_stripped.strip_suffix(JSON_SUFFIX))
                 .and_then(|handle_str| ParentHandle::from_str(handle_str).ok())
             {
@@ -125,11 +131,16 @@ impl StatusStore {
 
         // children
         let mut children = HashMap::new();
-        for child_key in self.store.keys(Some(ca.to_string()), CHILDREN_PREFIX)? {
+        let keys = self.store.keys(
+            &Scope::from_segment(Segment::parse_lossy(ca.as_str())), // ca should always be a valid Segment
+            CHILDREN_PREFIX.as_str(),
+        )?;
+        for child_key in keys {
             // Try to parse the key to get a child handle
             if let Some(child) = child_key
                 .name()
-                .strip_prefix(CHILDREN_PREFIX)
+                .as_str()
+                .strip_prefix(CHILDREN_PREFIX.as_str())
                 .and_then(|pfx_stripped| pfx_stripped.strip_suffix(JSON_SUFFIX))
                 .and_then(|handle_str| ChildHandle::from_str(handle_str).ok())
             {
@@ -158,8 +169,13 @@ impl StatusStore {
     }
 
     fn convert_pre_0_9_5_full_status_if_present(&self, ca: &CaHandle) -> KrillResult<()> {
-        let key = KeyStoreKey::scoped(ca.to_string(), "status.json".to_string());
-        if let Some(full_status) = self.store.get::<CaStatus>(&key).ok().flatten() {
+        let key = Key::new_scoped(
+            Scope::from_segment(Segment::parse_lossy(ca.as_str())),
+            segment!("status.json"),
+        ); // ca should always be a valid Segment
+
+        let status = self.store.get::<CaStatus>(&key).ok().flatten();
+        if let Some(full_status) = status {
             info!(
                 "Migrating pre 0.9.5 connection status file for CA '{}' to new format",
                 ca
@@ -183,17 +199,26 @@ impl StatusStore {
         Ok(())
     }
 
-    fn repo_status_key(ca: &CaHandle) -> KeyStoreKey {
+    fn repo_status_key(ca: &CaHandle) -> Key {
         // we may need to support multiple repos in future
-        KeyStoreKey::scoped(ca.to_string(), "repos-main.json".to_string())
+        Key::new_scoped(
+            Scope::from_segment(Segment::parse_lossy(ca.as_str())), // ca should always be a valid Segment
+            segment!("repos-main.json"),
+        )
     }
 
-    fn parent_status_key(ca: &CaHandle, parent: &ParentHandle) -> KeyStoreKey {
-        KeyStoreKey::scoped(ca.to_string(), format!("{}{}{}", PARENTS_PREFIX, parent, JSON_SUFFIX))
+    fn parent_status_key(ca: &CaHandle, parent: &ParentHandle) -> Key {
+        Key::new_scoped(
+            Scope::from_segment(Segment::parse_lossy(ca.as_str())), // ca should always be a valid Segment
+            Segment::parse_lossy(&format!("{}{}{}", PARENTS_PREFIX, parent, JSON_SUFFIX)),
+        )
     }
 
-    fn child_status_key(ca: &CaHandle, child: &ChildHandle) -> KeyStoreKey {
-        KeyStoreKey::scoped(ca.to_string(), format!("{}{}{}", CHILDREN_PREFIX, child, JSON_SUFFIX))
+    fn child_status_key(ca: &CaHandle, child: &ChildHandle) -> Key {
+        Key::new_scoped(
+            Scope::from_segment(Segment::parse_lossy(ca.as_str())), // ca should always be a valid Segment
+            Segment::parse_lossy(&format!("{}{}{}", CHILDREN_PREFIX, child, JSON_SUFFIX)),
+        )
     }
 
     /// Returns the stored CaStatus for a CA, or a default (empty) status if it can't be found
@@ -263,8 +288,9 @@ impl StatusStore {
     pub fn remove_ca(&self, ca: &CaHandle) -> KrillResult<()> {
         self.cache.write().unwrap().remove(ca);
 
-        let scope = ca.as_str();
-        self.store.drop_scope(scope)?; // will only fail if scope is present and cannot be removed
+        self.store
+            .drop_scope(&Scope::from_segment(Segment::parse_lossy(ca.as_str())))?; // will only fail if scope is present and cannot be removed
+                                                                                   // ca should always be a valid Segment
 
         Ok(())
     }
@@ -373,19 +399,20 @@ impl StatusStore {
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
 
     use std::path::PathBuf;
 
-    use crate::commons::util::file;
-    use crate::test::test_under_tmp;
+    use crate::{
+        commons::util::{file, storage::storage_uri_from_data_dir},
+        test,
+    };
 
     #[test]
     fn read_save_status() {
-        test_under_tmp(|d| {
+        test::test_under_tmp(|data_dir| {
             let source = PathBuf::from("test-resources/status_store/migration-0.9.5/");
-            let target = d.join("status");
+            let target = data_dir.join("status");
             file::backup_dir(&source, &target).unwrap();
 
             let status_testbed_before_migration =
@@ -394,7 +421,8 @@ mod tests {
             let status_testbed_before_migration: CaStatus =
                 serde_json::from_str(status_testbed_before_migration).unwrap();
 
-            let store = StatusStore::new(&d, "status").unwrap();
+            let storage_uri = storage_uri_from_data_dir(&data_dir).unwrap();
+            let store = StatusStore::create(&storage_uri, segment!("status")).unwrap();
             let testbed = CaHandle::from_str("testbed").unwrap();
 
             let status_testbed_migrated = store.get_ca_status(&testbed);

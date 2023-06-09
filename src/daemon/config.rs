@@ -8,28 +8,36 @@ use std::{
 };
 
 use chrono::Duration;
+use kvx::SegmentBuf;
 use log::{error, LevelFilter};
-use serde::{de, Deserialize, Deserializer};
-
-#[cfg(unix)]
-use syslog::Facility;
-
 use rpki::{
     ca::idexchange::PublisherHandle,
     repository::x509::{Time, Validity},
     uri,
 };
+use serde::{de, Deserialize, Deserializer};
+use url::Url;
+
+#[cfg(unix)]
+use syslog::Facility;
 
 use crate::{
     commons::{
         api::{PublicationServerUris, Token},
         crypto::{OpenSslSignerConfig, SignSupport},
-        error::KrillIoError,
-        util::ext_serde,
+        error::{Error, KrillIoError},
+        eventsourcing::KeyValueStore,
+        util::{
+            ext_serde,
+            storage::{data_dir_from_storage_uri, storage_uri_from_data_dir},
+        },
+        KrillResult,
     },
     constants::*,
-    daemon::http::tls_keys,
-    daemon::mq::{in_seconds, Priority},
+    daemon::{
+        http::tls_keys::{self, HTTPS_SUB_DIR},
+        mq::{in_seconds, Priority},
+    },
 };
 
 #[cfg(feature = "multi-user")]
@@ -46,6 +54,7 @@ impl ConfigDefaults {
     fn ip() -> Vec<IpAddr> {
         vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))]
     }
+
     fn port() -> u16 {
         3000
     }
@@ -53,8 +62,12 @@ impl ConfigDefaults {
     fn https_mode() -> HttpsMode {
         HttpsMode::Generate
     }
-    fn data_dir() -> PathBuf {
-        PathBuf::from("./data")
+
+    fn storage_uri() -> Url {
+        env::var(KRILL_ENV_STORAGE_URI)
+            .ok()
+            .and_then(|s| Url::parse(&s).ok())
+            .unwrap_or_else(|| Url::parse("local://./data").unwrap())
     }
 
     fn always_recover_data() -> bool {
@@ -90,8 +103,8 @@ impl ConfigDefaults {
         }
     }
 
-    fn log_file() -> PathBuf {
-        PathBuf::from("./krill.log")
+    fn log_file() -> Option<PathBuf> {
+        Some(PathBuf::from("./krill.log"))
     }
 
     fn syslog_facility() -> String {
@@ -236,7 +249,7 @@ impl ConfigDefaults {
     }
 
     pub fn openssl_signer_only() -> Vec<SignerConfig> {
-        let signer_config = OpenSslSignerConfig { keys_path: None };
+        let signer_config = OpenSslSignerConfig { keys_storage_uri: None };
         vec![SignerConfig::new(
             DEFAULT_SIGNER_NAME.to_string(),
             SignerType::OpenSsl(signer_config),
@@ -319,7 +332,6 @@ impl ConfigDefaults {
 //------------ Config --------------------------------------------------------
 
 #[derive(Clone, Debug)]
-
 pub enum SignerReference {
     /// The name of the [[signers]] block being referred to. If supplied it
     /// must match the name field of one of the [[signers]] blocks defined in
@@ -405,6 +417,17 @@ where
     OneOrMany::<IpAddr>::deserialize(deserializer).map(|oom| oom.into())
 }
 
+fn deserialize_storage_uri<'de, D>(deserializer: D) -> Result<Url, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let url = String::deserialize(deserializer)?;
+    match Url::parse(&url) {
+        Ok(url) => Ok(url),
+        Err(_) => Url::parse(&format!("local://{url}/")).map_err(de::Error::custom),
+    }
+}
+
 /// Global configuration for the Krill Server.
 #[derive(Clone, Debug, Deserialize)]
 pub struct Config {
@@ -417,11 +440,19 @@ pub struct Config {
     #[serde(default = "ConfigDefaults::https_mode")]
     https_mode: HttpsMode,
 
-    #[serde(default = "ConfigDefaults::data_dir")]
-    pub data_dir: PathBuf,
+    // Deserialize this field from data_dir or storage_uri
+    #[serde(
+        alias = "data_dir",
+        default = "ConfigDefaults::storage_uri",
+        deserialize_with = "deserialize_storage_uri"
+    )]
+    pub storage_uri: Url,
 
-    #[serde(default)] // default is false
-    pub data_dir_use_lock: bool,
+    upgrade_storage_uri: Option<Url>,
+
+    tls_keys_dir: Option<PathBuf>,
+
+    repo_dir: Option<PathBuf>,
 
     // default is false
     // implicitly enabled in case of testbed
@@ -442,7 +473,7 @@ pub struct Config {
     #[serde(default = "ConfigDefaults::always_recover_data")]
     pub always_recover_data: bool,
 
-    pub pid_file: Option<PathBuf>,
+    pid_file: Option<PathBuf>,
 
     service_uri: Option<uri::Https>,
 
@@ -456,7 +487,7 @@ pub struct Config {
     log_type: LogType,
 
     #[serde(default = "ConfigDefaults::log_file")]
-    log_file: PathBuf,
+    log_file: Option<PathBuf>,
 
     #[serde(default = "ConfigDefaults::syslog_facility")]
     syslog_facility: String,
@@ -777,8 +808,20 @@ pub struct Benchmark {
 
 /// # Accessors
 impl Config {
-    pub fn set_data_dir(&mut self, data_dir: PathBuf) {
-        self.data_dir = data_dir;
+    pub fn upgrade_storage_uri(&self) -> &Url {
+        self.upgrade_storage_uri.as_ref().unwrap() // should not panic, as it is always set
+    }
+
+    pub fn key_value_store(&self, name_space: impl Into<SegmentBuf>) -> KrillResult<KeyValueStore> {
+        KeyValueStore::create(&self.storage_uri, name_space).map_err(Error::KeyValueError)
+    }
+
+    pub fn tls_keys_dir(&self) -> &PathBuf {
+        self.tls_keys_dir.as_ref().unwrap() // should not panic, as it is always set
+    }
+
+    pub fn repo_dir(&self) -> &PathBuf {
+        self.repo_dir.as_ref().unwrap() // should not panic, as it is always set
     }
 
     fn ips(&self) -> &Vec<IpAddr> {
@@ -794,15 +837,13 @@ impl Config {
     }
 
     pub fn https_cert_file(&self) -> PathBuf {
-        let mut path = self.data_dir.clone();
-        path.push(tls_keys::HTTPS_SUB_DIR);
+        let mut path = self.tls_keys_dir().to_path_buf();
         path.push(tls_keys::CERT_FILE);
         path
     }
 
     pub fn https_key_file(&self) -> PathBuf {
-        let mut path = self.data_dir.clone();
-        path.push(tls_keys::HTTPS_SUB_DIR);
+        let mut path = self.tls_keys_dir().to_path_buf();
         path.push(tls_keys::KEY_FILE);
         path
     }
@@ -824,15 +865,8 @@ impl Config {
         uri::Https::from_string(format!("{}rfc8181/{}/", self.service_uri(), publisher)).unwrap()
     }
 
-    pub fn pid_file(&self) -> PathBuf {
-        match &self.pid_file {
-            None => {
-                let mut path = self.data_dir.clone();
-                path.push("krill.pid");
-                path
-            }
-            Some(file) => file.clone(),
-        }
+    pub fn pid_file(&self) -> &PathBuf {
+        self.pid_file.as_ref().unwrap() // should not panic, as it is always set
     }
 
     /// Returns whether TA support is explicitly enabled in the config, or
@@ -902,16 +936,13 @@ impl Config {
     pub fn one_off_signer(&self) -> &SignerConfig {
         &self.signers[self.one_off_signer.idx()]
     }
-
-    pub fn upgrade_data_dir(&self) -> PathBuf {
-        self.data_dir.join("upgrade-data")
-    }
 }
 
 /// # Create
 impl Config {
     fn test_config(
-        data_dir: &Path,
+        storage_uri: &Url,
+        data_dir: Option<&Path>,
         enable_testbed: bool,
         enable_ca_refresh: bool,
         enable_suspend: bool,
@@ -921,17 +952,12 @@ impl Config {
 
         let ip = ConfigDefaults::ip();
         let port = ConfigDefaults::port();
-        let pid_file = None;
 
         let https_mode = HttpsMode::Generate;
-        let data_dir = data_dir.to_path_buf();
-        let data_dir_use_lock = true; // ensure we touch this in tests
         let always_recover_data = false;
 
         let log_level = LevelFilter::Debug;
         let log_type = LogType::Stderr;
-        let mut log_file = data_dir.clone();
-        log_file.push("krill.log");
         let syslog_facility = ConfigDefaults::syslog_facility();
         let auth_type = AuthType::AdminToken;
         let admin_token = Token::from("secret");
@@ -965,17 +991,7 @@ impl Config {
         let ca_refresh_parents_batch_size = 10;
         let post_limit_api = ConfigDefaults::post_limit_api();
         let post_limit_rfc8181 = ConfigDefaults::post_limit_rfc8181();
-        let rfc8181_log_dir = {
-            let mut dir = data_dir.clone();
-            dir.push("rfc8181");
-            Some(dir)
-        };
         let post_limit_rfc6492 = ConfigDefaults::post_limit_rfc6492();
-        let rfc6492_log_dir = {
-            let mut dir = data_dir.clone();
-            dir.push("rfc6492");
-            Some(dir)
-        };
         let post_protocol_msg_timeout_seconds = ConfigDefaults::post_protocol_msg_timeout_seconds();
 
         let bgp_risdumps_enabled = false;
@@ -1045,16 +1061,18 @@ impl Config {
             ip,
             port,
             https_mode,
-            data_dir,
-            data_dir_use_lock,
+            storage_uri: storage_uri.clone(),
+            upgrade_storage_uri: data_dir.map(|d| storage_uri_from_data_dir(&d.join(UPGRADE_DIR)).unwrap()),
+            tls_keys_dir: data_dir.map(|d| d.join(HTTPS_SUB_DIR)),
+            repo_dir: data_dir.map(|d| d.join(REPOSITORY_DIR)),
             ta_support_enabled: false, // but, enabled by testbed where applicable
             ta_signer_enabled: false,  // same as above
             always_recover_data,
-            pid_file,
+            pid_file: data_dir.map(|d| d.join("krill.pid")),
             service_uri: None,
             log_level,
             log_type,
-            log_file,
+            log_file: None,
             syslog_facility,
             admin_token,
             auth_type,
@@ -1077,9 +1095,9 @@ impl Config {
             suspend_child_after_inactive_hours: None,
             post_limit_api,
             post_limit_rfc8181,
-            rfc8181_log_dir,
+            rfc8181_log_dir: None,
             post_limit_rfc6492,
-            rfc6492_log_dir,
+            rfc6492_log_dir: None,
             post_protocol_msg_timeout_seconds,
             bgp_risdumps_enabled,
             bgp_risdumps_v4_uri,
@@ -1095,14 +1113,16 @@ impl Config {
     }
 
     pub fn test(
-        data_dir: &Path,
+        test_storage: &Url,
+        test_dir: Option<&Path>,
         enable_testbed: bool,
         enable_ca_refresh: bool,
         enable_suspend: bool,
         second_signer: bool,
     ) -> Self {
         let mut cfg = Self::test_config(
-            data_dir,
+            test_storage,
+            test_dir,
             enable_testbed,
             enable_ca_refresh,
             enable_suspend,
@@ -1112,8 +1132,9 @@ impl Config {
         cfg
     }
 
-    pub fn pubd_test(data_dir: &Path) -> Self {
-        let mut config = Self::test_config(data_dir, false, false, false, false);
+    #[cfg(test)]
+    pub fn pubd_test(storage_uri: &Url, data_dir: Option<&Path>) -> Self {
+        let mut config = Self::test_config(storage_uri, data_dir, false, false, false, false);
         config.port = 3001;
         config
     }
@@ -1130,11 +1151,8 @@ impl Config {
 
         if upgrade_only {
             info!("Prepare upgrade using configuration file: {}", config_file);
-            info!("Processing data from: {}", config.data_dir.to_string_lossy());
-            info!(
-                "Saving prepared data to: {}",
-                config.upgrade_data_dir().to_string_lossy()
-            );
+            info!("Processing data from: {}", config.storage_uri);
+            info!("Saving prepared data to: {}", config.upgrade_storage_uri(),);
         } else {
             info!("{} uses configuration file: {}", KRILL_SERVER_APP, config_file);
         }
@@ -1147,13 +1165,13 @@ impl Config {
     }
 
     pub fn process(&mut self) -> Result<(), ConfigError> {
-        self.fix();
+        self.fix()?;
         self.verify()?;
         self.resolve();
         Ok(())
     }
 
-    fn fix(&mut self) {
+    fn fix(&mut self) -> Result<(), ConfigError> {
         if self.ca_refresh_seconds < CA_REFRESH_SECONDS_MIN {
             warn!(
                 "The value for 'ca_refresh_seconds' was below the minimum value, changing it to {} seconds",
@@ -1170,12 +1188,48 @@ impl Config {
             self.ca_refresh_seconds = CA_REFRESH_SECONDS_MAX;
         }
 
+        if self.upgrade_storage_uri.is_none() {
+            if self.storage_uri.scheme() != "local" {
+                return Err(ConfigError::other("'upgrade_storage_uri' is not configured, but 'storage_uri' is not a local directory, please configure an 'upgrade_storage_uri'"));
+            }
+            self.upgrade_storage_uri = Some(self.storage_uri.join(UPGRADE_DIR).unwrap());
+        }
+
+        if self.tls_keys_dir.is_none() {
+            if let Some(mut data_dir) = data_dir_from_storage_uri(&self.storage_uri) {
+                data_dir.push(HTTPS_SUB_DIR);
+                self.tls_keys_dir = Some(data_dir);
+            } else {
+                return Err(ConfigError::other("'tls_keys_dir' is not configured, but 'storage_uri' is not a local directory, please configure an 'tls_keys_dir'"));
+            }
+        }
+
+        if self.repo_dir.is_none() {
+            if let Some(mut data_dir) = data_dir_from_storage_uri(&self.storage_uri) {
+                data_dir.push(REPOSITORY_DIR);
+                self.repo_dir = Some(data_dir);
+            } else {
+                return Err(ConfigError::other("'repo_dir' is not configured, but 'storage_uri' is not a local directory, please configure an 'repo_dir'"));
+            }
+        }
+
+        if self.pid_file.is_none() {
+            if let Some(mut data_dir) = data_dir_from_storage_uri(&self.storage_uri) {
+                data_dir.push("krill.pid");
+                self.pid_file = Some(data_dir);
+            } else {
+                return Err(ConfigError::other("'pid_file' is not configured, but 'storage_uri' is not a local directory, please configure an 'pid_file'"));
+            }
+        }
+
         let half_refresh = self.ca_refresh_seconds / 2;
 
         if self.ca_refresh_jitter_seconds > half_refresh {
             warn!("The value for 'ca_refresh_jitter_seconds' exceeded 50% of 'ca_refresh_seconds'. Changing it to {} seconds", half_refresh);
             self.ca_refresh_jitter_seconds = half_refresh;
         }
+
+        Ok(())
     }
 
     fn resolve(&mut self) {
@@ -1392,7 +1446,7 @@ impl Config {
 
     pub fn init_logging(&self) -> Result<(), ConfigError> {
         match self.log_type {
-            LogType::File => self.file_logger(&self.log_file),
+            LogType::File => self.file_logger(),
             LogType::Stderr => self.stderr_logger(),
             LogType::Syslog => {
                 let facility = Facility::from_str(&self.syslog_facility)
@@ -1411,7 +1465,11 @@ impl Config {
     }
 
     /// Creates a file logger using the file provided by `path`.
-    fn file_logger(&self, path: &Path) -> Result<(), ConfigError> {
+    fn file_logger(&self) -> Result<(), ConfigError> {
+        let path = self.log_file.as_ref().ok_or(ConfigError::Other(
+            "log_file not configured with log_type = \"file\"".to_owned(),
+        ))?;
+
         let file = match fern::log_file(path) {
             Ok(file) => file,
             Err(err) => {

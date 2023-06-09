@@ -2229,9 +2229,9 @@ mod tests {
 
     #[test]
     fn generate_id_cert() {
-        test::test_under_tmp(|d| {
+        test::test_in_memory(|storage_uri| {
             let signers = ConfigDefaults::signers();
-            let signer = KrillSignerBuilder::new(&d, Duration::from_secs(1), &signers)
+            let signer = KrillSignerBuilder::new(storage_uri, Duration::from_secs(1), &signers)
                 .build()
                 .unwrap();
 

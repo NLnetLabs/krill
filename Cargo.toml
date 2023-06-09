@@ -3,7 +3,7 @@
 name    = "krill"
 version = "0.14.0-rc1"
 edition = "2018"
-rust-version = "1.64"
+rust-version = "1.65"
 authors = [ "The NLnet Labs RPKI team <rpki-team@nlnetlabs.nl>" ]
 description = "Resource Public Key Infrastructure (RPKI) daemon"
 homepage = "https://www.nlnetlabs.nl/projects/rpki/krill/"
@@ -36,6 +36,8 @@ hyper                 = { version = "^0.14", features = ["server"] }
 intervaltree          = "0.2.6"
 jmespatch             = { version = "^0.3", features = ["sync"], optional = true }
 kmip                  = { version = "0.4.2", package = "kmip-protocol", features = ["tls-with-openssl"], optional = true }
+kvx                   = { version = "0.6.0", features = ["macros"] }
+# kvx                   = { version = "0.6.0", git = "https://github.com/nlnetlabs/kvx", features = ["macros"] }
 libflate              = "^1"
 log                   = "^0.4"
 once_cell             = { version = "^1.7.2", optional = true }
@@ -59,6 +61,7 @@ tokio                 = { version = "1", features = ["macros", "rt", "rt-multi-t
 tokio-rustls          = "^0.22"
 toml                  = "^0.5"
 unicode-normalization = { version = "^0.1", optional = true }
+url                   = { version = "2.3.1", features = ["serde"] }
 urlparse              = { version = "^0.7", optional = true }
 uuid                  = { version = "1.1", features = [ "v4" ] } # keep this in sync with rpki-rs
 

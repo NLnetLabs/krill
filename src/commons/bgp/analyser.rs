@@ -339,10 +339,10 @@ impl From<RisDumpError> for BgpAnalyserError {
 
 #[cfg(test)]
 mod tests {
-
-    use crate::commons::api::RoaConfigurationUpdates;
-    use crate::commons::bgp::BgpAnalysisState;
-    use crate::test::*;
+    use crate::{
+        commons::{api::RoaConfigurationUpdates, bgp::BgpAnalysisState},
+        test::{announcement, configured_roa},
+    };
 
     use super::*;
 

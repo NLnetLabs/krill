@@ -26,7 +26,6 @@ use std::{
         HashMap,
     },
     ops::Deref,
-    path::Path,
     sync::Arc,
 };
 
@@ -92,7 +91,6 @@ use crate::{
 // See: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie#cookie_prefixes
 const NONCE_COOKIE_NAME: &str = "__Host-krill_login_nonce";
 const CSRF_COOKIE_NAME: &str = "__Host-krill_login_csrf_hash";
-const LOGIN_SESSION_STATE_KEY_PATH: &str = "login_session_state.key"; // TODO: decide on proper location
 
 #[allow(clippy::enum_variant_names)]
 enum TokenKind {
@@ -153,7 +151,7 @@ pub struct OpenIDConnectAuthProvider {
 
 impl OpenIDConnectAuthProvider {
     pub fn new(config: Arc<Config>, session_cache: Arc<LoginSessionCache>) -> KrillResult<Self> {
-        let session_key = Self::init_session_key(&config.data_dir)?;
+        let session_key = Self::init_session_key(&config)?;
 
         Ok(OpenIDConnectAuthProvider {
             config,
@@ -730,10 +728,9 @@ impl OpenIDConnectAuthProvider {
         Ok(None)
     }
 
-    fn init_session_key(data_dir: &Path) -> KrillResult<CryptState> {
-        let key_path = data_dir.join(LOGIN_SESSION_STATE_KEY_PATH);
-        info!("Initializing session encryption key {}", &key_path.display());
-        crypt::crypt_init(key_path.as_path())
+    fn init_session_key(config: &Config) -> KrillResult<CryptState> {
+        debug!("Initializing session encryption key");
+        crypt::crypt_init(config)
     }
 
     fn oidc_conf(&self) -> KrillResult<&ConfigAuthOpenIDConnect> {

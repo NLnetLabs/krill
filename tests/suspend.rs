@@ -1,7 +1,4 @@
 //! Test suspension and un-suspension logic.
-
-use std::fs;
-
 use krill::test::*;
 use rpki::ca::idexchange::CaHandle;
 use rpki::repository::resources::ResourceSet;
@@ -20,7 +17,7 @@ async fn test_suspension() {
     //  testbed enabled
     //  ca_refresh disabled (we will trigger individual CA refreshes manually)
     //  suspend enabled
-    let krill_dir = start_krill_with_default_test_config(true, false, true, false).await;
+    let cleanup = start_krill_with_default_test_config(true, false, true, false).await;
 
     let testbed = ca_handle("testbed");
     let ca = ca_handle("CA");
@@ -100,5 +97,5 @@ async fn test_suspension() {
         expect_not_suspended(&testbed, &ca).await;
     }
 
-    let _ = fs::remove_dir_all(krill_dir);
+    cleanup();
 }
