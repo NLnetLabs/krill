@@ -37,6 +37,8 @@ use crate::{
 use self::pre_0_13_0::OldRepositoryContent;
 
 pub mod pre_0_10_0;
+
+#[allow(clippy::mutable_key_type)]
 pub mod pre_0_13_0;
 
 pub type UpgradeResult<T> = Result<T, PrepareUpgradeError>;
