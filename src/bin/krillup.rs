@@ -34,7 +34,7 @@ async fn main() {
             let properties_manager = match PropertiesManager::create(&config.storage_uri) {
                 Ok(mgr) => mgr,
                 Err(e) => {
-                    eprintln!("*** Error Preparing Date Migration ***");
+                    eprintln!("*** Error Preparing Data Migration ***");
                     eprintln!("{}", e);
                     eprintln!();
                     eprintln!("Note that your server data has NOT been modified. Do not upgrade krill itself yet!");
@@ -45,7 +45,7 @@ async fn main() {
 
             match prepare_upgrade_data_migrations(UpgradeMode::PrepareOnly, &config, &properties_manager) {
                 Err(e) => {
-                    eprintln!("*** Error Preparing Date Migration ***");
+                    eprintln!("*** Error Preparing Data Migration ***");
                     eprintln!("{}", e);
                     eprintln!();
                     eprintln!("Note that your server data has NOT been modified. Do not upgrade krill itself yet!");
