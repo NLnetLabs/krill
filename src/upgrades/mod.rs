@@ -8,8 +8,6 @@ use serde::de::DeserializeOwned;
 
 use rpki::{ca::idexchange::MyHandle, repository::x509::Time};
 
-use crate::constants::{CASERVER_NS, STATUS_NS, TA_PROXY_SERVER_NS, TA_SIGNER_SERVER_NS};
-use crate::daemon::properties::PropertiesManager;
 use crate::{
     commons::{
         crypto::KrillSignerBuilder,
@@ -21,8 +19,11 @@ use crate::{
         util::{file, storage::data_dir_from_storage_uri, KrillVersion},
         KrillResult,
     },
-    constants::{CA_OBJECTS_NS, PUBSERVER_CONTENT_NS, PUBSERVER_NS, UPGRADE_REISSUE_ROAS_CAS_LIMIT},
-    daemon::{config::Config, krillserver::KrillServer},
+    constants::{
+        CASERVER_NS, CA_OBJECTS_NS, KEYS_NS, PUBSERVER_CONTENT_NS, PUBSERVER_NS, SIGNERS_NS, STATUS_NS,
+        TA_PROXY_SERVER_NS, TA_SIGNER_SERVER_NS, UPGRADE_REISSUE_ROAS_CAS_LIMIT,
+    },
+    daemon::{config::Config, krillserver::KrillServer, properties::PropertiesManager},
     pubd,
 };
 
@@ -30,10 +31,7 @@ use crate::{
 use rpki::crypto::KeyIdentifier;
 
 #[cfg(feature = "hsm")]
-use crate::{
-    commons::crypto::SignerHandle,
-    constants::{KEYS_NS, SIGNERS_NS},
-};
+use crate::commons::crypto::SignerHandle;
 
 use self::pre_0_13_0::OldRepositoryContent;
 
@@ -569,15 +567,15 @@ pub fn finalise_data_migration(
     // Remove version files that are no longer required
     if let Some(data_dir) = data_dir_from_storage_uri(&config.storage_uri) {
         for ns in &[
-            KEYS_NS,
-            SIGNERS_NS,
             CASERVER_NS,
+            CA_OBJECTS_NS,
+            KEYS_NS,
+            PUBSERVER_CONTENT_NS,
+            PUBSERVER_NS,
+            SIGNERS_NS,
+            STATUS_NS,
             TA_PROXY_SERVER_NS,
             TA_SIGNER_SERVER_NS,
-            CA_OBJECTS_NS,
-            PUBSERVER_NS,
-            PUBSERVER_CONTENT_NS,
-            STATUS_NS,
         ] {
             let path = data_dir.join(ns.as_str()).join("version");
             if path.exists() {
