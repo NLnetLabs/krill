@@ -171,10 +171,10 @@ impl PolarClass for Actor {
             .add_attribute_getter("name", |instance| instance.name().to_string())
             .add_class_method("builtin", |name: String| -> Actor {
                 match name.as_str() {
-                    "anon" => Actor::test_from_def(ACTOR_DEF_ANON),
-                    "krill" => Actor::test_from_def(ACTOR_DEF_KRILL),
-                    "admin-token" => Actor::test_from_def(ACTOR_DEF_ADMIN_TOKEN),
-                    "testbed" => Actor::test_from_def(ACTOR_DEF_TESTBED),
+                    "anon" => Actor::actor_from_def(ACTOR_DEF_ANON),
+                    "krill" => Actor::actor_from_def(ACTOR_DEF_KRILL),
+                    "admin-token" => Actor::actor_from_def(ACTOR_DEF_ADMIN_TOKEN),
+                    "testbed" => Actor::actor_from_def(ACTOR_DEF_TESTBED),
                     _ => panic!("Unknown built-in actor name '{}'", name),
                 }
             })

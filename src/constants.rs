@@ -47,6 +47,7 @@ pub fn test_announcements_enabled() -> bool {
 
 // until const fn's are more versatile for str's, we need to use lazy_static to be able to expand the segment macro at
 // compile time, while running the expanded code, which actually makes it a Segment, at runtime
+pub const PROPERTIES_NS: &Segment = segment!("properties");
 pub const KEYS_NS: &Segment = segment!("keys");
 pub const SIGNERS_NS: &Segment = segment!("signers");
 pub const CASERVER_NS: &Segment = segment!("cas");
@@ -58,6 +59,8 @@ pub const PUBSERVER_CONTENT_NS: &Segment = segment!("pubd_objects");
 pub const STATUS_NS: &Segment = segment!("status");
 
 pub const UPGRADE_DIR: &str = "upgrade-data";
+
+pub const PROPERTIES_DFLT_NAME: &str = "main";
 
 pub const PUBSERVER_DFLT: &str = "0";
 pub const PUBSERVER_BACKUP_DIR: &str = "pubd_bk";

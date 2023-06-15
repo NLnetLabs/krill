@@ -1,13 +1,11 @@
 extern crate krill;
 
-use std::sync::Arc;
-
 use clap::{App, Arg};
 use log::info;
 
 use krill::{
     constants::{KRILL_DEFAULT_CONFIG_FILE, KRILL_UP_APP, KRILL_VERSION},
-    daemon::config::Config,
+    daemon::{config::Config, properties::PropertiesManager},
     upgrades::{prepare_upgrade_data_migrations, UpgradeMode},
 };
 
@@ -33,8 +31,19 @@ async fn main() {
 
     match Config::create(config_file, true) {
         Ok(config) => {
-            let config = Arc::new(config);
-            match prepare_upgrade_data_migrations(UpgradeMode::PrepareOnly, config.clone()) {
+            let properties_manager = match PropertiesManager::create(&config.storage_uri) {
+                Ok(mgr) => mgr,
+                Err(e) => {
+                    eprintln!("*** Error Preparing Date Migration ***");
+                    eprintln!("{}", e);
+                    eprintln!();
+                    eprintln!("Note that your server data has NOT been modified. Do not upgrade krill itself yet!");
+                    eprintln!("If you did upgrade krill, then downgrade it to your previous installed version.");
+                    ::std::process::exit(1);
+                }
+            };
+
+            match prepare_upgrade_data_migrations(UpgradeMode::PrepareOnly, &config, &properties_manager) {
                 Err(e) => {
                     eprintln!("*** Error Preparing Date Migration ***");
                     eprintln!("{}", e);
