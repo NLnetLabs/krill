@@ -13,7 +13,7 @@ use crate::{
         crypto::KrillSignerBuilder,
         error::{Error, KrillIoError},
         eventsourcing::{
-            segment, AggregateStoreError, CommandKey, Key, KeyValueError, KeyValueStore, Scope, Segment, SegmentExt,
+            segment, AggregateStoreError, Key, KeyValueError, KeyValueStore, Scope, Segment, SegmentExt,
             StoredValueInfo, WalStore,
         },
         util::{file, storage::data_dir_from_storage_uri, KrillVersion},
@@ -39,6 +39,9 @@ pub mod pre_0_10_0;
 
 #[allow(clippy::mutable_key_type)]
 pub mod pre_0_13_0;
+
+mod pre_0_14_0;
+pub use self::pre_0_14_0::*;
 
 pub type UpgradeResult<T> = Result<T, PrepareUpgradeError>;
 
@@ -289,9 +292,9 @@ pub trait UpgradeStore {
     /// by sequence and turn them back into key store keys for further processing.
     fn command_keys(&self, scope: &Scope, from: u64) -> Result<Vec<Key>, PrepareUpgradeError> {
         let keys = self.deployed_store().keys(scope, "command--")?;
-        let mut cmd_keys: Vec<CommandKey> = vec![];
+        let mut cmd_keys: Vec<OldCommandKey> = vec![];
         for key in keys {
-            let cmd_key = CommandKey::from_str(key.name().as_str()).map_err(|_| {
+            let cmd_key = OldCommandKey::from_str(key.name().as_str()).map_err(|_| {
                 PrepareUpgradeError::Custom(format!("Found invalid command key: {} for ca: {}", key.name(), scope))
             })?;
             if cmd_key.sequence > from {
@@ -793,7 +796,7 @@ mod tests {
         let config = Config::test(&storage_uri, Some(&data_dir), false, false, false, false);
         let _ = config.init_logging();
 
-        let properties_manager = PropertiesManager::create(&config.storage_uri).unwrap();
+        let properties_manager = PropertiesManager::create(&config.storage_uri, config.disable_history_cache).unwrap();
 
         prepare_upgrade_data_migrations(UpgradeMode::PrepareOnly, &config, &properties_manager)
             .unwrap()

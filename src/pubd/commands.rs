@@ -1,14 +1,12 @@
 use std::fmt;
 
+use rpki::ca::idexchange::{MyHandle, PublisherHandle};
 use rpki::uri;
 
-use rpki::ca::idexchange::{MyHandle, PublisherHandle};
-
-use crate::commons::api::IdCertInfo;
 use crate::{
     commons::{
         actor::Actor,
-        api::StorableRepositoryCommand,
+        api::{IdCertInfo, StorableRepositoryCommand},
         eventsourcing::{CommandDetails, SentCommand},
     },
     pubd::RepositoryAccessEvent,

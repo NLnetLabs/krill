@@ -267,6 +267,10 @@ impl Aggregate for SignerInfo {
         self.version
     }
 
+    fn increment_version(&mut self) {
+        self.version += 1;
+    }
+
     fn apply(&mut self, event: SignerInfoEvent) {
         match event.into_details() {
             SignerInfoEventDetails::KeyAdded(key_id, internal_key_id) => {
@@ -282,36 +286,31 @@ impl Aggregate for SignerInfo {
                 self.signer_info = signer_info;
             }
         }
-        self.version += 1;
     }
 
-    fn process_command(&self, command: Self::Command) -> Result<Vec<SignerInfoEvent>, Self::Error> {
-        match command.into_details() {
+    fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Event>, Self::Error> {
+        Ok(match command.into_details() {
             SignerInfoCommandDetails::AddKey(key_id, internal_key_id) => {
-                let event = SignerInfoEvent::key_added(self, key_id, internal_key_id);
-                Ok(vec![event])
+                vec![SignerInfoEvent::key_added(self, key_id, internal_key_id)]
             }
             SignerInfoCommandDetails::RemoveKey(key_id) => {
-                let event = SignerInfoEvent::key_removed(self, key_id);
-                Ok(vec![event])
+                vec![SignerInfoEvent::key_removed(self, key_id)]
             }
             SignerInfoCommandDetails::ChangeSignerName(signer_name) => {
                 if signer_name != self.signer_name {
-                    let event = SignerInfoEvent::signer_name_changed(self, signer_name);
-                    Ok(vec![event])
+                    vec![SignerInfoEvent::signer_name_changed(self, signer_name)]
                 } else {
-                    Ok(vec![])
+                    vec![]
                 }
             }
             SignerInfoCommandDetails::ChangeSignerInfo(signer_info) => {
                 if signer_info != self.signer_info {
-                    let event = SignerInfoEvent::signer_info_changed(self, signer_info);
-                    Ok(vec![event])
+                    vec![SignerInfoEvent::signer_info_changed(self, signer_info)]
                 } else {
-                    Ok(vec![])
+                    vec![]
                 }
             }
-        }
+        })
     }
 }
 
@@ -328,7 +327,7 @@ impl std::fmt::Debug for SignerMapper {
 impl SignerMapper {
     /// Build a SignerMapper that will read/write its data in a subdirectory of the given work dir.
     pub fn build(storage_uri: &Url) -> KrillResult<SignerMapper> {
-        let store = AggregateStore::<SignerInfo>::create(storage_uri, SIGNERS_NS)?;
+        let store = AggregateStore::<SignerInfo>::create(storage_uri, SIGNERS_NS, true)?;
         Ok(SignerMapper { store })
     }
 

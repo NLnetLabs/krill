@@ -359,6 +359,10 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
         self.version
     }
 
+    fn increment_version(&mut self) {
+        self.version += 1;
+    }
+
     fn apply(&mut self, event: Self::Event) {
         let (handle, _version, details) = event.unpack();
 
@@ -371,7 +375,6 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
             );
         }
 
-        self.version += 1;
         match details {
             // Publication Support
             TrustAnchorProxyEventDetails::RepositoryAdded(repository) => self.repository = Some(repository),
@@ -435,167 +438,192 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
                 command
             );
         }
+
         match command.into_details() {
             // Publication Support
-            TrustAnchorProxyCommandDetails::AddRepository(repository) => {
-                if self.repository.is_none() {
-                    Ok(vec![TrustAnchorProxyEvent::new(
-                        &self.handle,
-                        self.version,
-                        TrustAnchorProxyEventDetails::RepositoryAdded(repository),
-                    )])
-                } else {
-                    Err(Error::TaProxyAlreadyHasRepository)
-                }
-            }
+            TrustAnchorProxyCommandDetails::AddRepository(repository) => self.process_add_repository(repository),
 
             // Proxy -> Signer interactions
-            TrustAnchorProxyCommandDetails::AddSigner(signer) => {
-                if self.signer.is_none() {
-                    Ok(vec![TrustAnchorProxyEvent::new(
-                        &self.handle,
-                        self.version,
-                        TrustAnchorProxyEventDetails::SignerAdded(signer),
-                    )])
-                } else {
-                    Err(Error::TaProxyAlreadyHasSigner)
-                }
-            }
-            TrustAnchorProxyCommandDetails::MakeSignerRequest => {
-                if self.open_signer_request.is_some() {
-                    Err(Error::TaProxyHasRequest)
-                } else {
-                    Ok(vec![TrustAnchorProxyEvent::new(
-                        &self.handle,
-                        self.version,
-                        TrustAnchorProxyEventDetails::SignerRequestMade(Nonce::new()),
-                    )])
-                }
-            }
-
-            TrustAnchorProxyCommandDetails::ProcessSignerResponse(response) => {
-                let open_request_nonce = self.open_signer_request.as_ref().ok_or(Error::TaProxyHasNoRequest)?;
-
-                if &response.content().nonce != open_request_nonce {
-                    // It seems that the user uploaded the wrong the response.
-                    Err(Error::TaProxyRequestNonceMismatch(
-                        response.into_content().nonce,
-                        open_request_nonce.clone(),
-                    ))
-                } else if let Some(signer) = &self.signer {
-                    // Ensure that the response was validly signed.
-                    response.validate(&signer.id)?;
-
-                    // We accept the response as is. Since children cannot be modified, and requests
-                    // cannot change as long as there is an open signer request we cannot have any
-                    // mismatches between the children and child requests in the proxy vs the
-                    // children and responses received from the signer.
-                    //
-                    // In other words.. we trust that the associated signer functions correctly and
-                    // we have no further defensive coding on this side.
-                    //
-                    // Note that if we would reject the response, then there would be no way of
-                    // telling the signer why. So, this is also a matter of the 'the signer is
-                    // always right'.
-                    Ok(vec![TrustAnchorProxyEvent::new(
-                        &self.handle,
-                        self.version,
-                        TrustAnchorProxyEventDetails::SignerResponseReceived(response),
-                    )])
-                } else {
-                    // This is rather unexpected.. it implies that we had a request, but no
-                    // signer. Still - return a clean error for this, so unlikely as this may
-                    // be, it can be investigated.
-                    Err(Error::TaProxyHasNoSigner)
-                }
-            }
+            TrustAnchorProxyCommandDetails::AddSigner(signer) => self.process_add_signer(signer),
+            TrustAnchorProxyCommandDetails::MakeSignerRequest => self.process_make_signer_request(),
+            TrustAnchorProxyCommandDetails::ProcessSignerResponse(response) => self.process_signer_response(response),
 
             // Children
-            TrustAnchorProxyCommandDetails::AddChild(child) => {
-                if self.child_details.contains_key(child.handle()) {
-                    Err(Error::CaChildDuplicate(self.handle.clone(), child.handle().clone()))
-                } else {
-                    let (handle, resources, id_cert) = child.unpack();
-                    Ok(vec![TrustAnchorProxyEvent::new(
-                        &self.handle,
-                        self.version,
-                        TrustAnchorProxyEventDetails::ChildAdded(TrustAnchorChild::new(
-                            handle,
-                            id_cert.into(),
-                            resources,
-                        )),
-                    )])
-                }
-            }
+            TrustAnchorProxyCommandDetails::AddChild(child) => self.process_add_child(child),
             TrustAnchorProxyCommandDetails::AddChildRequest(child_handle, request) => {
-                // We can do some basic checks on the request, like..
-                // - CSR is valid
-                // - CSR does not exceed entitled resources
-                // - CSR is for correct resource class
-                // - Revocation is for known key
-                // - Revocation is for correct resource class
-                //
-                // The signer will eventually handle the actual request. So we just
-                // schedule it as a manner of speaking. The signer will also do these
-                // checks - although that means that we have some duplication this helps
-                // to ensure that we can "fail fast" - and on the other hand leave the
-                // signer to be responsible for the final say (also.. things may have
-                // changed by the time the signer looks at it, like resource entitlements
-                // perhaps in future?)
-                let child = self.get_child_details(&child_handle)?;
-                let ta_resource_class_name = ta_resource_class_name();
-
-                match &request {
-                    ProvisioningRequest::Issuance(issuance) => {
-                        if issuance.class_name() != &ta_resource_class_name {
-                            return Err(Error::Custom(format!(
-                                "TA child certificate sign request uses unknown resource class name '{}'",
-                                issuance.class_name()
-                            )));
-                        }
-                        issuance.limit().apply_to(&child.resources)?; // Errors if request exceeds
-                        CsrInfo::try_from(issuance.csr())?; // Errors if the CSR is invalid
-                    }
-                    ProvisioningRequest::Revocation(revocation) => {
-                        if revocation.class_name() != &ta_resource_class_name {
-                            return Err(Error::Custom(format!(
-                                "TA child revocation request uses unknown resource class name '{}'",
-                                revocation.class_name()
-                            )));
-                        }
-                        if !child.used_keys.contains_key(&revocation.key()) {
-                            return Err(Error::Custom(format!(
-                                "TA child revocation requested for unknown key: {}",
-                                revocation.key()
-                            )));
-                        }
-                    }
-                }
-
-                Ok(vec![TrustAnchorProxyEvent::new(
-                    &self.handle,
-                    self.version,
-                    TrustAnchorProxyEventDetails::ChildRequestAdded(child_handle, request),
-                )])
+                self.process_add_child_request(child_handle, request)
             }
             TrustAnchorProxyCommandDetails::GiveChildResponse(child_handle, key) => {
-                let child = self.get_child_details(&child_handle)?;
+                self.process_give_child_response(child_handle, key)
+            }
+        }
+    }
+}
 
-                if child.open_responses.contains_key(&key) {
-                    Ok(vec![TrustAnchorProxyEvent::new(
-                        &self.handle,
-                        self.version,
-                        TrustAnchorProxyEventDetails::ChildResponseGiven(child_handle, key),
-                    )])
-                } else {
-                    // This should not never happen. The command would not be sent, but let's
-                    // return some useful error anyway.
-                    Err(Error::Custom(format!(
-                        "No response found for child {} and key {}",
-                        child_handle, key
-                    )))
+// # Process command details
+impl TrustAnchorProxy {
+    fn process_add_repository(&self, repository: RepositoryContact) -> KrillResult<Vec<TrustAnchorProxyEvent>> {
+        if self.repository.is_none() {
+            Ok(vec![TrustAnchorProxyEvent::new(
+                &self.handle,
+                self.version,
+                TrustAnchorProxyEventDetails::RepositoryAdded(repository),
+            )])
+        } else {
+            Err(Error::TaProxyAlreadyHasRepository)
+        }
+    }
+
+    fn process_add_signer(&self, signer: TrustAnchorSignerInfo) -> KrillResult<Vec<TrustAnchorProxyEvent>> {
+        if self.signer.is_none() {
+            Ok(vec![TrustAnchorProxyEvent::new(
+                &self.handle,
+                self.version,
+                TrustAnchorProxyEventDetails::SignerAdded(signer),
+            )])
+        } else {
+            Err(Error::TaProxyAlreadyHasSigner)
+        }
+    }
+
+    fn process_make_signer_request(&self) -> KrillResult<Vec<TrustAnchorProxyEvent>> {
+        if self.open_signer_request.is_some() {
+            Err(Error::TaProxyHasRequest)
+        } else {
+            Ok(vec![TrustAnchorProxyEvent::new(
+                &self.handle,
+                self.version,
+                TrustAnchorProxyEventDetails::SignerRequestMade(Nonce::new()),
+            )])
+        }
+    }
+
+    fn process_signer_response(&self, response: TrustAnchorSignedResponse) -> KrillResult<Vec<TrustAnchorProxyEvent>> {
+        let open_request_nonce = self.open_signer_request.as_ref().ok_or(Error::TaProxyHasNoRequest)?;
+
+        if &response.content().nonce != open_request_nonce {
+            // It seems that the user uploaded the wrong the response.
+            Err(Error::TaProxyRequestNonceMismatch(
+                response.into_content().nonce,
+                open_request_nonce.clone(),
+            ))
+        } else if let Some(signer) = &self.signer {
+            // Ensure that the response was validly signed.
+            response.validate(&signer.id)?;
+
+            // We accept the response as is. Since children cannot be modified, and requests
+            // cannot change as long as there is an open signer request we cannot have any
+            // mismatches between the children and child requests in the proxy vs the
+            // children and responses received from the signer.
+            //
+            // In other words.. we trust that the associated signer functions correctly and
+            // we have no further defensive coding on this side.
+            //
+            // Note that if we would reject the response, then there would be no way of
+            // telling the signer why. So, this is also a matter of the 'the signer is
+            // always right'.
+            Ok(vec![TrustAnchorProxyEvent::new(
+                &self.handle,
+                self.version,
+                TrustAnchorProxyEventDetails::SignerResponseReceived(response),
+            )])
+        } else {
+            // This is rather unexpected.. it implies that we had a request, but no
+            // signer. Still - return a clean error for this, so unlikely as this may
+            // be, it can be investigated.
+            Err(Error::TaProxyHasNoSigner)
+        }
+    }
+
+    fn process_add_child(&self, child: AddChildRequest) -> KrillResult<Vec<TrustAnchorProxyEvent>> {
+        if self.child_details.contains_key(child.handle()) {
+            Err(Error::CaChildDuplicate(self.handle.clone(), child.handle().clone()))
+        } else {
+            let (handle, resources, id_cert) = child.unpack();
+            Ok(vec![TrustAnchorProxyEvent::new(
+                &self.handle,
+                self.version,
+                TrustAnchorProxyEventDetails::ChildAdded(TrustAnchorChild::new(handle, id_cert.into(), resources)),
+            )])
+        }
+    }
+
+    fn process_add_child_request(
+        &self,
+        child_handle: ChildHandle,
+        request: ProvisioningRequest,
+    ) -> KrillResult<Vec<TrustAnchorProxyEvent>> {
+        // We can do some basic checks on the request, like..
+        // - CSR is valid
+        // - CSR does not exceed entitled resources
+        // - CSR is for correct resource class
+        // - Revocation is for known key
+        // - Revocation is for correct resource class
+        //
+        // The signer will eventually handle the actual request. So we just
+        // schedule it as a manner of speaking. The signer will also do these
+        // checks - although that means that we have some duplication this helps
+        // to ensure that we can "fail fast" - and on the other hand leave the
+        // signer to be responsible for the final say (also.. things may have
+        // changed by the time the signer looks at it, like resource entitlements
+        // perhaps in future?)
+        let child = self.get_child_details(&child_handle)?;
+        let ta_resource_class_name = ta_resource_class_name();
+
+        match &request {
+            ProvisioningRequest::Issuance(issuance) => {
+                if issuance.class_name() != &ta_resource_class_name {
+                    return Err(Error::Custom(format!(
+                        "TA child certificate sign request uses unknown resource class name '{}'",
+                        issuance.class_name()
+                    )));
+                }
+                issuance.limit().apply_to(&child.resources)?; // Errors if request exceeds
+                CsrInfo::try_from(issuance.csr())?; // Errors if the CSR is invalid
+            }
+            ProvisioningRequest::Revocation(revocation) => {
+                if revocation.class_name() != &ta_resource_class_name {
+                    return Err(Error::Custom(format!(
+                        "TA child revocation request uses unknown resource class name '{}'",
+                        revocation.class_name()
+                    )));
+                }
+                if !child.used_keys.contains_key(&revocation.key()) {
+                    return Err(Error::Custom(format!(
+                        "TA child revocation requested for unknown key: {}",
+                        revocation.key()
+                    )));
                 }
             }
+        }
+
+        Ok(vec![TrustAnchorProxyEvent::new(
+            &self.handle,
+            self.version,
+            TrustAnchorProxyEventDetails::ChildRequestAdded(child_handle, request),
+        )])
+    }
+
+    fn process_give_child_response(
+        &self,
+        child_handle: ChildHandle,
+        key: KeyIdentifier,
+    ) -> KrillResult<Vec<TrustAnchorProxyEvent>> {
+        let child = self.get_child_details(&child_handle)?;
+
+        if child.open_responses.contains_key(&key) {
+            Ok(vec![TrustAnchorProxyEvent::new(
+                &self.handle,
+                self.version,
+                TrustAnchorProxyEventDetails::ChildResponseGiven(child_handle, key),
+            )])
+        } else {
+            // This should not never happen. The command would not be sent, but let's
+            // return some useful error anyway.
+            Err(Error::Custom(format!(
+                "No response found for child {} and key {}",
+                child_handle, key
+            )))
         }
     }
 }

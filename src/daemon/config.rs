@@ -448,6 +448,9 @@ pub struct Config {
     )]
     pub storage_uri: Url,
 
+    #[serde(default)]
+    pub disable_history_cache: bool,
+
     upgrade_storage_uri: Option<Url>,
 
     tls_keys_dir: Option<PathBuf>,
@@ -1068,6 +1071,7 @@ impl Config {
             port,
             https_mode,
             storage_uri: storage_uri.clone(),
+            disable_history_cache: false,
             upgrade_storage_uri: data_dir.map(|d| storage_uri_from_data_dir(&d.join(UPGRADE_DIR)).unwrap()),
             tls_keys_dir: data_dir.map(|d| d.join(HTTPS_SUB_DIR)),
             repo_dir: data_dir.map(|d| d.join(REPOSITORY_DIR)),

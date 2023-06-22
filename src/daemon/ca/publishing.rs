@@ -218,6 +218,7 @@ impl CaObjectsStore {
     where
         F: FnOnce(&mut CaObjects) -> KrillResult<()>,
     {
+        // TODO: use kvx execute/transaction
         let lock = self.store.write().unwrap();
 
         let key = Self::key(ca);

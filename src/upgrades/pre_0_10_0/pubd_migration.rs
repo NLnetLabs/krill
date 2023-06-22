@@ -6,17 +6,15 @@ use rpki::{ca::idexchange::MyHandle, repository::x509::Time};
 use crate::{
     commons::{
         api::StorableRepositoryCommand,
-        eventsourcing::{
-            segment, AggregateStore, Key, KeyValueStore, Scope, Segment, StoredCommand, StoredEvent, StoredValueInfo,
-        },
+        eventsourcing::{segment, AggregateStore, Key, KeyValueStore, Scope, Segment, StoredEvent, StoredValueInfo},
         util::KrillVersion,
     },
     constants::{KRILL_VERSION, PUBSERVER_NS},
     daemon::config::Config,
     pubd::{RepositoryAccess, RepositoryAccessEvent, RepositoryAccessInitDetails},
     upgrades::{
-        pre_0_10_0::OldRepositoryAccessEvent, PrepareUpgradeError, UpgradeMode, UpgradeResult, UpgradeStore,
-        UpgradeVersions,
+        pre_0_10_0::OldRepositoryAccessEvent, OldStoredCommand, PrepareUpgradeError, UpgradeMode, UpgradeResult,
+        UpgradeStore, UpgradeVersions,
     },
 };
 
@@ -34,7 +32,8 @@ impl PublicationServerRepositoryAccessMigration {
     pub fn prepare(mode: UpgradeMode, config: &Config, versions: &UpgradeVersions) -> UpgradeResult<()> {
         let current_kv_store = KeyValueStore::create(&config.storage_uri, PUBSERVER_NS)?;
         let new_kv_store = KeyValueStore::create(config.upgrade_storage_uri(), PUBSERVER_NS)?;
-        let new_agg_store = AggregateStore::create(config.upgrade_storage_uri(), PUBSERVER_NS)?;
+        let new_agg_store =
+            AggregateStore::create(config.upgrade_storage_uri(), PUBSERVER_NS, config.disable_history_cache)?;
 
         let store_migration = PublicationServerRepositoryAccessMigration {
             current_kv_store,
@@ -112,7 +111,7 @@ impl UpgradeStore for PublicationServerRepositoryAccessMigration {
         for cmd_key in old_cmd_keys {
             // Read and parse the command. There is no need to change the command itself,
             // but we need to save it again and get the events from here.
-            let cmd: StoredCommand<StorableRepositoryCommand> = self.get(&cmd_key)?;
+            let cmd: OldStoredCommand<StorableRepositoryCommand> = self.get(&cmd_key)?;
 
             // If we encounter a command which is not (yet) covered by the old info file,
             // then we are done for now. This most likely happens in case we are preparing

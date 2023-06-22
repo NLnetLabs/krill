@@ -1513,7 +1513,11 @@ pub struct RepositoryAccessProxy {
 
 impl RepositoryAccessProxy {
     pub fn create(config: &Config) -> KrillResult<Self> {
-        let store = AggregateStore::<RepositoryAccess>::create(&config.storage_uri, PUBSERVER_NS)?;
+        let store = AggregateStore::<RepositoryAccess>::create(
+            &config.storage_uri,
+            PUBSERVER_NS,
+            config.disable_history_cache,
+        )?;
         let key = MyHandle::from_str(PUBSERVER_DFLT).unwrap();
 
         if store.has(&key)? {
@@ -1685,8 +1689,11 @@ impl Aggregate for RepositoryAccess {
         self.version
     }
 
-    fn apply(&mut self, event: Self::Event) {
+    fn increment_version(&mut self) {
         self.version += 1;
+    }
+
+    fn apply(&mut self, event: Self::Event) {
         match event.into_details() {
             RepositoryAccessEventDetails::PublisherAdded { name, publisher } => {
                 self.publishers.insert(name, publisher);

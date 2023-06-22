@@ -39,14 +39,12 @@ use crate::{
     daemon::{
         ca::{
             events::ChildCertificateUpdates, AspaDefinitions, BgpSecDefinitions, CaEvt, CaEvtDet, ChildDetails, Cmd,
-            CmdDet, DropReason, Ini, PreparedRta, ResourceClass, ResourceTaggedAttestation, Rfc8183Id,
+            CmdDet, DropReason, Ini, PreparedRta, ResourceClass, ResourceTaggedAttestation, Rfc8183Id, RoaInfo,
             RoaPayloadJsonMapKey, Routes, RtaContentRequest, RtaPrepareRequest, Rtas, SignedRta, StoredBgpSecCsr,
         },
         config::{Config, IssuanceTimingConfig},
     },
 };
-
-use super::RoaInfo;
 
 //------------ CertAuth ----------------------------------------------------
 
@@ -127,8 +125,11 @@ impl Aggregate for CertAuth {
         self.version
     }
 
-    fn apply(&mut self, event: CaEvt) {
+    fn increment_version(&mut self) {
         self.version += 1;
+    }
+
+    fn apply(&mut self, event: CaEvt) {
         match event.into_details() {
             //-----------------------------------------------------------------------
             // Being a parent
@@ -390,7 +391,7 @@ impl Aggregate for CertAuth {
         }
     }
 
-    fn process_command(&self, command: Cmd) -> KrillResult<Vec<CaEvt>> {
+    fn process_command(&self, command: Cmd) -> Result<Vec<CaEvt>, Error> {
         if log_enabled!(log::Level::Trace) {
             trace!(
                 "Sending command to CA '{}', version: {}: {}",

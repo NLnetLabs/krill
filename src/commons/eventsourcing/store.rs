@@ -1,8 +1,9 @@
 use std::{
+    borrow::Cow,
     collections::HashMap,
     fmt,
     str::FromStr,
-    sync::{Arc, RwLock},
+    sync::{Arc, Mutex, RwLock},
 };
 
 use rpki::{ca::idexchange::MyHandle, repository::x509::Time};
@@ -10,13 +11,12 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use url::Url;
 
 use crate::commons::{
-    api::{CommandHistory, CommandHistoryCriteria, CommandHistoryRecord, Label},
+    api::{CommandHistory, CommandHistoryCriteria, CommandHistoryRecord},
     error::KrillIoError,
     eventsourcing::{
-        cmd::{Command, StoredCommandBuilder},
-        locks::HandleLocks,
-        segment, Aggregate, Event, Key, KeyValueError, KeyValueStore, PostSaveEventListener, PreSaveEventListener,
-        Scope, Segment, SegmentBuf, SegmentExt, StoredCommand, WithStorableDetails,
+        cmd::Command, locks::HandleLocks, segment, Aggregate, Event, Key, KeyValueError, KeyValueStore,
+        PostSaveEventListener, PreSaveEventListener, Scope, Segment, SegmentBuf, SegmentExt, StoredCommand,
+        StoredCommandBuilder, WithStorableDetails,
     },
 };
 
@@ -46,88 +46,13 @@ impl Default for StoredValueInfo {
     }
 }
 
-//------------ CommandKey ----------------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct CommandKey {
-    pub sequence: u64,
-    pub timestamp_secs: i64,
-    pub label: Label,
-}
-
-impl CommandKey {
-    pub fn new(sequence: u64, time: Time, label: Label) -> Self {
-        CommandKey {
-            sequence,
-            timestamp_secs: time.timestamp(),
-            label,
-        }
-    }
-
-    pub fn for_stored<S: WithStorableDetails>(command: &StoredCommand<S>) -> CommandKey {
-        CommandKey::new(command.sequence(), command.time(), command.details().summary().label)
-    }
-
-    pub fn matches_crit(&self, crit: &CommandHistoryCriteria) -> bool {
-        crit.matches_timestamp_secs(self.timestamp_secs)
-            && crit.matches_label(&self.label)
-            && crit.matches_sequence(self.sequence)
-    }
-}
-
-impl fmt::Display for CommandKey {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "command--{}--{}--{}", self.timestamp_secs, self.sequence, self.label)
-    }
-}
-
-impl FromStr for CommandKey {
-    type Err = CommandKeyError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let parts: Vec<&str> = s.split("--").collect();
-        if parts.len() != 4 || parts[0] != "command" {
-            Err(CommandKeyError(s.to_string()))
-        } else {
-            let timestamp_secs = i64::from_str(parts[1]).map_err(|_| CommandKeyError(s.to_string()))?;
-            let sequence = u64::from_str(parts[2]).map_err(|_| CommandKeyError(s.to_string()))?;
-            // strip .json if present on the label part
-            let label = {
-                let end = parts[3].to_string();
-                let last = if end.ends_with(".json") {
-                    end.len() - 5
-                } else {
-                    end.len()
-                };
-                (end[0..last]).to_string()
-            };
-
-            Ok(CommandKey {
-                sequence,
-                timestamp_secs,
-                label,
-            })
-        }
-    }
-}
-
-//------------ CommandKeyError -----------------------------------------------
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CommandKeyError(String);
-
-impl fmt::Display for CommandKeyError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "invalid command key: {}", self.0)
-    }
-}
-
 //------------ AggregateStore ------------------------------------------------
 
 /// This type is responsible for managing aggregates.
 pub struct AggregateStore<A: Aggregate> {
     kv: KeyValueStore,
     cache: RwLock<HashMap<MyHandle, Arc<A>>>,
+    history_cache: Mutex<Option<HashMap<MyHandle, Vec<CommandHistoryRecord>>>>,
     pre_save_listeners: Vec<Arc<dyn PreSaveEventListener<A>>>,
     post_save_listeners: Vec<Arc<dyn PostSaveEventListener<A>>>,
     locks: HandleLocks,
@@ -140,9 +65,18 @@ where
     A::Error: From<AggregateStoreError>,
 {
     /// Creates an AggregateStore using a disk based KeyValueStore
-    pub fn create(storage_uri: &Url, name_space: impl Into<SegmentBuf>) -> StoreResult<Self> {
+    pub fn create(
+        storage_uri: &Url,
+        name_space: impl Into<SegmentBuf>,
+        disable_history_cache: bool,
+    ) -> StoreResult<Self> {
         let kv = KeyValueStore::create(storage_uri, name_space)?;
         let cache = RwLock::new(HashMap::new());
+        let history_cache = if disable_history_cache {
+            Mutex::new(None)
+        } else {
+            Mutex::new(Some(HashMap::new()))
+        };
         let pre_save_listeners = vec![];
         let post_save_listeners = vec![];
         let locks = HandleLocks::default();
@@ -150,6 +84,7 @@ where
         let store = AggregateStore {
             kv,
             cache,
+            history_cache,
             pre_save_listeners,
             post_save_listeners,
             locks,
@@ -178,48 +113,8 @@ where
     pub fn warm_aggregate(&self, handle: &MyHandle) -> StoreResult<()> {
         info!("Warming the cache for: '{}'", handle);
 
-        let agg = self
-            .get_latest(handle)
+        self.get_latest(handle)
             .map_err(|e| AggregateStoreError::WarmupFailed(handle.clone(), e.to_string()))?;
-
-        // check that last command and event are consistent with
-        // the info, if not fail warmup and force recover
-        let info = self.get_info(handle)?;
-
-        // for events we can just check if the next event, after
-        // the last event in the info exists
-        if self.get_event::<A::Event>(handle, info.last_event + 1)?.is_some() {
-            warn!(
-                "Found surplus event(s) for '{}' when warming up the cache. Will archive!",
-                handle
-            );
-            self.archive_surplus_events(handle, info.last_event + 1)?;
-        }
-
-        // Check if there are any commands with a sequence after the last
-        // recorded sequence in the info.
-        let mut crit = CommandHistoryCriteria::default();
-        crit.set_after_sequence(info.last_command);
-        let surplus_commands = self.command_keys_ascending(handle, &crit)?;
-        if !surplus_commands.is_empty() {
-            warn!(
-                "Found surplus command(s) for '{}' when warming up the cache. Will archive!",
-                handle
-            );
-
-            for command in surplus_commands {
-                self.archive_surplus_command(handle, &command)?;
-            }
-        }
-
-        // Save the snapshot if it does not yet match the latest state
-        if info.snapshot_version != agg.version() {
-            self.store_snapshot(handle, agg.as_ref())?;
-            debug!(
-                "Saved updated snapshot for '{}', to decrease future load times.",
-                handle
-            );
-        }
 
         Ok(())
     }
@@ -233,100 +128,99 @@ where
     /// is that `recover` can take longer, and that it could lead silent recovery without
     /// alerting to operators to underlying issues.
     pub fn recover(&self) -> StoreResult<()> {
-        let criteria = CommandHistoryCriteria::default();
-        for handle in self.list()? {
-            info!("Will recover state for '{}'", &handle);
+        todo!("recover and archive corrupted commands")
+        // let criteria = CommandHistoryCriteria::default();
+        // for handle in self.list()? {
+        //     info!("Will recover state for '{}'", &handle);
 
-            // Check
-            // - All commands, archive bad commands
-            // - All events, archive bad events
-            // - Keep track of last known good command and event
-            // - Archive all commands and events after
-            //
-            // Rebuild state up to event:
-            //   - use snapshot - archive if bad
-            //   - use back-up snapshot if snapshot is no good - archive if bad
-            //   - start from init event if back-up snapshot is bad, or if the version exceeds last good event
-            //   - process events from (back-up) snapshot up to last good event
-            //
-            //  If still good:
-            //   - save snapshot
-            //   - save info
+        //     // Check
+        //     // - All commands, archive bad commands
+        //     // - All events, archive bad events
+        //     // - Keep track of last known good command and event
+        //     // - Archive all commands and events after
+        //     //
+        //     // Rebuild state up to event:
+        //     //   - use snapshot - archive if bad
+        //     //   - use back-up snapshot if snapshot is no good - archive if bad
+        //     //   - start from init event if back-up snapshot is bad, or if the version exceeds last good event
+        //     //   - process events from (back-up) snapshot up to last good event
+        //     //
+        //     //  If still good:
+        //     //   - save snapshot
+        //     //   - save info
 
-            let mut last_good_cmd = 0;
-            let mut last_good_evt = 0;
-            let mut last_update = Time::now();
+        //     let mut last_good_cmd = 0;
+        //     let mut last_good_evt = 0;
+        //     let mut last_update = Time::now();
 
-            // Check all commands and associated events
-            let mut all_ok = true;
+        //     // Check all commands and associated events
+        //     let mut all_ok = true;
 
-            let command_keys = self.command_keys_ascending(&handle, &criteria)?;
-            info!("Processing {} commands for {}", command_keys.len(), handle);
-            for (counter, command_key) in command_keys.into_iter().enumerate() {
-                if counter % 100 == 0 {
-                    info!("Processed {} commands", counter);
-                }
+        //     let command_keys = self.command_keys_ascending(&handle, &criteria)?;
+        //     info!("Processing {} commands for {}", command_keys.len(), handle);
+        //     for (counter, command_key) in command_keys.into_iter().enumerate() {
+        //         if counter % 100 == 0 {
+        //             info!("Processed {} commands", counter);
+        //         }
 
-                if all_ok {
-                    if let Ok(cmd) = self.get_command::<A::StorableCommandDetails>(&handle, &command_key) {
-                        if let Some(events) = cmd.effect().events() {
-                            for version in events {
-                                if let Ok(Some(_)) = self.get_event::<A::Event>(&handle, *version) {
-                                    last_good_evt = *version;
-                                } else {
-                                    all_ok = false;
-                                }
-                            }
-                        }
-                        last_good_cmd = cmd.sequence();
-                        last_update = cmd.time();
-                    } else {
-                        all_ok = false;
-                    }
-                }
-                if !all_ok {
-                    warn!(
-                        "Command {} was corrupt, or not all events could be loaded. Will archive surplus",
-                        command_key
-                    );
-                    // Bad command or event encountered.. archive surplus commands
-                    // note that we will clean surplus events later
-                    self.archive_surplus_command(&handle, &command_key)?;
-                }
-            }
+        //         if all_ok {
+        //             if let Ok(cmd) = self.get_command::<A::StorableCommandDetails>(&handle, &command_key) {
+        //                 if let Some(events) = cmd.effect().events() {
+        //                     for version in events {
+        //                         if let Ok(Some(_)) = self.get_event::<A::Event>(&handle, *version) {
+        //                             last_good_evt = *version;
+        //                         } else {
+        //                             all_ok = false;
+        //                         }
+        //                     }
+        //                 }
+        //                 last_good_cmd = cmd.sequence();
+        //                 last_update = cmd.time();
+        //             } else {
+        //                 all_ok = false;
+        //             }
+        //         }
+        //         if !all_ok {
+        //             warn!(
+        //                 "Command {} was corrupt, or not all events could be loaded. Will archive surplus",
+        //                 command_key
+        //             );
+        //             // Bad command or event encountered.. archive surplus commands
+        //             // note that we will clean surplus events later
+        //             self.archive_surplus_command(&handle, &command_key)?;
+        //         }
+        //     }
 
-            self.archive_surplus_events(&handle, last_good_evt + 1)?;
+        //     self.archive_surplus_events(&handle, last_good_evt + 1)?;
 
-            if !all_ok {
-                warn!(
-                    "State for '{}' can only be recovered to version: {}. Check corrupt and surplus dirs",
-                    &handle, last_good_evt
-                );
-            }
+        //     if !all_ok {
+        //         warn!(
+        //             "State for '{}' can only be recovered to version: {}. Check corrupt and surplus dirs",
+        //             &handle, last_good_evt
+        //         );
+        //     }
 
-            // Get the latest aggregate, not that this ensures that the snapshots
-            // are checked, and archived if corrupt, or if they are after the last_good_evt
-            let agg = self
-                .get_aggregate(&handle, Some(last_good_evt))?
-                .ok_or_else(|| AggregateStoreError::CouldNotRecover(handle.clone()))?;
+        //     // Get the latest aggregate, not that this ensures that the snapshots
+        //     // are checked, and archived if corrupt, or if they are after the last_good_evt
+        //     let agg = self
+        //         .get_aggregate(&handle, Some(last_good_evt))?
+        //         .ok_or_else(|| AggregateStoreError::CouldNotRecover(handle.clone()))?;
 
-            let snapshot_version = agg.version();
+        //     let snapshot_version = agg.version();
 
-            let info = StoredValueInfo {
-                last_event: last_good_evt,
-                last_command: last_good_cmd,
-                last_update,
-                snapshot_version,
-            };
+        //     let info = StoredValueInfo {
+        //         last_event: last_good_evt,
+        //         last_command: last_good_cmd,
+        //         last_update,
+        //         snapshot_version,
+        //     };
 
-            self.store_snapshot(&handle, &agg)?;
+        //     self.store_snapshot(&handle, &agg)?;
 
-            self.cache_update(&handle, Arc::new(agg));
+        //     self.cache_update(&handle, Arc::new(agg));
 
-            self.save_info(&handle, &info)?;
-        }
-
-        Ok(())
+        //     self.save_info(&handle, &info)?;
+        // }
     }
 
     /// Adds a listener that will receive all events before they are stored.
@@ -397,10 +291,6 @@ where
         let agg_lock = self.locks.for_handle(handle.clone());
         let _write_lock = agg_lock.write();
 
-        let mut info = self.get_info(&handle)?;
-        info.last_update = Time::now();
-        info.last_command += 1;
-
         // Get the latest arc.
         let mut latest = self.get_latest_no_lock(&handle)?;
 
@@ -417,99 +307,86 @@ where
             }
         }
 
-        let stored_command_builder = StoredCommandBuilder::new(&cmd, latest.version(), info.last_command);
+        let processed_command_builder = StoredCommandBuilder::new(
+            cmd.actor().to_string(),
+            Time::now(),
+            cmd.handle().clone(),
+            latest.version(),
+            cmd.store(),
+        );
 
         match latest.process_command(cmd) {
             Err(e) => {
-                let stored_command = stored_command_builder.finish_with_error(&e);
-                self.store_command(stored_command)?;
-                self.save_info(&handle, &info)?; // last_command was updated
+                // Store the processed command with the error.
+                //
+                // If persistence fails, then complain loudly, and exit. Krill should not keep running, because this would
+                // result in discrepancies between state in memory and state on disk. Let Krill crash and an operator investigate.
+                // See issue: https://github.com/NLnetLabs/krill/issues/322
+                let processed_command = processed_command_builder.finish_with_error::<A::Event>(&e);
+                if let Err(e) = self.store_command(&processed_command) {
+                    error!("Cannot save state for '{}'. Got error: {}", handle, e);
+                    error!("Will now exit Krill - please verify that the disk can be written to and is not full");
+                    std::process::exit(1);
+                }
+
+                // Update the cached aggregate so that its version is incremented
+                let agg = Arc::make_mut(&mut latest);
+                agg.increment_version();
+
+                let mut cache = self.cache.write().unwrap();
+                cache.insert(handle, Arc::new(agg.clone()));
+
                 Err(e)
             }
             Ok(events) => {
                 if events.is_empty() {
                     Ok(latest) // note: no-op no version info will be updated
                 } else {
+                    // The command contains some effect.
+                    let processed_command = processed_command_builder.finish_with_events(events);
+
+                    // We will need to apply the command first because:
+                    // a) then we are really, really, sure that it can be applied (no panics)
+                    // b) more importantly, we will need to pass an updated aggregate to pre-save listeners
+                    //
+                    // Unfortunately, this means that we will need to clone the command.
                     let agg = Arc::make_mut(&mut latest);
+                    agg.apply_command(processed_command.clone());
 
-                    // Using a lock on the hashmap here to ensure that all updates happen sequentially.
-                    // It would be better to get a lock only for this specific aggregate. So it may be
-                    // worth rethinking the structure.
-                    //
-                    // That said.. saving and applying events is really quick, so this should not hurt
-                    // performance much.
-                    //
-                    // Also note that we don't need the lock to update the inner arc in the cache. We
-                    // just need it to be in scope until we are done updating.
-                    let mut cache = self.cache.write().unwrap();
-
-                    // It should be impossible to get events for the wrong aggregate, and the wrong
-                    // versions, because we are doing the update here inside the outer lock, and aggregates
-                    // generally do not lie about who do they are.
-                    //
-                    // Still.. some defensive coding in case we do have some issue. Double check that the
-                    // events are for this aggregate, and are a contiguous sequence of version starting with
-                    // this version.
-                    let version_before = agg.version();
-                    let nr_events = events.len() as u64;
-
-                    // Event numbers apply to the current version of an aggregate, so the first event
-                    // here applies to the current version (before applying) and the 2nd to +1 and so
-                    // on.
-                    info.last_event = version_before + nr_events - 1;
-
-                    for i in 0..nr_events {
-                        let event = &events[i as usize];
-                        let expected_version = version_before + i;
-                        if event.version() != expected_version || event.handle() != &handle {
-                            error!("Unexpected event: {}", event);
-                            return Err(A::Error::from(AggregateStoreError::WrongEventForAggregate(
-                                handle,
-                                event.handle().clone(),
-                                expected_version,
-                                event.version(),
-                            )));
+                    // If the command contained any events then we should inform the
+                    // pre-save listeners. They may still generate errors, and if
+                    // they do, then we will exit here with an error, without saving.
+                    if let Some(events) = processed_command.events() {
+                        for pre_save_listener in &self.pre_save_listeners {
+                            pre_save_listener.as_ref().listen(agg, events)?;
                         }
                     }
 
-                    // Time to start saving things.
-                    let stored_command = stored_command_builder.finish_with_events(events.as_slice());
-
+                    // Store the processed command - the effect could be an error that
+                    // we want to keep, or some events that update the state.
+                    //
                     // If persistence fails, then complain loudly, and exit. Krill should not keep running, because this would
                     // result in discrepancies between state in memory and state on disk. Let Krill crash and an operator investigate.
                     // See issue: https://github.com/NLnetLabs/krill/issues/322
-                    if let Err(e) = self.store_command(stored_command) {
+                    if let Err(e) = self.store_command(&processed_command) {
                         error!("Cannot save state for '{}'. Got error: {}", handle, e);
                         error!("Will now exit Krill - please verify that the disk can be written to and is not full");
                         std::process::exit(1);
                     }
 
-                    // Apply events, check that the aggregate can be updated, and make sure
-                    // we have an updated version so we can store it.
-                    for event in &events {
-                        agg.apply(event.clone());
-                    }
-
-                    // Apply events to pre save listeners which may still return errors
-                    for pre_save_listener in &self.pre_save_listeners {
-                        pre_save_listener.as_ref().listen(agg, events.as_slice())?;
-                    }
-
-                    // Nothing broke, so it's safe to store the command, events and aggregate
-                    for event in &events {
-                        self.store_event(event)?;
-                    }
-                    info.snapshot_version = agg.version();
+                    // For now, we also update the snapshot on disk on every change.
+                    // See issue #1084
                     self.store_snapshot(&handle, agg)?;
 
+                    // Update the memory cache.
+                    let mut cache = self.cache.write().unwrap();
                     cache.insert(handle.clone(), Arc::new(agg.clone()));
 
-                    // Save the info so that the aggregate can be loaded properly by the listeners.
-                    self.save_info(&handle, &info)?;
-
                     // Now send the events to the 'post-save' listeners.
-                    for listener in &self.post_save_listeners {
-                        listener.as_ref().listen(agg, events.as_slice());
+                    if let Some(events) = processed_command.events() {
+                        for listener in &self.post_save_listeners {
+                            listener.as_ref().listen(agg, events);
+                        }
                     }
 
                     Ok(latest)
@@ -543,70 +420,84 @@ where
         id: &MyHandle,
         crit: CommandHistoryCriteria,
     ) -> Result<CommandHistory, AggregateStoreError> {
-        let offset = crit.offset();
+        // If we have history cache, then first update it, and use that.
+        // Otherwise parse *all* commands in history.
+        let mut cache_lock = self.history_cache.lock().unwrap();
 
-        let command_keys = self.command_keys_ascending(id, &crit)?;
+        let records = match cache_lock.as_mut() {
+            Some(map) => {
+                let records = map.entry(id.clone()).or_default();
+                self.update_history_records(records, id)?;
+                Cow::Borrowed(records)
+            }
+            None => {
+                let mut records = vec![];
+                self.update_history_records(&mut records, id)?;
+                Cow::Owned(records)
+            }
+        };
+
+        let offset = crit.offset();
 
         let rows = match crit.rows_limit() {
             Some(limit) => limit,
-            None => command_keys.len(),
+            None => records.len(),
         };
 
-        let mut commands: Vec<CommandHistoryRecord> = Vec::with_capacity(rows);
+        let mut matching = Vec::with_capacity(rows);
         let mut skipped = 0;
         let mut total = 0;
 
-        for command_key in command_keys {
-            total += 1;
-            if skipped < offset {
-                skipped += 1;
-            } else if commands.len() < rows {
-                let key = Self::key_for_command(id, &command_key);
-                let stored: StoredCommand<A::StorableCommandDetails> = self
-                    .kv
-                    .get(&key)?
-                    .ok_or_else(|| AggregateStoreError::CommandNotFound(id.clone(), command_key))?;
-
-                let stored = stored.into();
-                commands.push(stored);
+        for record in records.iter() {
+            if record.matches(&crit) {
+                total += 1;
+                if skipped < offset {
+                    skipped += 1;
+                } else if total - skipped <= rows {
+                    matching.push(record.clone());
+                }
             }
         }
-        Ok(CommandHistory::new(offset, total, commands))
+
+        Ok(CommandHistory::new(offset, total, matching))
+    }
+
+    /// Updates history records for a given aggregate
+    fn update_history_records(
+        &self,
+        records: &mut Vec<CommandHistoryRecord>,
+        id: &MyHandle,
+    ) -> Result<(), AggregateStoreError> {
+        let mut version = match records.last() {
+            Some(record) => record.version + 1,
+            None => 1,
+        };
+
+        while let Ok(command) = self.get_command(id, version) {
+            records.push(CommandHistoryRecord::from(command));
+            version += 1;
+        }
+
+        Ok(())
     }
 
     /// Get the command for this key, if it exists
-    pub fn get_command<D: WithStorableDetails>(
+    pub fn get_command(
         &self,
         id: &MyHandle,
-        command_key: &CommandKey,
-    ) -> Result<StoredCommand<D>, AggregateStoreError> {
-        let key = Self::key_for_command(id, command_key);
+        sequence: u64,
+    ) -> Result<StoredCommand<A::StorableCommandDetails, A::Event>, AggregateStoreError> {
+        let key = Self::key_for_command(id, sequence);
         match self.kv.get(&key) {
             Ok(Some(cmd)) => Ok(cmd),
-            Ok(None) => Err(AggregateStoreError::CommandNotFound(id.clone(), command_key.clone())),
+            Ok(None) => Err(AggregateStoreError::CommandNotFound(id.clone(), sequence)),
             Err(e) => {
                 error!(
                     "Found corrupt command at: {}, will try to archive. Error was: {}",
                     key, e
                 );
                 self.kv.archive_corrupt(&key)?;
-                Err(AggregateStoreError::CommandCorrupt(id.clone(), command_key.clone()))
-            }
-        }
-    }
-
-    /// Get the value for this key, if any exists.
-    pub fn get_event<V: Event>(&self, id: &MyHandle, version: u64) -> Result<Option<V>, AggregateStoreError> {
-        let key = Self::key_for_event(id, version);
-        match self.kv.get(&key) {
-            Ok(res_opt) => Ok(res_opt),
-            Err(e) => {
-                error!(
-                    "Found corrupt event for {}, version {}, archiving. Error: {}",
-                    id, version, e
-                );
-                self.kv.archive_corrupt(&key)?;
-                Err(AggregateStoreError::EventCorrupt(id.clone(), version))
+                Err(AggregateStoreError::CommandCorrupt(id.clone(), sequence))
             }
         }
     }
@@ -616,8 +507,8 @@ impl<A: Aggregate> AggregateStore<A>
 where
     A::Error: From<AggregateStoreError>,
 {
-    fn has_updates(&self, id: &MyHandle, aggregate: &A) -> StoreResult<bool> {
-        Ok(self.get_event::<A::Event>(id, aggregate.version())?.is_some())
+    fn has_updates(&self, id: &MyHandle, aggregate: &A) -> bool {
+        self.get_command(id, aggregate.version()).is_ok()
     }
 
     fn cache_get(&self, id: &MyHandle) -> Option<Arc<A>> {
@@ -653,7 +544,7 @@ where
                 }
             },
             Some(mut arc) => {
-                if self.has_updates(handle, &arc)? {
+                if self.has_updates(handle, &arc) {
                     let agg = Arc::make_mut(&mut arc);
                     self.update_aggregate(handle, agg, None)?;
                 }
@@ -705,41 +596,41 @@ where
         )
     }
 
-    fn key_for_command(agg: &MyHandle, command: &CommandKey) -> Key {
+    fn key_for_command(agg: &MyHandle, sequence: u64) -> Key {
         Key::new_scoped(
             Scope::from_segment(Segment::parse_lossy(agg.as_str())), // agg should always be a valid Segment
-            Segment::parse_lossy(&command.to_string()),              // command should always be a valid Segment
+            Segment::parse(&format!("command-{}.json", sequence)).unwrap(), // cannot panic as a u64 cannot contain a Scope::SEPARATOR
         )
     }
 
-    fn command_keys_ascending(
-        &self,
-        id: &MyHandle,
-        crit: &CommandHistoryCriteria,
-    ) -> Result<Vec<CommandKey>, AggregateStoreError> {
-        let mut command_keys = vec![];
+    // fn command_keys_ascending(
+    //     &self,
+    //     id: &MyHandle,
+    //     crit: &CommandHistoryCriteria,
+    // ) -> Result<Vec<CommandKey>, AggregateStoreError> {
+    //     let mut command_keys = vec![];
 
-        for key in self
-            .kv
-            .keys(&Scope::from_segment(Segment::parse_lossy(id.as_str())), "command--")?
-        // id should always be a valid Segment
-        {
-            match CommandKey::from_str(key.name().as_str()) {
-                Ok(command_key) => {
-                    if command_key.matches_crit(crit) {
-                        command_keys.push(command_key);
-                    }
-                }
-                Err(_) => {
-                    warn!("Found strange command-like key in disk key-value store: {}", key.name());
-                }
-            }
-        }
+    //     for key in self
+    //         .kv
+    //         .keys(&Scope::from_segment(Segment::parse_lossy(id.as_str())), "command--")?
+    //     // id should always be a valid Segment
+    //     {
+    //         match CommandKey::from_str(key.name().as_str()) {
+    //             Ok(command_key) => {
+    //                 if command_key.matches_crit(crit) {
+    //                     command_keys.push(command_key);
+    //                 }
+    //             }
+    //             Err(_) => {
+    //                 warn!("Found strange command-like key in disk key-value store: {}", key.name());
+    //             }
+    //         }
+    //     }
 
-        command_keys.sort_by(|a, b| a.sequence.cmp(&b.sequence));
+    //     command_keys.sort_by(|a, b| a.sequence.cmp(&b.sequence));
 
-        Ok(command_keys)
-    }
+    //     Ok(command_keys)
+    // }
 
     /// Private, should be called through `list` which takes care of locking.
     fn aggregates(&self) -> Result<Vec<MyHandle>, AggregateStoreError> {
@@ -755,39 +646,39 @@ where
     }
 
     /// Clean surplus events
-    fn archive_surplus_events(&self, id: &MyHandle, from: u64) -> Result<(), AggregateStoreError> {
-        for key in self
-            .kv
-            .keys(&Scope::from_segment(Segment::parse_lossy(id.as_str())), "delta-")?
-        // id should always be a valid Segment
-        {
-            let name = key.name().as_str();
-            if name.starts_with("delta-") {
-                let start = 6;
-                if name.len() > start {
-                    if let Ok(v) = u64::from_str(&name[start..]) {
-                        if v >= from {
-                            let key = Self::key_for_event(id, v);
-                            warn!("Archiving surplus event for '{}': {}", id, key);
-                            self.kv
-                                .archive_surplus(&key)
-                                .map_err(AggregateStoreError::KeyStoreError)?
-                        }
-                    }
-                }
-            }
-        }
-        Ok(())
-    }
+    // fn archive_surplus_events(&self, id: &MyHandle, from: u64) -> Result<(), AggregateStoreError> {
+    //     for key in self
+    //         .kv
+    //         .keys(&Scope::from_segment(Segment::parse_lossy(id.as_str())), "delta-")?
+    //     // id should always be a valid Segment
+    //     {
+    //         let name = key.name().as_str();
+    //         if name.starts_with("delta-") {
+    //             let start = 6;
+    //             if name.len() > start {
+    //                 if let Ok(v) = u64::from_str(&name[start..]) {
+    //                     if v >= from {
+    //                         let key = Self::key_for_event(id, v);
+    //                         warn!("Archiving surplus event for '{}': {}", id, key);
+    //                         self.kv
+    //                             .archive_surplus(&key)
+    //                             .map_err(AggregateStoreError::KeyStoreError)?
+    //                     }
+    //                 }
+    //             }
+    //         }
+    //     }
+    //     Ok(())
+    // }
 
-    /// Archive a surplus value for a key
-    fn archive_surplus_command(&self, id: &MyHandle, key: &CommandKey) -> Result<(), AggregateStoreError> {
-        let key = Self::key_for_command(id, key);
-        warn!("Archiving surplus command for '{}': {}", id, key);
-        self.kv
-            .archive_surplus(&key)
-            .map_err(AggregateStoreError::KeyStoreError)
-    }
+    // /// Archive a surplus value for a key
+    // fn archive_surplus_command(&self, id: &MyHandle, key: &CommandKey) -> Result<(), AggregateStoreError> {
+    //     let key = Self::key_for_command(id, key);
+    //     warn!("Archiving surplus command for '{}': {}", id, key);
+    //     self.kv
+    //         .archive_surplus(&key)
+    //         .map_err(AggregateStoreError::KeyStoreError)
+    // }
 
     /// MUST check if the event already exists and return an error if it does.
     fn store_event<V: Event>(&self, event: &V) -> Result<(), AggregateStoreError> {
@@ -798,13 +689,13 @@ where
         Ok(())
     }
 
-    fn store_command<S: WithStorableDetails>(&self, command: StoredCommand<S>) -> Result<(), AggregateStoreError> {
-        let id = command.handle();
+    fn store_command<D: WithStorableDetails, E: Event>(
+        &self,
+        command: &StoredCommand<D, E>,
+    ) -> Result<(), AggregateStoreError> {
+        let key = Self::key_for_command(command.handle(), command.version());
 
-        let command_key = CommandKey::for_stored(&command);
-        let key = Self::key_for_command(id, &command_key);
-
-        self.kv.store_new(&key, &command)?;
+        self.kv.store_new(&key, command)?;
         Ok(())
     }
 
@@ -920,10 +811,10 @@ where
             debug!("Will update '{}' to latest version", id);
         }
 
-        // check and apply any applicable events until:
+        // check and apply any applicable processed commands until:
         // - the limit is reached (if supplied)
-        // - there are no more events
-        // - any event cannot be applied (return an error)
+        // - there are no more processed commands
+        // - the command cannot be applied (return an error)
         loop {
             let version = aggregate.version();
             if let Some(limit) = limit {
@@ -933,15 +824,15 @@ where
                 }
             }
 
-            if let Some(e) = self.get_event::<A::Event>(id, version)? {
-                if version != e.version() {
+            if let Ok(command) = self.get_command(id, version) {
+                if version != command.version() {
                     error!("Trying to apply event to wrong version of aggregate in replay");
-                    return Err(AggregateStoreError::ReplayError(id.clone(), version, e.version()));
+                    return Err(AggregateStoreError::ReplayError(id.clone(), version, command.version()));
                 }
-                aggregate.apply(e);
+                aggregate.apply_command(command);
                 debug!("Applied event nr {} to aggregate {}", version, id);
             } else {
-                debug!("No more events found. updated '{}' to: {}", id, version);
+                debug!("No more processed commands found. updated '{}' to: {}", id, version);
                 break;
             }
         }
@@ -989,14 +880,14 @@ where
         Ok(())
     }
 
-    fn get_info(&self, id: &MyHandle) -> Result<StoredValueInfo, AggregateStoreError> {
-        let key = Self::key_for_info(id);
-        let info = self
-            .kv
-            .get(&key)
-            .map_err(|_| AggregateStoreError::InfoCorrupt(id.clone()))?;
-        info.ok_or_else(|| AggregateStoreError::InfoMissing(id.clone()))
-    }
+    // fn get_info(&self, id: &MyHandle) -> Result<StoredValueInfo, AggregateStoreError> {
+    //     let key = Self::key_for_info(id);
+    //     let info = self
+    //         .kv
+    //         .get(&key)
+    //         .map_err(|_| AggregateStoreError::InfoCorrupt(id.clone()))?;
+    //     info.ok_or_else(|| AggregateStoreError::InfoMissing(id.clone()))
+    // }
 
     fn save_info(&self, id: &MyHandle, info: &StoredValueInfo) -> Result<(), AggregateStoreError> {
         let key = Self::key_for_info(id);
@@ -1024,8 +915,8 @@ pub enum AggregateStoreError {
     WarmupFailed(MyHandle, String),
     CouldNotRecover(MyHandle),
     CouldNotArchive(MyHandle, String),
-    CommandCorrupt(MyHandle, CommandKey),
-    CommandNotFound(MyHandle, CommandKey),
+    CommandCorrupt(MyHandle, u64),
+    CommandNotFound(MyHandle, u64),
     EventCorrupt(MyHandle, u64),
 }
 
@@ -1093,25 +984,5 @@ impl fmt::Display for AggregateStoreError {
 impl From<KeyValueError> for AggregateStoreError {
     fn from(e: KeyValueError) -> Self {
         AggregateStoreError::KeyStoreError(e)
-    }
-}
-
-//------------ Tests ---------------------------------------------------------
-
-#[cfg(test)]
-mod tests {
-
-    use super::*;
-
-    #[test]
-    fn command_key_to_from_str() {
-        let key_str = "command--1576389600--87--cmd-ca-publish";
-        let key = CommandKey::from_str(key_str).unwrap();
-        assert_eq!(key_str, &key.to_string());
-
-        let key_with_dot_json_str = "command--1576389600--87--cmd-ca-publish";
-        let key_with_dot_json = CommandKey::from_str(key_with_dot_json_str).unwrap();
-
-        assert_eq!(key, key_with_dot_json);
     }
 }

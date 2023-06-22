@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, fmt, str::FromStr};
+use std::{collections::BTreeMap, fmt};
 
 use chrono::{DateTime, NaiveDateTime, SecondsFormat, Utc};
 
@@ -15,75 +15,15 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            ArgKey, ArgVal, AspaCustomer, AspaProvidersUpdate, Label, Message, RoaConfigurationUpdates, RtaName,
+            ArgKey, ArgVal, AspaCustomer, AspaProvidersUpdate, Message, RoaConfigurationUpdates, RtaName,
             StorableParentContact,
         },
-        eventsourcing::{CommandKey, CommandKeyError, StoredCommand, WithStorableDetails},
+        eventsourcing::{Event, StoredCommand, StoredEffect, WithStorableDetails},
     },
-    daemon::ca::{self, DropReason},
+    daemon::ca::{CaEvt, DropReason},
 };
 
 use super::{AspaDefinitionUpdates, ResourceSetSummary};
-
-//------------ CaCommandDetails ----------------------------------------------
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct CaCommandDetails {
-    command: StoredCommand<StorableCaCommand>,
-    result: CaCommandResult,
-}
-
-impl CaCommandDetails {
-    pub fn new(command: StoredCommand<StorableCaCommand>, result: CaCommandResult) -> Self {
-        CaCommandDetails { command, result }
-    }
-
-    pub fn command(&self) -> &StoredCommand<StorableCaCommand> {
-        &self.command
-    }
-
-    pub fn effect(&self) -> &CaCommandResult {
-        &self.result
-    }
-}
-
-impl fmt::Display for CaCommandDetails {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let command = self.command();
-        writeln!(
-            f,
-            "Time:   {}",
-            command.time().to_rfc3339_opts(SecondsFormat::Secs, true)
-        )?;
-        writeln!(f, "Action: {}", command.details().summary().msg)?;
-
-        match self.effect() {
-            CaCommandResult::Error(msg) => writeln!(f, "Error:  {}", msg)?,
-            CaCommandResult::Events(events) => {
-                writeln!(f, "Changes:")?;
-                for evt in events {
-                    writeln!(f, "  {}", evt.details())?;
-                }
-            }
-        }
-
-        Ok(())
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum CaCommandResult {
-    Error(String),
-    Events(Vec<ca::CaEvt>),
-}
-
-impl CaCommandResult {
-    pub fn error(msg: String) -> Self {
-        CaCommandResult::Error(msg)
-    }
-    pub fn events(events: Vec<ca::CaEvt>) -> Self {
-        CaCommandResult::Events(events)
-    }
-}
 
 //------------ CommandHistory ------------------------------------------------
 
@@ -118,19 +58,19 @@ impl CommandHistory {
 
 impl fmt::Display for CommandHistory {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "time::command::key::success")?;
+        writeln!(f, "time::command::sequence::success")?;
 
         for command in self.commands() {
             let success_string = match &command.effect {
-                StoredEffect::Error { msg } => format!("ERROR -> {}", msg),
-                StoredEffect::Success { .. } => "OK".to_string(),
+                CommandHistoryResult::Error(msg) => format!("ERROR -> {}", msg),
+                CommandHistoryResult::Ok() => "OK".to_string(),
             };
             writeln!(
                 f,
                 "{}::{} ::{}::{}",
                 command.time().to_rfc3339_opts(SecondsFormat::Secs, true),
                 command.summary.msg,
-                command.key,
+                command.version,
                 success_string
             )?;
         }
@@ -146,14 +86,35 @@ impl fmt::Display for CommandHistory {
 /// the summary which is shown in the history response.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CommandHistoryRecord {
-    pub key: String,
     pub actor: String,
     pub timestamp: i64,
     pub handle: MyHandle,
     pub version: u64,
-    pub sequence: u64,
     pub summary: CommandSummary,
-    pub effect: StoredEffect,
+    pub effect: CommandHistoryResult,
+}
+
+impl CommandHistoryRecord {
+    pub fn matches(&self, crit: &CommandHistoryCriteria) -> bool {
+        crit.matches_timestamp_secs(self.timestamp)
+            && crit.matches_sequence(self.version)
+            && crit.matches_label(&self.summary.label)
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum CommandHistoryResult {
+    Error(String),
+    Ok(),
+}
+
+impl<E: Event> From<StoredEffect<E>> for CommandHistoryResult {
+    fn from(e: StoredEffect<E>) -> Self {
+        match e {
+            StoredEffect::Error { msg, .. } => CommandHistoryResult::Error(msg),
+            StoredEffect::Success { .. } => CommandHistoryResult::Ok(),
+        }
+    }
 }
 
 impl CommandHistoryRecord {
@@ -161,47 +122,6 @@ impl CommandHistoryRecord {
         let seconds = self.timestamp / 1000;
         let time = NaiveDateTime::from_timestamp_opt(seconds, 0).expect("timestamp out-of-range");
         Time::from(DateTime::from_utc(time, Utc))
-    }
-
-    pub fn resulting_version(&self) -> u64 {
-        if let Some(versions) = self.effect.events() {
-            if let Some(last) = versions.last() {
-                *last
-            } else {
-                self.version
-            }
-        } else {
-            self.version
-        }
-    }
-
-    pub fn command_key(&self) -> Result<CommandKey, CommandKeyError> {
-        CommandKey::from_str(&self.key)
-    }
-}
-
-//------------ StoredEffect --------------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case", tag = "result")]
-pub enum StoredEffect {
-    Error { msg: String },
-    Success { events: Vec<u64> },
-}
-
-impl StoredEffect {
-    pub fn successful(&self) -> bool {
-        match self {
-            StoredEffect::Error { .. } => false,
-            StoredEffect::Success { .. } => true,
-        }
-    }
-
-    pub fn events(&self) -> Option<&Vec<u64>> {
-        match self {
-            StoredEffect::Error { .. } => None,
-            StoredEffect::Success { events } => Some(events),
-        }
     }
 }
 
@@ -212,7 +132,7 @@ impl StoredEffect {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CommandSummary {
     pub msg: Message,
-    pub label: Label,
+    pub label: String,
     pub args: BTreeMap<ArgKey, ArgVal>,
 }
 
@@ -367,7 +287,7 @@ impl CommandHistoryCriteria {
     }
 
     #[allow(clippy::ptr_arg)]
-    pub fn matches_label(&self, label: &Label) -> bool {
+    pub fn matches_label(&self, label: &String) -> bool {
         if let Some(includes) = &self.label_includes {
             if !includes.contains(label) {
                 return false;
@@ -402,6 +322,29 @@ impl Default for CommandHistoryCriteria {
             offset: 0,
             rows_limit: Some(100),
         }
+    }
+}
+
+//------------ CaCommandDetails ----------------------------------------------
+pub type CaCommandDetails = StoredCommand<StorableCaCommand, CaEvt>;
+
+impl fmt::Display for CaCommandDetails {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Time:   {}", self.time().to_rfc3339_opts(SecondsFormat::Secs, true))?;
+        writeln!(f, "Actor:  {}", self.actor())?;
+        writeln!(f, "Action: {}", self.details().summary().msg)?;
+
+        match self.effect() {
+            StoredEffect::Error { msg, .. } => writeln!(f, "Error:  {}", msg)?,
+            StoredEffect::Success { events } => {
+                writeln!(f, "Changes:")?;
+                for evt in events {
+                    writeln!(f, "  {}", evt.details())?;
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 

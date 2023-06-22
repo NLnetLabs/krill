@@ -4,12 +4,11 @@ use chrono::Duration;
 use rpki::{ca::idexchange::CaHandle, repository::x509::Time};
 
 use crate::daemon::ca::CaObjects;
+use crate::upgrades::OldStoredCommand;
 use crate::{
     commons::{
         api::StorableCaCommand,
-        eventsourcing::{
-            segment, AggregateStore, Key, KeyValueStore, Segment, SegmentExt, StoredCommand, StoredValueInfo,
-        },
+        eventsourcing::{segment, AggregateStore, Key, KeyValueStore, Segment, SegmentExt, StoredValueInfo},
     },
     constants::{CASERVER_NS, CA_OBJECTS_NS, KRILL_VERSION},
     daemon::{
@@ -68,7 +67,11 @@ impl CasMigration {
     pub fn prepare(mode: UpgradeMode, config: &Config) -> UpgradeResult<()> {
         let current_kv_store = KeyValueStore::create(&config.storage_uri, CASERVER_NS)?;
         let new_kv_store = KeyValueStore::create(config.upgrade_storage_uri(), CASERVER_NS)?;
-        let new_agg_store = AggregateStore::<CertAuth>::create(config.upgrade_storage_uri(), CASERVER_NS)?;
+        let new_agg_store = AggregateStore::<CertAuth>::create(
+            config.upgrade_storage_uri(),
+            CASERVER_NS,
+            config.disable_history_cache,
+        )?;
         let ca_objects_migration = CaObjectsMigration::create(config)?;
 
         CasMigration {
@@ -139,7 +142,7 @@ impl UpgradeStore for CasMigration {
             for cmd_key in old_cmd_keys {
                 // Read and parse the command. There is no need to change the command itself,
                 // but we need to save it again and get the events from here.
-                let cmd: StoredCommand<StorableCaCommand> = self.get(&cmd_key)?;
+                let cmd: OldStoredCommand<StorableCaCommand> = self.get(&cmd_key)?;
 
                 // Read and parse all events. Migrate the events that contain changed types.
                 // In this case IdCert -> IdCertInfo for added publishers. Then save the event

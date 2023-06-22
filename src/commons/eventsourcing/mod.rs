@@ -1,22 +1,22 @@
 //! Event sourcing support for Krill
 
 mod agg;
-pub use self::agg::Aggregate;
+pub use self::agg::*;
 
 mod wal;
 pub use self::wal::*;
 
 mod evt;
-pub use self::evt::{Event, StoredEvent};
+pub use self::evt::*;
 
 mod cmd;
-pub use self::cmd::{Command, CommandDetails, SentCommand, StoredCommand, WithStorableDetails};
+pub use self::cmd::*;
 
 mod store;
 pub use self::store::*;
 
 mod listener;
-pub use self::listener::{EventCounter, PostSaveEventListener, PreSaveEventListener};
+pub use self::listener::*;
 
 pub mod locks;
 
@@ -207,12 +207,6 @@ mod tests {
 
     impl std::error::Error for PersonError {}
 
-    //------------ PersonResult --------------------------------------------------
-
-    /// A shorthand for the result type returned by the process_command function
-    /// of the Person aggregate.
-    type PersonResult = Result<Vec<PersonEvent>, PersonError>;
-
     //------------ Person ------------------------------------------------------
 
     /// Defines a person object. Persons have a name and an age.
@@ -266,15 +260,18 @@ mod tests {
             self.version
         }
 
+        fn increment_version(&mut self) {
+            self.version += 1;
+        }
+
         fn apply(&mut self, event: PersonEvent) {
             match event.into_details() {
                 PersonEventDetails::NameChanged(name) => self.name = name,
                 PersonEventDetails::HadBirthday => self.age += 1,
             }
-            self.version += 1;
         }
 
-        fn process_command(&self, command: Self::Command) -> PersonResult {
+        fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Event>, Self::Error> {
             match command.into_details() {
                 PersonCommandDetails::ChangeName(name) => {
                     let event = PersonEvent::name_changed(self, name);
@@ -297,7 +294,7 @@ mod tests {
         test_under_tmp(|data_dir| {
             let counter = Arc::new(EventCounter::default());
             let storage_uri = storage_uri_from_data_dir(&data_dir).unwrap();
-            let mut manager = AggregateStore::<Person>::create(&storage_uri, segment!("person")).unwrap();
+            let mut manager = AggregateStore::<Person>::create(&storage_uri, segment!("person"), false).unwrap();
             manager.add_post_save_listener(counter.clone());
 
             let id_alice = MyHandle::from_str("alice").unwrap();
@@ -329,7 +326,7 @@ mod tests {
             assert_eq!(21, alice.age());
 
             // Should read state from disk
-            let manager = AggregateStore::<Person>::create(&storage_uri, segment!("person")).unwrap();
+            let manager = AggregateStore::<Person>::create(&storage_uri, segment!("person"), false).unwrap();
 
             let alice = manager.get_latest(&id_alice).unwrap();
             assert_eq!("alice smith-doe", alice.name());
@@ -346,7 +343,7 @@ mod tests {
             assert_eq!(history.total(), 22);
             assert_eq!(history.offset(), 3);
             assert_eq!(history.commands().len(), 10);
-            assert_eq!(history.commands().first().unwrap().sequence, 4);
+            assert_eq!(history.commands().first().unwrap().version, 4);
 
             // Get history excluding 'around the sun' commands
             let mut crit = CommandHistoryCriteria::default();

@@ -6,6 +6,7 @@ use std::{
 };
 
 use rpki::ca::idexchange::MyHandle;
+use serde::Serialize;
 use url::Url;
 
 use crate::commons::eventsourcing::{

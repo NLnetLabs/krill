@@ -168,8 +168,11 @@ impl Aggregate for Properties {
         self.version
     }
 
-    fn apply(&mut self, event: Self::Event) {
+    fn increment_version(&mut self) {
         self.version += 1;
+    }
+
+    fn apply(&mut self, event: Self::Event) {
         match event.into_details() {
             PropertiesEventDetails::KrillVersionUpgraded { new, .. } => self.krill_version = new,
         }
@@ -221,9 +224,9 @@ pub struct PropertiesManager {
 }
 
 impl PropertiesManager {
-    pub fn create(storage_uri: &Url) -> KrillResult<Self> {
+    pub fn create(storage_uri: &Url, disable_history_cache: bool) -> KrillResult<Self> {
         let main_key = MyHandle::from_str(PROPERTIES_DFLT_NAME).unwrap();
-        AggregateStore::create(storage_uri, PROPERTIES_NS)
+        AggregateStore::create(storage_uri, PROPERTIES_NS, disable_history_cache)
             .map(|store| PropertiesManager {
                 store,
                 main_key,
@@ -276,7 +279,7 @@ mod tests {
     #[test]
     fn init_properties() {
         test::test_in_memory(|storage_uri| {
-            let properties_mgr = PropertiesManager::create(storage_uri).unwrap();
+            let properties_mgr = PropertiesManager::create(storage_uri, false).unwrap();
 
             // Should not be initialised on first use.
             assert!(!properties_mgr.is_initialized());

@@ -22,17 +22,13 @@ use crate::{
             StorableRcEntitlement,
         },
         crypto::KrillSigner,
-        eventsourcing::{self, StoredCommand},
+        eventsourcing,
     },
     daemon::{
         ca::{CaEvt, ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest},
         config::Config,
     },
 };
-
-//------------ StoredCaCommand ---------------------------------------------
-
-pub type StoredCaCommand = StoredCommand<StorableCaCommand>;
 
 //------------ Command -----------------------------------------------------
 

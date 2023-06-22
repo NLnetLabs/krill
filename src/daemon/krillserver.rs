@@ -30,7 +30,6 @@ use crate::{
         bgp::{BgpAnalyser, BgpAnalysisReport, BgpAnalysisSuggestion},
         crypto::KrillSignerBuilder,
         error::Error,
-        eventsourcing::CommandKey,
         KrillEmptyResult, KrillResult,
     },
     constants::*,
@@ -847,8 +846,8 @@ impl KrillServer {
         self.ca_manager.ca_history(ca, crit).await
     }
 
-    pub fn ca_command_details(&self, ca: &CaHandle, command: CommandKey) -> KrillResult<CaCommandDetails> {
-        self.ca_manager.ca_command_details(ca, command)
+    pub fn ca_command_details(&self, ca: &CaHandle, sequence: u64) -> KrillResult<CaCommandDetails> {
+        self.ca_manager.ca_command_details(ca, sequence)
     }
 
     /// Returns the publisher request for a CA, or NONE of the CA cannot be found.

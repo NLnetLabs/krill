@@ -203,6 +203,10 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
         self.version
     }
 
+    fn increment_version(&mut self) {
+        self.version += 1;
+    }
+
     fn apply(&mut self, event: Self::Event) {
         let (handle, _version, details) = event.unpack();
 
@@ -214,7 +218,6 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
                 details
             );
         }
-        self.version += 1;
 
         match details {
             TrustAnchorSignerEventDetails::ProxySignerExchangeDone(exchange) => {

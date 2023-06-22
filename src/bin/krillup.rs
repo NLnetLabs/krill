@@ -31,7 +31,8 @@ async fn main() {
 
     match Config::create(config_file, true) {
         Ok(config) => {
-            let properties_manager = match PropertiesManager::create(&config.storage_uri) {
+            let properties_manager = match PropertiesManager::create(&config.storage_uri, config.disable_history_cache)
+            {
                 Ok(mgr) => mgr,
                 Err(e) => {
                     eprintln!("*** Error Preparing Data Migration ***");

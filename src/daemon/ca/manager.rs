@@ -29,13 +29,12 @@ use crate::{
         },
         api::{
             AddChildRequest, AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates, AspaProvidersUpdate,
-            CaCommandDetails, CaCommandResult, CertAuthList, CertAuthSummary, ChildCaInfo, CommandHistory,
-            CommandHistoryCriteria, ParentCaContact, ParentCaReq, ReceivedCert, RepositoryContact, RtaName,
-            StoredEffect, UpdateChildRequest,
+            CaCommandDetails, CertAuthList, CertAuthSummary, ChildCaInfo, CommandHistory, CommandHistoryCriteria,
+            ParentCaContact, ParentCaReq, ReceivedCert, RepositoryContact, RtaName, UpdateChildRequest,
         },
         crypto::KrillSigner,
         error::Error,
-        eventsourcing::{Aggregate, AggregateStore, CommandKey},
+        eventsourcing::{Aggregate, AggregateStore},
         util::{cmslogger::CmsLogger, httpclient},
         KrillResult,
     },
@@ -107,7 +106,8 @@ impl CaManager {
     ) -> KrillResult<Self> {
         // Create the AggregateStore for the event-sourced `CertAuth` structures that handle
         // most CA functions.
-        let mut ca_store = AggregateStore::<CertAuth>::create(&config.storage_uri, CASERVER_NS)?;
+        let mut ca_store =
+            AggregateStore::<CertAuth>::create(&config.storage_uri, CASERVER_NS, config.disable_history_cache)?;
 
         if config.always_recover_data {
             // If the user chose to 'always recover data' then do so.
@@ -149,7 +149,11 @@ impl CaManager {
 
         // Create TA proxy store if we need it.
         let ta_proxy_store = if config.ta_proxy_enabled() {
-            let mut store = AggregateStore::<TrustAnchorProxy>::create(&config.storage_uri, TA_PROXY_SERVER_NS)?;
+            let mut store = AggregateStore::<TrustAnchorProxy>::create(
+                &config.storage_uri,
+                TA_PROXY_SERVER_NS,
+                config.disable_history_cache,
+            )?;
 
             // We need to listen for proxy events so that we can schedule:
             // 1. publication on updates
@@ -162,7 +166,11 @@ impl CaManager {
         };
 
         let ta_signer_store = if config.ta_signer_enabled() {
-            Some(AggregateStore::create(&config.storage_uri, TA_SIGNER_SERVER_NS)?)
+            Some(AggregateStore::create(
+                &config.storage_uri,
+                TA_SIGNER_SERVER_NS,
+                config.disable_history_cache,
+            )?)
         } else {
             None
         };
@@ -551,24 +559,10 @@ impl CaManager {
     }
 
     /// Shows the details for a CA command.
-    pub fn ca_command_details(&self, handle: &CaHandle, command: CommandKey) -> KrillResult<CaCommandDetails> {
-        let command = self.ca_store.get_command(handle, &command)?;
-
-        let effect = command.effect().clone();
-        match effect {
-            StoredEffect::Error { msg } => Ok(CaCommandDetails::new(command, CaCommandResult::error(msg))),
-            StoredEffect::Success { events } => {
-                let mut stored_events = vec![];
-                for version in events {
-                    let evt = self.ca_store.get_event(handle, version)?.ok_or_else(|| {
-                        Error::Custom(format!("Cannot find evt: {} in history for CA: {}", version, handle))
-                    })?;
-                    stored_events.push(evt);
-                }
-
-                Ok(CaCommandDetails::new(command, CaCommandResult::events(stored_events)))
-            }
-        }
+    pub fn ca_command_details(&self, handle: &CaHandle, sequence: u64) -> KrillResult<CaCommandDetails> {
+        self.ca_store
+            .get_command(handle, sequence)
+            .map_err(Error::AggregateStoreError)
     }
 }
 
