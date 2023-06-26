@@ -17,30 +17,65 @@ use crate::{
     commons::{
         actor::Actor,
         api::{
-            AspaCustomer, AspaDefinitionUpdates, AspaProvidersUpdate, BgpSecDefinitionUpdates, IdCertInfo,
-            ParentCaContact, ReceivedCert, RepositoryContact, RoaConfigurationUpdates, RtaName, StorableCaCommand,
+            AspaCustomer, AspaDefinitionUpdates, AspaProvidersUpdate, BgpSecDefinitionUpdates, CertAuthStorableCommand,
+            IdCertInfo, ParentCaContact, ReceivedCert, RepositoryContact, RoaConfigurationUpdates, RtaName,
             StorableRcEntitlement,
         },
         crypto::KrillSigner,
-        eventsourcing,
+        eventsourcing::{self, InitCommandDetails, SentCommand, SentInitCommand},
     },
     daemon::{
-        ca::{CaEvt, ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest},
+        ca::{CertAuthEvent, ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest},
         config::Config,
     },
 };
 
-//------------ Command -----------------------------------------------------
-
-pub type Cmd = eventsourcing::SentCommand<CmdDet>;
-
 pub type DropReason = String;
 
-//------------ CommandDetails ----------------------------------------------
+//------------ CertAuthInitCommand -----------------------------------------
+
+pub type CertAuthInitCommand = SentInitCommand<CertAuthInitCommandDetails>;
+
+//------------ CertAuthInitCommandDetails ----------------------------------
+
+#[derive(Clone, Debug)]
+pub struct CertAuthInitCommandDetails {
+    signer: Arc<KrillSigner>,
+}
+
+impl CertAuthInitCommandDetails {
+    pub fn new(signer: Arc<KrillSigner>) -> Self {
+        CertAuthInitCommandDetails { signer }
+    }
+
+    pub fn signer(&self) -> &KrillSigner {
+        &self.signer
+    }
+}
+
+impl InitCommandDetails for CertAuthInitCommandDetails {
+    type StorableDetails = CertAuthStorableCommand;
+
+    fn store(&self) -> Self::StorableDetails {
+        CertAuthStorableCommand::Created
+    }
+}
+
+impl fmt::Display for CertAuthInitCommandDetails {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        CertAuthStorableCommand::Created.fmt(f)
+    }
+}
+
+//------------ CertAuthCommand ---------------------------------------------
+
+pub type CertAuthCommand = SentCommand<CertAuthCommandDetails>;
+
+//------------ CertAuthCommandDetails --------------------------------------
 
 #[derive(Clone, Debug)]
 #[allow(clippy::large_enum_variant)]
-pub enum CmdDet {
+pub enum CertAuthCommandDetails {
     // ------------------------------------------------------------
     // Being a parent
     // ------------------------------------------------------------
@@ -197,68 +232,74 @@ pub enum CmdDet {
     RtaCoSign(RtaName, ResourceTaggedAttestation, Arc<KrillSigner>),
 }
 
-impl eventsourcing::CommandDetails for CmdDet {
-    type Event = CaEvt;
-    type StorableDetails = StorableCaCommand;
+impl eventsourcing::CommandDetails for CertAuthCommandDetails {
+    type Event = CertAuthEvent;
+    type StorableDetails = CertAuthStorableCommand;
 
     fn store(&self) -> Self::StorableDetails {
         self.clone().into()
     }
 }
 
-impl fmt::Display for CmdDet {
+impl fmt::Display for CertAuthCommandDetails {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        StorableCaCommand::from(self.clone()).fmt(f)
+        CertAuthStorableCommand::from(self.clone()).fmt(f)
     }
 }
 
-impl From<CmdDet> for StorableCaCommand {
-    fn from(d: CmdDet) -> Self {
+impl From<CertAuthCommandDetails> for CertAuthStorableCommand {
+    fn from(d: CertAuthCommandDetails) -> Self {
         match d {
             // ------------------------------------------------------------
             // Being a parent
             // ------------------------------------------------------------
-            CmdDet::ChildAdd(child, id_cert, resources) => StorableCaCommand::ChildAdd {
+            CertAuthCommandDetails::ChildAdd(child, id_cert, resources) => CertAuthStorableCommand::ChildAdd {
                 child,
                 ski: id_cert.public_key().key_identifier().to_string(),
                 resources,
             },
-            CmdDet::ChildUpdateResources(child, resources) => {
-                StorableCaCommand::ChildUpdateResources { child, resources }
+            CertAuthCommandDetails::ChildUpdateResources(child, resources) => {
+                CertAuthStorableCommand::ChildUpdateResources { child, resources }
             }
-            CmdDet::ChildUpdateId(child, id_cert) => StorableCaCommand::ChildUpdateId {
+            CertAuthCommandDetails::ChildUpdateId(child, id_cert) => CertAuthStorableCommand::ChildUpdateId {
                 child,
                 ski: id_cert.public_key().key_identifier().to_string(),
             },
-            CmdDet::ChildCertify(child, req, _, _) => {
+            CertAuthCommandDetails::ChildCertify(child, req, _, _) => {
                 let (resource_class_name, limit, csr) = req.unpack();
                 let ki = csr.public_key().key_identifier();
-                StorableCaCommand::ChildCertify {
+                CertAuthStorableCommand::ChildCertify {
                     child,
                     resource_class_name,
                     limit,
                     ki,
                 }
             }
-            CmdDet::ChildRevokeKey(child, revoke_req) => StorableCaCommand::ChildRevokeKey { child, revoke_req },
-            CmdDet::ChildRemove(child) => StorableCaCommand::ChildRemove { child },
-            CmdDet::ChildSuspendInactive(child) => StorableCaCommand::ChildSuspendInactive { child },
-            CmdDet::ChildUnsuspend(child) => StorableCaCommand::ChildUnsuspend { child },
+            CertAuthCommandDetails::ChildRevokeKey(child, revoke_req) => {
+                CertAuthStorableCommand::ChildRevokeKey { child, revoke_req }
+            }
+            CertAuthCommandDetails::ChildRemove(child) => CertAuthStorableCommand::ChildRemove { child },
+            CertAuthCommandDetails::ChildSuspendInactive(child) => {
+                CertAuthStorableCommand::ChildSuspendInactive { child }
+            }
+            CertAuthCommandDetails::ChildUnsuspend(child) => CertAuthStorableCommand::ChildUnsuspend { child },
 
             // ------------------------------------------------------------
             // Being a child
             // ------------------------------------------------------------
-            CmdDet::GenerateNewIdKey(_) => StorableCaCommand::GenerateNewIdKey,
-            CmdDet::AddParent(parent, contact) => StorableCaCommand::AddParent {
+            CertAuthCommandDetails::GenerateNewIdKey(_) => CertAuthStorableCommand::GenerateNewIdKey,
+            CertAuthCommandDetails::AddParent(parent, contact) => CertAuthStorableCommand::AddParent {
                 parent,
                 contact: contact.into(),
             },
-            CmdDet::UpdateParentContact(parent, contact) => StorableCaCommand::UpdateParentContact {
-                parent,
-                contact: contact.into(),
-            },
-            CmdDet::RemoveParent(parent) => StorableCaCommand::RemoveParent { parent },
-            CmdDet::UpdateEntitlements(parent, cmd_entitlements, _) => {
+            CertAuthCommandDetails::UpdateParentContact(parent, contact) => {
+                CertAuthStorableCommand::UpdateParentContact {
+                    parent,
+                    contact: contact.into(),
+                }
+            }
+            CertAuthCommandDetails::RemoveParent(parent) => CertAuthStorableCommand::RemoveParent { parent },
+            CertAuthCommandDetails::UpdateEntitlements(parent, cmd_entitlements, _) => {
                 let mut entitlements = vec![];
                 for entitlement in cmd_entitlements.classes() {
                     entitlements.push(StorableRcEntitlement {
@@ -267,68 +308,78 @@ impl From<CmdDet> for StorableCaCommand {
                     });
                 }
 
-                StorableCaCommand::UpdateResourceEntitlements { parent, entitlements }
+                CertAuthStorableCommand::UpdateResourceEntitlements { parent, entitlements }
             }
-            CmdDet::UpdateRcvdCert(resource_class_name, rcvd_cert, _, _) => StorableCaCommand::UpdateRcvdCert {
-                resource_class_name,
-                resources: rcvd_cert.resources().clone(),
-            },
-            CmdDet::DropResourceClass(resource_class_name, reason, _) => StorableCaCommand::DropResourceClass {
-                resource_class_name,
-                reason,
-            },
+            CertAuthCommandDetails::UpdateRcvdCert(resource_class_name, rcvd_cert, _, _) => {
+                CertAuthStorableCommand::UpdateRcvdCert {
+                    resource_class_name,
+                    resources: rcvd_cert.resources().clone(),
+                }
+            }
+            CertAuthCommandDetails::DropResourceClass(resource_class_name, reason, _) => {
+                CertAuthStorableCommand::DropResourceClass {
+                    resource_class_name,
+                    reason,
+                }
+            }
 
             // ------------------------------------------------------------
             // Key rolls
             // ------------------------------------------------------------
-            CmdDet::KeyRollInitiate(older_than, _) => StorableCaCommand::KeyRollInitiate {
+            CertAuthCommandDetails::KeyRollInitiate(older_than, _) => CertAuthStorableCommand::KeyRollInitiate {
                 older_than_seconds: older_than.num_seconds(),
             },
-            CmdDet::KeyRollActivate(staged_for, _, _) => StorableCaCommand::KeyRollActivate {
+            CertAuthCommandDetails::KeyRollActivate(staged_for, _, _) => CertAuthStorableCommand::KeyRollActivate {
                 staged_for_seconds: staged_for.num_seconds(),
             },
-            CmdDet::KeyRollFinish(resource_class_name, _) => StorableCaCommand::KeyRollFinish { resource_class_name },
+            CertAuthCommandDetails::KeyRollFinish(resource_class_name, _) => {
+                CertAuthStorableCommand::KeyRollFinish { resource_class_name }
+            }
 
             // ------------------------------------------------------------
             // ROA Support
             // ------------------------------------------------------------
-            CmdDet::RouteAuthorizationsUpdate(updates, _, _) => StorableCaCommand::RoaDefinitionUpdates { updates },
-            CmdDet::RouteAuthorizationsRenew(_, _) => StorableCaCommand::ReissueBeforeExpiring,
-            CmdDet::RouteAuthorizationsForceRenew(_, _) => StorableCaCommand::ForceReissue,
+            CertAuthCommandDetails::RouteAuthorizationsUpdate(updates, _, _) => {
+                CertAuthStorableCommand::RoaDefinitionUpdates { updates }
+            }
+            CertAuthCommandDetails::RouteAuthorizationsRenew(_, _) => CertAuthStorableCommand::ReissueBeforeExpiring,
+            CertAuthCommandDetails::RouteAuthorizationsForceRenew(_, _) => CertAuthStorableCommand::ForceReissue,
 
             // ------------------------------------------------------------
             // ASPA Support
             // ------------------------------------------------------------
-            CmdDet::AspasUpdate(updates, _, _) => StorableCaCommand::AspasUpdate { updates },
-            CmdDet::AspasUpdateExisting(customer, update, _, _) => {
-                StorableCaCommand::AspasUpdateExisting { customer, update }
+            CertAuthCommandDetails::AspasUpdate(updates, _, _) => CertAuthStorableCommand::AspasUpdate { updates },
+            CertAuthCommandDetails::AspasUpdateExisting(customer, update, _, _) => {
+                CertAuthStorableCommand::AspasUpdateExisting { customer, update }
             }
-            CmdDet::AspasRenew(_, _) => StorableCaCommand::ReissueBeforeExpiring,
+            CertAuthCommandDetails::AspasRenew(_, _) => CertAuthStorableCommand::ReissueBeforeExpiring,
 
             // ------------------------------------------------------------
             // BGPSec Support
             // ------------------------------------------------------------
-            CmdDet::BgpSecUpdateDefinitions(_, _, _) => StorableCaCommand::BgpSecDefinitionUpdates,
-            CmdDet::BgpSecRenew(_, _) => StorableCaCommand::ReissueBeforeExpiring,
+            CertAuthCommandDetails::BgpSecUpdateDefinitions(_, _, _) => {
+                CertAuthStorableCommand::BgpSecDefinitionUpdates
+            }
+            CertAuthCommandDetails::BgpSecRenew(_, _) => CertAuthStorableCommand::ReissueBeforeExpiring,
 
             // ------------------------------------------------------------
             // Publishing
             // ------------------------------------------------------------
-            CmdDet::RepoUpdate(contact, _) => StorableCaCommand::RepoUpdate {
+            CertAuthCommandDetails::RepoUpdate(contact, _) => CertAuthStorableCommand::RepoUpdate {
                 service_uri: contact.server_info().service_uri().clone(),
             },
 
             // ------------------------------------------------------------
             // Resource Tagged Attestations
             // ------------------------------------------------------------
-            CmdDet::RtaMultiPrepare(name, _, _) => StorableCaCommand::RtaPrepare { name },
-            CmdDet::RtaSign(name, _, _) => StorableCaCommand::RtaSign { name },
-            CmdDet::RtaCoSign(name, _, _) => StorableCaCommand::RtaCoSign { name },
+            CertAuthCommandDetails::RtaMultiPrepare(name, _, _) => CertAuthStorableCommand::RtaPrepare { name },
+            CertAuthCommandDetails::RtaSign(name, _, _) => CertAuthStorableCommand::RtaSign { name },
+            CertAuthCommandDetails::RtaCoSign(name, _, _) => CertAuthStorableCommand::RtaCoSign { name },
         }
     }
 }
 
-impl CmdDet {
+impl CertAuthCommandDetails {
     /// Adds a child to this CA. Will return an error in case you try
     /// to give the child resources not held by the CA.
     pub fn child_add(
@@ -337,8 +388,13 @@ impl CmdDet {
         id_cert: IdCertInfo,
         resources: ResourceSet,
         actor: &Actor,
-    ) -> Cmd {
-        eventsourcing::SentCommand::new(handle, None, CmdDet::ChildAdd(child_handle, id_cert, resources), actor)
+    ) -> CertAuthCommand {
+        eventsourcing::SentCommand::new(
+            handle,
+            None,
+            CertAuthCommandDetails::ChildAdd(child_handle, id_cert, resources),
+            actor,
+        )
     }
 
     pub fn child_update_resources(
@@ -346,17 +402,27 @@ impl CmdDet {
         child_handle: ChildHandle,
         resources: ResourceSet,
         actor: &Actor,
-    ) -> Cmd {
+    ) -> CertAuthCommand {
         eventsourcing::SentCommand::new(
             handle,
             None,
-            CmdDet::ChildUpdateResources(child_handle, resources),
+            CertAuthCommandDetails::ChildUpdateResources(child_handle, resources),
             actor,
         )
     }
 
-    pub fn child_update_id(handle: &CaHandle, child_handle: ChildHandle, id_cert: IdCertInfo, actor: &Actor) -> Cmd {
-        eventsourcing::SentCommand::new(handle, None, CmdDet::ChildUpdateId(child_handle, id_cert), actor)
+    pub fn child_update_id(
+        handle: &CaHandle,
+        child_handle: ChildHandle,
+        id_cert: IdCertInfo,
+        actor: &Actor,
+    ) -> CertAuthCommand {
+        eventsourcing::SentCommand::new(
+            handle,
+            None,
+            CertAuthCommandDetails::ChildUpdateId(child_handle, id_cert),
+            actor,
+        )
     }
 
     /// Certify a child. Will return an error in case the child is
@@ -368,11 +434,11 @@ impl CmdDet {
         config: Arc<Config>,
         signer: Arc<KrillSigner>,
         actor: &Actor,
-    ) -> Cmd {
+    ) -> CertAuthCommand {
         eventsourcing::SentCommand::new(
             handle,
             None,
-            CmdDet::ChildCertify(child_handle, request, config, signer),
+            CertAuthCommandDetails::ChildCertify(child_handle, request, config, signer),
             actor,
         )
     }
@@ -383,36 +449,66 @@ impl CmdDet {
         child_handle: ChildHandle,
         request: RevocationRequest,
         actor: &Actor,
-    ) -> Cmd {
-        eventsourcing::SentCommand::new(handle, None, CmdDet::ChildRevokeKey(child_handle, request), actor)
+    ) -> CertAuthCommand {
+        eventsourcing::SentCommand::new(
+            handle,
+            None,
+            CertAuthCommandDetails::ChildRevokeKey(child_handle, request),
+            actor,
+        )
     }
 
-    pub fn child_remove(handle: &CaHandle, child_handle: ChildHandle, actor: &Actor) -> Cmd {
-        eventsourcing::SentCommand::new(handle, None, CmdDet::ChildRemove(child_handle), actor)
+    pub fn child_remove(handle: &CaHandle, child_handle: ChildHandle, actor: &Actor) -> CertAuthCommand {
+        eventsourcing::SentCommand::new(handle, None, CertAuthCommandDetails::ChildRemove(child_handle), actor)
     }
 
-    pub fn child_suspend_inactive(handle: &CaHandle, child_handle: ChildHandle, actor: &Actor) -> Cmd {
-        eventsourcing::SentCommand::new(handle, None, CmdDet::ChildSuspendInactive(child_handle), actor)
+    pub fn child_suspend_inactive(handle: &CaHandle, child_handle: ChildHandle, actor: &Actor) -> CertAuthCommand {
+        eventsourcing::SentCommand::new(
+            handle,
+            None,
+            CertAuthCommandDetails::ChildSuspendInactive(child_handle),
+            actor,
+        )
     }
 
-    pub fn child_unsuspend(handle: &CaHandle, child_handle: ChildHandle, actor: &Actor) -> Cmd {
-        eventsourcing::SentCommand::new(handle, None, CmdDet::ChildUnsuspend(child_handle), actor)
+    pub fn child_unsuspend(handle: &CaHandle, child_handle: ChildHandle, actor: &Actor) -> CertAuthCommand {
+        eventsourcing::SentCommand::new(
+            handle,
+            None,
+            CertAuthCommandDetails::ChildUnsuspend(child_handle),
+            actor,
+        )
     }
 
-    pub fn update_id(handle: &CaHandle, signer: Arc<KrillSigner>, actor: &Actor) -> Cmd {
-        eventsourcing::SentCommand::new(handle, None, CmdDet::GenerateNewIdKey(signer), actor)
+    pub fn update_id(handle: &CaHandle, signer: Arc<KrillSigner>, actor: &Actor) -> CertAuthCommand {
+        eventsourcing::SentCommand::new(handle, None, CertAuthCommandDetails::GenerateNewIdKey(signer), actor)
     }
 
-    pub fn add_parent(handle: &CaHandle, parent: ParentHandle, info: ParentCaContact, actor: &Actor) -> Cmd {
-        eventsourcing::SentCommand::new(handle, None, CmdDet::AddParent(parent, info), actor)
+    pub fn add_parent(
+        handle: &CaHandle,
+        parent: ParentHandle,
+        info: ParentCaContact,
+        actor: &Actor,
+    ) -> CertAuthCommand {
+        eventsourcing::SentCommand::new(handle, None, CertAuthCommandDetails::AddParent(parent, info), actor)
     }
 
-    pub fn update_parent(handle: &CaHandle, parent: ParentHandle, info: ParentCaContact, actor: &Actor) -> Cmd {
-        eventsourcing::SentCommand::new(handle, None, CmdDet::UpdateParentContact(parent, info), actor)
+    pub fn update_parent(
+        handle: &CaHandle,
+        parent: ParentHandle,
+        info: ParentCaContact,
+        actor: &Actor,
+    ) -> CertAuthCommand {
+        eventsourcing::SentCommand::new(
+            handle,
+            None,
+            CertAuthCommandDetails::UpdateParentContact(parent, info),
+            actor,
+        )
     }
 
-    pub fn remove_parent(handle: &CaHandle, parent: ParentHandle, actor: &Actor) -> Cmd {
-        eventsourcing::SentCommand::new(handle, None, CmdDet::RemoveParent(parent), actor)
+    pub fn remove_parent(handle: &CaHandle, parent: ParentHandle, actor: &Actor) -> CertAuthCommand {
+        eventsourcing::SentCommand::new(handle, None, CertAuthCommandDetails::RemoveParent(parent), actor)
     }
 
     pub fn update_entitlements(
@@ -421,11 +517,11 @@ impl CmdDet {
         entitlements: Entitlements,
         signer: Arc<KrillSigner>,
         actor: &Actor,
-    ) -> Cmd {
+    ) -> CertAuthCommand {
         eventsourcing::SentCommand::new(
             handle,
             None,
-            CmdDet::UpdateEntitlements(parent, entitlements, signer),
+            CertAuthCommandDetails::UpdateEntitlements(parent, entitlements, signer),
             actor,
         )
     }
@@ -437,11 +533,11 @@ impl CmdDet {
         config: Arc<Config>,
         signer: Arc<KrillSigner>,
         actor: &Actor,
-    ) -> Cmd {
+    ) -> CertAuthCommand {
         eventsourcing::SentCommand::new(
             handle,
             None,
-            CmdDet::UpdateRcvdCert(class_name, cert, config, signer),
+            CertAuthCommandDetails::UpdateRcvdCert(class_name, cert, config, signer),
             actor,
         )
     }
@@ -452,11 +548,11 @@ impl CmdDet {
         reason: DropReason,
         signer: Arc<KrillSigner>,
         actor: &Actor,
-    ) -> Cmd {
+    ) -> CertAuthCommand {
         eventsourcing::SentCommand::new(
             handle,
             None,
-            CmdDet::DropResourceClass(class_name, reason, signer),
+            CertAuthCommandDetails::DropResourceClass(class_name, reason, signer),
             actor,
         )
     }
@@ -465,8 +561,18 @@ impl CmdDet {
     // Key Rolls
     //-------------------------------------------------------------------------------
 
-    pub fn key_roll_init(handle: &CaHandle, duration: Duration, signer: Arc<KrillSigner>, actor: &Actor) -> Cmd {
-        eventsourcing::SentCommand::new(handle, None, CmdDet::KeyRollInitiate(duration, signer), actor)
+    pub fn key_roll_init(
+        handle: &CaHandle,
+        duration: Duration,
+        signer: Arc<KrillSigner>,
+        actor: &Actor,
+    ) -> CertAuthCommand {
+        eventsourcing::SentCommand::new(
+            handle,
+            None,
+            CertAuthCommandDetails::KeyRollInitiate(duration, signer),
+            actor,
+        )
     }
 
     pub fn key_roll_activate(
@@ -475,16 +581,31 @@ impl CmdDet {
         config: Arc<Config>,
         signer: Arc<KrillSigner>,
         actor: &Actor,
-    ) -> Cmd {
-        eventsourcing::SentCommand::new(handle, None, CmdDet::KeyRollActivate(staging, config, signer), actor)
+    ) -> CertAuthCommand {
+        eventsourcing::SentCommand::new(
+            handle,
+            None,
+            CertAuthCommandDetails::KeyRollActivate(staging, config, signer),
+            actor,
+        )
     }
 
-    pub fn key_roll_finish(handle: &CaHandle, rcn: ResourceClassName, res: RevocationResponse, actor: &Actor) -> Cmd {
-        eventsourcing::SentCommand::new(handle, None, CmdDet::KeyRollFinish(rcn, res), actor)
+    pub fn key_roll_finish(
+        handle: &CaHandle,
+        rcn: ResourceClassName,
+        res: RevocationResponse,
+        actor: &Actor,
+    ) -> CertAuthCommand {
+        eventsourcing::SentCommand::new(handle, None, CertAuthCommandDetails::KeyRollFinish(rcn, res), actor)
     }
 
-    pub fn update_repo(handle: &CaHandle, contact: RepositoryContact, signer: Arc<KrillSigner>, actor: &Actor) -> Cmd {
-        eventsourcing::SentCommand::new(handle, None, CmdDet::RepoUpdate(contact, signer), actor)
+    pub fn update_repo(
+        handle: &CaHandle,
+        contact: RepositoryContact,
+        signer: Arc<KrillSigner>,
+        actor: &Actor,
+    ) -> CertAuthCommand {
+        eventsourcing::SentCommand::new(handle, None, CertAuthCommandDetails::RepoUpdate(contact, signer), actor)
     }
 
     //-------------------------------------------------------------------------------
@@ -496,11 +617,11 @@ impl CmdDet {
         config: Arc<Config>,
         signer: Arc<KrillSigner>,
         actor: &Actor,
-    ) -> Cmd {
+    ) -> CertAuthCommand {
         eventsourcing::SentCommand::new(
             handle,
             None,
-            CmdDet::RouteAuthorizationsUpdate(updates, config, signer),
+            CertAuthCommandDetails::RouteAuthorizationsUpdate(updates, config, signer),
             actor,
         )
     }
@@ -514,8 +635,13 @@ impl CmdDet {
         config: Arc<Config>,
         signer: Arc<KrillSigner>,
         actor: &Actor,
-    ) -> Cmd {
-        eventsourcing::SentCommand::new(ca, None, CmdDet::AspasUpdate(updates, config, signer), actor)
+    ) -> CertAuthCommand {
+        eventsourcing::SentCommand::new(
+            ca,
+            None,
+            CertAuthCommandDetails::AspasUpdate(updates, config, signer),
+            actor,
+        )
     }
 
     pub fn aspas_update_aspa(
@@ -525,11 +651,11 @@ impl CmdDet {
         config: Arc<Config>,
         signer: Arc<KrillSigner>,
         actor: &Actor,
-    ) -> Cmd {
+    ) -> CertAuthCommand {
         eventsourcing::SentCommand::new(
             ca,
             None,
-            CmdDet::AspasUpdateExisting(customer, update, config, signer),
+            CertAuthCommandDetails::AspasUpdateExisting(customer, update, config, signer),
             actor,
         )
     }
@@ -543,11 +669,11 @@ impl CmdDet {
         config: Arc<Config>,
         signer: Arc<KrillSigner>,
         actor: &Actor,
-    ) -> Cmd {
+    ) -> CertAuthCommand {
         eventsourcing::SentCommand::new(
             ca,
             None,
-            CmdDet::BgpSecUpdateDefinitions(updates, config, signer),
+            CertAuthCommandDetails::BgpSecUpdateDefinitions(updates, config, signer),
             actor,
         )
     }
@@ -561,8 +687,13 @@ impl CmdDet {
         request: RtaContentRequest,
         signer: Arc<KrillSigner>,
         actor: &Actor,
-    ) -> Cmd {
-        eventsourcing::SentCommand::new(handle, None, CmdDet::RtaSign(name, request, signer), actor)
+    ) -> CertAuthCommand {
+        eventsourcing::SentCommand::new(
+            handle,
+            None,
+            CertAuthCommandDetails::RtaSign(name, request, signer),
+            actor,
+        )
     }
 
     pub fn rta_multi_prep(
@@ -571,8 +702,13 @@ impl CmdDet {
         request: RtaPrepareRequest,
         signer: Arc<KrillSigner>,
         actor: &Actor,
-    ) -> Cmd {
-        eventsourcing::SentCommand::new(handle, None, CmdDet::RtaMultiPrepare(name, request, signer), actor)
+    ) -> CertAuthCommand {
+        eventsourcing::SentCommand::new(
+            handle,
+            None,
+            CertAuthCommandDetails::RtaMultiPrepare(name, request, signer),
+            actor,
+        )
     }
 
     pub fn rta_multi_sign(
@@ -581,7 +717,12 @@ impl CmdDet {
         rta: ResourceTaggedAttestation,
         signer: Arc<KrillSigner>,
         actor: &Actor,
-    ) -> Cmd {
-        eventsourcing::SentCommand::new(handle, None, CmdDet::RtaCoSign(name, rta, signer), actor)
+    ) -> CertAuthCommand {
+        eventsourcing::SentCommand::new(
+            handle,
+            None,
+            CertAuthCommandDetails::RtaCoSign(name, rta, signer),
+            actor,
+        )
     }
 }

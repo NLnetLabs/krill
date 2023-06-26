@@ -1,29 +1,32 @@
 use std::fmt;
 
-use rpki::{
-    ca::idexchange::{MyHandle, PublisherHandle},
-    uri,
-};
+use rpki::{ca::idexchange::PublisherHandle, uri};
 
 use crate::{
-    commons::{api::IdCertInfo, crypto::KrillSigner, eventsourcing::StoredEvent, KrillResult},
+    commons::{
+        api::IdCertInfo,
+        crypto::KrillSigner,
+        error::Error,
+        eventsourcing::{Event, InitEvent},
+        KrillResult,
+    },
     pubd::Publisher,
 };
 
-//------------ RepositoryAccessIni -------------------------------------------
-
-pub type RepositoryAccessIni = StoredEvent<RepositoryAccessInitDetails>;
+//------------ RepositoryAccessInitEvent -------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct RepositoryAccessInitDetails {
+pub struct RepositoryAccessInitEvent {
     id_cert: IdCertInfo,
     rrdp_base_uri: uri::Https,
     rsync_jail: uri::Rsync,
 }
 
-impl RepositoryAccessInitDetails {
+impl InitEvent for RepositoryAccessInitEvent {}
+
+impl RepositoryAccessInitEvent {
     pub fn new(id_cert: IdCertInfo, rrdp_base_uri: uri::Https, rsync_jail: uri::Rsync) -> Self {
-        RepositoryAccessInitDetails {
+        RepositoryAccessInitEvent {
             id_cert,
             rrdp_base_uri,
             rsync_jail,
@@ -35,28 +38,24 @@ impl RepositoryAccessInitDetails {
     }
 }
 
-impl RepositoryAccessInitDetails {
+impl RepositoryAccessInitEvent {
     pub fn init(
-        handle: &MyHandle,
         rsync_jail: uri::Rsync,
         rrdp_base_uri: uri::Https,
         signer: &KrillSigner,
-    ) -> KrillResult<RepositoryAccessIni> {
-        let id_cert = signer.create_self_signed_id_cert()?.into();
-
-        Ok(StoredEvent::new(
-            handle,
-            0,
-            RepositoryAccessInitDetails {
-                id_cert,
+    ) -> KrillResult<RepositoryAccessInitEvent> {
+        signer
+            .create_self_signed_id_cert()
+            .map_err(|e| Error::signer(e))
+            .map(|id| RepositoryAccessInitEvent {
+                id_cert: id.into(),
                 rrdp_base_uri,
                 rsync_jail,
-            },
-        ))
+            })
     }
 }
 
-impl fmt::Display for RepositoryAccessInitDetails {
+impl fmt::Display for RepositoryAccessInitEvent {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
@@ -68,12 +67,10 @@ impl fmt::Display for RepositoryAccessInitDetails {
 
 //------------ RepositoryAccessEvent -----------------------------------------
 
-pub type RepositoryAccessEvent = StoredEvent<RepositoryAccessEventDetails>;
-
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case", tag = "type")]
-pub enum RepositoryAccessEventDetails {
+pub enum RepositoryAccessEvent {
     PublisherAdded {
         name: PublisherHandle,
         publisher: Publisher,
@@ -83,30 +80,23 @@ pub enum RepositoryAccessEventDetails {
     },
 }
 
-impl fmt::Display for RepositoryAccessEventDetails {
+impl Event for RepositoryAccessEvent {}
+
+impl fmt::Display for RepositoryAccessEvent {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            RepositoryAccessEventDetails::PublisherAdded { name, .. } => write!(f, "Publisher '{}' added", name),
-            RepositoryAccessEventDetails::PublisherRemoved { name } => write!(f, "Publisher '{}' removed", name),
+            RepositoryAccessEvent::PublisherAdded { name, .. } => write!(f, "Publisher '{}' added", name),
+            RepositoryAccessEvent::PublisherRemoved { name } => write!(f, "Publisher '{}' removed", name),
         }
     }
 }
 
-impl RepositoryAccessEventDetails {
-    pub(super) fn publisher_added(
-        me: &MyHandle,
-        version: u64,
-        name: PublisherHandle,
-        publisher: Publisher,
-    ) -> RepositoryAccessEvent {
-        StoredEvent::new(
-            me,
-            version,
-            RepositoryAccessEventDetails::PublisherAdded { name, publisher },
-        )
+impl RepositoryAccessEvent {
+    pub(super) fn publisher_added(name: PublisherHandle, publisher: Publisher) -> RepositoryAccessEvent {
+        RepositoryAccessEvent::PublisherAdded { name, publisher }
     }
 
-    pub(super) fn publisher_removed(me: &MyHandle, version: u64, name: PublisherHandle) -> RepositoryAccessEvent {
-        StoredEvent::new(me, version, RepositoryAccessEventDetails::PublisherRemoved { name })
+    pub(super) fn publisher_removed(name: PublisherHandle) -> RepositoryAccessEvent {
+        RepositoryAccessEvent::PublisherRemoved { name }
     }
 }

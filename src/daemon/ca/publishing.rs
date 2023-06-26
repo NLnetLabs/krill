@@ -35,7 +35,7 @@ use crate::{
     },
     constants::CA_OBJECTS_NS,
     daemon::{
-        ca::{CaEvt, CertAuth, CertifiedKey, ChildCertificateUpdates, RoaUpdates},
+        ca::{CertAuth, CertAuthEvent, CertifiedKey, ChildCertificateUpdates, RoaUpdates},
         config::IssuanceTimingConfig,
     },
 };
@@ -81,7 +81,7 @@ impl CaObjectsStore {
 
 /// # Process new objects as they are being produced
 impl PreSaveEventListener<CertAuth> for CaObjectsStore {
-    fn listen(&self, ca: &CertAuth, events: &[CaEvt]) -> KrillResult<()> {
+    fn listen(&self, ca: &CertAuth, events: &[CertAuthEvent]) -> KrillResult<()> {
         // Note that the `CertAuth` which is passed in has already been
         // updated with the state changes contained in the event.
 
@@ -92,57 +92,57 @@ impl PreSaveEventListener<CertAuth> for CaObjectsStore {
             let mut force_reissue = false;
 
             for event in events {
-                match event.details() {
-                    super::CaEvtDet::RoasUpdated {
+                match event {
+                    super::CertAuthEvent::RoasUpdated {
                         resource_class_name,
                         updates,
                     } => {
                         objects.update_roas(resource_class_name, updates)?;
                         force_reissue = true;
                     }
-                    super::CaEvtDet::AspaObjectsUpdated {
+                    super::CertAuthEvent::AspaObjectsUpdated {
                         resource_class_name,
                         updates,
                     } => {
                         objects.update_aspas(resource_class_name, updates)?;
                         force_reissue = true;
                     }
-                    super::CaEvtDet::BgpSecCertificatesUpdated {
+                    super::CertAuthEvent::BgpSecCertificatesUpdated {
                         resource_class_name,
                         updates,
                     } => {
                         objects.update_bgpsec_certs(resource_class_name, updates)?;
                         force_reissue = true;
                     }
-                    super::CaEvtDet::ChildCertificatesUpdated {
+                    super::CertAuthEvent::ChildCertificatesUpdated {
                         resource_class_name,
                         updates,
                     } => {
                         objects.update_certs(resource_class_name, updates)?;
                         force_reissue = true;
                     }
-                    super::CaEvtDet::KeyPendingToActive {
+                    super::CertAuthEvent::KeyPendingToActive {
                         resource_class_name,
                         current_key,
                     } => {
                         objects.add_class(resource_class_name, current_key, timing, signer)?;
                     }
-                    super::CaEvtDet::KeyPendingToNew {
+                    super::CertAuthEvent::KeyPendingToNew {
                         resource_class_name,
                         new_key,
                     } => {
                         objects.keyroll_stage(resource_class_name, new_key, timing, signer)?;
                     }
-                    super::CaEvtDet::KeyRollActivated {
+                    super::CertAuthEvent::KeyRollActivated {
                         resource_class_name, ..
                     } => {
                         objects.keyroll_activate(resource_class_name)?;
                         force_reissue = true;
                     }
-                    super::CaEvtDet::KeyRollFinished { resource_class_name } => {
+                    super::CertAuthEvent::KeyRollFinished { resource_class_name } => {
                         objects.keyroll_finish(resource_class_name)?;
                     }
-                    super::CaEvtDet::CertificateReceived {
+                    super::CertAuthEvent::CertificateReceived {
                         resource_class_name,
                         rcvd_cert,
                         ..
@@ -153,13 +153,13 @@ impl PreSaveEventListener<CertAuth> for CaObjectsStore {
                         // e.g. because a ROA became overclaiming, then we would see another
                         // event for that which *will* result in forcing re-issuance.
                     }
-                    super::CaEvtDet::ResourceClassRemoved {
+                    super::CertAuthEvent::ResourceClassRemoved {
                         resource_class_name, ..
                     } => {
                         objects.remove_class(resource_class_name);
                         force_reissue = true;
                     }
-                    super::CaEvtDet::RepoUpdated { contact } => {
+                    super::CertAuthEvent::RepoUpdated { contact } => {
                         objects.update_repo(contact);
                         force_reissue = true;
                     }

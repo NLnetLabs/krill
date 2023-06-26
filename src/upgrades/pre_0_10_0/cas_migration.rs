@@ -7,16 +7,16 @@ use crate::daemon::ca::CaObjects;
 use crate::upgrades::OldStoredCommand;
 use crate::{
     commons::{
-        api::StorableCaCommand,
+        api::CertAuthStorableCommand,
         eventsourcing::{segment, AggregateStore, Key, KeyValueStore, Segment, SegmentExt, StoredValueInfo},
     },
     constants::{CASERVER_NS, CA_OBJECTS_NS, KRILL_VERSION},
     daemon::{
-        ca::{CaEvt, CertAuth, IniDet},
+        ca::{CertAuth, CertAuthEvent, CertAuthInitEvent},
         config::Config,
     },
     upgrades::{
-        pre_0_10_0::{OldCaEvt, OldCaIni},
+        pre_0_10_0::{Pre0_10CertAuthEvent, Pre0_10CertAuthInitEvent},
         PrepareUpgradeError, UpgradeMode, UpgradeResult, UpgradeStore,
     },
 };
@@ -108,9 +108,9 @@ impl UpgradeStore for CasMigration {
             if data_upgrade_info.last_event == 0 {
                 // Make a new init event.
                 let init_key = Self::event_key(scope.clone(), 0);
-                let old_init: OldCaIni = self.get(&init_key).unwrap();
-                let (id, _, old_ini_det) = old_init.unpack();
-                let ini = IniDet::new(&id, old_ini_det.into());
+                let old_init: Pre0_10CertAuthInitEvent = self.get(&init_key).unwrap();
+                let old_ini_det = old_init.into_details();
+                let ini = CertAuthInitEvent::new(old_ini_det.into());
                 self.new_kv_store.store(&init_key, &ini)?;
             }
 
@@ -142,7 +142,7 @@ impl UpgradeStore for CasMigration {
             for cmd_key in old_cmd_keys {
                 // Read and parse the command. There is no need to change the command itself,
                 // but we need to save it again and get the events from here.
-                let cmd: OldStoredCommand<StorableCaCommand> = self.get(&cmd_key)?;
+                let cmd: OldStoredCommand<CertAuthStorableCommand> = self.get(&cmd_key)?;
 
                 // Read and parse all events. Migrate the events that contain changed types.
                 // In this case IdCert -> IdCertInfo for added publishers. Then save the event
@@ -151,12 +151,13 @@ impl UpgradeStore for CasMigration {
                     for v in event_versions {
                         let event_key = Self::event_key(scope.clone(), *v);
                         trace!("  +- event: {}", event_key);
-                        let evt: OldCaEvt = self.current_kv_store.get(&event_key)?.ok_or_else(|| {
+                        let evt: Pre0_10CertAuthEvent = self.current_kv_store.get(&event_key)?.ok_or_else(|| {
                             PrepareUpgradeError::Custom(format!("Cannot parse old event: {}", event_key))
                         })?;
 
                         // Migrate into the current event type and save
-                        let evt: CaEvt = evt.try_into()?;
+                        let old_details = evt.into_details();
+                        let evt: CertAuthEvent = old_details.try_into()?;
                         self.new_kv_store.store(&event_key, &evt)?;
 
                         data_upgrade_info.last_event = *v;

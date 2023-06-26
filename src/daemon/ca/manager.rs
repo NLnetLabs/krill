@@ -43,19 +43,21 @@ use crate::{
         auth::common::permissions::Permission,
         auth::Handle,
         ca::{
-            CaObjectsStore, CaStatus, CertAuth, Cmd, CmdDet, DeprecatedRepository, IniDet, ResourceTaggedAttestation,
-            RtaContentRequest, RtaPrepareRequest, StatusStore,
+            CaObjectsStore, CaStatus, CertAuth, CertAuthCommand, CertAuthCommandDetails, DeprecatedRepository,
+            ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest, StatusStore,
         },
         config::Config,
         mq::{now, TaskQueue},
         ta::{
-            self, ta_handle, TrustAnchorProxy, TrustAnchorProxyCommand, TrustAnchorSignedRequest,
-            TrustAnchorSignedResponse, TrustAnchorSigner, TrustAnchorSignerCommand, TrustAnchorSignerInfo,
-            TrustAnchorSignerInitCommand, TA_NAME,
+            self, ta_handle, TrustAnchorProxy, TrustAnchorProxyCommand, TrustAnchorProxyInitCommand,
+            TrustAnchorSignedRequest, TrustAnchorSignedResponse, TrustAnchorSigner, TrustAnchorSignerCommand,
+            TrustAnchorSignerInfo, TrustAnchorSignerInitCommand, TrustAnchorSignerInitCommandDetails, TA_NAME,
         },
     },
     pubd::RepositoryManager,
 };
+
+use super::{CertAuthInitCommand, CertAuthInitCommandDetails};
 
 //------------ CaManager -----------------------------------------------------
 
@@ -197,7 +199,7 @@ impl CaManager {
     }
 
     /// Send a command to a CA
-    async fn send_ca_command(&self, cmd: Cmd) -> KrillResult<Arc<CertAuth>> {
+    async fn send_ca_command(&self, cmd: CertAuthCommand) -> KrillResult<Arc<CertAuth>> {
         self.ca_store.command(cmd)
     }
 
@@ -264,7 +266,7 @@ impl CaManager {
             Err(Error::TaAlreadyInitialized)
         } else {
             // Initialise proxy
-            let proxy_init = TrustAnchorProxy::create_init(ta_handle, &self.signer)?;
+            let proxy_init = TrustAnchorProxyInitCommand::make(&ta_handle, self.signer.clone(), &self.system_actor);
             ta_proxy_store.add(proxy_init)?;
             Ok(())
         }
@@ -293,8 +295,7 @@ impl CaManager {
             let repo_contact = self.ta_proxy_repository_contact().await?;
             let proxy_id = self.ta_proxy_id().await?;
 
-            let signer_init_cmd = TrustAnchorSignerInitCommand {
-                handle,
+            let details = TrustAnchorSignerInitCommandDetails {
                 proxy_id,
                 repo_info: repo_contact.repo_info().clone(),
                 tal_https,
@@ -302,9 +303,9 @@ impl CaManager {
                 private_key_pem,
                 signer: self.signer.clone(),
             };
+            let cmd = TrustAnchorSignerInitCommand::new(&handle, details, &self.system_actor);
 
-            let signer_init = TrustAnchorSigner::create_init(signer_init_cmd)?;
-            ta_signer_store.add(signer_init)?;
+            ta_signer_store.add(cmd)?;
 
             Ok(())
         }
@@ -439,8 +440,12 @@ impl CaManager {
             // Initialize the CA in self.ca_store, but note that there is no need to create
             // a new CA entry in self.ca_objects_store or self.status_store, because they will
             // generate empty default entries if needed.
-            let init = IniDet::init(handle, self.signer.deref())?;
-            self.ca_store.add(init)?;
+            let cmd = CertAuthInitCommand::new(
+                handle,
+                CertAuthInitCommandDetails::new(self.signer.clone()),
+                &self.system_actor,
+            );
+            self.ca_store.add(cmd)?;
             Ok(())
         }
     }
@@ -452,7 +457,7 @@ impl CaManager {
     /// this for a parent, a child, a repo and a publisher, but other implementations may
     /// not support that identities are updated after initialization.
     pub async fn ca_update_id(&self, handle: CaHandle, actor: &Actor) -> KrillResult<()> {
-        let cmd = CmdDet::update_id(&handle, self.signer.clone(), actor);
+        let cmd = CertAuthCommandDetails::update_id(&handle, self.signer.clone(), actor);
         self.send_ca_command(cmd).await?;
         Ok(())
     }
@@ -582,7 +587,8 @@ impl CaManager {
         if ca.as_str() != TA_NAME {
             let (child_handle, child_res, id_cert) = req.unpack();
 
-            let add_child = CmdDet::child_add(ca, child_handle.clone(), id_cert.into(), child_res, actor);
+            let add_child =
+                CertAuthCommandDetails::child_add(ca, child_handle.clone(), id_cert.into(), child_res, actor);
             self.send_ca_command(add_child).await?;
             self.ca_parent_response(ca, child_handle, service_uri).await
         } else {
@@ -663,19 +669,30 @@ impl CaManager {
         let (id_opt, resources_opt, suspend_opt) = req.unpack();
 
         if let Some(id) = id_opt {
-            self.send_ca_command(CmdDet::child_update_id(ca, child.clone(), id.into(), actor))
-                .await?;
+            self.send_ca_command(CertAuthCommandDetails::child_update_id(
+                ca,
+                child.clone(),
+                id.into(),
+                actor,
+            ))
+            .await?;
         }
         if let Some(resources) = resources_opt {
-            self.send_ca_command(CmdDet::child_update_resources(ca, child.clone(), resources, actor))
-                .await?;
+            self.send_ca_command(CertAuthCommandDetails::child_update_resources(
+                ca,
+                child.clone(),
+                resources,
+                actor,
+            ))
+            .await?;
         }
         if let Some(suspend) = suspend_opt {
             if suspend {
-                self.send_ca_command(CmdDet::child_suspend_inactive(ca, child, actor))
+                self.send_ca_command(CertAuthCommandDetails::child_suspend_inactive(ca, child, actor))
                     .await?;
             } else {
-                self.send_ca_command(CmdDet::child_unsuspend(ca, child, actor)).await?;
+                self.send_ca_command(CertAuthCommandDetails::child_unsuspend(ca, child, actor))
+                    .await?;
             }
         }
         Ok(())
@@ -685,7 +702,8 @@ impl CaManager {
     /// are revoked and withdrawn.
     pub async fn ca_child_remove(&self, ca: &CaHandle, child: ChildHandle, actor: &Actor) -> KrillResult<()> {
         self.status_store.remove_child(ca, &child)?;
-        self.send_ca_command(CmdDet::child_remove(ca, child, actor)).await?;
+        self.send_ca_command(CertAuthCommandDetails::child_remove(ca, child, actor))
+            .await?;
 
         Ok(())
     }
@@ -844,7 +862,7 @@ impl CaManager {
             let class_name = issue_req.class_name();
             let pub_key = issue_req.csr().public_key();
 
-            let cmd = CmdDet::child_certify(
+            let cmd = CertAuthCommandDetails::child_certify(
                 ca_handle,
                 child.clone(),
                 issue_req.clone(),
@@ -882,7 +900,7 @@ impl CaManager {
             let res = RevocationResponse::from(&revoke_request); // response provided that no errors are returned
             let msg = provisioning::Message::revoke_response(ca_handle.convert(), child.convert(), res);
 
-            let cmd = CmdDet::child_revoke_key(ca_handle, child, revoke_request, actor);
+            let cmd = CertAuthCommandDetails::child_revoke_key(ca_handle, child, revoke_request, actor);
             self.send_ca_command(cmd).await?;
 
             Ok(msg)
@@ -953,9 +971,9 @@ impl CaManager {
             .map_err(|e| Error::CaParentResponseInvalid(handle.clone(), e.to_string()))?;
 
         let cmd = if !ca.parent_known(&parent) {
-            CmdDet::add_parent(&handle, parent, contact, actor)
+            CertAuthCommandDetails::add_parent(&handle, parent, contact, actor)
         } else {
-            CmdDet::update_parent(&handle, parent, contact, actor)
+            CertAuthCommandDetails::update_parent(&handle, parent, contact, actor)
         };
 
         self.send_ca_command(cmd).await?;
@@ -976,7 +994,7 @@ impl CaManager {
 
         self.status_store.remove_parent(&handle, &parent)?;
 
-        let upd = CmdDet::remove_parent(&handle, parent, actor);
+        let upd = CertAuthCommandDetails::remove_parent(&handle, parent, actor);
         self.send_ca_command(upd).await?;
         Ok(())
     }
@@ -1189,7 +1207,7 @@ impl CaManager {
 
         for (rcn, revoke_responses) in revoke_responses.into_iter() {
             for response in revoke_responses.into_iter() {
-                let cmd = CmdDet::key_roll_finish(handle, rcn.clone(), response, actor);
+                let cmd = CertAuthCommandDetails::key_roll_finish(handle, rcn.clone(), response, actor);
                 self.send_ca_command(cmd).await?;
             }
         }
@@ -1412,7 +1430,7 @@ impl CaManager {
                                             }
                                             Ok(rcvd_cert) => {
                                                 if let Err(e) = self
-                                                    .send_ca_command(CmdDet::upd_received_cert(
+                                                    .send_ca_command(CertAuthCommandDetails::upd_received_cert(
                                                         ca_handle,
                                                         rcn.clone(),
                                                         rcvd_cert,
@@ -1434,7 +1452,7 @@ impl CaManager {
                                                     let reason =
                                                         format!("cannot process received certificate! error: {}", e);
 
-                                                    self.send_ca_command(CmdDet::drop_resource_class(
+                                                    self.send_ca_command(CertAuthCommandDetails::drop_resource_class(
                                                         ca_handle,
                                                         rcn.clone(),
                                                         reason.clone(),
@@ -1485,7 +1503,7 @@ impl CaManager {
 
                                         let reason = "parent removed entitlement to resource class".to_string();
 
-                                        self.send_ca_command(CmdDet::drop_resource_class(
+                                        self.send_ca_command(CertAuthCommandDetails::drop_resource_class(
                                             ca_handle,
                                             rcn.clone(),
                                             reason.clone(),
@@ -1519,7 +1537,7 @@ impl CaManager {
                                         // eligible certificates and ROAs under it.
 
                                         let reason = "parent claims we are re-using keys".to_string();
-                                        self.send_ca_command(CmdDet::drop_resource_class(
+                                        self.send_ca_command(CertAuthCommandDetails::drop_resource_class(
                                             ca_handle,
                                             rcn.clone(),
                                             reason.clone(),
@@ -1609,7 +1627,7 @@ impl CaManager {
         let current_version = self.get_ca(ca).await?.version();
 
         let update_entitlements_command =
-            CmdDet::update_entitlements(ca, parent, entitlements, self.signer.clone(), actor);
+            CertAuthCommandDetails::update_entitlements(ca, parent, entitlements, self.signer.clone(), actor);
 
         let new_version = self.send_ca_command(update_entitlements_command).await?.version();
 
@@ -1958,7 +1976,7 @@ impl CaManager {
                 .await
                 .map_err(|e| Error::CaRepoIssue(ca_handle.clone(), e.to_string()))?;
         }
-        let cmd = CmdDet::update_repo(&ca_handle, new_contact, self.signer.clone(), actor);
+        let cmd = CertAuthCommandDetails::update_repo(&ca_handle, new_contact, self.signer.clone(), actor);
         self.send_ca_command(cmd).await?;
         Ok(())
     }
@@ -2123,7 +2141,7 @@ impl CaManager {
         updates: AspaDefinitionUpdates,
         actor: &Actor,
     ) -> KrillResult<()> {
-        self.send_ca_command(CmdDet::aspas_definitions_update(
+        self.send_ca_command(CertAuthCommandDetails::aspas_definitions_update(
             &ca,
             updates,
             self.config.clone(),
@@ -2142,7 +2160,7 @@ impl CaManager {
         update: AspaProvidersUpdate,
         actor: &Actor,
     ) -> KrillResult<()> {
-        self.send_ca_command(CmdDet::aspas_update_aspa(
+        self.send_ca_command(CertAuthCommandDetails::aspas_update_aspa(
             &ca,
             customer,
             update,
@@ -2169,7 +2187,7 @@ impl CaManager {
         updates: BgpSecDefinitionUpdates,
         actor: &Actor,
     ) -> KrillResult<()> {
-        self.send_ca_command(CmdDet::bgpsec_update_definitions(
+        self.send_ca_command(CertAuthCommandDetails::bgpsec_update_definitions(
             &ca,
             updates,
             self.config.clone(),
@@ -2198,7 +2216,7 @@ impl CaManager {
         updates: RoaConfigurationUpdates,
         actor: &Actor,
     ) -> KrillResult<()> {
-        self.send_ca_command(CmdDet::route_authorizations_update(
+        self.send_ca_command(CertAuthCommandDetails::route_authorizations_update(
             &ca,
             updates,
             self.config.clone(),
@@ -2219,10 +2237,10 @@ impl CaManager {
     /// updated certificates themselves.
     pub async fn renew_objects_all(&self, actor: &Actor) -> KrillResult<()> {
         for ca in self.ca_store.list()? {
-            let cmd = Cmd::new(
+            let cmd = CertAuthCommand::new(
                 &ca,
                 None,
-                CmdDet::RouteAuthorizationsRenew(self.config.clone(), self.signer.clone()),
+                CertAuthCommandDetails::RouteAuthorizationsRenew(self.config.clone(), self.signer.clone()),
                 actor,
             );
 
@@ -2230,10 +2248,10 @@ impl CaManager {
                 error!("Renewing ROAs for CA '{}' failed with error: {}", ca, e);
             }
 
-            let cmd = Cmd::new(
+            let cmd = CertAuthCommand::new(
                 &ca,
                 None,
-                CmdDet::AspasRenew(self.config.clone(), self.signer.clone()),
+                CertAuthCommandDetails::AspasRenew(self.config.clone(), self.signer.clone()),
                 actor,
             );
 
@@ -2241,10 +2259,10 @@ impl CaManager {
                 error!("Renewing ASPAs for CA '{}' failed with error: {}", ca, e);
             }
 
-            let cmd = Cmd::new(
+            let cmd = CertAuthCommand::new(
                 &ca,
                 None,
-                CmdDet::BgpSecRenew(self.config.clone(), self.signer.clone()),
+                CertAuthCommandDetails::BgpSecRenew(self.config.clone(), self.signer.clone()),
                 actor,
             );
 
@@ -2262,10 +2280,10 @@ impl CaManager {
     /// forcing to re-issue ROAs may be useful.
     pub async fn force_renew_roas_all(&self, actor: &Actor) -> KrillResult<()> {
         for ca in self.ca_store.list()? {
-            let cmd = Cmd::new(
+            let cmd = CertAuthCommand::new(
                 &ca,
                 None,
-                CmdDet::RouteAuthorizationsForceRenew(self.config.clone(), self.signer.clone()),
+                CertAuthCommandDetails::RouteAuthorizationsForceRenew(self.config.clone(), self.signer.clone()),
                 actor,
             );
             if let Err(e) = self.send_ca_command(cmd).await {
@@ -2287,7 +2305,7 @@ impl CaManager {
         request: RtaContentRequest,
         actor: &Actor,
     ) -> KrillResult<()> {
-        let cmd = CmdDet::rta_sign(&ca, name, request, self.signer.clone(), actor);
+        let cmd = CertAuthCommandDetails::rta_sign(&ca, name, request, self.signer.clone(), actor);
         self.send_ca_command(cmd).await?;
         Ok(())
     }
@@ -2300,7 +2318,7 @@ impl CaManager {
         request: RtaPrepareRequest,
         actor: &Actor,
     ) -> KrillResult<()> {
-        let cmd = CmdDet::rta_multi_prep(ca, name, request, self.signer.clone(), actor);
+        let cmd = CertAuthCommandDetails::rta_multi_prep(ca, name, request, self.signer.clone(), actor);
         self.send_ca_command(cmd).await?;
         Ok(())
     }
@@ -2313,7 +2331,7 @@ impl CaManager {
         rta: ResourceTaggedAttestation,
         actor: &Actor,
     ) -> KrillResult<()> {
-        let cmd = CmdDet::rta_multi_sign(&ca, name, rta, self.signer.clone(), actor);
+        let cmd = CertAuthCommandDetails::rta_multi_sign(&ca, name, rta, self.signer.clone(), actor);
         self.send_ca_command(cmd).await?;
         Ok(())
     }
@@ -2324,7 +2342,7 @@ impl CaManager {
 impl CaManager {
     /// Initiate an RFC 6489 key roll for all active keys in a CA older than the specified duration.
     pub async fn ca_keyroll_init(&self, handle: CaHandle, max_age: Duration, actor: &Actor) -> KrillResult<()> {
-        let init_key_roll = CmdDet::key_roll_init(&handle, max_age, self.signer.clone(), actor);
+        let init_key_roll = CertAuthCommandDetails::key_roll_init(&handle, max_age, self.signer.clone(), actor);
         self.send_ca_command(init_key_roll).await?;
         Ok(())
     }
@@ -2334,7 +2352,13 @@ impl CaManager {
     /// a staging period of 24 hours, but we may use a shorter period for testing and/or emergency
     /// manual key rolls.
     pub async fn ca_keyroll_activate(&self, handle: CaHandle, staging: Duration, actor: &Actor) -> KrillResult<()> {
-        let activate_cmd = CmdDet::key_roll_activate(&handle, staging, self.config.clone(), self.signer.clone(), actor);
+        let activate_cmd = CertAuthCommandDetails::key_roll_activate(
+            &handle,
+            staging,
+            self.config.clone(),
+            self.signer.clone(),
+            actor,
+        );
         self.send_ca_command(activate_cmd).await?;
         Ok(())
     }

@@ -26,8 +26,8 @@ use crate::{
     daemon::{
         ca::events::RoaUpdates,
         ca::{
-            self, AspaObjects, AspaObjectsUpdates, CaEvtDet, CertifiedKey, ChildCertificates, CurrentKey, KeyState,
-            NewKey, OldKey, PendingKey, Roas, Routes,
+            self, AspaObjects, AspaObjectsUpdates, CertAuthEvent, CertifiedKey, ChildCertificates, CurrentKey,
+            KeyState, NewKey, OldKey, PendingKey, Roas, Routes,
         },
         config::{Config, IssuanceTimingConfig},
         ta::ta_handle,
@@ -207,7 +207,7 @@ impl ResourceClass {
         all_bgpsecs: &BgpSecDefinitions,
         config: &Config,
         signer: &KrillSigner,
-    ) -> KrillResult<Vec<CaEvtDet>> {
+    ) -> KrillResult<Vec<CertAuthEvent>> {
         // If this is for a pending key, then we need to promote this key
 
         let rcvd_cert_ki = rcvd_cert.key_identifier();
@@ -233,27 +233,27 @@ impl ResourceClass {
                         .bgpsec_certificates
                         .update(all_bgpsecs, &current_key, config, signer)?;
 
-                    let mut events = vec![CaEvtDet::KeyPendingToActive {
+                    let mut events = vec![CertAuthEvent::KeyPendingToActive {
                         resource_class_name: self.name.clone(),
                         current_key,
                     }];
 
                     if roa_updates.contains_changes() {
-                        events.push(CaEvtDet::RoasUpdated {
+                        events.push(CertAuthEvent::RoasUpdated {
                             resource_class_name: self.name.clone(),
                             updates: roa_updates,
                         })
                     }
 
                     if aspa_updates.contains_changes() {
-                        events.push(CaEvtDet::AspaObjectsUpdated {
+                        events.push(CertAuthEvent::AspaObjectsUpdated {
                             resource_class_name: self.name.clone(),
                             updates: aspa_updates,
                         })
                     }
 
                     if bgpsec_updates.contains_changes() {
-                        events.push(CaEvtDet::BgpSecCertificatesUpdated {
+                        events.push(CertAuthEvent::BgpSecCertificatesUpdated {
                             resource_class_name: self.name.clone(),
                             updates: bgpsec_updates,
                         })
@@ -275,7 +275,7 @@ impl ResourceClass {
             KeyState::RollPending(pending, current) => {
                 if rcvd_cert_ki == pending.key_id() {
                     let new_key = CertifiedKey::create(rcvd_cert);
-                    Ok(vec![CaEvtDet::KeyPendingToNew {
+                    Ok(vec![CertAuthEvent::KeyPendingToNew {
                         resource_class_name: self.name.clone(),
                         new_key,
                     }])
@@ -294,7 +294,7 @@ impl ResourceClass {
             }
             KeyState::RollNew(new, current) => {
                 if rcvd_cert_ki == new.key_id() {
-                    Ok(vec![CaEvtDet::CertificateReceived {
+                    Ok(vec![CertAuthEvent::CertificateReceived {
                         resource_class_name: self.name.clone(),
                         ki: rcvd_cert_ki,
                         rcvd_cert,
@@ -339,7 +339,7 @@ impl ResourceClass {
         all_bgpsecs: &BgpSecDefinitions,
         config: &Config,
         signer: &KrillSigner,
-    ) -> KrillResult<Vec<CaEvtDet>> {
+    ) -> KrillResult<Vec<CertAuthEvent>> {
         let ki = rcvd_cert.key_identifier();
         if ki != current_key.key_id() {
             return Err(ca::Error::KeyUseNoMatch(ki));
@@ -347,7 +347,7 @@ impl ResourceClass {
 
         let rcvd_resources = rcvd_cert.resources();
 
-        let mut res = vec![CaEvtDet::CertificateReceived {
+        let mut res = vec![CertAuthEvent::CertificateReceived {
             resource_class_name: self.name.clone(),
             ki,
             rcvd_cert: rcvd_cert.clone(),
@@ -372,7 +372,7 @@ impl ResourceClass {
                 self.certificates
                     .shrink_overclaiming(updated_key.incoming_cert(), &config.issuance_timing, signer)?;
             if !updates.is_empty() {
-                res.push(CaEvtDet::ChildCertificatesUpdated {
+                res.push(CertAuthEvent::ChildCertificatesUpdated {
                     resource_class_name: self.name.clone(),
                     updates,
                 });
@@ -383,7 +383,7 @@ impl ResourceClass {
             {
                 let updates = self.roas.update(all_routes, &updated_key, config, signer)?;
                 if !updates.is_empty() {
-                    res.push(CaEvtDet::RoasUpdated {
+                    res.push(CertAuthEvent::RoasUpdated {
                         resource_class_name: self.name.clone(),
                         updates,
                     });
@@ -395,7 +395,7 @@ impl ResourceClass {
             {
                 let updates = self.aspas.update(all_aspas, &updated_key, config, signer)?;
                 if !updates.is_empty() {
-                    res.push(CaEvtDet::AspaObjectsUpdated {
+                    res.push(CertAuthEvent::AspaObjectsUpdated {
                         resource_class_name: self.name.clone(),
                         updates,
                     })
@@ -409,7 +409,7 @@ impl ResourceClass {
                     .bgpsec_certificates
                     .update(all_bgpsecs, &updated_key, config, signer)?;
                 if !updates.is_empty() {
-                    res.push(CaEvtDet::BgpSecCertificatesUpdated {
+                    res.push(CertAuthEvent::BgpSecCertificatesUpdated {
                         resource_class_name: self.name.clone(),
                         updates,
                     })
@@ -439,7 +439,7 @@ impl ResourceClass {
         entitlement: &ResourceClassEntitlements,
         base_repo: &RepoInfo,
         signer: &KrillSigner,
-    ) -> KrillResult<Vec<CaEvtDet>> {
+    ) -> KrillResult<Vec<CertAuthEvent>> {
         self.key_state.make_entitlement_events(
             handle,
             self.name.clone(),
@@ -455,7 +455,7 @@ impl ResourceClass {
         &self,
         base_repo: &RepoInfo,
         signer: &KrillSigner,
-    ) -> KrillResult<Vec<CaEvtDet>> {
+    ) -> KrillResult<Vec<CertAuthEvent>> {
         self.key_state
             .request_certs_new_repo(self.name.clone(), base_repo, &self.name_space, signer)
     }
@@ -573,7 +573,7 @@ impl ResourceClass {
         base_repo: &RepoInfo,
         duration: Duration,
         signer: &KrillSigner,
-    ) -> KrillResult<Vec<CaEvtDet>> {
+    ) -> KrillResult<Vec<CertAuthEvent>> {
         if duration > Duration::seconds(0) && self.last_key_change + duration > Time::now() {
             return Ok(vec![]);
         }
@@ -593,7 +593,7 @@ impl ResourceClass {
         staging_time: Duration,
         issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
-    ) -> KrillResult<Vec<CaEvtDet>> {
+    ) -> KrillResult<Vec<CertAuthEvent>> {
         if let Some(new_key) = self.key_state.new_key() {
             if staging_time > Duration::seconds(0) && self.last_key_change + staging_time > Time::now() {
                 Ok(vec![])
@@ -606,7 +606,7 @@ impl ResourceClass {
 
                 let roa_updates = self.roas.renew(true, new_key, issuance_timing, signer)?;
                 if !roa_updates.is_empty() {
-                    let roas_updated = CaEvtDet::RoasUpdated {
+                    let roas_updated = CertAuthEvent::RoasUpdated {
                         resource_class_name: self.name.clone(),
                         updates: roa_updates,
                     };
@@ -615,7 +615,7 @@ impl ResourceClass {
 
                 let aspa_updates = self.aspas.renew(new_key, None, issuance_timing, signer)?;
                 if !aspa_updates.is_empty() {
-                    let aspas_updated = CaEvtDet::AspaObjectsUpdated {
+                    let aspas_updated = CertAuthEvent::AspaObjectsUpdated {
                         resource_class_name: self.name.clone(),
                         updates: aspa_updates,
                     };
@@ -626,7 +626,7 @@ impl ResourceClass {
                     .certificates
                     .activate_key(new_key.incoming_cert(), issuance_timing, signer)?;
                 if !cert_updates.is_empty() {
-                    let certs_updated = CaEvtDet::ChildCertificatesUpdated {
+                    let certs_updated = CertAuthEvent::ChildCertificatesUpdated {
                         resource_class_name: self.name.clone(),
                         updates: cert_updates,
                     };
@@ -635,7 +635,7 @@ impl ResourceClass {
 
                 let bgpsec_updates = self.bgpsec_certificates.renew(new_key, None, issuance_timing, signer)?;
                 if !bgpsec_updates.is_empty() {
-                    events.push(CaEvtDet::BgpSecCertificatesUpdated {
+                    events.push(CertAuthEvent::BgpSecCertificatesUpdated {
                         resource_class_name: self.name.clone(),
                         updates: bgpsec_updates,
                     });
@@ -649,9 +649,9 @@ impl ResourceClass {
     }
 
     /// Finish a key roll, withdraw the old key
-    pub fn keyroll_finish(&self) -> KrillResult<CaEvtDet> {
+    pub fn keyroll_finish(&self) -> KrillResult<CertAuthEvent> {
         match &self.key_state {
-            KeyState::RollOld(_current, _old) => Ok(CaEvtDet::KeyRollFinished {
+            KeyState::RollOld(_current, _old) => Ok(CertAuthEvent::KeyRollFinished {
                 resource_class_name: self.name.clone(),
             }),
             _ => Err(Error::KeyUseNoOldKey),

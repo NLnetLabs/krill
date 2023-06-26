@@ -71,7 +71,7 @@ impl RepositoryManager {
     /// Create the publication server, will fail if it was already created.
     pub fn init(&self, uris: PublicationServerUris) -> KrillResult<()> {
         info!("Initializing repository");
-        self.access.init(uris.clone(), &self.signer)?;
+        self.access.init(uris.clone(), self.signer.clone())?;
         self.content.init(self.config.repo_dir(), uris)?;
         self.content.write_repository(self.config.rrdp_updates_config)?;
 

@@ -2,7 +2,10 @@
 
 use std::{collections::HashMap, fmt, str::FromStr};
 
-use rpki::crypto::{KeyIdentifier, PublicKey};
+use rpki::{
+    ca::idexchange::MyHandle,
+    crypto::{KeyIdentifier, PublicKey},
+};
 use url::Url;
 
 use crate::{
@@ -11,105 +14,129 @@ use crate::{
         api::CommandSummary,
         crypto::SignerHandle,
         error::Error,
-        eventsourcing::{Aggregate, AggregateStore, CommandDetails, SentCommand, StoredEvent, WithStorableDetails},
+        eventsourcing::{
+            Aggregate, AggregateStore, CommandDetails, Event, InitCommandDetails, InitEvent, SentCommand,
+            SentInitCommand, WithStorableDetails,
+        },
         KrillResult,
     },
     constants::{ACTOR_DEF_KRILL, SIGNERS_NS},
 };
 
-//------------ InitSignerInfoEvent -----------------------------------------------------------------------------
-type InitSignerInfoEvent = StoredEvent<InitSignerInfoDetails>;
+//------------ SignerInfoInitCommand ------------------------------------------------------------------------------
 
-impl InitSignerInfoEvent {
-    pub fn init(
+type SignerInfoInitCommand = SentInitCommand<SignerInfoInitCommandDetails>;
+
+//------------ SignerInfoInitCommandDetails --------------------------------------------------------------------
+
+#[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
+pub struct SignerInfoInitCommandDetails {
+    id: SignerHandle,
+    signer_name: String,
+    signer_info: String,
+    public_key: PublicKey,
+    private_key_internal_id: String,
+}
+
+impl SignerInfoInitCommandDetails {
+    pub fn new(
         id: &SignerHandle,
         signer_name: &str,
         signer_info: &str,
         public_key: &PublicKey,
         private_key_internal_id: &str,
     ) -> Self {
-        StoredEvent::new(
-            id,
-            0,
-            InitSignerInfoDetails {
-                signer_name: signer_name.to_string(),
-                signer_info: signer_info.to_string(),
-                signer_identity: SignerIdentity {
-                    public_key: public_key.clone(),
-                    private_key_internal_id: private_key_internal_id.to_string(),
-                },
-            },
-        )
+        SignerInfoInitCommandDetails {
+            id: id.clone(),
+            signer_name: signer_name.to_string(),
+            signer_info: signer_info.to_string(),
+            public_key: public_key.clone(),
+            private_key_internal_id: private_key_internal_id.to_string(),
+        }
     }
 }
 
+impl fmt::Display for SignerInfoInitCommandDetails {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        SignerInfoCommandDetails::from(self).fmt(f)
+    }
+}
+
+impl InitCommandDetails for SignerInfoInitCommandDetails {
+    type StorableDetails = SignerInfoCommandDetails;
+
+    fn store(&self) -> Self::StorableDetails {
+        self.into()
+    }
+}
+
+impl From<&SignerInfoInitCommandDetails> for SignerInfoCommandDetails {
+    fn from(_d: &SignerInfoInitCommandDetails) -> Self {
+        SignerInfoCommandDetails::CreateSigner
+    }
+}
+
+//------------ InitSignerInfoEvent -----------------------------------------------------------------------------
+
 #[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
-struct InitSignerInfoDetails {
+pub struct SignerInfoInitEvent {
+    pub id: MyHandle,
     pub signer_name: String,
     pub signer_info: String,
     pub signer_identity: SignerIdentity,
 }
 
-impl fmt::Display for InitSignerInfoDetails {
+impl InitEvent for SignerInfoInitEvent {}
+
+impl fmt::Display for SignerInfoInitEvent {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Signer info initialized with name '{}'", self.signer_name)
     }
 }
 
 //------------ SignerInfoEvent ---------------------------------------------------------------------------------
-type SignerInfoEvent = StoredEvent<SignerInfoEventDetails>;
 
 #[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
-enum SignerInfoEventDetails {
+pub enum SignerInfoEvent {
     KeyAdded(KeyIdentifier, String),
     KeyRemoved(KeyIdentifier),
     SignerNameChanged(String),
     SignerInfoChanged(String),
 }
 
+impl Event for SignerInfoEvent {}
+
 impl SignerInfoEvent {
-    pub fn key_added(si: &SignerInfo, key_id: KeyIdentifier, internal_key_id: String) -> Self {
-        StoredEvent::new(
-            si.id(),
-            si.version,
-            SignerInfoEventDetails::KeyAdded(key_id, internal_key_id),
-        )
+    pub fn key_added(key_id: KeyIdentifier, internal_key_id: String) -> Self {
+        SignerInfoEvent::KeyAdded(key_id, internal_key_id)
     }
 
-    pub fn key_removed(si: &SignerInfo, key_id: KeyIdentifier) -> Self {
-        StoredEvent::new(si.id(), si.version, SignerInfoEventDetails::KeyRemoved(key_id))
+    pub fn key_removed(key_id: KeyIdentifier) -> Self {
+        SignerInfoEvent::KeyRemoved(key_id)
     }
 
-    pub fn signer_name_changed(si: &SignerInfo, signer_name: String) -> Self {
-        StoredEvent::new(
-            si.id(),
-            si.version,
-            SignerInfoEventDetails::SignerNameChanged(signer_name),
-        )
+    pub fn signer_name_changed(signer_name: String) -> Self {
+        SignerInfoEvent::SignerNameChanged(signer_name)
     }
 
-    pub fn signer_info_changed(si: &SignerInfo, signer_info: String) -> Self {
-        StoredEvent::new(
-            si.id(),
-            si.version,
-            SignerInfoEventDetails::SignerInfoChanged(signer_info),
-        )
+    pub fn signer_info_changed(signer_info: String) -> Self {
+        SignerInfoEvent::SignerInfoChanged(signer_info)
     }
 }
 
-impl fmt::Display for SignerInfoEventDetails {
+impl fmt::Display for SignerInfoEvent {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            SignerInfoEventDetails::KeyAdded(key_id, internal_key_id) => write!(
+            SignerInfoEvent::KeyAdded(key_id, internal_key_id) => write!(
                 f,
                 "added key with key id '{}' and internal key id '{}'",
                 key_id, internal_key_id
             ),
-            SignerInfoEventDetails::KeyRemoved(key_id) => write!(f, "removed key with key id '{}'", key_id),
-            SignerInfoEventDetails::SignerNameChanged(signer_name) => {
+            SignerInfoEvent::KeyRemoved(key_id) => write!(f, "removed key with key id '{}'", key_id),
+            SignerInfoEvent::SignerNameChanged(signer_name) => {
                 write!(f, "signer name changed to '{}'", signer_name)
             }
-            SignerInfoEventDetails::SignerInfoChanged(signer_info) => {
+            SignerInfoEvent::SignerInfoChanged(signer_info) => {
                 write!(f, "signer info changed to '{}'", signer_info)
             }
         }
@@ -121,7 +148,8 @@ impl fmt::Display for SignerInfoEventDetails {
 type SignerInfoCommand = SentCommand<SignerInfoCommandDetails>;
 
 #[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
-enum SignerInfoCommandDetails {
+pub enum SignerInfoCommandDetails {
+    CreateSigner,
     AddKey(KeyIdentifier, String),
     RemoveKey(KeyIdentifier),
     ChangeSignerName(String),
@@ -131,6 +159,7 @@ enum SignerInfoCommandDetails {
 impl fmt::Display for SignerInfoCommandDetails {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            SignerInfoCommandDetails::CreateSigner => write!(f, "Create Signer"),
             SignerInfoCommandDetails::AddKey(key_id, internal_key_id) => write!(
                 f,
                 "Add key with key id '{}' and internal key id '{}'",
@@ -150,6 +179,7 @@ impl fmt::Display for SignerInfoCommandDetails {
 impl WithStorableDetails for SignerInfoCommandDetails {
     fn summary(&self) -> CommandSummary {
         match self {
+            SignerInfoCommandDetails::CreateSigner => CommandSummary::new("signer-create", &self),
             SignerInfoCommandDetails::AddKey(key_id, internal_key_id) => CommandSummary::new("signer-add-key", self)
                 .with_arg("key_id", key_id)
                 .with_arg("internal_key_id", internal_key_id),
@@ -204,7 +234,7 @@ impl SignerInfoCommand {
 //------------ SignerInfo -----------------------------------------------------------------------------------------
 
 #[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
-struct SignerIdentity {
+pub struct SignerIdentity {
     /// An X.509 Subject Public Key Info public key that can be used to verify the identity of the signer.
     public_key: PublicKey,
 
@@ -238,29 +268,25 @@ struct SignerInfo {
     keys: HashMap<KeyIdentifier, String>,
 }
 
-impl SignerInfo {
-    pub fn id(&self) -> &SignerHandle {
-        &self.id
-    }
-}
-
 impl Aggregate for SignerInfo {
     type Command = SignerInfoCommand;
     type StorableCommandDetails = SignerInfoCommandDetails;
     type Event = SignerInfoEvent;
-    type InitEvent = InitSignerInfoEvent;
+
+    type InitCommand = SignerInfoInitCommand;
+    type InitEvent = SignerInfoInitEvent;
+
     type Error = Error;
 
-    fn init(event: InitSignerInfoEvent) -> Result<Self, Self::Error> {
-        let (id, _version, init) = event.unpack();
-        Ok(SignerInfo {
-            id,
-            version: 1,
+    fn init(_handle: MyHandle, init: SignerInfoInitEvent) -> Self {
+        SignerInfo {
+            id: init.id,
+            version: 0,
             signer_name: init.signer_name,
             signer_info: init.signer_info,
             signer_identity: init.signer_identity,
             keys: HashMap::new(),
-        })
+        }
     }
 
     fn version(&self) -> u64 {
@@ -272,17 +298,17 @@ impl Aggregate for SignerInfo {
     }
 
     fn apply(&mut self, event: SignerInfoEvent) {
-        match event.into_details() {
-            SignerInfoEventDetails::KeyAdded(key_id, internal_key_id) => {
+        match event {
+            SignerInfoEvent::KeyAdded(key_id, internal_key_id) => {
                 self.keys.insert(key_id, internal_key_id);
             }
-            SignerInfoEventDetails::KeyRemoved(key_id) => {
+            SignerInfoEvent::KeyRemoved(key_id) => {
                 let _ = self.keys.remove(&key_id);
             }
-            SignerInfoEventDetails::SignerNameChanged(signer_name) => {
+            SignerInfoEvent::SignerNameChanged(signer_name) => {
                 self.signer_name = signer_name;
             }
-            SignerInfoEventDetails::SignerInfoChanged(signer_info) => {
+            SignerInfoEvent::SignerInfoChanged(signer_info) => {
                 self.signer_info = signer_info;
             }
         }
@@ -290,26 +316,50 @@ impl Aggregate for SignerInfo {
 
     fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Event>, Self::Error> {
         Ok(match command.into_details() {
+            SignerInfoCommandDetails::CreateSigner => {
+                // This can't happen really.. we would never send this command
+                // to an existing Signer.
+                //
+                // This could be solved more elegantly, and more verbosely, if
+                // we create a separate SignerInfoStorableCommand that implements
+                // 'WithStorableDetails' - like we have in other cases - because
+                // then our initialisation command could map to that type instead
+                // of having this additional variant for storing.
+                return Err(Error::custom("Signer already initialised"));
+            }
             SignerInfoCommandDetails::AddKey(key_id, internal_key_id) => {
-                vec![SignerInfoEvent::key_added(self, key_id, internal_key_id)]
+                vec![SignerInfoEvent::key_added(key_id, internal_key_id)]
             }
             SignerInfoCommandDetails::RemoveKey(key_id) => {
-                vec![SignerInfoEvent::key_removed(self, key_id)]
+                vec![SignerInfoEvent::key_removed(key_id)]
             }
             SignerInfoCommandDetails::ChangeSignerName(signer_name) => {
                 if signer_name != self.signer_name {
-                    vec![SignerInfoEvent::signer_name_changed(self, signer_name)]
+                    vec![SignerInfoEvent::signer_name_changed(signer_name)]
                 } else {
                     vec![]
                 }
             }
             SignerInfoCommandDetails::ChangeSignerInfo(signer_info) => {
                 if signer_info != self.signer_info {
-                    vec![SignerInfoEvent::signer_info_changed(self, signer_info)]
+                    vec![SignerInfoEvent::signer_info_changed(signer_info)]
                 } else {
                     vec![]
                 }
             }
+        })
+    }
+
+    fn process_init_command(command: SignerInfoInitCommand) -> Result<SignerInfoInitEvent, Self::Error> {
+        let details = command.into_details();
+        Ok(SignerInfoInitEvent {
+            id: details.id,
+            signer_name: details.signer_name,
+            signer_info: details.signer_info,
+            signer_identity: SignerIdentity {
+                public_key: details.public_key,
+                private_key_internal_id: details.private_key_internal_id,
+            },
         })
     }
 }
@@ -367,14 +417,20 @@ impl SignerMapper {
         let signer_handle = SignerHandle::from_str(&uuid::Uuid::new_v4().to_string())
             .map_err(|err| Error::SignerError(format!("Generated UUID is not a valid signer handle: {}", err)))?;
 
-        let init = InitSignerInfoEvent::init(
+        let actor = Actor::system_actor();
+        let cmd = SignerInfoInitCommand::new(
             &signer_handle,
-            signer_name,
-            signer_info,
-            public_key,
-            private_key_internal_id,
+            SignerInfoInitCommandDetails {
+                id: signer_handle.clone(),
+                signer_name: signer_name.to_string(),
+                signer_info: signer_info.to_string(),
+                public_key: public_key.clone(),
+                private_key_internal_id: private_key_internal_id.to_string(),
+            },
+            &actor,
         );
-        self.store.add(init)?;
+
+        self.store.add(cmd)?;
         Ok(signer_handle)
     }
 

@@ -2,7 +2,89 @@ use std::{fmt, str::FromStr};
 
 use rpki::{ca::idexchange::MyHandle, repository::x509::Time};
 
-use crate::commons::eventsourcing::WithStorableDetails;
+use crate::{
+    commons::{
+        crypto::dispatch::signerinfo::{SignerInfoEvent, SignerInfoInitEvent},
+        eventsourcing::{Storable, WithStorableDetails},
+    },
+    daemon::{
+        ca::{CertAuthEvent, CertAuthInitEvent},
+        ta::{TrustAnchorProxyEvent, TrustAnchorProxyInitEvent, TrustAnchorSignerEvent, TrustAnchorSignerInitEvent},
+    },
+    pubd::{RepositoryAccessEvent, RepositoryAccessInitEvent},
+};
+
+pub type OldInitSignerInfoEvent = OldStoredEvent<SignerInfoInitEvent>;
+pub type OldSignerInfoEvent = OldStoredEvent<SignerInfoEvent>;
+
+pub type OldCertAuthInitEvent = OldStoredEvent<CertAuthInitEvent>;
+pub type OldCertAuthEvent = OldStoredEvent<CertAuthEvent>;
+
+pub type OldTrustAnchorProxyInitEvent = OldStoredEvent<TrustAnchorProxyInitEvent>;
+pub type OldTrustAnchorProxyEvent = OldStoredEvent<TrustAnchorProxyEvent>;
+
+pub type OldTrustAnchorSignerInitEvent = OldStoredEvent<TrustAnchorSignerInitEvent>;
+pub type OldTrustAnchorSignerEvent = OldStoredEvent<TrustAnchorSignerEvent>;
+
+pub type OldRepositoryAccessInitEvent = OldStoredEvent<RepositoryAccessInitEvent>;
+pub type OldRepositoryAccessEvent = OldStoredEvent<RepositoryAccessEvent>;
+
+pub trait OldEvent: fmt::Display + Eq + PartialEq + Send + Sync + Storable + 'static {
+    /// Identifies the aggregate, useful when storing and retrieving the event.
+    fn handle(&self) -> &MyHandle;
+
+    /// The version of the aggregate that this event updates. An aggregate that
+    /// is currently at version x, will get version x + 1, when the event for
+    /// version x is applied.
+    fn version(&self) -> u64;
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct OldStoredEvent<E: fmt::Display + Eq + PartialEq + Storable + 'static> {
+    id: MyHandle,
+    version: u64,
+    #[serde(deserialize_with = "E::deserialize")]
+    details: E,
+}
+
+impl<E: fmt::Display + Eq + PartialEq + Storable + Send + Sync + 'static> OldStoredEvent<E> {
+    pub fn new(id: &MyHandle, version: u64, event: E) -> Self {
+        OldStoredEvent {
+            id: id.clone(),
+            version,
+            details: event,
+        }
+    }
+
+    pub fn details(&self) -> &E {
+        &self.details
+    }
+
+    pub fn into_details(self) -> E {
+        self.details
+    }
+
+    /// Return the parts of this event.
+    pub fn unpack(self) -> (MyHandle, u64, E) {
+        (self.id, self.version, self.details)
+    }
+}
+
+impl<E: fmt::Display + Eq + PartialEq + Storable + Send + Sync + 'static> OldEvent for OldStoredEvent<E> {
+    fn handle(&self) -> &MyHandle {
+        &self.id
+    }
+
+    fn version(&self) -> u64 {
+        self.version
+    }
+}
+
+impl<E: fmt::Display + Eq + PartialEq + Storable + Send + Sync + 'static> fmt::Display for OldStoredEvent<E> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "id: {} version: {} details: {}", self.id, self.version, self.details)
+    }
+}
 
 //------------ OldStoredCommand ----------------------------------------------
 

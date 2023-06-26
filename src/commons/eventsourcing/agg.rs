@@ -1,4 +1,6 @@
-use super::{Command, Event, Storable, StoredCommand};
+use rpki::ca::idexchange::MyHandle;
+
+use super::{Command, Event, InitCommand, InitEvent, Storable, StoredCommand};
 use crate::commons::eventsourcing::WithStorableDetails;
 
 //------------ Aggregate -----------------------------------------------------
@@ -19,18 +21,34 @@ use crate::commons::eventsourcing::WithStorableDetails;
 /// 'events' are returned that contain state changes to the aggregate. These events
 /// still need to be applied to become persisted.
 pub trait Aggregate: Storable + Send + Sync + 'static {
+    type InitCommand: InitCommand<StorableDetails = Self::StorableCommandDetails>;
+    type InitEvent: InitEvent;
+
     type Command: Command<StorableDetails = Self::StorableCommandDetails>;
-    type StorableCommandDetails: WithStorableDetails;
     type Event: Event;
-    type InitEvent: Event;
+
+    type StorableCommandDetails: WithStorableDetails;
+
     type Error: std::error::Error + Send + Sync;
 
-    /// Creates a new instance. Expects an event with data needed to
-    /// initialize the instance. Typically this means that a specific
-    /// 'create' event is passed, with all the needed data, or just an empty
-    /// marker if no data is needed. Implementations must return an error in
-    /// case the instance cannot be created.
-    fn init(event: Self::InitEvent) -> Result<Self, Self::Error>;
+    /// Creates a new instance. Expects an InitEvent with data needed to
+    /// initialize the instance. This is not allowed to fail - it's just
+    /// data and MUST not have any side effects.
+    ///
+    /// The InitEvent is generated once using `process_init_command`.
+    ///
+    /// The handle is not strictly necessary inside an aggregate, it is
+    /// what you use to refer to an instance in the AggregateStore. But,
+    /// it's quite convenient to store it inside an Aggregate as well.
+    ///
+    /// More importantly, the handle is not typically included in the
+    /// InitEvent itself.
+    fn init(handle: MyHandle, event: Self::InitEvent) -> Self;
+
+    /// Tries to initialise a new InitEvent for a new instance. This
+    /// can fail. The InitEvent is not applied here, but returned so
+    /// that we can re-build state from history.
+    fn process_init_command(command: Self::InitCommand) -> Result<Self::InitEvent, Self::Error>;
 
     /// Returns the current version of the aggregate.
     fn version(&self) -> u64;
@@ -52,7 +70,7 @@ pub trait Aggregate: Storable + Send + Sync + 'static {
     /// - applies any contained event
     ///
     /// NOTE:
-    fn apply_command(&mut self, command: StoredCommand<Self::StorableCommandDetails, Self::Event>) {
+    fn apply_command(&mut self, command: StoredCommand<Self::StorableCommandDetails, Self::Event, Self::InitEvent>) {
         self.increment_version();
         if let Some(events) = command.into_events() {
             for event in events {

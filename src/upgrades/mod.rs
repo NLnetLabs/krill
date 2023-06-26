@@ -320,6 +320,10 @@ pub trait UpgradeStore {
         // cannot panic as a u64 cannot contain a Scope::SEPARATOR
         Key::new_scoped(scope, Segment::parse(&format!("delta-{nr}.json")).unwrap())
     }
+
+    fn new_stored_command_key(scope: Scope, version: u64) -> Key {
+        Key::new_scoped(scope, Segment::parse(&format!("command-{version}.json")).unwrap())
+    }
 }
 
 /// Prepares a Krill upgrade related data migration. If no data migration is needed

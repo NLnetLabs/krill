@@ -1,11 +1,11 @@
-use std::fmt;
+use std::{fmt, marker::PhantomData};
 
 use rpki::{ca::idexchange::MyHandle, repository::x509::Time};
 
 use crate::commons::{
     actor::Actor,
     api::{CommandHistoryRecord, CommandSummary},
-    eventsourcing::{Event, Storable},
+    eventsourcing::{Event, InitEvent, Storable},
 };
 
 //------------ WithStorableDetails -------------------------------------------
@@ -17,6 +17,87 @@ use crate::commons::{
 /// CommandSummary for use in history.
 pub trait WithStorableDetails: Storable + Send + Sync {
     fn summary(&self) -> CommandSummary;
+}
+
+//------------ InitCommand ---------------------------------------------------
+
+/// The InitCommand is used to create an aggregate.
+///
+/// It should be storable in the same way as normal commands, sent to this
+/// aggregate type so that they can use the same kind of ProcessedCommand
+/// and CommandHistoryRecord
+pub trait InitCommand: fmt::Display + Send + Sync {
+    /// Identify the type of storable component for this command. Commands
+    /// may contain short-lived things (e.g. an Arc<Signer>) or even secrets
+    /// which should not be persisted.
+    type StorableDetails: WithStorableDetails;
+
+    /// Identifies the aggregate, useful when storing and retrieving the event.
+    fn handle(&self) -> &MyHandle;
+
+    /// The actor who sent the command. There is no default so as to avoid
+    /// accidentally attributing a command by a user instead as if it were an
+    /// internal command by Krill itself.
+    fn actor(&self) -> &str;
+
+    /// Get the storable information for this command
+    fn store(&self) -> Self::StorableDetails;
+}
+
+//------------ SentInitCommand -----------------------------------------------
+
+/// Convenience wrapper so that implementations can just implement
+/// ['InitCommandDetails'] and leave the id and version boilerplate.
+pub struct SentInitCommand<I: InitCommandDetails> {
+    handle: MyHandle,
+    details: I,
+    actor: String,
+}
+
+impl<I: InitCommandDetails> InitCommand for SentInitCommand<I> {
+    type StorableDetails = I::StorableDetails;
+
+    fn handle(&self) -> &MyHandle {
+        &self.handle
+    }
+
+    fn actor(&self) -> &str {
+        &self.actor
+    }
+
+    fn store(&self) -> Self::StorableDetails {
+        self.details.store()
+    }
+}
+
+impl<I: InitCommandDetails> SentInitCommand<I> {
+    pub fn new(id: &MyHandle, details: I, actor: &Actor) -> Self {
+        SentInitCommand {
+            handle: id.clone(),
+            details,
+            actor: actor.to_string(),
+        }
+    }
+
+    pub fn into_details(self) -> I {
+        self.details
+    }
+}
+
+impl<I: InitCommandDetails> fmt::Display for SentInitCommand<I> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "initialise '{}'", self.handle)
+    }
+}
+
+//------------ InitCommandDetails --------------------------------------------
+
+/// Implement this for an enum with CommandDetails, so you you can reuse the
+/// id and version boilerplate from ['SentCommand'].
+pub trait InitCommandDetails: fmt::Display + Send + Sync + 'static {
+    type StorableDetails: WithStorableDetails;
+
+    fn store(&self) -> Self::StorableDetails;
 }
 
 //------------ Command -------------------------------------------------------
@@ -128,15 +209,21 @@ pub trait CommandDetails: fmt::Display + Send + Sync + 'static {
     fn store(&self) -> Self::StorableDetails;
 }
 
-pub struct StoredCommandBuilder<D: WithStorableDetails> {
+//------------ StoredCommandBuilder ------------------------------------------
+
+/// Helper to create StoredCommand instances that will contain the
+/// atomic change sets for Aggregates.
+pub struct StoredCommandBuilder<D: WithStorableDetails, E: Event, I: InitEvent> {
     actor: String,
     time: Time,
     handle: MyHandle,
     version: u64, // version of aggregate this was applied to (successful or not)
     details: D,
+    _e: PhantomData<E>,
+    _i: PhantomData<I>,
 }
 
-impl<D: WithStorableDetails> StoredCommandBuilder<D> {
+impl<D: WithStorableDetails, E: Event, I: InitEvent> StoredCommandBuilder<D, E, I> {
     pub fn new(
         actor: String,
         time: Time,
@@ -150,18 +237,24 @@ impl<D: WithStorableDetails> StoredCommandBuilder<D> {
             handle,
             version,
             details,
+            _e: PhantomData,
+            _i: PhantomData,
         }
     }
 
-    pub fn finish_with_events<E: Event>(self, events: Vec<E>) -> StoredCommand<D, E> {
+    pub fn finish_with_init_event(self, init_event: I) -> StoredCommand<D, E, I> {
+        self.with_effect(StoredEffect::init(init_event))
+    }
+
+    pub fn finish_with_events(self, events: Vec<E>) -> StoredCommand<D, E, I> {
         self.with_effect(StoredEffect::success(events))
     }
 
-    pub fn finish_with_error<E: Event>(self, error: impl fmt::Display) -> StoredCommand<D, E> {
+    pub fn finish_with_error(self, error: impl fmt::Display) -> StoredCommand<D, E, I> {
         self.with_effect(StoredEffect::error(error))
     }
 
-    fn with_effect<E: Event>(self, effect: StoredEffect<E>) -> StoredCommand<D, E> {
+    fn with_effect(self, effect: StoredEffect<E, I>) -> StoredCommand<D, E, I> {
         StoredCommand::new(self.actor, self.time, self.handle, self.version, self.details, effect)
     }
 }
@@ -173,18 +266,25 @@ impl<D: WithStorableDetails> StoredCommandBuilder<D> {
 /// should not be stored.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(bound(deserialize = "E: Event"))]
-pub struct StoredCommand<D: WithStorableDetails, E: Event> {
+pub struct StoredCommand<D: WithStorableDetails, E: Event, I: InitEvent> {
     actor: String,
     time: Time,
     handle: MyHandle,
     version: u64, // version of aggregate this was applied to (successful or not)
     #[serde(deserialize_with = "D::deserialize")]
     details: D,
-    effect: StoredEffect<E>,
+    effect: StoredEffect<E, I>,
 }
 
-impl<D: WithStorableDetails, E: Event> StoredCommand<D, E> {
-    pub fn new(actor: String, time: Time, handle: MyHandle, version: u64, details: D, effect: StoredEffect<E>) -> Self {
+impl<D: WithStorableDetails, E: Event, I: InitEvent> StoredCommand<D, E, I> {
+    pub fn new(
+        actor: String,
+        time: Time,
+        handle: MyHandle,
+        version: u64,
+        details: D,
+        effect: StoredEffect<E, I>,
+    ) -> Self {
         StoredCommand {
             actor,
             time,
@@ -215,27 +315,34 @@ impl<D: WithStorableDetails, E: Event> StoredCommand<D, E> {
         &self.details
     }
 
-    pub fn effect(&self) -> &StoredEffect<E> {
+    pub fn effect(&self) -> &StoredEffect<E, I> {
         &self.effect
     }
 
     pub fn events(&self) -> Option<&Vec<E>> {
         match &self.effect {
-            StoredEffect::Error { .. } => None,
+            StoredEffect::Error { .. } | StoredEffect::Init { .. } => None,
             StoredEffect::Success { events } => Some(events),
         }
     }
 
     pub fn into_events(self) -> Option<Vec<E>> {
         match self.effect {
-            StoredEffect::Error { .. } => None,
+            StoredEffect::Error { .. } | StoredEffect::Init { .. } => None,
             StoredEffect::Success { events } => Some(events),
+        }
+    }
+
+    pub fn into_init(self) -> Option<I> {
+        match self.effect {
+            StoredEffect::Init { init } => Some(init),
+            _ => None,
         }
     }
 }
 
-impl<D: WithStorableDetails, E: Event> From<StoredCommand<D, E>> for CommandHistoryRecord {
-    fn from(command: StoredCommand<D, E>) -> Self {
+impl<D: WithStorableDetails, E: Event, I: InitEvent> From<StoredCommand<D, E, I>> for CommandHistoryRecord {
+    fn from(command: StoredCommand<D, E, I>) -> Self {
         CommandHistoryRecord {
             actor: command.actor,
             timestamp: command.time.timestamp_millis(),
@@ -251,12 +358,13 @@ impl<D: WithStorableDetails, E: Event> From<StoredCommand<D, E>> for CommandHist
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case", tag = "result", bound(deserialize = "E: Event"))]
-pub enum StoredEffect<E: Event> {
+pub enum StoredEffect<E: Event, I: InitEvent> {
     Error { msg: String },
     Success { events: Vec<E> },
+    Init { init: I },
 }
 
-impl<E: Event> StoredEffect<E> {
+impl<E: Event, I: InitEvent> StoredEffect<E, I> {
     pub fn error(e: impl fmt::Display) -> Self {
         Self::Error { msg: e.to_string() }
     }
@@ -265,16 +373,13 @@ impl<E: Event> StoredEffect<E> {
         Self::Success { events }
     }
 
-    pub fn successful(&self) -> bool {
-        match self {
-            StoredEffect::Error { .. } => false,
-            StoredEffect::Success { .. } => true,
-        }
+    pub fn init(init: I) -> Self {
+        Self::Init { init }
     }
 
     pub fn events(&self) -> Option<&Vec<E>> {
         match self {
-            StoredEffect::Error { .. } => None,
+            StoredEffect::Error { .. } | StoredEffect::Init { .. } => None,
             StoredEffect::Success { events } => Some(events),
         }
     }

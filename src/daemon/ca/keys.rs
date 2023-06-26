@@ -23,7 +23,7 @@ use crate::{
         error::Error,
         KrillResult,
     },
-    daemon::ca::CaEvtDet,
+    daemon::ca::CertAuthEvent,
 };
 
 //------------ CertifiedKey --------------------------------------------------
@@ -346,7 +346,7 @@ impl KeyState {
         base_repo: &RepoInfo,
         name_space: &str,
         signer: &KrillSigner,
-    ) -> KrillResult<Vec<CaEvtDet>> {
+    ) -> KrillResult<Vec<CertAuthEvent>> {
         let mut keys_for_requests = vec![];
 
         match self {
@@ -394,7 +394,7 @@ impl KeyState {
             let req =
                 self.create_issuance_req(base_repo, name_space, entitlement.class_name().clone(), key_id, signer)?;
 
-            res.push(CaEvtDet::CertificateRequested {
+            res.push(CertAuthEvent::CertificateRequested {
                 resource_class_name: rcn.clone(),
                 req,
                 ki: *key_id,
@@ -408,7 +408,7 @@ impl KeyState {
         {
             if !self.knows_key(key) {
                 let revoke_req = RevocationRequest::new(entitlement.class_name().clone(), key);
-                res.push(CaEvtDet::UnexpectedKeyFound {
+                res.push(CertAuthEvent::UnexpectedKeyFound {
                     resource_class_name: rcn.clone(),
                     revoke_req,
                 });
@@ -424,7 +424,7 @@ impl KeyState {
         base_repo: &RepoInfo,
         name_space: &str,
         signer: &KrillSigner,
-    ) -> KrillResult<Vec<CaEvtDet>> {
+    ) -> KrillResult<Vec<CertAuthEvent>> {
         let mut res = vec![];
 
         let keys = match self {
@@ -437,7 +437,7 @@ impl KeyState {
 
         for ki in keys {
             let req = self.create_issuance_req(base_repo, name_space, rcn.clone(), ki, signer)?;
-            res.push(CaEvtDet::CertificateRequested {
+            res.push(CertAuthEvent::CertificateRequested {
                 resource_class_name: rcn.clone(),
                 req,
                 ki: *ki,
@@ -546,7 +546,7 @@ impl KeyState {
         base_repo: &RepoInfo,
         name_space: &str,
         signer: &KrillSigner,
-    ) -> KrillResult<Vec<CaEvtDet>> {
+    ) -> KrillResult<Vec<CertAuthEvent>> {
         match self {
             KeyState::Active(_current) => {
                 let pending_key_id = signer.create_key()?;
@@ -555,11 +555,11 @@ impl KeyState {
                     self.create_issuance_req(base_repo, name_space, parent_class_name, &pending_key_id, signer)?;
 
                 Ok(vec![
-                    CaEvtDet::KeyRollPendingKeyAdded {
+                    CertAuthEvent::KeyRollPendingKeyAdded {
                         resource_class_name: resource_class_name.clone(),
                         pending_key_id,
                     },
-                    CaEvtDet::CertificateRequested {
+                    CertAuthEvent::CertificateRequested {
                         resource_class_name,
                         req,
                         ki: pending_key_id,
@@ -577,14 +577,14 @@ impl KeyState {
         resource_class_name: ResourceClassName,
         parent_class_name: ResourceClassName,
         signer: &KrillSigner,
-    ) -> KrillResult<CaEvtDet> {
+    ) -> KrillResult<CertAuthEvent> {
         match self {
             KeyState::RollNew(new, current) => {
                 if new.request().is_some() || current.request().is_some() {
                     Err(Error::KeyRollActivatePendingRequests)
                 } else {
                     let revoke_req = Self::revoke_key(parent_class_name, current.key_id(), signer)?;
-                    Ok(CaEvtDet::KeyRollActivated {
+                    Ok(CertAuthEvent::KeyRollActivated {
                         resource_class_name,
                         revoke_req,
                     })

@@ -5,20 +5,23 @@ use rpki::{ca::idexchange::MyHandle, repository::x509::Time};
 
 use crate::{
     commons::{
+        actor::Actor,
         api::StorableRepositoryCommand,
-        eventsourcing::{segment, AggregateStore, Key, KeyValueStore, Scope, Segment, StoredEvent, StoredValueInfo},
+        eventsourcing::{
+            segment, AggregateStore, Key, KeyValueStore, Scope, Segment, StoredCommandBuilder, StoredValueInfo,
+        },
         util::KrillVersion,
     },
     constants::{KRILL_VERSION, PUBSERVER_NS},
     daemon::config::Config,
-    pubd::{RepositoryAccess, RepositoryAccessEvent, RepositoryAccessInitDetails},
+    pubd::{RepositoryAccess, RepositoryAccessEvent, RepositoryAccessInitEvent},
     upgrades::{
-        pre_0_10_0::OldRepositoryAccessEvent, OldStoredCommand, PrepareUpgradeError, UpgradeMode, UpgradeResult,
+        pre_0_10_0::Pre0_10RepositoryAccessEvent, OldStoredCommand, PrepareUpgradeError, UpgradeMode, UpgradeResult,
         UpgradeStore, UpgradeVersions,
     },
 };
 
-use super::OldRepositoryAccessIni;
+use super::Pre0_10RepositoryAccessIni;
 
 /// Migrates the events, snapshots and info for the event-sourced RepositoryAccess.
 /// There is no need to migrate the mutable RepositoryContent structure for this migration.
@@ -75,15 +78,42 @@ impl UpgradeStore for PublicationServerRepositoryAccessMigration {
         if data_upgrade_info.last_event == 0 {
             let init_key = Self::event_key(scope.clone(), 0);
 
-            let old_init: OldRepositoryAccessIni = self
+            let old_init: Pre0_10RepositoryAccessIni = self
                 .current_kv_store
                 .get(&init_key)?
                 .ok_or_else(|| PrepareUpgradeError::custom("Cannot read Publication Server init event"))?;
 
             let (_, _, old_init) = old_init.unpack();
-            let init: RepositoryAccessInitDetails = old_init.into();
-            let init = StoredEvent::new(&handle, 0, init);
-            self.new_kv_store.store(&init_key, &init)?;
+            let init_event: RepositoryAccessInitEvent = old_init.into();
+
+            // But from 0.14.x and up we will have command '0' for the init.
+            // We will have to make up some values for the actor and time.
+            let actor = Actor::system_actor();
+
+            // The time is tricky.. our best guess is to set this to the same
+            // value as the first command, if there is any. In the very unlikely
+            // case that there is no first command, then we might as well set
+            // it to now.
+            let time = if let Some(first_command) = old_cmd_keys.first() {
+                let cmd: OldStoredCommand<StorableRepositoryCommand> = self.get(first_command)?;
+                cmd.time()
+            } else {
+                Time::now()
+            };
+
+            let details = StorableRepositoryCommand::Initialise;
+
+            // TODO: simplify type for StoredCommand and its Builder to A?
+            let builder = StoredCommandBuilder::<
+                StorableRepositoryCommand,
+                RepositoryAccessEvent,
+                RepositoryAccessInitEvent,
+            >::new(actor.to_string(), time, handle.clone(), 0, details);
+            let stored_command = builder.finish_with_init_event(init_event);
+
+            let command_key = Self::new_stored_command_key(scope.clone(), 0);
+
+            self.new_kv_store.store(&command_key, &stored_command)?;
         }
 
         // Report the amount of (remaining) work
@@ -130,13 +160,13 @@ impl UpgradeStore for PublicationServerRepositoryAccessMigration {
                 for v in event_versions {
                     let event_key = Self::event_key(scope.clone(), *v);
                     trace!("  +- event: {}", event_key);
-                    let evt: OldRepositoryAccessEvent = self
+                    let evt: Pre0_10RepositoryAccessEvent = self
                         .current_kv_store
                         .get(&event_key)?
                         .ok_or_else(|| PrepareUpgradeError::Custom(format!("Cannot parse old event: {}", event_key)))?;
 
                     // Migrate into the current event type and save
-                    let evt: RepositoryAccessEvent = evt.into();
+                    let evt: RepositoryAccessEvent = evt.into_details().into();
                     self.new_kv_store.store(&event_key, &evt)?;
 
                     data_upgrade_info.last_event = *v;

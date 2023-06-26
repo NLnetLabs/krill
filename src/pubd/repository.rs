@@ -44,14 +44,17 @@ use crate::{
         REPOSITORY_RSYNC_DIR, RRDP_FIRST_SERIAL,
     },
     daemon::{
+        ca::Rfc8183Id,
         config::{Config, RrdpUpdatesConfig},
         ta::TA_NAME,
     },
     pubd::{
-        publishers::Publisher, RepoAccessCmd, RepoAccessCmdDet, RepositoryAccessEvent, RepositoryAccessEventDetails,
-        RepositoryAccessIni, RepositoryAccessInitDetails,
+        publishers::Publisher, RepositoryAccessCommand, RepositoryAccessCommandDetails, RepositoryAccessEvent,
+        RepositoryAccessInitEvent,
     },
 };
+
+use super::commands::{RepositoryAccessInitCommand, RepositoryAccessInitCommandDetails};
 
 //------------ RepositoryContentProxy ----------------------------------------
 
@@ -1539,15 +1542,21 @@ impl RepositoryAccessProxy {
         self.store.has(&self.key).map_err(Error::AggregateStoreError)
     }
 
-    pub fn init(&self, uris: PublicationServerUris, signer: &KrillSigner) -> KrillResult<()> {
+    pub fn init(&self, uris: PublicationServerUris, signer: Arc<KrillSigner>) -> KrillResult<()> {
         if self.initialized()? {
             Err(Error::RepositoryServerAlreadyInitialized)
         } else {
+            let actor = Actor::system_actor();
+
             let (rrdp_base_uri, rsync_jail) = uris.unpack();
 
-            let ini = RepositoryAccessInitDetails::init(&self.key, rsync_jail, rrdp_base_uri, signer)?;
+            let cmd = RepositoryAccessInitCommand::new(
+                &self.key,
+                RepositoryAccessInitCommandDetails::new(rrdp_base_uri, rsync_jail, signer),
+                &actor,
+            );
 
-            self.store.add(ini)?;
+            self.store.add(cmd)?;
 
             Ok(())
         }
@@ -1587,7 +1596,7 @@ impl RepositoryAccessProxy {
         let id_cert = req.validate().map_err(Error::rfc8183)?;
         let base_uri = self.read()?.base_uri_for(&name)?;
 
-        let cmd = RepoAccessCmdDet::add_publisher(&self.key, id_cert.into(), name, base_uri, actor);
+        let cmd = RepositoryAccessCommandDetails::add_publisher(&self.key, id_cert.into(), name, base_uri, actor);
         self.store.command(cmd)?;
         Ok(())
     }
@@ -1596,7 +1605,7 @@ impl RepositoryAccessProxy {
         if !self.initialized()? {
             Err(Error::RepositoryServerNotInitialized)
         } else {
-            let cmd = RepoAccessCmdDet::remove_publisher(&self.key, name, actor);
+            let cmd = RepositoryAccessCommandDetails::remove_publisher(&self.key, name, actor);
             self.store.command(cmd)?;
             Ok(())
         }
@@ -1665,24 +1674,34 @@ impl RepositoryAccess {
 /// # Event Sourcing support
 ///
 impl Aggregate for RepositoryAccess {
-    type Command = RepoAccessCmd;
+    type Command = RepositoryAccessCommand;
     type StorableCommandDetails = StorableRepositoryCommand;
     type Event = RepositoryAccessEvent;
-    type InitEvent = RepositoryAccessIni;
+
+    type InitCommand = RepositoryAccessInitCommand;
+    type InitEvent = RepositoryAccessInitEvent;
     type Error = Error;
 
-    fn init(event: Self::InitEvent) -> Result<Self, Self::Error> {
-        let (handle, _version, details) = event.unpack();
-        let (id_cert, rrdp_base, rsync_base) = details.unpack();
+    fn init(handle: MyHandle, event: Self::InitEvent) -> Self {
+        let (id_cert, rrdp_base, rsync_base) = event.unpack();
 
-        Ok(RepositoryAccess {
+        RepositoryAccess {
             handle,
             version: 1,
             id_cert,
             publishers: HashMap::new(),
             rsync_base,
             rrdp_base,
-        })
+        }
+    }
+
+    fn process_init_command(command: Self::InitCommand) -> Result<Self::InitEvent, Self::Error> {
+        let details = command.into_details();
+        let (rrdp_base_uri, rsync_jail, signer) = details.unpack();
+
+        let id_cert_info = Rfc8183Id::generate(&signer)?.into();
+
+        Ok(RepositoryAccessInitEvent::new(id_cert_info, rrdp_base_uri, rsync_jail))
     }
 
     fn version(&self) -> u64 {
@@ -1694,11 +1713,11 @@ impl Aggregate for RepositoryAccess {
     }
 
     fn apply(&mut self, event: Self::Event) {
-        match event.into_details() {
-            RepositoryAccessEventDetails::PublisherAdded { name, publisher } => {
+        match event {
+            RepositoryAccessEvent::PublisherAdded { name, publisher } => {
                 self.publishers.insert(name, publisher);
             }
-            RepositoryAccessEventDetails::PublisherRemoved { name } => {
+            RepositoryAccessEvent::PublisherRemoved { name } => {
                 self.publishers.remove(&name);
             }
         }
@@ -1711,12 +1730,12 @@ impl Aggregate for RepositoryAccess {
         );
 
         match command.into_details() {
-            RepoAccessCmdDet::AddPublisher {
+            RepositoryAccessCommandDetails::AddPublisher {
                 id_cert,
                 name,
                 base_uri,
             } => self.add_publisher(id_cert, name, base_uri),
-            RepoAccessCmdDet::RemovePublisher { name } => self.remove_publisher(name),
+            RepositoryAccessCommandDetails::RemovePublisher { name } => self.remove_publisher(name),
         }
     }
 }
@@ -1736,12 +1755,7 @@ impl RepositoryAccess {
         } else {
             let publisher = Publisher::new(id_cert, base_uri);
 
-            Ok(vec![RepositoryAccessEventDetails::publisher_added(
-                &self.handle,
-                self.version,
-                name,
-                publisher,
-            )])
+            Ok(vec![RepositoryAccessEvent::publisher_added(name, publisher)])
         }
     }
 
@@ -1750,11 +1764,7 @@ impl RepositoryAccess {
         if !self.has_publisher(&publisher_handle) {
             Err(Error::PublisherUnknown(publisher_handle))
         } else {
-            Ok(vec![RepositoryAccessEventDetails::publisher_removed(
-                &self.handle,
-                self.version,
-                publisher_handle,
-            )])
+            Ok(vec![RepositoryAccessEvent::publisher_removed(publisher_handle)])
         }
     }
 

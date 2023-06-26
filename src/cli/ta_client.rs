@@ -39,6 +39,7 @@ use crate::{
         ta::{
             TrustAnchorHandle, TrustAnchorProxySignerExchanges, TrustAnchorSignedRequest, TrustAnchorSignedResponse,
             TrustAnchorSigner, TrustAnchorSignerCommand, TrustAnchorSignerInfo, TrustAnchorSignerInitCommand,
+            TrustAnchorSignerInitCommandDetails,
         },
     },
 };
@@ -1019,18 +1020,20 @@ impl TrustAnchorSignerManager {
         if self.store.has(&self.ta_handle)? {
             Err(Error::other("Trust Anchor Signer was already initialised."))
         } else {
-            let signer_init_command = TrustAnchorSignerInitCommand {
-                handle: self.ta_handle.clone(),
-                proxy_id: info.proxy_id,
-                repo_info: info.repo_info,
-                tal_https: info.tal_https,
-                tal_rsync: info.tal_rsync,
-                private_key_pem: info.private_key_pem,
-                signer: self.signer.clone(),
-            };
+            let cmd = TrustAnchorSignerInitCommand::new(
+                &self.ta_handle,
+                TrustAnchorSignerInitCommandDetails {
+                    proxy_id: info.proxy_id,
+                    repo_info: info.repo_info,
+                    tal_https: info.tal_https,
+                    tal_rsync: info.tal_rsync,
+                    private_key_pem: info.private_key_pem,
+                    signer: self.signer.clone(),
+                },
+                &self.actor,
+            );
 
-            let signer_init_event = TrustAnchorSigner::create_init(signer_init_command)?;
-            self.store.add(signer_init_event)?;
+            self.store.add(cmd)?;
 
             Ok(TrustAnchorClientApiResponse::Empty)
         }

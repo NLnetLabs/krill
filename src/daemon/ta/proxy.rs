@@ -5,11 +5,11 @@
 /// is handled by the Trust Anchor Signer instead.
 use super::*;
 
-use std::{collections::HashMap, convert::TryFrom, fmt};
+use std::{collections::HashMap, convert::TryFrom, fmt, sync::Arc};
 
 use rpki::{
     ca::{
-        idexchange::{self, ChildHandle},
+        idexchange::{self, ChildHandle, MyHandle},
         provisioning::{ResourceClassEntitlements, SigningCert},
     },
     crypto::KeyIdentifier,
@@ -21,7 +21,8 @@ use crate::{
         api::{AddChildRequest, IdCertInfo, RepositoryContact},
         crypto::{CsrInfo, KrillSigner},
         error::Error,
-        eventsourcing, KrillResult,
+        eventsourcing::{self, Event, InitCommandDetails, InitEvent},
+        KrillResult,
     },
     daemon::{
         ca::{Rfc8183Id, UsedKeyState},
@@ -90,17 +91,44 @@ pub struct TrustAnchorProxy {
 
 //------------ TrustAnchorProxy: Commands and Events -----------------------
 
+pub type TrustAnchorProxyInitCommand = eventsourcing::SentInitCommand<TrustAnchorProxyInitCommandDetails>;
+
+impl TrustAnchorProxyInitCommand {
+    pub fn make(id: &MyHandle, signer: Arc<KrillSigner>, actor: &Actor) -> Self {
+        TrustAnchorProxyInitCommand::new(id, TrustAnchorProxyInitCommandDetails { signer }, actor)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct TrustAnchorProxyInitCommandDetails {
+    signer: Arc<KrillSigner>,
+}
+
+impl fmt::Display for TrustAnchorProxyInitCommandDetails {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        TrustAnchorProxyCommandDetails::Create.fmt(f)
+    }
+}
+
+impl InitCommandDetails for TrustAnchorProxyInitCommandDetails {
+    type StorableDetails = TrustAnchorProxyCommandDetails;
+
+    fn store(&self) -> Self::StorableDetails {
+        TrustAnchorProxyCommandDetails::Create
+    }
+}
+
 pub type TrustAnchorProxyCommand = eventsourcing::SentCommand<TrustAnchorProxyCommandDetails>;
-pub type TrustAnchorProxyInitEvent = eventsourcing::StoredEvent<TrustAnchorProxyInitDetails>;
-pub type TrustAnchorProxyEvent = eventsourcing::StoredEvent<TrustAnchorProxyEventDetails>;
 
 // Initialisation
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct TrustAnchorProxyInitDetails {
+pub struct TrustAnchorProxyInitEvent {
     id: IdCertInfo,
 }
 
-impl fmt::Display for TrustAnchorProxyInitDetails {
+impl InitEvent for TrustAnchorProxyInitEvent {}
+
+impl fmt::Display for TrustAnchorProxyInitEvent {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // note that this is a summary, full details are stored in the init event.
         write!(f, "Trust Anchor Proxy was initialised.")
@@ -110,7 +138,7 @@ impl fmt::Display for TrustAnchorProxyInitDetails {
 // Events
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
-pub enum TrustAnchorProxyEventDetails {
+pub enum TrustAnchorProxyEvent {
     // Publication Support
     RepositoryAdded(RepositoryContact),
 
@@ -125,12 +153,14 @@ pub enum TrustAnchorProxyEventDetails {
     ChildResponseGiven(ChildHandle, KeyIdentifier),
 }
 
-impl fmt::Display for TrustAnchorProxyEventDetails {
+impl Event for TrustAnchorProxyEvent {}
+
+impl fmt::Display for TrustAnchorProxyEvent {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // note that this is a summary, full details are stored in the json.
         match self {
             // Publication Support
-            TrustAnchorProxyEventDetails::RepositoryAdded(repository) => {
+            TrustAnchorProxyEvent::RepositoryAdded(repository) => {
                 write!(
                     f,
                     "Added repository with service uri: {}",
@@ -139,24 +169,24 @@ impl fmt::Display for TrustAnchorProxyEventDetails {
             }
 
             // Proxy -> Signer interactions
-            TrustAnchorProxyEventDetails::SignerAdded(signer) => {
+            TrustAnchorProxyEvent::SignerAdded(signer) => {
                 write!(f, "Added signer with ID certificate hash: {}", signer.id.hash())
             }
-            TrustAnchorProxyEventDetails::SignerRequestMade(nonce) => {
+            TrustAnchorProxyEvent::SignerRequestMade(nonce) => {
                 write!(f, "Created signer request with nonce '{}'", nonce)
             }
-            TrustAnchorProxyEventDetails::SignerResponseReceived(response) => {
+            TrustAnchorProxyEvent::SignerResponseReceived(response) => {
                 write!(f, "Received signer response with nonce '{}'", response.content().nonce)
             }
 
             // Children
-            TrustAnchorProxyEventDetails::ChildAdded(child) => {
+            TrustAnchorProxyEvent::ChildAdded(child) => {
                 write!(f, "Added child: {}, with resources: {}", child.handle, child.resources)
             }
-            TrustAnchorProxyEventDetails::ChildRequestAdded(child_handle, request) => {
+            TrustAnchorProxyEvent::ChildRequestAdded(child_handle, request) => {
                 write!(f, "Added request for child {}: {}", child_handle, request)
             }
-            TrustAnchorProxyEventDetails::ChildResponseGiven(child_handle, key) => {
+            TrustAnchorProxyEvent::ChildResponseGiven(child_handle, key) => {
                 write!(f, "Given response to child {} for key: {}", child_handle, key)
             }
         }
@@ -168,6 +198,9 @@ impl fmt::Display for TrustAnchorProxyEventDetails {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum TrustAnchorProxyCommandDetails {
+    // Create new instance - cannot be sent to an existing instance
+    Create,
+
     // Publication Support
     AddRepository(RepositoryContact),
 
@@ -186,6 +219,9 @@ impl fmt::Display for TrustAnchorProxyCommandDetails {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // note that this is a summary, full details are stored in the json.
         match self {
+            TrustAnchorProxyCommandDetails::Create => {
+                write!(f, "Create TA proxy")
+            }
             // Publication Support
             TrustAnchorProxyCommandDetails::AddRepository(repository) => {
                 write!(f, "Add repository at: {}", repository.server_info().service_uri())
@@ -228,6 +264,10 @@ impl fmt::Display for TrustAnchorProxyCommandDetails {
 impl eventsourcing::WithStorableDetails for TrustAnchorProxyCommandDetails {
     fn summary(&self) -> crate::commons::api::CommandSummary {
         match self {
+            // Initialisation
+            TrustAnchorProxyCommandDetails::Create => {
+                crate::commons::api::CommandSummary::new("cmd-ta-proxy-created", self)
+            }
             // Publication Support
             TrustAnchorProxyCommandDetails::AddRepository(repository) => {
                 crate::commons::api::CommandSummary::new("cmd-ta-proxy-repo-add", self)
@@ -338,21 +378,25 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
     type Command = TrustAnchorProxyCommand;
     type StorableCommandDetails = TrustAnchorProxyCommandDetails;
     type Event = TrustAnchorProxyEvent;
+
+    type InitCommand = TrustAnchorProxyInitCommand;
     type InitEvent = TrustAnchorProxyInitEvent;
     type Error = Error;
 
-    fn init(event: Self::InitEvent) -> Result<Self, Self::Error> {
-        let (handle, _version, details) = event.unpack();
-
-        Ok(TrustAnchorProxy {
+    fn init(handle: TrustAnchorHandle, event: TrustAnchorProxyInitEvent) -> Self {
+        TrustAnchorProxy {
             handle,
             version: 1,
-            id: details.id,
+            id: event.id,
             repository: None,
             signer: None,
             child_details: HashMap::new(),
             open_signer_request: None,
-        })
+        }
+    }
+
+    fn process_init_command(command: TrustAnchorProxyInitCommand) -> Result<TrustAnchorProxyInitEvent, Error> {
+        Rfc8183Id::generate(&command.into_details().signer).map(|id| TrustAnchorProxyInitEvent { id: id.into() })
     }
 
     fn version(&self) -> u64 {
@@ -364,25 +408,23 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
     }
 
     fn apply(&mut self, event: Self::Event) {
-        let (handle, _version, details) = event.unpack();
-
         if log_enabled!(log::Level::Trace) {
             trace!(
                 "Applying event to Trust Anchor Proxy '{}', version: {}: {}",
-                handle,
+                self.handle,
                 self.version,
-                details
+                event
             );
         }
 
-        match details {
+        match event {
             // Publication Support
-            TrustAnchorProxyEventDetails::RepositoryAdded(repository) => self.repository = Some(repository),
+            TrustAnchorProxyEvent::RepositoryAdded(repository) => self.repository = Some(repository),
 
             // Proxy -> Signer interactions
-            TrustAnchorProxyEventDetails::SignerAdded(signer) => self.signer = Some(signer),
-            TrustAnchorProxyEventDetails::SignerRequestMade(nonce) => self.open_signer_request = Some(nonce),
-            TrustAnchorProxyEventDetails::SignerResponseReceived(response) => {
+            TrustAnchorProxyEvent::SignerAdded(signer) => self.signer = Some(signer),
+            TrustAnchorProxyEvent::SignerRequestMade(nonce) => self.open_signer_request = Some(nonce),
+            TrustAnchorProxyEvent::SignerResponseReceived(response) => {
                 let content = response.into_content();
                 for (child_handle, child_responses) in content.child_responses {
                     if let Some(child_details) = self.child_details.get_mut(&child_handle) {
@@ -409,17 +451,17 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
             }
 
             // Children
-            TrustAnchorProxyEventDetails::ChildAdded(child) => {
+            TrustAnchorProxyEvent::ChildAdded(child) => {
                 self.child_details.insert(child.handle.clone(), child);
             }
-            TrustAnchorProxyEventDetails::ChildRequestAdded(child_handle, request) => {
+            TrustAnchorProxyEvent::ChildRequestAdded(child_handle, request) => {
                 self.child_details
                     .get_mut(&child_handle)
                     .unwrap() // safe - we can only have an event for this child if it exists
                     .open_requests
                     .insert(request.key_identifier(), request);
             }
-            TrustAnchorProxyEventDetails::ChildResponseGiven(child_handle, key) => {
+            TrustAnchorProxyEvent::ChildResponseGiven(child_handle, key) => {
                 self.child_details
                     .get_mut(&child_handle)
                     .unwrap() // safe - we can only have an event for this child if it exists
@@ -440,6 +482,19 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
         }
 
         match command.into_details() {
+            // Initialisation
+            TrustAnchorProxyCommandDetails::Create => {
+                // This can't happen really.. we would never send this command
+                // to an existing TrustAnchorProxy.
+                //
+                // This could be solved more elegantly, and more verbosely, if
+                // we create a separate TrustAnchorProxyStorableCommand that
+                // implements 'WithStorableDetails' - like we have in other cases -
+                // because then our initialisation command could map to that type
+                // instead of having this additional variant for storing.
+                Err(Error::custom("Trust Anchor Proxy already created"))
+            }
+
             // Publication Support
             TrustAnchorProxyCommandDetails::AddRepository(repository) => self.process_add_repository(repository),
 
@@ -464,11 +519,7 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
 impl TrustAnchorProxy {
     fn process_add_repository(&self, repository: RepositoryContact) -> KrillResult<Vec<TrustAnchorProxyEvent>> {
         if self.repository.is_none() {
-            Ok(vec![TrustAnchorProxyEvent::new(
-                &self.handle,
-                self.version,
-                TrustAnchorProxyEventDetails::RepositoryAdded(repository),
-            )])
+            Ok(vec![TrustAnchorProxyEvent::RepositoryAdded(repository)])
         } else {
             Err(Error::TaProxyAlreadyHasRepository)
         }
@@ -476,11 +527,7 @@ impl TrustAnchorProxy {
 
     fn process_add_signer(&self, signer: TrustAnchorSignerInfo) -> KrillResult<Vec<TrustAnchorProxyEvent>> {
         if self.signer.is_none() {
-            Ok(vec![TrustAnchorProxyEvent::new(
-                &self.handle,
-                self.version,
-                TrustAnchorProxyEventDetails::SignerAdded(signer),
-            )])
+            Ok(vec![TrustAnchorProxyEvent::SignerAdded(signer)])
         } else {
             Err(Error::TaProxyAlreadyHasSigner)
         }
@@ -490,11 +537,7 @@ impl TrustAnchorProxy {
         if self.open_signer_request.is_some() {
             Err(Error::TaProxyHasRequest)
         } else {
-            Ok(vec![TrustAnchorProxyEvent::new(
-                &self.handle,
-                self.version,
-                TrustAnchorProxyEventDetails::SignerRequestMade(Nonce::new()),
-            )])
+            Ok(vec![TrustAnchorProxyEvent::SignerRequestMade(Nonce::new())])
         }
     }
 
@@ -522,11 +565,7 @@ impl TrustAnchorProxy {
             // Note that if we would reject the response, then there would be no way of
             // telling the signer why. So, this is also a matter of the 'the signer is
             // always right'.
-            Ok(vec![TrustAnchorProxyEvent::new(
-                &self.handle,
-                self.version,
-                TrustAnchorProxyEventDetails::SignerResponseReceived(response),
-            )])
+            Ok(vec![TrustAnchorProxyEvent::SignerResponseReceived(response)])
         } else {
             // This is rather unexpected.. it implies that we had a request, but no
             // signer. Still - return a clean error for this, so unlikely as this may
@@ -540,11 +579,11 @@ impl TrustAnchorProxy {
             Err(Error::CaChildDuplicate(self.handle.clone(), child.handle().clone()))
         } else {
             let (handle, resources, id_cert) = child.unpack();
-            Ok(vec![TrustAnchorProxyEvent::new(
-                &self.handle,
-                self.version,
-                TrustAnchorProxyEventDetails::ChildAdded(TrustAnchorChild::new(handle, id_cert.into(), resources)),
-            )])
+            Ok(vec![TrustAnchorProxyEvent::ChildAdded(TrustAnchorChild::new(
+                handle,
+                id_cert.into(),
+                resources,
+            ))])
         }
     }
 
@@ -597,11 +636,7 @@ impl TrustAnchorProxy {
             }
         }
 
-        Ok(vec![TrustAnchorProxyEvent::new(
-            &self.handle,
-            self.version,
-            TrustAnchorProxyEventDetails::ChildRequestAdded(child_handle, request),
-        )])
+        Ok(vec![TrustAnchorProxyEvent::ChildRequestAdded(child_handle, request)])
     }
 
     fn process_give_child_response(
@@ -612,11 +647,7 @@ impl TrustAnchorProxy {
         let child = self.get_child_details(&child_handle)?;
 
         if child.open_responses.contains_key(&key) {
-            Ok(vec![TrustAnchorProxyEvent::new(
-                &self.handle,
-                self.version,
-                TrustAnchorProxyEventDetails::ChildResponseGiven(child_handle, key),
-            )])
+            Ok(vec![TrustAnchorProxyEvent::ChildResponseGiven(child_handle, key)])
         } else {
             // This should not never happen. The command would not be sent, but let's
             // return some useful error anyway.
@@ -629,21 +660,6 @@ impl TrustAnchorProxy {
 }
 
 impl TrustAnchorProxy {
-    /// Creates an initialisation event that can be used to create
-    /// a new TrustAnchorProxy.
-    //
-    // Perhaps we should refactor the eventsourcing support to have
-    // a create command instead, and let the init event become a
-    // normal event. But, not changing that now..
-    pub fn create_init(handle: TrustAnchorHandle, signer: &KrillSigner) -> KrillResult<TrustAnchorProxyInitEvent> {
-        let id = Rfc8183Id::generate(signer)?;
-        Ok(TrustAnchorProxyInitEvent::new(
-            &handle.into_converted(),
-            0,
-            TrustAnchorProxyInitDetails { id: id.into() },
-        ))
-    }
-
     pub fn get_signer_request(&self, signer: &KrillSigner) -> KrillResult<TrustAnchorSignedRequest> {
         if let Some(nonce) = self.open_signer_request.as_ref().cloned() {
             let mut child_requests = vec![];
