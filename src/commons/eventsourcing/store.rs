@@ -802,7 +802,7 @@ impl fmt::Display for AggregateStoreError {
             AggregateStoreError::KeyStoreError(e) => write!(f, "KeyStore Error: {}", e),
             AggregateStoreError::NotInitialized => write!(f, "This aggregate store is not initialized"),
             AggregateStoreError::UnknownAggregate(handle) => write!(f, "unknown entity: {}", handle),
-            AggregateStoreError::InitError(handle) => write!(f, "Command 0 has no init '{}'", handle),
+            AggregateStoreError::InitError(handle) => write!(f, "Command 0 for '{}' has no init", handle),
             AggregateStoreError::ReplayError(handle, version, fail_version) => write!(
                 f,
                 "Event for '{}' version '{}' had version '{}'",
