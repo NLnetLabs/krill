@@ -39,14 +39,13 @@ mod tests {
 
     use rpki::ca::idexchange::MyHandle;
 
-    use crate::commons::util::storage::storage_uri_from_data_dir;
-    use crate::test::test_under_tmp;
     use crate::{
         commons::{
             actor::Actor,
             api::{CommandHistoryCriteria, CommandSummary},
         },
         constants::ACTOR_DEF_TEST,
+        test::tmp_storage,
     };
 
     use super::*;
@@ -336,66 +335,69 @@ mod tests {
 
     #[test]
     fn event_sourcing_framework() {
-        test_under_tmp(|data_dir| {
-            let counter = Arc::new(EventCounter::default());
-            let storage_uri = storage_uri_from_data_dir(&data_dir).unwrap();
-            let mut manager = AggregateStore::<Person>::create(&storage_uri, segment!("person"), false).unwrap();
-            manager.add_post_save_listener(counter.clone());
+        // crate::test::test_under_tmp(|data_dir| {
+        //     let storage_uri = crate::commons::util::storage::storage_uri_from_data_dir(&data_dir).unwrap();
 
-            let alice_name = "alice".to_string();
-            let alice_handle = MyHandle::from_str(&alice_name).unwrap();
-            let alice_init_cmd = PersonInitCommand::make(&alice_handle, alice_name);
+        let storage_uri = tmp_storage();
 
-            manager.add(alice_init_cmd).unwrap();
+        let counter = Arc::new(EventCounter::default());
+        let mut manager = AggregateStore::<Person>::create(&storage_uri, segment!("person"), false).unwrap();
+        manager.add_post_save_listener(counter.clone());
 
-            let mut alice = manager.get_latest(&alice_handle).unwrap();
-            assert_eq!("alice smith", alice.name());
-            assert_eq!(0, alice.age());
+        let alice_name = "alice smith".to_string();
+        let alice_handle = MyHandle::from_str("alice").unwrap();
+        let alice_init_cmd = PersonInitCommand::make(&alice_handle, alice_name);
 
-            let mut age = 0;
-            loop {
-                let get_older = PersonCommand::go_around_sun(&alice_handle, None);
-                alice = manager.command(get_older).unwrap();
+        manager.add(alice_init_cmd).unwrap();
 
-                age += 1;
-                if age == 21 {
-                    break;
-                }
+        let mut alice = manager.get_latest(&alice_handle).unwrap();
+        assert_eq!("alice smith", alice.name());
+        assert_eq!(0, alice.age());
+
+        let mut age = 0;
+        loop {
+            let get_older = PersonCommand::go_around_sun(&alice_handle, None);
+            alice = manager.command(get_older).unwrap();
+
+            age += 1;
+            if age == 21 {
+                break;
             }
+        }
 
-            assert_eq!("alice smith", alice.name());
-            assert_eq!(21, alice.age());
+        assert_eq!("alice smith", alice.name());
+        assert_eq!(21, alice.age());
 
-            let change_name = PersonCommand::change_name(&alice_handle, Some(22), "alice smith-doe");
-            let alice = manager.command(change_name).unwrap();
-            assert_eq!("alice smith-doe", alice.name());
-            assert_eq!(21, alice.age());
+        let change_name = PersonCommand::change_name(&alice_handle, Some(22), "alice smith-doe");
+        let alice = manager.command(change_name).unwrap();
+        assert_eq!("alice smith-doe", alice.name());
+        assert_eq!(21, alice.age());
 
-            // Should read state from disk
-            let manager = AggregateStore::<Person>::create(&storage_uri, segment!("person"), false).unwrap();
+        // Should read state from disk
+        let manager = AggregateStore::<Person>::create(&storage_uri, segment!("person"), false).unwrap();
 
-            let alice = manager.get_latest(&alice_handle).unwrap();
-            assert_eq!("alice smith-doe", alice.name());
-            assert_eq!(21, alice.age());
+        let alice = manager.get_latest(&alice_handle).unwrap();
+        assert_eq!("alice smith-doe", alice.name());
+        assert_eq!(21, alice.age());
 
-            assert_eq!(22, counter.total());
+        assert_eq!(22, counter.total());
 
-            // Get paginated history
-            let mut crit = CommandHistoryCriteria::default();
-            crit.set_offset(3);
-            crit.set_rows(10);
+        // Get paginated history
+        let mut crit = CommandHistoryCriteria::default();
+        crit.set_offset(3);
+        crit.set_rows(10);
 
-            let history = manager.command_history(&alice_handle, crit).unwrap();
-            assert_eq!(history.total(), 22);
-            assert_eq!(history.offset(), 3);
-            assert_eq!(history.commands().len(), 10);
-            assert_eq!(history.commands().first().unwrap().version, 4);
+        let history = manager.command_history(&alice_handle, crit).unwrap();
+        assert_eq!(history.total(), 22);
+        assert_eq!(history.offset(), 3);
+        assert_eq!(history.commands().len(), 10);
+        assert_eq!(history.commands().first().unwrap().version, 4);
 
-            // Get history excluding 'around the sun' commands
-            let mut crit = CommandHistoryCriteria::default();
-            crit.set_excludes(&["person-around-sun"]);
-            let history = manager.command_history(&alice_handle, crit).unwrap();
-            assert_eq!(history.total(), 1);
-        })
+        // Get history excluding 'around the sun' commands
+        let mut crit = CommandHistoryCriteria::default();
+        crit.set_excludes(&["person-around-sun"]);
+        let history = manager.command_history(&alice_handle, crit).unwrap();
+        assert_eq!(history.total(), 1);
+        // })
     }
 }
