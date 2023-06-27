@@ -361,7 +361,7 @@ impl fmt::Display for CaCommandDetails {
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
 pub enum CertAuthStorableCommand {
-    Created,
+    Create,
     ChildAdd {
         child: ChildHandle,
         ski: String,
@@ -467,7 +467,7 @@ pub struct StorableRcEntitlement {
 impl WithStorableDetails for CertAuthStorableCommand {
     fn summary(&self) -> CommandSummary {
         match self {
-            CertAuthStorableCommand::Created => CommandSummary::new("cmd-ca-created", self),
+            CertAuthStorableCommand::Create => CommandSummary::new("cmd-ca-created", self),
             CertAuthStorableCommand::ChildAdd { child, ski, resources } => {
                 CommandSummary::new("cmd-ca-child-add", self)
                     .with_child(child)
@@ -597,7 +597,7 @@ impl fmt::Display for CertAuthStorableCommand {
             // ------------------------------------------------------------
             // Initialisation
             // ------------------------------------------------------------
-            CertAuthStorableCommand::Created => write!(f, "Create CA"),
+            CertAuthStorableCommand::Create => write!(f, "Create CA"),
 
             // ------------------------------------------------------------
             // Being a parent

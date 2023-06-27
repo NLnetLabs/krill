@@ -3,12 +3,14 @@ use std::{convert::TryInto, str::FromStr};
 use chrono::Duration;
 use rpki::{ca::idexchange::CaHandle, repository::x509::Time};
 
+use crate::commons::actor::Actor;
+use crate::commons::eventsourcing::StoredCommandBuilder;
 use crate::daemon::ca::CaObjects;
-use crate::upgrades::OldStoredCommand;
+use crate::upgrades::{OldStoredCommand, OldStoredEffect};
 use crate::{
     commons::{
         api::CertAuthStorableCommand,
-        eventsourcing::{segment, AggregateStore, Key, KeyValueStore, Segment, SegmentExt, StoredValueInfo},
+        eventsourcing::{AggregateStore, Key, KeyValueStore, Segment, SegmentExt},
     },
     constants::{CASERVER_NS, CA_OBJECTS_NS, KRILL_VERSION},
     daemon::{
@@ -103,19 +105,43 @@ impl UpgradeStore for CasMigration {
             // Get the info from the current store to see where we are
             let mut data_upgrade_info = self.data_upgrade_info(&scope)?;
 
+            // Get the list of commands to prepare, starting with the last_command we got to (may be 0)
+            let old_cmd_keys = self.command_keys(&scope, data_upgrade_info.last_command)?;
+
             // Migrate the initialisation event, if not done in a previous run. This
             // is a special event that has no command, so we need to do this separately.
             if data_upgrade_info.last_event == 0 {
                 // Make a new init event.
-                let init_key = Self::event_key(scope.clone(), 0);
-                let old_init: Pre0_10CertAuthInitEvent = self.get(&init_key).unwrap();
+                let old_init_key = Self::event_key(scope.clone(), 0);
+                let old_init: Pre0_10CertAuthInitEvent = self.get(&old_init_key).unwrap();
                 let old_ini_det = old_init.into_details();
-                let ini = CertAuthInitEvent::new(old_ini_det.into());
-                self.new_kv_store.store(&init_key, &ini)?;
-            }
 
-            // Get the list of commands to prepare, starting with the last_command we got to (may be 0)
-            let old_cmd_keys = self.command_keys(&scope, data_upgrade_info.last_command)?;
+                let init_event = CertAuthInitEvent::new(old_ini_det.into());
+
+                // From 0.14.x and up we will have command '0' for the init, where beforehand
+                // we only had an event. We will have to make up some values for the actor and time.
+                let actor = Actor::system_actor();
+
+                // The time is tricky.. our best guess is to set this to the same
+                // value as the first command, if there is any. In the very unlikely
+                // case that there is no first command, then we might as well set
+                // it to now.
+                let time = if let Some(first_command) = old_cmd_keys.first() {
+                    let cmd: OldStoredCommand<CertAuthStorableCommand> = self.get(first_command)?;
+                    cmd.time()
+                } else {
+                    Time::now()
+                };
+
+                let details = CertAuthStorableCommand::Create;
+                let builder =
+                    StoredCommandBuilder::<CertAuth>::new(actor.to_string(), time, handle.clone(), 0, details);
+
+                let stored_command = builder.finish_with_init_event(init_event);
+                let command_key = Self::new_stored_command_key(scope.clone(), 0);
+
+                self.new_kv_store.store(&command_key, &stored_command)?;
+            }
 
             // Report the amount of (remaining) work
             let total_commands = old_cmd_keys.len();
@@ -128,48 +154,56 @@ impl UpgradeStore for CasMigration {
                 );
             }
 
-            // Get the old info file. We will only migrate commands in the info file
-            let info_key = Key::new_scoped(scope.clone(), segment!("info.json"));
-            let old_info: StoredValueInfo = self
-                .current_kv_store
-                .get(&info_key)?
-                .ok_or_else(|| PrepareUpgradeError::Custom(format!("Cannot parse old info file: {}", info_key)))?;
-
             // Track commands migrated and time spent so we can report progress
             let mut total_migrated = 0;
             let time_started = Time::now();
 
-            for cmd_key in old_cmd_keys {
+            for old_cmd_key in old_cmd_keys {
                 // Read and parse the command. There is no need to change the command itself,
                 // but we need to save it again and get the events from here.
-                let cmd: OldStoredCommand<CertAuthStorableCommand> = self.get(&cmd_key)?;
+                let old_cmd: OldStoredCommand<CertAuthStorableCommand> = self.get(&old_cmd_key)?;
+
+                let new_command_builder = StoredCommandBuilder::<CertAuth>::new(
+                    old_cmd.actor().clone(),
+                    old_cmd.time(),
+                    handle.clone(),
+                    old_cmd.sequence(),
+                    old_cmd.details().clone(),
+                );
 
                 // Read and parse all events. Migrate the events that contain changed types.
                 // In this case IdCert -> IdCertInfo for added publishers. Then save the event
                 // again in the migration scope.
-                if let Some(event_versions) = cmd.effect().events() {
-                    for v in event_versions {
-                        let event_key = Self::event_key(scope.clone(), *v);
-                        trace!("  +- event: {}", event_key);
-                        let evt: Pre0_10CertAuthEvent = self.current_kv_store.get(&event_key)?.ok_or_else(|| {
-                            PrepareUpgradeError::Custom(format!("Cannot parse old event: {}", event_key))
-                        })?;
 
-                        // Migrate into the current event type and save
-                        let old_details = evt.into_details();
-                        let evt: CertAuthEvent = old_details.try_into()?;
-                        self.new_kv_store.store(&event_key, &evt)?;
+                let new_command = match old_cmd.effect() {
+                    OldStoredEffect::Error { msg } => new_command_builder.finish_with_error(msg),
+                    OldStoredEffect::Success { events } => {
+                        let mut full_events: Vec<CertAuthEvent> = vec![]; // We just had numbers, we need to include the full events
+                        for v in events {
+                            let event_key = Self::event_key(scope.clone(), *v);
+                            trace!("  +- event: {}", event_key);
+                            let evt: Pre0_10CertAuthEvent =
+                                self.current_kv_store.get(&event_key)?.ok_or_else(|| {
+                                    PrepareUpgradeError::Custom(format!("Cannot parse old event: {}", event_key))
+                                })?;
 
-                        data_upgrade_info.last_event = *v;
+                            // Migrate into the current event type and save
+                            let old_details = evt.into_details();
+                            full_events.push(old_details.try_into()?);
+
+                            data_upgrade_info.last_event = *v;
+                        }
+                        new_command_builder.finish_with_events(full_events)
                     }
-                }
+                };
 
                 // Save the command to the migration
-                self.new_kv_store.store(&cmd_key, &cmd)?;
+                let new_command_key = Self::new_stored_command_key(scope.clone(), new_command.version());
+                self.new_kv_store.store(&new_command_key, &new_command)?;
 
                 // Update and save data_upgrade_info for progress tracking
                 data_upgrade_info.last_command += 1;
-                data_upgrade_info.last_update = cmd.time();
+                data_upgrade_info.last_update = old_cmd.time();
                 self.update_data_upgrade_info(&scope, &data_upgrade_info)?;
 
                 // Report progress and expected time to finish on every 100 commands evaluated.
@@ -193,34 +227,6 @@ impl UpgradeStore for CasMigration {
             }
 
             info!("Finished migrating commands for CA '{}'", scope);
-
-            // Create a new info file for the new aggregate repository
-            {
-                // Store a new info.json
-                //
-                // It should have been safe to just copy the old info.json, since
-                // we do not exclude commands or event, but this way we can be sure
-                // that it is *always* correct for the commands and events which
-                // were migrated.
-                let info = StoredValueInfo {
-                    snapshot_version: data_upgrade_info.last_event + 1,
-                    last_event: data_upgrade_info.last_event,
-                    last_command: data_upgrade_info.last_command,
-                    last_update: data_upgrade_info.last_update,
-                };
-
-                self.new_kv_store.store(&info_key, &info)?;
-
-                if mode.is_finalise() {
-                    // We expect that all commands and events are migrated without exception.
-                    // Otherwise there is a bug in our migration code.
-                    if info.last_command != old_info.last_command || info.last_event != old_info.last_event {
-                        return Err(PrepareUpgradeError::custom(
-                        format!("New info.json does not match old info.json when upgrading CA '{}'. Please downgrade to the previous version and provide a bug report to rpki-team@nlnetlabs.nl.", handle),
-                    ));
-                    }
-                }
-            }
 
             // Verify migration
             info!("Will verify the migration by rebuilding CA '{}' events", &scope);

@@ -104,6 +104,10 @@ pub struct OldStoredCommand<S: WithStorableDetails> {
 }
 
 impl<S: WithStorableDetails> OldStoredCommand<S> {
+    pub fn actor(&self) -> &String {
+        &self.actor
+    }
+
     pub fn time(&self) -> Time {
         self.time
     }
@@ -114,6 +118,10 @@ impl<S: WithStorableDetails> OldStoredCommand<S> {
 
     pub fn effect(&self) -> &OldStoredEffect {
         &self.effect
+    }
+
+    pub fn details(&self) -> &S {
+        &self.details
     }
 }
 

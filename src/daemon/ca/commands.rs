@@ -57,13 +57,13 @@ impl InitCommandDetails for CertAuthInitCommandDetails {
     type StorableDetails = CertAuthStorableCommand;
 
     fn store(&self) -> Self::StorableDetails {
-        CertAuthStorableCommand::Created
+        CertAuthStorableCommand::Create
     }
 }
 
 impl fmt::Display for CertAuthInitCommandDetails {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        CertAuthStorableCommand::Created.fmt(f)
+        CertAuthStorableCommand::Create.fmt(f)
     }
 }
 

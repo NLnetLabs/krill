@@ -7,17 +7,15 @@ use crate::{
     commons::{
         actor::Actor,
         api::StorableRepositoryCommand,
-        eventsourcing::{
-            segment, AggregateStore, Key, KeyValueStore, Scope, Segment, StoredCommandBuilder, StoredValueInfo,
-        },
+        eventsourcing::{segment, AggregateStore, KeyValueStore, Scope, Segment, StoredCommandBuilder},
         util::KrillVersion,
     },
     constants::{KRILL_VERSION, PUBSERVER_NS},
     daemon::config::Config,
     pubd::{RepositoryAccess, RepositoryAccessEvent, RepositoryAccessInitEvent},
     upgrades::{
-        pre_0_10_0::Pre0_10RepositoryAccessEvent, OldStoredCommand, PrepareUpgradeError, UpgradeMode, UpgradeResult,
-        UpgradeStore, UpgradeVersions,
+        pre_0_10_0::Pre0_10RepositoryAccessEvent, OldStoredCommand, OldStoredEffect, PrepareUpgradeError, UpgradeMode,
+        UpgradeResult, UpgradeStore, UpgradeVersions,
     },
 };
 
@@ -86,8 +84,8 @@ impl UpgradeStore for PublicationServerRepositoryAccessMigration {
             let (_, _, old_init) = old_init.unpack();
             let init_event: RepositoryAccessInitEvent = old_init.into();
 
-            // But from 0.14.x and up we will have command '0' for the init.
-            // We will have to make up some values for the actor and time.
+            // From 0.14.x and up we will have command '0' for the init, where beforehand
+            // we only had an event. We will have to make up some values for the actor and time.
             let actor = Actor::system_actor();
 
             // The time is tricky.. our best guess is to set this to the same
@@ -123,13 +121,6 @@ impl UpgradeStore for PublicationServerRepositoryAccessMigration {
             );
         }
 
-        // Get the old info file. We will only migrate commands in the info file
-        let info_key = Key::new_scoped(scope.clone(), segment!("info.json"));
-        let old_info: StoredValueInfo = self
-            .current_kv_store
-            .get(&info_key)?
-            .ok_or_else(|| PrepareUpgradeError::Custom(format!("Cannot parse old info file: {}", info_key)))?;
-
         // Track commands migrated and time spent so we can report progress
         let mut total_migrated = 0;
         let time_started = Time::now();
@@ -137,44 +128,50 @@ impl UpgradeStore for PublicationServerRepositoryAccessMigration {
         for cmd_key in old_cmd_keys {
             // Read and parse the command. There is no need to change the command itself,
             // but we need to save it again and get the events from here.
-            let cmd: OldStoredCommand<StorableRepositoryCommand> = self.get(&cmd_key)?;
+            let old_cmd: OldStoredCommand<StorableRepositoryCommand> = self.get(&cmd_key)?;
 
-            // If we encounter a command which is not (yet) covered by the old info file,
-            // then we are done for now. This most likely happens in case we are preparing
-            // an upgrade with krillup while krill is running.
-            //
-            // This may also happen in case there was an incomplete transaction, most likely
-            // because the old krill was shutdown in the middle.
-            if cmd.sequence() > old_info.last_command {
-                break;
-            }
+            let new_command_builder = StoredCommandBuilder::<RepositoryAccess>::new(
+                old_cmd.actor().clone(),
+                old_cmd.time(),
+                handle.clone(),
+                old_cmd.sequence(),
+                old_cmd.details().clone(),
+            );
 
             // Read and parse all events. Migrate the events that contain changed types.
             // In this case IdCert -> IdCertInfo for added publishers. Then save the event
             // again in the migration scope.
-            if let Some(event_versions) = cmd.effect().events() {
-                for v in event_versions {
-                    let event_key = Self::event_key(scope.clone(), *v);
-                    trace!("  +- event: {}", event_key);
-                    let evt: Pre0_10RepositoryAccessEvent = self
-                        .current_kv_store
-                        .get(&event_key)?
-                        .ok_or_else(|| PrepareUpgradeError::Custom(format!("Cannot parse old event: {}", event_key)))?;
+            let new_command = match old_cmd.effect() {
+                OldStoredEffect::Error { msg } => new_command_builder.finish_with_error(msg),
+                OldStoredEffect::Success { events } => {
+                    let mut full_events: Vec<RepositoryAccessEvent> = vec![]; // We just had numbers, we need to include the full events
 
-                    // Migrate into the current event type and save
-                    let evt: RepositoryAccessEvent = evt.into_details().into();
-                    self.new_kv_store.store(&event_key, &evt)?;
+                    for v in events {
+                        let event_key = Self::event_key(scope.clone(), *v);
+                        trace!("  +- event: {}", event_key);
+                        let evt: Pre0_10RepositoryAccessEvent =
+                            self.current_kv_store.get(&event_key)?.ok_or_else(|| {
+                                PrepareUpgradeError::Custom(format!("Cannot parse old event: {}", event_key))
+                            })?;
 
-                    data_upgrade_info.last_event = *v;
+                        // Migrate into the current event type and save
+                        let evt: RepositoryAccessEvent = evt.into_details().into();
+                        full_events.push(evt);
+
+                        data_upgrade_info.last_event = *v;
+                    }
+
+                    new_command_builder.finish_with_events(full_events)
                 }
-            }
+            };
 
             // Save the command to the migration
-            self.new_kv_store.store(&cmd_key, &cmd)?;
+            let new_command_key = Self::new_stored_command_key(scope.clone(), new_command.version());
+            self.new_kv_store.store(&new_command_key, &new_command)?;
 
             // Update and save data_upgrade_info for progress tracking
             data_upgrade_info.last_command += 1;
-            data_upgrade_info.last_update = cmd.time();
+            data_upgrade_info.last_update = old_cmd.time();
             self.update_data_upgrade_info(&scope, &data_upgrade_info)?;
 
             // Report progress and expected time to finish on every 100 commands evaluated.
@@ -198,27 +195,6 @@ impl UpgradeStore for PublicationServerRepositoryAccessMigration {
         }
 
         info!("Finished migrating Publication Server commands");
-
-        {
-            // Store a new info.json
-            let info = StoredValueInfo {
-                snapshot_version: data_upgrade_info.last_event + 1,
-                last_event: data_upgrade_info.last_event,
-                last_command: data_upgrade_info.last_command,
-                last_update: data_upgrade_info.last_update,
-            };
-            self.new_kv_store.store(&info_key, &info)?;
-
-            if mode.is_finalise() {
-                // We expect that all commands and events are migrated without exception.
-                // Otherwise there is a bug in our migration code.
-                if info.last_command != old_info.last_command || info.last_event != old_info.last_event {
-                    return Err(PrepareUpgradeError::custom(
-                        "New info.json does not match old info.json when upgrading Publication Server. Please downgrade to the previous version and provide a bug report to rpki-team@nlnetlabs.nl.",
-                    ));
-                }
-            }
-        }
 
         // Verify migration
         info!("Will verify the migration by rebuilding the Publication Server from events");
