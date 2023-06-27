@@ -8,6 +8,8 @@ use crate::commons::{
     eventsourcing::{Event, InitEvent, Storable},
 };
 
+use super::Aggregate;
+
 //------------ WithStorableDetails -------------------------------------------
 
 /// Must be implemented for all 'StorableDetails' used in Commands.
@@ -213,23 +215,23 @@ pub trait CommandDetails: fmt::Display + Send + Sync + 'static {
 
 /// Helper to create StoredCommand instances that will contain the
 /// atomic change sets for Aggregates.
-pub struct StoredCommandBuilder<D: WithStorableDetails, E: Event, I: InitEvent> {
+pub struct StoredCommandBuilder<A: Aggregate> {
     actor: String,
     time: Time,
     handle: MyHandle,
     version: u64, // version of aggregate this was applied to (successful or not)
-    details: D,
-    _e: PhantomData<E>,
-    _i: PhantomData<I>,
+    details: A::StorableCommandDetails,
+    _e: PhantomData<A::Event>,
+    _i: PhantomData<A::InitEvent>,
 }
 
-impl<D: WithStorableDetails, E: Event, I: InitEvent> StoredCommandBuilder<D, E, I> {
+impl<A: Aggregate> StoredCommandBuilder<A> {
     pub fn new(
         actor: String,
         time: Time,
         handle: MyHandle,
         version: u64, // version of aggregate this was applied to (successful or not)
-        details: D,
+        details: A::StorableCommandDetails,
     ) -> Self {
         StoredCommandBuilder {
             actor,
@@ -242,19 +244,19 @@ impl<D: WithStorableDetails, E: Event, I: InitEvent> StoredCommandBuilder<D, E, 
         }
     }
 
-    pub fn finish_with_init_event(self, init_event: I) -> StoredCommand<D, E, I> {
+    pub fn finish_with_init_event(self, init_event: A::InitEvent) -> StoredCommand<A> {
         self.with_effect(StoredEffect::init(init_event))
     }
 
-    pub fn finish_with_events(self, events: Vec<E>) -> StoredCommand<D, E, I> {
+    pub fn finish_with_events(self, events: Vec<A::Event>) -> StoredCommand<A> {
         self.with_effect(StoredEffect::success(events))
     }
 
-    pub fn finish_with_error(self, error: impl fmt::Display) -> StoredCommand<D, E, I> {
+    pub fn finish_with_error(self, error: impl fmt::Display) -> StoredCommand<A> {
         self.with_effect(StoredEffect::error(error))
     }
 
-    fn with_effect(self, effect: StoredEffect<E, I>) -> StoredCommand<D, E, I> {
+    fn with_effect(self, effect: StoredEffect<A::Event, A::InitEvent>) -> StoredCommand<A> {
         StoredCommand::new(self.actor, self.time, self.handle, self.version, self.details, effect)
     }
 }
@@ -265,25 +267,25 @@ impl<D: WithStorableDetails, E: Event, I: InitEvent> StoredCommandBuilder<D, E, 
 /// that followed. Commands that turn out to be no-ops (no events, no errors)
 /// should not be stored.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(bound(deserialize = "E: Event"))]
-pub struct StoredCommand<D: WithStorableDetails, E: Event, I: InitEvent> {
+#[serde(bound(deserialize = "A::Event: Event"))]
+pub struct StoredCommand<A: Aggregate> {
     actor: String,
     time: Time,
     handle: MyHandle,
     version: u64, // version of aggregate this was applied to (successful or not)
-    #[serde(deserialize_with = "D::deserialize")]
-    details: D,
-    effect: StoredEffect<E, I>,
+    #[serde(deserialize_with = "A::StorableCommandDetails::deserialize")]
+    details: A::StorableCommandDetails,
+    effect: StoredEffect<A::Event, A::InitEvent>,
 }
 
-impl<D: WithStorableDetails, E: Event, I: InitEvent> StoredCommand<D, E, I> {
+impl<A: Aggregate> StoredCommand<A> {
     pub fn new(
         actor: String,
         time: Time,
         handle: MyHandle,
         version: u64,
-        details: D,
-        effect: StoredEffect<E, I>,
+        details: A::StorableCommandDetails,
+        effect: StoredEffect<A::Event, A::InitEvent>,
     ) -> Self {
         StoredCommand {
             actor,
@@ -311,29 +313,29 @@ impl<D: WithStorableDetails, E: Event, I: InitEvent> StoredCommand<D, E, I> {
         self.version
     }
 
-    pub fn details(&self) -> &D {
+    pub fn details(&self) -> &A::StorableCommandDetails {
         &self.details
     }
 
-    pub fn effect(&self) -> &StoredEffect<E, I> {
+    pub fn effect(&self) -> &StoredEffect<A::Event, A::InitEvent> {
         &self.effect
     }
 
-    pub fn events(&self) -> Option<&Vec<E>> {
+    pub fn events(&self) -> Option<&Vec<A::Event>> {
         match &self.effect {
             StoredEffect::Error { .. } | StoredEffect::Init { .. } => None,
             StoredEffect::Success { events } => Some(events),
         }
     }
 
-    pub fn into_events(self) -> Option<Vec<E>> {
+    pub fn into_events(self) -> Option<Vec<A::Event>> {
         match self.effect {
             StoredEffect::Error { .. } | StoredEffect::Init { .. } => None,
             StoredEffect::Success { events } => Some(events),
         }
     }
 
-    pub fn into_init(self) -> Option<I> {
+    pub fn into_init(self) -> Option<A::InitEvent> {
         match self.effect {
             StoredEffect::Init { init } => Some(init),
             _ => None,
@@ -341,8 +343,8 @@ impl<D: WithStorableDetails, E: Event, I: InitEvent> StoredCommand<D, E, I> {
     }
 }
 
-impl<D: WithStorableDetails, E: Event, I: InitEvent> From<StoredCommand<D, E, I>> for CommandHistoryRecord {
-    fn from(command: StoredCommand<D, E, I>) -> Self {
+impl<A: Aggregate> From<StoredCommand<A>> for CommandHistoryRecord {
+    fn from(command: StoredCommand<A>) -> Self {
         CommandHistoryRecord {
             actor: command.actor,
             timestamp: command.time.timestamp_millis(),

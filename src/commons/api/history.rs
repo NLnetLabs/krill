@@ -20,7 +20,7 @@ use crate::{
         },
         eventsourcing::{Event, InitEvent, StoredCommand, StoredEffect, WithStorableDetails},
     },
-    daemon::ca::{CertAuthEvent, CertAuthInitEvent, DropReason},
+    daemon::ca::{CertAuth, DropReason},
 };
 
 use super::{AspaDefinitionUpdates, ResourceSetSummary};
@@ -329,7 +329,7 @@ impl Default for CommandHistoryCriteria {
 }
 
 //------------ CaCommandDetails ----------------------------------------------
-pub type CaCommandDetails = StoredCommand<CertAuthStorableCommand, CertAuthEvent, CertAuthInitEvent>;
+pub type CaCommandDetails = StoredCommand<CertAuth>;
 
 impl fmt::Display for CaCommandDetails {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

@@ -51,9 +51,17 @@ use super::CertAuthInitCommand;
 
 //------------ CertAuth ----------------------------------------------------
 
-/// This type defines a Certification Authority at a slightly higher level
-/// than one might expect.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+/// This type defines a Certification Authority (CA).
+///
+/// That is to say.. this is an "organisational" CA. It can have multiple
+/// parents, and multiple keys under each. Ultimately, it gets a number of
+/// resource classes this way - each with its own set of resources and an
+/// active (certified) key.
+///
+/// Configurations for ROAs, ASPA etc are kept at the level of the CA, and
+/// actual RPKI objects are then issued under each (and every) resource
+/// class that has matching resources.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CertAuth {
     handle: CaHandle,
     version: u64,

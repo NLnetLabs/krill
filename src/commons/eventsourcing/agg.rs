@@ -70,7 +70,7 @@ pub trait Aggregate: Storable + Send + Sync + 'static {
     /// - applies any contained event
     ///
     /// NOTE:
-    fn apply_command(&mut self, command: StoredCommand<Self::StorableCommandDetails, Self::Event, Self::InitEvent>) {
+    fn apply_command(&mut self, command: StoredCommand<Self>) {
         self.increment_version();
         if let Some(events) = command.into_events() {
             for event in events {

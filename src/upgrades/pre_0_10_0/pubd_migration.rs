@@ -103,12 +103,8 @@ impl UpgradeStore for PublicationServerRepositoryAccessMigration {
 
             let details = StorableRepositoryCommand::Initialise;
 
-            // TODO: simplify type for StoredCommand and its Builder to A?
-            let builder = StoredCommandBuilder::<
-                StorableRepositoryCommand,
-                RepositoryAccessEvent,
-                RepositoryAccessInitEvent,
-            >::new(actor.to_string(), time, handle.clone(), 0, details);
+            let builder =
+                StoredCommandBuilder::<RepositoryAccess>::new(actor.to_string(), time, handle.clone(), 0, details);
             let stored_command = builder.finish_with_init_event(init_event);
 
             let command_key = Self::new_stored_command_key(scope.clone(), 0);

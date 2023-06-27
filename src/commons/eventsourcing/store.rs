@@ -14,13 +14,12 @@ use crate::commons::{
     api::{CommandHistory, CommandHistoryCriteria, CommandHistoryRecord},
     error::KrillIoError,
     eventsourcing::{
-        cmd::Command, locks::HandleLocks, segment, Aggregate, Event, Key, KeyValueError, KeyValueStore,
-        PostSaveEventListener, PreSaveEventListener, Scope, Segment, SegmentBuf, SegmentExt, StoredCommand,
-        StoredCommandBuilder, WithStorableDetails,
+        cmd::Command, locks::HandleLocks, segment, Aggregate, Key, KeyValueError, KeyValueStore, PostSaveEventListener,
+        PreSaveEventListener, Scope, Segment, SegmentBuf, SegmentExt, StoredCommand, StoredCommandBuilder,
     },
 };
 
-use super::{InitCommand, InitEvent};
+use super::InitCommand;
 
 pub type StoreResult<T> = Result<T, AggregateStoreError>;
 
@@ -241,13 +240,8 @@ where
         let agg_lock = self.locks.for_handle(handle.clone());
         let _write_lock = agg_lock.write();
 
-        let processed_command_builder = StoredCommandBuilder::<A::StorableCommandDetails, A::Event, A::InitEvent>::new(
-            cmd.actor().to_string(),
-            Time::now(),
-            handle.clone(),
-            0,
-            cmd.store(),
-        );
+        let processed_command_builder =
+            StoredCommandBuilder::<A>::new(cmd.actor().to_string(), Time::now(), handle.clone(), 0, cmd.store());
 
         let init_event = A::process_init_command(cmd).map_err(|_| AggregateStoreError::InitError(handle.clone()))?;
         let aggregate = A::init(handle.clone(), init_event.clone());
@@ -484,11 +478,7 @@ where
     }
 
     /// Get the command for this key, if it exists
-    pub fn get_command(
-        &self,
-        id: &MyHandle,
-        version: u64,
-    ) -> Result<StoredCommand<A::StorableCommandDetails, A::Event, A::InitEvent>, AggregateStoreError> {
+    pub fn get_command(&self, id: &MyHandle, version: u64) -> Result<StoredCommand<A>, AggregateStoreError> {
         let key = Self::key_for_command(id, version);
         match self.kv.get(&key) {
             Ok(Some(cmd)) => Ok(cmd),
@@ -604,19 +594,7 @@ where
         Ok(res)
     }
 
-    // /// Archive a surplus value for a key
-    // fn archive_surplus_command(&self, id: &MyHandle, key: &CommandKey) -> Result<(), AggregateStoreError> {
-    //     let key = Self::key_for_command(id, key);
-    //     warn!("Archiving surplus command for '{}': {}", id, key);
-    //     self.kv
-    //         .archive_surplus(&key)
-    //         .map_err(AggregateStoreError::KeyStoreError)
-    // }
-
-    fn store_command<D: WithStorableDetails, E: Event, I: InitEvent>(
-        &self,
-        command: &StoredCommand<D, E, I>,
-    ) -> Result<(), AggregateStoreError> {
+    fn store_command(&self, command: &StoredCommand<A>) -> Result<(), AggregateStoreError> {
         let key = Self::key_for_command(command.handle(), command.version());
 
         self.kv.store_new(&key, command)?;
