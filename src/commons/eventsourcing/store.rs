@@ -7,7 +7,7 @@ use std::{
 };
 
 use rpki::{ca::idexchange::MyHandle, repository::x509::Time};
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Serialize};
 use url::Url;
 
 use crate::commons::{
@@ -27,25 +27,6 @@ pub type StoreResult<T> = Result<T, AggregateStoreError>;
 
 pub trait Storable: Clone + Serialize + DeserializeOwned + Sized + 'static {}
 impl<T: Clone + Serialize + DeserializeOwned + Sized + 'static> Storable for T {}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct StoredValueInfo {
-    pub snapshot_version: u64,
-    pub last_event: u64,
-    pub last_command: u64,
-    pub last_update: Time,
-}
-
-impl Default for StoredValueInfo {
-    fn default() -> Self {
-        StoredValueInfo {
-            snapshot_version: 0,
-            last_event: 0,
-            last_command: 0,
-            last_update: Time::now(),
-        }
-    }
-}
 
 //------------ AggregateStore ------------------------------------------------
 
