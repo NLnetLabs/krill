@@ -46,7 +46,7 @@ impl RepositoryAccessInitEvent {
     ) -> KrillResult<RepositoryAccessInitEvent> {
         signer
             .create_self_signed_id_cert()
-            .map_err(|e| Error::signer(e))
+            .map_err(Error::signer)
             .map(|id| RepositoryAccessInitEvent {
                 id_cert: id.into(),
                 rrdp_base_uri,

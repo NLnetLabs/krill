@@ -61,10 +61,7 @@ pub struct AggregateStore<A: Aggregate> {
 
 /// # Starting up
 ///
-impl<A: Aggregate> AggregateStore<A>
-where
-    A::Error: From<AggregateStoreError>,
-{
+impl<A: Aggregate> AggregateStore<A> {
     /// Creates an AggregateStore using a disk based KeyValueStore
     pub fn create(
         storage_uri: &Url,
@@ -376,7 +373,7 @@ where
 
                     // Update the memory cache.
                     let mut cache = self.cache.write().unwrap();
-                    cache.insert(handle.clone(), Arc::new(agg.clone()));
+                    cache.insert(handle, Arc::new(agg.clone()));
 
                     // Now send the events to the 'post-save' listeners.
                     if let Some(events) = processed_command.events() {

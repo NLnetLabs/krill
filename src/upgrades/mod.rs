@@ -4,23 +4,24 @@
 
 use std::{convert::TryInto, fmt, path::Path, str::FromStr, time::Duration};
 
-use serde::de::DeserializeOwned;
+use serde::{de::DeserializeOwned, Deserialize};
 
 use rpki::{ca::idexchange::MyHandle, repository::x509::Time};
 
 use crate::{
     commons::{
+        actor::Actor,
         crypto::KrillSignerBuilder,
         error::{Error, KrillIoError},
         eventsourcing::{
-            segment, AggregateStoreError, Key, KeyValueError, KeyValueStore, Scope, Segment, SegmentExt,
-            StoredValueInfo, WalStore,
+            segment, Aggregate, AggregateStore, AggregateStoreError, Key, KeyValueError, KeyValueStore, Scope, Segment,
+            SegmentExt, StoredCommand, WalStore, WithStorableDetails,
         },
         util::{file, storage::data_dir_from_storage_uri, KrillVersion},
         KrillResult,
     },
     constants::{
-        CASERVER_NS, CA_OBJECTS_NS, KEYS_NS, PUBSERVER_CONTENT_NS, PUBSERVER_NS, SIGNERS_NS, STATUS_NS,
+        CASERVER_NS, CA_OBJECTS_NS, KEYS_NS, KRILL_VERSION, PUBSERVER_CONTENT_NS, PUBSERVER_NS, SIGNERS_NS, STATUS_NS,
         TA_PROXY_SERVER_NS, TA_SIGNER_SERVER_NS, UPGRADE_REISSUE_ROAS_CAS_LIMIT,
     },
     daemon::{config::Config, krillserver::KrillServer, properties::PropertiesManager},
@@ -43,7 +44,7 @@ pub mod pre_0_13_0;
 mod pre_0_14_0;
 pub use self::pre_0_14_0::*;
 
-pub type UpgradeResult<T> = Result<T, PrepareUpgradeError>;
+pub type UpgradeResult<T> = Result<T, UpgradeError>;
 
 //------------ KrillUpgradeReport --------------------------------------------
 
@@ -80,7 +81,7 @@ pub struct UpgradeVersions {
 impl UpgradeVersions {
     /// Returns a KrillUpgradeVersions if the krill code version is newer
     /// than the provided current version.
-    pub fn for_current(current: KrillVersion) -> Result<Option<Self>, PrepareUpgradeError> {
+    pub fn for_current(current: KrillVersion) -> Result<Option<Self>, UpgradeError> {
         let code_version = KrillVersion::code_version();
         match code_version.cmp(&current) {
             std::cmp::Ordering::Greater => Ok(Some(UpgradeVersions {
@@ -88,7 +89,7 @@ impl UpgradeVersions {
                 to: code_version,
             })),
             std::cmp::Ordering::Equal => Ok(None),
-            std::cmp::Ordering::Less => Err(PrepareUpgradeError::CodeOlderThanData(code_version, current)),
+            std::cmp::Ordering::Less => Err(UpgradeError::CodeOlderThanData(code_version, current)),
         }
     }
 
@@ -105,7 +106,7 @@ impl UpgradeVersions {
 
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
-pub enum PrepareUpgradeError {
+pub enum UpgradeError {
     AggregateStoreError(AggregateStoreError),
     KeyStoreError(KeyValueError),
     IoError(KrillIoError),
@@ -117,92 +118,91 @@ pub enum PrepareUpgradeError {
     Custom(String),
 }
 
-impl fmt::Display for PrepareUpgradeError {
+impl fmt::Display for UpgradeError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let cause = match &self {
-            PrepareUpgradeError::AggregateStoreError(e) => format!("Aggregate Error: {}", e),
-            PrepareUpgradeError::KeyStoreError(e) => format!("Keystore Error: {}", e),
-            PrepareUpgradeError::IoError(e) => format!("I/O Error: {}", e),
-            PrepareUpgradeError::Unrecognised(s) => format!("Unrecognised: {}", s),
-            PrepareUpgradeError::CannotLoadAggregate(h) => format!("Cannot load: {}", h),
-            PrepareUpgradeError::IdExchange(s) => format!("Could not use exchanged id info: {}", s),
-            PrepareUpgradeError::OldTaMigration => "Your installation cannot be upgraded to Krill 0.13.0 or later because it includes a CA called \"ta\". These CAs were used for the preliminary Trust Anchor support needed by testbed and benchmark setups. They cannot be migrated to the production grade Trust Anchor support that was introduced in Krill 0.13.0. If you want to continue to use your existing installation we recommend that you downgrade to Krill 0.12.1 or earlier. If you want to operate a testbed using Krill 0.13.0 or later, then you can create a fresh testbed instead of migrating your existing testbed. If you believe that you should not have a CA called \"ta\" - i.e. it may have been left over from an abandoned testbed set up - then you can delete the \"ta\" directory under your krill data \"cas\" directory and restart Krill.".to_string(),
-            PrepareUpgradeError::CodeOlderThanData(code, data) => format!("Krill version {} is older than data version {}. You will need to restore before you can downgrade.", code, data),
-            PrepareUpgradeError::Custom(s) => s.clone(),
+            UpgradeError::AggregateStoreError(e) => format!("Aggregate Error: {}", e),
+            UpgradeError::KeyStoreError(e) => format!("Keystore Error: {}", e),
+            UpgradeError::IoError(e) => format!("I/O Error: {}", e),
+            UpgradeError::Unrecognised(s) => format!("Unrecognised: {}", s),
+            UpgradeError::CannotLoadAggregate(h) => format!("Cannot load: {}", h),
+            UpgradeError::IdExchange(s) => format!("Could not use exchanged id info: {}", s),
+            UpgradeError::OldTaMigration => "Your installation cannot be upgraded to Krill 0.13.0 or later because it includes a CA called \"ta\". These CAs were used for the preliminary Trust Anchor support needed by testbed and benchmark setups. They cannot be migrated to the production grade Trust Anchor support that was introduced in Krill 0.13.0. If you want to continue to use your existing installation we recommend that you downgrade to Krill 0.12.1 or earlier. If you want to operate a testbed using Krill 0.13.0 or later, then you can create a fresh testbed instead of migrating your existing testbed. If you believe that you should not have a CA called \"ta\" - i.e. it may have been left over from an abandoned testbed set up - then you can delete the \"ta\" directory under your krill data \"cas\" directory and restart Krill.".to_string(),
+            UpgradeError::CodeOlderThanData(code, data) => format!("Krill version {} is older than data version {}. You will need to restore before you can downgrade.", code, data),
+            UpgradeError::Custom(s) => s.clone(),
         };
 
         write!(f, "Upgrade preparation failed because of: {}", cause)
     }
 }
-impl PrepareUpgradeError {
+impl UpgradeError {
     pub fn custom(msg: impl fmt::Display) -> Self {
-        PrepareUpgradeError::Custom(msg.to_string())
+        UpgradeError::Custom(msg.to_string())
     }
 
     pub fn unrecognised(msg: impl fmt::Display) -> Self {
-        PrepareUpgradeError::Unrecognised(msg.to_string())
+        UpgradeError::Unrecognised(msg.to_string())
     }
 }
 
-impl From<AggregateStoreError> for PrepareUpgradeError {
+impl From<AggregateStoreError> for UpgradeError {
     fn from(e: AggregateStoreError) -> Self {
-        PrepareUpgradeError::AggregateStoreError(e)
+        UpgradeError::AggregateStoreError(e)
     }
 }
 
-impl From<KeyValueError> for PrepareUpgradeError {
+impl From<KeyValueError> for UpgradeError {
     fn from(e: KeyValueError) -> Self {
-        PrepareUpgradeError::KeyStoreError(e)
+        UpgradeError::KeyStoreError(e)
     }
 }
 
-impl From<KrillIoError> for PrepareUpgradeError {
+impl From<KrillIoError> for UpgradeError {
     fn from(e: KrillIoError) -> Self {
-        PrepareUpgradeError::IoError(e)
+        UpgradeError::IoError(e)
     }
 }
 
-impl From<crate::commons::error::Error> for PrepareUpgradeError {
+impl From<crate::commons::error::Error> for UpgradeError {
     fn from(e: crate::commons::error::Error) -> Self {
-        PrepareUpgradeError::Custom(e.to_string())
+        UpgradeError::Custom(e.to_string())
     }
 }
 
-impl From<rpki::ca::idexchange::Error> for PrepareUpgradeError {
+impl From<rpki::ca::idexchange::Error> for UpgradeError {
     fn from(e: rpki::ca::idexchange::Error) -> Self {
-        PrepareUpgradeError::IdExchange(e.to_string())
+        UpgradeError::IdExchange(e.to_string())
     }
 }
 
-impl std::error::Error for PrepareUpgradeError {}
+impl std::error::Error for UpgradeError {}
 
 //------------ DataUpgradeInfo -----------------------------------------------
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct DataUpgradeInfo {
     pub to_krill_version: KrillVersion,
-    pub last_event: u64,
-    pub last_command: u64,
-    pub last_update: Time,
+    pub last_command: Option<u64>,
+}
+
+impl DataUpgradeInfo {
+    fn next_command(&self) -> u64 {
+        self.last_command.map(|nr| nr + 1).unwrap_or(0)
+    }
+
+    fn increment_command(&mut self) {
+        if let Some(last_command) = self.last_command {
+            self.last_command = Some(last_command + 1);
+        } else {
+            self.last_command = Some(0)
+        }
+    }
 }
 
 impl Default for DataUpgradeInfo {
     fn default() -> Self {
         Self {
             to_krill_version: KrillVersion::code_version(),
-            last_event: 0,
-            last_command: 0,
-            last_update: Time::now(), // will be overwritten to appropriate value
-        }
-    }
-}
-
-impl From<&DataUpgradeInfo> for StoredValueInfo {
-    fn from(upgrade_info: &DataUpgradeInfo) -> Self {
-        StoredValueInfo {
-            snapshot_version: 0,
-            last_event: upgrade_info.last_event,
-            last_command: upgrade_info.last_command,
-            last_update: upgrade_info.last_update,
+            last_command: None,
         }
     }
 }
@@ -223,11 +223,235 @@ impl UpgradeMode {
     }
 }
 
+//------------ UnconvertedEffect ---------------------------------------------
+
+pub enum UnconvertedEffect<T> {
+    Error { msg: String },
+    Success { events: Vec<T> },
+}
+
 //------------ UpgradeStore --------------------------------------------------
 
 /// Implement this for automatic upgrades to key stores
-pub trait UpgradeStore {
-    fn prepare_new_data(&self, mode: UpgradeMode) -> Result<(), PrepareUpgradeError>;
+pub trait UpgradeAggregateStorePre0_14 {
+    type Aggregate: Aggregate;
+
+    type OldInitEvent: DeserializeOwned;
+    type OldEvent: DeserializeOwned;
+    type OldStorableDetails: WithStorableDetails;
+
+    //--- Mandatory functions to implement
+
+    fn store_name(&self) -> &str;
+
+    fn deployed_store(&self) -> &KeyValueStore;
+
+    fn preparation_key_value_store(&self) -> &KeyValueStore;
+
+    fn preparation_aggregate_store(&self) -> &AggregateStore<Self::Aggregate>;
+
+    /// Implement this to convert the old init event to a new
+    /// StoredCommand for the init.
+    fn convert_init_event(
+        &self,
+        old_init: Self::OldInitEvent,
+        handle: MyHandle,
+        actor: String,
+        time: Time,
+    ) -> UpgradeResult<StoredCommand<Self::Aggregate>>;
+
+    /// Implement this to convert an old command and convert the
+    /// included old events.
+    ///
+    /// Implementers may decide that the command does not need to
+    /// be preserved - if it has become irrelevant (may be needed
+    /// for the ASPA migration wrt AFI limit stuff in particular).
+    ///
+    /// The version for the new command is given, as it might differ
+    /// from the old command sequence.
+    fn convert_old_command(
+        &self,
+        old_command: OldStoredCommand<Self::OldStorableDetails>,
+        old_effect: UnconvertedEffect<Self::OldEvent>,
+        version: u64,
+    ) -> UpgradeResult<Option<StoredCommand<Self::Aggregate>>>;
+
+    /// Override this to get a call when the migration of commands for
+    /// an aggregate is done.
+    fn post_migration(&self, handle: &MyHandle) -> UpgradeResult<()> {
+        trace!("default post migration hook called for '{handle}'");
+        Ok(())
+    }
+
+    /// Upgrades pre 0.14.x AggregateStore.
+    ///
+    /// Expects implementers of this trait to provide function for converting
+    /// old command/event/init types to the current types.
+    fn upgrade(&self, mode: UpgradeMode) -> UpgradeResult<()> {
+        // check existing version, wipe it if there is an unfinished upgrade
+        // in progress for another Krill version.
+        self.preparation_store_prepare()?;
+
+        info!(
+            "Prepare upgrading {} to Krill version {}",
+            self.store_name(),
+            KRILL_VERSION
+        );
+
+        // Migrate the event sourced data for each scope and create new snapshots
+        for scope in self.deployed_store().scopes()? {
+            // Getting the Handle should never fail, but if it does then we should bail out asap.
+            let handle = MyHandle::from_str(&scope.to_string())
+                .map_err(|_| UpgradeError::Custom(format!("Found invalid handle '{}'", scope)))?;
+
+            // Get the upgrade info to see where we got to.
+            // We may be continuing from an
+
+            let mut data_upgrade_info = self.data_upgrade_info(&scope)?;
+
+            // Get the list of commands to prepare, starting with the last_command we got to (may be 0)
+            let old_cmd_keys = self.command_keys(&scope, data_upgrade_info.last_command.unwrap_or(0))?;
+
+            // Migrate the initialisation event, if not done in a previous run. This
+            // is a special event that has no command, so we need to do this separately.
+            if data_upgrade_info.last_command.is_none() {
+                let old_init_key = Self::event_key(scope.clone(), 0);
+                let old_init: Self::OldInitEvent = self.get(&old_init_key)?;
+
+                // From 0.14.x and up we will have command '0' for the init, where beforehand
+                // we only had an event. We will have to make up some values for the actor and time.
+                let actor = Actor::system_actor().to_string();
+
+                // The time is tricky.. our best guess is to set this to the same
+                // value as the first command, if there is any. In the very unlikely
+                // case that there is no first command, then we might as well set
+                // it to now.
+                let time = if let Some(first_command) = old_cmd_keys.first() {
+                    let cmd: OldStoredCommand<Self::OldStorableDetails> = self.get(first_command)?;
+                    cmd.time()
+                } else {
+                    Time::now()
+                };
+
+                // We need to ask the implementer of this trait to convert the
+                // init event we found to a StoredCommand that we can save.
+                let command = self.convert_init_event(old_init, handle.clone(), actor, time)?;
+
+                self.store_new_command(&scope, &command)?;
+                data_upgrade_info.increment_command();
+            }
+
+            // Track commands migrated and time spent so we can report progress
+            let mut total_migrated = 0;
+            let total_commands = old_cmd_keys.len(); // excludes migrated commands
+            let time_started = Time::now();
+
+            // Report the amount of (remaining) work (old)
+            Self::report_remaining_work(total_commands, &handle, &data_upgrade_info)?;
+
+            // Process remaining commands
+            for old_cmd_key in old_cmd_keys {
+                // Read and parse the command.
+                let old_command: OldStoredCommand<Self::OldStorableDetails> = self.get(&old_cmd_key)?;
+
+                // And the unconverted effects
+                let old_effect = match old_command.effect() {
+                    OldStoredEffect::Success { events } => {
+                        let mut full_events: Vec<Self::OldEvent> = vec![]; // We just had numbers, we need to include the full events
+                        for v in events {
+                            let event_key = Self::event_key(scope.clone(), *v);
+                            trace!("  +- event: {}", event_key);
+                            let evt: Self::OldEvent = self.deployed_store().get(&event_key)?.ok_or_else(|| {
+                                UpgradeError::Custom(format!("Cannot parse old event: {}", event_key))
+                            })?;
+                            full_events.push(evt);
+                        }
+                        UnconvertedEffect::Success { events: full_events }
+                    }
+                    OldStoredEffect::Error { msg } => UnconvertedEffect::Error { msg: msg.clone() },
+                };
+
+                if let Some(command) =
+                    self.convert_old_command(old_command, old_effect, data_upgrade_info.next_command())?
+                {
+                    self.store_new_command(&scope, &command)?;
+                    data_upgrade_info.increment_command();
+                }
+
+                // Report progress and expected time to finish on every 100 commands evaluated.
+                total_migrated += 1;
+                if total_migrated % 100 == 0 {
+                    // expected time: (total_migrated / (now - started)) * total
+
+                    let mut time_passed = (Time::now().timestamp() - time_started.timestamp()) as usize;
+                    if time_passed == 0 {
+                        time_passed = 1; // avoid divide by zero.. we are doing approximate estimates here
+                    }
+                    let migrated_per_second: f64 = total_migrated as f64 / time_passed as f64;
+                    let expected_seconds = (total_commands as f64 / migrated_per_second) as i64;
+                    let eta = time_started + chrono::Duration::seconds(expected_seconds);
+                    info!(
+                        "  migrated {} commands, expect to finish: {}",
+                        total_migrated,
+                        eta.to_rfc3339()
+                    );
+                }
+            }
+
+            info!("Finished migrating commands for '{}'", scope);
+
+            // Verify migration
+            info!(
+                "Will verify the migration by rebuilding '{}' from migrated commands",
+                &scope
+            );
+            let latest = self.preparation_aggregate_store().get_latest(&handle).map_err(|e| {
+                UpgradeError::Custom(format!(
+                    "Could not rebuild state after migrating CA '{}'! Error was: {}.",
+                    handle, e
+                ))
+            })?;
+
+            // Store snapshot to avoid having to re-process the deltas again in future
+            self.preparation_aggregate_store()
+                .store_snapshot(&handle, latest.as_ref())
+                .map_err(|e| {
+                    UpgradeError::Custom(format!(
+                        "Could not save snapshot for CA '{}' after migration! Disk full?!? Error was: {}.",
+                        handle, e
+                    ))
+                })?;
+
+            // Call the post command migration hook, this will do nothing
+            // unless the implementer of this trait overrode it.
+            self.post_migration(&handle)?;
+
+            // Update the upgrade info as this could be a prepare only
+            // run, and this migration could be resumed later after more
+            // changes were applied.
+            self.update_data_upgrade_info(&scope, &data_upgrade_info)?;
+
+            info!("Verified migration of '{}'", handle);
+        }
+
+        match mode {
+            UpgradeMode::PrepareOnly => {
+                info!(
+                    "Prepared migrating CAs to Krill version {}. Will save progress for final upgrade when Krill restarts.",
+                    KRILL_VERSION
+                );
+            }
+            UpgradeMode::PrepareToFinalise => {
+                self.clean_migration_help_files()?;
+                info!("Prepared migrating CAs to Krill version {}.", KRILL_VERSION);
+            }
+        }
+
+        Ok(())
+    }
+
+    //-- Internal helper functions for this trait. Should not be used or
+    //   overridden.
 
     /// Saves the version of the target upgrade. Wipes the store if there is another
     /// version set as the target.
@@ -235,21 +459,50 @@ pub trait UpgradeStore {
         let code_version = KrillVersion::code_version();
         let version_key = Key::new_global(segment!("version"));
 
-        if let Ok(Some(existing_migration_version)) = self.preparation_store().get::<KrillVersion>(&version_key) {
+        if let Ok(Some(existing_migration_version)) =
+            self.preparation_key_value_store().get::<KrillVersion>(&version_key)
+        {
             if existing_migration_version != code_version {
                 warn!("Found prepared data for Krill version {existing_migration_version}, will remove it and start from scratch for {code_version}");
-                self.preparation_store().wipe()?;
+                self.preparation_key_value_store().wipe()?;
             }
         }
 
-        self.preparation_store().store(&version_key, &code_version)?;
+        self.preparation_key_value_store().store(&version_key, &code_version)?;
 
         Ok(())
     }
 
-    fn deployed_store(&self) -> &KeyValueStore;
+    fn report_remaining_work(
+        total_remaining: usize,
+        handle: &MyHandle,
+        data_upgrade_info: &DataUpgradeInfo,
+    ) -> UpgradeResult<()> {
+        // Unwrap is safe here, because if there was no last_command
+        // then we would have converted the init event above, and would
+        // have set this.
+        let last_command = data_upgrade_info.last_command.ok_or(UpgradeError::custom(
+            "called report_remaining_work before converting init event",
+        ))?;
 
-    fn preparation_store(&self) -> &KeyValueStore;
+        if last_command == 0 {
+            info!("Will migrate {} commands for '{}'", total_remaining, handle);
+        } else {
+            info!(
+                "Will resume migration of {} remaining commands for '{}'",
+                total_remaining, handle
+            );
+        }
+
+        Ok(())
+    }
+
+    fn store_new_command(&self, scope: &Scope, command: &StoredCommand<Self::Aggregate>) -> UpgradeResult<()> {
+        let key = Self::new_stored_command_key(scope.clone(), command.version());
+        self.preparation_key_value_store()
+            .store_new(&key, command)
+            .map_err(UpgradeError::KeyStoreError)
+    }
 
     fn data_upgrade_info_key(scope: Scope) -> Key {
         Key::new_scoped(scope, segment!("upgrade_info.json"))
@@ -257,45 +510,45 @@ pub trait UpgradeStore {
 
     /// Return the DataUpgradeInfo telling us to where we got to with this migration.
     fn data_upgrade_info(&self, scope: &Scope) -> UpgradeResult<DataUpgradeInfo> {
-        self.preparation_store()
+        self.preparation_key_value_store()
             .get(&Self::data_upgrade_info_key(scope.clone()))
             .map(|opt| match opt {
                 None => DataUpgradeInfo::default(),
                 Some(info) => info,
             })
-            .map_err(PrepareUpgradeError::KeyStoreError)
+            .map_err(UpgradeError::KeyStoreError)
     }
 
     /// Update the DataUpgradeInfo
     fn update_data_upgrade_info(&self, scope: &Scope, info: &DataUpgradeInfo) -> UpgradeResult<()> {
-        self.preparation_store()
+        self.preparation_key_value_store()
             .store(&Self::data_upgrade_info_key(scope.clone()), info)
-            .map_err(PrepareUpgradeError::KeyStoreError)
+            .map_err(UpgradeError::KeyStoreError)
     }
 
     /// Clean up keys used for tracking migration progress
     fn clean_migration_help_files(&self) -> UpgradeResult<()> {
         let version_key = Key::new_global(segment!("version"));
-        self.preparation_store()
+        self.preparation_key_value_store()
             .drop_key(&version_key)
-            .map_err(PrepareUpgradeError::KeyStoreError)?;
+            .map_err(UpgradeError::KeyStoreError)?;
 
-        for scope in self.preparation_store().scopes()? {
-            self.preparation_store()
+        for scope in self.preparation_key_value_store().scopes()? {
+            self.preparation_key_value_store()
                 .drop_key(&Self::data_upgrade_info_key(scope))
-                .map_err(PrepareUpgradeError::KeyStoreError)?;
+                .map_err(UpgradeError::KeyStoreError)?;
         }
         Ok(())
     }
 
     /// Find all command keys for the scope, starting from the provided sequence. Then sort them
     /// by sequence and turn them back into key store keys for further processing.
-    fn command_keys(&self, scope: &Scope, from: u64) -> Result<Vec<Key>, PrepareUpgradeError> {
+    fn command_keys(&self, scope: &Scope, from: u64) -> Result<Vec<Key>, UpgradeError> {
         let keys = self.deployed_store().keys(scope, "command--")?;
         let mut cmd_keys: Vec<OldCommandKey> = vec![];
         for key in keys {
             let cmd_key = OldCommandKey::from_str(key.name().as_str()).map_err(|_| {
-                PrepareUpgradeError::Custom(format!("Found invalid command key: {} for ca: {}", key.name(), scope))
+                UpgradeError::Custom(format!("Found invalid command key: {} for ca: {}", key.name(), scope))
             })?;
             if cmd_key.sequence > from {
                 cmd_keys.push(cmd_key);
@@ -310,10 +563,10 @@ pub trait UpgradeStore {
         Ok(cmd_keys)
     }
 
-    fn get<V: DeserializeOwned>(&self, key: &Key) -> Result<V, PrepareUpgradeError> {
+    fn get<V: DeserializeOwned>(&self, key: &Key) -> Result<V, UpgradeError> {
         self.deployed_store()
             .get(key)?
-            .ok_or_else(|| PrepareUpgradeError::Custom(format!("Cannot read key: {}", key)))
+            .ok_or_else(|| UpgradeError::Custom(format!("Cannot read key: {}", key)))
     }
 
     fn event_key(scope: Scope, nr: u64) -> Key {
@@ -366,17 +619,17 @@ pub fn prepare_upgrade_data_migrations(
             // case to put in the effort, but there really isn't.
             let ca_kv_store = KeyValueStore::create(&config.storage_uri, CASERVER_NS)?;
             if ca_kv_store.has_scope(&Scope::from_segment(segment!("ta")))? {
-                return Err(PrepareUpgradeError::OldTaMigration);
+                return Err(UpgradeError::OldTaMigration);
             }
 
             if versions.from < KrillVersion::release(0, 6, 0) {
                 let msg = "Cannot upgrade Krill installations from before version 0.6.0. Please upgrade to 0.8.1 first, then upgrade to 0.12.3, and then upgrade to this version.";
                 error!("{}", msg);
-                Err(PrepareUpgradeError::custom(msg))
+                Err(UpgradeError::custom(msg))
             } else if versions.from < KrillVersion::release(0, 9, 0) {
                 let msg = "Cannot upgrade Krill installations from before version 0.9.0. Please upgrade to 0.12.3 first, and then upgrade to this version.";
                 error!("{}", msg);
-                Err(PrepareUpgradeError::custom(msg))
+                Err(UpgradeError::custom(msg))
             } else if versions.from < KrillVersion::candidate(0, 10, 0, 1) {
                 let upgrade_data_dir = data_dir_from_storage_uri(config.upgrade_storage_uri()).unwrap();
                 if !upgrade_data_dir.exists() {
@@ -389,18 +642,18 @@ pub fn prepare_upgrade_data_migrations(
                     // Create upgrade dir if it did not yet exist.
                     let lock_file_path = upgrade_data_dir.join("upgrade.lock");
                     fslock::LockFile::open(&lock_file_path).map_err(|_| {
-                        PrepareUpgradeError::custom(
+                        UpgradeError::custom(
                             format!("Cannot get upgrade lock. Another process may be running a Krill upgrade. Or, perhaps you ran 'krillup' as root - in that case check the ownership of directory: {}", upgrade_data_dir.to_string_lossy()),
                         )
                     })?
                 };
 
-                pre_0_10_0::PublicationServerRepositoryAccessMigration::prepare(mode, &config, &versions)?;
+                pre_0_10_0::PublicationServerRepositoryAccessMigration::prepare(mode, config, &versions)?;
                 pre_0_10_0::CasMigration::prepare(mode, config)?;
                 migrate_pre_0_12_pubd_objects(config)?;
                 Ok(Some(UpgradeReport::new(true, versions)))
             } else if versions.from < KrillVersion::candidate(0, 10, 0, 3) {
-                Err(PrepareUpgradeError::custom(
+                Err(UpgradeError::custom(
                     "Cannot upgrade from 0.10.0 RC1 or RC2. Please contact rpki-team@nlnetlabs.nl",
                 ))
             } else if versions.from < KrillVersion::candidate(0, 12, 0, 2) {
@@ -615,7 +868,7 @@ pub fn finalise_data_migration(
 /// signers have been registered and no key mappings have been recorded, and then walk KEYS_NS adding the keys one by
 /// one to the mapping in the signer store, if any.
 #[cfg(feature = "hsm")]
-fn record_preexisting_openssl_keys_in_signer_mapper(config: &Config) -> Result<(), PrepareUpgradeError> {
+fn record_preexisting_openssl_keys_in_signer_mapper(config: &Config) -> Result<(), UpgradeError> {
     match data_dir_from_storage_uri(&config.storage_uri) {
         None => Ok(()),
         Some(data_dir) => {
@@ -641,7 +894,7 @@ fn record_preexisting_openssl_keys_in_signer_mapper(config: &Config) -> Result<(
 
                     for entry in dir_iter {
                         let entry = entry.map_err(|err| {
-                            PrepareUpgradeError::IoError(KrillIoError::new(
+                            UpgradeError::IoError(KrillIoError::new(
                                 format!(
                                     "I/O error while looking for signer keys to register in: {}",
                                     keys_dir.to_string_lossy()
@@ -723,7 +976,7 @@ pub async fn post_start_upgrade(upgrade_versions: &UpgradeVersions, server: &Kri
 fn upgrade_versions(
     config: &Config,
     properties_manager: &PropertiesManager,
-) -> Result<Option<UpgradeVersions>, PrepareUpgradeError> {
+) -> Result<Option<UpgradeVersions>, UpgradeError> {
     if let Ok(current) = properties_manager.current_krill_version() {
         // We found the KrillVersion stored in the properties manager
         // introduced in Krill 0.14.0.

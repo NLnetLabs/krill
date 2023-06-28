@@ -436,7 +436,7 @@ mod tests {
         let content = "content".to_owned();
         let id = segment!("id");
         let scope = Scope::from_segment(random_segment());
-        let key = Key::new_scoped(scope.clone(), id.clone());
+        let key = Key::new_scoped(scope.clone(), id);
 
         assert!(store.scopes().unwrap().is_empty());
 
@@ -483,7 +483,7 @@ mod tests {
 
         let id2 = segment!("command--ls");
         let id3 = random_segment();
-        let key2 = Key::new_scoped(scope.clone(), id2.clone());
+        let key2 = Key::new_scoped(scope.clone(), id2);
         let key3 = Key::new_global(id3.clone());
 
         store.store(&key, &content).unwrap();

@@ -112,6 +112,10 @@ impl<S: WithStorableDetails> OldStoredCommand<S> {
         self.time
     }
 
+    pub fn handle(&self) -> &MyHandle {
+        &self.handle
+    }
+
     pub fn sequence(&self) -> u64 {
         self.sequence
     }

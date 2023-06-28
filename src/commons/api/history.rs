@@ -781,7 +781,7 @@ pub enum StorableRepositoryCommand {
 impl WithStorableDetails for StorableRepositoryCommand {
     fn summary(&self) -> CommandSummary {
         match self {
-            StorableRepositoryCommand::Initialise => CommandSummary::new("pubd-init", &self),
+            StorableRepositoryCommand::Initialise => CommandSummary::new("pubd-init", self),
             StorableRepositoryCommand::AddPublisher { name } => {
                 CommandSummary::new("pubd-publisher-add", self).with_publisher(name)
             }

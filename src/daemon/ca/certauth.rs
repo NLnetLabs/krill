@@ -489,7 +489,7 @@ impl Aggregate for CertAuth {
     }
 
     fn process_init_command(command: CertAuthInitCommand) -> Result<CertAuthInitEvent, Error> {
-        Rfc8183Id::generate(command.into_details().signer()).map(|id| CertAuthInitEvent::new(id))
+        Rfc8183Id::generate(command.into_details().signer()).map(CertAuthInitEvent::new)
     }
 }
 

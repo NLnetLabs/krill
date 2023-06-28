@@ -1,6 +1,6 @@
 use rpki::ca::idexchange::MyHandle;
 
-use super::{Command, Event, InitCommand, InitEvent, Storable, StoredCommand};
+use super::{AggregateStoreError, Command, Event, InitCommand, InitEvent, Storable, StoredCommand};
 use crate::commons::eventsourcing::WithStorableDetails;
 
 //------------ Aggregate -----------------------------------------------------
@@ -29,7 +29,7 @@ pub trait Aggregate: Storable + Send + Sync + 'static {
 
     type StorableCommandDetails: WithStorableDetails;
 
-    type Error: std::error::Error + Send + Sync;
+    type Error: std::error::Error + Send + Sync + From<AggregateStoreError>;
 
     /// Creates a new instance. Expects an InitEvent with data needed to
     /// initialize the instance. This is not allowed to fail - it's just

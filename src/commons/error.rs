@@ -24,7 +24,7 @@ use crate::{
         util::httpclient,
     },
     daemon::{ca::RoaPayloadJsonMapKey, http::tls_keys, ta},
-    upgrades::PrepareUpgradeError,
+    upgrades::UpgradeError,
 };
 
 use super::{
@@ -166,7 +166,7 @@ pub enum Error {
     HttpsSetup(String),
     HttpClientError(httpclient::Error),
     ConfigError(String),
-    UpgradeError(PrepareUpgradeError),
+    UpgradeError(UpgradeError),
 
     //-----------------------------------------------------------------
     // General API Client Issues
@@ -603,8 +603,8 @@ impl From<PublicationDeltaError> for Error {
     }
 }
 
-impl From<PrepareUpgradeError> for Error {
-    fn from(e: PrepareUpgradeError) -> Self {
+impl From<UpgradeError> for Error {
+    fn from(e: UpgradeError) -> Self {
         Error::UpgradeError(e)
     }
 }

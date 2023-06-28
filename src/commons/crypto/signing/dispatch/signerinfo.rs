@@ -179,7 +179,7 @@ impl fmt::Display for SignerInfoCommandDetails {
 impl WithStorableDetails for SignerInfoCommandDetails {
     fn summary(&self) -> CommandSummary {
         match self {
-            SignerInfoCommandDetails::CreateSigner => CommandSummary::new("signer-create", &self),
+            SignerInfoCommandDetails::CreateSigner => CommandSummary::new("signer-create", self),
             SignerInfoCommandDetails::AddKey(key_id, internal_key_id) => CommandSummary::new("signer-add-key", self)
                 .with_arg("key_id", key_id)
                 .with_arg("internal_key_id", internal_key_id),

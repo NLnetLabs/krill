@@ -34,7 +34,7 @@ use crate::{
     },
     daemon::ta::{TaCertDetails, TrustAnchorLocator},
     pubd::{Publisher, RepositoryAccessEvent, RepositoryAccessInitEvent},
-    upgrades::{OldStoredEvent, PrepareUpgradeError},
+    upgrades::{OldStoredEvent, UpgradeError},
 };
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -66,7 +66,7 @@ pub struct OldTrustAnchorLocator {
 }
 
 impl TryFrom<OldTaCertDetails> for TaCertDetails {
-    type Error = PrepareUpgradeError;
+    type Error = UpgradeError;
 
     fn try_from(old: OldTaCertDetails) -> Result<Self, Self::Error> {
         let cert = old.cert;
@@ -84,7 +84,7 @@ impl TryFrom<OldTaCertDetails> for TaCertDetails {
                 // included.
                 cert.rpki_manifest()
                     .ok_or_else(|| {
-                        PrepareUpgradeError::custom(
+                        UpgradeError::custom(
                             "Cannot migrate TA, rsync URI is missing and TA cert does not have a manifest URI?!",
                         )
                     })?
@@ -98,7 +98,7 @@ impl TryFrom<OldTaCertDetails> for TaCertDetails {
 
         let public_key = cert.subject_public_key_info().clone();
         let rvcd_cert = ReceivedCert::create(cert, rsync_uri.clone(), resources, limit)
-            .map_err(|e| PrepareUpgradeError::Custom(format!("Could not convert old TA details: {}", e)))?;
+            .map_err(|e| UpgradeError::Custom(format!("Could not convert old TA details: {}", e)))?;
 
         let tal = TrustAnchorLocator::new(tal.uris, rsync_uri, &public_key);
 
@@ -135,9 +135,9 @@ pub struct OldChildCertificateUpdates {
 }
 
 impl TryFrom<OldChildCertificateUpdates> for ChildCertificateUpdates {
-    type Error = PrepareUpgradeError;
+    type Error = UpgradeError;
 
-    fn try_from(old: OldChildCertificateUpdates) -> Result<Self, PrepareUpgradeError> {
+    fn try_from(old: OldChildCertificateUpdates) -> Result<Self, UpgradeError> {
         let mut issued: Vec<IssuedCertificate> = vec![];
         let mut suspended: Vec<SuspendedCert> = vec![];
         let mut unsuspended: Vec<UnsuspendedCert> = vec![];
@@ -188,11 +188,11 @@ pub type OldSuspendedCert = OldDelegatedCertificate;
 pub type OldUnsuspendedCert = OldDelegatedCertificate;
 
 impl<T> TryFrom<OldDelegatedCertificate> for CertInfo<T> {
-    type Error = PrepareUpgradeError;
+    type Error = UpgradeError;
 
     fn try_from(old: OldDelegatedCertificate) -> Result<Self, Self::Error> {
         CertInfo::create(old.cert, old.uri, old.resource_set, old.limit)
-            .map_err(|e| PrepareUpgradeError::Custom(format!("cannot convert certificate: {}", e)))
+            .map_err(|e| UpgradeError::Custom(format!("cannot convert certificate: {}", e)))
     }
 }
 
@@ -217,11 +217,11 @@ impl PartialEq for OldRcvdCert {
 impl Eq for OldRcvdCert {}
 
 impl TryFrom<OldRcvdCert> for ReceivedCert {
-    type Error = PrepareUpgradeError;
+    type Error = UpgradeError;
 
     fn try_from(old: OldRcvdCert) -> Result<Self, Self::Error> {
         ReceivedCert::create(old.cert, old.uri, old.resources, RequestResourceLimit::default())
-            .map_err(|e| PrepareUpgradeError::Custom(format!("cannot convert certificate: {}", e)))
+            .map_err(|e| UpgradeError::Custom(format!("cannot convert certificate: {}", e)))
     }
 }
 
@@ -239,7 +239,7 @@ pub struct OldCertifiedKey {
 }
 
 impl TryFrom<OldCertifiedKey> for CertifiedKey {
-    type Error = PrepareUpgradeError;
+    type Error = UpgradeError;
 
     fn try_from(old: OldCertifiedKey) -> Result<Self, Self::Error> {
         Ok(CertifiedKey::new(
@@ -265,11 +265,11 @@ pub enum OldParentCaContact {
 }
 
 impl TryFrom<OldParentCaContact> for ParentCaContact {
-    type Error = PrepareUpgradeError;
+    type Error = UpgradeError;
 
     fn try_from(old: OldParentCaContact) -> Result<Self, Self::Error> {
         match old {
-            OldParentCaContact::Ta(_old) => Err(PrepareUpgradeError::OldTaMigration),
+            OldParentCaContact::Ta(_old) => Err(UpgradeError::OldTaMigration),
             OldParentCaContact::Rfc6492(old) => Ok(ParentCaContact::Rfc6492(old.into())),
         }
     }
@@ -877,11 +877,11 @@ pub enum Pre0_10CertAuthEventDetails {
 }
 
 impl TryFrom<Pre0_10CertAuthEventDetails> for CertAuthEvent {
-    type Error = PrepareUpgradeError;
+    type Error = UpgradeError;
 
     fn try_from(old: Pre0_10CertAuthEventDetails) -> Result<Self, Self::Error> {
         Ok(match old {
-            Pre0_10CertAuthEventDetails::TrustAnchorMade { .. } => return Err(PrepareUpgradeError::OldTaMigration),
+            Pre0_10CertAuthEventDetails::TrustAnchorMade { .. } => return Err(UpgradeError::OldTaMigration),
             Pre0_10CertAuthEventDetails::ChildAdded {
                 child,
                 id_cert,
@@ -1075,7 +1075,7 @@ pub struct OldCaObjects {
 }
 
 impl TryFrom<OldCaObjects> for ca::CaObjects {
-    type Error = PrepareUpgradeError;
+    type Error = UpgradeError;
 
     fn try_from(old: OldCaObjects) -> Result<Self, Self::Error> {
         let ca = old.ca;
@@ -1158,7 +1158,7 @@ pub struct OldResourceClassObjects {
 }
 
 impl TryFrom<OldResourceClassObjects> for ca::ResourceClassObjects {
-    type Error = PrepareUpgradeError;
+    type Error = UpgradeError;
 
     fn try_from(old: OldResourceClassObjects) -> Result<Self, Self::Error> {
         old.keys.try_into().map(ca::ResourceClassObjects::new)
@@ -1174,7 +1174,7 @@ pub enum OldResourceClassKeyState {
 }
 
 impl TryFrom<OldResourceClassKeyState> for ca::ResourceClassKeyState {
-    type Error = PrepareUpgradeError;
+    type Error = UpgradeError;
 
     fn try_from(old: OldResourceClassKeyState) -> Result<Self, Self::Error> {
         Ok(match old {
@@ -1191,7 +1191,7 @@ pub struct OldCurrentKeyState {
 }
 
 impl TryFrom<OldCurrentKeyState> for ca::CurrentKeyState {
-    type Error = PrepareUpgradeError;
+    type Error = UpgradeError;
 
     fn try_from(old: OldCurrentKeyState) -> Result<Self, Self::Error> {
         Ok(ca::CurrentKeyState::new(old.current_set.try_into()?))
@@ -1205,7 +1205,7 @@ pub struct OldStagingKeyState {
 }
 
 impl TryFrom<OldStagingKeyState> for ca::StagingKeyState {
-    type Error = PrepareUpgradeError;
+    type Error = UpgradeError;
 
     fn try_from(old: OldStagingKeyState) -> Result<Self, Self::Error> {
         Ok(ca::StagingKeyState::new(
@@ -1222,7 +1222,7 @@ pub struct OldOldKeyState {
 }
 
 impl TryFrom<OldOldKeyState> for ca::OldKeyState {
-    type Error = PrepareUpgradeError;
+    type Error = UpgradeError;
 
     fn try_from(old: OldOldKeyState) -> Result<Self, Self::Error> {
         Ok(ca::OldKeyState::new(
@@ -1248,7 +1248,7 @@ pub struct OldCurrentKeyObjectSet {
 }
 
 impl TryFrom<OldCurrentKeyObjectSet> for ca::KeyObjectSet {
-    type Error = PrepareUpgradeError;
+    type Error = UpgradeError;
 
     fn try_from(old: OldCurrentKeyObjectSet) -> Result<Self, Self::Error> {
         let signing_cert = old.basic.signing_cert.try_into()?;
@@ -1421,7 +1421,7 @@ pub struct OldBasicKeyObjectSet {
 }
 
 impl TryFrom<OldBasicKeyObjectSet> for ca::KeyObjectSet {
-    type Error = PrepareUpgradeError;
+    type Error = UpgradeError;
 
     fn try_from(old: OldBasicKeyObjectSet) -> Result<Self, Self::Error> {
         let signing_cert = old.signing_cert.try_into()?;
