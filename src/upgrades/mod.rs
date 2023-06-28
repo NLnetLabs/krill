@@ -396,8 +396,8 @@ pub fn prepare_upgrade_data_migrations(
                 };
 
                 pre_0_10_0::PublicationServerRepositoryAccessMigration::prepare(mode, &config, &versions)?;
-                pre_0_10_0::CasMigration::prepare(mode, &config)?;
-                migrate_pre_0_12_pubd_objects(&config)?;
+                pre_0_10_0::CasMigration::prepare(mode, config)?;
+                migrate_pre_0_12_pubd_objects(config)?;
                 Ok(Some(UpgradeReport::new(true, versions)))
             } else if versions.from < KrillVersion::candidate(0, 10, 0, 3) {
                 Err(PrepareUpgradeError::custom(
@@ -409,10 +409,10 @@ pub fn prepare_upgrade_data_migrations(
                     versions.from(),
                     versions.to()
                 );
-                let pubd_objects_migrated = migrate_pre_0_12_pubd_objects(&config)?;
+                let pubd_objects_migrated = migrate_pre_0_12_pubd_objects(config)?;
                 Ok(Some(UpgradeReport::new(pubd_objects_migrated, versions)))
             } else if versions.from < KrillVersion::candidate(0, 13, 0, 0) {
-                let pubd_objects_migrated = migrate_0_12_pubd_objects(&config)?;
+                let pubd_objects_migrated = migrate_0_12_pubd_objects(config)?;
                 Ok(Some(UpgradeReport::new(pubd_objects_migrated, versions)))
             } else {
                 Ok(Some(UpgradeReport::new(false, versions)))
