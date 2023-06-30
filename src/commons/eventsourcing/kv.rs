@@ -5,7 +5,7 @@ use kvx::{KeyValueStoreBackend, ReadStore, WriteStore};
 use serde::{de::DeserializeOwned, Serialize};
 use url::Url;
 
-use crate::commons::{error::KrillIoError, util::KrillVersion};
+use crate::commons::error::KrillIoError;
 
 pub trait SegmentExt {
     fn parse_lossy(value: &str) -> SegmentBuf;
@@ -42,15 +42,6 @@ impl KeyValueStore {
     /// Creates a new KeyValueStore and initializes the version if it had
     /// not been set.
     pub fn create(storage_uri: &Url, name_space: impl Into<SegmentBuf>) -> Result<Self, KeyValueError> {
-        let store = KeyValueStore {
-            inner: kvx::KeyValueStore::new(storage_uri, name_space)?,
-        };
-        store.init_version()?;
-        Ok(store)
-    }
-
-    /// Creates a new KeyValueStore and does NOT initializes the version
-    pub fn create_no_init(storage_uri: &Url, name_space: impl Into<SegmentBuf>) -> Result<Self, KeyValueError> {
         let store = KeyValueStore {
             inner: kvx::KeyValueStore::new(storage_uri, name_space)?,
         };
@@ -161,55 +152,6 @@ impl KeyValueStore {
             .into_iter()
             .filter(|key| matching.is_empty() || key.name().as_str().contains(matching))
             .collect())
-    }
-
-    /// Stores the Krill version in the store, if it does not exist already. Can
-    /// occur at the same time as another store, but they will write the same
-    /// version anyway.
-    fn init_version(&self) -> Result<(), KeyValueError> {
-        if self.inner.get(&Self::version_key())?.is_none() {
-            self.version_set_current()?
-        }
-
-        Ok(())
-    }
-
-    /// Returns the version of a key store.
-    /// KeyStore use a specific key-value pair to track their version. If the key is absent it
-    /// is assumed that the version was from before Krill 0.6.0. An error is returned if the key
-    /// is present, but the value is corrupt or not recognized.
-    pub fn version(&self) -> Result<KrillVersion, KeyValueError> {
-        self.get(&Self::version_key())
-            .map(|version_opt| version_opt.unwrap_or_else(KrillVersion::v0_5_0_or_before))
-    }
-
-    /// Returns whether the version of this key store predates the given version.
-    /// KeyStore use a specific key-value pair to track their version. If the key is absent it
-    /// is assumed that the version was from before Krill 0.6.0. An error is returned if the key
-    /// is present, but the value is corrupt or not recognized.
-    pub fn version_is_before(&self, later: KrillVersion) -> Result<bool, KeyValueError> {
-        let version = self.version()?;
-        Ok(version < later)
-    }
-
-    pub fn version_is_after(&self, earlier: KrillVersion) -> Result<bool, KeyValueError> {
-        let version = self.version()?;
-        Ok(version > earlier)
-    }
-
-    /// Returns whether the version of the deployed keystore matches that of the
-    /// currently deployed code.
-    pub fn version_is_current(&self) -> Result<bool, KeyValueError> {
-        self.version().map(|deployed| deployed == KrillVersion::code_version())
-    }
-
-    /// Sets the version of this key store to the currently deployed code
-    pub fn version_set_current(&self) -> Result<(), KeyValueError> {
-        self.store(&Self::version_key(), &KrillVersion::code_version())
-    }
-
-    fn version_key() -> Key {
-        Key::new_global(segment!("version"))
     }
 }
 

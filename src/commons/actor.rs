@@ -140,15 +140,24 @@ impl PartialEq<ActorDef> for Actor {
 impl Actor {
     /// Only for krillta
     ///
-    /// Mo authorizer framework exists for krillta. It is designed as a
+    /// No authorizer framework exists for krillta. It is designed as a
     /// CLI. Sysadmins should ensure that only trusted people can execute
     /// the CLI (and/or read / write its data).
     pub fn krillta() -> Actor {
-        Self::test_from_def(crate::constants::ACTOR_DEF_KRILLTA)
+        Self::actor_from_def(crate::constants::ACTOR_DEF_KRILLTA)
     }
 
-    /// Only for use in testing
-    pub fn test_from_def(actor_def: ActorDef) -> Actor {
+    /// Setup a System Actor
+    ///
+    /// This is an admin user used by the system itself. Authorizer frameworks
+    /// are not relevant to it.
+    pub fn system_actor() -> Actor {
+        Self::actor_from_def(crate::constants::ACTOR_DEF_KRILL)
+    }
+
+    /// Should only be used for system users, i.e. not for mapping
+    /// logged in users.
+    pub fn actor_from_def(actor_def: ActorDef) -> Actor {
         Actor {
             name: actor_def.name.clone(),
             is_user: actor_def.is_user,

@@ -34,7 +34,7 @@ struct CaObjectsMigration {
 
 impl CaObjectsMigration {
     fn create(config: &Config) -> Result<Self, PrepareUpgradeError> {
-        let current_store = KeyValueStore::create_no_init(&config.storage_uri, CA_OBJECTS_NS)?;
+        let current_store = KeyValueStore::create(&config.storage_uri, CA_OBJECTS_NS)?;
         let new_store = KeyValueStore::create(config.upgrade_storage_uri(), CA_OBJECTS_NS)?;
         Ok(CaObjectsMigration {
             current_store,
@@ -66,7 +66,7 @@ pub struct CasMigration {
 
 impl CasMigration {
     pub fn prepare(mode: UpgradeMode, config: &Config) -> UpgradeResult<()> {
-        let current_kv_store = KeyValueStore::create_no_init(&config.storage_uri, CASERVER_NS)?;
+        let current_kv_store = KeyValueStore::create(&config.storage_uri, CASERVER_NS)?;
         let new_kv_store = KeyValueStore::create(config.upgrade_storage_uri(), CASERVER_NS)?;
         let new_agg_store = AggregateStore::<CertAuth>::create(config.upgrade_storage_uri(), CASERVER_NS)?;
         let ca_objects_migration = CaObjectsMigration::create(config)?;
@@ -82,10 +82,6 @@ impl CasMigration {
 }
 
 impl UpgradeStore for CasMigration {
-    fn needs_migrate(&self) -> Result<bool, PrepareUpgradeError> {
-        unreachable!("This is checked in upgrades/mod.rs")
-    }
-
     fn prepare_new_data(&self, mode: UpgradeMode) -> Result<(), PrepareUpgradeError> {
         // check existing version, wipe if needed
         self.preparation_store_prepare()?;
@@ -254,12 +250,8 @@ impl UpgradeStore for CasMigration {
                 );
             }
             UpgradeMode::PrepareToFinalise => {
+                self.clean_migration_help_files()?;
                 info!("Prepared migrating CAs to Krill version {}.", KRILL_VERSION);
-
-                // For each CA clean up the saved data upgrade info file.
-                for scope in self.current_kv_store.scopes()? {
-                    self.remove_data_upgrade_info(scope)?;
-                }
             }
         }
 

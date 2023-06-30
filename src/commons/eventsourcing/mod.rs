@@ -169,13 +169,13 @@ mod tests {
 
     impl PersonCommand {
         pub fn go_around_sun(id: &MyHandle, version: Option<u64>) -> Self {
-            let actor = Actor::test_from_def(ACTOR_DEF_TEST);
+            let actor = Actor::actor_from_def(ACTOR_DEF_TEST);
             Self::new(id, version, PersonCommandDetails::GoAroundTheSun, &actor)
         }
 
         pub fn change_name(id: &MyHandle, version: Option<u64>, s: &str) -> Self {
             let details = PersonCommandDetails::ChangeName(s.to_string());
-            let actor = Actor::test_from_def(ACTOR_DEF_TEST);
+            let actor = Actor::actor_from_def(ACTOR_DEF_TEST);
             Self::new(id, version, details, &actor)
         }
     }

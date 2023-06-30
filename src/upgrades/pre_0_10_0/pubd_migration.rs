@@ -14,7 +14,10 @@ use crate::{
     constants::{KRILL_VERSION, PUBSERVER_NS},
     daemon::config::Config,
     pubd::{RepositoryAccess, RepositoryAccessEvent, RepositoryAccessInitDetails},
-    upgrades::{pre_0_10_0::OldRepositoryAccessEvent, PrepareUpgradeError, UpgradeMode, UpgradeResult, UpgradeStore},
+    upgrades::{
+        pre_0_10_0::OldRepositoryAccessEvent, PrepareUpgradeError, UpgradeMode, UpgradeResult, UpgradeStore,
+        UpgradeVersions,
+    },
 };
 
 use super::OldRepositoryAccessIni;
@@ -28,8 +31,8 @@ pub struct PublicationServerRepositoryAccessMigration {
 }
 
 impl PublicationServerRepositoryAccessMigration {
-    pub fn prepare(mode: UpgradeMode, config: &Config) -> UpgradeResult<()> {
-        let current_kv_store = KeyValueStore::create_no_init(&config.storage_uri, PUBSERVER_NS)?;
+    pub fn prepare(mode: UpgradeMode, config: &Config, versions: &UpgradeVersions) -> UpgradeResult<()> {
+        let current_kv_store = KeyValueStore::create(&config.storage_uri, PUBSERVER_NS)?;
         let new_kv_store = KeyValueStore::create(config.upgrade_storage_uri(), PUBSERVER_NS)?;
         let new_agg_store = AggregateStore::create(config.upgrade_storage_uri(), PUBSERVER_NS)?;
 
@@ -39,7 +42,12 @@ impl PublicationServerRepositoryAccessMigration {
             new_agg_store,
         };
 
-        if store_migration.needs_migrate()? {
+        if store_migration
+            .current_kv_store
+            .has_scope(&Scope::from_segment(segment!("0")))?
+            && versions.from > KrillVersion::release(0, 9, 0)
+            && versions.from < KrillVersion::candidate(0, 10, 0, 1)
+        {
             store_migration.prepare_new_data(mode)
         } else {
             Ok(())
@@ -48,17 +56,6 @@ impl PublicationServerRepositoryAccessMigration {
 }
 
 impl UpgradeStore for PublicationServerRepositoryAccessMigration {
-    fn needs_migrate(&self) -> Result<bool, crate::upgrades::PrepareUpgradeError> {
-        if !self.current_kv_store.has_scope(&Scope::from_segment(segment!("0")))? {
-            Ok(false)
-        } else {
-            Ok(self.current_kv_store.version()? >= KrillVersion::release(0, 9, 0)
-                && self
-                    .current_kv_store
-                    .version_is_before(KrillVersion::candidate(0, 10, 0, 1))?)
-        }
-    }
-
     fn prepare_new_data(&self, mode: crate::upgrades::UpgradeMode) -> Result<(), crate::upgrades::PrepareUpgradeError> {
         // check existing version, wipe if needed
         self.preparation_store_prepare()?;
@@ -225,11 +222,11 @@ impl UpgradeStore for PublicationServerRepositoryAccessMigration {
                 );
             }
             UpgradeMode::PrepareToFinalise => {
+                self.clean_migration_help_files()?;
                 info!(
                     "Prepared Publication Server data migration to version {}.",
                     KRILL_VERSION
                 );
-                self.remove_data_upgrade_info(scope)?;
             }
         }
 
