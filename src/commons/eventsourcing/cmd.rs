@@ -1,4 +1,4 @@
-use std::{fmt, marker::PhantomData};
+use std::fmt;
 
 use rpki::{ca::idexchange::MyHandle, repository::x509::Time};
 
@@ -229,8 +229,6 @@ pub struct StoredCommandBuilder<A: Aggregate> {
     handle: MyHandle,
     version: u64, // version of aggregate this was applied to (successful or not)
     details: A::StorableCommandDetails,
-    _e: PhantomData<A::Event>,
-    _i: PhantomData<A::InitEvent>,
 }
 
 impl<A: Aggregate> StoredCommandBuilder<A> {
@@ -247,8 +245,6 @@ impl<A: Aggregate> StoredCommandBuilder<A> {
             handle,
             version,
             details,
-            _e: PhantomData,
-            _i: PhantomData,
         }
     }
 
