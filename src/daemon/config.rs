@@ -812,6 +812,12 @@ impl Config {
         self.upgrade_storage_uri.as_ref().unwrap() // should not panic, as it is always set
     }
 
+    /// General purpose KV store, can be used to track server settings
+    /// etc not specific to any Aggregate or WalSupport type
+    pub fn general_key_value_store(&self) -> KrillResult<KeyValueStore> {
+        KeyValueStore::create(&self.storage_uri, PROPERTIES_NS).map_err(Error::KeyValueError)
+    }
+
     pub fn key_value_store(&self, name_space: impl Into<SegmentBuf>) -> KrillResult<KeyValueStore> {
         KeyValueStore::create(&self.storage_uri, name_space).map_err(Error::KeyValueError)
     }

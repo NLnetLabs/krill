@@ -59,6 +59,7 @@ use crate::{
             RoutingResult,
         },
         krillserver::KrillServer,
+        properties::PropertiesManager,
         ta::{self, TA_NAME},
     },
     upgrades::{finalise_data_migration, prepare_upgrade_data_migrations, UpgradeMode},
@@ -119,13 +120,16 @@ pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
     write_pid_file_or_die(&config);
     test_data_dirs_or_die(&config);
 
+    // Set up the runtime properties manager, so that we can check
+    // the version used for the current data in storage
+    let properties_manager = PropertiesManager::create(&config.storage_uri)?;
+
     // Call upgrade, this will only do actual work if needed.
-    let upgrade_report = prepare_upgrade_data_migrations(UpgradeMode::PrepareToFinalise, config.clone())
+    let upgrade_report = prepare_upgrade_data_migrations(UpgradeMode::PrepareToFinalise, &config, &properties_manager)
         .map_err(|e| Error::Custom(format!("Upgrade data migration failed with error: {}\n\nNOTE: your data was not changed. Please downgrade your krill instance to your previous version.", e)))?;
 
     if let Some(report) = &upgrade_report {
-        if report.data_migration() {
-            finalise_data_migration(report.versions(), config.as_ref()).map_err(|e| {
+        finalise_data_migration(report.versions(), &config, &properties_manager).map_err(|e| {
                 Error::Custom(format!(
                     "Finishing prepared migration failed unexpectedly. Please check your data {}. If you find folders named 'arch-cas-{}' or 'arch-pubd-{}' there, then rename them to 'cas' and 'pubd' respectively and re-install krill version {}. Underlying error was: {}",
                     config.storage_uri,
@@ -135,7 +139,6 @@ pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
                     e
                 ))
             })?;
-        }
     }
 
     // Create the server, this will create the necessary data sub-directories if needed

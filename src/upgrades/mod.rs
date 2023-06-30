@@ -2,13 +2,12 @@
 //! - Updating the format of commands or events
 //! - Export / Import data
 
-use std::{convert::TryInto, fmt, path::Path, str::FromStr, sync::Arc, time::Duration};
+use std::{convert::TryInto, fmt, path::Path, str::FromStr, time::Duration};
 
 use serde::de::DeserializeOwned;
 
 use rpki::{ca::idexchange::MyHandle, repository::x509::Time};
 
-use crate::constants::CASERVER_NS;
 use crate::{
     commons::{
         crypto::KrillSignerBuilder,
@@ -20,8 +19,11 @@ use crate::{
         util::{file, storage::data_dir_from_storage_uri, KrillVersion},
         KrillResult,
     },
-    constants::{CA_OBJECTS_NS, PUBSERVER_CONTENT_NS, PUBSERVER_NS, UPGRADE_REISSUE_ROAS_CAS_LIMIT},
-    daemon::{config::Config, krillserver::KrillServer},
+    constants::{
+        CASERVER_NS, CA_OBJECTS_NS, KEYS_NS, PUBSERVER_CONTENT_NS, PUBSERVER_NS, SIGNERS_NS, STATUS_NS,
+        TA_PROXY_SERVER_NS, TA_SIGNER_SERVER_NS, UPGRADE_REISSUE_ROAS_CAS_LIMIT,
+    },
+    daemon::{config::Config, krillserver::KrillServer, properties::PropertiesManager},
     pubd,
 };
 
@@ -29,14 +31,13 @@ use crate::{
 use rpki::crypto::KeyIdentifier;
 
 #[cfg(feature = "hsm")]
-use crate::{
-    commons::crypto::SignerHandle,
-    constants::{KEYS_NS, SIGNERS_NS},
-};
+use crate::commons::crypto::SignerHandle;
 
 use self::pre_0_13_0::OldRepositoryContent;
 
 pub mod pre_0_10_0;
+
+#[allow(clippy::mutable_key_type)]
 pub mod pre_0_13_0;
 
 pub type UpgradeResult<T> = Result<T, PrepareUpgradeError>;
@@ -76,15 +77,15 @@ pub struct UpgradeVersions {
 impl UpgradeVersions {
     /// Returns a KrillUpgradeVersions if the krill code version is newer
     /// than the provided current version.
-    pub fn for_current(current: KrillVersion) -> Option<Self> {
+    pub fn for_current(current: KrillVersion) -> Result<Option<Self>, PrepareUpgradeError> {
         let code_version = KrillVersion::code_version();
-        if code_version > current {
-            Some(UpgradeVersions {
+        match code_version.cmp(&current) {
+            std::cmp::Ordering::Greater => Ok(Some(UpgradeVersions {
                 from: current,
                 to: code_version,
-            })
-        } else {
-            None
+            })),
+            std::cmp::Ordering::Equal => Ok(None),
+            std::cmp::Ordering::Less => Err(PrepareUpgradeError::CodeOlderThanData(code_version, current)),
         }
     }
 
@@ -109,6 +110,7 @@ pub enum PrepareUpgradeError {
     CannotLoadAggregate(MyHandle),
     IdExchange(String),
     OldTaMigration,
+    CodeOlderThanData(KrillVersion, KrillVersion),
     Custom(String),
 }
 
@@ -122,6 +124,7 @@ impl fmt::Display for PrepareUpgradeError {
             PrepareUpgradeError::CannotLoadAggregate(h) => format!("Cannot load: {}", h),
             PrepareUpgradeError::IdExchange(s) => format!("Could not use exchanged id info: {}", s),
             PrepareUpgradeError::OldTaMigration => "Your installation cannot be upgraded to Krill 0.13.0 or later because it includes a CA called \"ta\". These CAs were used for the preliminary Trust Anchor support needed by testbed and benchmark setups. They cannot be migrated to the production grade Trust Anchor support that was introduced in Krill 0.13.0. If you want to continue to use your existing installation we recommend that you downgrade to Krill 0.12.1 or earlier. If you want to operate a testbed using Krill 0.13.0 or later, then you can create a fresh testbed instead of migrating your existing testbed. If you believe that you should not have a CA called \"ta\" - i.e. it may have been left over from an abandoned testbed set up - then you can delete the \"ta\" directory under your krill data \"cas\" directory and restart Krill.".to_string(),
+            PrepareUpgradeError::CodeOlderThanData(code, data) => format!("Krill version {} is older than data version {}. You will need to restore before you can downgrade.", code, data),
             PrepareUpgradeError::Custom(s) => s.clone(),
         };
 
@@ -173,6 +176,7 @@ impl std::error::Error for PrepareUpgradeError {}
 //------------ DataUpgradeInfo -----------------------------------------------
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct DataUpgradeInfo {
+    pub to_krill_version: KrillVersion,
     pub last_event: u64,
     pub last_command: u64,
     pub last_update: Time,
@@ -181,6 +185,7 @@ pub struct DataUpgradeInfo {
 impl Default for DataUpgradeInfo {
     fn default() -> Self {
         Self {
+            to_krill_version: KrillVersion::code_version(),
             last_event: 0,
             last_command: 0,
             last_update: Time::now(), // will be overwritten to appropriate value
@@ -219,31 +224,29 @@ impl UpgradeMode {
 
 /// Implement this for automatic upgrades to key stores
 pub trait UpgradeStore {
-    fn needs_migrate(&self) -> Result<bool, PrepareUpgradeError>;
-
     fn prepare_new_data(&self, mode: UpgradeMode) -> Result<(), PrepareUpgradeError>;
 
-    fn version_before(&self, later: KrillVersion) -> Result<bool, PrepareUpgradeError> {
-        self.deployed_store()
-            .version_is_before(later)
-            .map_err(PrepareUpgradeError::KeyStoreError)
+    /// Saves the version of the target upgrade. Wipes the store if there is another
+    /// version set as the target.
+    fn preparation_store_prepare(&self) -> UpgradeResult<()> {
+        let code_version = KrillVersion::code_version();
+        let version_key = Key::new_global(segment!("version"));
+
+        if let Ok(Some(existing_migration_version)) = self.preparation_store().get::<KrillVersion>(&version_key) {
+            if existing_migration_version != code_version {
+                warn!("Found prepared data for Krill version {existing_migration_version}, will remove it and start from scratch for {code_version}");
+                self.preparation_store().wipe()?;
+            }
+        }
+
+        self.preparation_store().store(&version_key, &code_version)?;
+
+        Ok(())
     }
 
     fn deployed_store(&self) -> &KeyValueStore;
 
     fn preparation_store(&self) -> &KeyValueStore;
-
-    /// Checks whether the preparation store is set up for the current code
-    /// krill version. If it isn't the store will be wiped so that we can
-    /// start over, and the version will be set to the current code version.
-    fn preparation_store_prepare(&self) -> UpgradeResult<()> {
-        if !self.preparation_store().version_is_current()? {
-            warn!("Found prepared data for a different Krill version, will remove it and start from scratch");
-            self.preparation_store().wipe()?;
-            self.preparation_store().version_set_current()?;
-        }
-        Ok(())
-    }
 
     fn data_upgrade_info_key(scope: Scope) -> Key {
         Key::new_scoped(scope, segment!("upgrade_info.json"))
@@ -267,11 +270,19 @@ pub trait UpgradeStore {
             .map_err(PrepareUpgradeError::KeyStoreError)
     }
 
-    /// Removed the DataUpgradeInfo
-    fn remove_data_upgrade_info(&self, scope: Scope) -> UpgradeResult<()> {
+    /// Clean up keys used for tracking migration progress
+    fn clean_migration_help_files(&self) -> UpgradeResult<()> {
+        let version_key = Key::new_global(segment!("version"));
         self.preparation_store()
-            .drop_key(&Self::data_upgrade_info_key(scope))
-            .map_err(PrepareUpgradeError::KeyStoreError)
+            .drop_key(&version_key)
+            .map_err(PrepareUpgradeError::KeyStoreError)?;
+
+        for scope in self.preparation_store().scopes()? {
+            self.preparation_store()
+                .drop_key(&Self::data_upgrade_info_key(scope))
+                .map_err(PrepareUpgradeError::KeyStoreError)?;
+        }
+        Ok(())
     }
 
     /// Find all command keys for the scope, starting from the provided sequence. Then sort them
@@ -323,17 +334,11 @@ pub trait UpgradeStore {
 /// started, it will call this again - to do the final preparation for a migration -
 /// knowing that no changes are added to the event history at this time. After this,
 /// the migration will be finalised.
-pub fn prepare_upgrade_data_migrations(mode: UpgradeMode, config: Arc<Config>) -> UpgradeResult<Option<UpgradeReport>> {
-    // Up until version 0.14.0 only local disk was supported. In order to use
-    // postgresql (i.e. the other kvx option) users must first upgrade to 0.14.0
-    // using the existing disk based storage. And only then migrate the data.
-    //
-    // This means that until this krill version we can assume that version upgrades
-    // will always be done using disk.
-    if data_dir_from_storage_uri(&config.storage_uri).is_none() {
-        return Ok(None);
-    }
-
+pub fn prepare_upgrade_data_migrations(
+    mode: UpgradeMode,
+    config: &Config,
+    properties_manager: &PropertiesManager,
+) -> UpgradeResult<Option<UpgradeReport>> {
     // First of all ALWAYS check the existing keys if the hsm feature is enabled.
     // Remember that this feature - although enabled by default from 0.10.x - may be enabled by installing
     // a new krill binary of the same Krill version as the the previous binary. In other words, we cannot
@@ -341,9 +346,9 @@ pub fn prepare_upgrade_data_migrations(mode: UpgradeMode, config: Arc<Config>) -
     // cheap operation that we can just do at startup. It is done here, because in effect it *is* a data
     // migration.
     #[cfg(feature = "hsm")]
-    record_preexisting_openssl_keys_in_signer_mapper(config.clone())?;
+    record_preexisting_openssl_keys_in_signer_mapper(config)?;
 
-    match upgrade_versions(config.as_ref()) {
+    match upgrade_versions(config, properties_manager)? {
         None => Ok(None),
         Some(versions) => {
             info!("Preparing upgrade from {} to {}", versions.from(), versions.to());
@@ -352,7 +357,7 @@ pub fn prepare_upgrade_data_migrations(mode: UpgradeMode, config: Arc<Config>) -
             // or benchmark set up that uses the old deprecated trust anchor set up. These TAs cannot easily
             // be migrated to the new setup in 0.13.0. Well.. it could be done, if there would be a strong use
             // case to put in the effort, but there really isn't.
-            let ca_kv_store = KeyValueStore::create_no_init(&config.storage_uri, CASERVER_NS)?;
+            let ca_kv_store = KeyValueStore::create(&config.storage_uri, CASERVER_NS)?;
             if ca_kv_store.has_scope(&Scope::from_segment(segment!("ta")))? {
                 return Err(PrepareUpgradeError::OldTaMigration);
             }
@@ -383,7 +388,7 @@ pub fn prepare_upgrade_data_migrations(mode: UpgradeMode, config: Arc<Config>) -
                     })?
                 };
 
-                pre_0_10_0::PublicationServerRepositoryAccessMigration::prepare(mode, &config)?;
+                pre_0_10_0::PublicationServerRepositoryAccessMigration::prepare(mode, &config, &versions)?;
                 pre_0_10_0::CasMigration::prepare(mode, &config)?;
                 migrate_pre_0_12_pubd_objects(&config)?;
                 Ok(Some(UpgradeReport::new(true, versions)))
@@ -439,7 +444,7 @@ fn migrate_pre_0_12_pubd_objects(config: &Config) -> KrillResult<bool> {
     let data_dir = data_dir_from_storage_uri(&config.storage_uri).unwrap();
     let old_repo_content_dir = data_dir.join(PUBSERVER_CONTENT_NS.as_str());
     if old_repo_content_dir.exists() {
-        let old_store = KeyValueStore::create_no_init(&config.storage_uri, PUBSERVER_CONTENT_NS)?;
+        let old_store = KeyValueStore::create(&config.storage_uri, PUBSERVER_CONTENT_NS)?;
         let old_key = Key::new_global(segment!("0.json"));
         if let Ok(Some(old_repo_content)) = old_store.get::<pre_0_13_0::OldRepositoryContent>(&old_key) {
             info!("Found pre 0.12.0 RC2 publication server data. Migrating..");
@@ -457,86 +462,139 @@ fn migrate_pre_0_12_pubd_objects(config: &Config) -> KrillResult<bool> {
     }
 }
 
-/// Finalise the data migration for an upgrade. I.e. move the prepared data and archive
-/// the old data if applicable to this upgrade, and otherwise (in any event) update the
-/// the current versions for the "cas" and "pubd" store where applicable.
-pub fn finalise_data_migration(upgrade: &UpgradeVersions, config: &Config) -> KrillResult<()> {
-    // Move directories - if applicable (servers can have cas, repo server or both)
-    info!(
-        "finish data migrations for upgrade from {} to {}",
-        upgrade.from(),
-        upgrade.to()
-    );
+/// Finalise the data migration for an upgrade.
+///
+/// If there is any prepared data, then:
+/// - archive the current data
+/// - make the prepared data current
+pub fn finalise_data_migration(
+    upgrade: &UpgradeVersions,
+    config: &Config,
+    properties_manager: &PropertiesManager,
+) -> KrillResult<()> {
+    if upgrade.from >= KrillVersion::candidate(0, 14, 0, 0) {
+        // Not supported yet, we will need to implement changing the
+        // namespace in kvx::KeyValueStore.
+        //
+        // When this is done then we can use the same logic for any
+        // storage implementation used (disk/db).
+        todo!("Support migrations from 0.14.x and higher migrations");
+    } else {
+        // Krill versions before 0.14.x *always* used disk based storage.
+        // Furthermore, they were storing the version in each key-value
+        // store. Since we now keep that in one place, we can remove those
+        // files.
 
-    let from = upgrade.from();
-    // TODO do we need to rewrite this?
-    let data_dir = data_dir_from_storage_uri(&config.storage_uri).unwrap();
-    let upgrade_dir = data_dir_from_storage_uri(config.upgrade_storage_uri()).unwrap();
+        // Move directories - if applicable (servers can have cas, repo server or both)
+        info!(
+            "Finish data migrations for upgrade from {} to {}",
+            upgrade.from(),
+            upgrade.to()
+        );
 
-    let cas = data_dir.join(CASERVER_NS.as_str());
-    let cas_arch = data_dir.join(format!("arch-{}-{}", CASERVER_NS.as_str(), from));
-    let cas_upg = upgrade_dir.join(CASERVER_NS.as_str());
-    let ca_objects = data_dir.join(CA_OBJECTS_NS.as_str());
-    let ca_objects_arch = data_dir.join(format!("arch-{}-{}", CA_OBJECTS_NS.as_str(), from));
-    let ca_objects_upg = upgrade_dir.join(CA_OBJECTS_NS.as_str());
+        let from = upgrade.from();
+        // TODO do we need to rewrite this?
+        let data_dir = data_dir_from_storage_uri(&config.storage_uri).unwrap();
+        let upgrade_dir = data_dir_from_storage_uri(config.upgrade_storage_uri()).unwrap();
 
-    // upgrade-data/cas exists
-    if cas_upg.exists() {
-        // cas -> arch-cas-{old-version}
-        // upgrade-data/cas -> cas
-        move_dir_if_exists(&cas, &cas_arch)?;
-        move_dir_if_exists(&cas_upg, &cas)?;
-    }
+        let cas = data_dir.join(CASERVER_NS.as_str());
+        let cas_arch = data_dir.join(format!("arch-{}-{}", CASERVER_NS.as_str(), from));
+        let cas_upg = upgrade_dir.join(CASERVER_NS.as_str());
+        let ca_objects = data_dir.join(CA_OBJECTS_NS.as_str());
+        let ca_objects_arch = data_dir.join(format!("arch-{}-{}", CA_OBJECTS_NS.as_str(), from));
+        let ca_objects_upg = upgrade_dir.join(CA_OBJECTS_NS.as_str());
 
-    // upgrade-data/ca_objects exists
-    if ca_objects_upg.exists() {
-        // ca_objects -> arch-ca_objects-{old-version}
-        // upgrade-data/ca_objects -> ca_objects
-        move_dir_if_exists(&ca_objects, &ca_objects_arch)?;
-        move_dir_if_exists(&ca_objects_upg, &ca_objects)?;
-    }
-
-    let pubd = data_dir.join(PUBSERVER_NS.as_str());
-    let pubd_arch = data_dir.join(format!("arch-{}-{}", PUBSERVER_NS.as_str(), from));
-    let pubd_upg = upgrade_dir.join(PUBSERVER_NS.as_str());
-    let pubd_objects = data_dir.join(PUBSERVER_CONTENT_NS.as_str());
-    let pubd_objects_arch = data_dir.join(format!("arch-{}-{}", PUBSERVER_CONTENT_NS.as_str(), from));
-    let pubd_objects_upg = upgrade_dir.join(PUBSERVER_CONTENT_NS.as_str());
-
-    // upgrade-data/pubd exists
-    if pubd_upg.exists() {
-        // pubd -> arch-pubd-{old-version}
-        // upgrade-data/pubd -> pubd
-        move_dir_if_exists(&pubd, &pubd_arch)?;
-        move_dir_if_exists(&pubd_upg, &pubd)?
-    }
-
-    // upgrade-data/pubd_objects exists
-    if pubd_objects_upg.exists() {
-        // pubd_objects -> arch-pubd_objects-{old-version}
-        // upgrade-data/pubd_objects -> pubd_objects
-        move_dir_if_exists(&pubd_objects, &pubd_objects_arch)?;
-        move_dir_if_exists(&pubd_objects_upg, &pubd_objects)?;
-    }
-
-    // done, clean out the migration dir
-    file::remove_dir_all(&upgrade_dir)
-        .map_err(|e| Error::Custom(format!("Could not delete migration directory: {}", e)))?;
-
-    // move the dirs
-    fn move_dir_if_exists(from: &Path, to: &Path) -> KrillResult<()> {
-        if from.exists() {
-            std::fs::rename(from, to).map_err(|e| {
-                let context = format!(
-                    "Could not rename directory from: {} to: {}.",
-                    from.to_string_lossy(),
-                    to.to_string_lossy()
-                );
-                Error::IoError(KrillIoError::new(context, e))
-            })
-        } else {
-            Ok(())
+        // upgrade-data/cas exists
+        if cas_upg.exists() {
+            // cas -> arch-cas-{old-version}
+            // upgrade-data/cas -> cas
+            move_dir_if_exists(&cas, &cas_arch)?;
+            move_dir_if_exists(&cas_upg, &cas)?;
         }
+
+        // upgrade-data/ca_objects exists
+        if ca_objects_upg.exists() {
+            // ca_objects -> arch-ca_objects-{old-version}
+            // upgrade-data/ca_objects -> ca_objects
+            move_dir_if_exists(&ca_objects, &ca_objects_arch)?;
+            move_dir_if_exists(&ca_objects_upg, &ca_objects)?;
+        }
+
+        let pubd = data_dir.join(PUBSERVER_NS.as_str());
+        let pubd_arch = data_dir.join(format!("arch-{}-{}", PUBSERVER_NS.as_str(), from));
+        let pubd_upg = upgrade_dir.join(PUBSERVER_NS.as_str());
+        let pubd_objects = data_dir.join(PUBSERVER_CONTENT_NS.as_str());
+        let pubd_objects_arch = data_dir.join(format!("arch-{}-{}", PUBSERVER_CONTENT_NS.as_str(), from));
+        let pubd_objects_upg = upgrade_dir.join(PUBSERVER_CONTENT_NS.as_str());
+
+        // upgrade-data/pubd exists
+        if pubd_upg.exists() {
+            // pubd -> arch-pubd-{old-version}
+            // upgrade-data/pubd -> pubd
+            move_dir_if_exists(&pubd, &pubd_arch)?;
+            move_dir_if_exists(&pubd_upg, &pubd)?
+        }
+
+        // upgrade-data/pubd_objects exists
+        if pubd_objects_upg.exists() {
+            // pubd_objects -> arch-pubd_objects-{old-version}
+            // upgrade-data/pubd_objects -> pubd_objects
+            move_dir_if_exists(&pubd_objects, &pubd_objects_arch)?;
+            move_dir_if_exists(&pubd_objects_upg, &pubd_objects)?;
+        }
+
+        // done, clean out the migration dir
+        file::remove_dir_all(&upgrade_dir)
+            .map_err(|e| Error::Custom(format!("Could not delete migration directory: {}", e)))?;
+
+        // move the dirs
+        fn move_dir_if_exists(from: &Path, to: &Path) -> KrillResult<()> {
+            if from.exists() {
+                std::fs::rename(from, to).map_err(|e| {
+                    let context = format!(
+                        "Could not rename directory from: {} to: {}.",
+                        from.to_string_lossy(),
+                        to.to_string_lossy()
+                    );
+                    Error::IoError(KrillIoError::new(context, e))
+                })
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    // Remove version files that are no longer required
+    if let Some(data_dir) = data_dir_from_storage_uri(&config.storage_uri) {
+        for ns in &[
+            CASERVER_NS,
+            CA_OBJECTS_NS,
+            KEYS_NS,
+            PUBSERVER_CONTENT_NS,
+            PUBSERVER_NS,
+            SIGNERS_NS,
+            STATUS_NS,
+            TA_PROXY_SERVER_NS,
+            TA_SIGNER_SERVER_NS,
+        ] {
+            let path = data_dir.join(ns.as_str()).join("version");
+            if path.exists() {
+                debug!("Removing version excess file: {}", path.to_string_lossy());
+                std::fs::remove_file(&path).map_err(|e| {
+                    let context = format!("Could not remove old version file at: {}", path.to_string_lossy(),);
+                    Error::IoError(KrillIoError::new(context, e))
+                })?;
+            }
+        }
+    }
+
+    // Set the current version of the store to that of the running code
+    let code_version = KrillVersion::code_version();
+    info!("Finished upgrading Krill to version: {code_version}");
+    if properties_manager.is_initialized() {
+        properties_manager.upgrade_krill_version(code_version)?;
+    } else {
+        properties_manager.init(code_version)?;
     }
 
     Ok(())
@@ -550,81 +608,84 @@ pub fn finalise_data_migration(upgrade: &UpgradeVersions, config: &Config) -> Kr
 /// signers have been registered and no key mappings have been recorded, and then walk KEYS_NS adding the keys one by
 /// one to the mapping in the signer store, if any.
 #[cfg(feature = "hsm")]
-fn record_preexisting_openssl_keys_in_signer_mapper(config: Arc<Config>) -> Result<(), PrepareUpgradeError> {
-    // TODO do we need to rewrite this?
-    let data_dir = data_dir_from_storage_uri(&config.storage_uri).unwrap();
-    if !data_dir.join(SIGNERS_NS.as_str()).exists() {
-        let mut num_recorded_keys = 0;
-        let keys_dir = data_dir.join(KEYS_NS.as_str());
+fn record_preexisting_openssl_keys_in_signer_mapper(config: &Config) -> Result<(), PrepareUpgradeError> {
+    match data_dir_from_storage_uri(&config.storage_uri) {
+        None => Ok(()),
+        Some(data_dir) => {
+            if !data_dir.join(SIGNERS_NS.as_str()).exists() {
+                let mut num_recorded_keys = 0;
+                let keys_dir = data_dir.join(KEYS_NS.as_str());
 
-        info!(
-            "Scanning for not yet mapped OpenSSL signer keys in {} to record in the signer store",
-            keys_dir.to_string_lossy()
-        );
+                info!(
+                    "Scanning for not yet mapped OpenSSL signer keys in {} to record in the signer store",
+                    keys_dir.to_string_lossy()
+                );
 
-        let probe_interval = Duration::from_secs(config.signer_probe_retry_seconds);
-        let krill_signer = KrillSignerBuilder::new(&config.storage_uri, probe_interval, &config.signers)
-            .with_default_signer(config.default_signer())
-            .with_one_off_signer(config.one_off_signer())
-            .build()
-            .unwrap();
+                let probe_interval = Duration::from_secs(config.signer_probe_retry_seconds);
+                let krill_signer = KrillSignerBuilder::new(&config.storage_uri, probe_interval, &config.signers)
+                    .with_default_signer(config.default_signer())
+                    .with_one_off_signer(config.one_off_signer())
+                    .build()
+                    .unwrap();
 
-        // For every file (key) in the legacy OpenSSL signer keys directory
-        if let Ok(dir_iter) = keys_dir.read_dir() {
-            let mut openssl_signer_handle: Option<SignerHandle> = None;
+                // For every file (key) in the legacy OpenSSL signer keys directory
+                if let Ok(dir_iter) = keys_dir.read_dir() {
+                    let mut openssl_signer_handle: Option<SignerHandle> = None;
 
-            for entry in dir_iter {
-                let entry = entry.map_err(|err| {
-                    PrepareUpgradeError::IoError(KrillIoError::new(
-                        format!(
-                            "I/O error while looking for signer keys to register in: {}",
-                            keys_dir.to_string_lossy()
-                        ),
-                        err,
-                    ))
-                })?;
+                    for entry in dir_iter {
+                        let entry = entry.map_err(|err| {
+                            PrepareUpgradeError::IoError(KrillIoError::new(
+                                format!(
+                                    "I/O error while looking for signer keys to register in: {}",
+                                    keys_dir.to_string_lossy()
+                                ),
+                                err,
+                            ))
+                        })?;
 
-                if entry.path().is_file() {
-                    // Is it a key identifier?
-                    if let Ok(key_id) = KeyIdentifier::from_str(&entry.file_name().to_string_lossy()) {
-                        // Is the key already recorded in the mapper? It shouldn't be, but asking will cause the initial
-                        // registration of the OpenSSL signer to occur and for it to be assigned a handle. We need the
-                        // handle so that we can register keys with the mapper.
-                        if krill_signer.get_key_info(&key_id).is_err() {
-                            // No, record it
+                        if entry.path().is_file() {
+                            // Is it a key identifier?
+                            if let Ok(key_id) = KeyIdentifier::from_str(&entry.file_name().to_string_lossy()) {
+                                // Is the key already recorded in the mapper? It shouldn't be, but asking will cause the initial
+                                // registration of the OpenSSL signer to occur and for it to be assigned a handle. We need the
+                                // handle so that we can register keys with the mapper.
+                                if krill_signer.get_key_info(&key_id).is_err() {
+                                    // No, record it
 
-                            // Find out the handle of the OpenSSL signer used to create this key, if not yet known.
-                            if openssl_signer_handle.is_none() {
-                                // No, find it by asking each of the active signers if they have the key because one of
-                                // them must have it and it should be the one and only OpenSSL signer that Krill was
-                                // using previously. We can't just find and use the only OpenSSL signers as Krill may
-                                // have been configured with more than one each with separate keys directories.
-                                for (a_signer_handle, a_signer) in krill_signer.get_active_signers().iter() {
-                                    if a_signer.get_key_info(&key_id).is_ok() {
-                                        openssl_signer_handle = Some(a_signer_handle.clone());
-                                        break;
+                                    // Find out the handle of the OpenSSL signer used to create this key, if not yet known.
+                                    if openssl_signer_handle.is_none() {
+                                        // No, find it by asking each of the active signers if they have the key because one of
+                                        // them must have it and it should be the one and only OpenSSL signer that Krill was
+                                        // using previously. We can't just find and use the only OpenSSL signers as Krill may
+                                        // have been configured with more than one each with separate keys directories.
+                                        for (a_signer_handle, a_signer) in krill_signer.get_active_signers().iter() {
+                                            if a_signer.get_key_info(&key_id).is_ok() {
+                                                openssl_signer_handle = Some(a_signer_handle.clone());
+                                                break;
+                                            }
+                                        }
                                     }
-                                }
-                            }
 
-                            // Record the key in the signer mapper as being owned by the found signer handle.
-                            if let Some(signer_handle) = &openssl_signer_handle {
-                                let internal_key_id = key_id.to_string();
-                                if let Some(mapper) = krill_signer.get_mapper() {
-                                    mapper.add_key(signer_handle, &key_id, &internal_key_id)?;
-                                    num_recorded_keys += 1;
+                                    // Record the key in the signer mapper as being owned by the found signer handle.
+                                    if let Some(signer_handle) = &openssl_signer_handle {
+                                        let internal_key_id = key_id.to_string();
+                                        if let Some(mapper) = krill_signer.get_mapper() {
+                                            mapper.add_key(signer_handle, &key_id, &internal_key_id)?;
+                                            num_recorded_keys += 1;
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
                 }
+
+                info!("Recorded {} key identifiers in the signer store", num_recorded_keys);
             }
+
+            Ok(())
         }
-
-        info!("Recorded {} key identifiers in the signer store", num_recorded_keys);
     }
-
-    Ok(())
 }
 
 /// Should be called after the KrillServer is started, but before the web server is started
@@ -648,41 +709,66 @@ pub async fn post_start_upgrade(upgrade_versions: &UpgradeVersions, server: &Kri
     }
 }
 
-/// Returns the KrillUpgradeVersion by comparing the versions of the data used by
-/// the "cas" and "pubd" of the current Krill version to the code version. In the
-/// unlikely event that the "cas" and "pubd" stores are in disagreement, then the
-/// highest of the two version is used as the 'current' version. This can only happen
-/// in practice in case one of the two did not have their version updated in the past,
-/// as there can be only one version running.
-fn upgrade_versions(config: &Config) -> Option<UpgradeVersions> {
-    // TODO do we need to rewrite this?
-    // Yes: #1074
-    let data_dir = data_dir_from_storage_uri(&config.storage_uri).unwrap();
-    let cas_version = key_store_version(&data_dir, CASERVER_NS.as_str());
-    let pubd_version = key_store_version(&data_dir, PUBSERVER_NS.as_str());
-    let pubd_objects_version = key_store_version(&data_dir, PUBSERVER_CONTENT_NS.as_str());
+/// Checks if we should upgrade:
+///  - if the code is newer than the version used then we upgrade
+///  - if the code is the same version then we do not upgrade
+///  - if the code is older then we need to error out
+fn upgrade_versions(
+    config: &Config,
+    properties_manager: &PropertiesManager,
+) -> Result<Option<UpgradeVersions>, PrepareUpgradeError> {
+    if let Ok(current) = properties_manager.current_krill_version() {
+        // We found the KrillVersion stored in the properties manager
+        // introduced in Krill 0.14.0.
+        UpgradeVersions::for_current(current)
+    } else if let Some(data_dir) = data_dir_from_storage_uri(&config.storage_uri) {
+        // If the disk is used for storage, then we need to check
+        // if there are any pre Krill 0.14.0 version files in the
+        // usual places. If so, then this is an upgrade.
+        //
+        // If there are no such files, then we know that this is a
+        // new clean installation. Otherwise, we would have found
+        // the properties_manager.current_krill_version().
+        let mut current = None;
 
-    if cas_version.is_none() && pubd_version.is_none() {
-        None
+        // So.. try to find the most recent version among those files
+        // in as far as they exist.
+        for ns in &[CASERVER_NS, PUBSERVER_NS, PUBSERVER_CONTENT_NS] {
+            let path = data_dir.join(ns.as_str()).join("version");
+            if let Ok(bytes) = file::read(&path) {
+                if let Ok(new_version_seen_on_disk) = serde_json::from_slice::<KrillVersion>(&bytes) {
+                    if let Some(previous_seen_on_disk) = current.clone() {
+                        if new_version_seen_on_disk > previous_seen_on_disk {
+                            current = Some(new_version_seen_on_disk);
+                        }
+                    } else {
+                        current = Some(new_version_seen_on_disk);
+                    }
+                }
+            }
+        }
+
+        match current {
+            None => {
+                info!("Clean installation for Krill version {}", KrillVersion::code_version());
+                Ok(None)
+            }
+            Some(current) => UpgradeVersions::for_current(current),
+        }
     } else {
-        // get the highest version as the krill version for the data dirs.
-        let cas_version = cas_version.unwrap_or(KrillVersion::v0_5_0_or_before());
-        let pubd_version = pubd_version.unwrap_or(KrillVersion::v0_5_0_or_before());
-        let pubd_objects_version = pubd_objects_version.unwrap_or(KrillVersion::v0_5_0_or_before());
-        let versions = [cas_version, pubd_version, pubd_objects_version];
-        let current = versions.iter().max().unwrap();
-
-        UpgradeVersions::for_current(current.clone())
-    }
-}
-
-fn key_store_version(work_dir: &Path, ns: &str) -> Option<KrillVersion> {
-    let keystore_path = work_dir.join(ns);
-    if keystore_path.exists() {
-        let version_path = keystore_path.join("version");
-        Some(file::load_json(&version_path).unwrap_or_else(|_| KrillVersion::v0_5_0_or_before()))
-    } else {
-        None
+        // No disk was used. We do not support upgrading from <0.14.0 to 0.14.0 or
+        // above AND migrating to a database at the same time. If users want this
+        // then they should first upgrade using disk based storage and then migrate
+        // the data content to a new storage option. See issue #1079
+        info!(
+            "Clean installation using database storage for Krill version {}",
+            KrillVersion::code_version()
+        );
+        info!("NOTE: if you meant to upgrade an existing Krill <0.14.0 installation");
+        info!("      then you should stop this instance, clear the new database, then");
+        info!("      upgrade your old installation using the disk as a storage option,");
+        info!("      and then migrate your data to a database.");
+        Ok(None)
     }
 }
 
@@ -707,16 +793,18 @@ mod tests {
         let config = Config::test(&storage_uri, Some(&data_dir), false, false, false, false);
         let _ = config.init_logging();
 
-        let _upgrade = prepare_upgrade_data_migrations(UpgradeMode::PrepareOnly, Arc::new(config.clone()))
+        let properties_manager = PropertiesManager::create(&config.storage_uri).unwrap();
+
+        prepare_upgrade_data_migrations(UpgradeMode::PrepareOnly, &config, &properties_manager)
             .unwrap()
             .unwrap();
 
         // and continue - immediately, but still tests that this can pick up again.
-        let report = prepare_upgrade_data_migrations(UpgradeMode::PrepareToFinalise, Arc::new(config.clone()))
+        let report = prepare_upgrade_data_migrations(UpgradeMode::PrepareToFinalise, &config, &properties_manager)
             .unwrap()
             .unwrap();
 
-        finalise_data_migration(report.versions(), &config).unwrap();
+        finalise_data_migration(report.versions(), &config, &properties_manager).unwrap();
 
         cleanup();
     }
@@ -753,10 +841,9 @@ mod tests {
         let mut config = Config::test(&storage_uri, Some(&data_dir), false, false, false, false);
         let _ = config.init_logging();
         config.process().unwrap();
-        let config = Arc::new(config);
 
         if do_upgrade {
-            record_preexisting_openssl_keys_in_signer_mapper(config.clone()).unwrap();
+            record_preexisting_openssl_keys_in_signer_mapper(&config).unwrap();
         }
 
         // Now test that a newly initialized `KrillSigner` with a default OpenSSL signer

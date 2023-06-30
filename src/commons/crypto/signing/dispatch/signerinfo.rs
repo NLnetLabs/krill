@@ -178,25 +178,25 @@ impl CommandDetails for SignerInfoCommandDetails {
 impl SignerInfoCommand {
     pub fn add_key(id: &SignerHandle, version: Option<u64>, key_id: &KeyIdentifier, internal_key_id: &str) -> Self {
         let details = SignerInfoCommandDetails::AddKey(*key_id, internal_key_id.to_string());
-        let actor = Actor::test_from_def(ACTOR_DEF_KRILL);
+        let actor = Actor::actor_from_def(ACTOR_DEF_KRILL);
         Self::new(id, version, details, &actor)
     }
 
     pub fn remove_key(id: &SignerHandle, version: Option<u64>, key_id: &KeyIdentifier) -> Self {
         let details = SignerInfoCommandDetails::RemoveKey(*key_id);
-        let actor = Actor::test_from_def(ACTOR_DEF_KRILL);
+        let actor = Actor::actor_from_def(ACTOR_DEF_KRILL);
         Self::new(id, version, details, &actor)
     }
 
     pub fn change_signer_name(id: &SignerHandle, version: Option<u64>, signer_name: &str) -> Self {
         let details = SignerInfoCommandDetails::ChangeSignerName(signer_name.to_string());
-        let actor = Actor::test_from_def(ACTOR_DEF_KRILL);
+        let actor = Actor::actor_from_def(ACTOR_DEF_KRILL);
         Self::new(id, version, details, &actor)
     }
 
     pub fn change_signer_info(id: &SignerHandle, version: Option<u64>, signer_info: &str) -> Self {
         let details = SignerInfoCommandDetails::ChangeSignerInfo(signer_info.to_string());
-        let actor = Actor::test_from_def(ACTOR_DEF_KRILL);
+        let actor = Actor::actor_from_def(ACTOR_DEF_KRILL);
         Self::new(id, version, details, &actor)
     }
 }

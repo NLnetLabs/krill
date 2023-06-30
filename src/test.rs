@@ -1161,5 +1161,5 @@ pub fn test_id_certificate() -> IdCert {
 
 #[cfg(test)]
 pub fn test_actor() -> crate::commons::actor::Actor {
-    crate::commons::actor::Actor::test_from_def(crate::constants::ACTOR_DEF_KRILL)
+    crate::commons::actor::Actor::actor_from_def(crate::constants::ACTOR_DEF_KRILL)
 }

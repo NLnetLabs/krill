@@ -18,7 +18,6 @@ use crate::commons::{
         segment, Aggregate, Event, Key, KeyValueError, KeyValueStore, PostSaveEventListener, PreSaveEventListener,
         Scope, Segment, SegmentBuf, SegmentExt, StoredCommand, WithStorableDetails,
     },
-    util::KrillVersion,
 };
 
 pub type StoreResult<T> = Result<T, AggregateStoreError>;
@@ -671,10 +670,6 @@ impl<A: Aggregate> AggregateStore<A>
 where
     A::Error: From<AggregateStoreError>,
 {
-    fn key_version() -> Key {
-        Key::new_global(segment!("version"))
-    }
-
     fn key_for_info(agg: &MyHandle) -> Key {
         Key::new_scoped(
             Scope::from_segment(Segment::parse_lossy(agg.as_str())),
@@ -715,15 +710,6 @@ where
             Scope::from_segment(Segment::parse_lossy(agg.as_str())), // agg should always be a valid Segment
             Segment::parse_lossy(&command.to_string()),              // command should always be a valid Segment
         )
-    }
-
-    pub fn get_version(&self) -> Result<KrillVersion, AggregateStoreError> {
-        Ok(self.kv.version()?)
-    }
-
-    pub fn set_version(&self, version: &KrillVersion) -> Result<(), AggregateStoreError> {
-        self.kv.store(&Self::key_version(), version)?;
-        Ok(())
     }
 
     fn command_keys_ascending(
