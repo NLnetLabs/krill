@@ -1,0 +1,23 @@
+{
+  "actor": "testbed",
+  "time": "2023-02-07T13:59:57.876726378Z",
+  "handle": "testbed",
+  "version": 6,
+  "sequence": 5,
+  "details": {
+    "type": "child_add",
+    "child": "testbed-client",
+    "ski": "417974A639363D3033D1925E8FF5FC1BE7D3780C",
+    "resources": {
+      "asn": "AS204325, AS211321",
+      "ipv4": "185.49.140.0/22",
+      "ipv6": "2a04:b900::/29"
+    }
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      6
+    ]
+  }
+}

@@ -21,7 +21,7 @@ use crate::{
         api::{AddChildRequest, IdCertInfo, RepositoryContact},
         crypto::{CsrInfo, KrillSigner},
         error::Error,
-        eventsourcing::{self, Event, InitCommandDetails, InitEvent},
+        eventsourcing::{self, Event, InitCommandDetails, InitEvent, WithStorableDetails},
         KrillResult,
     },
     daemon::{
@@ -106,7 +106,7 @@ pub struct TrustAnchorProxyInitCommandDetails {
 
 impl fmt::Display for TrustAnchorProxyInitCommandDetails {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        TrustAnchorProxyCommandDetails::Create.fmt(f)
+        self.store().fmt(f)
     }
 }
 
@@ -114,7 +114,7 @@ impl InitCommandDetails for TrustAnchorProxyInitCommandDetails {
     type StorableDetails = TrustAnchorProxyCommandDetails;
 
     fn store(&self) -> Self::StorableDetails {
-        TrustAnchorProxyCommandDetails::Create
+        TrustAnchorProxyCommandDetails::make_init()
     }
 }
 
@@ -199,7 +199,7 @@ impl fmt::Display for TrustAnchorProxyEvent {
 #[allow(clippy::large_enum_variant)]
 pub enum TrustAnchorProxyCommandDetails {
     // Create new instance - cannot be sent to an existing instance
-    Create,
+    Initialise,
 
     // Publication Support
     AddRepository(RepositoryContact),
@@ -219,7 +219,7 @@ impl fmt::Display for TrustAnchorProxyCommandDetails {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // note that this is a summary, full details are stored in the json.
         match self {
-            TrustAnchorProxyCommandDetails::Create => {
+            TrustAnchorProxyCommandDetails::Initialise => {
                 write!(f, "Create TA proxy")
             }
             // Publication Support
@@ -265,8 +265,8 @@ impl eventsourcing::WithStorableDetails for TrustAnchorProxyCommandDetails {
     fn summary(&self) -> crate::commons::api::CommandSummary {
         match self {
             // Initialisation
-            TrustAnchorProxyCommandDetails::Create => {
-                crate::commons::api::CommandSummary::new("cmd-ta-proxy-created", self)
+            TrustAnchorProxyCommandDetails::Initialise => {
+                crate::commons::api::CommandSummary::new("cmd-ta-proxy-init", self)
             }
             // Publication Support
             TrustAnchorProxyCommandDetails::AddRepository(repository) => {
@@ -307,6 +307,10 @@ impl eventsourcing::WithStorableDetails for TrustAnchorProxyCommandDetails {
                 crate::commons::api::CommandSummary::new("cmd-ta-proxy-child-res", self).with_child(child_handle)
             }
         }
+    }
+
+    fn make_init() -> Self {
+        Self::Initialise
     }
 }
 
@@ -483,7 +487,7 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
 
         match command.into_details() {
             // Initialisation
-            TrustAnchorProxyCommandDetails::Create => {
+            TrustAnchorProxyCommandDetails::Initialise => {
                 // This can't happen really.. we would never send this command
                 // to an existing TrustAnchorProxy.
                 //

@@ -27,6 +27,7 @@ use crate::{
         error::Error,
         eventsourcing::{
             self, Aggregate, AggregateStore, Event, InitCommandDetails, InitEvent, SentCommand, SentInitCommand,
+            WithStorableDetails,
         },
         util::KrillVersion,
         KrillResult,
@@ -45,7 +46,7 @@ pub struct PropertiesInitCommandDetails {
 
 impl fmt::Display for PropertiesInitCommandDetails {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        StorablePropertiesCommand::Create.fmt(f)
+        self.store().fmt(f)
     }
 }
 
@@ -53,7 +54,7 @@ impl InitCommandDetails for PropertiesInitCommandDetails {
     type StorableDetails = StorablePropertiesCommand;
 
     fn store(&self) -> Self::StorableDetails {
-        StorablePropertiesCommand::Create
+        StorablePropertiesCommand::make_init()
     }
 }
 
@@ -77,14 +78,14 @@ impl fmt::Display for PropertiesCommandDetails {
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
 pub enum StorablePropertiesCommand {
-    Create,
+    Initialise,
     UpgradeTo { krill_version: KrillVersion },
 }
 
 impl fmt::Display for StorablePropertiesCommand {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::Create => {
+            Self::Initialise => {
                 write!(f, "create properties")
             }
             Self::UpgradeTo { krill_version: version } => {
@@ -117,11 +118,15 @@ impl From<&PropertiesCommandDetails> for StorablePropertiesCommand {
 impl eventsourcing::WithStorableDetails for StorablePropertiesCommand {
     fn summary(&self) -> crate::commons::api::CommandSummary {
         match self {
-            StorablePropertiesCommand::Create => CommandSummary::new("cmd-properties-created", self),
+            StorablePropertiesCommand::Initialise => CommandSummary::new("cmd-properties-init", self),
             StorablePropertiesCommand::UpgradeTo { krill_version } => {
-                CommandSummary::new("cmd-properties-krill-upgraded", self).with_arg("version", krill_version)
+                CommandSummary::new("cmd-properties-krill-upgrade", self).with_arg("version", krill_version)
             }
         }
+    }
+
+    fn make_init() -> Self {
+        Self::Initialise
     }
 }
 

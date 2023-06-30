@@ -29,7 +29,7 @@ use crate::{
         api::{IdCertInfo, ObjectName, ReceivedCert},
         crypto::{CsrInfo, KrillSigner, SignSupport},
         error::Error,
-        eventsourcing::{self, Event, InitCommandDetails, InitEvent},
+        eventsourcing::{self, Event, InitCommandDetails, InitEvent, WithStorableDetails},
         KrillResult,
     },
     daemon::ca::Rfc8183Id,
@@ -78,7 +78,7 @@ pub struct TrustAnchorSignerInitCommandDetails {
 
 impl fmt::Display for TrustAnchorSignerInitCommandDetails {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        TrustAnchorSignerStorableCommand::Create.fmt(f)
+        self.store().fmt(f)
     }
 }
 
@@ -86,7 +86,7 @@ impl InitCommandDetails for TrustAnchorSignerInitCommandDetails {
     type StorableDetails = TrustAnchorSignerStorableCommand;
 
     fn store(&self) -> Self::StorableDetails {
-        TrustAnchorSignerStorableCommand::Create
+        TrustAnchorSignerStorableCommand::make_init()
     }
 }
 
@@ -173,7 +173,7 @@ impl TrustAnchorSignerCommand {
 // Storable Commands (KrillSigner cannot be de-/serialized)
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum TrustAnchorSignerStorableCommand {
-    Create,
+    Initialise,
     TrustAnchorSignerRequest(TrustAnchorSignedRequest),
 }
 
@@ -190,8 +190,8 @@ impl From<&TrustAnchorSignerCommandDetails> for TrustAnchorSignerStorableCommand
 impl eventsourcing::WithStorableDetails for TrustAnchorSignerStorableCommand {
     fn summary(&self) -> crate::commons::api::CommandSummary {
         match self {
-            TrustAnchorSignerStorableCommand::Create => {
-                crate::commons::api::CommandSummary::new("cmd-ta-signer-create", self)
+            TrustAnchorSignerStorableCommand::Initialise => {
+                crate::commons::api::CommandSummary::new("cmd-ta-signer-init", self)
             }
             TrustAnchorSignerStorableCommand::TrustAnchorSignerRequest(request) => {
                 crate::commons::api::CommandSummary::new("cmd-ta-signer-process-request", self)
@@ -199,14 +199,18 @@ impl eventsourcing::WithStorableDetails for TrustAnchorSignerStorableCommand {
             }
         }
     }
+
+    fn make_init() -> Self {
+        Self::Initialise
+    }
 }
 
 impl fmt::Display for TrustAnchorSignerStorableCommand {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // note that this is a summary, full details are stored in the json.
         match self {
-            TrustAnchorSignerStorableCommand::Create => {
-                write!(f, "Create TA signer")
+            TrustAnchorSignerStorableCommand::Initialise => {
+                write!(f, "Initialise TA signer")
             }
             TrustAnchorSignerStorableCommand::TrustAnchorSignerRequest(req) => {
                 write!(f, "Process signer request with nonce: {}", req.content().nonce)

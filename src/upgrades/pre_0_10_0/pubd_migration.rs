@@ -24,7 +24,7 @@ pub struct PublicationServerRepositoryAccessMigration {
 }
 
 impl PublicationServerRepositoryAccessMigration {
-    pub fn prepare(mode: UpgradeMode, config: &Config, versions: &UpgradeVersions) -> UpgradeResult<()> {
+    pub fn upgrade(mode: UpgradeMode, config: &Config, versions: &UpgradeVersions) -> UpgradeResult<()> {
         let current_kv_store = KeyValueStore::create(&config.storage_uri, PUBSERVER_NS)?;
         let new_kv_store = KeyValueStore::create(config.upgrade_storage_uri(), PUBSERVER_NS)?;
         let new_agg_store =

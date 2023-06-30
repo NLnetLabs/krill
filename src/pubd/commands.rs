@@ -5,7 +5,7 @@ use rpki::ca::idexchange::{MyHandle, PublisherHandle};
 use rpki::uri;
 
 use crate::commons::crypto::KrillSigner;
-use crate::commons::eventsourcing::{InitCommandDetails, SentInitCommand};
+use crate::commons::eventsourcing::{InitCommandDetails, SentInitCommand, WithStorableDetails};
 use crate::{
     commons::{
         actor::Actor,
@@ -45,7 +45,7 @@ impl RepositoryAccessInitCommandDetails {
 
 impl fmt::Display for RepositoryAccessInitCommandDetails {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        StorableRepositoryCommand::Initialise.fmt(f)
+        self.store().fmt(f)
     }
 }
 
@@ -53,7 +53,7 @@ impl InitCommandDetails for RepositoryAccessInitCommandDetails {
     type StorableDetails = StorableRepositoryCommand;
 
     fn store(&self) -> Self::StorableDetails {
-        StorableRepositoryCommand::Initialise
+        StorableRepositoryCommand::make_init()
     }
 }
 

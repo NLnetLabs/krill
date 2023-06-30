@@ -2,7 +2,7 @@
 //! - Updating the format of commands or events
 //! - Export / Import data
 
-use std::{convert::TryInto, fmt, path::Path, str::FromStr, time::Duration};
+use std::{convert::TryInto, fmt, fs, path::Path, str::FromStr, time::Duration};
 
 use serde::{de::DeserializeOwned, Deserialize};
 
@@ -15,7 +15,7 @@ use crate::{
         error::{Error, KrillIoError},
         eventsourcing::{
             segment, Aggregate, AggregateStore, AggregateStoreError, Key, KeyValueError, KeyValueStore, Scope, Segment,
-            SegmentExt, StoredCommand, WalStore, WithStorableDetails,
+            SegmentExt, Storable, StoredCommand, WalStore, WithStorableDetails,
         },
         util::{file, storage::data_dir_from_storage_uri, KrillVersion},
         KrillResult,
@@ -236,8 +236,8 @@ pub enum UnconvertedEffect<T> {
 pub trait UpgradeAggregateStorePre0_14 {
     type Aggregate: Aggregate;
 
-    type OldInitEvent: DeserializeOwned;
-    type OldEvent: DeserializeOwned;
+    type OldInitEvent: fmt::Display + Eq + PartialEq + Storable + 'static;
+    type OldEvent: fmt::Display + Eq + PartialEq + Storable + 'static;
     type OldStorableDetails: WithStorableDetails;
 
     //--- Mandatory functions to implement
@@ -316,7 +316,9 @@ pub trait UpgradeAggregateStorePre0_14 {
             // is a special event that has no command, so we need to do this separately.
             if data_upgrade_info.last_command.is_none() {
                 let old_init_key = Self::event_key(scope.clone(), 0);
-                let old_init: Self::OldInitEvent = self.get(&old_init_key)?;
+
+                let old_init: OldStoredEvent<Self::OldInitEvent> = self.get(&old_init_key)?;
+                let old_init = old_init.into_details();
 
                 // From 0.14.x and up we will have command '0' for the init, where beforehand
                 // we only had an event. We will have to make up some values for the actor and time.
@@ -361,10 +363,11 @@ pub trait UpgradeAggregateStorePre0_14 {
                         for v in events {
                             let event_key = Self::event_key(scope.clone(), *v);
                             trace!("  +- event: {}", event_key);
-                            let evt: Self::OldEvent = self.deployed_store().get(&event_key)?.ok_or_else(|| {
-                                UpgradeError::Custom(format!("Cannot parse old event: {}", event_key))
-                            })?;
-                            full_events.push(evt);
+                            let evt: OldStoredEvent<Self::OldEvent> =
+                                self.deployed_store().get(&event_key)?.ok_or_else(|| {
+                                    UpgradeError::Custom(format!("Cannot parse old event: {}", event_key))
+                                })?;
+                            full_events.push(evt.into_details());
                         }
                         UnconvertedEffect::Success { events: full_events }
                     }
@@ -648,9 +651,17 @@ pub fn prepare_upgrade_data_migrations(
                     })?
                 };
 
-                pre_0_10_0::PublicationServerRepositoryAccessMigration::prepare(mode, config, &versions)?;
-                pre_0_10_0::CasMigration::prepare(mode, config)?;
+                // Complex migrations involving command / event conversions
+                pre_0_10_0::PublicationServerRepositoryAccessMigration::upgrade(mode, config, &versions)?;
+                pre_0_10_0::CasMigration::upgrade(mode, config)?;
+
+                // The way that pubd objects were stored was changed as well (since 0.13.0)
                 migrate_pre_0_12_pubd_objects(config)?;
+
+                // Migrate remaining aggregate stores used in < 0.10.0 to the new format
+                // in 0.14.0 where we combine commands and events into a single key-value pair.
+                pre_0_14_0::UpgradeAggregateStoreSignerInfo::upgrade(SIGNERS_NS, mode, config)?;
+
                 Ok(Some(UpgradeReport::new(true, versions)))
             } else if versions.from < KrillVersion::candidate(0, 10, 0, 3) {
                 Err(UpgradeError::custom(
@@ -662,11 +673,37 @@ pub fn prepare_upgrade_data_migrations(
                     versions.from(),
                     versions.to()
                 );
-                let pubd_objects_migrated = migrate_pre_0_12_pubd_objects(config)?;
-                Ok(Some(UpgradeReport::new(pubd_objects_migrated, versions)))
+
+                // The pubd objects storage changed in 0.13.0
+                migrate_pre_0_12_pubd_objects(config)?;
+
+                // Migrate aggregate stores used in < 0.12.0 to the new format in 0.14.0 where
+                // we combine commands and events into a single key-value pair.
+                pre_0_14_0::UpgradeAggregateStoreSignerInfo::upgrade(SIGNERS_NS, mode, config)?;
+                pre_0_14_0::UpgradeAggregateStoreCertAuth::upgrade(CASERVER_NS, mode, config)?;
+                pre_0_14_0::UpgradeAggregateStoreRepositoryAccess::upgrade(PUBSERVER_NS, mode, config)?;
+
+                Ok(Some(UpgradeReport::new(true, versions)))
             } else if versions.from < KrillVersion::candidate(0, 13, 0, 0) {
-                let pubd_objects_migrated = migrate_0_12_pubd_objects(config)?;
-                Ok(Some(UpgradeReport::new(pubd_objects_migrated, versions)))
+                migrate_0_12_pubd_objects(config)?;
+
+                // Migrate aggregate stores used in < 0.13.0 to the new format in 0.14.0 where
+                // we combine commands and events into a single key-value pair.
+                pre_0_14_0::UpgradeAggregateStoreSignerInfo::upgrade(SIGNERS_NS, mode, config)?;
+                pre_0_14_0::UpgradeAggregateStoreCertAuth::upgrade(CASERVER_NS, mode, config)?;
+                pre_0_14_0::UpgradeAggregateStoreRepositoryAccess::upgrade(PUBSERVER_NS, mode, config)?;
+
+                Ok(Some(UpgradeReport::new(true, versions)))
+            } else if versions.from < KrillVersion::candidate(0, 14, 0, 0) {
+                // Migrate aggregate stores used in < 0.14.0 to the new format in 0.14.0 where
+                // we combine commands and events into a single key-value pair.
+                pre_0_14_0::UpgradeAggregateStoreCertAuth::upgrade(CASERVER_NS, mode, config)?;
+                pre_0_14_0::UpgradeAggregateStoreRepositoryAccess::upgrade(PUBSERVER_NS, mode, config)?;
+                pre_0_14_0::UpgradeAggregateStoreSignerInfo::upgrade(SIGNERS_NS, mode, config)?;
+                pre_0_14_0::UpgradeAggregateStoreTrustAnchorSigner::upgrade(TA_SIGNER_SERVER_NS, mode, config)?;
+                pre_0_14_0::UpgradeAggregateStoreTrustAnchorProxy::upgrade(TA_PROXY_SERVER_NS, mode, config)?;
+
+                Ok(Some(UpgradeReport::new(true, versions)))
             } else {
                 Ok(Some(UpgradeReport::new(false, versions)))
             }
@@ -700,7 +737,7 @@ fn migrate_0_12_pubd_objects(config: &Config) -> KrillResult<bool> {
 
 /// The format of the RepositoryContent did not change in 0.12, but
 /// the location and way of storing it did. So, migrate if present.
-fn migrate_pre_0_12_pubd_objects(config: &Config) -> KrillResult<bool> {
+fn migrate_pre_0_12_pubd_objects(config: &Config) -> KrillResult<()> {
     let data_dir = data_dir_from_storage_uri(&config.storage_uri).unwrap();
     let old_repo_content_dir = data_dir.join(PUBSERVER_CONTENT_NS.as_str());
     if old_repo_content_dir.exists() {
@@ -713,13 +750,9 @@ fn migrate_pre_0_12_pubd_objects(config: &Config) -> KrillResult<bool> {
             let new_key = Key::new_scoped(Scope::from_segment(segment!("0")), segment!("snapshot.json"));
             let upgrade_store = KeyValueStore::create(config.upgrade_storage_uri(), PUBSERVER_CONTENT_NS)?;
             upgrade_store.store(&new_key, &repo_content)?;
-            Ok(true)
-        } else {
-            Ok(false)
         }
-    } else {
-        Ok(false)
     }
+    Ok(())
 }
 
 /// Finalise the data migration for an upgrade.
@@ -740,111 +773,103 @@ pub fn finalise_data_migration(
         // storage implementation used (disk/db).
         todo!("Support migrations from 0.14.x and higher migrations");
     } else {
-        // Krill versions before 0.14.x *always* used disk based storage.
-        // Furthermore, they were storing the version in each key-value
-        // store. Since we now keep that in one place, we can remove those
-        // files.
-
-        // Move directories - if applicable (servers can have cas, repo server or both)
         info!(
             "Finish data migrations for upgrade from {} to {}",
             upgrade.from(),
             upgrade.to()
         );
 
-        let from = upgrade.from();
-        // TODO do we need to rewrite this?
-        let data_dir = data_dir_from_storage_uri(&config.storage_uri).unwrap();
-        let upgrade_dir = data_dir_from_storage_uri(config.upgrade_storage_uri()).unwrap();
+        // Krill versions before 0.14.x *always* used disk based storage.
+        //
+        // So, we should always get some data dir from the current config
+        // when upgrading from a a version before 0.14.x.
+        //
+        // Furthermore, now that we are storing the version in one single
+        // place, we can remove the "version" file from any directory that
+        // remains after migration.
+        if let Some(data_dir) = data_dir_from_storage_uri(&config.storage_uri) {
+            let archive_base_dir = data_dir.join(&format!("archive-{}", upgrade.from()));
+            let upgrade_base_dir = data_dir.join("upgrade-data");
 
-        let cas = data_dir.join(CASERVER_NS.as_str());
-        let cas_arch = data_dir.join(format!("arch-{}-{}", CASERVER_NS.as_str(), from));
-        let cas_upg = upgrade_dir.join(CASERVER_NS.as_str());
-        let ca_objects = data_dir.join(CA_OBJECTS_NS.as_str());
-        let ca_objects_arch = data_dir.join(format!("arch-{}-{}", CA_OBJECTS_NS.as_str(), from));
-        let ca_objects_upg = upgrade_dir.join(CA_OBJECTS_NS.as_str());
+            for ns in &[
+                CASERVER_NS,
+                CA_OBJECTS_NS,
+                KEYS_NS,
+                PUBSERVER_CONTENT_NS,
+                PUBSERVER_NS,
+                SIGNERS_NS,
+                STATUS_NS,
+                TA_PROXY_SERVER_NS,
+                TA_SIGNER_SERVER_NS,
+            ] {
+                // Data structure is as follows:
+                //
+                //   data_dir/
+                //            upgrade-data/      --> upgraded (may be missing)
+                //                         ns1,
+                //                         ns2,
+                //                         etc
+                //             ns1, --> current
+                //             ns2,
+                //             etc
+                //
+                //             archive-prev-v/   --> archived current dirs which were upgraded
+                //
+                let upgraded_dir = upgrade_base_dir.join(ns.as_str());
+                let archive_dir = archive_base_dir.join(ns.as_str());
+                let current_dir = data_dir.join(ns.as_str());
 
-        // upgrade-data/cas exists
-        if cas_upg.exists() {
-            // cas -> arch-cas-{old-version}
-            // upgrade-data/cas -> cas
-            move_dir_if_exists(&cas, &cas_arch)?;
-            move_dir_if_exists(&cas_upg, &cas)?;
+                if upgraded_dir.exists() {
+                    // Data was prepared. So we archive the current data and
+                    // then move the prepped data.
+                    move_dir(&current_dir, &archive_dir)?;
+                    move_dir(&upgraded_dir, &current_dir)?;
+                } else if current_dir.exists() {
+                    // There was no new data for this directory. But, we make
+                    // make a backup so that we can have a consistent data set
+                    // to fall back to in case of a downgrade.
+                    file::backup_dir(&current_dir, &archive_dir).map_err(|e| {
+                        Error::Custom(format!(
+                            "Could not backup directory {} to {} after migration: {}",
+                            current_dir.to_string_lossy(),
+                            archive_dir.to_string_lossy(),
+                            e
+                        ))
+                    })?;
+                }
+
+                let version_file = current_dir.join("version");
+                if version_file.exists() {
+                    debug!("Removing excess version file: {}", version_file.to_string_lossy());
+                    std::fs::remove_file(&version_file).map_err(|e| {
+                        let context = format!(
+                            "Could not remove old version file at: {}",
+                            version_file.to_string_lossy(),
+                        );
+                        Error::IoError(KrillIoError::new(context, e))
+                    })?;
+                }
+            }
+
+            // remove the upgrade base dir - if it's empty - so ignore error.
+            let _ = fs::remove_dir(&upgrade_base_dir);
         }
-
-        // upgrade-data/ca_objects exists
-        if ca_objects_upg.exists() {
-            // ca_objects -> arch-ca_objects-{old-version}
-            // upgrade-data/ca_objects -> ca_objects
-            move_dir_if_exists(&ca_objects, &ca_objects_arch)?;
-            move_dir_if_exists(&ca_objects_upg, &ca_objects)?;
-        }
-
-        let pubd = data_dir.join(PUBSERVER_NS.as_str());
-        let pubd_arch = data_dir.join(format!("arch-{}-{}", PUBSERVER_NS.as_str(), from));
-        let pubd_upg = upgrade_dir.join(PUBSERVER_NS.as_str());
-        let pubd_objects = data_dir.join(PUBSERVER_CONTENT_NS.as_str());
-        let pubd_objects_arch = data_dir.join(format!("arch-{}-{}", PUBSERVER_CONTENT_NS.as_str(), from));
-        let pubd_objects_upg = upgrade_dir.join(PUBSERVER_CONTENT_NS.as_str());
-
-        // upgrade-data/pubd exists
-        if pubd_upg.exists() {
-            // pubd -> arch-pubd-{old-version}
-            // upgrade-data/pubd -> pubd
-            move_dir_if_exists(&pubd, &pubd_arch)?;
-            move_dir_if_exists(&pubd_upg, &pubd)?
-        }
-
-        // upgrade-data/pubd_objects exists
-        if pubd_objects_upg.exists() {
-            // pubd_objects -> arch-pubd_objects-{old-version}
-            // upgrade-data/pubd_objects -> pubd_objects
-            move_dir_if_exists(&pubd_objects, &pubd_objects_arch)?;
-            move_dir_if_exists(&pubd_objects_upg, &pubd_objects)?;
-        }
-
-        // done, clean out the migration dir
-        file::remove_dir_all(&upgrade_dir)
-            .map_err(|e| Error::Custom(format!("Could not delete migration directory: {}", e)))?;
 
         // move the dirs
-        fn move_dir_if_exists(from: &Path, to: &Path) -> KrillResult<()> {
-            if from.exists() {
-                std::fs::rename(from, to).map_err(|e| {
-                    let context = format!(
-                        "Could not rename directory from: {} to: {}.",
-                        from.to_string_lossy(),
-                        to.to_string_lossy()
-                    );
-                    Error::IoError(KrillIoError::new(context, e))
-                })
-            } else {
-                Ok(())
+        fn move_dir(from: &Path, to: &Path) -> KrillResult<()> {
+            if let Some(parent) = to.parent() {
+                if !parent.exists() {
+                    file::create_dir_all(parent).map_err(Error::IoError)?;
+                }
             }
-        }
-    }
-
-    // Remove version files that are no longer required
-    if let Some(data_dir) = data_dir_from_storage_uri(&config.storage_uri) {
-        for ns in &[
-            CASERVER_NS,
-            CA_OBJECTS_NS,
-            KEYS_NS,
-            PUBSERVER_CONTENT_NS,
-            PUBSERVER_NS,
-            SIGNERS_NS,
-            STATUS_NS,
-            TA_PROXY_SERVER_NS,
-            TA_SIGNER_SERVER_NS,
-        ] {
-            let path = data_dir.join(ns.as_str()).join("version");
-            if path.exists() {
-                debug!("Removing version excess file: {}", path.to_string_lossy());
-                std::fs::remove_file(&path).map_err(|e| {
-                    let context = format!("Could not remove old version file at: {}", path.to_string_lossy(),);
-                    Error::IoError(KrillIoError::new(context, e))
-                })?;
-            }
+            std::fs::rename(from, to).map_err(|e| {
+                let context = format!(
+                    "Could not rename directory from: {} to: {}.",
+                    from.to_string_lossy(),
+                    to.to_string_lossy()
+                );
+                Error::IoError(KrillIoError::new(context, e))
+            })
         }
     }
 
@@ -1078,6 +1103,12 @@ mod tests {
     #[tokio::test]
     async fn prepare_then_upgrade_0_12_1() {
         let source = PathBuf::from("test-resources/migrations/v0_12_1/");
+        test_upgrade(source).await;
+    }
+
+    #[tokio::test]
+    async fn prepare_then_upgrade_0_13_0() {
+        let source = PathBuf::from("test-resources/migrations/v0_13_1/");
         test_upgrade(source).await;
     }
 

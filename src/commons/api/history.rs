@@ -361,7 +361,7 @@ impl fmt::Display for CaCommandDetails {
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
 pub enum CertAuthStorableCommand {
-    Create,
+    Initialise,
     ChildAdd {
         child: ChildHandle,
         ski: String,
@@ -467,7 +467,7 @@ pub struct StorableRcEntitlement {
 impl WithStorableDetails for CertAuthStorableCommand {
     fn summary(&self) -> CommandSummary {
         match self {
-            CertAuthStorableCommand::Create => CommandSummary::new("cmd-ca-created", self),
+            CertAuthStorableCommand::Initialise => CommandSummary::new("cmd-ca-init", self),
             CertAuthStorableCommand::ChildAdd { child, ski, resources } => {
                 CommandSummary::new("cmd-ca-child-add", self)
                     .with_child(child)
@@ -589,6 +589,10 @@ impl WithStorableDetails for CertAuthStorableCommand {
             CertAuthStorableCommand::Deactivate => CommandSummary::new("cmd-ca-deactivate", self),
         }
     }
+
+    fn make_init() -> Self {
+        Self::Initialise
+    }
 }
 
 impl fmt::Display for CertAuthStorableCommand {
@@ -597,7 +601,7 @@ impl fmt::Display for CertAuthStorableCommand {
             // ------------------------------------------------------------
             // Initialisation
             // ------------------------------------------------------------
-            CertAuthStorableCommand::Create => write!(f, "Create CA"),
+            CertAuthStorableCommand::Initialise => write!(f, "Create CA"),
 
             // ------------------------------------------------------------
             // Being a parent
@@ -789,6 +793,10 @@ impl WithStorableDetails for StorableRepositoryCommand {
                 CommandSummary::new("pubd-publisher-remove", self).with_publisher(name)
             }
         }
+    }
+
+    fn make_init() -> Self {
+        Self::Initialise
     }
 }
 

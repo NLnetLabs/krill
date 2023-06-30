@@ -65,7 +65,7 @@ pub struct CasMigration {
 }
 
 impl CasMigration {
-    pub fn prepare(mode: UpgradeMode, config: &Config) -> UpgradeResult<()> {
+    pub fn upgrade(mode: UpgradeMode, config: &Config) -> UpgradeResult<()> {
         let current_kv_store = KeyValueStore::create(&config.storage_uri, CASERVER_NS)?;
         let new_kv_store = KeyValueStore::create(config.upgrade_storage_uri(), CASERVER_NS)?;
         let new_agg_store = AggregateStore::<CertAuth>::create(
@@ -103,9 +103,8 @@ impl UpgradeAggregateStorePre0_14 for CasMigration {
         actor: String,
         time: Time,
     ) -> UpgradeResult<crate::commons::eventsourcing::StoredCommand<Self::Aggregate>> {
-        let details = CertAuthStorableCommand::Create;
-        let old_init_det = old_init.into_details();
-        let init_event = CertAuthInitEvent::new(old_init_det.into());
+        let details = CertAuthStorableCommand::Initialise;
+        let init_event = CertAuthInitEvent::new(old_init.into());
 
         let builder = StoredCommandBuilder::<CertAuth>::new(actor, time, handle, 0, details);
 
@@ -143,8 +142,7 @@ impl UpgradeAggregateStorePre0_14 for CasMigration {
             UnconvertedEffect::Success { events } => {
                 let mut full_events: Vec<CertAuthEvent> = vec![]; // We just had numbers, we need to include the full events
                 for old_event in events {
-                    let old_details = old_event.into_details();
-                    full_events.push(old_details.try_into()?);
+                    full_events.push(old_event.try_into()?);
                 }
                 new_command_builder.finish_with_events(full_events)
             }

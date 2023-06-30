@@ -19,6 +19,14 @@ use super::Aggregate;
 /// CommandSummary for use in history.
 pub trait WithStorableDetails: Storable + Send + Sync {
     fn summary(&self) -> CommandSummary;
+
+    /// Create an instance representing the initialisation command/event.
+    ///
+    /// Should not contain any data, so that we can keep this signature
+    /// simple. All relevant data will be in the init event for the command.
+    /// Having this allows us to make a generic pre-0.14.0 AggregateStore
+    /// upgrade implementation.
+    fn make_init() -> Self;
 }
 
 //------------ InitCommand ---------------------------------------------------

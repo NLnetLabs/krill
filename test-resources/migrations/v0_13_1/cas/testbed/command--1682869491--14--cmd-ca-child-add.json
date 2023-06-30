@@ -1,0 +1,23 @@
+{
+  "actor": "testbed",
+  "time": "2023-04-30T15:44:51.826098437Z",
+  "handle": "testbed",
+  "version": 16,
+  "sequence": 14,
+  "details": {
+    "type": "child_add",
+    "child": "teste_ca",
+    "ski": "40E0CC08314637AA2D38F928F941E57BF74F4FFF",
+    "resources": {
+      "asn": "AS1",
+      "ipv4": "192.168.224.0/20",
+      "ipv6": ""
+    }
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      16
+    ]
+  }
+}

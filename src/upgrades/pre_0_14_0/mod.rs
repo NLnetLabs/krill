@@ -1,18 +1,29 @@
 use std::{fmt, str::FromStr};
 
+use kvx::Segment;
 use rpki::{ca::idexchange::MyHandle, repository::x509::Time};
 
 use crate::{
     commons::{
-        crypto::dispatch::signerinfo::{SignerInfoEvent, SignerInfoInitEvent},
-        eventsourcing::{Storable, WithStorableDetails},
+        crypto::dispatch::signerinfo::{SignerInfo, SignerInfoEvent, SignerInfoInitEvent},
+        eventsourcing::{
+            Aggregate, AggregateStore, KeyValueStore, Storable, StoredCommand, StoredCommandBuilder,
+            WithStorableDetails,
+        },
     },
     daemon::{
-        ca::{CertAuthEvent, CertAuthInitEvent},
-        ta::{TrustAnchorProxyEvent, TrustAnchorProxyInitEvent, TrustAnchorSignerEvent, TrustAnchorSignerInitEvent},
+        ca::{CertAuth, CertAuthEvent, CertAuthInitEvent},
+        config::Config,
+        properties::Properties,
+        ta::{
+            TrustAnchorProxy, TrustAnchorProxyEvent, TrustAnchorProxyInitEvent, TrustAnchorSigner,
+            TrustAnchorSignerEvent, TrustAnchorSignerInitEvent,
+        },
     },
-    pubd::{RepositoryAccessEvent, RepositoryAccessInitEvent},
+    pubd::{RepositoryAccess, RepositoryAccessEvent, RepositoryAccessInitEvent},
 };
+
+use super::{UnconvertedEffect, UpgradeAggregateStorePre0_14, UpgradeMode, UpgradeResult};
 
 pub type OldInitSignerInfoEvent = OldStoredEvent<SignerInfoInitEvent>;
 pub type OldSignerInfoEvent = OldStoredEvent<SignerInfoEvent>;
@@ -29,7 +40,7 @@ pub type OldTrustAnchorSignerEvent = OldStoredEvent<TrustAnchorSignerEvent>;
 pub type OldRepositoryAccessInitEvent = OldStoredEvent<RepositoryAccessInitEvent>;
 pub type OldRepositoryAccessEvent = OldStoredEvent<RepositoryAccessEvent>;
 
-pub trait OldEvent: fmt::Display + Eq + PartialEq + Send + Sync + Storable + 'static {
+pub trait OldEvent: fmt::Display + Eq + PartialEq + Storable + 'static {
     /// Identifies the aggregate, useful when storing and retrieving the event.
     fn handle(&self) -> &MyHandle;
 
@@ -47,7 +58,7 @@ pub struct OldStoredEvent<E: fmt::Display + Eq + PartialEq + Storable + 'static>
     details: E,
 }
 
-impl<E: fmt::Display + Eq + PartialEq + Storable + Send + Sync + 'static> OldStoredEvent<E> {
+impl<E: fmt::Display + Eq + PartialEq + Storable + 'static> OldStoredEvent<E> {
     pub fn new(id: &MyHandle, version: u64, event: E) -> Self {
         OldStoredEvent {
             id: id.clone(),
@@ -70,7 +81,7 @@ impl<E: fmt::Display + Eq + PartialEq + Storable + Send + Sync + 'static> OldSto
     }
 }
 
-impl<E: fmt::Display + Eq + PartialEq + Storable + Send + Sync + 'static> OldEvent for OldStoredEvent<E> {
+impl<E: fmt::Display + Eq + PartialEq + Storable + 'static> OldEvent for OldStoredEvent<E> {
     fn handle(&self) -> &MyHandle {
         &self.id
     }
@@ -80,7 +91,7 @@ impl<E: fmt::Display + Eq + PartialEq + Storable + Send + Sync + 'static> OldEve
     }
 }
 
-impl<E: fmt::Display + Eq + PartialEq + Storable + Send + Sync + 'static> fmt::Display for OldStoredEvent<E> {
+impl<E: fmt::Display + Eq + PartialEq + Storable + 'static> fmt::Display for OldStoredEvent<E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "id: {} version: {} details: {}", self.id, self.version, self.details)
     }
@@ -202,5 +213,110 @@ pub struct CommandKeyError(String);
 impl fmt::Display for CommandKeyError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "invalid command key: {}", self.0)
+    }
+}
+
+//------------ UpgradeAggrateStore impls from generic ------------------------
+
+pub type UpgradeAggregateStoreProperties = GenericUpgradeAggregateStore<Properties>;
+pub type UpgradeAggregateStoreSignerInfo = GenericUpgradeAggregateStore<SignerInfo>;
+pub type UpgradeAggregateStoreTrustAnchorSigner = GenericUpgradeAggregateStore<TrustAnchorSigner>;
+pub type UpgradeAggregateStoreTrustAnchorProxy = GenericUpgradeAggregateStore<TrustAnchorProxy>;
+pub type UpgradeAggregateStoreCertAuth = GenericUpgradeAggregateStore<CertAuth>;
+pub type UpgradeAggregateStoreRepositoryAccess = GenericUpgradeAggregateStore<RepositoryAccess>;
+
+//------------ GenericUpgradeAggrateStore ------------------------------------
+
+/// Upgrades a generic pre 0.14.0 AggregateStore
+///
+/// This works for implementations that do not need to do complex command or
+/// event conversions.
+pub struct GenericUpgradeAggregateStore<A: Aggregate> {
+    store_name: String,
+    current_kv_store: KeyValueStore,
+    new_kv_store: KeyValueStore,
+    new_agg_store: AggregateStore<A>,
+}
+
+impl<A: Aggregate> GenericUpgradeAggregateStore<A> {
+    pub fn upgrade(name_space: &Segment, mode: UpgradeMode, config: &Config) -> UpgradeResult<()> {
+        let current_kv_store = KeyValueStore::create(&config.storage_uri, name_space)?;
+
+        if current_kv_store.scopes()?.is_empty() {
+            // nothing to do here
+            Ok(())
+        } else {
+            let new_kv_store = KeyValueStore::create(config.upgrade_storage_uri(), name_space)?;
+            let new_agg_store =
+                AggregateStore::<A>::create(config.upgrade_storage_uri(), name_space, config.disable_history_cache)?;
+
+            let store_migration = GenericUpgradeAggregateStore {
+                store_name: name_space.to_string(),
+                current_kv_store,
+                new_kv_store,
+                new_agg_store,
+            };
+
+            store_migration.upgrade(mode)
+        }
+    }
+}
+
+impl<A: Aggregate> UpgradeAggregateStorePre0_14 for GenericUpgradeAggregateStore<A> {
+    type Aggregate = A;
+
+    type OldInitEvent = A::InitEvent;
+    type OldEvent = A::Event;
+    type OldStorableDetails = A::StorableCommandDetails;
+
+    fn store_name(&self) -> &str {
+        &self.store_name
+    }
+
+    fn deployed_store(&self) -> &KeyValueStore {
+        &self.current_kv_store
+    }
+
+    fn preparation_key_value_store(&self) -> &KeyValueStore {
+        &self.new_kv_store
+    }
+
+    fn preparation_aggregate_store(&self) -> &AggregateStore<Self::Aggregate> {
+        &self.new_agg_store
+    }
+
+    fn convert_init_event(
+        &self,
+        old_init: Self::OldInitEvent,
+        handle: MyHandle,
+        actor: String,
+        time: Time,
+    ) -> UpgradeResult<StoredCommand<Self::Aggregate>> {
+        let details = A::StorableCommandDetails::make_init();
+        let builder = StoredCommandBuilder::<A>::new(actor, time, handle, 0, details);
+
+        Ok(builder.finish_with_init_event(old_init))
+    }
+
+    fn convert_old_command(
+        &self,
+        old_command: OldStoredCommand<Self::OldStorableDetails>,
+        old_effect: UnconvertedEffect<Self::OldEvent>,
+        version: u64,
+    ) -> UpgradeResult<Option<StoredCommand<Self::Aggregate>>> {
+        let new_command_builder = StoredCommandBuilder::<A>::new(
+            old_command.actor().clone(),
+            old_command.time(),
+            old_command.handle().clone(),
+            version,
+            old_command.details().clone(),
+        );
+
+        let new_command = match old_effect {
+            UnconvertedEffect::Error { msg } => new_command_builder.finish_with_error(msg),
+            UnconvertedEffect::Success { events } => new_command_builder.finish_with_events(events),
+        };
+
+        Ok(Some(new_command))
     }
 }

@@ -83,7 +83,7 @@ mod tests {
 
     impl fmt::Display for PersonInitCommandDetails {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "Create person with name {}", self.name)
+            self.store().fmt(f)
         }
     }
 
@@ -91,7 +91,7 @@ mod tests {
         type StorableDetails = PersonStorableCommand;
 
         fn store(&self) -> Self::StorableDetails {
-            PersonStorableCommand::Create(self.name.clone())
+            PersonStorableCommand::make_init()
         }
     }
 
@@ -189,7 +189,7 @@ mod tests {
 
     #[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
     enum PersonStorableCommand {
-        Create(String),
+        Initialise,
         ChangeName(String),
         GoAroundTheSun,
     }
@@ -197,7 +197,7 @@ mod tests {
     impl fmt::Display for PersonStorableCommand {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             match self {
-                PersonStorableCommand::Create(name) => write!(f, "Create person with name {}", name),
+                PersonStorableCommand::Initialise => write!(f, "Initialise person"),
                 PersonStorableCommand::ChangeName(name) => write!(f, "Change name to {}", name),
                 PersonStorableCommand::GoAroundTheSun => write!(f, "Go around the sun"),
             }
@@ -207,14 +207,16 @@ mod tests {
     impl WithStorableDetails for PersonStorableCommand {
         fn summary(&self) -> CommandSummary {
             match self {
-                PersonStorableCommand::Create(name) => {
-                    CommandSummary::new("person-create", self).with_arg("name", name)
-                }
+                PersonStorableCommand::Initialise => CommandSummary::new("person-init", self),
                 PersonStorableCommand::ChangeName(name) => {
                     CommandSummary::new("person-change-name", self).with_arg("name", name)
                 }
                 PersonStorableCommand::GoAroundTheSun => CommandSummary::new("person-around-sun", self),
             }
+        }
+
+        fn make_init() -> Self {
+            Self::Initialise
         }
     }
 

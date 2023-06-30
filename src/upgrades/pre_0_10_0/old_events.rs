@@ -640,7 +640,7 @@ pub struct OldRepositoryResponse {
 
 //------------ OldCaIni -----------------------------------------------------------
 
-pub type Pre0_10CertAuthInitEvent = OldStoredEvent<Pre0_10CaIniDet>;
+pub type Pre0_10CertAuthInitEvent = Pre0_10CaIniDet;
 
 //------------ OldCaIniDet --------------------------------------------------------
 
@@ -668,7 +668,7 @@ impl fmt::Display for Pre0_10CaIniDet {
 
 //------------ OldEvt ---------------------------------------------------------
 
-pub type Pre0_10CertAuthEvent = OldStoredEvent<Pre0_10CertAuthEventDetails>;
+pub type Pre0_10CertAuthEvent = Pre0_10CertAuthEventDetails;
 
 //------------ EvtDet -------------------------------------------------------
 

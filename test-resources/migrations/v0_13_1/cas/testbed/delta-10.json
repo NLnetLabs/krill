@@ -1,0 +1,13 @@
+{
+  "id": "testbed",
+  "version": 10,
+  "details": {
+    "type": "child_certificates_updated",
+    "resource_class_name": "0",
+    "updates": {
+      "removed": [
+        "1A1F1D103D06E0E0D97B4B78F115E9AFAAC61E98"
+      ]
+    }
+  }
+}

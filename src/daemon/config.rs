@@ -812,7 +812,7 @@ pub struct Benchmark {
 /// # Accessors
 impl Config {
     pub fn upgrade_storage_uri(&self) -> &Url {
-        self.upgrade_storage_uri.as_ref().unwrap() // should not panic, as it is always set
+        self.upgrade_storage_uri.as_ref().unwrap() // should not panic, as it is always set by Config::verify
     }
 
     /// General purpose KV store, can be used to track server settings

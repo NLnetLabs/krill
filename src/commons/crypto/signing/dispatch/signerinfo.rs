@@ -58,7 +58,7 @@ impl SignerInfoInitCommandDetails {
 
 impl fmt::Display for SignerInfoInitCommandDetails {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        SignerInfoCommandDetails::from(self).fmt(f)
+        self.store().fmt(f)
     }
 }
 
@@ -66,13 +66,7 @@ impl InitCommandDetails for SignerInfoInitCommandDetails {
     type StorableDetails = SignerInfoCommandDetails;
 
     fn store(&self) -> Self::StorableDetails {
-        self.into()
-    }
-}
-
-impl From<&SignerInfoInitCommandDetails> for SignerInfoCommandDetails {
-    fn from(_d: &SignerInfoInitCommandDetails) -> Self {
-        SignerInfoCommandDetails::CreateSigner
+        SignerInfoCommandDetails::make_init()
     }
 }
 
@@ -80,7 +74,6 @@ impl From<&SignerInfoInitCommandDetails> for SignerInfoCommandDetails {
 
 #[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
 pub struct SignerInfoInitEvent {
-    pub id: MyHandle,
     pub signer_name: String,
     pub signer_info: String,
     pub signer_identity: SignerIdentity,
@@ -149,7 +142,7 @@ type SignerInfoCommand = SentCommand<SignerInfoCommandDetails>;
 
 #[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
 pub enum SignerInfoCommandDetails {
-    CreateSigner,
+    Initialise,
     AddKey(KeyIdentifier, String),
     RemoveKey(KeyIdentifier),
     ChangeSignerName(String),
@@ -159,7 +152,7 @@ pub enum SignerInfoCommandDetails {
 impl fmt::Display for SignerInfoCommandDetails {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            SignerInfoCommandDetails::CreateSigner => write!(f, "Create Signer"),
+            SignerInfoCommandDetails::Initialise => write!(f, "Create Signer"),
             SignerInfoCommandDetails::AddKey(key_id, internal_key_id) => write!(
                 f,
                 "Add key with key id '{}' and internal key id '{}'",
@@ -179,7 +172,7 @@ impl fmt::Display for SignerInfoCommandDetails {
 impl WithStorableDetails for SignerInfoCommandDetails {
     fn summary(&self) -> CommandSummary {
         match self {
-            SignerInfoCommandDetails::CreateSigner => CommandSummary::new("signer-create", self),
+            SignerInfoCommandDetails::Initialise => CommandSummary::new("signer-init", self),
             SignerInfoCommandDetails::AddKey(key_id, internal_key_id) => CommandSummary::new("signer-add-key", self)
                 .with_arg("key_id", key_id)
                 .with_arg("internal_key_id", internal_key_id),
@@ -193,6 +186,10 @@ impl WithStorableDetails for SignerInfoCommandDetails {
                 CommandSummary::new("signer-change-info", self).with_arg("signer_info", signer_info)
             }
         }
+    }
+
+    fn make_init() -> Self {
+        Self::Initialise
     }
 }
 
@@ -245,7 +242,7 @@ pub struct SignerIdentity {
 /// SignerInfo defines the set of keys created in a particular signer backend and the identity of that backend.
 ///
 #[derive(Clone, Deserialize, Serialize)]
-struct SignerInfo {
+pub struct SignerInfo {
     /// The id is needed when generating events.
     id: SignerHandle,
 
@@ -278,10 +275,10 @@ impl Aggregate for SignerInfo {
 
     type Error = Error;
 
-    fn init(_handle: MyHandle, init: SignerInfoInitEvent) -> Self {
+    fn init(handle: MyHandle, init: SignerInfoInitEvent) -> Self {
         SignerInfo {
-            id: init.id,
             version: 0,
+            id: handle,
             signer_name: init.signer_name,
             signer_info: init.signer_info,
             signer_identity: init.signer_identity,
@@ -316,7 +313,7 @@ impl Aggregate for SignerInfo {
 
     fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Event>, Self::Error> {
         Ok(match command.into_details() {
-            SignerInfoCommandDetails::CreateSigner => {
+            SignerInfoCommandDetails::Initialise => {
                 // This can't happen really.. we would never send this command
                 // to an existing Signer.
                 //
@@ -353,7 +350,6 @@ impl Aggregate for SignerInfo {
     fn process_init_command(command: SignerInfoInitCommand) -> Result<SignerInfoInitEvent, Self::Error> {
         let details = command.into_details();
         Ok(SignerInfoInitEvent {
-            id: details.id,
             signer_name: details.signer_name,
             signer_info: details.signer_info,
             signer_identity: SignerIdentity {

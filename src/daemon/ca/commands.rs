@@ -22,7 +22,7 @@ use crate::{
             StorableRcEntitlement,
         },
         crypto::KrillSigner,
-        eventsourcing::{self, InitCommandDetails, SentCommand, SentInitCommand},
+        eventsourcing::{self, InitCommandDetails, SentCommand, SentInitCommand, WithStorableDetails},
     },
     daemon::{
         ca::{CertAuthEvent, ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest},
@@ -57,13 +57,13 @@ impl InitCommandDetails for CertAuthInitCommandDetails {
     type StorableDetails = CertAuthStorableCommand;
 
     fn store(&self) -> Self::StorableDetails {
-        CertAuthStorableCommand::Create
+        CertAuthStorableCommand::make_init()
     }
 }
 
 impl fmt::Display for CertAuthInitCommandDetails {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        CertAuthStorableCommand::Create.fmt(f)
+        self.store().fmt(f)
     }
 }
 
