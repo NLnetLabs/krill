@@ -552,10 +552,10 @@ where
         )
     }
 
-    fn key_for_command(agg: &MyHandle, sequence: u64) -> Key {
+    fn key_for_command(agg: &MyHandle, version: u64) -> Key {
         Key::new_scoped(
             Scope::from_segment(Segment::parse_lossy(agg.as_str())), // agg should always be a valid Segment
-            Segment::parse(&format!("command-{}.json", sequence)).unwrap(), // cannot panic as a u64 cannot contain a Scope::SEPARATOR
+            Segment::parse(&format!("command-{}.json", version)).unwrap(), // cannot panic as a u64 cannot contain a Scope::SEPARATOR
         )
     }
 
@@ -789,10 +789,10 @@ impl fmt::Display for AggregateStoreError {
             AggregateStoreError::ConcurrentModification(handle) => {
                 write!(f, "concurrent modification attempt for entity: '{}'", handle)
             }
-            AggregateStoreError::UnknownCommand(handle, seq) => write!(
+            AggregateStoreError::UnknownCommand(handle, version) => write!(
                 f,
-                "Aggregate '{}' does not have command with sequence '{}'",
-                handle, seq
+                "Aggregate '{}' does not have command with version '{}'",
+                handle, version
             ),
             AggregateStoreError::WarmupFailed(handle, e) => {
                 write!(f, "Could not rebuild state for '{}': {}", handle, e)

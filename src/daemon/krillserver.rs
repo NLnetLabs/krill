@@ -846,8 +846,8 @@ impl KrillServer {
         self.ca_manager.ca_history(ca, crit).await
     }
 
-    pub fn ca_command_details(&self, ca: &CaHandle, sequence: u64) -> KrillResult<CaCommandDetails> {
-        self.ca_manager.ca_command_details(ca, sequence)
+    pub fn ca_command_details(&self, ca: &CaHandle, version: u64) -> KrillResult<CaCommandDetails> {
+        self.ca_manager.ca_command_details(ca, version)
     }
 
     /// Returns the publisher request for a CA, or NONE of the CA cannot be found.

@@ -564,9 +564,9 @@ impl CaManager {
     }
 
     /// Shows the details for a CA command.
-    pub fn ca_command_details(&self, handle: &CaHandle, sequence: u64) -> KrillResult<CaCommandDetails> {
+    pub fn ca_command_details(&self, handle: &CaHandle, version: u64) -> KrillResult<CaCommandDetails> {
         self.ca_store
-            .get_command(handle, sequence)
+            .get_command(handle, version)
             .map_err(Error::AggregateStoreError)
     }
 }

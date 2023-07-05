@@ -58,7 +58,7 @@ impl CommandHistory {
 
 impl fmt::Display for CommandHistory {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "time::command::sequence::success")?;
+        writeln!(f, "time::command::version::success")?;
 
         for command in self.commands() {
             let success_string = match &command.effect {
@@ -68,7 +68,7 @@ impl fmt::Display for CommandHistory {
             };
             writeln!(
                 f,
-                "{}::{} ::{}::{}",
+                "{}::{}::{}::{}",
                 command.time().to_rfc3339_opts(SecondsFormat::Secs, true),
                 command.summary.msg,
                 command.version,
@@ -98,7 +98,7 @@ pub struct CommandHistoryRecord {
 impl CommandHistoryRecord {
     pub fn matches(&self, crit: &CommandHistoryCriteria) -> bool {
         crit.matches_timestamp_secs(self.timestamp)
-            && crit.matches_sequence(self.version)
+            && crit.matches_version(self.version)
             && crit.matches_label(&self.summary.label)
     }
 }
@@ -224,7 +224,7 @@ pub struct CommandHistoryCriteria {
     #[serde(skip_serializing_if = "Option::is_none")]
     after: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    after_sequence: Option<u64>,
+    after_version: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     label_includes: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -252,8 +252,8 @@ impl CommandHistoryCriteria {
         self.before = Some(timestamp);
     }
 
-    pub fn set_after_sequence(&mut self, sequence: u64) {
-        self.after_sequence = Some(sequence)
+    pub fn set_after_version(&mut self, version: u64) {
+        self.after_version = Some(version)
     }
 
     pub fn set_rows(&mut self, rows: usize) {
@@ -282,10 +282,10 @@ impl CommandHistoryCriteria {
         true
     }
 
-    pub fn matches_sequence(&self, sequence: u64) -> bool {
-        match self.after_sequence {
+    pub fn matches_version(&self, version: u64) -> bool {
+        match self.after_version {
             None => true,
-            Some(seq_crit) => sequence > seq_crit,
+            Some(seq_crit) => version > seq_crit,
         }
     }
 
@@ -319,7 +319,7 @@ impl Default for CommandHistoryCriteria {
         CommandHistoryCriteria {
             before: None,
             after: None,
-            after_sequence: None,
+            after_version: None,
             label_includes: None,
             label_excludes: None,
             offset: 0,
