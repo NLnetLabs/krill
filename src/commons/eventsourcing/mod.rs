@@ -189,7 +189,7 @@ mod tests {
 
     #[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
     enum PersonStorableCommand {
-        Initialise,
+        Init,
         ChangeName(String),
         GoAroundTheSun,
     }
@@ -197,7 +197,7 @@ mod tests {
     impl fmt::Display for PersonStorableCommand {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             match self {
-                PersonStorableCommand::Initialise => write!(f, "Initialise person"),
+                PersonStorableCommand::Init => write!(f, "Initialise person"),
                 PersonStorableCommand::ChangeName(name) => write!(f, "Change name to {}", name),
                 PersonStorableCommand::GoAroundTheSun => write!(f, "Go around the sun"),
             }
@@ -207,7 +207,7 @@ mod tests {
     impl WithStorableDetails for PersonStorableCommand {
         fn summary(&self) -> CommandSummary {
             match self {
-                PersonStorableCommand::Initialise => CommandSummary::new("person-init", self),
+                PersonStorableCommand::Init => CommandSummary::new("person-init", self),
                 PersonStorableCommand::ChangeName(name) => {
                     CommandSummary::new("person-change-name", self).with_arg("name", name)
                 }
@@ -216,7 +216,7 @@ mod tests {
         }
 
         fn make_init() -> Self {
-            Self::Initialise
+            Self::Init
         }
     }
 

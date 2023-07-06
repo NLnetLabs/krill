@@ -78,15 +78,15 @@ impl fmt::Display for PropertiesCommandDetails {
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
 pub enum StorablePropertiesCommand {
-    Initialise,
+    Init,
     UpgradeTo { krill_version: KrillVersion },
 }
 
 impl fmt::Display for StorablePropertiesCommand {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::Initialise => {
-                write!(f, "create properties")
+            Self::Init => {
+                write!(f, "initialise properties")
             }
             Self::UpgradeTo { krill_version: version } => {
                 write!(f, "upgrade Krill to {version}")
@@ -118,7 +118,7 @@ impl From<&PropertiesCommandDetails> for StorablePropertiesCommand {
 impl eventsourcing::WithStorableDetails for StorablePropertiesCommand {
     fn summary(&self) -> crate::commons::api::CommandSummary {
         match self {
-            StorablePropertiesCommand::Initialise => CommandSummary::new("cmd-properties-init", self),
+            StorablePropertiesCommand::Init => CommandSummary::new("cmd-properties-init", self),
             StorablePropertiesCommand::UpgradeTo { krill_version } => {
                 CommandSummary::new("cmd-properties-krill-upgrade", self).with_arg("version", krill_version)
             }
@@ -126,7 +126,7 @@ impl eventsourcing::WithStorableDetails for StorablePropertiesCommand {
     }
 
     fn make_init() -> Self {
-        Self::Initialise
+        Self::Init
     }
 }
 

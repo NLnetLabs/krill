@@ -361,7 +361,7 @@ impl fmt::Display for CaCommandDetails {
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
 pub enum CertAuthStorableCommand {
-    Initialise,
+    Init,
     ChildAdd {
         child: ChildHandle,
         ski: String,
@@ -467,7 +467,7 @@ pub struct StorableRcEntitlement {
 impl WithStorableDetails for CertAuthStorableCommand {
     fn summary(&self) -> CommandSummary {
         match self {
-            CertAuthStorableCommand::Initialise => CommandSummary::new("cmd-ca-init", self),
+            CertAuthStorableCommand::Init => CommandSummary::new("cmd-ca-init", self),
             CertAuthStorableCommand::ChildAdd { child, ski, resources } => {
                 CommandSummary::new("cmd-ca-child-add", self)
                     .with_child(child)
@@ -591,7 +591,7 @@ impl WithStorableDetails for CertAuthStorableCommand {
     }
 
     fn make_init() -> Self {
-        Self::Initialise
+        Self::Init
     }
 }
 
@@ -601,7 +601,7 @@ impl fmt::Display for CertAuthStorableCommand {
             // ------------------------------------------------------------
             // Initialisation
             // ------------------------------------------------------------
-            CertAuthStorableCommand::Initialise => write!(f, "Create CA"),
+            CertAuthStorableCommand::Init => write!(f, "Create CA"),
 
             // ------------------------------------------------------------
             // Being a parent
@@ -777,7 +777,7 @@ impl fmt::Display for CertAuthStorableCommand {
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case", tag = "type")]
 pub enum StorableRepositoryCommand {
-    Initialise,
+    Init,
     AddPublisher { name: PublisherHandle },
     RemovePublisher { name: PublisherHandle },
 }
@@ -785,7 +785,7 @@ pub enum StorableRepositoryCommand {
 impl WithStorableDetails for StorableRepositoryCommand {
     fn summary(&self) -> CommandSummary {
         match self {
-            StorableRepositoryCommand::Initialise => CommandSummary::new("pubd-init", self),
+            StorableRepositoryCommand::Init => CommandSummary::new("pubd-init", self),
             StorableRepositoryCommand::AddPublisher { name } => {
                 CommandSummary::new("pubd-publisher-add", self).with_publisher(name)
             }
@@ -796,14 +796,14 @@ impl WithStorableDetails for StorableRepositoryCommand {
     }
 
     fn make_init() -> Self {
-        Self::Initialise
+        Self::Init
     }
 }
 
 impl fmt::Display for StorableRepositoryCommand {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            StorableRepositoryCommand::Initialise => {
+            StorableRepositoryCommand::Init => {
                 write!(f, "Initialise server")
             }
             StorableRepositoryCommand::AddPublisher { name } => {

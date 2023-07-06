@@ -142,7 +142,7 @@ type SignerInfoCommand = SentCommand<SignerInfoCommandDetails>;
 
 #[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
 pub enum SignerInfoCommandDetails {
-    Initialise,
+    Init,
     AddKey(KeyIdentifier, String),
     RemoveKey(KeyIdentifier),
     ChangeSignerName(String),
@@ -152,7 +152,7 @@ pub enum SignerInfoCommandDetails {
 impl fmt::Display for SignerInfoCommandDetails {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            SignerInfoCommandDetails::Initialise => write!(f, "Create Signer"),
+            SignerInfoCommandDetails::Init => write!(f, "Initialise Signer"),
             SignerInfoCommandDetails::AddKey(key_id, internal_key_id) => write!(
                 f,
                 "Add key with key id '{}' and internal key id '{}'",
@@ -172,7 +172,7 @@ impl fmt::Display for SignerInfoCommandDetails {
 impl WithStorableDetails for SignerInfoCommandDetails {
     fn summary(&self) -> CommandSummary {
         match self {
-            SignerInfoCommandDetails::Initialise => CommandSummary::new("signer-init", self),
+            SignerInfoCommandDetails::Init => CommandSummary::new("signer-init", self),
             SignerInfoCommandDetails::AddKey(key_id, internal_key_id) => CommandSummary::new("signer-add-key", self)
                 .with_arg("key_id", key_id)
                 .with_arg("internal_key_id", internal_key_id),
@@ -189,7 +189,7 @@ impl WithStorableDetails for SignerInfoCommandDetails {
     }
 
     fn make_init() -> Self {
-        Self::Initialise
+        Self::Init
     }
 }
 
@@ -313,7 +313,7 @@ impl Aggregate for SignerInfo {
 
     fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Event>, Self::Error> {
         Ok(match command.into_details() {
-            SignerInfoCommandDetails::Initialise => {
+            SignerInfoCommandDetails::Init => {
                 // This can't happen really.. we would never send this command
                 // to an existing Signer.
                 //

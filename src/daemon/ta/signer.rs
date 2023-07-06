@@ -173,7 +173,7 @@ impl TrustAnchorSignerCommand {
 // Storable Commands (KrillSigner cannot be de-/serialized)
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum TrustAnchorSignerStorableCommand {
-    Initialise,
+    Init,
     TrustAnchorSignerRequest(TrustAnchorSignedRequest),
 }
 
@@ -190,7 +190,7 @@ impl From<&TrustAnchorSignerCommandDetails> for TrustAnchorSignerStorableCommand
 impl eventsourcing::WithStorableDetails for TrustAnchorSignerStorableCommand {
     fn summary(&self) -> crate::commons::api::CommandSummary {
         match self {
-            TrustAnchorSignerStorableCommand::Initialise => {
+            TrustAnchorSignerStorableCommand::Init => {
                 crate::commons::api::CommandSummary::new("cmd-ta-signer-init", self)
             }
             TrustAnchorSignerStorableCommand::TrustAnchorSignerRequest(request) => {
@@ -201,7 +201,7 @@ impl eventsourcing::WithStorableDetails for TrustAnchorSignerStorableCommand {
     }
 
     fn make_init() -> Self {
-        Self::Initialise
+        Self::Init
     }
 }
 
@@ -209,7 +209,7 @@ impl fmt::Display for TrustAnchorSignerStorableCommand {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // note that this is a summary, full details are stored in the json.
         match self {
-            TrustAnchorSignerStorableCommand::Initialise => {
+            TrustAnchorSignerStorableCommand::Init => {
                 write!(f, "Initialise TA signer")
             }
             TrustAnchorSignerStorableCommand::TrustAnchorSignerRequest(req) => {

@@ -199,7 +199,7 @@ impl fmt::Display for TrustAnchorProxyEvent {
 #[allow(clippy::large_enum_variant)]
 pub enum TrustAnchorProxyCommandDetails {
     // Create new instance - cannot be sent to an existing instance
-    Initialise,
+    Init,
 
     // Publication Support
     AddRepository(RepositoryContact),
@@ -219,8 +219,8 @@ impl fmt::Display for TrustAnchorProxyCommandDetails {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // note that this is a summary, full details are stored in the json.
         match self {
-            TrustAnchorProxyCommandDetails::Initialise => {
-                write!(f, "Create TA proxy")
+            TrustAnchorProxyCommandDetails::Init => {
+                write!(f, "Initialise TA proxy")
             }
             // Publication Support
             TrustAnchorProxyCommandDetails::AddRepository(repository) => {
@@ -265,7 +265,7 @@ impl eventsourcing::WithStorableDetails for TrustAnchorProxyCommandDetails {
     fn summary(&self) -> crate::commons::api::CommandSummary {
         match self {
             // Initialisation
-            TrustAnchorProxyCommandDetails::Initialise => {
+            TrustAnchorProxyCommandDetails::Init => {
                 crate::commons::api::CommandSummary::new("cmd-ta-proxy-init", self)
             }
             // Publication Support
@@ -310,7 +310,7 @@ impl eventsourcing::WithStorableDetails for TrustAnchorProxyCommandDetails {
     }
 
     fn make_init() -> Self {
-        Self::Initialise
+        Self::Init
     }
 }
 
@@ -487,7 +487,7 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
 
         match command.into_details() {
             // Initialisation
-            TrustAnchorProxyCommandDetails::Initialise => {
+            TrustAnchorProxyCommandDetails::Init => {
                 // This can't happen really.. we would never send this command
                 // to an existing TrustAnchorProxy.
                 //

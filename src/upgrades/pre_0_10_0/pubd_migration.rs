@@ -79,7 +79,7 @@ impl UpgradeAggregateStorePre0_14 for PublicationServerRepositoryAccessMigration
         actor: String,
         time: Time,
     ) -> UpgradeResult<crate::commons::eventsourcing::StoredCommand<Self::Aggregate>> {
-        let details = StorableRepositoryCommand::Initialise;
+        let details = StorableRepositoryCommand::Init;
         let builder = StoredCommandBuilder::<RepositoryAccess>::new(actor, time, handle, 0, details);
         let init_event: RepositoryAccessInitEvent = old_init.into_details();
 

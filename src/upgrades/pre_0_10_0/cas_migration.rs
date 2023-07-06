@@ -103,7 +103,7 @@ impl UpgradeAggregateStorePre0_14 for CasMigration {
         actor: String,
         time: Time,
     ) -> UpgradeResult<crate::commons::eventsourcing::StoredCommand<Self::Aggregate>> {
-        let details = CertAuthStorableCommand::Initialise;
+        let details = CertAuthStorableCommand::Init;
         let init_event = CertAuthInitEvent::new(old_init.into());
 
         let builder = StoredCommandBuilder::<CertAuth>::new(actor, time, handle, 0, details);
