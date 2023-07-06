@@ -440,13 +440,13 @@ pub trait UpgradeAggregateStorePre0_14 {
         match mode {
             UpgradeMode::PrepareOnly => {
                 info!(
-                    "Prepared migrating CAs to Krill version {}. Will save progress for final upgrade when Krill restarts.",
+                    "Prepared migrating data to Krill version {}. Will save progress for final upgrade when Krill restarts.",
                     KRILL_VERSION
                 );
             }
             UpgradeMode::PrepareToFinalise => {
                 self.clean_migration_help_files()?;
-                info!("Prepared migrating CAs to Krill version {}.", KRILL_VERSION);
+                info!("Prepared migrating data to Krill version {}.", KRILL_VERSION);
             }
         }
 
