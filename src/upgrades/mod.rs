@@ -278,7 +278,7 @@ pub trait UpgradeAggregateStorePre0_14 {
 
     /// Override this to get a call when the migration of commands for
     /// an aggregate is done.
-    fn post_migration(&self, handle: &MyHandle) -> UpgradeResult<()> {
+    fn post_command_migration(&self, handle: &MyHandle) -> UpgradeResult<()> {
         trace!("default post migration hook called for '{handle}'");
         Ok(())
     }
@@ -427,7 +427,7 @@ pub trait UpgradeAggregateStorePre0_14 {
 
             // Call the post command migration hook, this will do nothing
             // unless the implementer of this trait overrode it.
-            self.post_migration(&handle)?;
+            self.post_command_migration(&handle)?;
 
             // Update the upgrade info as this could be a prepare only
             // run, and this migration could be resumed later after more
