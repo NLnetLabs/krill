@@ -81,13 +81,7 @@ impl<A: Aggregate> AggregateStore<A> {
         Ok(())
     }
 
-    /// Warm the cache for a specific aggregate. If successful save the latest snapshot
-    /// as well (will help in case of migrations where snapshots were dropped).
-    ///
-    /// In case any surplus event(s) and/or command(s) are encountered, i.e. extra entries not
-    /// recorded in the 'info.json' which is always saved last on state changes - then it is
-    /// assumed that an incomplete transaction took place. The surplus entries will be archived
-    /// and warnings will be reported.
+    /// Warm the cache for a specific aggregate.
     pub fn warm_aggregate(&self, handle: &MyHandle) -> StoreResult<()> {
         info!("Warming the cache for: '{}'", handle);
 
