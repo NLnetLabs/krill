@@ -825,9 +825,9 @@ pub fn finalise_data_migration(
                     move_dir(&current_dir, &archive_dir)?;
                     move_dir(&upgraded_dir, &current_dir)?;
                 } else if current_dir.exists() {
-                    // There was no new data for this directory. But, we make
-                    // make a backup so that we can have a consistent data set
-                    // to fall back to in case of a downgrade.
+                    // There was no new data for this directory. But, we make a backup
+                    // so that we can have a consistent data set to fall back to in case
+                    // of a downgrade.
                     file::backup_dir(&current_dir, &archive_dir).map_err(|e| {
                         Error::Custom(format!(
                             "Could not backup directory {} to {} after migration: {}",
