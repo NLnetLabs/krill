@@ -840,10 +840,10 @@ pub fn finalise_data_migration(
 
                 let version_file = current_dir.join("version");
                 if version_file.exists() {
-                    debug!("Removing excess version file: {}", version_file.to_string_lossy());
+                    debug!("Removing (no longer used) version file: {}", version_file.to_string_lossy());
                     std::fs::remove_file(&version_file).map_err(|e| {
                         let context = format!(
-                            "Could not remove old version file at: {}",
+                            "Could not remove (no longer used) version file at: {}",
                             version_file.to_string_lossy(),
                         );
                         Error::IoError(KrillIoError::new(context, e))
