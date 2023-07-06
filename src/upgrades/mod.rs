@@ -305,7 +305,7 @@ pub trait UpgradeAggregateStorePre0_14 {
                 .map_err(|_| UpgradeError::Custom(format!("Found invalid handle '{}'", scope)))?;
 
             // Get the upgrade info to see where we got to.
-            // We may be continuing from an
+            // We may be continuing from an earlier migration, e.g. by krillup.
 
             let mut data_upgrade_info = self.data_upgrade_info(&scope)?;
 
