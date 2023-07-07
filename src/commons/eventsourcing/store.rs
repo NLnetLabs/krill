@@ -222,9 +222,7 @@ where
         // recover from. So, exit.
         let processed_command = processed_command_builder.finish_with_init_event(init_event);
         if let Err(e) = self.store_command(&processed_command) {
-            error!("Cannot save state for '{}'. Got error: {}", handle, e);
-            error!("Will now exit Krill - please verify that the disk can be written to and is not full");
-            std::process::exit(1);
+            self.exit_with_fatal_storage_error(&handle, e);
         }
 
         // This should not fail, but if it does then it's not as critical
@@ -291,9 +289,7 @@ where
                 // See issue: https://github.com/NLnetLabs/krill/issues/322
                 let processed_command = processed_command_builder.finish_with_error(&e);
                 if let Err(e) = self.store_command(&processed_command) {
-                    error!("Cannot save state for '{}'. Got error: {}", handle, e);
-                    error!("Will now exit Krill - please verify that the disk can be written to and is not full");
-                    std::process::exit(1);
+                    self.exit_with_fatal_storage_error(&handle, e);
                 }
 
                 // Update the cached aggregate so that its version is incremented
@@ -336,9 +332,7 @@ where
                     // result in discrepancies between state in memory and state on disk. Let Krill crash and an operator investigate.
                     // See issue: https://github.com/NLnetLabs/krill/issues/322
                     if let Err(e) = self.store_command(&processed_command) {
-                        error!("Cannot save state for '{}'. Got error: {}", handle, e);
-                        error!("Will now exit Krill - please verify that the disk can be written to and is not full");
-                        std::process::exit(1);
+                        self.exit_with_fatal_storage_error(&handle, e);
                     }
 
                     // For now, we also update the snapshot on disk on every change.
@@ -372,6 +366,14 @@ where
     /// Lists all known ids.
     pub fn list(&self) -> Result<Vec<MyHandle>, AggregateStoreError> {
         self.aggregates()
+    }
+
+    /// Exit with a fatal storage error
+    fn exit_with_fatal_storage_error(&self, handle: &MyHandle, e: impl fmt::Display) {
+        error!("Cannot save state for '{}'. Got error: {}", handle, e);
+        error!("Please check permissions and storage space for: {}", self.kv);
+        error!("Krill will now exit to prevent discrepancies between in-memory and stored state.");
+        std::process::exit(1);
     }
 }
 

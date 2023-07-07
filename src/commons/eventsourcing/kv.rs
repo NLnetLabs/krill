@@ -155,6 +155,12 @@ impl KeyValueStore {
     }
 }
 
+impl fmt::Display for KeyValueStore {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.inner.fmt(f)
+    }
+}
+
 //------------ KeyValueError -------------------------------------------------
 
 /// This type defines possible Errors for KeyStore
