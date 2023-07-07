@@ -26,25 +26,24 @@ use crate::{
             ParentCaContact, ParentServerInfo, PublicationServerInfo, ReceivedCert, RepositoryContact, Revocation,
             Revocations, RoaAggregateKey, RtaName, SuspendedCert, UnsuspendedCert,
         },
-        eventsourcing::StoredEvent,
         util::ext_serde,
     },
     daemon::ca::{
-        self, AspaInfo, AspaObjectsUpdates, CaEvt, CaEvtDet, CaObjects, CertifiedKey, ChildCertificateUpdates,
+        self, AspaInfo, AspaObjectsUpdates, CaObjects, CertAuthEvent, CertifiedKey, ChildCertificateUpdates,
         ObjectSetRevision, PreparedRta, PublishedObject, RoaInfo, RoaPayloadJsonMapKey, RoaUpdates, SignedRta,
     },
     daemon::ta::{TaCertDetails, TrustAnchorLocator},
-    pubd::{Publisher, RepositoryAccessEvent, RepositoryAccessEventDetails, RepositoryAccessInitDetails},
-    upgrades::PrepareUpgradeError,
+    pubd::{Publisher, RepositoryAccessEvent, RepositoryAccessInitEvent},
+    upgrades::{OldStoredEvent, UpgradeError},
 };
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct OldRfc8183Id {
+pub struct Pre0_10Rfc8183Id {
     cert: IdCert,
 }
 
-impl From<OldRfc8183Id> for ca::Rfc8183Id {
-    fn from(old: OldRfc8183Id) -> Self {
+impl From<Pre0_10Rfc8183Id> for ca::Rfc8183Id {
+    fn from(old: Pre0_10Rfc8183Id) -> Self {
         ca::Rfc8183Id::new(old.cert.into())
     }
 }
@@ -67,7 +66,7 @@ pub struct OldTrustAnchorLocator {
 }
 
 impl TryFrom<OldTaCertDetails> for TaCertDetails {
-    type Error = PrepareUpgradeError;
+    type Error = UpgradeError;
 
     fn try_from(old: OldTaCertDetails) -> Result<Self, Self::Error> {
         let cert = old.cert;
@@ -85,7 +84,7 @@ impl TryFrom<OldTaCertDetails> for TaCertDetails {
                 // included.
                 cert.rpki_manifest()
                     .ok_or_else(|| {
-                        PrepareUpgradeError::custom(
+                        UpgradeError::custom(
                             "Cannot migrate TA, rsync URI is missing and TA cert does not have a manifest URI?!",
                         )
                     })?
@@ -99,7 +98,7 @@ impl TryFrom<OldTaCertDetails> for TaCertDetails {
 
         let public_key = cert.subject_public_key_info().clone();
         let rvcd_cert = ReceivedCert::create(cert, rsync_uri.clone(), resources, limit)
-            .map_err(|e| PrepareUpgradeError::Custom(format!("Could not convert old TA details: {}", e)))?;
+            .map_err(|e| UpgradeError::Custom(format!("Could not convert old TA details: {}", e)))?;
 
         let tal = TrustAnchorLocator::new(tal.uris, rsync_uri, &public_key);
 
@@ -136,9 +135,9 @@ pub struct OldChildCertificateUpdates {
 }
 
 impl TryFrom<OldChildCertificateUpdates> for ChildCertificateUpdates {
-    type Error = PrepareUpgradeError;
+    type Error = UpgradeError;
 
-    fn try_from(old: OldChildCertificateUpdates) -> Result<Self, PrepareUpgradeError> {
+    fn try_from(old: OldChildCertificateUpdates) -> Result<Self, UpgradeError> {
         let mut issued: Vec<IssuedCertificate> = vec![];
         let mut suspended: Vec<SuspendedCert> = vec![];
         let mut unsuspended: Vec<UnsuspendedCert> = vec![];
@@ -189,11 +188,11 @@ pub type OldSuspendedCert = OldDelegatedCertificate;
 pub type OldUnsuspendedCert = OldDelegatedCertificate;
 
 impl<T> TryFrom<OldDelegatedCertificate> for CertInfo<T> {
-    type Error = PrepareUpgradeError;
+    type Error = UpgradeError;
 
     fn try_from(old: OldDelegatedCertificate) -> Result<Self, Self::Error> {
         CertInfo::create(old.cert, old.uri, old.resource_set, old.limit)
-            .map_err(|e| PrepareUpgradeError::Custom(format!("cannot convert certificate: {}", e)))
+            .map_err(|e| UpgradeError::Custom(format!("cannot convert certificate: {}", e)))
     }
 }
 
@@ -218,11 +217,11 @@ impl PartialEq for OldRcvdCert {
 impl Eq for OldRcvdCert {}
 
 impl TryFrom<OldRcvdCert> for ReceivedCert {
-    type Error = PrepareUpgradeError;
+    type Error = UpgradeError;
 
     fn try_from(old: OldRcvdCert) -> Result<Self, Self::Error> {
         ReceivedCert::create(old.cert, old.uri, old.resources, RequestResourceLimit::default())
-            .map_err(|e| PrepareUpgradeError::Custom(format!("cannot convert certificate: {}", e)))
+            .map_err(|e| UpgradeError::Custom(format!("cannot convert certificate: {}", e)))
     }
 }
 
@@ -240,7 +239,7 @@ pub struct OldCertifiedKey {
 }
 
 impl TryFrom<OldCertifiedKey> for CertifiedKey {
-    type Error = PrepareUpgradeError;
+    type Error = UpgradeError;
 
     fn try_from(old: OldCertifiedKey) -> Result<Self, Self::Error> {
         Ok(CertifiedKey::new(
@@ -266,11 +265,11 @@ pub enum OldParentCaContact {
 }
 
 impl TryFrom<OldParentCaContact> for ParentCaContact {
-    type Error = PrepareUpgradeError;
+    type Error = UpgradeError;
 
     fn try_from(old: OldParentCaContact) -> Result<Self, Self::Error> {
         match old {
-            OldParentCaContact::Ta(_old) => Err(PrepareUpgradeError::OldTaMigration),
+            OldParentCaContact::Ta(_old) => Err(UpgradeError::OldTaMigration),
             OldParentCaContact::Rfc6492(old) => Ok(ParentCaContact::Rfc6492(old.into())),
         }
     }
@@ -641,22 +640,22 @@ pub struct OldRepositoryResponse {
 
 //------------ OldCaIni -----------------------------------------------------------
 
-pub type OldCaIni = StoredEvent<OldCaIniDet>;
+pub type Pre0_10CertAuthInitEvent = Pre0_10CaIniDet;
 
 //------------ OldCaIniDet --------------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct OldCaIniDet {
-    id: OldRfc8183Id,
+pub struct Pre0_10CaIniDet {
+    id: Pre0_10Rfc8183Id,
 }
 
-impl From<OldCaIniDet> for ca::Rfc8183Id {
-    fn from(old: OldCaIniDet) -> Self {
+impl From<Pre0_10CaIniDet> for ca::Rfc8183Id {
+    fn from(old: Pre0_10CaIniDet) -> Self {
         old.id.into()
     }
 }
 
-impl fmt::Display for OldCaIniDet {
+impl fmt::Display for Pre0_10CaIniDet {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
@@ -669,16 +668,7 @@ impl fmt::Display for OldCaIniDet {
 
 //------------ OldEvt ---------------------------------------------------------
 
-pub type OldCaEvt = StoredEvent<OldCaEvtDet>;
-
-impl TryFrom<OldCaEvt> for CaEvt {
-    type Error = PrepareUpgradeError;
-
-    fn try_from(old: OldCaEvt) -> Result<Self, Self::Error> {
-        let (id, version, details) = old.unpack();
-        Ok(CaEvt::new(&id, version, details.try_into()?))
-    }
-}
+pub type Pre0_10CertAuthEvent = Pre0_10CertAuthEventDetails;
 
 //------------ EvtDet -------------------------------------------------------
 
@@ -686,7 +676,7 @@ impl TryFrom<OldCaEvt> for CaEvt {
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
-pub enum OldCaEvtDet {
+pub enum Pre0_10CertAuthEventDetails {
     // Being a Trust Anchor
     TrustAnchorMade {
         ta_cert_details: OldTaCertDetails,
@@ -743,7 +733,7 @@ pub enum OldCaEvtDet {
 
     // Being a child Events
     IdUpdated {
-        id: OldRfc8183Id,
+        id: Pre0_10Rfc8183Id,
     },
     ParentAdded {
         parent: ParentHandle,
@@ -886,169 +876,183 @@ pub enum OldCaEvtDet {
     },
 }
 
-impl TryFrom<OldCaEvtDet> for CaEvtDet {
-    type Error = PrepareUpgradeError;
+impl TryFrom<Pre0_10CertAuthEventDetails> for CertAuthEvent {
+    type Error = UpgradeError;
 
-    fn try_from(old: OldCaEvtDet) -> Result<Self, Self::Error> {
+    fn try_from(old: Pre0_10CertAuthEventDetails) -> Result<Self, Self::Error> {
         Ok(match old {
-            OldCaEvtDet::TrustAnchorMade { .. } => return Err(PrepareUpgradeError::OldTaMigration),
-            OldCaEvtDet::ChildAdded {
+            Pre0_10CertAuthEventDetails::TrustAnchorMade { .. } => return Err(UpgradeError::OldTaMigration),
+            Pre0_10CertAuthEventDetails::ChildAdded {
                 child,
                 id_cert,
                 resources,
-            } => CaEvtDet::ChildAdded {
+            } => CertAuthEvent::ChildAdded {
                 child,
                 id_cert: id_cert.into(),
                 resources,
             },
-            OldCaEvtDet::ChildCertificateIssued {
+            Pre0_10CertAuthEventDetails::ChildCertificateIssued {
                 child,
                 resource_class_name,
                 ki,
-            } => CaEvtDet::ChildCertificateIssued {
-                child,
-                resource_class_name,
-                ki,
-            },
-            OldCaEvtDet::ChildKeyRevoked {
-                child,
-                resource_class_name,
-                ki,
-            } => CaEvtDet::ChildKeyRevoked {
+            } => CertAuthEvent::ChildCertificateIssued {
                 child,
                 resource_class_name,
                 ki,
             },
-            OldCaEvtDet::ChildCertificatesUpdated {
+            Pre0_10CertAuthEventDetails::ChildKeyRevoked {
+                child,
+                resource_class_name,
+                ki,
+            } => CertAuthEvent::ChildKeyRevoked {
+                child,
+                resource_class_name,
+                ki,
+            },
+            Pre0_10CertAuthEventDetails::ChildCertificatesUpdated {
                 resource_class_name,
                 updates,
-            } => CaEvtDet::ChildCertificatesUpdated {
+            } => CertAuthEvent::ChildCertificatesUpdated {
                 resource_class_name,
                 updates: updates.try_into()?,
             },
-            OldCaEvtDet::ChildUpdatedIdCert { child, id_cert } => CaEvtDet::ChildUpdatedIdCert {
+            Pre0_10CertAuthEventDetails::ChildUpdatedIdCert { child, id_cert } => CertAuthEvent::ChildUpdatedIdCert {
                 child,
                 id_cert: id_cert.into(),
             },
-            OldCaEvtDet::ChildUpdatedResources { child, resources } => {
-                CaEvtDet::ChildUpdatedResources { child, resources }
+            Pre0_10CertAuthEventDetails::ChildUpdatedResources { child, resources } => {
+                CertAuthEvent::ChildUpdatedResources { child, resources }
             }
-            OldCaEvtDet::ChildRemoved { child } => CaEvtDet::ChildRemoved { child },
-            OldCaEvtDet::ChildSuspended { child } => CaEvtDet::ChildSuspended { child },
-            OldCaEvtDet::ChildUnsuspended { child } => CaEvtDet::ChildUnsuspended { child },
-            OldCaEvtDet::IdUpdated { id } => CaEvtDet::IdUpdated { id: id.into() },
-            OldCaEvtDet::ParentAdded { parent, contact } => CaEvtDet::ParentAdded {
+            Pre0_10CertAuthEventDetails::ChildRemoved { child } => CertAuthEvent::ChildRemoved { child },
+            Pre0_10CertAuthEventDetails::ChildSuspended { child } => CertAuthEvent::ChildSuspended { child },
+            Pre0_10CertAuthEventDetails::ChildUnsuspended { child } => CertAuthEvent::ChildUnsuspended { child },
+            Pre0_10CertAuthEventDetails::IdUpdated { id } => CertAuthEvent::IdUpdated { id: id.into() },
+            Pre0_10CertAuthEventDetails::ParentAdded { parent, contact } => CertAuthEvent::ParentAdded {
                 parent,
                 contact: contact.try_into()?,
             },
-            OldCaEvtDet::ParentUpdated { parent, contact } => CaEvtDet::ParentUpdated {
+            Pre0_10CertAuthEventDetails::ParentUpdated { parent, contact } => CertAuthEvent::ParentUpdated {
                 parent,
                 contact: contact.try_into()?,
             },
-            OldCaEvtDet::ParentRemoved { parent } => CaEvtDet::ParentRemoved { parent },
-            OldCaEvtDet::ResourceClassAdded {
+            Pre0_10CertAuthEventDetails::ParentRemoved { parent } => CertAuthEvent::ParentRemoved { parent },
+            Pre0_10CertAuthEventDetails::ResourceClassAdded {
                 resource_class_name,
                 parent,
                 parent_resource_class_name,
                 pending_key,
-            } => CaEvtDet::ResourceClassAdded {
+            } => CertAuthEvent::ResourceClassAdded {
                 resource_class_name,
                 parent,
                 parent_resource_class_name,
                 pending_key,
             },
-            OldCaEvtDet::ResourceClassRemoved {
+            Pre0_10CertAuthEventDetails::ResourceClassRemoved {
                 resource_class_name,
                 parent,
                 revoke_requests,
-            } => CaEvtDet::ResourceClassRemoved {
+            } => CertAuthEvent::ResourceClassRemoved {
                 resource_class_name,
                 parent,
                 revoke_requests,
             },
-            OldCaEvtDet::CertificateRequested {
+            Pre0_10CertAuthEventDetails::CertificateRequested {
                 resource_class_name,
                 req,
                 ki,
-            } => CaEvtDet::CertificateRequested {
+            } => CertAuthEvent::CertificateRequested {
                 resource_class_name,
                 req,
                 ki,
             },
-            OldCaEvtDet::CertificateReceived {
+            Pre0_10CertAuthEventDetails::CertificateReceived {
                 resource_class_name,
                 rcvd_cert,
                 ki,
-            } => CaEvtDet::CertificateReceived {
+            } => CertAuthEvent::CertificateReceived {
                 resource_class_name,
                 rcvd_cert: rcvd_cert.try_into()?,
                 ki,
             },
-            OldCaEvtDet::KeyRollPendingKeyAdded {
+            Pre0_10CertAuthEventDetails::KeyRollPendingKeyAdded {
                 resource_class_name,
                 pending_key_id,
-            } => CaEvtDet::KeyRollPendingKeyAdded {
+            } => CertAuthEvent::KeyRollPendingKeyAdded {
                 resource_class_name,
                 pending_key_id,
             },
-            OldCaEvtDet::KeyPendingToNew {
+            Pre0_10CertAuthEventDetails::KeyPendingToNew {
                 resource_class_name,
                 new_key,
-            } => CaEvtDet::KeyPendingToNew {
+            } => CertAuthEvent::KeyPendingToNew {
                 resource_class_name,
                 new_key: new_key.try_into()?,
             },
-            OldCaEvtDet::KeyPendingToActive {
+            Pre0_10CertAuthEventDetails::KeyPendingToActive {
                 resource_class_name,
                 current_key,
-            } => CaEvtDet::KeyPendingToActive {
+            } => CertAuthEvent::KeyPendingToActive {
                 resource_class_name,
                 current_key: current_key.try_into()?,
             },
-            OldCaEvtDet::KeyRollActivated {
+            Pre0_10CertAuthEventDetails::KeyRollActivated {
                 resource_class_name,
                 revoke_req,
-            } => CaEvtDet::KeyRollActivated {
-                resource_class_name,
-                revoke_req,
-            },
-            OldCaEvtDet::KeyRollFinished { resource_class_name } => CaEvtDet::KeyRollFinished { resource_class_name },
-            OldCaEvtDet::UnexpectedKeyFound {
-                resource_class_name,
-                revoke_req,
-            } => CaEvtDet::UnexpectedKeyFound {
+            } => CertAuthEvent::KeyRollActivated {
                 resource_class_name,
                 revoke_req,
             },
-            OldCaEvtDet::RouteAuthorizationAdded { auth } => CaEvtDet::RouteAuthorizationAdded { auth },
-            OldCaEvtDet::RouteAuthorizationRemoved { auth } => CaEvtDet::RouteAuthorizationRemoved { auth },
-            OldCaEvtDet::RoasUpdated {
+            Pre0_10CertAuthEventDetails::KeyRollFinished { resource_class_name } => {
+                CertAuthEvent::KeyRollFinished { resource_class_name }
+            }
+            Pre0_10CertAuthEventDetails::UnexpectedKeyFound {
+                resource_class_name,
+                revoke_req,
+            } => CertAuthEvent::UnexpectedKeyFound {
+                resource_class_name,
+                revoke_req,
+            },
+            Pre0_10CertAuthEventDetails::RouteAuthorizationAdded { auth } => {
+                CertAuthEvent::RouteAuthorizationAdded { auth }
+            }
+            Pre0_10CertAuthEventDetails::RouteAuthorizationRemoved { auth } => {
+                CertAuthEvent::RouteAuthorizationRemoved { auth }
+            }
+            Pre0_10CertAuthEventDetails::RoasUpdated {
                 resource_class_name,
                 updates,
-            } => CaEvtDet::RoasUpdated {
+            } => CertAuthEvent::RoasUpdated {
                 resource_class_name,
                 updates: updates.into(),
             },
-            OldCaEvtDet::AspaConfigAdded { aspa_config } => CaEvtDet::AspaConfigAdded { aspa_config },
-            OldCaEvtDet::AspaConfigUpdated { customer, update } => CaEvtDet::AspaConfigUpdated { customer, update },
-            OldCaEvtDet::AspaConfigRemoved { customer } => CaEvtDet::AspaConfigRemoved { customer },
-            OldCaEvtDet::AspaObjectsUpdated {
+            Pre0_10CertAuthEventDetails::AspaConfigAdded { aspa_config } => {
+                CertAuthEvent::AspaConfigAdded { aspa_config }
+            }
+            Pre0_10CertAuthEventDetails::AspaConfigUpdated { customer, update } => {
+                CertAuthEvent::AspaConfigUpdated { customer, update }
+            }
+            Pre0_10CertAuthEventDetails::AspaConfigRemoved { customer } => {
+                CertAuthEvent::AspaConfigRemoved { customer }
+            }
+            Pre0_10CertAuthEventDetails::AspaObjectsUpdated {
                 resource_class_name,
                 updates,
-            } => CaEvtDet::AspaObjectsUpdated {
+            } => CertAuthEvent::AspaObjectsUpdated {
                 resource_class_name,
                 updates: updates.into(),
             },
-            OldCaEvtDet::RepoUpdated { contact } => CaEvtDet::RepoUpdated {
+            Pre0_10CertAuthEventDetails::RepoUpdated { contact } => CertAuthEvent::RepoUpdated {
                 contact: contact.into(),
             },
-            OldCaEvtDet::RtaSigned { name, rta } => CaEvtDet::RtaSigned { name, rta },
-            OldCaEvtDet::RtaPrepared { name, prepared } => CaEvtDet::RtaPrepared { name, prepared },
+            Pre0_10CertAuthEventDetails::RtaSigned { name, rta } => CertAuthEvent::RtaSigned { name, rta },
+            Pre0_10CertAuthEventDetails::RtaPrepared { name, prepared } => {
+                CertAuthEvent::RtaPrepared { name, prepared }
+            }
         })
     }
 }
 
-impl fmt::Display for OldCaEvtDet {
+impl fmt::Display for Pre0_10CertAuthEventDetails {
     fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
         unimplemented!("not used for migration")
     }
@@ -1071,7 +1075,7 @@ pub struct OldCaObjects {
 }
 
 impl TryFrom<OldCaObjects> for ca::CaObjects {
-    type Error = PrepareUpgradeError;
+    type Error = UpgradeError;
 
     fn try_from(old: OldCaObjects) -> Result<Self, Self::Error> {
         let ca = old.ca;
@@ -1154,7 +1158,7 @@ pub struct OldResourceClassObjects {
 }
 
 impl TryFrom<OldResourceClassObjects> for ca::ResourceClassObjects {
-    type Error = PrepareUpgradeError;
+    type Error = UpgradeError;
 
     fn try_from(old: OldResourceClassObjects) -> Result<Self, Self::Error> {
         old.keys.try_into().map(ca::ResourceClassObjects::new)
@@ -1170,7 +1174,7 @@ pub enum OldResourceClassKeyState {
 }
 
 impl TryFrom<OldResourceClassKeyState> for ca::ResourceClassKeyState {
-    type Error = PrepareUpgradeError;
+    type Error = UpgradeError;
 
     fn try_from(old: OldResourceClassKeyState) -> Result<Self, Self::Error> {
         Ok(match old {
@@ -1187,7 +1191,7 @@ pub struct OldCurrentKeyState {
 }
 
 impl TryFrom<OldCurrentKeyState> for ca::CurrentKeyState {
-    type Error = PrepareUpgradeError;
+    type Error = UpgradeError;
 
     fn try_from(old: OldCurrentKeyState) -> Result<Self, Self::Error> {
         Ok(ca::CurrentKeyState::new(old.current_set.try_into()?))
@@ -1201,7 +1205,7 @@ pub struct OldStagingKeyState {
 }
 
 impl TryFrom<OldStagingKeyState> for ca::StagingKeyState {
-    type Error = PrepareUpgradeError;
+    type Error = UpgradeError;
 
     fn try_from(old: OldStagingKeyState) -> Result<Self, Self::Error> {
         Ok(ca::StagingKeyState::new(
@@ -1218,7 +1222,7 @@ pub struct OldOldKeyState {
 }
 
 impl TryFrom<OldOldKeyState> for ca::OldKeyState {
-    type Error = PrepareUpgradeError;
+    type Error = UpgradeError;
 
     fn try_from(old: OldOldKeyState) -> Result<Self, Self::Error> {
         Ok(ca::OldKeyState::new(
@@ -1244,7 +1248,7 @@ pub struct OldCurrentKeyObjectSet {
 }
 
 impl TryFrom<OldCurrentKeyObjectSet> for ca::KeyObjectSet {
-    type Error = PrepareUpgradeError;
+    type Error = UpgradeError;
 
     fn try_from(old: OldCurrentKeyObjectSet) -> Result<Self, Self::Error> {
         let signing_cert = old.basic.signing_cert.try_into()?;
@@ -1417,7 +1421,7 @@ pub struct OldBasicKeyObjectSet {
 }
 
 impl TryFrom<OldBasicKeyObjectSet> for ca::KeyObjectSet {
-    type Error = PrepareUpgradeError;
+    type Error = UpgradeError;
 
     fn try_from(old: OldBasicKeyObjectSet) -> Result<Self, Self::Error> {
         let signing_cert = old.signing_cert.try_into()?;
@@ -1521,22 +1525,22 @@ impl Eq for OldPublishedCrl {}
 
 //------------ OldRepositoryAccessIni -------------------------------------------
 
-pub type OldRepositoryAccessIni = StoredEvent<OldRepositoryAccessInitDetails>;
+pub type Pre0_10RepositoryAccessIni = OldStoredEvent<Pre0_10RepositoryAccessInitDetails>;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct OldRepositoryAccessInitDetails {
+pub struct Pre0_10RepositoryAccessInitDetails {
     id_cert: IdCert,
     rrdp_base_uri: uri::Https,
     rsync_jail: uri::Rsync,
 }
 
-impl From<OldRepositoryAccessInitDetails> for RepositoryAccessInitDetails {
-    fn from(old: OldRepositoryAccessInitDetails) -> Self {
-        RepositoryAccessInitDetails::new(old.id_cert.into(), old.rrdp_base_uri, old.rsync_jail)
+impl From<Pre0_10RepositoryAccessInitDetails> for RepositoryAccessInitEvent {
+    fn from(old: Pre0_10RepositoryAccessInitDetails) -> Self {
+        RepositoryAccessInitEvent::new(old.id_cert.into(), old.rrdp_base_uri, old.rsync_jail)
     }
 }
 
-impl fmt::Display for OldRepositoryAccessInitDetails {
+impl fmt::Display for Pre0_10RepositoryAccessInitDetails {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
@@ -1548,19 +1552,12 @@ impl fmt::Display for OldRepositoryAccessInitDetails {
 
 //------------ OldRepositoryAccessEvent -----------------------------------------
 
-pub type OldRepositoryAccessEvent = StoredEvent<OldRepositoryAccessEventDetails>;
-
-impl From<OldRepositoryAccessEvent> for RepositoryAccessEvent {
-    fn from(old: OldRepositoryAccessEvent) -> Self {
-        let (id, version, details) = old.unpack();
-        RepositoryAccessEvent::new(&id, version, details.into())
-    }
-}
+pub type Pre0_10RepositoryAccessEvent = OldStoredEvent<Pre0_10RepositoryAccessEventDetails>;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case", tag = "type")]
-pub enum OldRepositoryAccessEventDetails {
+pub enum Pre0_10RepositoryAccessEventDetails {
     PublisherAdded {
         name: PublisherHandle,
         publisher: OldPublisher,
@@ -1570,23 +1567,23 @@ pub enum OldRepositoryAccessEventDetails {
     },
 }
 
-impl From<OldRepositoryAccessEventDetails> for RepositoryAccessEventDetails {
-    fn from(old: OldRepositoryAccessEventDetails) -> Self {
+impl From<Pre0_10RepositoryAccessEventDetails> for RepositoryAccessEvent {
+    fn from(old: Pre0_10RepositoryAccessEventDetails) -> Self {
         match old {
-            OldRepositoryAccessEventDetails::PublisherAdded { name, publisher } => {
-                RepositoryAccessEventDetails::PublisherAdded {
+            Pre0_10RepositoryAccessEventDetails::PublisherAdded { name, publisher } => {
+                RepositoryAccessEvent::PublisherAdded {
                     name,
                     publisher: publisher.into(),
                 }
             }
-            OldRepositoryAccessEventDetails::PublisherRemoved { name } => {
-                RepositoryAccessEventDetails::PublisherRemoved { name }
+            Pre0_10RepositoryAccessEventDetails::PublisherRemoved { name } => {
+                RepositoryAccessEvent::PublisherRemoved { name }
             }
         }
     }
 }
 
-impl fmt::Display for OldRepositoryAccessEventDetails {
+impl fmt::Display for Pre0_10RepositoryAccessEventDetails {
     fn fmt(&self, _f: &mut fmt::Formatter) -> fmt::Result {
         unimplemented!("not used for migration")
     }

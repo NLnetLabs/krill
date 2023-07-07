@@ -1,0 +1,21 @@
+{
+  "actor": "anonymous",
+  "time": "2023-02-07T14:00:19.351490836Z",
+  "handle": "testbed",
+  "version": 7,
+  "sequence": 6,
+  "details": {
+    "type": "child_certify",
+    "child": "testbed-client",
+    "resource_class_name": "0",
+    "limit": {},
+    "ki": "1A1F1D103D06E0E0D97B4B78F115E9AFAAC61E98"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      7,
+      8
+    ]
+  }
+}

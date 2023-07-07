@@ -62,7 +62,7 @@ use crate::{
         properties::PropertiesManager,
         ta::{self, TA_NAME},
     },
-    upgrades::{finalise_data_migration, prepare_upgrade_data_migrations, UpgradeMode},
+    upgrades::{finalise_data_migration, post_start_upgrade, prepare_upgrade_data_migrations, UpgradeMode},
 };
 
 //------------ State -----------------------------------------------------
@@ -122,7 +122,7 @@ pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
 
     // Set up the runtime properties manager, so that we can check
     // the version used for the current data in storage
-    let properties_manager = PropertiesManager::create(&config.storage_uri)?;
+    let properties_manager = PropertiesManager::create(&config.storage_uri, config.use_history_cache)?;
 
     // Call upgrade, this will only do actual work if needed.
     let upgrade_report = prepare_upgrade_data_migrations(UpgradeMode::PrepareToFinalise, &config, &properties_manager)
@@ -146,10 +146,9 @@ pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
 
     // Call post-start upgrades to trigger any upgrade related runtime actions, such as
     // re-issuing ROAs because subject name strategy has changed.
-    // TODO move to version upgrade
-    // if let Some(report) = upgrade_report {
-    //     post_start_upgrade(report.versions(), &krill_server).await?;
-    // }
+    if let Some(report) = upgrade_report {
+        post_start_upgrade(report.versions(), &krill_server).await?;
+    }
 
     // If the operator wanted to do the upgrade only, now is a good time to report success and stop
     if env::var(KRILL_ENV_UPGRADE_ONLY).is_ok() {

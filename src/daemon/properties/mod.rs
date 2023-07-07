@@ -25,15 +25,41 @@ use crate::{
         actor::Actor,
         api::CommandSummary,
         error::Error,
-        eventsourcing::{self, Aggregate, AggregateStore},
+        eventsourcing::{
+            self, Aggregate, AggregateStore, Event, InitCommandDetails, InitEvent, SentCommand, SentInitCommand,
+            WithStorableDetails,
+        },
         util::KrillVersion,
         KrillResult,
     },
     constants::{PROPERTIES_DFLT_NAME, PROPERTIES_NS},
 };
 
+//------------ PropertiesInitCommand ---------------------------------------
+pub type PropertiesInitCommand = SentInitCommand<PropertiesInitCommandDetails>;
+
+//------------ PropertiesInitCommandDetails --------------------------------
+#[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
+pub struct PropertiesInitCommandDetails {
+    pub krill_version: KrillVersion,
+}
+
+impl fmt::Display for PropertiesInitCommandDetails {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.store().fmt(f)
+    }
+}
+
+impl InitCommandDetails for PropertiesInitCommandDetails {
+    type StorableDetails = StorablePropertiesCommand;
+
+    fn store(&self) -> Self::StorableDetails {
+        StorablePropertiesCommand::make_init()
+    }
+}
+
 //------------ PropertiesCommand -------------------------------------------
-pub type PropertiesCommand = eventsourcing::SentCommand<PropertiesCommandDetails>;
+pub type PropertiesCommand = SentCommand<PropertiesCommandDetails>;
 
 //------------ PropertiesCommandDetails ------------------------------------
 #[derive(Clone, Debug)]
@@ -52,12 +78,16 @@ impl fmt::Display for PropertiesCommandDetails {
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
 pub enum StorablePropertiesCommand {
+    Init,
     UpgradeTo { krill_version: KrillVersion },
 }
 
 impl fmt::Display for StorablePropertiesCommand {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            Self::Init => {
+                write!(f, "initialise properties")
+            }
             Self::UpgradeTo { krill_version: version } => {
                 write!(f, "upgrade Krill to {version}")
             }
@@ -88,28 +118,32 @@ impl From<&PropertiesCommandDetails> for StorablePropertiesCommand {
 impl eventsourcing::WithStorableDetails for StorablePropertiesCommand {
     fn summary(&self) -> crate::commons::api::CommandSummary {
         match self {
+            StorablePropertiesCommand::Init => CommandSummary::new("cmd-properties-init", self),
             StorablePropertiesCommand::UpgradeTo { krill_version } => {
-                CommandSummary::new("cmd-krill-upgraded", self).with_arg("version", krill_version)
+                CommandSummary::new("cmd-properties-krill-upgrade", self).with_arg("version", krill_version)
             }
         }
+    }
+
+    fn make_init() -> Self {
+        Self::Init
     }
 }
 
 //------------ PropertiesEvent ---------------------------------------------
-type PropertiesEvent = eventsourcing::StoredEvent<PropertiesEventDetails>;
-
-//------------ PropertiesEventDetails --------------------------------------
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
-pub enum PropertiesEventDetails {
+pub enum PropertiesEvent {
     KrillVersionUpgraded { old: KrillVersion, new: KrillVersion },
 }
 
-impl fmt::Display for PropertiesEventDetails {
+impl Event for PropertiesEvent {}
+
+impl fmt::Display for PropertiesEvent {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            PropertiesEventDetails::KrillVersionUpgraded { old, new } => {
+            PropertiesEvent::KrillVersionUpgraded { old, new } => {
                 write!(f, "upgraded Krill from {old} to {new}")
             }
         }
@@ -117,15 +151,14 @@ impl fmt::Display for PropertiesEventDetails {
 }
 
 //------------ PropertiesInitEvent -----------------------------------------
-type PropertiesInitEvent = eventsourcing::StoredEvent<PropertiesInitEventDetails>;
-
-//------------ PropertiesInitEventDetails ----------------------------------
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct PropertiesInitEventDetails {
+pub struct PropertiesInitEvent {
     krill_version: KrillVersion,
 }
 
-impl fmt::Display for PropertiesInitEventDetails {
+impl InitEvent for PropertiesInitEvent {}
+
+impl fmt::Display for PropertiesInitEvent {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "initialised Krill version {}", self.krill_version)
     }
@@ -146,32 +179,37 @@ impl Aggregate for Properties {
     type Command = PropertiesCommand;
     type StorableCommandDetails = StorablePropertiesCommand;
     type Event = PropertiesEvent;
+
+    type InitCommand = PropertiesInitCommand;
     type InitEvent = PropertiesInitEvent;
+
     type Error = Error;
 
-    fn init(event: Self::InitEvent) -> Result<Self, Self::Error> {
-        let (handle, version, details) = event.unpack();
-        let krill_version = details.krill_version;
-
-        if version != 0 {
-            Err(Error::custom("version for init event for properties MUST be 0"))
-        } else {
-            Ok(Properties {
-                handle,
-                version: 1, // init for 0 was applied
-                krill_version,
-            })
+    fn init(handle: MyHandle, event: PropertiesInitEvent) -> Self {
+        Properties {
+            handle,
+            version: 1, // init for 0 was applied
+            krill_version: event.krill_version,
         }
+    }
+
+    fn process_init_command(command: PropertiesInitCommand) -> Result<Self::InitEvent, Self::Error> {
+        Ok(PropertiesInitEvent {
+            krill_version: command.into_details().krill_version,
+        })
     }
 
     fn version(&self) -> u64 {
         self.version
     }
 
-    fn apply(&mut self, event: Self::Event) {
+    fn increment_version(&mut self) {
         self.version += 1;
-        match event.into_details() {
-            PropertiesEventDetails::KrillVersionUpgraded { new, .. } => self.krill_version = new,
+    }
+
+    fn apply(&mut self, event: Self::Event) {
+        match event {
+            PropertiesEvent::KrillVersionUpgraded { new, .. } => self.krill_version = new,
         }
     }
 
@@ -189,14 +227,10 @@ impl Aggregate for Properties {
             PropertiesCommandDetails::UpgradeTo { krill_version } => {
                 // We can only upgrade to a newer version.
                 if krill_version > self.krill_version {
-                    Ok(vec![PropertiesEvent::new(
-                        &self.handle,
-                        self.version,
-                        PropertiesEventDetails::KrillVersionUpgraded {
-                            old: self.krill_version.clone(),
-                            new: krill_version,
-                        },
-                    )])
+                    Ok(vec![PropertiesEvent::KrillVersionUpgraded {
+                        old: self.krill_version.clone(),
+                        new: krill_version,
+                    }])
                 } else {
                     Err(Error::Custom(format!(
                         "Can only upgrade Krill to newer versions. Current version: {}, Requested version: {}",
@@ -221,9 +255,9 @@ pub struct PropertiesManager {
 }
 
 impl PropertiesManager {
-    pub fn create(storage_uri: &Url) -> KrillResult<Self> {
+    pub fn create(storage_uri: &Url, use_history_cache: bool) -> KrillResult<Self> {
         let main_key = MyHandle::from_str(PROPERTIES_DFLT_NAME).unwrap();
-        AggregateStore::create(storage_uri, PROPERTIES_NS)
+        AggregateStore::create(storage_uri, PROPERTIES_NS, use_history_cache)
             .map(|store| PropertiesManager {
                 store,
                 main_key,
@@ -237,8 +271,12 @@ impl PropertiesManager {
     }
 
     pub fn init(&self, krill_version: KrillVersion) -> KrillResult<Arc<Properties>> {
-        let init = PropertiesInitEvent::new(&self.main_key, 0, PropertiesInitEventDetails { krill_version });
-        self.store.add(init).map_err(Error::AggregateStoreError)
+        let cmd = PropertiesInitCommand::new(
+            &self.main_key,
+            PropertiesInitCommandDetails { krill_version },
+            &self.system_actor,
+        );
+        self.store.add(cmd).map_err(Error::AggregateStoreError)
     }
 
     /// Returns the current KrillVersion used for the data store
@@ -276,7 +314,7 @@ mod tests {
     #[test]
     fn init_properties() {
         test::test_in_memory(|storage_uri| {
-            let properties_mgr = PropertiesManager::create(storage_uri).unwrap();
+            let properties_mgr = PropertiesManager::create(storage_uri, false).unwrap();
 
             // Should not be initialised on first use.
             assert!(!properties_mgr.is_initialized());

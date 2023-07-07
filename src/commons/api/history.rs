@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, fmt, str::FromStr};
+use std::{collections::BTreeMap, fmt};
 
 use chrono::{DateTime, NaiveDateTime, SecondsFormat, Utc};
 
@@ -15,75 +15,15 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            ArgKey, ArgVal, AspaCustomer, AspaProvidersUpdate, Label, Message, RoaConfigurationUpdates, RtaName,
+            ArgKey, ArgVal, AspaCustomer, AspaProvidersUpdate, Message, RoaConfigurationUpdates, RtaName,
             StorableParentContact,
         },
-        eventsourcing::{CommandKey, CommandKeyError, StoredCommand, WithStorableDetails},
+        eventsourcing::{Event, InitEvent, StoredCommand, StoredEffect, WithStorableDetails},
     },
-    daemon::ca::{self, DropReason},
+    daemon::ca::{CertAuth, DropReason},
 };
 
 use super::{AspaDefinitionUpdates, ResourceSetSummary};
-
-//------------ CaCommandDetails ----------------------------------------------
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct CaCommandDetails {
-    command: StoredCommand<StorableCaCommand>,
-    result: CaCommandResult,
-}
-
-impl CaCommandDetails {
-    pub fn new(command: StoredCommand<StorableCaCommand>, result: CaCommandResult) -> Self {
-        CaCommandDetails { command, result }
-    }
-
-    pub fn command(&self) -> &StoredCommand<StorableCaCommand> {
-        &self.command
-    }
-
-    pub fn effect(&self) -> &CaCommandResult {
-        &self.result
-    }
-}
-
-impl fmt::Display for CaCommandDetails {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let command = self.command();
-        writeln!(
-            f,
-            "Time:   {}",
-            command.time().to_rfc3339_opts(SecondsFormat::Secs, true)
-        )?;
-        writeln!(f, "Action: {}", command.details().summary().msg)?;
-
-        match self.effect() {
-            CaCommandResult::Error(msg) => writeln!(f, "Error:  {}", msg)?,
-            CaCommandResult::Events(events) => {
-                writeln!(f, "Changes:")?;
-                for evt in events {
-                    writeln!(f, "  {}", evt.details())?;
-                }
-            }
-        }
-
-        Ok(())
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum CaCommandResult {
-    Error(String),
-    Events(Vec<ca::CaEvt>),
-}
-
-impl CaCommandResult {
-    pub fn error(msg: String) -> Self {
-        CaCommandResult::Error(msg)
-    }
-    pub fn events(events: Vec<ca::CaEvt>) -> Self {
-        CaCommandResult::Events(events)
-    }
-}
 
 //------------ CommandHistory ------------------------------------------------
 
@@ -118,19 +58,20 @@ impl CommandHistory {
 
 impl fmt::Display for CommandHistory {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "time::command::key::success")?;
+        writeln!(f, "time::command::version::success")?;
 
         for command in self.commands() {
             let success_string = match &command.effect {
-                StoredEffect::Error { msg } => format!("ERROR -> {}", msg),
-                StoredEffect::Success { .. } => "OK".to_string(),
+                CommandHistoryResult::Init() => "INIT".to_string(),
+                CommandHistoryResult::Ok() => "OK".to_string(),
+                CommandHistoryResult::Error(msg) => format!("ERROR -> {}", msg),
             };
             writeln!(
                 f,
-                "{}::{} ::{}::{}",
+                "{}::{}::{}::{}",
                 command.time().to_rfc3339_opts(SecondsFormat::Secs, true),
                 command.summary.msg,
-                command.key,
+                command.version,
                 success_string
             )?;
         }
@@ -146,14 +87,37 @@ impl fmt::Display for CommandHistory {
 /// the summary which is shown in the history response.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CommandHistoryRecord {
-    pub key: String,
     pub actor: String,
     pub timestamp: i64,
     pub handle: MyHandle,
     pub version: u64,
-    pub sequence: u64,
     pub summary: CommandSummary,
-    pub effect: StoredEffect,
+    pub effect: CommandHistoryResult,
+}
+
+impl CommandHistoryRecord {
+    pub fn matches(&self, crit: &CommandHistoryCriteria) -> bool {
+        crit.matches_timestamp_secs(self.timestamp)
+            && crit.matches_version(self.version)
+            && crit.matches_label(&self.summary.label)
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum CommandHistoryResult {
+    Init(),
+    Ok(),
+    Error(String),
+}
+
+impl<E: Event, I: InitEvent> From<StoredEffect<E, I>> for CommandHistoryResult {
+    fn from(effect: StoredEffect<E, I>) -> Self {
+        match effect {
+            StoredEffect::Error { msg, .. } => CommandHistoryResult::Error(msg),
+            StoredEffect::Success { .. } => CommandHistoryResult::Ok(),
+            StoredEffect::Init { .. } => CommandHistoryResult::Init(),
+        }
+    }
 }
 
 impl CommandHistoryRecord {
@@ -161,47 +125,6 @@ impl CommandHistoryRecord {
         let seconds = self.timestamp / 1000;
         let time = NaiveDateTime::from_timestamp_opt(seconds, 0).expect("timestamp out-of-range");
         Time::from(DateTime::from_utc(time, Utc))
-    }
-
-    pub fn resulting_version(&self) -> u64 {
-        if let Some(versions) = self.effect.events() {
-            if let Some(last) = versions.last() {
-                *last
-            } else {
-                self.version
-            }
-        } else {
-            self.version
-        }
-    }
-
-    pub fn command_key(&self) -> Result<CommandKey, CommandKeyError> {
-        CommandKey::from_str(&self.key)
-    }
-}
-
-//------------ StoredEffect --------------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case", tag = "result")]
-pub enum StoredEffect {
-    Error { msg: String },
-    Success { events: Vec<u64> },
-}
-
-impl StoredEffect {
-    pub fn successful(&self) -> bool {
-        match self {
-            StoredEffect::Error { .. } => false,
-            StoredEffect::Success { .. } => true,
-        }
-    }
-
-    pub fn events(&self) -> Option<&Vec<u64>> {
-        match self {
-            StoredEffect::Error { .. } => None,
-            StoredEffect::Success { events } => Some(events),
-        }
     }
 }
 
@@ -212,7 +135,7 @@ impl StoredEffect {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CommandSummary {
     pub msg: Message,
-    pub label: Label,
+    pub label: String,
     pub args: BTreeMap<ArgKey, ArgVal>,
 }
 
@@ -301,7 +224,7 @@ pub struct CommandHistoryCriteria {
     #[serde(skip_serializing_if = "Option::is_none")]
     after: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    after_sequence: Option<u64>,
+    after_version: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     label_includes: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -329,8 +252,8 @@ impl CommandHistoryCriteria {
         self.before = Some(timestamp);
     }
 
-    pub fn set_after_sequence(&mut self, sequence: u64) {
-        self.after_sequence = Some(sequence)
+    pub fn set_after_version(&mut self, version: u64) {
+        self.after_version = Some(version)
     }
 
     pub fn set_rows(&mut self, rows: usize) {
@@ -359,15 +282,15 @@ impl CommandHistoryCriteria {
         true
     }
 
-    pub fn matches_sequence(&self, sequence: u64) -> bool {
-        match self.after_sequence {
+    pub fn matches_version(&self, version: u64) -> bool {
+        match self.after_version {
             None => true,
-            Some(seq_crit) => sequence > seq_crit,
+            Some(seq_crit) => version > seq_crit,
         }
     }
 
     #[allow(clippy::ptr_arg)]
-    pub fn matches_label(&self, label: &Label) -> bool {
+    pub fn matches_label(&self, label: &String) -> bool {
         if let Some(includes) = &self.label_includes {
             if !includes.contains(label) {
                 return false;
@@ -396,12 +319,38 @@ impl Default for CommandHistoryCriteria {
         CommandHistoryCriteria {
             before: None,
             after: None,
-            after_sequence: None,
+            after_version: None,
             label_includes: None,
             label_excludes: None,
             offset: 0,
             rows_limit: Some(100),
         }
+    }
+}
+
+//------------ CaCommandDetails ----------------------------------------------
+pub type CaCommandDetails = StoredCommand<CertAuth>;
+
+impl fmt::Display for CaCommandDetails {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Time:   {}", self.time().to_rfc3339_opts(SecondsFormat::Secs, true))?;
+        writeln!(f, "Actor:  {}", self.actor())?;
+        writeln!(f, "Action: {}", self.details().summary().msg)?;
+
+        match self.effect() {
+            StoredEffect::Error { msg, .. } => writeln!(f, "Error:  {}", msg)?,
+            StoredEffect::Success { events } => {
+                writeln!(f, "Changes:")?;
+                for evt in events {
+                    writeln!(f, "  {}", evt)?;
+                }
+            }
+            StoredEffect::Init { init } => {
+                writeln!(f, "{}", init)?;
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -411,7 +360,8 @@ impl Default for CommandHistoryCriteria {
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
-pub enum StorableCaCommand {
+pub enum CertAuthStorableCommand {
+    Init,
     ChildAdd {
         child: ChildHandle,
         ski: String,
@@ -514,22 +464,27 @@ pub struct StorableRcEntitlement {
     pub resources: ResourceSet,
 }
 
-impl WithStorableDetails for StorableCaCommand {
+impl WithStorableDetails for CertAuthStorableCommand {
     fn summary(&self) -> CommandSummary {
         match self {
-            StorableCaCommand::ChildAdd { child, ski, resources } => CommandSummary::new("cmd-ca-child-add", self)
-                .with_child(child)
-                .with_id_ski(ski.as_ref())
-                .with_resources(resources),
-            StorableCaCommand::ChildUpdateResources { child, resources } => {
+            CertAuthStorableCommand::Init => CommandSummary::new("cmd-ca-init", self),
+            CertAuthStorableCommand::ChildAdd { child, ski, resources } => {
+                CommandSummary::new("cmd-ca-child-add", self)
+                    .with_child(child)
+                    .with_id_ski(ski.as_ref())
+                    .with_resources(resources)
+            }
+            CertAuthStorableCommand::ChildUpdateResources { child, resources } => {
                 CommandSummary::new("cmd-ca-child-update-res", self)
                     .with_child(child)
                     .with_resources(resources)
             }
-            StorableCaCommand::ChildUpdateId { child, ski } => CommandSummary::new("cmd-ca-child-update-id", self)
-                .with_child(child)
-                .with_id_ski(ski),
-            StorableCaCommand::ChildCertify {
+            CertAuthStorableCommand::ChildUpdateId { child, ski } => {
+                CommandSummary::new("cmd-ca-child-update-id", self)
+                    .with_child(child)
+                    .with_id_ski(ski)
+            }
+            CertAuthStorableCommand::ChildCertify {
                 child,
                 resource_class_name,
                 ki,
@@ -538,41 +493,43 @@ impl WithStorableDetails for StorableCaCommand {
                 .with_child(child)
                 .with_rcn(resource_class_name)
                 .with_key(*ki),
-            StorableCaCommand::ChildRemove { child } => {
+            CertAuthStorableCommand::ChildRemove { child } => {
                 CommandSummary::new("cmd-ca-child-remove", self).with_child(child)
             }
-            StorableCaCommand::ChildSuspendInactive { child } => {
+            CertAuthStorableCommand::ChildSuspendInactive { child } => {
                 CommandSummary::new("cmd-ca-child-suspend-inactive", self).with_child(child)
             }
-            StorableCaCommand::ChildUnsuspend { child } => {
+            CertAuthStorableCommand::ChildUnsuspend { child } => {
                 CommandSummary::new("cmd-ca-child-unsuspend", self).with_child(child)
             }
-            StorableCaCommand::ChildRevokeKey { child, revoke_req } => CommandSummary::new("cmd-ca-child-revoke", self)
-                .with_child(child)
-                .with_rcn(revoke_req.class_name())
-                .with_key(revoke_req.key()),
-            StorableCaCommand::GenerateNewIdKey => CommandSummary::new("cmd-ca-generate-new-id", self),
-            StorableCaCommand::AddParent { parent, contact } => CommandSummary::new("cmd-ca-parent-add", self)
+            CertAuthStorableCommand::ChildRevokeKey { child, revoke_req } => {
+                CommandSummary::new("cmd-ca-child-revoke", self)
+                    .with_child(child)
+                    .with_rcn(revoke_req.class_name())
+                    .with_key(revoke_req.key())
+            }
+            CertAuthStorableCommand::GenerateNewIdKey => CommandSummary::new("cmd-ca-generate-new-id", self),
+            CertAuthStorableCommand::AddParent { parent, contact } => CommandSummary::new("cmd-ca-parent-add", self)
                 .with_parent(parent)
                 .with_parent_contact(contact),
-            StorableCaCommand::UpdateParentContact { parent, contact } => {
+            CertAuthStorableCommand::UpdateParentContact { parent, contact } => {
                 CommandSummary::new("cmd-ca-parent-update", self)
                     .with_parent(parent)
                     .with_parent_contact(contact)
             }
-            StorableCaCommand::RemoveParent { parent } => {
+            CertAuthStorableCommand::RemoveParent { parent } => {
                 CommandSummary::new("cmd-ca-parent-remove", self).with_parent(parent)
             }
-            StorableCaCommand::UpdateResourceEntitlements { parent, .. } => {
+            CertAuthStorableCommand::UpdateResourceEntitlements { parent, .. } => {
                 CommandSummary::new("cmd-ca-parent-entitlements", self).with_parent(parent)
             }
-            StorableCaCommand::UpdateRcvdCert {
+            CertAuthStorableCommand::UpdateRcvdCert {
                 resource_class_name,
                 resources,
             } => CommandSummary::new("cmd-ca-rcn-receive", self)
                 .with_rcn(resource_class_name)
                 .with_resources(resources),
-            StorableCaCommand::DropResourceClass {
+            CertAuthStorableCommand::DropResourceClass {
                 resource_class_name,
                 reason,
             } => CommandSummary::new("cmd-ca-rc-drop", self)
@@ -580,57 +537,76 @@ impl WithStorableDetails for StorableCaCommand {
                 .with_arg("reason", reason),
 
             // Key rolls
-            StorableCaCommand::KeyRollInitiate { older_than_seconds } => {
+            CertAuthStorableCommand::KeyRollInitiate { older_than_seconds } => {
                 CommandSummary::new("cmd-ca-keyroll-init", self).with_seconds(*older_than_seconds)
             }
-            StorableCaCommand::KeyRollActivate { staged_for_seconds } => {
+            CertAuthStorableCommand::KeyRollActivate { staged_for_seconds } => {
                 CommandSummary::new("cmd-ca-keyroll-activate", self).with_seconds(*staged_for_seconds)
             }
-            StorableCaCommand::KeyRollFinish { resource_class_name } => {
+            CertAuthStorableCommand::KeyRollFinish { resource_class_name } => {
                 CommandSummary::new("cmd-ca-keyroll-finish", self).with_rcn(resource_class_name)
             }
 
             // ROA
-            StorableCaCommand::RoaDefinitionUpdates { updates } => CommandSummary::new("cmd-ca-roas-updated", self)
-                .with_added(updates.added().len())
-                .with_removed(updates.removed().len()),
+            CertAuthStorableCommand::RoaDefinitionUpdates { updates } => {
+                CommandSummary::new("cmd-ca-roas-updated", self)
+                    .with_added(updates.added().len())
+                    .with_removed(updates.removed().len())
+            }
 
             // ASPA
-            StorableCaCommand::AspasUpdate { .. } => CommandSummary::new("cmd-ca-aspas-update", self),
-            StorableCaCommand::AspasUpdateExisting { .. } => CommandSummary::new("cmd-ca-aspas-update-existing", self),
-            StorableCaCommand::AspaRemove { .. } => CommandSummary::new("cmd-ca-aspas-remove", self),
+            CertAuthStorableCommand::AspasUpdate { .. } => CommandSummary::new("cmd-ca-aspas-update", self),
+            CertAuthStorableCommand::AspasUpdateExisting { .. } => {
+                CommandSummary::new("cmd-ca-aspas-update-existing", self)
+            }
+            CertAuthStorableCommand::AspaRemove { .. } => CommandSummary::new("cmd-ca-aspas-remove", self),
 
             // BGPSec
-            StorableCaCommand::BgpSecDefinitionUpdates => CommandSummary::new("cmd-bgpsec-update", self),
+            CertAuthStorableCommand::BgpSecDefinitionUpdates => CommandSummary::new("cmd-bgpsec-update", self),
 
             // REPO
-            StorableCaCommand::RepoUpdate { service_uri } => {
+            CertAuthStorableCommand::RepoUpdate { service_uri } => {
                 CommandSummary::new("cmd-ca-repo-update", self).with_service_uri(service_uri)
             }
 
-            StorableCaCommand::ReissueBeforeExpiring => CommandSummary::new("cmd-ca-reissue-before-expiring", self),
-            StorableCaCommand::ForceReissue => CommandSummary::new("cmd-ca-force-reissue", self),
+            CertAuthStorableCommand::ReissueBeforeExpiring => {
+                CommandSummary::new("cmd-ca-reissue-before-expiring", self)
+            }
+            CertAuthStorableCommand::ForceReissue => CommandSummary::new("cmd-ca-force-reissue", self),
 
             // RTA
-            StorableCaCommand::RtaPrepare { name } => {
+            CertAuthStorableCommand::RtaPrepare { name } => {
                 CommandSummary::new("cmd-ca-rta-prepare", self).with_rta_name(name)
             }
-            StorableCaCommand::RtaSign { name } => CommandSummary::new("cmd-ca-rta-sign", self).with_rta_name(name),
-            StorableCaCommand::RtaCoSign { name } => CommandSummary::new("cmd-ca-rta-cosign", self).with_rta_name(name),
+            CertAuthStorableCommand::RtaSign { name } => {
+                CommandSummary::new("cmd-ca-rta-sign", self).with_rta_name(name)
+            }
+            CertAuthStorableCommand::RtaCoSign { name } => {
+                CommandSummary::new("cmd-ca-rta-cosign", self).with_rta_name(name)
+            }
 
             // Deactivation
-            StorableCaCommand::Deactivate => CommandSummary::new("cmd-ca-deactivate", self),
+            CertAuthStorableCommand::Deactivate => CommandSummary::new("cmd-ca-deactivate", self),
         }
+    }
+
+    fn make_init() -> Self {
+        Self::Init
     }
 }
 
-impl fmt::Display for StorableCaCommand {
+impl fmt::Display for CertAuthStorableCommand {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             // ------------------------------------------------------------
+            // Initialisation
+            // ------------------------------------------------------------
+            CertAuthStorableCommand::Init => write!(f, "Create CA"),
+
+            // ------------------------------------------------------------
             // Being a parent
             // ------------------------------------------------------------
-            StorableCaCommand::ChildAdd { child, ski, resources } => {
+            CertAuthStorableCommand::ChildAdd { child, ski, resources } => {
                 let summary = ResourceSetSummary::from(resources);
                 write!(
                     f,
@@ -638,44 +614,46 @@ impl fmt::Display for StorableCaCommand {
                     child, ski, summary
                 )
             }
-            StorableCaCommand::ChildUpdateResources { child, resources } => {
+            CertAuthStorableCommand::ChildUpdateResources { child, resources } => {
                 let summary = ResourceSetSummary::from(resources);
                 write!(f, "Update resources for child '{}' to: {}", child, summary)
             }
-            StorableCaCommand::ChildUpdateId { child, ski } => {
+            CertAuthStorableCommand::ChildUpdateId { child, ski } => {
                 write!(f, "Update child '{}' RFC 8183 key '{}'", child, ski)
             }
-            StorableCaCommand::ChildCertify { child, ki, .. } => {
+            CertAuthStorableCommand::ChildCertify { child, ki, .. } => {
                 write!(f, "Issue certificate to child '{}' for key '{}'", child, ki)
             }
-            StorableCaCommand::ChildRevokeKey { child, revoke_req } => write!(
+            CertAuthStorableCommand::ChildRevokeKey { child, revoke_req } => write!(
                 f,
                 "Revoke certificates for child '{}' for key '{}' in RC {}",
                 child,
                 revoke_req.key(),
                 revoke_req.class_name()
             ),
-            StorableCaCommand::ChildRemove { child } => {
+            CertAuthStorableCommand::ChildRemove { child } => {
                 write!(f, "Remove child '{}' and revoke & remove its certs", child)
             }
-            StorableCaCommand::ChildSuspendInactive { child } => {
+            CertAuthStorableCommand::ChildSuspendInactive { child } => {
                 write!(f, "Suspend inactive child '{}': stop publishing its certs", child)
             }
-            StorableCaCommand::ChildUnsuspend { child } => {
+            CertAuthStorableCommand::ChildUnsuspend { child } => {
                 write!(f, "Unsuspend child '{}': publish its unexpired certs", child)
             }
 
             // ------------------------------------------------------------
             // Being a child (only allowed if this CA is not self-signed)
             // ------------------------------------------------------------
-            StorableCaCommand::GenerateNewIdKey => write!(f, "Generate a new RFC8183 ID."),
-            StorableCaCommand::AddParent { parent, contact } => write!(f, "Add parent '{}' as '{}'", parent, contact),
-            StorableCaCommand::UpdateParentContact { parent, contact } => {
+            CertAuthStorableCommand::GenerateNewIdKey => write!(f, "Generate a new RFC8183 ID."),
+            CertAuthStorableCommand::AddParent { parent, contact } => {
+                write!(f, "Add parent '{}' as '{}'", parent, contact)
+            }
+            CertAuthStorableCommand::UpdateParentContact { parent, contact } => {
                 write!(f, "Update contact for parent '{}' to '{}'", parent, contact)
             }
-            StorableCaCommand::RemoveParent { parent } => write!(f, "Remove parent '{}'", parent),
+            CertAuthStorableCommand::RemoveParent { parent } => write!(f, "Remove parent '{}'", parent),
 
-            StorableCaCommand::UpdateResourceEntitlements { parent, entitlements } => {
+            CertAuthStorableCommand::UpdateResourceEntitlements { parent, entitlements } => {
                 write!(f, "Update entitlements under parent '{}': ", parent)?;
 
                 for entitlement in entitlements.iter() {
@@ -685,7 +663,7 @@ impl fmt::Display for StorableCaCommand {
                 Ok(())
             }
             // Process a new certificate received from a parent.
-            StorableCaCommand::UpdateRcvdCert {
+            CertAuthStorableCommand::UpdateRcvdCert {
                 resource_class_name,
                 resources,
             } => {
@@ -696,7 +674,7 @@ impl fmt::Display for StorableCaCommand {
                     resource_class_name, summary
                 )
             }
-            StorableCaCommand::DropResourceClass {
+            CertAuthStorableCommand::DropResourceClass {
                 resource_class_name,
                 reason,
             } => write!(
@@ -708,14 +686,14 @@ impl fmt::Display for StorableCaCommand {
             // ------------------------------------------------------------
             // Key rolls
             // ------------------------------------------------------------
-            StorableCaCommand::KeyRollInitiate { older_than_seconds } => {
+            CertAuthStorableCommand::KeyRollInitiate { older_than_seconds } => {
                 write!(
                     f,
                     "Initiate key roll for keys older than '{}' seconds",
                     older_than_seconds
                 )
             }
-            StorableCaCommand::KeyRollActivate { staged_for_seconds } => {
+            CertAuthStorableCommand::KeyRollActivate { staged_for_seconds } => {
                 write!(
                     f,
                     "Activate new keys staging longer than '{}' seconds",
@@ -723,14 +701,14 @@ impl fmt::Display for StorableCaCommand {
                 )
             }
 
-            StorableCaCommand::KeyRollFinish { resource_class_name } => {
+            CertAuthStorableCommand::KeyRollFinish { resource_class_name } => {
                 write!(f, "Retire old revoked key in RC '{}'", resource_class_name)
             }
 
             // ------------------------------------------------------------
             // ROA Support
             // ------------------------------------------------------------
-            StorableCaCommand::RoaDefinitionUpdates { updates } => {
+            CertAuthStorableCommand::RoaDefinitionUpdates { updates } => {
                 write!(f, "Update ROAs",)?;
                 if !updates.added().is_empty() {
                     write!(f, "  ADD:",)?;
@@ -746,47 +724,49 @@ impl fmt::Display for StorableCaCommand {
                 }
                 Ok(())
             }
-            StorableCaCommand::ReissueBeforeExpiring => {
+            CertAuthStorableCommand::ReissueBeforeExpiring => {
                 write!(f, "Automatically re-issue objects before they would expire")
             }
-            StorableCaCommand::ForceReissue => {
+            CertAuthStorableCommand::ForceReissue => {
                 write!(f, "Force re-issuance of objects")
             }
 
             // ------------------------------------------------------------
             // ASPA Support
             // ------------------------------------------------------------
-            StorableCaCommand::AspasUpdate { updates } => {
+            CertAuthStorableCommand::AspasUpdate { updates } => {
                 write!(f, "{}", updates)
             }
-            StorableCaCommand::AspasUpdateExisting { customer, update } => {
+            CertAuthStorableCommand::AspasUpdateExisting { customer, update } => {
                 write!(f, "update ASPA for customer AS: {} {}", customer, update)
             }
-            StorableCaCommand::AspaRemove { customer } => {
+            CertAuthStorableCommand::AspaRemove { customer } => {
                 write!(f, "Remove ASPA for customer AS: {}", customer)
             }
 
             // ------------------------------------------------------------
             // BGPSec Support
             // ------------------------------------------------------------
-            StorableCaCommand::BgpSecDefinitionUpdates => write!(f, "Update BGPSec definitions"),
+            CertAuthStorableCommand::BgpSecDefinitionUpdates => write!(f, "Update BGPSec definitions"),
 
             // ------------------------------------------------------------
             // Publishing
             // ------------------------------------------------------------
-            StorableCaCommand::RepoUpdate { service_uri } => write!(f, "Update repo to server at: {}", service_uri),
+            CertAuthStorableCommand::RepoUpdate { service_uri } => {
+                write!(f, "Update repo to server at: {}", service_uri)
+            }
 
             // ------------------------------------------------------------
             // RTA
             // ------------------------------------------------------------
-            StorableCaCommand::RtaPrepare { name } => write!(f, "RTA Prepare {}", name),
-            StorableCaCommand::RtaSign { name } => write!(f, "RTA Sign {}", name),
-            StorableCaCommand::RtaCoSign { name } => write!(f, "RTA Co-Sign {}", name),
+            CertAuthStorableCommand::RtaPrepare { name } => write!(f, "RTA Prepare {}", name),
+            CertAuthStorableCommand::RtaSign { name } => write!(f, "RTA Sign {}", name),
+            CertAuthStorableCommand::RtaCoSign { name } => write!(f, "RTA Co-Sign {}", name),
 
             // ------------------------------------------------------------
             // Deactivate
             // ------------------------------------------------------------
-            StorableCaCommand::Deactivate => write!(f, "Deactivate CA"),
+            CertAuthStorableCommand::Deactivate => write!(f, "Deactivate CA"),
         }
     }
 }
@@ -797,6 +777,7 @@ impl fmt::Display for StorableCaCommand {
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case", tag = "type")]
 pub enum StorableRepositoryCommand {
+    Init,
     AddPublisher { name: PublisherHandle },
     RemovePublisher { name: PublisherHandle },
 }
@@ -804,6 +785,7 @@ pub enum StorableRepositoryCommand {
 impl WithStorableDetails for StorableRepositoryCommand {
     fn summary(&self) -> CommandSummary {
         match self {
+            StorableRepositoryCommand::Init => CommandSummary::new("pubd-init", self),
             StorableRepositoryCommand::AddPublisher { name } => {
                 CommandSummary::new("pubd-publisher-add", self).with_publisher(name)
             }
@@ -812,11 +794,18 @@ impl WithStorableDetails for StorableRepositoryCommand {
             }
         }
     }
+
+    fn make_init() -> Self {
+        Self::Init
+    }
 }
 
 impl fmt::Display for StorableRepositoryCommand {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            StorableRepositoryCommand::Init => {
+                write!(f, "Initialise server")
+            }
             StorableRepositoryCommand::AddPublisher { name } => {
                 write!(f, "Added publisher '{}'", name)
             }

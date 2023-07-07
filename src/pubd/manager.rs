@@ -71,7 +71,7 @@ impl RepositoryManager {
     /// Create the publication server, will fail if it was already created.
     pub fn init(&self, uris: PublicationServerUris) -> KrillResult<()> {
         info!("Initializing repository");
-        self.access.init(uris.clone(), &self.signer)?;
+        self.access.init(uris.clone(), self.signer.clone())?;
         self.content.init(self.config.repo_dir(), uris)?;
         self.content.write_repository(self.config.rrdp_updates_config)?;
 
@@ -311,7 +311,10 @@ mod tests {
                 IdCertInfo,
             },
             crypto::{KrillSignerBuilder, OpenSslSignerConfig},
-            util::file::{self, CurrentFile},
+            util::{
+                file::{self, CurrentFile},
+                storage::storage_uri_from_data_dir,
+            },
         },
         constants::*,
         daemon::config::{SignerConfig, SignerType},
@@ -399,7 +402,9 @@ mod tests {
     fn should_not_add_publisher_twice() {
         // we need a disk, as repo_dir, etc. use data_dir by default
         let (data_dir, cleanup) = test::tmp_dir();
-        let storage_uri = test::tmp_storage();
+        // let storage_uri = test::tmp_storage();
+        let storage_uri = storage_uri_from_data_dir(&data_dir).unwrap();
+
         let server = make_server(&storage_uri, &data_dir);
 
         let alice = publisher_alice(&storage_uri);

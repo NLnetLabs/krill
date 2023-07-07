@@ -1,0 +1,15 @@
+{
+  "actor": "testbed",
+  "time": "2023-04-30T15:51:28.475549765Z",
+  "handle": "0",
+  "version": 10,
+  "sequence": 10,
+  "details": {
+    "type": "add_publisher",
+    "name": "teste2"
+  },
+  "effect": {
+    "result": "error",
+    "msg": "Duplicate publisher 'teste2'"
+  }
+}

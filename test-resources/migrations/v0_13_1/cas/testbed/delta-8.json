@@ -1,0 +1,35 @@
+{
+  "id": "testbed",
+  "version": 8,
+  "details": {
+    "type": "child_certificates_updated",
+    "resource_class_name": "0",
+    "updates": {
+      "issued": [
+        {
+          "uri": "rsync://krill-ui-dev-testbed.krill.cloud/repo/testbed/0/1A1F1D103D06E0E0D97B4B78F115E9AFAAC61E98.cer",
+          "name": "1A1F1D103D06E0E0D97B4B78F115E9AFAAC61E98.cer",
+          "resources": {
+            "asn": "AS204325, AS211321",
+            "ipv4": "185.49.140.0/22",
+            "ipv6": "2a04:b900::/29"
+          },
+          "limit": {},
+          "subject": "MDMxMTAvBgNVBAMTKDFBMUYxRDEwM0QwNkUwRTBEOTdCNEI3OEYxMTVFOUFGQUFDNjFFOTg=",
+          "validity": {
+            "not_before": "2023-02-07T13:55:19.351545691Z",
+            "not_after": "2024-02-06T14:00:19.351545933Z"
+          },
+          "serial": "662486915211500835397523287879949263332432184206",
+          "ca_repository": "rsync://krill-ui-dev-testbed.krill.cloud/repo/testbed-client/0",
+          "rpki_manifest": "rsync://krill-ui-dev-testbed.krill.cloud/repo/testbed-client/0/1A1F1D103D06E0E0D97B4B78F115E9AFAAC61E98.mft",
+          "rpki_notify": "https://krill-ui-dev-testbed.krill.cloud/rrdp/notification.xml",
+          "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvjxrEk7VfyRrOacK85f0F74M+ixDTU8mccWX9GZd/j6J/HCOt8Um2KqgnItdu+Kb+YDYC41yRhaY+852siBe8yV7CRsxdcSVDTZAGabq03mjoEvqQ2BiwloY4cu2QmyZn6QZnQie5l4N5bObWnIShWKhslUa04HYEhk956YWupy/M/ktgux85PbW4Ay0BNGdX2xViFYybjo/Bvg97qfgJf5UODvzzZF90rwmZYFx0DT4aPp2MvxxKXAIidpoxHvH+9eMlFN657CWpjkVYn5Uhe/n9bVLRGi6nUN0Wi5Jk54c25mWtmRaNgDu7x90npFUOtntogGXmEie1W6zSPXYOQIDAQAB",
+          "base64": "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",
+          "hash": "438b374f159ad6cb5fae326ee24ab5fbb53f0dd82a019a14920a6f12f343a36a",
+          "marker": null
+        }
+      ]
+    }
+  }
+}

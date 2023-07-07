@@ -51,9 +51,9 @@ mod tests {
             let cleanup = test::init_logging();
 
             let ta_signer_store: AggregateStore<TrustAnchorSigner> =
-                AggregateStore::create(storage_uri, segment!("ta_signer")).unwrap();
+                AggregateStore::create(storage_uri, segment!("ta_signer"), false).unwrap();
             let ta_proxy_store: AggregateStore<TrustAnchorProxy> =
-                AggregateStore::create(storage_uri, segment!("ta_proxy")).unwrap();
+                AggregateStore::create(storage_uri, segment!("ta_proxy"), false).unwrap();
 
             // We will import a TA key - this is only (supposed to be) supported for the openssl signer
             let signers = ConfigDefaults::openssl_signer_only();
@@ -66,10 +66,9 @@ mod tests {
             let actor = test::test_actor();
 
             let proxy_handle = TrustAnchorHandle::new("proxy".into());
+            let proxy_init = TrustAnchorProxyInitCommand::make(&proxy_handle, signer.clone(), &actor);
 
-            let init = TrustAnchorProxy::create_init(proxy_handle.clone(), &signer).unwrap();
-
-            ta_proxy_store.add(init).unwrap();
+            ta_proxy_store.add(proxy_init).unwrap();
 
             let repository = {
                 let repo_info = RepoInfo::new(
@@ -94,19 +93,20 @@ mod tests {
 
             let import_key_pem = include_str!("../../../test-resources/ta/example-pkcs1.pem");
 
-            let signer_init_cmd = TrustAnchorSignerInitCommand {
-                handle: signer_handle.clone(),
-                proxy_id: proxy.id().clone(),
-                repo_info: proxy.repository().unwrap().repo_info().clone(),
-                tal_https: tal_https.clone(),
-                tal_rsync: tal_rsync.clone(),
-                private_key_pem: Some(import_key_pem.to_string()),
-                signer: signer.clone(),
-            };
+            let signer_init_cmd = TrustAnchorSignerInitCommand::new(
+                &signer_handle,
+                TrustAnchorSignerInitCommandDetails {
+                    proxy_id: proxy.id().clone(),
+                    repo_info: proxy.repository().unwrap().repo_info().clone(),
+                    tal_https: tal_https.clone(),
+                    tal_rsync: tal_rsync.clone(),
+                    private_key_pem: Some(import_key_pem.to_string()),
+                    signer: signer.clone(),
+                },
+                &actor,
+            );
 
-            let signer_init = TrustAnchorSigner::create_init(signer_init_cmd).unwrap();
-
-            let mut ta_signer = ta_signer_store.add(signer_init).unwrap();
+            let mut ta_signer = ta_signer_store.add(signer_init_cmd).unwrap();
             let signer_info = ta_signer.get_signer_info();
             let add_signer_cmd = TrustAnchorProxyCommand::add_signer(&proxy_handle, signer_info, &actor);
 

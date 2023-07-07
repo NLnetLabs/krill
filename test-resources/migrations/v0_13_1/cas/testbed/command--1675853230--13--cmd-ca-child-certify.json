@@ -1,0 +1,21 @@
+{
+  "actor": "anonymous",
+  "time": "2023-02-08T10:47:10.246862037Z",
+  "handle": "testbed",
+  "version": 14,
+  "sequence": 13,
+  "details": {
+    "type": "child_certify",
+    "child": "NLnetLabs",
+    "resource_class_name": "0",
+    "limit": {},
+    "ki": "B2F9D7A5A5A9D791BE2BB641C9AF19505D100C2F"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      14,
+      15
+    ]
+  }
+}

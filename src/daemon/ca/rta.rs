@@ -17,7 +17,7 @@ use crate::commons::{
 
 //------------ Rtas ---------------------------------------------------------
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Rtas {
     map: HashMap<RtaName, RtaState>,
 }
@@ -62,7 +62,7 @@ impl Rtas {
 
 //------------ RtaState -----------------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 enum RtaState {
     Prepared(PreparedRta),
     Signed(SignedRta),

@@ -1,0 +1,15 @@
+{
+  "actor": "testbed",
+  "time": "2023-02-07T14:18:04.970412732Z",
+  "handle": "testbed",
+  "version": 12,
+  "sequence": 10,
+  "details": {
+    "type": "child_remove",
+    "child": "testbed-client"
+  },
+  "effect": {
+    "result": "error",
+    "msg": "CA 'testbed' does not have a child named 'testbed-client'"
+  }
+}

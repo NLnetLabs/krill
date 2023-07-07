@@ -1,0 +1,17 @@
+{
+  "actor": "testbed",
+  "time": "2023-02-08T10:46:58.545026630Z",
+  "handle": "0",
+  "version": 7,
+  "sequence": 7,
+  "details": {
+    "type": "add_publisher",
+    "name": "NLnetLabs"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      7
+    ]
+  }
+}

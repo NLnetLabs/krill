@@ -1,0 +1,12 @@
+{
+  "id": "f1e77c71-d28f-4d56-ace7-6bb6f4bcc8f3",
+  "version": 0,
+  "details": {
+    "signer_name": "Default OpenSSL signer",
+    "signer_info": "OpenSSL Soft Signer [version: OpenSSL 3.0.5 5 Jul 2022, keys dir: /var/lib/krill/data/keys]",
+    "signer_identity": {
+      "public_key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqPbr6J0nkRmMXz33xuqCHfm7FOj2IxF6Bi/3oFqNZtDafdeQEK2PS1dljic/9842b71lbfgT5yU5ivl4N515yjpN2oW9E14BIGFACXaQ4TdD/aVbEvlZWc7XwYhqu6zA5v8PZVF5y1vyfBG0OuReZmT0FUf7qK3ATi71urE88RKLstkAUwHF2xH+WjHQh7eor1DvBwdLKstJ+6Nz4aiUoykxsmSu/DbINfzd4dZJXOUaFLZ18vwmW/oz0pe8ohmUKnPHoMaz904hdE5UKwSLFLlUwRaslLFXzI8l5qliGdyOvGfZNQY0OcyEBk3bCEQR1TsrIx+PU4VH5xZXeohx+QIDAQAB",
+      "private_key_internal_id": "365A07041056D0D4D2A338F19D9F7C10324CDE20"
+    }
+  }
+}
