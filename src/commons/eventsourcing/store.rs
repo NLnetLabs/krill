@@ -46,11 +46,11 @@ impl<A: Aggregate> AggregateStore<A> {
     pub fn create(
         storage_uri: &Url,
         name_space: impl Into<SegmentBuf>,
-        disable_history_cache: bool,
+        use_history_cache: bool,
     ) -> StoreResult<Self> {
         let kv = KeyValueStore::create(storage_uri, name_space)?;
         let cache = RwLock::new(HashMap::new());
-        let history_cache = if disable_history_cache {
+        let history_cache = if !use_history_cache {
             None
         } else {
             Some(Mutex::new(HashMap::new()))

@@ -1102,7 +1102,7 @@ mod tests {
         let config = Config::test(&storage_uri, Some(&data_dir), false, false, false, false);
         let _ = config.init_logging();
 
-        let properties_manager = PropertiesManager::create(&config.storage_uri, config.disable_history_cache).unwrap();
+        let properties_manager = PropertiesManager::create(&config.storage_uri, config.use_history_cache).unwrap();
 
         prepare_upgrade_data_migrations(UpgradeMode::PrepareOnly, &config, &properties_manager)
             .unwrap()

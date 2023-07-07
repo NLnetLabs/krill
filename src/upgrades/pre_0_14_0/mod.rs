@@ -248,7 +248,7 @@ impl<A: Aggregate> GenericUpgradeAggregateStore<A> {
         } else {
             let new_kv_store = KeyValueStore::create(config.upgrade_storage_uri(), name_space)?;
             let new_agg_store =
-                AggregateStore::<A>::create(config.upgrade_storage_uri(), name_space, config.disable_history_cache)?;
+                AggregateStore::<A>::create(config.upgrade_storage_uri(), name_space, config.use_history_cache)?;
 
             let store_migration = GenericUpgradeAggregateStore {
                 store_name: name_space.to_string(),

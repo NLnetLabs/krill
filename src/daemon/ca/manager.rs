@@ -109,7 +109,7 @@ impl CaManager {
         // Create the AggregateStore for the event-sourced `CertAuth` structures that handle
         // most CA functions.
         let mut ca_store =
-            AggregateStore::<CertAuth>::create(&config.storage_uri, CASERVER_NS, config.disable_history_cache)?;
+            AggregateStore::<CertAuth>::create(&config.storage_uri, CASERVER_NS, config.use_history_cache)?;
 
         if config.always_recover_data {
             // If the user chose to 'always recover data' then do so.
@@ -154,7 +154,7 @@ impl CaManager {
             let mut store = AggregateStore::<TrustAnchorProxy>::create(
                 &config.storage_uri,
                 TA_PROXY_SERVER_NS,
-                config.disable_history_cache,
+                config.use_history_cache,
             )?;
 
             // We need to listen for proxy events so that we can schedule:
@@ -171,7 +171,7 @@ impl CaManager {
             Some(AggregateStore::create(
                 &config.storage_uri,
                 TA_SIGNER_SERVER_NS,
-                config.disable_history_cache,
+                config.use_history_cache,
             )?)
         } else {
             None

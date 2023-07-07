@@ -28,7 +28,7 @@ impl PublicationServerRepositoryAccessMigration {
         let current_kv_store = KeyValueStore::create(&config.storage_uri, PUBSERVER_NS)?;
         let new_kv_store = KeyValueStore::create(config.upgrade_storage_uri(), PUBSERVER_NS)?;
         let new_agg_store =
-            AggregateStore::create(config.upgrade_storage_uri(), PUBSERVER_NS, config.disable_history_cache)?;
+            AggregateStore::create(config.upgrade_storage_uri(), PUBSERVER_NS, config.use_history_cache)?;
 
         let store_migration = PublicationServerRepositoryAccessMigration {
             current_kv_store,

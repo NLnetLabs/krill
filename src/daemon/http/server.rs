@@ -122,7 +122,7 @@ pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
 
     // Set up the runtime properties manager, so that we can check
     // the version used for the current data in storage
-    let properties_manager = PropertiesManager::create(&config.storage_uri, config.disable_history_cache)?;
+    let properties_manager = PropertiesManager::create(&config.storage_uri, config.use_history_cache)?;
 
     // Call upgrade, this will only do actual work if needed.
     let upgrade_report = prepare_upgrade_data_migrations(UpgradeMode::PrepareToFinalise, &config, &properties_manager)

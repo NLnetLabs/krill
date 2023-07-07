@@ -71,7 +71,7 @@ impl CasMigration {
         let new_agg_store = AggregateStore::<CertAuth>::create(
             config.upgrade_storage_uri(),
             CASERVER_NS,
-            config.disable_history_cache,
+            config.use_history_cache,
         )?;
         let ca_objects_migration = CaObjectsMigration::create(config)?;
 

@@ -255,9 +255,9 @@ pub struct PropertiesManager {
 }
 
 impl PropertiesManager {
-    pub fn create(storage_uri: &Url, disable_history_cache: bool) -> KrillResult<Self> {
+    pub fn create(storage_uri: &Url, use_history_cache: bool) -> KrillResult<Self> {
         let main_key = MyHandle::from_str(PROPERTIES_DFLT_NAME).unwrap();
-        AggregateStore::create(storage_uri, PROPERTIES_NS, disable_history_cache)
+        AggregateStore::create(storage_uri, PROPERTIES_NS, use_history_cache)
             .map(|store| PropertiesManager {
                 store,
                 main_key,

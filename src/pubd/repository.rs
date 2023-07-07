@@ -1519,7 +1519,7 @@ impl RepositoryAccessProxy {
         let store = AggregateStore::<RepositoryAccess>::create(
             &config.storage_uri,
             PUBSERVER_NS,
-            config.disable_history_cache,
+            config.use_history_cache,
         )?;
         let key = MyHandle::from_str(PUBSERVER_DFLT).unwrap();
 
