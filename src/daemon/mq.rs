@@ -16,17 +16,12 @@ use rpki::{
 };
 
 use crate::{
-    commons::{
-        api::Timestamp,
-        eventsourcing::{self, Event},
-    },
+    commons::{api::Timestamp, eventsourcing},
     daemon::{
-        ca::{CaEvt, CaEvtDet, CertAuth},
-        ta::{ta_handle, TrustAnchorProxyEventDetails},
+        ca::{CertAuth, CertAuthEvent},
+        ta::{ta_handle, TrustAnchorProxy, TrustAnchorProxyEvent},
     },
 };
-
-use super::ta::{TrustAnchorProxy, TrustAnchorProxyEvent};
 
 //------------ Task ---------------------------------------------------------
 
@@ -267,23 +262,23 @@ impl TaskQueue {
 
 /// Implement listening for CertAuth events.
 impl eventsourcing::PostSaveEventListener<CertAuth> for TaskQueue {
-    fn listen(&self, ca: &CertAuth, events: &[CaEvt]) {
+    fn listen(&self, ca: &CertAuth, events: &[CertAuthEvent]) {
+        let handle = ca.handle();
+
         for event in events {
-            trace!("Seen CertAuth event '{}'", event);
+            trace!("Seen event for CA {}: '{}'", handle, event);
 
-            let handle = event.handle();
+            match event {
+                CertAuthEvent::RoasUpdated { .. }
+                | CertAuthEvent::AspaObjectsUpdated { .. }
+                | CertAuthEvent::ChildCertificatesUpdated { .. }
+                | CertAuthEvent::BgpSecCertificatesUpdated { .. }
+                | CertAuthEvent::ChildKeyRevoked { .. }
+                | CertAuthEvent::KeyPendingToNew { .. }
+                | CertAuthEvent::KeyPendingToActive { .. }
+                | CertAuthEvent::KeyRollFinished { .. } => self.sync_repo(handle.clone(), now()),
 
-            match event.details() {
-                CaEvtDet::RoasUpdated { .. }
-                | CaEvtDet::AspaObjectsUpdated { .. }
-                | CaEvtDet::ChildCertificatesUpdated { .. }
-                | CaEvtDet::BgpSecCertificatesUpdated { .. }
-                | CaEvtDet::ChildKeyRevoked { .. }
-                | CaEvtDet::KeyPendingToNew { .. }
-                | CaEvtDet::KeyPendingToActive { .. }
-                | CaEvtDet::KeyRollFinished { .. } => self.sync_repo(handle.clone(), now()),
-
-                CaEvtDet::KeyRollActivated {
+                CertAuthEvent::KeyRollActivated {
                     resource_class_name, ..
                 } => {
                     if let Ok(parent) = ca.parent_for_rc(resource_class_name) {
@@ -292,12 +287,12 @@ impl eventsourcing::PostSaveEventListener<CertAuth> for TaskQueue {
                     self.sync_repo(handle.clone(), now());
                 }
 
-                CaEvtDet::ParentRemoved { parent } => {
+                CertAuthEvent::ParentRemoved { parent } => {
                     self.drop_sync_parent(handle.clone(), parent.clone());
                     self.sync_repo(handle.clone(), now());
                 }
 
-                CaEvtDet::ResourceClassRemoved {
+                CertAuthEvent::ResourceClassRemoved {
                     resource_class_name,
                     parent,
                     revoke_requests,
@@ -315,7 +310,7 @@ impl eventsourcing::PostSaveEventListener<CertAuth> for TaskQueue {
                     )
                 }
 
-                CaEvtDet::UnexpectedKeyFound {
+                CertAuthEvent::UnexpectedKeyFound {
                     resource_class_name,
                     revoke_req,
                 } => self.schedule(
@@ -327,7 +322,7 @@ impl eventsourcing::PostSaveEventListener<CertAuth> for TaskQueue {
                     now(),
                 ),
 
-                CaEvtDet::ParentAdded { parent, .. } => {
+                CertAuthEvent::ParentAdded { parent, .. } => {
                     if ca.repository_contact().is_ok() {
                         debug!("Parent {} added to CA {}, scheduling sync", parent, handle);
                         self.sync_parent(handle.clone(), parent.clone(), now());
@@ -340,12 +335,12 @@ impl eventsourcing::PostSaveEventListener<CertAuth> for TaskQueue {
                         );
                     }
                 }
-                CaEvtDet::RepoUpdated { .. } => {
+                CertAuthEvent::RepoUpdated { .. } => {
                     for parent in ca.parents() {
                         self.sync_parent(handle.clone(), parent.clone(), now());
                     }
                 }
-                CaEvtDet::CertificateRequested {
+                CertAuthEvent::CertificateRequested {
                     resource_class_name, ..
                 } => {
                     debug!("CA {} requested certificate for RC {}", handle, resource_class_name);
@@ -354,7 +349,7 @@ impl eventsourcing::PostSaveEventListener<CertAuth> for TaskQueue {
                         self.sync_parent(handle.clone(), parent.clone(), now());
                     }
                 }
-                CaEvtDet::ChildUpdatedResources { child, .. } => {
+                CertAuthEvent::ChildUpdatedResources { child, .. } => {
                     debug!("Schedule a sync from the child to this CA as their parent. This will be a no-op for remote children.");
                     self.sync_parent(child.convert(), handle.convert(), now());
                 }
@@ -370,12 +365,12 @@ impl eventsourcing::PostSaveEventListener<TrustAnchorProxy> for TaskQueue {
     fn listen(&self, _proxy: &TrustAnchorProxy, events: &[TrustAnchorProxyEvent]) {
         for event in events {
             trace!("Seen TrustAnchorProxy event '{}'", event);
-            match event.details() {
-                TrustAnchorProxyEventDetails::ChildRequestAdded(_child, _request) => {
+            match event {
+                TrustAnchorProxyEvent::ChildRequestAdded(_child, _request) => {
                     // schedule proxy -> signer sync
                     self.sync_ta_proxy_signer_if_possible();
                 }
-                TrustAnchorProxyEventDetails::SignerResponseReceived(response) => {
+                TrustAnchorProxyEvent::SignerResponseReceived(response) => {
                     // schedule publication for the TA
                     self.sync_repo(ta_handle(), now());
                     // Schedule child->ta sync(s) now that there is a response.
@@ -384,11 +379,11 @@ impl eventsourcing::PostSaveEventListener<TrustAnchorProxy> for TaskQueue {
                         self.sync_parent(ca.convert(), ta_handle().into_converted(), now());
                     }
                 }
-                TrustAnchorProxyEventDetails::RepositoryAdded(_)
-                | TrustAnchorProxyEventDetails::SignerAdded(_)
-                | TrustAnchorProxyEventDetails::SignerRequestMade(_)
-                | TrustAnchorProxyEventDetails::ChildAdded(_)
-                | TrustAnchorProxyEventDetails::ChildResponseGiven(_, _) => {
+                TrustAnchorProxyEvent::RepositoryAdded(_)
+                | TrustAnchorProxyEvent::SignerAdded(_)
+                | TrustAnchorProxyEvent::SignerRequestMade(_)
+                | TrustAnchorProxyEvent::ChildAdded(_)
+                | TrustAnchorProxyEvent::ChildResponseGiven(_, _) => {
                     // No triggered actions needed
                 }
             }

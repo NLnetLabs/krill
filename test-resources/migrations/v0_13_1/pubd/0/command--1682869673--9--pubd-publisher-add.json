@@ -1,0 +1,17 @@
+{
+  "actor": "testbed",
+  "time": "2023-04-30T15:47:53.896631396Z",
+  "handle": "0",
+  "version": 9,
+  "sequence": 9,
+  "details": {
+    "type": "add_publisher",
+    "name": "teste2"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      9
+    ]
+  }
+}

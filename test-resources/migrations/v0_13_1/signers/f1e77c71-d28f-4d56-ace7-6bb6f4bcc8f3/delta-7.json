@@ -1,0 +1,7 @@
+{
+  "id": "f1e77c71-d28f-4d56-ace7-6bb6f4bcc8f3",
+  "version": 7,
+  "details": {
+    "SignerInfoChanged": "OpenSSL Soft Signer [version: OpenSSL 1.1.1f  31 Mar 2020, keys dir: /var/lib/krill/data/keys]"
+  }
+}

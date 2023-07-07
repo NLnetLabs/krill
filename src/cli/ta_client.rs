@@ -39,6 +39,7 @@ use crate::{
         ta::{
             TrustAnchorHandle, TrustAnchorProxySignerExchanges, TrustAnchorSignedRequest, TrustAnchorSignedResponse,
             TrustAnchorSigner, TrustAnchorSignerCommand, TrustAnchorSignerInfo, TrustAnchorSignerInitCommand,
+            TrustAnchorSignerInitCommandDetails,
         },
     },
 };
@@ -1001,8 +1002,8 @@ struct TrustAnchorSignerManager {
 
 impl TrustAnchorSignerManager {
     fn create(config: Config) -> Result<Self, Error> {
-        let store =
-            AggregateStore::create(&config.storage_uri, segment!("signer")).map_err(KrillError::AggregateStoreError)?;
+        let store = AggregateStore::create(&config.storage_uri, segment!("signer"), config.use_history_cache)
+            .map_err(KrillError::AggregateStoreError)?;
         let ta_handle = TrustAnchorHandle::new("ta".into());
         let signer = config.signer()?;
         let actor = Actor::krillta();
@@ -1019,18 +1020,20 @@ impl TrustAnchorSignerManager {
         if self.store.has(&self.ta_handle)? {
             Err(Error::other("Trust Anchor Signer was already initialised."))
         } else {
-            let signer_init_command = TrustAnchorSignerInitCommand {
-                handle: self.ta_handle.clone(),
-                proxy_id: info.proxy_id,
-                repo_info: info.repo_info,
-                tal_https: info.tal_https,
-                tal_rsync: info.tal_rsync,
-                private_key_pem: info.private_key_pem,
-                signer: self.signer.clone(),
-            };
+            let cmd = TrustAnchorSignerInitCommand::new(
+                &self.ta_handle,
+                TrustAnchorSignerInitCommandDetails {
+                    proxy_id: info.proxy_id,
+                    repo_info: info.repo_info,
+                    tal_https: info.tal_https,
+                    tal_rsync: info.tal_rsync,
+                    private_key_pem: info.private_key_pem,
+                    signer: self.signer.clone(),
+                },
+                &self.actor,
+            );
 
-            let signer_init_event = TrustAnchorSigner::create_init(signer_init_command)?;
-            self.store.add(signer_init_event)?;
+            self.store.add(cmd)?;
 
             Ok(TrustAnchorClientApiResponse::Empty)
         }
@@ -1089,6 +1092,9 @@ impl TrustAnchorSignerManager {
 #[derive(Clone, Debug, Deserialize)]
 pub struct Config {
     storage_uri: Url,
+
+    #[serde(default)]
+    use_history_cache: bool,
 
     #[serde(default = "crate::daemon::config::ConfigDefaults::log_type")]
     log_type: LogType,

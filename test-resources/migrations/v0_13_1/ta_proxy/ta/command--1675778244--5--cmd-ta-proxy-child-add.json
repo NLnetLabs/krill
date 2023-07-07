@@ -1,0 +1,24 @@
+{
+  "actor": "krill",
+  "time": "2023-02-07T13:57:24.691863466Z",
+  "handle": "ta",
+  "version": 5,
+  "sequence": 5,
+  "details": {
+    "AddChild": {
+      "handle": "testbed",
+      "resources": {
+        "asn": "AS0-AS4294967295",
+        "ipv4": "0.0.0.0/0",
+        "ipv6": "::/0"
+      },
+      "id_cert": "MIIDEzCCAfugAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEyhDREQ5OTA0OTdDOEYxNTA4NkE4MjAzMTE4NUIwQjQ2NTVCRUIwMkYxMB4XDTIzMDIwNzEzNTIyNFoXDTM4MDIwNzEzNTcyNFowMzExMC8GA1UEAxMoQ0REOTkwNDk3QzhGMTUwODZBODIwMzExODVCMEI0NjU1QkVCMDJGMTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAMo+hedCKM2txNm1l+OBp8jwa2KXCZGqb5oQi7eQNt+V+h/OjDk3vr/dK4OHusFuNtgQw1fs/9xIY+DhBtVxuwcNaiWmDQw79rkHBdydHImsY+XJGmU2+HY/1++Qt0tlCG51Mx6sjvvepTt9TlCksOILXhHfC5xPV6EIAysfKMLz4HVdV6PyyBtHTajjrLdCPKkfGDnzKI+MjWwaxyjDd/Rc1ageIuMolyIX7Uc2iOQO9WQ0Nd9R2G54CzT0RmSilkpf2obOhDcjIsHMkDF0jFm0VLcmO6c2BDNRFC6x8k66/RIW35wu9CrvBzmAYrPkLiPvM7nB4Wvdw+W8tCtkxr8CAwEAAaMyMDAwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUzdmQSXyPFQhqggMRhbC0ZVvrAvEwDQYJKoZIhvcNAQELBQADggEBAGrqOyPnyuaUqXqLS4nWRilP6ElOFplYABMtBesSm3n/9ENvMahi0okboCKaNP8nX7fzAI1Rs5Rv8YohSKkz25PokwwNtCts1hZABffxNhucmkNOKvNljtEGiZjgq0UwNqY61swH3cK6+k4sQC1IhCQAgRh17Aq4bKXk3qS1jSxPepU+XT8zjBZd2QpnAQ0bx4Zm31OyswJOBdLMb30xJJElO7hkcyY3VmZEvWKlmVbKXRp5uKcoLe3CjqWwN9uAvwCNIXPurjYAslc1XDShFqRbDMToPwQaIZ4bdm5lF/bkRmeb0iwt0GQwbbdnVhZUk8UwjStdVhVlvS5FpKrmrP8="
+    }
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      5
+    ]
+  }
+}

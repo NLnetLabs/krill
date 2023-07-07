@@ -2,7 +2,7 @@ use std::{collections::HashMap, fmt};
 
 use rpki::{
     ca::{
-        idexchange::{CaHandle, ChildHandle, ParentHandle},
+        idexchange::{ChildHandle, ParentHandle},
         provisioning::{IssuanceRequest, ParentResourceClassName, ResourceClassName, RevocationRequest},
     },
     crypto::KeyIdentifier,
@@ -16,7 +16,7 @@ use crate::{
             ParentCaContact, ReceivedCert, RepositoryContact, RoaAggregateKey, RtaName, SuspendedCert, UnsuspendedCert,
         },
         crypto::KrillSigner,
-        eventsourcing::StoredEvent,
+        eventsourcing::{Event, InitEvent},
         KrillResult,
     },
     daemon::ca::{AspaInfo, CertifiedKey, PreparedRta, RoaInfo, RoaPayloadJsonMapKey, SignedRta},
@@ -53,35 +53,32 @@ impl From<Rfc8183Id> for IdCertInfo {
     }
 }
 
-//------------ Ini -----------------------------------------------------------
-
-pub type Ini = StoredEvent<IniDet>;
-
-//------------ IniDet --------------------------------------------------------
+//------------ CertAuthInitEvent ---------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct IniDet {
+pub struct CertAuthInitEvent {
     id: Rfc8183Id,
 }
 
-impl IniDet {
+impl InitEvent for CertAuthInitEvent {}
+
+impl CertAuthInitEvent {
     pub fn unpack(self) -> Rfc8183Id {
         self.id
     }
 }
 
-impl IniDet {
-    pub fn new(handle: &CaHandle, id: Rfc8183Id) -> Ini {
-        Ini::new(handle, 0, IniDet { id })
+impl CertAuthInitEvent {
+    pub fn new(id: Rfc8183Id) -> CertAuthInitEvent {
+        CertAuthInitEvent { id }
     }
 
-    pub fn init(handle: &CaHandle, signer: &KrillSigner) -> KrillResult<Ini> {
-        let id = Rfc8183Id::generate(signer)?;
-        Ok(Self::new(handle, id))
+    pub fn init(signer: &KrillSigner) -> KrillResult<CertAuthInitEvent> {
+        Rfc8183Id::generate(signer).map(|id| CertAuthInitEvent { id })
     }
 }
 
-impl fmt::Display for IniDet {
+impl fmt::Display for CertAuthInitEvent {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
@@ -419,17 +416,13 @@ impl ChildCertificateUpdates {
     }
 }
 
-//------------ Evt ---------------------------------------------------------
-
-pub type CaEvt = StoredEvent<CaEvtDet>;
-
-//------------ EvtDet -------------------------------------------------------
+//------------ CertAuthEvent ------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
-pub enum CaEvtDet {
+pub enum CertAuthEvent {
     // Being a parent Events
     /// A child was added to this (parent) CA
     ChildAdded {
@@ -644,138 +637,92 @@ pub enum CaEvtDet {
     },
 }
 
-impl CaEvtDet {
+impl Event for CertAuthEvent {}
+
+impl CertAuthEvent {
     /// This marks the RFC8183Id as updated
-    pub(super) fn id_updated(handle: &CaHandle, version: u64, id: Rfc8183Id) -> CaEvt {
-        StoredEvent::new(handle, version, CaEvtDet::IdUpdated { id })
+    pub(super) fn id_updated(id: Rfc8183Id) -> CertAuthEvent {
+        CertAuthEvent::IdUpdated { id }
     }
 
     /// This marks a parent as added to the CA.
-    pub(super) fn parent_added(
-        handle: &CaHandle,
-        version: u64,
-        parent: ParentHandle,
-        contact: ParentCaContact,
-    ) -> CaEvt {
-        StoredEvent::new(handle, version, CaEvtDet::ParentAdded { parent, contact })
+    pub(super) fn parent_added(parent: ParentHandle, contact: ParentCaContact) -> CertAuthEvent {
+        CertAuthEvent::ParentAdded { parent, contact }
     }
 
     /// This marks a parent contact as updated
-    pub(super) fn parent_updated(
-        handle: &CaHandle,
-        version: u64,
-        parent: ParentHandle,
-        contact: ParentCaContact,
-    ) -> CaEvt {
-        StoredEvent::new(handle, version, CaEvtDet::ParentUpdated { parent, contact })
+    pub(super) fn parent_updated(parent: ParentHandle, contact: ParentCaContact) -> CertAuthEvent {
+        CertAuthEvent::ParentUpdated { parent, contact }
     }
 
-    pub(super) fn child_added(
-        handle: &CaHandle,
-        version: u64,
-        child: ChildHandle,
-        id_cert: IdCertInfo,
-        resources: ResourceSet,
-    ) -> CaEvt {
-        StoredEvent::new(
-            handle,
-            version,
-            CaEvtDet::ChildAdded {
-                child,
-                id_cert,
-                resources,
-            },
-        )
+    pub(super) fn child_added(child: ChildHandle, id_cert: IdCertInfo, resources: ResourceSet) -> CertAuthEvent {
+        CertAuthEvent::ChildAdded {
+            child,
+            id_cert,
+            resources,
+        }
     }
 
-    pub(super) fn child_updated_cert(
-        handle: &CaHandle,
-        version: u64,
-        child: ChildHandle,
-        id_cert: IdCertInfo,
-    ) -> CaEvt {
-        StoredEvent::new(handle, version, CaEvtDet::ChildUpdatedIdCert { child, id_cert })
+    pub(super) fn child_updated_cert(child: ChildHandle, id_cert: IdCertInfo) -> CertAuthEvent {
+        CertAuthEvent::ChildUpdatedIdCert { child, id_cert }
     }
 
-    pub(super) fn child_updated_resources(
-        handle: &CaHandle,
-        version: u64,
-        child: ChildHandle,
-        resources: ResourceSet,
-    ) -> CaEvt {
-        StoredEvent::new(handle, version, CaEvtDet::ChildUpdatedResources { child, resources })
+    pub(super) fn child_updated_resources(child: ChildHandle, resources: ResourceSet) -> CertAuthEvent {
+        CertAuthEvent::ChildUpdatedResources { child, resources }
     }
 
     pub(super) fn child_certificate_issued(
-        handle: &CaHandle,
-        version: u64,
         child: ChildHandle,
         resource_class_name: ResourceClassName,
         ki: KeyIdentifier,
-    ) -> CaEvt {
-        StoredEvent::new(
-            handle,
-            version,
-            CaEvtDet::ChildCertificateIssued {
-                child,
-                resource_class_name,
-                ki,
-            },
-        )
+    ) -> CertAuthEvent {
+        CertAuthEvent::ChildCertificateIssued {
+            child,
+            resource_class_name,
+            ki,
+        }
     }
 
     pub(super) fn child_revoke_key(
-        handle: &CaHandle,
-        version: u64,
         child: ChildHandle,
         resource_class_name: ResourceClassName,
         ki: KeyIdentifier,
-    ) -> CaEvt {
-        StoredEvent::new(
-            handle,
-            version,
-            CaEvtDet::ChildKeyRevoked {
-                child,
-                resource_class_name,
-                ki,
-            },
-        )
+    ) -> CertAuthEvent {
+        CertAuthEvent::ChildKeyRevoked {
+            child,
+            resource_class_name,
+            ki,
+        }
     }
 
     pub(super) fn child_certificates_updated(
-        handle: &CaHandle,
-        version: u64,
         resource_class_name: ResourceClassName,
         updates: ChildCertificateUpdates,
-    ) -> CaEvt {
-        StoredEvent::new(
-            handle,
-            version,
-            CaEvtDet::ChildCertificatesUpdated {
-                resource_class_name,
-                updates,
-            },
-        )
+    ) -> CertAuthEvent {
+        CertAuthEvent::ChildCertificatesUpdated {
+            resource_class_name,
+            updates,
+        }
     }
 
-    pub(super) fn child_removed(handle: &CaHandle, version: u64, child: ChildHandle) -> CaEvt {
-        StoredEvent::new(handle, version, CaEvtDet::ChildRemoved { child })
+    pub(super) fn child_removed(child: ChildHandle) -> CertAuthEvent {
+        CertAuthEvent::ChildRemoved { child }
     }
 
-    pub(super) fn child_suspended(handle: &CaHandle, version: u64, child: ChildHandle) -> CaEvt {
-        StoredEvent::new(handle, version, CaEvtDet::ChildSuspended { child })
+    pub(super) fn child_suspended(child: ChildHandle) -> CertAuthEvent {
+        CertAuthEvent::ChildSuspended { child }
     }
 
-    pub(super) fn child_unsuspended(handle: &CaHandle, version: u64, child: ChildHandle) -> CaEvt {
-        StoredEvent::new(handle, version, CaEvtDet::ChildUnsuspended { child })
+    pub(super) fn child_unsuspended(child: ChildHandle) -> CertAuthEvent {
+        CertAuthEvent::ChildUnsuspended { child }
     }
 }
 
-impl fmt::Display for CaEvtDet {
+impl fmt::Display for CertAuthEvent {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             // Being a parent Events
-            CaEvtDet::ChildAdded {
+            CertAuthEvent::ChildAdded {
                 child,
                 id_cert,
                 resources,
@@ -788,7 +735,7 @@ impl fmt::Display for CaEvtDet {
                     id_cert.public_key().key_identifier()
                 )
             }
-            CaEvtDet::ChildCertificateIssued {
+            CertAuthEvent::ChildCertificateIssued {
                 child,
                 resource_class_name,
                 ki,
@@ -797,7 +744,7 @@ impl fmt::Display for CaEvtDet {
                 "issued certificate to child '{}' for class '{}' and pub key '{}'",
                 child, resource_class_name, ki
             ),
-            CaEvtDet::ChildCertificatesUpdated {
+            CertAuthEvent::ChildCertificatesUpdated {
                 resource_class_name,
                 updates,
             } => {
@@ -837,7 +784,7 @@ impl fmt::Display for CaEvtDet {
 
                 Ok(())
             }
-            CaEvtDet::ChildKeyRevoked {
+            CertAuthEvent::ChildKeyRevoked {
                 child,
                 resource_class_name,
                 ki,
@@ -846,7 +793,7 @@ impl fmt::Display for CaEvtDet {
                 "revoked certificate for child '{}' in resource class '{}' with key(hash) '{}'",
                 child, resource_class_name, ki
             ),
-            CaEvtDet::ChildUpdatedIdCert { child, id_cert } => {
+            CertAuthEvent::ChildUpdatedIdCert { child, id_cert } => {
                 write!(
                     f,
                     "updated child '{}' id (hash) '{}'",
@@ -854,31 +801,31 @@ impl fmt::Display for CaEvtDet {
                     id_cert.public_key().key_identifier()
                 )
             }
-            CaEvtDet::ChildUpdatedResources { child, resources } => {
+            CertAuthEvent::ChildUpdatedResources { child, resources } => {
                 write!(f, "updated child '{}' resources to '{}'", child, resources)
             }
-            CaEvtDet::ChildRemoved { child } => write!(f, "removed child '{}'", child),
-            CaEvtDet::ChildSuspended { child } => write!(f, "suspended child '{}'", child),
-            CaEvtDet::ChildUnsuspended { child } => write!(f, "unsuspended child '{}'", child),
+            CertAuthEvent::ChildRemoved { child } => write!(f, "removed child '{}'", child),
+            CertAuthEvent::ChildSuspended { child } => write!(f, "suspended child '{}'", child),
+            CertAuthEvent::ChildUnsuspended { child } => write!(f, "unsuspended child '{}'", child),
 
             // Being a child Events
-            CaEvtDet::IdUpdated { id } => write!(
+            CertAuthEvent::IdUpdated { id } => write!(
                 f,
                 "updated RFC8183 id to key '{}'",
                 id.cert().public_key().key_identifier()
             ),
-            CaEvtDet::ParentAdded { parent, .. } => {
+            CertAuthEvent::ParentAdded { parent, .. } => {
                 write!(f, "added parent '{}' ", parent)
             }
-            CaEvtDet::ParentUpdated { parent, .. } => {
+            CertAuthEvent::ParentUpdated { parent, .. } => {
                 write!(f, "updated parent '{}'", parent)
             }
-            CaEvtDet::ParentRemoved { parent } => write!(f, "removed parent '{}'", parent),
+            CertAuthEvent::ParentRemoved { parent } => write!(f, "removed parent '{}'", parent),
 
-            CaEvtDet::ResourceClassAdded {
+            CertAuthEvent::ResourceClassAdded {
                 resource_class_name, ..
             } => write!(f, "added resource class with name '{}'", resource_class_name),
-            CaEvtDet::ResourceClassRemoved {
+            CertAuthEvent::ResourceClassRemoved {
                 resource_class_name,
                 parent,
                 ..
@@ -887,7 +834,7 @@ impl fmt::Display for CaEvtDet {
                 "removed resource class with name '{}' under parent '{}'",
                 resource_class_name, parent
             ),
-            CaEvtDet::CertificateRequested {
+            CertAuthEvent::CertificateRequested {
                 resource_class_name,
                 ki,
                 ..
@@ -896,7 +843,7 @@ impl fmt::Display for CaEvtDet {
                 "requested certificate for key (hash) '{}' under resource class '{}'",
                 ki, resource_class_name
             ),
-            CaEvtDet::CertificateReceived {
+            CertAuthEvent::CertificateReceived {
                 resource_class_name,
                 ki,
                 ..
@@ -907,7 +854,7 @@ impl fmt::Display for CaEvtDet {
             ),
 
             // Key life cycle
-            CaEvtDet::KeyRollPendingKeyAdded {
+            CertAuthEvent::KeyRollPendingKeyAdded {
                 resource_class_name,
                 pending_key_id,
             } => {
@@ -917,7 +864,7 @@ impl fmt::Display for CaEvtDet {
                     pending_key_id, resource_class_name
                 )
             }
-            CaEvtDet::KeyPendingToNew {
+            CertAuthEvent::KeyPendingToNew {
                 resource_class_name,
                 new_key,
             } => write!(
@@ -926,7 +873,7 @@ impl fmt::Display for CaEvtDet {
                 new_key.key_id(),
                 resource_class_name
             ),
-            CaEvtDet::KeyPendingToActive {
+            CertAuthEvent::KeyPendingToActive {
                 resource_class_name,
                 current_key,
             } => write!(
@@ -935,7 +882,7 @@ impl fmt::Display for CaEvtDet {
                 current_key.key_id(),
                 resource_class_name
             ),
-            CaEvtDet::KeyRollActivated {
+            CertAuthEvent::KeyRollActivated {
                 resource_class_name,
                 revoke_req,
             } => write!(
@@ -944,10 +891,10 @@ impl fmt::Display for CaEvtDet {
                 revoke_req.key(),
                 resource_class_name
             ),
-            CaEvtDet::KeyRollFinished { resource_class_name } => {
+            CertAuthEvent::KeyRollFinished { resource_class_name } => {
                 write!(f, "key roll: finished for resource class '{}'", resource_class_name)
             }
-            CaEvtDet::UnexpectedKeyFound {
+            CertAuthEvent::UnexpectedKeyFound {
                 resource_class_name,
                 revoke_req,
             } => write!(
@@ -958,16 +905,16 @@ impl fmt::Display for CaEvtDet {
             ),
 
             // Route Authorizations
-            CaEvtDet::RouteAuthorizationAdded { auth } => write!(f, "added ROA: '{}'", auth),
-            CaEvtDet::RouteAuthorizationComment { auth, comment } => {
+            CertAuthEvent::RouteAuthorizationAdded { auth } => write!(f, "added ROA: '{}'", auth),
+            CertAuthEvent::RouteAuthorizationComment { auth, comment } => {
                 if let Some(comment) = comment {
                     write!(f, "added comment to ROA: '{}' => {}", auth, comment)
                 } else {
                     write!(f, "removed comment from ROA: '{}'", auth)
                 }
             }
-            CaEvtDet::RouteAuthorizationRemoved { auth } => write!(f, "removed ROA: '{}'", auth),
-            CaEvtDet::RoasUpdated {
+            CertAuthEvent::RouteAuthorizationRemoved { auth } => write!(f, "removed ROA: '{}'", auth),
+            CertAuthEvent::RoasUpdated {
                 resource_class_name,
                 updates,
             } => {
@@ -994,12 +941,14 @@ impl fmt::Display for CaEvtDet {
             }
 
             // Autonomous System Provider Authorization
-            CaEvtDet::AspaConfigAdded { aspa_config: addition } => write!(f, "{}", addition),
-            CaEvtDet::AspaConfigUpdated { customer, update } => {
+            CertAuthEvent::AspaConfigAdded { aspa_config: addition } => write!(f, "{}", addition),
+            CertAuthEvent::AspaConfigUpdated { customer, update } => {
                 write!(f, "updated ASPA config for customer ASN: {} {}", customer, update)
             }
-            CaEvtDet::AspaConfigRemoved { customer } => write!(f, "removed ASPA config for customer ASN: {}", customer),
-            CaEvtDet::AspaObjectsUpdated {
+            CertAuthEvent::AspaConfigRemoved { customer } => {
+                write!(f, "removed ASPA config for customer ASN: {}", customer)
+            }
+            CertAuthEvent::AspaObjectsUpdated {
                 resource_class_name,
                 updates,
             } => {
@@ -1020,7 +969,7 @@ impl fmt::Display for CaEvtDet {
             }
 
             // BGPSec
-            CaEvtDet::BgpSecDefinitionAdded { key, .. } => {
+            CertAuthEvent::BgpSecDefinitionAdded { key, .. } => {
                 write!(
                     f,
                     "added BGPSec definition for ASN: {} and key id: {}",
@@ -1028,7 +977,7 @@ impl fmt::Display for CaEvtDet {
                     key.key_identifier()
                 )
             }
-            CaEvtDet::BgpSecDefinitionUpdated { key, .. } => {
+            CertAuthEvent::BgpSecDefinitionUpdated { key, .. } => {
                 write!(
                     f,
                     "updated CSR for BGPSec definition for ASN: {} and key id: {}",
@@ -1036,7 +985,7 @@ impl fmt::Display for CaEvtDet {
                     key.key_identifier()
                 )
             }
-            CaEvtDet::BgpSecDefinitionRemoved { key } => {
+            CertAuthEvent::BgpSecDefinitionRemoved { key } => {
                 write!(
                     f,
                     "removed BGPSec definition for ASN: {} and key id: {}",
@@ -1044,7 +993,7 @@ impl fmt::Display for CaEvtDet {
                     key.key_identifier()
                 )
             }
-            CaEvtDet::BgpSecCertificatesUpdated {
+            CertAuthEvent::BgpSecCertificatesUpdated {
                 resource_class_name,
                 updates,
             } => {
@@ -1071,7 +1020,7 @@ impl fmt::Display for CaEvtDet {
             }
 
             // Publishing
-            CaEvtDet::RepoUpdated { contact } => {
+            CertAuthEvent::RepoUpdated { contact } => {
                 write!(
                     f,
                     "updated repository to remote server: {}",
@@ -1080,10 +1029,10 @@ impl fmt::Display for CaEvtDet {
             }
 
             // Rta
-            CaEvtDet::RtaPrepared { name, prepared } => {
+            CertAuthEvent::RtaPrepared { name, prepared } => {
                 write!(f, "Prepared RTA '{}' for resources: {}", name, prepared.resources())
             }
-            CaEvtDet::RtaSigned { name, rta } => {
+            CertAuthEvent::RtaSigned { name, rta } => {
                 write!(f, "Signed RTA '{}' for resources: {}", name, rta.resources())
             }
         }

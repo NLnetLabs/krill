@@ -1,0 +1,21 @@
+{
+  "actor": "anonymous",
+  "time": "2023-04-30T16:01:25.448833371Z",
+  "handle": "testbed",
+  "version": 18,
+  "sequence": 16,
+  "details": {
+    "type": "child_certify",
+    "child": "ca_teste",
+    "resource_class_name": "0",
+    "limit": {},
+    "ki": "7DC1E81BCB69BE275046D337AB3FBEF76A62354C"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      18,
+      19
+    ]
+  }
+}

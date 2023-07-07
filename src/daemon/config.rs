@@ -51,6 +51,10 @@ use crate::commons::crypto::{KmipSignerConfig, Pkcs11SignerConfig};
 pub struct ConfigDefaults;
 
 impl ConfigDefaults {
+    fn dflt_true() -> bool {
+        true
+    }
+
     fn ip() -> Vec<IpAddr> {
         vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))]
     }
@@ -448,6 +452,9 @@ pub struct Config {
     )]
     pub storage_uri: Url,
 
+    #[serde(default="ConfigDefaults::dflt_true")]
+    pub use_history_cache: bool,
+
     upgrade_storage_uri: Option<Url>,
 
     tls_keys_dir: Option<PathBuf>,
@@ -809,7 +816,7 @@ pub struct Benchmark {
 /// # Accessors
 impl Config {
     pub fn upgrade_storage_uri(&self) -> &Url {
-        self.upgrade_storage_uri.as_ref().unwrap() // should not panic, as it is always set
+        self.upgrade_storage_uri.as_ref().unwrap() // should not panic, as it is always set by Config::verify
     }
 
     /// General purpose KV store, can be used to track server settings
@@ -1068,6 +1075,7 @@ impl Config {
             port,
             https_mode,
             storage_uri: storage_uri.clone(),
+            use_history_cache: false,
             upgrade_storage_uri: data_dir.map(|d| storage_uri_from_data_dir(&d.join(UPGRADE_DIR)).unwrap()),
             tls_keys_dir: data_dir.map(|d| d.join(HTTPS_SUB_DIR)),
             repo_dir: data_dir.map(|d| d.join(REPOSITORY_DIR)),

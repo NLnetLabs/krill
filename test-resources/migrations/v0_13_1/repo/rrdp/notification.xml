@@ -1,0 +1,9 @@
+<notification xmlns="http://www.ripe.net/rpki/rrdp" version="1" session_id="41890b14-62ee-430f-b15d-c4bade57537e" serial="382">
+  <snapshot uri="https://krill-ui-dev-testbed.krill.cloud/rrdp/41890b14-62ee-430f-b15d-c4bade57537e/382/78451657e95955cc/snapshot.xml" hash="eb78a6d82761fb3e664c79cad475575cddd3ec5d567134eabdc58106977c8480"/>
+  <delta serial="382" uri="https://krill-ui-dev-testbed.krill.cloud/rrdp/41890b14-62ee-430f-b15d-c4bade57537e/382/6cc1d6b8daed8f9c/delta.xml" hash="2562b30fb9a0af84c895bb2a784aef9f08402953f92fa916ea5f8e66192443b1"/>
+  <delta serial="381" uri="https://krill-ui-dev-testbed.krill.cloud/rrdp/41890b14-62ee-430f-b15d-c4bade57537e/381/ae0ae1a6907446b8/delta.xml" hash="d47f109c81415554d5e5c5a49d1bc97140faeb0fccae790aafa0cd9419197a19"/>
+  <delta serial="380" uri="https://krill-ui-dev-testbed.krill.cloud/rrdp/41890b14-62ee-430f-b15d-c4bade57537e/380/51425859f63daa2f/delta.xml" hash="1a3eca9d59c8faab2ecf54bab73a3d4c664e27307d0fc9001a8fd745483205f1"/>
+  <delta serial="379" uri="https://krill-ui-dev-testbed.krill.cloud/rrdp/41890b14-62ee-430f-b15d-c4bade57537e/379/a3241123266859d1/delta.xml" hash="9b1b48108b2ec56fb2a6f127a9ca27e8db7a5e4ee302872bbb9feacac7a4c86f"/>
+  <delta serial="378" uri="https://krill-ui-dev-testbed.krill.cloud/rrdp/41890b14-62ee-430f-b15d-c4bade57537e/378/a3ea7b4d36eec91d/delta.xml" hash="ce5fa762fe0171cee5f8e4854074d1b1ef1b96bdc7eb2ec1295d179b6c07e4d9"/>
+  <delta serial="377" uri="https://krill-ui-dev-testbed.krill.cloud/rrdp/41890b14-62ee-430f-b15d-c4bade57537e/377/bb8d2585db3056c4/delta.xml" hash="78bfd39594c0d3fe135a2390e888edfc876ec58cab109ac5a31d4b23d1b19897"/>
+</notification>

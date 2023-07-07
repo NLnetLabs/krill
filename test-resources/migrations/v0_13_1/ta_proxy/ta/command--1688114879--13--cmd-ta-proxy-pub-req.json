@@ -1,0 +1,14 @@
+{
+  "actor": "krill",
+  "time": "2023-06-30T08:47:59.149866742Z",
+  "handle": "ta",
+  "version": 13,
+  "sequence": 13,
+  "details": "MakeSignerRequest",
+  "effect": {
+    "result": "success",
+    "events": [
+      13
+    ]
+  }
+}

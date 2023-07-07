@@ -1,0 +1,18 @@
+{
+  "actor": "testbed",
+  "time": "2023-02-07T14:17:56.475424674Z",
+  "handle": "testbed",
+  "version": 10,
+  "sequence": 9,
+  "details": {
+    "type": "child_remove",
+    "child": "testbed-client"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      10,
+      11
+    ]
+  }
+}
