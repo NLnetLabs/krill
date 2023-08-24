@@ -5,6 +5,7 @@ use std::{
     sync::{Arc, Mutex, RwLock},
 };
 
+use kvx::NamespaceBuf;
 use rpki::{ca::idexchange::MyHandle, repository::x509::Time};
 use serde::{de::DeserializeOwned, Serialize};
 use url::Url;
@@ -14,7 +15,7 @@ use crate::commons::{
     error::KrillIoError,
     eventsourcing::{
         cmd::Command, locks::HandleLocks, segment, Aggregate, Key, KeyValueError, KeyValueStore, PostSaveEventListener,
-        PreSaveEventListener, Scope, Segment, SegmentBuf, SegmentExt, StoredCommand, StoredCommandBuilder,
+        PreSaveEventListener, Scope, Segment, SegmentExt, StoredCommand, StoredCommandBuilder,
     },
 };
 
@@ -42,13 +43,22 @@ pub struct AggregateStore<A: Aggregate> {
 /// # Starting up
 ///
 impl<A: Aggregate> AggregateStore<A> {
-    /// Creates an AggregateStore using a disk based KeyValueStore
-    pub fn create(
+    /// Creates an AggregateStore using the given storage url
+    pub fn create_from_url(
         storage_uri: &Url,
-        name_space: impl Into<SegmentBuf>,
+        name_space: impl Into<NamespaceBuf>,
         use_history_cache: bool,
     ) -> StoreResult<Self> {
         let kv = KeyValueStore::create(storage_uri, name_space)?;
+
+        Self::create_with_store(kv, use_history_cache)
+    }
+
+    /// Creates an AggregateStore using the given KV store
+    pub fn create_with_store(
+        kv: KeyValueStore,
+        use_history_cache: bool,
+    ) -> StoreResult<Self> {
         let cache = RwLock::new(HashMap::new());
         let history_cache = if !use_history_cache {
             None

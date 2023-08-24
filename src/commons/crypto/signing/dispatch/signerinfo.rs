@@ -373,7 +373,7 @@ impl std::fmt::Debug for SignerMapper {
 impl SignerMapper {
     /// Build a SignerMapper that will read/write its data in a subdirectory of the given work dir.
     pub fn build(storage_uri: &Url) -> KrillResult<SignerMapper> {
-        let store = AggregateStore::<SignerInfo>::create(storage_uri, SIGNERS_NS, true)?;
+        let store = AggregateStore::<SignerInfo>::create_from_url(storage_uri, SIGNERS_NS, true)?;
         Ok(SignerMapper { store })
     }
 

@@ -1,5 +1,6 @@
 use std::{collections::HashMap, str::FromStr, sync::RwLock};
 
+use kvx::NamespaceBuf;
 use rpki::ca::{
     idexchange::{CaHandle, ChildHandle, ParentHandle, ServiceUri},
     provisioning::ResourceClassListResponse as Entitlements,
@@ -13,7 +14,7 @@ use crate::commons::{
         RepoStatus,
     },
     error::Error,
-    eventsourcing::{segment, Key, KeyValueStore, Scope, Segment, SegmentBuf, SegmentExt},
+    eventsourcing::{segment, Key, KeyValueStore, Scope, Segment, SegmentExt},
     util::httpclient,
     KrillResult,
 };
@@ -67,7 +68,7 @@ pub struct StatusStore {
 }
 
 impl StatusStore {
-    pub fn create(storage_uri: &Url, namespace: impl Into<SegmentBuf>) -> KrillResult<Self> {
+    pub fn create(storage_uri: &Url, namespace: impl Into<NamespaceBuf>) -> KrillResult<Self> {
         let store = KeyValueStore::create(storage_uri, namespace)?;
         let cache = RwLock::new(HashMap::new());
 
@@ -403,6 +404,8 @@ mod tests {
 
     use std::path::PathBuf;
 
+    use kvx::{namespace, Namespace};
+
     use crate::{
         commons::util::{file, storage::storage_uri_from_data_dir},
         test,
@@ -422,7 +425,7 @@ mod tests {
                 serde_json::from_str(status_testbed_before_migration).unwrap();
 
             let storage_uri = storage_uri_from_data_dir(&data_dir).unwrap();
-            let store = StatusStore::create(&storage_uri, segment!("status")).unwrap();
+            let store = StatusStore::create(&storage_uri, namespace!("status")).unwrap();
             let testbed = CaHandle::from_str("testbed").unwrap();
 
             let status_testbed_migrated = store.get_ca_status(&testbed);

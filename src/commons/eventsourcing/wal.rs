@@ -5,12 +5,13 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+use kvx::NamespaceBuf;
 use rpki::ca::idexchange::MyHandle;
 use serde::Serialize;
 use url::Url;
 
 use crate::commons::eventsourcing::{
-    locks::HandleLocks, segment, Key, KeyValueError, KeyValueStore, Scope, Segment, SegmentBuf, SegmentExt, Storable,
+    locks::HandleLocks, segment, Key, KeyValueError, KeyValueStore, Scope, Segment, SegmentExt, Storable,
 };
 
 //------------ WalSupport ----------------------------------------------------
@@ -129,7 +130,7 @@ pub struct WalStore<T: WalSupport> {
 impl<T: WalSupport> WalStore<T> {
     /// Creates a new store using a disk based keystore for the given data
     /// directory and namespace (directory).
-    pub fn create(storage_uri: &Url, name_space: impl Into<SegmentBuf>) -> WalStoreResult<Self> {
+    pub fn create(storage_uri: &Url, name_space: impl Into<NamespaceBuf>) -> WalStoreResult<Self> {
         let kv = KeyValueStore::create(storage_uri, name_space)?;
         let cache = RwLock::new(HashMap::new());
         let locks = HandleLocks::default();

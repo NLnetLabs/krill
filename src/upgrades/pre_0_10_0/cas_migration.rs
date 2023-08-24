@@ -68,7 +68,7 @@ impl CasMigration {
     pub fn upgrade(mode: UpgradeMode, config: &Config) -> UpgradeResult<()> {
         let current_kv_store = KeyValueStore::create(&config.storage_uri, CASERVER_NS)?;
         let new_kv_store = KeyValueStore::create(config.upgrade_storage_uri(), CASERVER_NS)?;
-        let new_agg_store = AggregateStore::<CertAuth>::create(
+        let new_agg_store = AggregateStore::<CertAuth>::create_from_url(
             config.upgrade_storage_uri(),
             CASERVER_NS,
             config.use_history_cache,

@@ -21,7 +21,7 @@ pub use self::listener::*;
 pub mod locks;
 
 mod kv;
-pub use self::kv::{segment, Key, KeyValueError, KeyValueStore, Scope, Segment, SegmentBuf, SegmentExt};
+pub use self::kv::{segment, namespace, Key, KeyValueError, KeyValueStore, Namespace, Scope, Segment, SegmentBuf, SegmentExt};
 
 //------------ Tests ---------------------------------------------------------
 
@@ -341,9 +341,11 @@ mod tests {
         //     let storage_uri = crate::commons::util::storage::storage_uri_from_data_dir(&data_dir).unwrap();
 
         let storage_uri = tmp_storage();
+        let kv = KeyValueStore::create(&storage_uri, namespace!("person")).unwrap();
 
         let counter = Arc::new(EventCounter::default());
-        let mut manager = AggregateStore::<Person>::create(&storage_uri, segment!("person"), false).unwrap();
+
+        let mut manager = AggregateStore::<Person>::create_with_store(kv.clone(), false).unwrap();
         manager.add_post_save_listener(counter.clone());
 
         let alice_name = "alice smith".to_string();
@@ -376,7 +378,7 @@ mod tests {
         assert_eq!(21, alice.age());
 
         // Should read state from disk
-        let manager = AggregateStore::<Person>::create(&storage_uri, segment!("person"), false).unwrap();
+        let manager = AggregateStore::<Person>::create_with_store(kv, false).unwrap();
 
         let alice = manager.get_latest(&alice_handle).unwrap();
         assert_eq!("alice smith-doe", alice.name());

@@ -8,7 +8,7 @@ use std::{
 };
 
 use chrono::Duration;
-use kvx::SegmentBuf;
+use kvx::NamespaceBuf;
 use log::{error, LevelFilter};
 use rpki::{
     ca::idexchange::PublisherHandle,
@@ -825,7 +825,7 @@ impl Config {
         KeyValueStore::create(&self.storage_uri, PROPERTIES_NS).map_err(Error::KeyValueError)
     }
 
-    pub fn key_value_store(&self, name_space: impl Into<SegmentBuf>) -> KrillResult<KeyValueStore> {
+    pub fn key_value_store(&self, name_space: impl Into<NamespaceBuf>) -> KrillResult<KeyValueStore> {
         KeyValueStore::create(&self.storage_uri, name_space).map_err(Error::KeyValueError)
     }
 
