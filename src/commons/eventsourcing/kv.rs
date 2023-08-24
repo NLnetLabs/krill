@@ -1,7 +1,7 @@
-use std::{fmt, sync::Arc};
+use std::fmt;
 
-pub use kvx::{segment, namespace, Key, Namespace, Scope, Segment, SegmentBuf};
-use kvx::{KeyValueStoreBackend, ReadStore, WriteStore, NamespaceBuf};
+pub use kvx::{namespace, segment, Key, Namespace, Scope, Segment, SegmentBuf};
+use kvx::{KeyValueStoreBackend, NamespaceBuf, ReadStore, WriteStore};
 use serde::{de::DeserializeOwned, Serialize};
 use url::Url;
 
@@ -33,19 +33,18 @@ impl SegmentExt for Segment {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct KeyValueStore {
-    inner: Arc<kvx::KeyValueStore>,
+    inner: kvx::KeyValueStore,
 }
 
 impl KeyValueStore {
     /// Creates a new KeyValueStore and initializes the version if it had
     /// not been set.
     pub fn create(storage_uri: &Url, name_space: impl Into<NamespaceBuf>) -> Result<Self, KeyValueError> {
-        let store = KeyValueStore {
-            inner: Arc::new(kvx::KeyValueStore::new(storage_uri, name_space)?),
-        };
-        Ok(store)
+        kvx::KeyValueStore::new(storage_uri, name_space)
+            .map(|inner| KeyValueStore { inner })
+            .map_err(KeyValueError::KVError)
     }
 
     /// Stores a key value pair, serialized as json, overwrite existing

@@ -50,15 +50,6 @@ impl<A: Aggregate> AggregateStore<A> {
         use_history_cache: bool,
     ) -> StoreResult<Self> {
         let kv = KeyValueStore::create(storage_uri, name_space)?;
-
-        Self::create_with_store(kv, use_history_cache)
-    }
-
-    /// Creates an AggregateStore using the given KV store
-    pub fn create_with_store(
-        kv: KeyValueStore,
-        use_history_cache: bool,
-    ) -> StoreResult<Self> {
         let cache = RwLock::new(HashMap::new());
         let history_cache = if !use_history_cache {
             None
@@ -404,7 +395,10 @@ where
 
         // Little local helper so we can use borrowed records without keeping
         // the lock longer than it wants to live.
-        fn command_history_for_records(crit: CommandHistoryCriteria, records: &[CommandHistoryRecord]) -> CommandHistory {
+        fn command_history_for_records(
+            crit: CommandHistoryCriteria,
+            records: &[CommandHistoryRecord],
+        ) -> CommandHistory {
             let offset = crit.offset();
 
             let rows = match crit.rows_limit() {
@@ -429,7 +423,7 @@ where
 
             CommandHistory::new(offset, total, matching)
         }
-        
+
         match &self.history_cache {
             Some(mutex) => {
                 let mut cache_lock = mutex.lock().unwrap();
