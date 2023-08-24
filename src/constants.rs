@@ -1,10 +1,7 @@
 use kvx::Namespace;
 
 use crate::{
-    commons::{
-        actor::ActorDef,
-        eventsourcing::namespace,
-    },
+    commons::{actor::ActorDef, eventsourcing::namespace},
     daemon::auth::common::NoResourceType,
 };
 
@@ -59,8 +56,6 @@ pub const SIGNERS_NS: &Namespace = namespace!("signers");
 pub const STATUS_NS: &Namespace = namespace!("status");
 pub const TA_PROXY_SERVER_NS: &Namespace = namespace!("ta_proxy");
 pub const TA_SIGNER_SERVER_NS: &Namespace = namespace!("ta_signer");
-
-pub const UPGRADE_DIR: &str = "upgrade-data";
 
 pub const PROPERTIES_DFLT_NAME: &str = "main";
 

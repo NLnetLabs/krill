@@ -346,7 +346,7 @@ mod tests {
 
         let counter = Arc::new(EventCounter::default());
 
-        let mut manager = AggregateStore::<Person>::create_from_url(&storage_uri, namespace!("person"), false).unwrap();
+        let mut manager = AggregateStore::<Person>::create(&storage_uri, namespace!("person"), false).unwrap();
         manager.add_post_save_listener(counter.clone());
 
         let alice_name = "alice smith".to_string();
@@ -379,7 +379,7 @@ mod tests {
         assert_eq!(21, alice.age());
 
         // Should read state again when restarted with same data store mapping.
-        let mut manager = AggregateStore::<Person>::create_from_url(&storage_uri, namespace!("person"), false).unwrap();
+        let manager = AggregateStore::<Person>::create(&storage_uri, namespace!("person"), false).unwrap();
 
         let alice = manager.get_latest(&alice_handle).unwrap();
         assert_eq!("alice smith-doe", alice.name());

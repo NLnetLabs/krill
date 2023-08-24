@@ -634,19 +634,20 @@ pub fn prepare_upgrade_data_migrations(
                 error!("{}", msg);
                 Err(UpgradeError::custom(msg))
             } else if versions.from < KrillVersion::candidate(0, 10, 0, 1) {
-                let upgrade_data_dir = data_dir_from_storage_uri(config.upgrade_storage_uri()).unwrap();
-                if !upgrade_data_dir.exists() {
-                    file::create_dir_all(&upgrade_data_dir)?;
-                }
-
                 // Get a lock to ensure that only one process can run this migration
                 // at any one time (for a given config).
                 let _lock = {
+                    // Note that all version before 0.14.0 were using disk based storage
+                    // and we only support migration to database storage *after* upgrading.
+                    // So.. it is safe to unwrap the storage_uri into a data dir here. We
+                    // would not be here otherwise.
+                    let data_dir = data_dir_from_storage_uri(&config.storage_uri).unwrap();
+
                     // Create upgrade dir if it did not yet exist.
-                    let lock_file_path = upgrade_data_dir.join("upgrade.lock");
+                    let lock_file_path = data_dir.join("upgrade.lock");
                     fslock::LockFile::open(&lock_file_path).map_err(|_| {
                         UpgradeError::custom(
-                            format!("Cannot get upgrade lock. Another process may be running a Krill upgrade. Or, perhaps you ran 'krillup' as root - in that case check the ownership of directory: {}", upgrade_data_dir.to_string_lossy()),
+                            format!("Cannot get upgrade lock. Another process may be running a Krill upgrade. Or, perhaps you ran 'krillup' as root - in that case check the ownership of directory: {}", data_dir.to_string_lossy()),
                         )
                     })?
                 };
@@ -724,7 +725,7 @@ fn migrate_0_12_pubd_objects(config: &Config) -> KrillResult<bool> {
             let old_repo_content = old_store.get_latest(&repo_content_handle)?.as_ref().clone();
             let repo_content: pubd::RepositoryContent = old_repo_content.try_into()?;
             let new_key = Key::new_scoped(Scope::from_segment(segment!("0")), segment!("snapshot.json"));
-            let upgrade_store = KeyValueStore::create(config.upgrade_storage_uri(), PUBSERVER_CONTENT_NS)?;
+            let upgrade_store = KeyValueStore::create_upgrade_store(&config.storage_uri, PUBSERVER_CONTENT_NS)?;
             upgrade_store.store(&new_key, &repo_content)?;
             Ok(true)
         } else {
@@ -748,7 +749,7 @@ fn migrate_pre_0_12_pubd_objects(config: &Config) -> KrillResult<()> {
             let repo_content: pubd::RepositoryContent = old_repo_content.try_into()?;
 
             let new_key = Key::new_scoped(Scope::from_segment(segment!("0")), segment!("snapshot.json"));
-            let upgrade_store = KeyValueStore::create(config.upgrade_storage_uri(), PUBSERVER_CONTENT_NS)?;
+            let upgrade_store = KeyValueStore::create_upgrade_store(&config.storage_uri, PUBSERVER_CONTENT_NS)?;
             upgrade_store.store(&new_key, &repo_content)?;
         }
     }
@@ -840,7 +841,10 @@ pub fn finalise_data_migration(
 
                 let version_file = current_dir.join("version");
                 if version_file.exists() {
-                    debug!("Removing (no longer used) version file: {}", version_file.to_string_lossy());
+                    debug!(
+                        "Removing (no longer used) version file: {}",
+                        version_file.to_string_lossy()
+                    );
                     std::fs::remove_file(&version_file).map_err(|e| {
                         let context = format!(
                             "Could not remove (no longer used) version file at: {}",

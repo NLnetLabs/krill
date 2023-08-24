@@ -1003,7 +1003,7 @@ struct TrustAnchorSignerManager {
 
 impl TrustAnchorSignerManager {
     fn create(config: Config) -> Result<Self, Error> {
-        let store = AggregateStore::create_from_url(&config.storage_uri, namespace!("signer"), config.use_history_cache)
+        let store = AggregateStore::create(&config.storage_uri, namespace!("signer"), config.use_history_cache)
             .map_err(KrillError::AggregateStoreError)?;
         let ta_handle = TrustAnchorHandle::new("ta".into());
         let signer = config.signer()?;

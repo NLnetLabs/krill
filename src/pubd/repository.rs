@@ -1516,11 +1516,8 @@ pub struct RepositoryAccessProxy {
 
 impl RepositoryAccessProxy {
     pub fn create(config: &Config) -> KrillResult<Self> {
-        let store = AggregateStore::<RepositoryAccess>::create_from_url(
-            &config.storage_uri,
-            PUBSERVER_NS,
-            config.use_history_cache,
-        )?;
+        let store =
+            AggregateStore::<RepositoryAccess>::create(&config.storage_uri, PUBSERVER_NS, config.use_history_cache)?;
         let key = MyHandle::from_str(PUBSERVER_DFLT).unwrap();
 
         if store.has(&key)? {

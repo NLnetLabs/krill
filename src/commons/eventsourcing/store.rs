@@ -5,7 +5,7 @@ use std::{
     sync::{Arc, Mutex, RwLock},
 };
 
-use kvx::NamespaceBuf;
+use kvx::Namespace;
 use rpki::{ca::idexchange::MyHandle, repository::x509::Time};
 use serde::{de::DeserializeOwned, Serialize};
 use url::Url;
@@ -44,12 +44,22 @@ pub struct AggregateStore<A: Aggregate> {
 ///
 impl<A: Aggregate> AggregateStore<A> {
     /// Creates an AggregateStore using the given storage url
-    pub fn create_from_url(
+    pub fn create(storage_uri: &Url, name_space: &Namespace, use_history_cache: bool) -> StoreResult<Self> {
+        let kv = KeyValueStore::create(storage_uri, name_space)?;
+        Self::create_from_kv(kv, use_history_cache)
+    }
+
+    /// Creates an AggregateStore for upgrades using the given storage url
+    pub fn create_upgrade_store(
         storage_uri: &Url,
-        name_space: impl Into<NamespaceBuf>,
+        name_space: &Namespace,
         use_history_cache: bool,
     ) -> StoreResult<Self> {
-        let kv = KeyValueStore::create(storage_uri, name_space)?;
+        let kv = KeyValueStore::create_upgrade_store(storage_uri, name_space)?;
+        Self::create_from_kv(kv, use_history_cache)
+    }
+
+    fn create_from_kv(kv: KeyValueStore, use_history_cache: bool) -> StoreResult<Self> {
         let cache = RwLock::new(HashMap::new());
         let history_cache = if !use_history_cache {
             None

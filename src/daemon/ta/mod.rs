@@ -51,9 +51,9 @@ mod tests {
             let cleanup = test::init_logging();
 
             let ta_signer_store: AggregateStore<TrustAnchorSigner> =
-                AggregateStore::create_from_url(storage_uri, namespace!("ta_signer"), false).unwrap();
+                AggregateStore::create(storage_uri, namespace!("ta_signer"), false).unwrap();
             let ta_proxy_store: AggregateStore<TrustAnchorProxy> =
-                AggregateStore::create_from_url(storage_uri, namespace!("ta_proxy"), false).unwrap();
+                AggregateStore::create(storage_uri, namespace!("ta_proxy"), false).unwrap();
 
             // We will import a TA key - this is only (supposed to be) supported for the openssl signer
             let signers = ConfigDefaults::openssl_signer_only();

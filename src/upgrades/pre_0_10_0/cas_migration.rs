@@ -35,7 +35,7 @@ struct CaObjectsMigration {
 impl CaObjectsMigration {
     fn create(config: &Config) -> Result<Self, UpgradeError> {
         let current_store = KeyValueStore::create(&config.storage_uri, CA_OBJECTS_NS)?;
-        let new_store = KeyValueStore::create(config.upgrade_storage_uri(), CA_OBJECTS_NS)?;
+        let new_store = KeyValueStore::create_upgrade_store(&config.storage_uri, CA_OBJECTS_NS)?;
         Ok(CaObjectsMigration {
             current_store,
             new_store,
@@ -67,9 +67,10 @@ pub struct CasMigration {
 impl CasMigration {
     pub fn upgrade(mode: UpgradeMode, config: &Config) -> UpgradeResult<()> {
         let current_kv_store = KeyValueStore::create(&config.storage_uri, CASERVER_NS)?;
-        let new_kv_store = KeyValueStore::create(config.upgrade_storage_uri(), CASERVER_NS)?;
-        let new_agg_store = AggregateStore::<CertAuth>::create_from_url(
-            config.upgrade_storage_uri(),
+        let new_kv_store = KeyValueStore::create_upgrade_store(&config.storage_uri, CASERVER_NS)?;
+
+        let new_agg_store = AggregateStore::<CertAuth>::create_upgrade_store(
+            &config.storage_uri,
             CASERVER_NS,
             config.use_history_cache,
         )?;

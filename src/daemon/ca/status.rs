@@ -1,6 +1,6 @@
 use std::{collections::HashMap, str::FromStr, sync::RwLock};
 
-use kvx::NamespaceBuf;
+use kvx::Namespace;
 use rpki::ca::{
     idexchange::{CaHandle, ChildHandle, ParentHandle, ServiceUri},
     provisioning::ResourceClassListResponse as Entitlements,
@@ -68,7 +68,7 @@ pub struct StatusStore {
 }
 
 impl StatusStore {
-    pub fn create(storage_uri: &Url, namespace: impl Into<NamespaceBuf>) -> KrillResult<Self> {
+    pub fn create(storage_uri: &Url, namespace: &Namespace) -> KrillResult<Self> {
         let store = KeyValueStore::create(storage_uri, namespace)?;
         let cache = RwLock::new(HashMap::new());
 

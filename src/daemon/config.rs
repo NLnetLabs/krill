@@ -8,7 +8,7 @@ use std::{
 };
 
 use chrono::Duration;
-use kvx::NamespaceBuf;
+use kvx::Namespace;
 use log::{error, LevelFilter};
 use rpki::{
     ca::idexchange::PublisherHandle,
@@ -27,10 +27,7 @@ use crate::{
         crypto::{OpenSslSignerConfig, SignSupport},
         error::{Error, KrillIoError},
         eventsourcing::KeyValueStore,
-        util::{
-            ext_serde,
-            storage::{data_dir_from_storage_uri, storage_uri_from_data_dir},
-        },
+        util::{ext_serde, storage::data_dir_from_storage_uri},
         KrillResult,
     },
     constants::*,
@@ -452,10 +449,8 @@ pub struct Config {
     )]
     pub storage_uri: Url,
 
-    #[serde(default="ConfigDefaults::dflt_true")]
+    #[serde(default = "ConfigDefaults::dflt_true")]
     pub use_history_cache: bool,
-
-    upgrade_storage_uri: Option<Url>,
 
     tls_keys_dir: Option<PathBuf>,
 
@@ -815,17 +810,13 @@ pub struct Benchmark {
 
 /// # Accessors
 impl Config {
-    pub fn upgrade_storage_uri(&self) -> &Url {
-        self.upgrade_storage_uri.as_ref().unwrap() // should not panic, as it is always set by Config::verify
-    }
-
     /// General purpose KV store, can be used to track server settings
     /// etc not specific to any Aggregate or WalSupport type
     pub fn general_key_value_store(&self) -> KrillResult<KeyValueStore> {
         KeyValueStore::create(&self.storage_uri, PROPERTIES_NS).map_err(Error::KeyValueError)
     }
 
-    pub fn key_value_store(&self, name_space: impl Into<NamespaceBuf>) -> KrillResult<KeyValueStore> {
+    pub fn key_value_store(&self, name_space: &Namespace) -> KrillResult<KeyValueStore> {
         KeyValueStore::create(&self.storage_uri, name_space).map_err(Error::KeyValueError)
     }
 
@@ -1076,7 +1067,6 @@ impl Config {
             https_mode,
             storage_uri: storage_uri.clone(),
             use_history_cache: false,
-            upgrade_storage_uri: data_dir.map(|d| storage_uri_from_data_dir(&d.join(UPGRADE_DIR)).unwrap()),
             tls_keys_dir: data_dir.map(|d| d.join(HTTPS_SUB_DIR)),
             repo_dir: data_dir.map(|d| d.join(REPOSITORY_DIR)),
             ta_support_enabled: false, // but, enabled by testbed where applicable
@@ -1166,7 +1156,6 @@ impl Config {
         if upgrade_only {
             info!("Prepare upgrade using configuration file: {}", config_file);
             info!("Processing data from: {}", config.storage_uri);
-            info!("Saving prepared data to: {}", config.upgrade_storage_uri(),);
         } else {
             info!("{} uses configuration file: {}", KRILL_SERVER_APP, config_file);
         }
@@ -1200,13 +1189,6 @@ impl Config {
                 CA_REFRESH_SECONDS_MAX
             );
             self.ca_refresh_seconds = CA_REFRESH_SECONDS_MAX;
-        }
-
-        if self.upgrade_storage_uri.is_none() {
-            if self.storage_uri.scheme() != "local" {
-                return Err(ConfigError::other("'upgrade_storage_uri' is not configured, but 'storage_uri' is not a local directory, please configure an 'upgrade_storage_uri'"));
-            }
-            self.upgrade_storage_uri = Some(self.storage_uri.join(UPGRADE_DIR).unwrap());
         }
 
         if self.tls_keys_dir.is_none() {

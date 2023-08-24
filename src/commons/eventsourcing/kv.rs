@@ -1,11 +1,11 @@
-use std::fmt;
+use std::{fmt, str::FromStr};
 
 pub use kvx::{namespace, segment, Key, Namespace, Scope, Segment, SegmentBuf};
 use kvx::{KeyValueStoreBackend, NamespaceBuf, ReadStore, WriteStore};
 use serde::{de::DeserializeOwned, Serialize};
 use url::Url;
 
-use crate::commons::error::KrillIoError;
+use crate::commons::{error::KrillIoError, util::KrillVersion};
 
 pub trait SegmentExt {
     fn parse_lossy(value: &str) -> SegmentBuf;
@@ -39,10 +39,26 @@ pub struct KeyValueStore {
 }
 
 impl KeyValueStore {
-    /// Creates a new KeyValueStore and initializes the version if it had
-    /// not been set.
-    pub fn create(storage_uri: &Url, name_space: impl Into<NamespaceBuf>) -> Result<Self, KeyValueError> {
+    /// Creates a new KeyValueStore.
+    pub fn create(storage_uri: &Url, name_space: &Namespace) -> Result<Self, KeyValueError> {
         kvx::KeyValueStore::new(storage_uri, name_space)
+            .map(|inner| KeyValueStore { inner })
+            .map_err(KeyValueError::KVError)
+    }
+
+    /// Creates a new KeyValueStore for upgrades.
+    ///
+    /// Adds the implicit prefix "upgrade-{version}-" to the given namespace.
+    pub fn create_upgrade_store(storage_uri: &Url, namespace: &Namespace) -> Result<Self, KeyValueError> {
+        let namespace_string = format!(
+            "upgrade_{}_{}",
+            KrillVersion::code_version().hyphen_notated(),
+            namespace
+        );
+        let namespace = NamespaceBuf::from_str(&namespace_string)
+            .map_err(|e| KeyValueError::Other(format!("Cannot parse namespace: {}. Error: {}", namespace_string, e)))?;
+
+        kvx::KeyValueStore::new(storage_uri, namespace)
             .map(|inner| KeyValueStore { inner })
             .map_err(KeyValueError::KVError)
     }
@@ -171,6 +187,7 @@ pub enum KeyValueError {
     UnknownKey(Key),
     DuplicateKey(Key),
     KVError(kvx::Error),
+    Other(String),
 }
 
 impl From<KrillIoError> for KeyValueError {
@@ -200,6 +217,7 @@ impl fmt::Display for KeyValueError {
             KeyValueError::UnknownKey(key) => write!(f, "Unknown key: {}", key),
             KeyValueError::DuplicateKey(key) => write!(f, "Duplicate key: {}", key),
             KeyValueError::KVError(e) => write!(f, "Store error: {}", e),
+            KeyValueError::Other(msg) => write!(f, "{}", msg),
         }
     }
 }
@@ -244,7 +262,7 @@ mod tests {
     fn test_store() {
         let storage_uri = get_storage_uri();
 
-        let store = KeyValueStore::create(&storage_uri, random_namespace()).unwrap();
+        let store = KeyValueStore::create(&storage_uri, &random_namespace()).unwrap();
         let content = "content".to_owned();
         let key = Key::new_global(random_segment());
 
@@ -257,7 +275,7 @@ mod tests {
     fn test_store_new() {
         let storage_uri = get_storage_uri();
 
-        let store = KeyValueStore::create(&storage_uri, random_namespace()).unwrap();
+        let store = KeyValueStore::create(&storage_uri, &random_namespace()).unwrap();
         let content = "content".to_owned();
         let key = Key::new_global(random_segment());
 
@@ -269,7 +287,7 @@ mod tests {
     fn test_store_scoped() {
         let storage_uri = get_storage_uri();
 
-        let store = KeyValueStore::create(&storage_uri, random_namespace()).unwrap();
+        let store = KeyValueStore::create(&storage_uri, &random_namespace()).unwrap();
         let content = "content".to_owned();
         let id = random_segment();
         let scope = Scope::from_segment(segment!("scope"));
@@ -290,7 +308,7 @@ mod tests {
     fn test_get() {
         let storage_uri = get_storage_uri();
 
-        let store = KeyValueStore::create(&storage_uri, random_namespace()).unwrap();
+        let store = KeyValueStore::create(&storage_uri, &random_namespace()).unwrap();
         let content = "content".to_owned();
         let key = Key::new_global(random_segment());
         assert_eq!(store.get::<String>(&key).unwrap(), None);
@@ -303,7 +321,7 @@ mod tests {
     fn test_get_transactional() {
         let storage_uri = get_storage_uri();
 
-        let store = KeyValueStore::create(&storage_uri, random_namespace()).unwrap();
+        let store = KeyValueStore::create(&storage_uri, &random_namespace()).unwrap();
         let content = "content".to_owned();
         let key = Key::new_global(random_segment());
         assert_eq!(store.get_transactional::<String>(&key).unwrap(), None);
@@ -316,7 +334,7 @@ mod tests {
     fn test_has() {
         let storage_uri = get_storage_uri();
 
-        let store = KeyValueStore::create(&storage_uri, random_namespace()).unwrap();
+        let store = KeyValueStore::create(&storage_uri, &random_namespace()).unwrap();
         let content = "content".to_owned();
         let key = Key::new_global(random_segment());
         assert!(!store.has(&key).unwrap());
@@ -329,7 +347,7 @@ mod tests {
     fn test_drop_key() {
         let storage_uri = get_storage_uri();
 
-        let store = KeyValueStore::create(&storage_uri, random_namespace()).unwrap();
+        let store = KeyValueStore::create(&storage_uri, &random_namespace()).unwrap();
         let content = "content".to_owned();
         let key = Key::new_global(random_segment());
         store.store(&key, &content).unwrap();
@@ -343,7 +361,7 @@ mod tests {
     fn test_drop_scope() {
         let storage_uri = get_storage_uri();
 
-        let store = KeyValueStore::create(&storage_uri, random_namespace()).unwrap();
+        let store = KeyValueStore::create(&storage_uri, &random_namespace()).unwrap();
         let content = "content".to_owned();
         let scope = Scope::from_segment(random_segment());
         let key = Key::new_scoped(scope.clone(), random_segment());
@@ -364,7 +382,7 @@ mod tests {
     fn test_wipe() {
         let storage_uri = get_storage_uri();
 
-        let store = KeyValueStore::create(&storage_uri, random_namespace()).unwrap();
+        let store = KeyValueStore::create(&storage_uri, &random_namespace()).unwrap();
         let content = "content".to_owned();
         let scope = Scope::from_segment(segment!("scope"));
         let key = Key::new_scoped(scope.clone(), random_segment());
@@ -382,7 +400,7 @@ mod tests {
     fn test_move_key() {
         let storage_uri = get_storage_uri();
 
-        let store = KeyValueStore::create(&storage_uri, random_namespace()).unwrap();
+        let store = KeyValueStore::create(&storage_uri, &random_namespace()).unwrap();
         let content = "content".to_string();
         let key = Key::new_global(random_segment());
 
@@ -399,7 +417,7 @@ mod tests {
     fn test_archive() {
         let storage_uri = get_storage_uri();
 
-        let store = KeyValueStore::create(&storage_uri, random_namespace()).unwrap();
+        let store = KeyValueStore::create(&storage_uri, &random_namespace()).unwrap();
         let content = "content".to_string();
         let key = Key::new_global(random_segment());
 
@@ -415,7 +433,7 @@ mod tests {
     fn test_archive_corrupt() {
         let storage_uri = get_storage_uri();
 
-        let store = KeyValueStore::create(&storage_uri, random_namespace()).unwrap();
+        let store = KeyValueStore::create(&storage_uri, &random_namespace()).unwrap();
         let content = "content".to_string();
         let key = Key::new_global(random_segment());
 
@@ -431,7 +449,7 @@ mod tests {
     fn test_archive_surplus() {
         let storage_uri = get_storage_uri();
 
-        let store = KeyValueStore::create(&storage_uri, random_namespace()).unwrap();
+        let store = KeyValueStore::create(&storage_uri, &random_namespace()).unwrap();
         let content = "content".to_string();
         let key = Key::new_global(random_segment());
 
@@ -447,7 +465,7 @@ mod tests {
     fn test_scopes() {
         let storage_uri = get_storage_uri();
 
-        let store = KeyValueStore::create(&storage_uri, random_namespace()).unwrap();
+        let store = KeyValueStore::create(&storage_uri, &random_namespace()).unwrap();
         let content = "content".to_owned();
         let id = segment!("id");
         let scope = Scope::from_segment(random_segment());
@@ -476,7 +494,7 @@ mod tests {
     fn test_has_scope() {
         let storage_uri = get_storage_uri();
 
-        let store = KeyValueStore::create(&storage_uri, random_namespace()).unwrap();
+        let store = KeyValueStore::create(&storage_uri, &random_namespace()).unwrap();
         let content = "content".to_owned();
         let scope = Scope::from_segment(random_segment());
         let key = Key::new_scoped(scope.clone(), segment!("id"));
@@ -490,7 +508,7 @@ mod tests {
     fn test_keys() {
         let storage_uri = get_storage_uri();
 
-        let store = KeyValueStore::create(&storage_uri, random_namespace()).unwrap();
+        let store = KeyValueStore::create(&storage_uri, &random_namespace()).unwrap();
         let content = "content".to_owned();
         let id = segment!("command--id");
         let scope = Scope::from_segment(segment!("command"));
