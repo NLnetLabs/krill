@@ -63,6 +63,19 @@ impl KeyValueStore {
             .map_err(KeyValueError::KVError)
     }
 
+    /// Import all data from the given KV store into this
+    pub fn import(&self, other: &Self) -> Result<(), KeyValueError> {
+        for scope in other.scopes()? {
+            for key in other.keys(&scope, "")? {
+                if let Some(value) = other.get_raw_value(&key)? {
+                    self.store_raw_value(&key, value)?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     /// Stores a key value pair, serialized as json, overwrite existing
     pub fn store<V: Serialize>(&self, key: &Key, value: &V) -> Result<(), KeyValueError> {
         Ok(self.inner.store(key, serde_json::to_value(value)?)?)
@@ -82,11 +95,19 @@ impl KeyValueStore {
     /// Gets a value for a key, returns an error if the value cannot be deserialized,
     /// returns None if it cannot be found.
     pub fn get<V: DeserializeOwned>(&self, key: &Key) -> Result<Option<V>, KeyValueError> {
-        if let Some(value) = self.inner.get(key)? {
+        if let Some(value) = self.get_raw_value(key)? {
             Ok(serde_json::from_value(value)?)
         } else {
             Ok(None)
         }
+    }
+
+    fn get_raw_value(&self, key: &Key) -> Result<Option<serde_json::Value>, KeyValueError> {
+        self.inner.get(key).map_err(KeyValueError::KVError)
+    }
+
+    fn store_raw_value(&self, key: &Key, value: serde_json::Value) -> Result<(), KeyValueError> {
+        self.inner.store(key, value).map_err(KeyValueError::KVError)
     }
 
     /// Transactional `get`.
@@ -145,7 +166,7 @@ impl KeyValueStore {
         self.move_key(key, &key.clone().with_sub_scope(segment!("surplus")))
     }
 
-    /// Returns all 1st level scopes
+    /// Returns all scopes, including sub_scopes
     pub fn scopes(&self) -> Result<Vec<Scope>, KeyValueError> {
         Ok(self.inner.list_scopes()?)
     }

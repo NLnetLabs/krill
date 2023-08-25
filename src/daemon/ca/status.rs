@@ -402,35 +402,39 @@ impl StatusStore {
 mod tests {
     use super::*;
 
-    use std::path::PathBuf;
-
-    use kvx::{namespace, Namespace};
-
-    use crate::{
-        commons::util::{file, storage::storage_uri_from_data_dir},
-        test,
-    };
+    use crate::{constants::STATUS_NS, test};
 
     #[test]
     fn read_save_status() {
-        test::test_under_tmp(|data_dir| {
-            let source = PathBuf::from("test-resources/status_store/migration-0.9.5/");
-            let target = data_dir.join("status");
-            file::backup_dir(&source, &target).unwrap();
+        let source_dir_path_str = "test-resources/status_store/migration-0.9.5/";
+        let source_dir_url = Url::parse(&format!("local://{}", source_dir_path_str)).unwrap();
 
-            let status_testbed_before_migration =
-                include_str!("../../../test-resources/status_store/migration-0.9.5/testbed/status.json");
+        let source_store = KeyValueStore::create(&source_dir_url, STATUS_NS).unwrap();
 
-            let status_testbed_before_migration: CaStatus =
-                serde_json::from_str(status_testbed_before_migration).unwrap();
+        let test_storage_uri = test::tmp_storage();
+        let status_kv_store = KeyValueStore::create(&test_storage_uri, STATUS_NS).unwrap();
 
-            let storage_uri = storage_uri_from_data_dir(&data_dir).unwrap();
-            let store = StatusStore::create(&storage_uri, namespace!("status")).unwrap();
-            let testbed = CaHandle::from_str("testbed").unwrap();
+        // copy the source KV store (files) into the test KV store (in memory)
+        status_kv_store.import(&source_store).unwrap();
 
-            let status_testbed_migrated = store.get_ca_status(&testbed);
+        // get the status for testbed before initialising a StatusStore
+        // using the copied the data - that will be done next and start
+        // a migration.
+        let testbed_status_key = Key::new_scoped(
+            Scope::from_segment(segment!("testbed")),
+            Segment::parse("status.json").unwrap(),
+        );
+        let status_testbed_before_migration: CaStatus = status_kv_store.get(&testbed_status_key).unwrap().unwrap();
 
-            assert_eq!(status_testbed_before_migration, status_testbed_migrated);
-        });
+        // Initialise the StatusStore using the new (in memory) storage,
+        // and migrate the data.
+        let store = StatusStore::create(&test_storage_uri, STATUS_NS).unwrap();
+        let testbed = CaHandle::from_str("testbed").unwrap();
+
+        // Get the migrated status for testbed and verify that it's equivalent
+        // to the status before migration.
+        let status_testbed_migrated = store.get_ca_status(&testbed);
+
+        assert_eq!(status_testbed_before_migration, status_testbed_migrated);
     }
 }

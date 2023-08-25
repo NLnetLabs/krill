@@ -311,10 +311,7 @@ mod tests {
                 IdCertInfo,
             },
             crypto::{KrillSignerBuilder, OpenSslSignerConfig},
-            util::{
-                file::{self, CurrentFile},
-                storage::storage_uri_from_data_dir,
-            },
+            util::file::{self, CurrentFile},
         },
         constants::*,
         daemon::config::{SignerConfig, SignerType},
@@ -402,8 +399,7 @@ mod tests {
     fn should_not_add_publisher_twice() {
         // we need a disk, as repo_dir, etc. use data_dir by default
         let (data_dir, cleanup) = test::tmp_dir();
-        // let storage_uri = test::tmp_storage();
-        let storage_uri = storage_uri_from_data_dir(&data_dir).unwrap();
+        let storage_uri = test::tmp_storage();
 
         let server = make_server(&storage_uri, &data_dir);
 
