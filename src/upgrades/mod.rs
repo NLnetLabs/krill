@@ -17,7 +17,7 @@ use crate::{
             segment, Aggregate, AggregateStore, AggregateStoreError, Key, KeyValueError, KeyValueStore, Scope, Segment,
             SegmentExt, Storable, StoredCommand, WalStore, WithStorableDetails,
         },
-        util::{file, storage::data_dir_from_storage_uri, KrillVersion},
+        util::{file, KrillVersion},
         KrillResult,
     },
     constants::{
@@ -641,7 +641,9 @@ pub fn prepare_upgrade_data_migrations(
                     // and we only support migration to database storage *after* upgrading.
                     // So.. it is safe to unwrap the storage_uri into a data dir here. We
                     // would not be here otherwise.
-                    let data_dir = data_dir_from_storage_uri(&config.storage_uri).unwrap();
+                    let data_dir = config
+                        .data_dir()
+                        .ok_or(UpgradeError::custom("no data dir found in config"))?;
 
                     // Create upgrade dir if it did not yet exist.
                     let lock_file_path = data_dir.join("upgrade.lock");
@@ -715,7 +717,9 @@ pub fn prepare_upgrade_data_migrations(
 /// Migrate v0.12.x RepositoryContent to the new 0.13.0+ format.
 /// Apply any open WAL changes to the source first.
 fn migrate_0_12_pubd_objects(config: &Config) -> KrillResult<bool> {
-    let data_dir = data_dir_from_storage_uri(&config.storage_uri).unwrap();
+    let data_dir = config
+        .data_dir()
+        .ok_or(Error::custom("cannot find data dir in config"))?;
     let old_repo_content_dir = data_dir.join(PUBSERVER_CONTENT_NS.as_str());
     if old_repo_content_dir.exists() {
         let old_store: WalStore<OldRepositoryContent> = WalStore::create(&config.storage_uri, PUBSERVER_CONTENT_NS)?;
@@ -739,7 +743,9 @@ fn migrate_0_12_pubd_objects(config: &Config) -> KrillResult<bool> {
 /// The format of the RepositoryContent did not change in 0.12, but
 /// the location and way of storing it did. So, migrate if present.
 fn migrate_pre_0_12_pubd_objects(config: &Config) -> KrillResult<()> {
-    let data_dir = data_dir_from_storage_uri(&config.storage_uri).unwrap();
+    let data_dir = config
+        .data_dir()
+        .ok_or(Error::custom("cannot find data dir in config"))?;
     let old_repo_content_dir = data_dir.join(PUBSERVER_CONTENT_NS.as_str());
     if old_repo_content_dir.exists() {
         let old_store = KeyValueStore::create(&config.storage_uri, PUBSERVER_CONTENT_NS)?;
@@ -788,7 +794,7 @@ pub fn finalise_data_migration(
         // Furthermore, now that we are storing the version in one single
         // place, we can remove the "version" file from any directory that
         // remains after migration.
-        if let Some(data_dir) = data_dir_from_storage_uri(&config.storage_uri) {
+        if let Some(data_dir) = config.data_dir() {
             let archive_base_dir = data_dir.join(&format!("archive-{}", upgrade.from()));
             let upgrade_base_dir = data_dir.join("upgrade-data");
 
@@ -878,7 +884,7 @@ pub fn finalise_data_migration(
     }
 
     // Remove version files that are no longer required
-    if let Some(data_dir) = data_dir_from_storage_uri(&config.storage_uri) {
+    if let Some(data_dir) = config.data_dir() {
         for ns in &[
             CASERVER_NS,
             CA_OBJECTS_NS,
@@ -922,7 +928,7 @@ pub fn finalise_data_migration(
 /// one to the mapping in the signer store, if any.
 #[cfg(feature = "hsm")]
 fn record_preexisting_openssl_keys_in_signer_mapper(config: &Config) -> Result<(), UpgradeError> {
-    match data_dir_from_storage_uri(&config.storage_uri) {
+    match config.data_dir() {
         None => Ok(()),
         Some(data_dir) => {
             if !data_dir.join(SIGNERS_NS.as_str()).exists() {
@@ -1034,7 +1040,7 @@ fn upgrade_versions(
         // We found the KrillVersion stored in the properties manager
         // introduced in Krill 0.14.0.
         UpgradeVersions::for_current(current)
-    } else if let Some(data_dir) = data_dir_from_storage_uri(&config.storage_uri) {
+    } else if let Some(data_dir) = config.data_dir() {
         // If the disk is used for storage, then we need to check
         // if there are any pre Krill 0.14.0 version files in the
         // usual places. If so, then this is an upgrade.

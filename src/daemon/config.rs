@@ -27,7 +27,7 @@ use crate::{
         crypto::{OpenSslSignerConfig, SignSupport},
         error::{Error, KrillIoError},
         eventsourcing::KeyValueStore,
-        util::{ext_serde, storage::data_dir_from_storage_uri},
+        util::ext_serde,
         KrillResult,
     },
     constants::*,
@@ -820,6 +820,23 @@ impl Config {
         KeyValueStore::create(&self.storage_uri, name_space).map_err(Error::KeyValueError)
     }
 
+    /// Returns the data directory if disk was used for storage.
+    /// This will always be true for upgrades of pre 0.14.0 versions
+    pub fn data_dir(&self) -> Option<PathBuf> {
+        if self.storage_uri.scheme() != "local" {
+            None
+        } else {
+            Some(
+                Path::new(&format!(
+                    "{}{}",
+                    self.storage_uri.host_str().unwrap_or(""),
+                    self.storage_uri.path()
+                ))
+                .to_path_buf(),
+            )
+        }
+    }
+
     pub fn tls_keys_dir(&self) -> &PathBuf {
         self.tls_keys_dir.as_ref().unwrap() // should not panic, as it is always set
     }
@@ -1192,7 +1209,7 @@ impl Config {
         }
 
         if self.tls_keys_dir.is_none() {
-            if let Some(mut data_dir) = data_dir_from_storage_uri(&self.storage_uri) {
+            if let Some(mut data_dir) = self.data_dir() {
                 data_dir.push(HTTPS_SUB_DIR);
                 self.tls_keys_dir = Some(data_dir);
             } else {
@@ -1201,7 +1218,7 @@ impl Config {
         }
 
         if self.repo_dir.is_none() {
-            if let Some(mut data_dir) = data_dir_from_storage_uri(&self.storage_uri) {
+            if let Some(mut data_dir) = self.data_dir() {
                 data_dir.push(REPOSITORY_DIR);
                 self.repo_dir = Some(data_dir);
             } else {
@@ -1210,7 +1227,7 @@ impl Config {
         }
 
         if self.pid_file.is_none() {
-            if let Some(mut data_dir) = data_dir_from_storage_uri(&self.storage_uri) {
+            if let Some(mut data_dir) = self.data_dir() {
                 data_dir.push("krill.pid");
                 self.pid_file = Some(data_dir);
             } else {
@@ -2170,5 +2187,31 @@ mod tests {
 
         let res = parse_and_process_config_str(config_str);
         assert_err_msg(res, "Signer name 'Blah' is not unique");
+    }
+
+    #[test]
+    fn data_dir_for_storage() {
+        fn test_uri(uri: &str, expected_path: &str) {
+            let storage_uri = Url::parse(uri).unwrap();
+            let config = Config::test_config(&storage_uri, None, false, false, false, false);
+
+            let expected_path = PathBuf::from(expected_path);
+            assert_eq!(config.data_dir().unwrap(), expected_path);
+        }
+
+        test_uri("local:///tmp/test", "/tmp/test");
+        test_uri("local://./data", "./data");
+        test_uri("local://data", "data");
+        test_uri("local://data/test", "data/test");
+        test_uri("local:///tmp/test", "/tmp/test");
+
+        // assert_eq!(
+        //     storage_uri_from_data_dir(Path::new("./data")).unwrap(),
+        //     Url::parse("local://./data/").unwrap()
+        // );
+        // assert_eq!(
+        //     storage_uri_from_data_dir(Path::new("/tmp/data")).unwrap(),
+        //     Url::parse("local:///tmp/data/").unwrap()
+        // );
     }
 }
