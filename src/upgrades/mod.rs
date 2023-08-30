@@ -2,7 +2,7 @@
 //! - Updating the format of commands or events
 //! - Export / Import data
 
-use std::{convert::TryInto, fmt, str::FromStr, time::Duration};
+use std::{convert::TryInto, fmt, str::FromStr};
 
 use serde::{de::DeserializeOwned, Deserialize};
 
@@ -11,7 +11,6 @@ use rpki::{ca::idexchange::MyHandle, repository::x509::Time};
 use crate::{
     commons::{
         actor::Actor,
-        crypto::KrillSignerBuilder,
         error::KrillIoError,
         eventsourcing::{
             segment, Aggregate, AggregateStore, AggregateStoreError, Key, KeyValueError, KeyValueStore, Scope, Segment,
@@ -818,12 +817,13 @@ fn record_preexisting_openssl_keys_in_signer_mapper(config: &Config) -> Result<(
         let keys_key_store = KeyValueStore::create(&config.storage_uri, KEYS_NS)?;
         info!("Mapping OpenSSL signer keys, using uri: {}", config.storage_uri);
 
-        let probe_interval = Duration::from_secs(config.signer_probe_retry_seconds);
-        let krill_signer = KrillSignerBuilder::new(&config.storage_uri, probe_interval, &config.signers)
-            .with_default_signer(config.default_signer())
-            .with_one_off_signer(config.one_off_signer())
-            .build()
-            .unwrap();
+        let probe_interval = std::time::Duration::from_secs(config.signer_probe_retry_seconds);
+        let krill_signer =
+            crate::commons::crypto::KrillSignerBuilder::new(&config.storage_uri, probe_interval, &config.signers)
+                .with_default_signer(config.default_signer())
+                .with_one_off_signer(config.one_off_signer())
+                .build()
+                .unwrap();
 
         // For every file (key) in the legacy OpenSSL signer keys directory
 
@@ -1028,8 +1028,7 @@ mod tests {
         let _repo: pre_0_13_0::OldRepositoryContent = serde_json::from_str(json).unwrap();
     }
 
-    // Used by complex hsm feature dependent functions.
-    #[allow(dead_code)]
+    #[cfg(all(feature = "hsm", not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11"))))]
     fn unmapped_keys_test_core(do_upgrade: bool) {
         let expected_key_id = KeyIdentifier::from_str("5CBCAB14B810C864F3EEA8FD102B79F4E53FCC70").unwrap();
 
