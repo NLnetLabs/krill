@@ -822,7 +822,7 @@ impl Config {
 
     /// Returns the data directory if disk was used for storage.
     /// This will always be true for upgrades of pre 0.14.0 versions
-    pub fn data_dir(&self) -> Option<PathBuf> {
+    fn data_dir(&self) -> Option<PathBuf> {
         if self.storage_uri.scheme() != "local" {
             None
         } else {
@@ -2204,14 +2204,5 @@ mod tests {
         test_uri("local://data", "data");
         test_uri("local://data/test", "data/test");
         test_uri("local:///tmp/test", "/tmp/test");
-
-        // assert_eq!(
-        //     storage_uri_from_data_dir(Path::new("./data")).unwrap(),
-        //     Url::parse("local://./data/").unwrap()
-        // );
-        // assert_eq!(
-        //     storage_uri_from_data_dir(Path::new("/tmp/data")).unwrap(),
-        //     Url::parse("local:///tmp/data/").unwrap()
-        // );
     }
 }

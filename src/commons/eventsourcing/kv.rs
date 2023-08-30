@@ -5,7 +5,7 @@ use kvx::{KeyValueStoreBackend, NamespaceBuf, ReadStore, WriteStore};
 use serde::{de::DeserializeOwned, Serialize};
 use url::Url;
 
-use crate::commons::{error::KrillIoError, util::KrillVersion};
+use crate::commons::error::KrillIoError;
 
 pub trait SegmentExt {
     fn parse_lossy(value: &str) -> SegmentBuf;
@@ -40,8 +40,8 @@ pub struct KeyValueStore {
 
 impl KeyValueStore {
     /// Creates a new KeyValueStore.
-    pub fn create(storage_uri: &Url, name_space: &Namespace) -> Result<Self, KeyValueError> {
-        kvx::KeyValueStore::new(storage_uri, name_space)
+    pub fn create(storage_uri: &Url, namespace: &Namespace) -> Result<Self, KeyValueError> {
+        kvx::KeyValueStore::new(storage_uri, namespace)
             .map(|inner| KeyValueStore { inner })
             .map_err(KeyValueError::KVError)
     }
@@ -50,22 +50,59 @@ impl KeyValueStore {
     ///
     /// Adds the implicit prefix "upgrade-{version}-" to the given namespace.
     pub fn create_upgrade_store(storage_uri: &Url, namespace: &Namespace) -> Result<Self, KeyValueError> {
-        let namespace_string = format!(
-            "upgrade_{}_{}",
-            KrillVersion::code_version().hyphen_notated(),
-            namespace
-        );
-        let namespace = NamespaceBuf::from_str(&namespace_string)
-            .map_err(|e| KeyValueError::Other(format!("Cannot parse namespace: {}. Error: {}", namespace_string, e)))?;
+        let namespace = Self::prefixed_namespace(namespace, "upgrade")?;
 
         kvx::KeyValueStore::new(storage_uri, namespace)
             .map(|inner| KeyValueStore { inner })
             .map_err(KeyValueError::KVError)
     }
 
+    fn prefixed_namespace(namespace: &Namespace, prefix: &str) -> Result<NamespaceBuf, KeyValueError> {
+        let namespace_string = format!("{}_{}", prefix, namespace);
+        NamespaceBuf::from_str(&namespace_string)
+            .map_err(|e| KeyValueError::Other(format!("Cannot parse namespace: {}. Error: {}", namespace_string, e)))
+    }
+
+    /// Archive this store (i.e. for this namespace). Deletes
+    /// any existing archive for this namespace if present.
+    pub fn migrate_to_archive(&mut self, storage_uri: &Url, namespace: &Namespace) -> Result<(), KeyValueError> {
+        let archive_ns = Self::prefixed_namespace(namespace, "archive")?;
+        // Wipe any existing archive, before archiving this store.
+        // We don't want to keep too much old data. See issue: #1088.
+        let archive_store = KeyValueStore::create(storage_uri, namespace)?;
+        archive_store.wipe()?;
+
+        self.inner.migrate_namespace(archive_ns).map_err(KeyValueError::KVError)
+    }
+
+    /// Make this (upgrade) store the current store.
+    ///
+    /// Fails if there is a non-empty current store.
+    pub fn migrate_to_current(&mut self, storage_uri: &Url, namespace: &Namespace) -> Result<(), KeyValueError> {
+        let current_store = KeyValueStore::create(storage_uri, namespace)?;
+        if !current_store.is_empty()? {
+            Err(KeyValueError::Other(format!(
+                "Abort migrate upgraded store for {} to current. The current store was not archived.",
+                namespace
+            )))
+        } else {
+            self.inner
+                .migrate_namespace(namespace.into())
+                .map_err(KeyValueError::KVError)
+        }
+    }
+
+    /// Returns true if this KeyValueStore (with this namespace) has any entries
+    pub fn is_empty(&self) -> Result<bool, KeyValueError> {
+        self.inner.is_empty().map_err(KeyValueError::KVError)
+    }
+
     /// Import all data from the given KV store into this
     pub fn import(&self, other: &Self) -> Result<(), KeyValueError> {
-        for scope in other.scopes()? {
+        let mut scopes = other.scopes()?;
+        scopes.push(Scope::global()); // not explicitly listed but should be migrated as well.
+
+        for scope in scopes {
             for key in other.keys(&scope, "")? {
                 if let Some(value) = other.get_raw_value(&key)? {
                     self.store_raw_value(&key, value)?;
@@ -152,7 +189,7 @@ impl KeyValueStore {
     }
 
     /// Archive a key
-    pub fn archive(&self, key: &Key) -> Result<(), KeyValueError> {
+    pub fn archive_key(&self, key: &Key) -> Result<(), KeyValueError> {
         self.move_key(key, &key.clone().with_sub_scope(segment!("archived")))
     }
 
@@ -445,7 +482,7 @@ mod tests {
         store.store(&key, &content).unwrap();
         assert!(store.has(&key).unwrap());
 
-        store.archive(&key).unwrap();
+        store.archive_key(&key).unwrap();
         assert!(!store.has(&key).unwrap());
         assert!(store.has(&key.with_sub_scope(segment!("archived"))).unwrap());
     }

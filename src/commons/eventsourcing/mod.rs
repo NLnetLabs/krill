@@ -47,7 +47,7 @@ mod tests {
             api::{CommandHistoryCriteria, CommandSummary},
         },
         constants::ACTOR_DEF_TEST,
-        test::tmp_storage,
+        test::mem_storage,
     };
 
     use super::*;
@@ -339,10 +339,7 @@ mod tests {
 
     #[test]
     fn event_sourcing_framework() {
-        // crate::test::test_under_tmp(|data_dir| {
-        //     let storage_uri = crate::commons::util::storage::storage_uri_from_data_dir(&data_dir).unwrap();
-
-        let storage_uri = tmp_storage();
+        let storage_uri = mem_storage();
 
         let counter = Arc::new(EventCounter::default());
 

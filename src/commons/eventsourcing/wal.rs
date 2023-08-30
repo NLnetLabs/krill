@@ -356,7 +356,7 @@ impl<T: WalSupport> WalStore<T> {
                     if let Ok(revision) = u64::from_str(number) {
                         if revision < latest.revision() {
                             if archive {
-                                self.kv.archive(&key)?;
+                                self.kv.archive_key(&key)?;
                             } else {
                                 self.kv.drop_key(&key)?;
                             }

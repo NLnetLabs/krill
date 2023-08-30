@@ -411,7 +411,7 @@ mod tests {
 
         let source_store = KeyValueStore::create(&source_dir_url, STATUS_NS).unwrap();
 
-        let test_storage_uri = test::tmp_storage();
+        let test_storage_uri = test::mem_storage();
         let status_kv_store = KeyValueStore::create(&test_storage_uri, STATUS_NS).unwrap();
 
         // copy the source KV store (files) into the test KV store (in memory)
