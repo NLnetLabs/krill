@@ -133,7 +133,21 @@ impl KeyValueStore {
     /// returns None if it cannot be found.
     pub fn get<V: DeserializeOwned>(&self, key: &Key) -> Result<Option<V>, KeyValueError> {
         if let Some(value) = self.get_raw_value(key)? {
-            Ok(serde_json::from_value(value)?)
+            match serde_json::from_value(value) {
+                Ok(result) => Ok(result),
+                Err(e) => {
+                    // Get the value again so that we can do a full error report
+                    let value = self.get_raw_value(key)?;
+                    let value_str = value.map(|v| v.to_string()).unwrap_or("".to_string());
+
+                    let expected_type = std::any::type_name::<V>();
+
+                    Err(KeyValueError::Other(format!(
+                        "Could not deserialize value for key '{}'. Expected type: {}. Error: {}. Value was: {}",
+                        key, expected_type, e, value_str
+                    )))
+                }
+            }
         } else {
             Ok(None)
         }
