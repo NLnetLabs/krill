@@ -14,7 +14,7 @@ use crate::{
         error::KrillIoError,
         eventsourcing::{
             segment, Aggregate, AggregateStore, AggregateStoreError, Key, KeyValueError, KeyValueStore, Scope, Segment,
-            SegmentExt, Storable, StoredCommand, WalStore, WithStorableDetails,
+            SegmentExt, Storable, StoredCommand, WalStore, WalStoreError, WithStorableDetails,
         },
         util::KrillVersion,
         KrillResult,
@@ -25,6 +25,7 @@ use crate::{
     },
     daemon::{config::Config, krillserver::KrillServer, properties::PropertiesManager},
     pubd,
+    upgrades::pre_0_14_0::{OldStoredCommand, OldStoredEffect, OldStoredEvent},
 };
 
 #[cfg(feature = "hsm")]
@@ -33,15 +34,14 @@ use rpki::crypto::KeyIdentifier;
 #[cfg(feature = "hsm")]
 use crate::commons::crypto::SignerHandle;
 
-use self::pre_0_13_0::OldRepositoryContent;
+use self::{pre_0_13_0::OldRepositoryContent, pre_0_14_0::OldCommandKey};
 
 pub mod pre_0_10_0;
 
 #[allow(clippy::mutable_key_type)]
 pub mod pre_0_13_0;
 
-mod pre_0_14_0;
-pub use self::pre_0_14_0::*;
+pub mod pre_0_14_0;
 
 pub type UpgradeResult<T> = Result<T, UpgradeError>;
 
@@ -107,6 +107,7 @@ impl UpgradeVersions {
 #[allow(clippy::large_enum_variant)]
 pub enum UpgradeError {
     AggregateStoreError(AggregateStoreError),
+    WalStoreError(WalStoreError),
     KeyStoreError(KeyValueError),
     IoError(KrillIoError),
     Unrecognised(String),
@@ -121,6 +122,7 @@ impl fmt::Display for UpgradeError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let cause = match &self {
             UpgradeError::AggregateStoreError(e) => format!("Aggregate Error: {}", e),
+            UpgradeError::WalStoreError(e) => format!("Write-Ahead-Log Store Error: {}", e),
             UpgradeError::KeyStoreError(e) => format!("Keystore Error: {}", e),
             UpgradeError::IoError(e) => format!("I/O Error: {}", e),
             UpgradeError::Unrecognised(s) => format!("Unrecognised: {}", s),
@@ -147,6 +149,12 @@ impl UpgradeError {
 impl From<AggregateStoreError> for UpgradeError {
     fn from(e: AggregateStoreError) -> Self {
         UpgradeError::AggregateStoreError(e)
+    }
+}
+
+impl From<WalStoreError> for UpgradeError {
+    fn from(e: WalStoreError) -> Self {
+        UpgradeError::WalStoreError(e)
     }
 }
 
@@ -766,7 +774,7 @@ pub fn finalise_data_migration(
         // that would need to be migrated.
         let mut upgrade_store = KeyValueStore::create_upgrade_store(&config.storage_uri, ns)?;
         if !upgrade_store.is_empty()? {
-            debug!("Migrate new data for {} and archive old", ns);
+            info!("Migrate new data for {} and archive old", ns);
             let mut current_store = KeyValueStore::create(&config.storage_uri, ns)?;
             if !current_store.is_empty()? {
                 current_store.migrate_to_archive(&config.storage_uri, ns)?;
@@ -1054,12 +1062,13 @@ mod tests {
         // Now test that a newly initialized `KrillSigner` with a default OpenSSL signer
         // is associated with the newly created mapper store and is thus able to use the
         // key that we placed on disk.
-        let probe_interval = Duration::from_secs(config.signer_probe_retry_seconds);
-        let krill_signer = KrillSignerBuilder::new(&mem_storage_base_uri, probe_interval, &config.signers)
-            .with_default_signer(config.default_signer())
-            .with_one_off_signer(config.one_off_signer())
-            .build()
-            .unwrap();
+        let probe_interval = std::time::Duration::from_secs(config.signer_probe_retry_seconds);
+        let krill_signer =
+            crate::commons::crypto::KrillSignerBuilder::new(&mem_storage_base_uri, probe_interval, &config.signers)
+                .with_default_signer(config.default_signer())
+                .with_one_off_signer(config.one_off_signer())
+                .build()
+                .unwrap();
 
         // Trigger the signer to be bound to the one the migration just registered in the mapper
         krill_signer.random_serial().unwrap();

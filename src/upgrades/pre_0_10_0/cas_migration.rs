@@ -5,7 +5,7 @@ use rpki::{ca::idexchange::CaHandle, repository::x509::Time};
 
 use crate::commons::eventsourcing::{StoredCommand, StoredCommandBuilder};
 use crate::daemon::ca::CaObjects;
-use crate::upgrades::{OldStoredCommand, UnconvertedEffect};
+use crate::upgrades::UnconvertedEffect;
 use crate::{
     commons::{
         api::CertAuthStorableCommand,
@@ -18,6 +18,7 @@ use crate::{
     },
     upgrades::{
         pre_0_10_0::{Pre0_10CertAuthEvent, Pre0_10CertAuthInitEvent},
+        pre_0_14_0::OldStoredCommand,
         UpgradeAggregateStorePre0_14, UpgradeError, UpgradeMode, UpgradeResult,
     },
 };
@@ -43,11 +44,12 @@ impl CaObjectsMigration {
     }
 
     fn prepare_new_data_for(&self, ca: &CaHandle) -> Result<(), UpgradeError> {
-        let key = Key::new_global(Segment::parse_lossy(ca.as_str())); // ca should always be a valid Segment
+        let key = Key::new_global(Segment::parse_lossy(&format!("{}.json", ca))); // ca should always be a valid Segment
 
         if let Some(old_objects) = self.current_store.get::<OldCaObjects>(&key)? {
             let converted: CaObjects = old_objects.try_into()?;
             self.new_store.store(&key, &converted)?;
+            debug!("Stored updated objects for CA {} in {}", ca, self.new_store);
         }
 
         Ok(())
