@@ -36,6 +36,8 @@ use crate::commons::crypto::SignerHandle;
 
 use self::{pre_0_13_0::OldRepositoryContent, pre_0_14_0::OldCommandKey};
 
+pub mod data_migration;
+
 pub mod pre_0_10_0;
 
 #[allow(clippy::mutable_key_type)]
