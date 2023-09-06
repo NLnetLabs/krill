@@ -1419,14 +1419,11 @@ impl Config {
             ));
         }
 
-        if self.default_signer.is_named() {
-            if self.find_signer_reference(&self.default_signer).is_none() {
-                return Err(ConfigError::other(&format!(
-                    "'{}' cannot be used as the 'default_signer' as no signer with that name is defined",
-                    self.default_signer.name()
-                )));
-            }
-        } else {
+        if self.default_signer.is_named() && self.find_signer_reference(&self.default_signer).is_none() {
+            return Err(ConfigError::other(&format!(
+                "'{}' cannot be used as the 'default_signer' as no signer with that name is defined",
+                self.default_signer.name()
+            )));
         }
 
         if self.one_off_signer.is_named() && self.find_signer_reference(&self.one_off_signer).is_none() {

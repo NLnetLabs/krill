@@ -79,6 +79,7 @@ mod tests {
         }
     }
 
+    #[derive(Clone, Debug)]
     struct PersonInitCommandDetails {
         name: String,
     }

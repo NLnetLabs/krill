@@ -417,22 +417,12 @@ pub trait UpgradeAggregateStorePre0_14 {
                 "Will verify the migration by rebuilding '{}' from migrated commands",
                 &scope
             );
-            let latest = self.preparation_aggregate_store().get_latest(&handle).map_err(|e| {
+            let _latest = self.preparation_aggregate_store().save_snapshot(&handle).map_err(|e| {
                 UpgradeError::Custom(format!(
                     "Could not rebuild state after migrating CA '{}'! Error was: {}.",
                     handle, e
                 ))
             })?;
-
-            // Store snapshot to avoid having to re-process the deltas again in future
-            self.preparation_aggregate_store()
-                .store_snapshot(&handle, latest.as_ref())
-                .map_err(|e| {
-                    UpgradeError::Custom(format!(
-                        "Could not save snapshot for CA '{}' after migration! Disk full?!? Error was: {}.",
-                        handle, e
-                    ))
-                })?;
 
             // Call the post command migration hook, this will do nothing
             // unless the implementer of this trait overrode it.

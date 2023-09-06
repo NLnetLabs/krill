@@ -1522,13 +1522,13 @@ impl RepositoryAccessProxy {
 
         if store.has(&key)? {
             if config.always_recover_data {
-                store.recover()?;
+                todo!("issue #1086");
             } else if let Err(e) = store.warm() {
                 error!(
                     "Could not warm up cache, storage seems corrupt, will try to recover!! Error was: {}",
                     e
                 );
-                store.recover()?;
+                todo!("issue #1086");
             }
         }
 
