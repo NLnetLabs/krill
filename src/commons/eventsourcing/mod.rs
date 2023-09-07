@@ -18,8 +18,6 @@ pub use self::store::*;
 mod listener;
 pub use self::listener::*;
 
-pub mod locks;
-
 mod kv;
 pub use self::kv::{
     namespace, segment, Key, KeyValueError, KeyValueStore, Namespace, Scope, Segment, SegmentBuf, SegmentExt,

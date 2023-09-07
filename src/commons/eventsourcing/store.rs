@@ -238,7 +238,7 @@ where
                 // Get the aggregate from the cache, or get it from the store.
                 let mut changed_from_cached = false;
 
-                let res = match self.cache_get(handle) {
+                let latest_result = match self.cache_get(handle) {
                     Some(arc) => Ok(arc),
                     None => {
                         // There was no cached aggregate, so try to get it
@@ -277,7 +277,7 @@ where
                     }
                 };
 
-                let mut agg = match res {
+                let mut agg = match latest_result {
                     Err(e) => return Ok(Err(e)),
                     Ok(agg) => agg,
                 };
