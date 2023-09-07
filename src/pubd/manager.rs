@@ -85,15 +85,6 @@ impl RepositoryManager {
         self.content.clear()
     }
 
-    /// Update snapshots on disk for faster re-starts
-    pub fn update_snapshots(&self) -> KrillResult<()> {
-        if self.initialized()? {
-            self.content.update_snapshots()
-        } else {
-            Ok(())
-        }
-    }
-
     /// List all current publishers
     pub fn publishers(&self) -> KrillResult<Vec<PublisherHandle>> {
         self.access.publishers()

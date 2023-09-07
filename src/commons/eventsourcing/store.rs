@@ -43,8 +43,8 @@ pub struct AggregateStore<A: Aggregate> {
 ///
 impl<A: Aggregate> AggregateStore<A> {
     /// Creates an AggregateStore using the given storage url
-    pub fn create(storage_uri: &Url, name_space: &Namespace, use_history_cache: bool) -> StoreResult<Self> {
-        let kv = KeyValueStore::create(storage_uri, name_space)?;
+    pub fn create(storage_uri: &Url, namespace: &Namespace, use_history_cache: bool) -> StoreResult<Self> {
+        let kv = KeyValueStore::create(storage_uri, namespace)?;
         Self::create_from_kv(kv, use_history_cache)
     }
 
@@ -123,6 +123,16 @@ where
         self.execute_opt_command(handle, None, false)
     }
 
+    /// Updates the snapshots for all entities in this store.
+    pub fn update_snapshots(&self) -> Result<(), A::Error> {
+        for handle in self.list()? {
+            self.save_snapshot(&handle)?;
+        }
+
+        Ok(())
+    }
+
+    /// Gets the latest version for the given aggregate and updates the snapshot.
     pub fn save_snapshot(&self, handle: &MyHandle) -> Result<Arc<A>, A::Error> {
         self.execute_opt_command(handle, None, true)
     }

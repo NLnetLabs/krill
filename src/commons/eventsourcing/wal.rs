@@ -322,10 +322,19 @@ impl<T: WalSupport> WalStore<T> {
         }
     }
 
+    pub fn update_snapshots(&self) -> WalStoreResult<()> {
+        for handle in self.list()? {
+            self.update_snapshot(&handle, false)?;
+        }
+        Ok(())
+    }
+
     /// Update snapshot and archive or delete old wal sets
     ///
     /// This is a separate function because serializing a large instance can
-    /// be expensive.
+    /// be expensive. Note that the archive bool argument is (currently) always
+    /// set to false, but it has been added to support archiving - rather than
+    /// deleting old change sets - in future.
     pub fn update_snapshot(&self, handle: &MyHandle, archive: bool) -> WalStoreResult<()> {
         // Note that we do not need to keep a lock for the instance when we update the snapshot.
         // This function just updates the latest snapshot in the key value store, and it removes
