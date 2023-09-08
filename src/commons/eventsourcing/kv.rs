@@ -38,6 +38,7 @@ pub struct KeyValueStore {
     inner: kvx::KeyValueStore,
 }
 
+// # Construct and high level functions.
 impl KeyValueStore {
     /// Creates a new KeyValueStore.
     pub fn create(storage_uri: &Url, namespace: &Namespace) -> Result<Self, KeyValueError> {
@@ -46,6 +47,116 @@ impl KeyValueStore {
             .map_err(KeyValueError::KVError)
     }
 
+    /// Returns true if this KeyValueStore (with this namespace) has any entries
+    pub fn is_empty(&self) -> Result<bool, KeyValueError> {
+        self.execute(&Scope::global(), |kv| kv.is_empty())
+    }
+
+    /// Wipe the complete store. Needless to say perhaps.. use with care..
+    pub fn wipe(&self) -> Result<(), KeyValueError> {
+        self.execute(&Scope::global(), |kv| kv.clear())
+    }
+
+    /// Execute one or more `kvx::KeyValueStoreBackend` operations
+    /// within a transaction or scope lock context inside the given
+    /// closure.
+    ///
+    /// The closure needs to return a Result<T, kvx::Error>. This
+    /// allows the caller to simply use the ? operator on any kvx
+    /// calls that could result in an error within the closure. The
+    /// kvx::Error is mapped to a KeyValueError to avoid that the
+    /// caller needs to have any specific knowledge about the kvx::Error
+    /// type.
+    ///
+    /// T can be () if no return value is needed. If anything can
+    /// fail in the closure, other than kvx calls, then T can be
+    /// a Result<X,Y>.
+    pub fn execute<F, T>(&self, scope: &Scope, op: F) -> Result<T, KeyValueError>
+    where
+        F: FnMut(&dyn KeyValueStoreBackend) -> Result<T, kvx::Error>,
+    {
+        self.inner.execute(scope, op).map_err(KeyValueError::KVError)
+    }
+}
+
+// # Keys and Values
+impl KeyValueStore {
+    /// Stores a key value pair, serialized as json, overwrite existing
+    pub fn store<V: Serialize>(&self, key: &Key, value: &V) -> Result<(), KeyValueError> {
+        self.execute(key.scope(), &mut move |kv: &dyn KeyValueStoreBackend| {
+            kv.store(key, serde_json::to_value(value)?)
+        })
+    }
+
+    /// Stores a key value pair, serialized as json, fails if existing
+    pub fn store_new<V: Serialize>(&self, key: &Key, value: &V) -> Result<(), KeyValueError> {
+        self.execute(
+            key.scope(),
+            &mut move |kv: &dyn KeyValueStoreBackend| match kv.get(key)? {
+                None => kv.store(key, serde_json::to_value(value)?),
+                _ => Err(kvx::Error::Unknown),
+            },
+        )
+    }
+
+    /// Gets a value for a key, returns an error if the value cannot be deserialized,
+    /// returns None if it cannot be found.
+    pub fn get<V: DeserializeOwned>(&self, key: &Key) -> Result<Option<V>, KeyValueError> {
+        self.execute(key.scope(), |kv| {
+            if let Some(value) = kv.get(key)? {
+                Ok(Some(serde_json::from_value(value)?))
+            } else {
+                Ok(None)
+            }
+        })
+    }
+
+    /// Returns whether a key exists
+    pub fn has(&self, key: &Key) -> Result<bool, KeyValueError> {
+        self.execute(key.scope(), |kv| kv.has(key))
+    }
+
+    /// Delete a key-value pair
+    pub fn drop_key(&self, key: &Key) -> Result<(), KeyValueError> {
+        self.execute(key.scope(), |kv| kv.delete(key))
+    }
+
+    /// Returns all keys under a scope (scopes are exact strings, 'sub'-scopes
+    /// would need to be specified explicitly.. e.g. 'ca' and 'ca/archived' are
+    /// two distinct scopes.
+    ///
+    /// If matching is not empty then the key must contain the given `&str`.
+    pub fn keys(&self, scope: &Scope, matching: &str) -> Result<Vec<Key>, KeyValueError> {
+        self.execute(scope, |kv| {
+            kv.list_keys(scope).map(|keys| {
+                keys.into_iter()
+                    .filter(|key| matching.is_empty() || key.name().as_str().contains(matching))
+                    .collect()
+            })
+        })
+    }
+}
+
+// # Scopes
+impl KeyValueStore {
+    /// Returns whether a scope exists
+    pub fn has_scope(&self, scope: &Scope) -> Result<bool, KeyValueError> {
+        self.execute(&Scope::global(), |kv| kv.has_scope(scope))
+    }
+
+    /// Delete a scope
+    pub fn drop_scope(&self, scope: &Scope) -> Result<(), KeyValueError> {
+        self.execute(scope, |kv| kv.delete_scope(scope))
+    }
+
+    /// Returns all scopes, including sub_scopes
+    pub fn scopes(&self) -> Result<Vec<Scope>, KeyValueError> {
+        self.execute(&Scope::global(), |kv| kv.list_scopes())
+    }
+}
+
+// # Migration Support
+impl KeyValueStore {
     /// Creates a new KeyValueStore for upgrades.
     ///
     /// Adds the implicit prefix "upgrade-{version}-" to the given namespace.
@@ -92,11 +203,6 @@ impl KeyValueStore {
         }
     }
 
-    /// Returns true if this KeyValueStore (with this namespace) has any entries
-    pub fn is_empty(&self) -> Result<bool, KeyValueError> {
-        self.execute(&Scope::global(), |kv| kv.is_empty())
-    }
-
     /// Import all data from the given KV store into this
     ///
     /// NOTE: This function is not transactional because both this, and the other
@@ -117,102 +223,6 @@ impl KeyValueStore {
         }
 
         Ok(())
-    }
-
-    /// Stores a key value pair, serialized as json, overwrite existing
-    pub fn store<V: Serialize>(&self, key: &Key, value: &V) -> Result<(), KeyValueError> {
-        self.execute(key.scope(), &mut move |kv: &dyn KeyValueStoreBackend| {
-            kv.store(key, serde_json::to_value(value)?)
-        })
-    }
-
-    /// Stores a key value pair, serialized as json, fails if existing
-    pub fn store_new<V: Serialize>(&self, key: &Key, value: &V) -> Result<(), KeyValueError> {
-        self.execute(
-            key.scope(),
-            &mut move |kv: &dyn KeyValueStoreBackend| match kv.get(key)? {
-                None => kv.store(key, serde_json::to_value(value)?),
-                _ => Err(kvx::Error::Unknown),
-            },
-        )
-    }
-
-    /// Execute one or more `kvx::KeyValueStoreBackend` operations
-    /// within a transaction or scope lock context inside the given
-    /// closure.
-    ///
-    /// The closure needs to return a Result<T, kvx::Error>. This
-    /// allows the caller to simply use the ? operator on any kvx
-    /// calls that could result in an error within the closure. The
-    /// kvx::Error is mapped to a KeyValueError to avoid that the
-    /// caller needs to have any specific knowledge about the kvx::Error
-    /// type.
-    ///
-    /// T can be () if no return value is needed. If anything can
-    /// fail in the closure, other than kvx calls, then T can be
-    /// a Result<X,Y>.
-    pub fn execute<F, T>(&self, scope: &Scope, op: F) -> Result<T, KeyValueError>
-    where
-        F: FnMut(&dyn KeyValueStoreBackend) -> Result<T, kvx::Error>,
-    {
-        self.inner.execute(scope, op).map_err(KeyValueError::KVError)
-    }
-
-    /// Gets a value for a key, returns an error if the value cannot be deserialized,
-    /// returns None if it cannot be found.
-    pub fn get<V: DeserializeOwned>(&self, key: &Key) -> Result<Option<V>, KeyValueError> {
-        self.execute(key.scope(), |kv| {
-            if let Some(value) = kv.get(key)? {
-                Ok(Some(serde_json::from_value(value)?))
-            } else {
-                Ok(None)
-            }
-        })
-    }
-
-    /// Returns whether a key exists
-    pub fn has(&self, key: &Key) -> Result<bool, KeyValueError> {
-        self.execute(key.scope(), |kv| kv.has(key))
-    }
-
-    /// Delete a key-value pair
-    pub fn drop_key(&self, key: &Key) -> Result<(), KeyValueError> {
-        self.execute(key.scope(), |kv| kv.delete(key))
-    }
-
-    /// Delete a scope
-    pub fn drop_scope(&self, scope: &Scope) -> Result<(), KeyValueError> {
-        self.execute(scope, |kv| kv.delete_scope(scope))
-    }
-
-    /// Wipe the complete store. Needless to say perhaps.. use with care..
-    pub fn wipe(&self) -> Result<(), KeyValueError> {
-        self.execute(&Scope::global(), |kv| kv.clear())
-    }
-
-    /// Returns all scopes, including sub_scopes
-    pub fn scopes(&self) -> Result<Vec<Scope>, KeyValueError> {
-        self.execute(&Scope::global(), |kv| kv.list_scopes())
-    }
-
-    /// Returns whether a scope exists
-    pub fn has_scope(&self, scope: &Scope) -> Result<bool, KeyValueError> {
-        self.execute(&Scope::global(), |kv| kv.has_scope(scope))
-    }
-
-    /// Returns all keys under a scope (scopes are exact strings, 'sub'-scopes
-    /// would need to be specified explicitly.. e.g. 'ca' and 'ca/archived' are
-    /// two distinct scopes.
-    ///
-    /// If matching is not empty then the key must contain the given `&str`.
-    pub fn keys(&self, scope: &Scope, matching: &str) -> Result<Vec<Key>, KeyValueError> {
-        self.execute(scope, |kv| {
-            kv.list_keys(scope).map(|keys| {
-                keys.into_iter()
-                    .filter(|key| matching.is_empty() || key.name().as_str().contains(matching))
-                    .collect()
-            })
-        })
     }
 }
 
