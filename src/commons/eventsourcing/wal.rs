@@ -5,7 +5,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use kvx::{Namespace, ReadStore};
+use kvx::Namespace;
 use rpki::ca::idexchange::MyHandle;
 use serde::Serialize;
 use url::Url;
@@ -152,7 +152,6 @@ impl<T: WalSupport> WalStore<T> {
         let instance = Arc::new(instance);
 
         self.kv
-            .inner()
             .execute(&scope, |kv| {
                 let key = Self::key_for_snapshot(handle);
                 let json = serde_json::to_value(instance.as_ref())?;
@@ -162,16 +161,13 @@ impl<T: WalSupport> WalStore<T> {
 
                 Ok(())
             })
-            .map_err(|e| WalStoreError::KeyStoreError(KeyValueError::KVError(e)))
+            .map_err(WalStoreError::KeyStoreError)
     }
 
     /// Checks whether there is an instance for the given handle.
     pub fn has(&self, handle: &MyHandle) -> WalStoreResult<bool> {
         let scope = Self::scope_for_handle(handle);
-        self.kv
-            .inner()
-            .has_scope(&scope)
-            .map_err(|e| WalStoreError::KeyStoreError(KeyValueError::KVError(e)))
+        self.kv.has_scope(&scope).map_err(WalStoreError::KeyStoreError)
     }
 
     /// Get the latest revision for the given handle.
@@ -191,13 +187,12 @@ impl<T: WalSupport> WalStore<T> {
             let scope = Self::scope_for_handle(handle);
 
             self.kv
-                .inner()
                 .execute(&scope, |kv| {
                     kv.delete_scope(&scope)?;
                     self.cache_remove(handle);
                     Ok(())
                 })
-                .map_err(|e| WalStoreError::KeyStoreError(KeyValueError::KVError(e)))
+                .map_err(WalStoreError::KeyStoreError)
         }
     }
 
@@ -233,24 +228,13 @@ impl<T: WalSupport> WalStore<T> {
         save_snapshot: bool,
     ) -> Result<Arc<T>, T::Error> {
         self.kv
-            .inner()
             .execute(&Self::scope_for_handle(handle), |kv| {
-                // The closure needs to return a Result<X, kvx::Error>.
-                // In our case X will be a Result<Arc<T>, T::Error>.
-                //
-                // or in full: Result<Result<Arc<T>, T::Error>, kvx::Error>
-                //
-                // So.. any kvx error will be in the outer result, while
-                // any T related issues can still be returned as an err
-                // in the inner result.
-
-                // Track whether T has changed compared to the cached
-                // version (if any) so that we will know whether the
-                // cache should be updated.
+                // Track whether anything has changed compared to the cached
+                // instance (if any) so that we will know whether the cache
+                // should be updated.
                 let mut changed_from_cached = false;
 
-                // Get the instance for T from the cache, or get it
-                // from the store.
+                // Get the instance from the cache, or get it from the store.
                 let latest_option = match self.cache_get(handle) {
                     Some(t) => {
                         debug!("Found cached instance for '{handle}', at revision: {}", t.revision());
@@ -276,7 +260,7 @@ impl<T: WalSupport> WalStore<T> {
                     }
                 };
 
-                // Get a mutable latest T to work with, or return with an
+                // Get a mutable instance to work with, or return with an
                 // inner Err informing the caller that there is no instance.
                 let mut latest = match latest_option {
                     Some(latest) => latest,
@@ -284,7 +268,6 @@ impl<T: WalSupport> WalStore<T> {
                 };
 
                 // Check for updates and apply changes
-
                 {
                     // Check if there any new changes that ought to be applied.
                     // If so, apply them and remember that the instance was changed
@@ -385,7 +368,7 @@ impl<T: WalSupport> WalStore<T> {
 
                 Ok(Ok(latest))
             })
-            .map_err(|kv_err| T::Error::from(WalStoreError::KeyStoreError(KeyValueError::KVError(kv_err))))?
+            .map_err(|e| T::Error::from(WalStoreError::KeyStoreError(e)))?
     }
 
     pub fn update_snapshots(&self) -> Result<(), T::Error> {
