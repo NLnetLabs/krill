@@ -1,11 +1,6 @@
 //! Support for signing mft, crl, certificates, roas..
 //! Common objects for TAs and CAs
-use std::{
-    borrow::BorrowMut,
-    collections::HashMap,
-    str::FromStr,
-    sync::{Arc, RwLock},
-};
+use std::{borrow::BorrowMut, collections::HashMap, str::FromStr, sync::Arc};
 
 use chrono::Duration;
 use rpki::{
@@ -57,7 +52,7 @@ use super::{AspaInfo, AspaObjectsUpdates, BgpSecCertInfo, BgpSecCertificateUpdat
 /// inspect, and causes issues with regards to replaying CA state from scratch.
 #[derive(Clone, Debug)]
 pub struct CaObjectsStore {
-    store: Arc<RwLock<KeyValueStore>>,
+    store: Arc<KeyValueStore>,
     signer: Arc<KrillSigner>,
     issuance_timing: IssuanceTimingConfig,
 }
@@ -70,7 +65,7 @@ impl CaObjectsStore {
         signer: Arc<KrillSigner>,
     ) -> KrillResult<Self> {
         let store = KeyValueStore::create(storage_uri, CA_OBJECTS_NS)?;
-        let store = Arc::new(RwLock::new(store));
+        let store = Arc::new(store);
         Ok(CaObjectsStore {
             store,
             signer,
@@ -180,8 +175,6 @@ impl CaObjectsStore {
     pub fn cas(&self) -> KrillResult<Vec<CaHandle>> {
         let cas = self
             .store
-            .read()
-            .unwrap()
             .keys(&Scope::global(), ".json")?
             .iter()
             .flat_map(|k| {
@@ -202,7 +195,7 @@ impl CaObjectsStore {
     pub fn ca_objects(&self, ca: &CaHandle) -> KrillResult<CaObjects> {
         let key = Self::key(ca);
 
-        match self.store.read().unwrap().get(&key).map_err(Error::KeyValueError)? {
+        match self.store.get_transactional(&key).map_err(Error::KeyValueError)? {
             None => {
                 let objects = CaObjects::new(ca.clone(), None, HashMap::new(), vec![]);
                 Ok(objects)
@@ -214,33 +207,30 @@ impl CaObjectsStore {
     /// Perform an action (closure) on a mutable instance of the CaObjects for a
     /// CA. If the CA did not have any CaObjects yet, one will be created. The
     /// closure is executed within a write lock.
-    pub fn with_ca_objects<F>(&self, ca: &CaHandle, op: F) -> KrillResult<()>
+    pub fn with_ca_objects<F>(&self, ca: &CaHandle, mut op: F) -> KrillResult<()>
     where
-        F: FnOnce(&mut CaObjects) -> KrillResult<()>,
+        F: FnMut(&mut CaObjects) -> KrillResult<()>,
     {
-        // TODO: use kvx execute/transaction
-        let lock = self.store.write().unwrap();
-
-        let key = Self::key(ca);
-
-        let mut objects = lock
-            .get(&key)
-            .map_err(Error::KeyValueError)?
-            .unwrap_or_else(|| CaObjects::new(ca.clone(), None, HashMap::new(), vec![]));
-
-        op(&mut objects)?;
-
-        lock.store(&key, &objects).map_err(Error::KeyValueError)?;
-
-        Ok(())
-    }
-
-    pub fn put_ca_objects(&self, ca: &CaHandle, objects: &CaObjects) -> KrillResult<()> {
         self.store
-            .write()
-            .unwrap()
-            .store(&Self::key(ca), objects)
-            .map_err(Error::KeyValueError)
+            .execute(&Scope::global(), |kv| {
+                let key = Self::key(ca);
+
+                let mut objects: CaObjects = if let Some(value) = kv.get(&key)? {
+                    serde_json::from_value(value)?
+                } else {
+                    CaObjects::new(ca.clone(), None, HashMap::new(), vec![])
+                };
+
+                match op(&mut objects) {
+                    Err(e) => Ok(Err(e)),
+                    Ok(()) => {
+                        let value = serde_json::to_value(&objects)?;
+                        kv.store(&key, value)?;
+                        Ok(Ok(()))
+                    }
+                }
+            })
+            .map_err(Error::KeyValueError)?
     }
 
     // Re-issue MFT and CRL for all CAs *if needed*, returns all CAs which were updated.
