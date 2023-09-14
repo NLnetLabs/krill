@@ -138,9 +138,9 @@ dependencies = [
 
 [[package]]
 name = "bcder"
-version = "0.7.1"
+version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69dfb7dc0d4aee3f8c723c43553b55662badf692b541ff8e4426df75dae8da9a"
+checksum = "bf16bec990f8ea25cab661199904ef452fcf11f565c404ce6cffbdf3f8cbbc47"
 dependencies = [
  "bytes",
  "smallvec",
