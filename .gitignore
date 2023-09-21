@@ -2,7 +2,7 @@
 .idea/
 .vscode/
 .DS_Store
-data*
+data/
 krill.log
 target/
 tmp
