@@ -135,6 +135,7 @@ impl Task {
             Task::RefreshAnnouncementsInfo => Ok(segment!("refresh_bgp_announcements_info").to_owned()),
             Task::UpdateSnapshots => Ok(segment!("update_stored_snapshots").to_owned()),
             Task::RrdpUpdateIfNeeded => Ok(segment!("update_rrdp_if_needed").to_owned()),
+            #[cfg(feature = "multi-user")]
             Task::SweepLoginCache => Ok(segment!("sweep_login_cache").to_owned()),
             Task::SyncTrustAnchorProxySignerIfPossible => Ok(segment!("sync_ta_proxy_signer").to_owned()),
             Task::QueueStartTasks => Ok(segment!("queue_start_tasks").to_owned()),
