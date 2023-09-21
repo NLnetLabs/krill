@@ -486,7 +486,7 @@ pub struct Config {
     pub log_level: LevelFilter,
 
     #[serde(default = "ConfigDefaults::log_type")]
-    log_type: LogType,
+    pub log_type: LogType,
 
     #[serde(default = "ConfigDefaults::log_file")]
     log_file: Option<PathBuf>,

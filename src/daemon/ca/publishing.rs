@@ -177,7 +177,7 @@ impl CaObjectsStore {
         Key::new_global(Segment::parse_lossy(&format!("{}.json", ca))) // ca should always be a valid Segment
     }
 
-    fn cas(&self) -> KrillResult<Vec<CaHandle>> {
+    pub fn cas(&self) -> KrillResult<Vec<CaHandle>> {
         let cas = self
             .store
             .read()
