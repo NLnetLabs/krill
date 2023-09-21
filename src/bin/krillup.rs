@@ -31,8 +31,7 @@ async fn main() {
 
     match Config::create(config_file, true) {
         Ok(config) => {
-            let properties_manager = match PropertiesManager::create(&config.storage_uri, config.use_history_cache)
-            {
+            let properties_manager = match PropertiesManager::create(&config.storage_uri, config.use_history_cache) {
                 Ok(mgr) => mgr,
                 Err(e) => {
                     eprintln!("*** Error Preparing Data Migration ***");
@@ -61,12 +60,7 @@ async fn main() {
                         let from = report.versions().from();
                         let to = report.versions().to();
                         if report.data_migration() {
-                            info!(
-                                "Prepared and verified upgrade from {} to {}. Prepared data was saved to: {}",
-                                from,
-                                to,
-                                config.upgrade_storage_uri()
-                            );
+                            info!("Prepared and verified upgrade from {} to {}.", from, to,);
                         } else {
                             info!("No preparation is needed for the upgrade from {} to {}.", from, to)
                         }

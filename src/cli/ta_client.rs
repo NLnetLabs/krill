@@ -12,6 +12,7 @@ use std::{
 
 use bytes::Bytes;
 use clap::{App, Arg, ArgMatches, SubCommand};
+
 use log::LevelFilter;
 use rpki::{
     ca::idexchange::{self, ChildHandle, RepoInfo, ServiceUri},
@@ -28,7 +29,7 @@ use crate::{
         api::{AddChildRequest, ApiRepositoryContact, CertAuthInfo, IdCertInfo, RepositoryContact, Token},
         crypto::{KrillSigner, KrillSignerBuilder, OpenSslSignerConfig},
         error::Error as KrillError,
-        eventsourcing::{segment, AggregateStore, AggregateStoreError, Segment},
+        eventsourcing::{namespace, AggregateStore, AggregateStoreError, Namespace},
         util::{file, httpclient},
     },
     constants::{
@@ -1002,7 +1003,7 @@ struct TrustAnchorSignerManager {
 
 impl TrustAnchorSignerManager {
     fn create(config: Config) -> Result<Self, Error> {
-        let store = AggregateStore::create(&config.storage_uri, segment!("signer"), config.use_history_cache)
+        let store = AggregateStore::create(&config.storage_uri, namespace!("signer"), config.use_history_cache)
             .map_err(KrillError::AggregateStoreError)?;
         let ta_handle = TrustAnchorHandle::new("ta".into());
         let signer = config.signer()?;

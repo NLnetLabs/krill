@@ -267,7 +267,7 @@ impl PropertiesManager {
     }
 
     pub fn is_initialized(&self) -> bool {
-        self.properties().is_ok()
+        self.store.has(&self.main_key).unwrap_or_default()
     }
 
     pub fn init(&self, krill_version: KrillVersion) -> KrillResult<Arc<Properties>> {

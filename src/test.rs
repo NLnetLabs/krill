@@ -61,7 +61,7 @@ pub const KRILL_SECOND_SERVER_URI: &str = "https://localhost:3002/";
 
 pub fn init_logging() -> impl FnOnce() {
     // Just creates a test config so we can initialize logging, then forgets about it
-    let storage = tmp_storage();
+    let storage = mem_storage();
     let (dir, cleanup) = tmp_dir();
     let _ = Config::test(&storage, Some(&dir), false, false, false, false).init_logging();
 
@@ -148,7 +148,7 @@ pub fn init_config(config: &mut Config) {
 /// Starts krill server for testing using the given configuration. Creates a random base directory in the 'work' folder,
 /// adjusts the config to use it and returns it. Be sure to clean it up when the test is done.
 pub async fn start_krill_with_custom_config(mut config: Config) -> Url {
-    let storage_uri = tmp_storage();
+    let storage_uri = mem_storage();
     config.storage_uri = storage_uri.clone();
     start_krill(config).await;
     storage_uri
@@ -163,8 +163,7 @@ pub async fn start_krill_with_default_test_config(
     second_signer: bool,
 ) -> impl FnOnce() {
     let (data_dir, cleanup) = tmp_dir();
-    let storage_uri = tmp_storage();
-    // let storage_uri = storage_uri_from_data_dir(&data_dir).unwrap();
+    let storage_uri = mem_storage();
     let config = test_config(
         &storage_uri,
         Some(&data_dir),
@@ -182,7 +181,7 @@ pub async fn start_krill_with_default_test_config(
 /// RRDP delta delays work properly.
 pub async fn start_krill_testbed_with_rrdp_interval(interval: u32) -> impl FnOnce() {
     let (data_dir, cleanup) = tmp_dir();
-    let storage_uri = tmp_storage();
+    let storage_uri = mem_storage();
     let mut config = test_config(&storage_uri, Some(&data_dir), true, false, false, false);
     config.rrdp_updates_config.rrdp_delta_interval_min_seconds = interval;
     start_krill(config).await;
@@ -206,7 +205,7 @@ async fn start_krill_with_error_trap(config: Arc<Config>) {
 /// own temp dir for storage.
 pub async fn start_krill_pubd(rrdp_delta_rrdp_delta_min_interval_seconds: u32) -> impl FnOnce() {
     let (data_dir, cleanup) = tmp_dir();
-    let storage_uri = tmp_storage();
+    let storage_uri = mem_storage();
     let mut config = test_config(&storage_uri, Some(&data_dir), false, false, false, true);
     config.rrdp_updates_config.rrdp_delta_interval_min_seconds = rrdp_delta_rrdp_delta_min_interval_seconds;
     init_config(&mut config);
@@ -231,7 +230,7 @@ pub async fn start_krill_pubd(rrdp_delta_rrdp_delta_min_interval_seconds: u32) -
 /// own temp dir for storage.
 pub async fn start_second_krill() -> impl FnOnce() {
     let (data_dir, cleanup) = tmp_dir();
-    let storage_uri = tmp_storage();
+    let storage_uri = mem_storage();
     let mut config = test_config(&storage_uri, Some(&data_dir), false, false, false, true);
     init_config(&mut config);
     config.port = 3002;
@@ -823,7 +822,7 @@ pub fn test_in_memory<F>(op: F)
 where
     F: FnOnce(&Url),
 {
-    let storage_uri = tmp_storage();
+    let storage_uri = mem_storage();
 
     op(&storage_uri);
 }
@@ -861,7 +860,7 @@ fn random_hex_string() -> String {
     hex::encode(bytes)
 }
 
-pub fn tmp_storage() -> Url {
+pub fn mem_storage() -> Url {
     let mut bytes = [0; 8];
     openssl::rand::rand_bytes(&mut bytes).unwrap();
 

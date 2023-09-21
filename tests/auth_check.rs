@@ -5,7 +5,7 @@ use rpki::ca::idexchange::Handle;
 
 use krill::{
     commons::api::Token,
-    test::{init_ca, start_krill_with_custom_config, test_config, tmp_storage},
+    test::{init_ca, mem_storage, start_krill_with_custom_config, test_config},
 };
 
 extern crate krill;
@@ -16,7 +16,7 @@ async fn auth_check() {
     // Use a copy of the default test Krill config but change the server admin token thereby hopefully causing the
     // bearer token sent by the test suite support functions not to match and thus be rejected which in turn should
     // cause a Rust panic.
-    let storage_uri = tmp_storage();
+    let storage_uri = mem_storage();
     let mut config = test_config(&storage_uri, None, false, false, false, false);
     config.admin_token = Token::from("wrong secret");
 

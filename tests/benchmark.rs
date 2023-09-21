@@ -6,7 +6,7 @@ use log::LevelFilter;
 #[tokio::test(flavor = "multi_thread")]
 async fn benchmark() {
     let (data_dir, cleanup) = tmp_dir();
-    let storage_uri = tmp_storage();
+    let storage_uri = mem_storage();
 
     let cas = 10;
     let ca_roas = 10;

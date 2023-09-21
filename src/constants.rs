@@ -1,8 +1,7 @@
+use kvx::Namespace;
+
 use crate::{
-    commons::{
-        actor::ActorDef,
-        eventsourcing::{segment, Segment},
-    },
+    commons::{actor::ActorDef, eventsourcing::namespace},
     daemon::auth::common::NoResourceType,
 };
 
@@ -47,18 +46,16 @@ pub fn test_announcements_enabled() -> bool {
 
 // until const fn's are more versatile for str's, we need to use lazy_static to be able to expand the segment macro at
 // compile time, while running the expanded code, which actually makes it a Segment, at runtime
-pub const CASERVER_NS: &Segment = segment!("cas");
-pub const CA_OBJECTS_NS: &Segment = segment!("ca_objects");
-pub const KEYS_NS: &Segment = segment!("keys");
-pub const PUBSERVER_CONTENT_NS: &Segment = segment!("pubd_objects");
-pub const PUBSERVER_NS: &Segment = segment!("pubd");
-pub const PROPERTIES_NS: &Segment = segment!("properties");
-pub const SIGNERS_NS: &Segment = segment!("signers");
-pub const STATUS_NS: &Segment = segment!("status");
-pub const TA_PROXY_SERVER_NS: &Segment = segment!("ta_proxy");
-pub const TA_SIGNER_SERVER_NS: &Segment = segment!("ta_signer");
-
-pub const UPGRADE_DIR: &str = "upgrade-data";
+pub const CASERVER_NS: &Namespace = namespace!("cas");
+pub const CA_OBJECTS_NS: &Namespace = namespace!("ca_objects");
+pub const KEYS_NS: &Namespace = namespace!("keys");
+pub const PUBSERVER_CONTENT_NS: &Namespace = namespace!("pubd_objects");
+pub const PUBSERVER_NS: &Namespace = namespace!("pubd");
+pub const PROPERTIES_NS: &Namespace = namespace!("properties");
+pub const SIGNERS_NS: &Namespace = namespace!("signers");
+pub const STATUS_NS: &Namespace = namespace!("status");
+pub const TA_PROXY_SERVER_NS: &Namespace = namespace!("ta_proxy");
+pub const TA_SIGNER_SERVER_NS: &Namespace = namespace!("ta_signer");
 
 pub const PROPERTIES_DFLT_NAME: &str = "main";
 

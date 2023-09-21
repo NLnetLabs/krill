@@ -8,7 +8,7 @@ use std::{
 };
 
 use chrono::Duration;
-use kvx::SegmentBuf;
+use kvx::Namespace;
 use log::{error, LevelFilter};
 use rpki::{
     ca::idexchange::PublisherHandle,
@@ -27,10 +27,7 @@ use crate::{
         crypto::{OpenSslSignerConfig, SignSupport},
         error::{Error, KrillIoError},
         eventsourcing::KeyValueStore,
-        util::{
-            ext_serde,
-            storage::{data_dir_from_storage_uri, storage_uri_from_data_dir},
-        },
+        util::ext_serde,
         KrillResult,
     },
     constants::*,
@@ -452,10 +449,8 @@ pub struct Config {
     )]
     pub storage_uri: Url,
 
-    #[serde(default="ConfigDefaults::dflt_true")]
+    #[serde(default = "ConfigDefaults::dflt_true")]
     pub use_history_cache: bool,
-
-    upgrade_storage_uri: Option<Url>,
 
     tls_keys_dir: Option<PathBuf>,
 
@@ -815,18 +810,31 @@ pub struct Benchmark {
 
 /// # Accessors
 impl Config {
-    pub fn upgrade_storage_uri(&self) -> &Url {
-        self.upgrade_storage_uri.as_ref().unwrap() // should not panic, as it is always set by Config::verify
-    }
-
     /// General purpose KV store, can be used to track server settings
     /// etc not specific to any Aggregate or WalSupport type
     pub fn general_key_value_store(&self) -> KrillResult<KeyValueStore> {
         KeyValueStore::create(&self.storage_uri, PROPERTIES_NS).map_err(Error::KeyValueError)
     }
 
-    pub fn key_value_store(&self, name_space: impl Into<SegmentBuf>) -> KrillResult<KeyValueStore> {
+    pub fn key_value_store(&self, name_space: &Namespace) -> KrillResult<KeyValueStore> {
         KeyValueStore::create(&self.storage_uri, name_space).map_err(Error::KeyValueError)
+    }
+
+    /// Returns the data directory if disk was used for storage.
+    /// This will always be true for upgrades of pre 0.14.0 versions
+    fn data_dir(&self) -> Option<PathBuf> {
+        if self.storage_uri.scheme() != "local" {
+            None
+        } else {
+            Some(
+                Path::new(&format!(
+                    "{}{}",
+                    self.storage_uri.host_str().unwrap_or(""),
+                    self.storage_uri.path()
+                ))
+                .to_path_buf(),
+            )
+        }
     }
 
     pub fn tls_keys_dir(&self) -> &PathBuf {
@@ -1076,7 +1084,6 @@ impl Config {
             https_mode,
             storage_uri: storage_uri.clone(),
             use_history_cache: false,
-            upgrade_storage_uri: data_dir.map(|d| storage_uri_from_data_dir(&d.join(UPGRADE_DIR)).unwrap()),
             tls_keys_dir: data_dir.map(|d| d.join(HTTPS_SUB_DIR)),
             repo_dir: data_dir.map(|d| d.join(REPOSITORY_DIR)),
             ta_support_enabled: false, // but, enabled by testbed where applicable
@@ -1166,7 +1173,6 @@ impl Config {
         if upgrade_only {
             info!("Prepare upgrade using configuration file: {}", config_file);
             info!("Processing data from: {}", config.storage_uri);
-            info!("Saving prepared data to: {}", config.upgrade_storage_uri(),);
         } else {
             info!("{} uses configuration file: {}", KRILL_SERVER_APP, config_file);
         }
@@ -1202,15 +1208,8 @@ impl Config {
             self.ca_refresh_seconds = CA_REFRESH_SECONDS_MAX;
         }
 
-        if self.upgrade_storage_uri.is_none() {
-            if self.storage_uri.scheme() != "local" {
-                return Err(ConfigError::other("'upgrade_storage_uri' is not configured, but 'storage_uri' is not a local directory, please configure an 'upgrade_storage_uri'"));
-            }
-            self.upgrade_storage_uri = Some(self.storage_uri.join(UPGRADE_DIR).unwrap());
-        }
-
         if self.tls_keys_dir.is_none() {
-            if let Some(mut data_dir) = data_dir_from_storage_uri(&self.storage_uri) {
+            if let Some(mut data_dir) = self.data_dir() {
                 data_dir.push(HTTPS_SUB_DIR);
                 self.tls_keys_dir = Some(data_dir);
             } else {
@@ -1219,7 +1218,7 @@ impl Config {
         }
 
         if self.repo_dir.is_none() {
-            if let Some(mut data_dir) = data_dir_from_storage_uri(&self.storage_uri) {
+            if let Some(mut data_dir) = self.data_dir() {
                 data_dir.push(REPOSITORY_DIR);
                 self.repo_dir = Some(data_dir);
             } else {
@@ -1228,7 +1227,7 @@ impl Config {
         }
 
         if self.pid_file.is_none() {
-            if let Some(mut data_dir) = data_dir_from_storage_uri(&self.storage_uri) {
+            if let Some(mut data_dir) = self.data_dir() {
                 data_dir.push("krill.pid");
                 self.pid_file = Some(data_dir);
             } else {
@@ -2188,5 +2187,22 @@ mod tests {
 
         let res = parse_and_process_config_str(config_str);
         assert_err_msg(res, "Signer name 'Blah' is not unique");
+    }
+
+    #[test]
+    fn data_dir_for_storage() {
+        fn test_uri(uri: &str, expected_path: &str) {
+            let storage_uri = Url::parse(uri).unwrap();
+            let config = Config::test_config(&storage_uri, None, false, false, false, false);
+
+            let expected_path = PathBuf::from(expected_path);
+            assert_eq!(config.data_dir().unwrap(), expected_path);
+        }
+
+        test_uri("local:///tmp/test", "/tmp/test");
+        test_uri("local://./data", "./data");
+        test_uri("local://data", "data");
+        test_uri("local://data/test", "data/test");
+        test_uri("local:///tmp/test", "/tmp/test");
     }
 }

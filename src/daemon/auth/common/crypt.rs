@@ -18,7 +18,7 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use kvx::{segment, Key, Segment};
+use kvx::{namespace, segment, Key, Namespace, Segment};
 
 use crate::{
     commons::{error::Error, util::ext_serde, KrillResult},
@@ -34,7 +34,7 @@ const POLY1305_TAG_BYTE_LEN: usize = POLY1305_TAG_BIT_LEN / 8;
 const CLEARTEXT_PREFIX_LEN: usize = CHACHA20_NONCE_BYTE_LEN + POLY1305_TAG_BYTE_LEN;
 const UNUSED_AAD: [u8; 0] = [0; 0];
 
-const CRYPT_STATE_NS: &Segment = segment!("login_sessions");
+const CRYPT_STATE_NS: &Namespace = namespace!("login_sessions");
 const CRYPT_STATE_KEY: &Segment = segment!("main_key");
 
 #[derive(Debug, Deserialize, Serialize)]

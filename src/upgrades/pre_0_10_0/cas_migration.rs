@@ -5,7 +5,7 @@ use rpki::{ca::idexchange::CaHandle, repository::x509::Time};
 
 use crate::commons::eventsourcing::{StoredCommand, StoredCommandBuilder};
 use crate::daemon::ca::CaObjects;
-use crate::upgrades::{OldStoredCommand, UnconvertedEffect};
+use crate::upgrades::UnconvertedEffect;
 use crate::{
     commons::{
         api::CertAuthStorableCommand,
@@ -18,6 +18,7 @@ use crate::{
     },
     upgrades::{
         pre_0_10_0::{Pre0_10CertAuthEvent, Pre0_10CertAuthInitEvent},
+        pre_0_14_0::OldStoredCommand,
         UpgradeAggregateStorePre0_14, UpgradeError, UpgradeMode, UpgradeResult,
     },
 };
@@ -35,7 +36,7 @@ struct CaObjectsMigration {
 impl CaObjectsMigration {
     fn create(config: &Config) -> Result<Self, UpgradeError> {
         let current_store = KeyValueStore::create(&config.storage_uri, CA_OBJECTS_NS)?;
-        let new_store = KeyValueStore::create(config.upgrade_storage_uri(), CA_OBJECTS_NS)?;
+        let new_store = KeyValueStore::create_upgrade_store(&config.storage_uri, CA_OBJECTS_NS)?;
         Ok(CaObjectsMigration {
             current_store,
             new_store,
@@ -43,11 +44,12 @@ impl CaObjectsMigration {
     }
 
     fn prepare_new_data_for(&self, ca: &CaHandle) -> Result<(), UpgradeError> {
-        let key = Key::new_global(Segment::parse_lossy(ca.as_str())); // ca should always be a valid Segment
+        let key = Key::new_global(Segment::parse_lossy(&format!("{}.json", ca))); // ca should always be a valid Segment
 
         if let Some(old_objects) = self.current_store.get::<OldCaObjects>(&key)? {
             let converted: CaObjects = old_objects.try_into()?;
             self.new_store.store(&key, &converted)?;
+            debug!("Stored updated objects for CA {} in {}", ca, self.new_store);
         }
 
         Ok(())
@@ -67,9 +69,10 @@ pub struct CasMigration {
 impl CasMigration {
     pub fn upgrade(mode: UpgradeMode, config: &Config) -> UpgradeResult<()> {
         let current_kv_store = KeyValueStore::create(&config.storage_uri, CASERVER_NS)?;
-        let new_kv_store = KeyValueStore::create(config.upgrade_storage_uri(), CASERVER_NS)?;
-        let new_agg_store = AggregateStore::<CertAuth>::create(
-            config.upgrade_storage_uri(),
+        let new_kv_store = KeyValueStore::create_upgrade_store(&config.storage_uri, CASERVER_NS)?;
+
+        let new_agg_store = AggregateStore::<CertAuth>::create_upgrade_store(
+            &config.storage_uri,
             CASERVER_NS,
             config.use_history_cache,
         )?;
