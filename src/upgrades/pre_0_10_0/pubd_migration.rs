@@ -9,10 +9,9 @@ use crate::{
     constants::PUBSERVER_NS,
     daemon::config::Config,
     pubd::{RepositoryAccess, RepositoryAccessEvent, RepositoryAccessInitEvent},
-    upgrades::{
-        OldRepositoryAccessEvent, OldRepositoryAccessInitEvent, OldStoredCommand, UnconvertedEffect,
-        UpgradeAggregateStorePre0_14, UpgradeMode, UpgradeResult, UpgradeVersions,
-    },
+    upgrades::pre_0_10_0::{Pre0_10RepositoryAccessEventDetails, Pre0_10RepositoryAccessInitDetails},
+    upgrades::pre_0_14_0::OldStoredCommand,
+    upgrades::{UnconvertedEffect, UpgradeAggregateStorePre0_14, UpgradeMode, UpgradeResult, UpgradeVersions},
 };
 
 /// Migrates the events, snapshots and info for the event-sourced RepositoryAccess.
@@ -26,9 +25,9 @@ pub struct PublicationServerRepositoryAccessMigration {
 impl PublicationServerRepositoryAccessMigration {
     pub fn upgrade(mode: UpgradeMode, config: &Config, versions: &UpgradeVersions) -> UpgradeResult<()> {
         let current_kv_store = KeyValueStore::create(&config.storage_uri, PUBSERVER_NS)?;
-        let new_kv_store = KeyValueStore::create(config.upgrade_storage_uri(), PUBSERVER_NS)?;
+        let new_kv_store = KeyValueStore::create_upgrade_store(&config.storage_uri, PUBSERVER_NS)?;
         let new_agg_store =
-            AggregateStore::create(config.upgrade_storage_uri(), PUBSERVER_NS, config.use_history_cache)?;
+            AggregateStore::create_upgrade_store(&config.storage_uri, PUBSERVER_NS, config.use_history_cache)?;
 
         let store_migration = PublicationServerRepositoryAccessMigration {
             current_kv_store,
@@ -39,7 +38,7 @@ impl PublicationServerRepositoryAccessMigration {
         if store_migration
             .current_kv_store
             .has_scope(&Scope::from_segment(segment!("0")))?
-            && versions.from > KrillVersion::release(0, 9, 0)
+            && versions.from >= KrillVersion::release(0, 9, 0)
             && versions.from < KrillVersion::candidate(0, 10, 0, 1)
         {
             store_migration.upgrade(mode)
@@ -52,8 +51,8 @@ impl PublicationServerRepositoryAccessMigration {
 impl UpgradeAggregateStorePre0_14 for PublicationServerRepositoryAccessMigration {
     type Aggregate = RepositoryAccess;
 
-    type OldInitEvent = OldRepositoryAccessInitEvent;
-    type OldEvent = OldRepositoryAccessEvent;
+    type OldInitEvent = Pre0_10RepositoryAccessInitDetails;
+    type OldEvent = Pre0_10RepositoryAccessEventDetails;
     type OldStorableDetails = StorableRepositoryCommand;
 
     fn store_name(&self) -> &str {
@@ -81,7 +80,7 @@ impl UpgradeAggregateStorePre0_14 for PublicationServerRepositoryAccessMigration
     ) -> UpgradeResult<crate::commons::eventsourcing::StoredCommand<Self::Aggregate>> {
         let details = StorableRepositoryCommand::Init;
         let builder = StoredCommandBuilder::<RepositoryAccess>::new(actor, time, handle, 0, details);
-        let init_event: RepositoryAccessInitEvent = old_init.into_details();
+        let init_event: RepositoryAccessInitEvent = old_init.into();
 
         Ok(builder.finish_with_init_event(init_event))
     }
@@ -103,8 +102,7 @@ impl UpgradeAggregateStorePre0_14 for PublicationServerRepositoryAccessMigration
         let new_command = match old_effect {
             UnconvertedEffect::Error { msg } => new_command_builder.finish_with_error(msg),
             UnconvertedEffect::Success { events } => {
-                let full_events: Vec<RepositoryAccessEvent> =
-                    events.into_iter().map(|old| old.into_details()).collect();
+                let full_events: Vec<RepositoryAccessEvent> = events.into_iter().map(|old| old.into()).collect();
                 new_command_builder.finish_with_events(full_events)
             }
         };

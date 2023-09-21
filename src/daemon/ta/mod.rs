@@ -39,7 +39,7 @@ mod tests {
         commons::{
             api::{PublicationServerInfo, RepositoryContact},
             crypto::KrillSignerBuilder,
-            eventsourcing::{segment, AggregateStore, Segment},
+            eventsourcing::{namespace, AggregateStore, Namespace},
         },
         daemon::config::ConfigDefaults,
         test,
@@ -51,9 +51,9 @@ mod tests {
             let cleanup = test::init_logging();
 
             let ta_signer_store: AggregateStore<TrustAnchorSigner> =
-                AggregateStore::create(storage_uri, segment!("ta_signer"), false).unwrap();
+                AggregateStore::create(storage_uri, namespace!("ta_signer"), false).unwrap();
             let ta_proxy_store: AggregateStore<TrustAnchorProxy> =
-                AggregateStore::create(storage_uri, segment!("ta_proxy"), false).unwrap();
+                AggregateStore::create(storage_uri, namespace!("ta_proxy"), false).unwrap();
 
             // We will import a TA key - this is only (supposed to be) supported for the openssl signer
             let signers = ConfigDefaults::openssl_signer_only();

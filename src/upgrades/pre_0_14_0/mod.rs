@@ -1,6 +1,6 @@
 use std::{fmt, str::FromStr};
 
-use kvx::Segment;
+use kvx::Namespace;
 use rpki::{ca::idexchange::MyHandle, repository::x509::Time};
 
 use crate::{
@@ -239,16 +239,16 @@ pub struct GenericUpgradeAggregateStore<A: Aggregate> {
 }
 
 impl<A: Aggregate> GenericUpgradeAggregateStore<A> {
-    pub fn upgrade(name_space: &Segment, mode: UpgradeMode, config: &Config) -> UpgradeResult<()> {
+    pub fn upgrade(name_space: &Namespace, mode: UpgradeMode, config: &Config) -> UpgradeResult<()> {
         let current_kv_store = KeyValueStore::create(&config.storage_uri, name_space)?;
 
         if current_kv_store.scopes()?.is_empty() {
             // nothing to do here
             Ok(())
         } else {
-            let new_kv_store = KeyValueStore::create(config.upgrade_storage_uri(), name_space)?;
+            let new_kv_store = KeyValueStore::create_upgrade_store(&config.storage_uri, name_space)?;
             let new_agg_store =
-                AggregateStore::<A>::create(config.upgrade_storage_uri(), name_space, config.use_history_cache)?;
+                AggregateStore::<A>::create_upgrade_store(&config.storage_uri, name_space, config.use_history_cache)?;
 
             let store_migration = GenericUpgradeAggregateStore {
                 store_name: name_space.to_string(),

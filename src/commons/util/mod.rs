@@ -15,7 +15,6 @@ pub mod cmslogger;
 pub mod ext_serde;
 pub mod file;
 pub mod httpclient;
-pub mod storage;
 
 //------------ KrillVersion --------------------------------------------------
 
@@ -34,6 +33,11 @@ impl KrillVersion {
         // Note: we have a unit test to ensure that the KRILL_VERSION constant
         // which is derived from the Cargo.toml version can be parsed.
         Self::from_str(KRILL_VERSION).unwrap()
+    }
+
+    /// Make a notation friendly to namespaces for upgrades.
+    pub fn hyphen_notated(&self) -> String {
+        format!("{}-{}-{}{}", self.major, self.minor, self.patch, self.release_type)
     }
 
     pub fn v0_5_0_or_before() -> Self {

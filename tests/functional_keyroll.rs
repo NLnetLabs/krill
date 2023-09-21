@@ -23,8 +23,7 @@ use krill::{
 #[tokio::test]
 async fn functional_keyroll() {
     let (data_dir, cleanup) = tmp_dir();
-    let storage_uri = tmp_storage();
-    // let storage_uri = util::storage::storage_uri_from_data_dir(&data_dir).unwrap();
+    let storage_uri = mem_storage();
     let config = test_config(&storage_uri, Some(&data_dir), true, false, false, false);
     start_krill(config).await;
 

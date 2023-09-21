@@ -34,7 +34,7 @@ use crate::{
     },
     daemon::ta::{TaCertDetails, TrustAnchorLocator},
     pubd::{Publisher, RepositoryAccessEvent, RepositoryAccessInitEvent},
-    upgrades::{OldStoredEvent, UpgradeError},
+    upgrades::UpgradeError,
 };
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1525,8 +1525,6 @@ impl Eq for OldPublishedCrl {}
 
 //------------ OldRepositoryAccessIni -------------------------------------------
 
-pub type Pre0_10RepositoryAccessIni = OldStoredEvent<Pre0_10RepositoryAccessInitDetails>;
-
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Pre0_10RepositoryAccessInitDetails {
     id_cert: IdCert,
@@ -1551,8 +1549,6 @@ impl fmt::Display for Pre0_10RepositoryAccessInitDetails {
 }
 
 //------------ OldRepositoryAccessEvent -----------------------------------------
-
-pub type Pre0_10RepositoryAccessEvent = OldStoredEvent<Pre0_10RepositoryAccessEventDetails>;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]

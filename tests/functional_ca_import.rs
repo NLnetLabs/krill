@@ -11,7 +11,7 @@ async fn functional_ca_import() {
 
     // Start an empty Krill instance.
     let (data_dir, cleanup) = tmp_dir();
-    let krill_storage = tmp_storage();
+    let krill_storage = mem_storage();
     let mut config = test_config(&krill_storage, Some(&data_dir), false, false, false, false);
     config.ta_support_enabled = true;
     config.ta_signer_enabled = true;

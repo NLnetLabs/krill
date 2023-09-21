@@ -311,10 +311,7 @@ mod tests {
                 IdCertInfo,
             },
             crypto::{KrillSignerBuilder, OpenSslSignerConfig},
-            util::{
-                file::{self, CurrentFile},
-                storage::storage_uri_from_data_dir,
-            },
+            util::file::{self, CurrentFile},
         },
         constants::*,
         daemon::config::{SignerConfig, SignerType},
@@ -378,7 +375,7 @@ mod tests {
     fn should_add_publisher() {
         // we need a disk, as repo_dir, etc. use data_dir by default
         let (data_dir, cleanup) = test::tmp_dir();
-        let storage_uri = test::tmp_storage();
+        let storage_uri = test::mem_storage();
         let server = make_server(&storage_uri, &data_dir);
 
         let alice = publisher_alice(&storage_uri);
@@ -402,8 +399,7 @@ mod tests {
     fn should_not_add_publisher_twice() {
         // we need a disk, as repo_dir, etc. use data_dir by default
         let (data_dir, cleanup) = test::tmp_dir();
-        // let storage_uri = test::tmp_storage();
-        let storage_uri = storage_uri_from_data_dir(&data_dir).unwrap();
+        let storage_uri = test::mem_storage();
 
         let server = make_server(&storage_uri, &data_dir);
 
@@ -427,7 +423,7 @@ mod tests {
     fn should_list_files() {
         // we need a disk, as repo_dir, etc. use data_dir by default
         let (data_dir, cleanup) = test::tmp_dir();
-        let storage_uri = test::tmp_storage();
+        let storage_uri = test::mem_storage();
         let server = make_server(&storage_uri, &data_dir);
 
         let alice = publisher_alice(&storage_uri);
@@ -448,7 +444,7 @@ mod tests {
     async fn should_publish_files() {
         // we need a disk, as repo_dir, etc. use data_dir by default
         let (data_dir, cleanup) = test::tmp_dir();
-        let storage_uri = test::tmp_storage();
+        let storage_uri = test::mem_storage();
         let server = make_server(&storage_uri, &data_dir);
 
         let session = session_dir(&data_dir);
@@ -637,7 +633,7 @@ mod tests {
     #[test]
     pub fn repository_session_reset() {
         let (data_dir, cleanup) = test::tmp_dir();
-        let storage_uri = test::tmp_storage();
+        let storage_uri = test::mem_storage();
         let server = make_server(&storage_uri, &data_dir);
 
         // set up server with default repository, and publisher alice

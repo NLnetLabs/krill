@@ -1,7 +1,7 @@
-use std::fmt;
+use std::{fmt, str::FromStr};
 
-pub use kvx::{segment, Key, Scope, Segment, SegmentBuf};
-use kvx::{KeyValueStoreBackend, ReadStore, WriteStore};
+pub use kvx::{namespace, segment, Key, Namespace, Scope, Segment, SegmentBuf};
+use kvx::{KeyValueStoreBackend, NamespaceBuf, ReadStore, WriteStore};
 use serde::{de::DeserializeOwned, Serialize};
 use url::Url;
 
@@ -39,13 +39,78 @@ pub struct KeyValueStore {
 }
 
 impl KeyValueStore {
-    /// Creates a new KeyValueStore and initializes the version if it had
-    /// not been set.
-    pub fn create(storage_uri: &Url, name_space: impl Into<SegmentBuf>) -> Result<Self, KeyValueError> {
-        let store = KeyValueStore {
-            inner: kvx::KeyValueStore::new(storage_uri, name_space)?,
-        };
-        Ok(store)
+    /// Creates a new KeyValueStore.
+    pub fn create(storage_uri: &Url, namespace: &Namespace) -> Result<Self, KeyValueError> {
+        kvx::KeyValueStore::new(storage_uri, namespace)
+            .map(|inner| KeyValueStore { inner })
+            .map_err(KeyValueError::KVError)
+    }
+
+    /// Creates a new KeyValueStore for upgrades.
+    ///
+    /// Adds the implicit prefix "upgrade-{version}-" to the given namespace.
+    pub fn create_upgrade_store(storage_uri: &Url, namespace: &Namespace) -> Result<Self, KeyValueError> {
+        let namespace = Self::prefixed_namespace(namespace, "upgrade")?;
+
+        kvx::KeyValueStore::new(storage_uri, namespace)
+            .map(|inner| KeyValueStore { inner })
+            .map_err(KeyValueError::KVError)
+    }
+
+    fn prefixed_namespace(namespace: &Namespace, prefix: &str) -> Result<NamespaceBuf, KeyValueError> {
+        let namespace_string = format!("{}_{}", prefix, namespace);
+        NamespaceBuf::from_str(&namespace_string)
+            .map_err(|e| KeyValueError::Other(format!("Cannot parse namespace: {}. Error: {}", namespace_string, e)))
+    }
+
+    /// Archive this store (i.e. for this namespace). Deletes
+    /// any existing archive for this namespace if present.
+    pub fn migrate_to_archive(&mut self, storage_uri: &Url, namespace: &Namespace) -> Result<(), KeyValueError> {
+        let archive_ns = Self::prefixed_namespace(namespace, "archive")?;
+        // Wipe any existing archive, before archiving this store.
+        // We don't want to keep too much old data. See issue: #1088.
+        let archive_store = KeyValueStore::create(storage_uri, namespace)?;
+        archive_store.wipe()?;
+
+        self.inner.migrate_namespace(archive_ns).map_err(KeyValueError::KVError)
+    }
+
+    /// Make this (upgrade) store the current store.
+    ///
+    /// Fails if there is a non-empty current store.
+    pub fn migrate_to_current(&mut self, storage_uri: &Url, namespace: &Namespace) -> Result<(), KeyValueError> {
+        let current_store = KeyValueStore::create(storage_uri, namespace)?;
+        if !current_store.is_empty()? {
+            Err(KeyValueError::Other(format!(
+                "Abort migrate upgraded store for {} to current. The current store was not archived.",
+                namespace
+            )))
+        } else {
+            self.inner
+                .migrate_namespace(namespace.into())
+                .map_err(KeyValueError::KVError)
+        }
+    }
+
+    /// Returns true if this KeyValueStore (with this namespace) has any entries
+    pub fn is_empty(&self) -> Result<bool, KeyValueError> {
+        self.inner.is_empty().map_err(KeyValueError::KVError)
+    }
+
+    /// Import all data from the given KV store into this
+    pub fn import(&self, other: &Self) -> Result<(), KeyValueError> {
+        let mut scopes = other.scopes()?;
+        scopes.push(Scope::global()); // not explicitly listed but should be migrated as well.
+
+        for scope in scopes {
+            for key in other.keys(&scope, "")? {
+                if let Some(value) = other.get_raw_value(&key)? {
+                    self.store_raw_value(&key, value)?;
+                }
+            }
+        }
+
+        Ok(())
     }
 
     /// Stores a key value pair, serialized as json, overwrite existing
@@ -67,11 +132,33 @@ impl KeyValueStore {
     /// Gets a value for a key, returns an error if the value cannot be deserialized,
     /// returns None if it cannot be found.
     pub fn get<V: DeserializeOwned>(&self, key: &Key) -> Result<Option<V>, KeyValueError> {
-        if let Some(value) = self.inner.get(key)? {
-            Ok(serde_json::from_value(value)?)
+        if let Some(value) = self.get_raw_value(key)? {
+            match serde_json::from_value(value) {
+                Ok(result) => Ok(result),
+                Err(e) => {
+                    // Get the value again so that we can do a full error report
+                    let value = self.get_raw_value(key)?;
+                    let value_str = value.map(|v| v.to_string()).unwrap_or("".to_string());
+
+                    let expected_type = std::any::type_name::<V>();
+
+                    Err(KeyValueError::Other(format!(
+                        "Could not deserialize value for key '{}'. Expected type: {}. Error: {}. Value was: {}",
+                        key, expected_type, e, value_str
+                    )))
+                }
+            }
         } else {
             Ok(None)
         }
+    }
+
+    fn get_raw_value(&self, key: &Key) -> Result<Option<serde_json::Value>, KeyValueError> {
+        self.inner.get(key).map_err(KeyValueError::KVError)
+    }
+
+    fn store_raw_value(&self, key: &Key, value: serde_json::Value) -> Result<(), KeyValueError> {
+        self.inner.store(key, value).map_err(KeyValueError::KVError)
     }
 
     /// Transactional `get`.
@@ -116,7 +203,7 @@ impl KeyValueStore {
     }
 
     /// Archive a key
-    pub fn archive(&self, key: &Key) -> Result<(), KeyValueError> {
+    pub fn archive_key(&self, key: &Key) -> Result<(), KeyValueError> {
         self.move_key(key, &key.clone().with_sub_scope(segment!("archived")))
     }
 
@@ -130,7 +217,7 @@ impl KeyValueStore {
         self.move_key(key, &key.clone().with_sub_scope(segment!("surplus")))
     }
 
-    /// Returns all 1st level scopes
+    /// Returns all scopes, including sub_scopes
     pub fn scopes(&self) -> Result<Vec<Scope>, KeyValueError> {
         Ok(self.inner.list_scopes()?)
     }
@@ -172,6 +259,7 @@ pub enum KeyValueError {
     UnknownKey(Key),
     DuplicateKey(Key),
     KVError(kvx::Error),
+    Other(String),
 }
 
 impl From<KrillIoError> for KeyValueError {
@@ -201,6 +289,7 @@ impl fmt::Display for KeyValueError {
             KeyValueError::UnknownKey(key) => write!(f, "Unknown key: {}", key),
             KeyValueError::DuplicateKey(key) => write!(f, "Duplicate key: {}", key),
             KeyValueError::KVError(e) => write!(f, "Store error: {}", e),
+            KeyValueError::Other(msg) => write!(f, "{}", msg),
         }
     }
 }
@@ -224,6 +313,16 @@ mod tests {
             .unwrap()
     }
 
+    fn random_namespace() -> NamespaceBuf {
+        rand::thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(8)
+            .map(char::from)
+            .collect::<String>()
+            .parse()
+            .unwrap()
+    }
+
     fn get_storage_uri() -> Url {
         env::var("KRILL_KV_STORAGE_URL")
             .ok()
@@ -235,7 +334,7 @@ mod tests {
     fn test_store() {
         let storage_uri = get_storage_uri();
 
-        let store = KeyValueStore::create(&storage_uri, random_segment()).unwrap();
+        let store = KeyValueStore::create(&storage_uri, &random_namespace()).unwrap();
         let content = "content".to_owned();
         let key = Key::new_global(random_segment());
 
@@ -248,7 +347,7 @@ mod tests {
     fn test_store_new() {
         let storage_uri = get_storage_uri();
 
-        let store = KeyValueStore::create(&storage_uri, random_segment()).unwrap();
+        let store = KeyValueStore::create(&storage_uri, &random_namespace()).unwrap();
         let content = "content".to_owned();
         let key = Key::new_global(random_segment());
 
@@ -260,7 +359,7 @@ mod tests {
     fn test_store_scoped() {
         let storage_uri = get_storage_uri();
 
-        let store = KeyValueStore::create(&storage_uri, random_segment()).unwrap();
+        let store = KeyValueStore::create(&storage_uri, &random_namespace()).unwrap();
         let content = "content".to_owned();
         let id = random_segment();
         let scope = Scope::from_segment(segment!("scope"));
@@ -281,7 +380,7 @@ mod tests {
     fn test_get() {
         let storage_uri = get_storage_uri();
 
-        let store = KeyValueStore::create(&storage_uri, random_segment()).unwrap();
+        let store = KeyValueStore::create(&storage_uri, &random_namespace()).unwrap();
         let content = "content".to_owned();
         let key = Key::new_global(random_segment());
         assert_eq!(store.get::<String>(&key).unwrap(), None);
@@ -294,7 +393,7 @@ mod tests {
     fn test_get_transactional() {
         let storage_uri = get_storage_uri();
 
-        let store = KeyValueStore::create(&storage_uri, random_segment()).unwrap();
+        let store = KeyValueStore::create(&storage_uri, &random_namespace()).unwrap();
         let content = "content".to_owned();
         let key = Key::new_global(random_segment());
         assert_eq!(store.get_transactional::<String>(&key).unwrap(), None);
@@ -307,7 +406,7 @@ mod tests {
     fn test_has() {
         let storage_uri = get_storage_uri();
 
-        let store = KeyValueStore::create(&storage_uri, random_segment()).unwrap();
+        let store = KeyValueStore::create(&storage_uri, &random_namespace()).unwrap();
         let content = "content".to_owned();
         let key = Key::new_global(random_segment());
         assert!(!store.has(&key).unwrap());
@@ -320,7 +419,7 @@ mod tests {
     fn test_drop_key() {
         let storage_uri = get_storage_uri();
 
-        let store = KeyValueStore::create(&storage_uri, random_segment()).unwrap();
+        let store = KeyValueStore::create(&storage_uri, &random_namespace()).unwrap();
         let content = "content".to_owned();
         let key = Key::new_global(random_segment());
         store.store(&key, &content).unwrap();
@@ -334,7 +433,7 @@ mod tests {
     fn test_drop_scope() {
         let storage_uri = get_storage_uri();
 
-        let store = KeyValueStore::create(&storage_uri, random_segment()).unwrap();
+        let store = KeyValueStore::create(&storage_uri, &random_namespace()).unwrap();
         let content = "content".to_owned();
         let scope = Scope::from_segment(random_segment());
         let key = Key::new_scoped(scope.clone(), random_segment());
@@ -355,7 +454,7 @@ mod tests {
     fn test_wipe() {
         let storage_uri = get_storage_uri();
 
-        let store = KeyValueStore::create(&storage_uri, random_segment()).unwrap();
+        let store = KeyValueStore::create(&storage_uri, &random_namespace()).unwrap();
         let content = "content".to_owned();
         let scope = Scope::from_segment(segment!("scope"));
         let key = Key::new_scoped(scope.clone(), random_segment());
@@ -373,7 +472,7 @@ mod tests {
     fn test_move_key() {
         let storage_uri = get_storage_uri();
 
-        let store = KeyValueStore::create(&storage_uri, random_segment()).unwrap();
+        let store = KeyValueStore::create(&storage_uri, &random_namespace()).unwrap();
         let content = "content".to_string();
         let key = Key::new_global(random_segment());
 
@@ -390,14 +489,14 @@ mod tests {
     fn test_archive() {
         let storage_uri = get_storage_uri();
 
-        let store = KeyValueStore::create(&storage_uri, random_segment()).unwrap();
+        let store = KeyValueStore::create(&storage_uri, &random_namespace()).unwrap();
         let content = "content".to_string();
         let key = Key::new_global(random_segment());
 
         store.store(&key, &content).unwrap();
         assert!(store.has(&key).unwrap());
 
-        store.archive(&key).unwrap();
+        store.archive_key(&key).unwrap();
         assert!(!store.has(&key).unwrap());
         assert!(store.has(&key.with_sub_scope(segment!("archived"))).unwrap());
     }
@@ -406,7 +505,7 @@ mod tests {
     fn test_archive_corrupt() {
         let storage_uri = get_storage_uri();
 
-        let store = KeyValueStore::create(&storage_uri, random_segment()).unwrap();
+        let store = KeyValueStore::create(&storage_uri, &random_namespace()).unwrap();
         let content = "content".to_string();
         let key = Key::new_global(random_segment());
 
@@ -422,7 +521,7 @@ mod tests {
     fn test_archive_surplus() {
         let storage_uri = get_storage_uri();
 
-        let store = KeyValueStore::create(&storage_uri, random_segment()).unwrap();
+        let store = KeyValueStore::create(&storage_uri, &random_namespace()).unwrap();
         let content = "content".to_string();
         let key = Key::new_global(random_segment());
 
@@ -438,7 +537,7 @@ mod tests {
     fn test_scopes() {
         let storage_uri = get_storage_uri();
 
-        let store = KeyValueStore::create(&storage_uri, random_segment()).unwrap();
+        let store = KeyValueStore::create(&storage_uri, &random_namespace()).unwrap();
         let content = "content".to_owned();
         let id = segment!("id");
         let scope = Scope::from_segment(random_segment());
@@ -467,7 +566,7 @@ mod tests {
     fn test_has_scope() {
         let storage_uri = get_storage_uri();
 
-        let store = KeyValueStore::create(&storage_uri, random_segment()).unwrap();
+        let store = KeyValueStore::create(&storage_uri, &random_namespace()).unwrap();
         let content = "content".to_owned();
         let scope = Scope::from_segment(random_segment());
         let key = Key::new_scoped(scope.clone(), segment!("id"));
@@ -481,7 +580,7 @@ mod tests {
     fn test_keys() {
         let storage_uri = get_storage_uri();
 
-        let store = KeyValueStore::create(&storage_uri, random_segment()).unwrap();
+        let store = KeyValueStore::create(&storage_uri, &random_namespace()).unwrap();
         let content = "content".to_owned();
         let id = segment!("command--id");
         let scope = Scope::from_segment(segment!("command"));
