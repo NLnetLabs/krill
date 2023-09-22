@@ -117,13 +117,6 @@ impl RepositoryContentProxy {
         Ok(())
     }
 
-    // Update snapshot on disk for faster load times after restart.
-    pub fn update_snapshots(&self) -> KrillResult<()> {
-        self.store
-            .update_snapshot(&self.default_handle, false)
-            .map_err(Error::WalStoreError)
-    }
-
     /// Return the repository content stats
     pub fn stats(&self) -> KrillResult<RepoStats> {
         self.get_default_content().map(|content| content.stats())
