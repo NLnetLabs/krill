@@ -1131,7 +1131,7 @@ dependencies = [
 [[package]]
 name = "kvx"
 version = "0.7.0"
-source = "git+https://github.com/nlnetlabs/kvx?branch=support-namespace-migrations#7bb8ee911d13655b86df4433c8000005f33678ee"
+source = "git+https://github.com/nlnetlabs/kvx?branch=prep-0.8.0#bc8fae8842fdaf653c1f54b2558c40794034ba9c"
 dependencies = [
  "kvx_macros",
  "kvx_types",
@@ -1141,6 +1141,7 @@ dependencies = [
  "r2d2_postgres",
  "rand",
  "serde_json",
+ "tempfile",
  "thiserror",
  "url",
 ]
@@ -1148,7 +1149,7 @@ dependencies = [
 [[package]]
 name = "kvx_macros"
 version = "0.7.0"
-source = "git+https://github.com/nlnetlabs/kvx?branch=support-namespace-migrations#7bb8ee911d13655b86df4433c8000005f33678ee"
+source = "git+https://github.com/nlnetlabs/kvx?branch=prep-0.8.0#bc8fae8842fdaf653c1f54b2558c40794034ba9c"
 dependencies = [
  "kvx_types",
  "proc-macro-error",
@@ -1160,7 +1161,7 @@ dependencies = [
 [[package]]
 name = "kvx_types"
 version = "0.7.0"
-source = "git+https://github.com/nlnetlabs/kvx?branch=support-namespace-migrations#7bb8ee911d13655b86df4433c8000005f33678ee"
+source = "git+https://github.com/nlnetlabs/kvx?branch=prep-0.8.0#bc8fae8842fdaf653c1f54b2558c40794034ba9c"
 dependencies = [
  "postgres",
  "postgres-types",
