@@ -276,7 +276,7 @@ impl PropertiesManager {
             PropertiesInitCommandDetails { krill_version },
             &self.system_actor,
         );
-        self.store.add(cmd).map_err(Error::AggregateStoreError)
+        self.store.add(cmd)
     }
 
     /// Returns the current KrillVersion used for the data store
@@ -297,9 +297,7 @@ impl PropertiesManager {
     }
 
     fn properties(&self) -> KrillResult<Arc<Properties>> {
-        self.store
-            .get_latest(&self.main_key)
-            .map_err(Error::AggregateStoreError)
+        self.store.get_latest(&self.main_key)
     }
 }
 

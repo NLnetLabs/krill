@@ -129,6 +129,10 @@ impl KeyValueStore {
         )?)
     }
 
+    pub fn inner(&self) -> &kvx::KeyValueStore {
+        &self.inner
+    }
+
     /// Gets a value for a key, returns an error if the value cannot be deserialized,
     /// returns None if it cannot be found.
     pub fn get<V: DeserializeOwned>(&self, key: &Key) -> Result<Option<V>, KeyValueError> {

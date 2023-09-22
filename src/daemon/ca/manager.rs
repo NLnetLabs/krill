@@ -116,7 +116,7 @@ impl CaManager {
             // This is slow, but it will ensure that all commands and events are accounted for,
             // and there are no incomplete changes where some but not all files for a change were
             // written to disk.
-            ca_store.recover()?;
+            todo!("issue #1086");
         } else if let Err(e) = ca_store.warm() {
             // Otherwise we just tried to 'warm' the cache. This serves two purposes:
             // 1. this ensures that all `CertAuth` structs are available in memory
@@ -127,7 +127,7 @@ impl CaManager {
                 "Could not warm up cache, data seems corrupt. Will try to recover!! Error was: {}",
                 e
             );
-            ca_store.recover()?;
+            todo!("issue #1086");
         }
 
         // Create the `CaObjectStore` that is responsible for maintaining CA objects: the `CaObjects`
@@ -236,7 +236,6 @@ impl CaManager {
             .as_ref()
             .ok_or_else(|| Error::custom("TA proxy not enabled"))?
             .get_latest(&ta_handle)
-            .map_err(Error::AggregateStoreError)
     }
 
     /// Gets the Trust Anchor Signer, if present. Returns an error if the TA is uninitialized.
@@ -246,7 +245,6 @@ impl CaManager {
             .as_ref()
             .ok_or_else(|| Error::custom("TA signer not enabled"))?
             .get_latest(&ta_handle)
-            .map_err(Error::AggregateStoreError)
     }
 
     /// Initialises the (one) Trust Anchor proxy.
