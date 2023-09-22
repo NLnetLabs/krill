@@ -1131,7 +1131,7 @@ dependencies = [
 [[package]]
 name = "kvx"
 version = "0.7.0"
-source = "git+https://github.com/nlnetlabs/kvx?branch=queue-schedule-if-missing#cd319020357d5a7fab71c73781f8836f8cb08d2c"
+source = "git+https://github.com/nlnetlabs/kvx?branch=queue-finish-and-reschedule#165a76fc182a241472ae1d467300e026216e38a5"
 dependencies = [
  "kvx_macros",
  "kvx_types",
@@ -1149,7 +1149,7 @@ dependencies = [
 [[package]]
 name = "kvx_macros"
 version = "0.7.0"
-source = "git+https://github.com/nlnetlabs/kvx?branch=queue-schedule-if-missing#cd319020357d5a7fab71c73781f8836f8cb08d2c"
+source = "git+https://github.com/nlnetlabs/kvx?branch=queue-finish-and-reschedule#165a76fc182a241472ae1d467300e026216e38a5"
 dependencies = [
  "kvx_types",
  "proc-macro-error",
@@ -1161,7 +1161,7 @@ dependencies = [
 [[package]]
 name = "kvx_types"
 version = "0.7.0"
-source = "git+https://github.com/nlnetlabs/kvx?branch=queue-schedule-if-missing#cd319020357d5a7fab71c73781f8836f8cb08d2c"
+source = "git+https://github.com/nlnetlabs/kvx?branch=queue-finish-and-reschedule#165a76fc182a241472ae1d467300e026216e38a5"
 dependencies = [
  "postgres",
  "postgres-types",
