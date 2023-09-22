@@ -1,0 +1,5 @@
+<delta xmlns="http://www.ripe.net/rpki/rrdp" version="1" session_id="41890b14-62ee-430f-b15d-c4bade57537e" serial="381">
+  <publish uri="rsync://krill-ui-dev-testbed.krill.cloud/repo/testbed/0/1B73D6E56F851983B02CD2ED642B6A94BF368AEF.crl" hash="602d146364a78489c37b8ce13ebfa75e8faa1e506a5c4adcf4c3b762acc12030">
+    MIIB1zCBwAIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEygxQjczRDZFNTZGODUxOTgzQjAyQ0QyRUQ2NDJCNkE5NEJGMzY4QUVGFw0yMzA2MzAwODE0NTlaFw0yMzA3MDExMDU2NTlaMCcwJQIUdArw0c/fuUnMvvU46W/R23iog44XDTIzMDIwNzE0MTc1NlqgMDAuMB8GA1UdIwQYMBaAFBtz1uVvhRmDsCzS7WQrapS/NorvMAsGA1UdFAQEAgIAwzANBgkqhkiG9w0BAQsFAAOCAQEAV2yLp+BKCe/+8aQV1mu+upMZlwIFLZSzcOfyoqAmmRHEQkB0+tatryLLpfGQsNVdJ2L4IAjktSeyyMGCUidNclms4OPrCwql+zRj5hBoEqXTXepy0OATuTspzI6xLzlA6MCptoDzlPkwVGu7uxCRCRsPcaPdPqBn+g7Ld5yrKtDyOujGN47qbn11pg40dYjuwSdy0nh2t/9f3BLIqvLU4DmW/rp9HJNzdbSg7MErXKtGR/7/gHbCBk8nzLGkydU+DFQC3L+1o6HSbE659iywNCy1OK/QfhB9+6+yQKbamdfgy9gaVHFsqUa152jalOpdnOQokjFg3n7UhUKhPLjs+A==
+  </publish>
+</delta>

@@ -35,6 +35,11 @@ impl KrillVersion {
         Self::from_str(KRILL_VERSION).unwrap()
     }
 
+    /// Make a notation friendly to namespaces for upgrades.
+    pub fn hyphen_notated(&self) -> String {
+        format!("{}-{}-{}{}", self.major, self.minor, self.patch, self.release_type)
+    }
+
     pub fn v0_5_0_or_before() -> Self {
         Self::dev(0, 5, 0, "or-before".to_string())
     }

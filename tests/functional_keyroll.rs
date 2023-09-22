@@ -1,6 +1,5 @@
 //! Perform functional tests on a Krill instance, using the API
 //!
-use std::fs;
 use std::str::FromStr;
 
 use bytes::Bytes;
@@ -23,8 +22,9 @@ use krill::{
 
 #[tokio::test]
 async fn functional_keyroll() {
-    let krill_dir = tmp_dir();
-    let config = test_config(&krill_dir, true, false, false, false);
+    let (data_dir, cleanup) = tmp_dir();
+    let storage_uri = mem_storage();
+    let config = test_config(&storage_uri, Some(&data_dir), true, false, false, false);
     start_krill(config).await;
 
     info("##################################################################");
@@ -246,7 +246,7 @@ async fn functional_keyroll() {
         .await;
     }
 
-    let _ = fs::remove_dir_all(krill_dir);
+    cleanup();
 }
 
 async fn assert_manifest_number_current_key(msg: &str, ca: &CaHandle, nr: u64) {

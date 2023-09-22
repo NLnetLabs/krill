@@ -1,15 +1,8 @@
 //! Support for signing mft, crl, certificates, roas..
 //! Common objects for TAs and CAs
-use std::{
-    borrow::BorrowMut,
-    collections::HashMap,
-    path::Path,
-    str::FromStr,
-    sync::{Arc, RwLock},
-};
+use std::{borrow::BorrowMut, collections::HashMap, str::FromStr, sync::Arc};
 
 use chrono::Duration;
-
 use rpki::{
     ca::{idexchange::CaHandle, provisioning::ResourceClassName, publication::Base64},
     crypto::{DigestAlgorithm, KeyIdentifier},
@@ -22,6 +15,7 @@ use rpki::{
     rrdp::Hash,
     uri,
 };
+use url::Url;
 
 use crate::{
     commons::{
@@ -31,12 +25,12 @@ use crate::{
         },
         crypto::KrillSigner,
         error::Error,
-        eventsourcing::{KeyStoreKey, KeyValueStore, PreSaveEventListener},
+        eventsourcing::{Key, KeyValueStore, PreSaveEventListener, Scope, Segment, SegmentExt},
         KrillResult,
     },
-    constants::CA_OBJECTS_DIR,
+    constants::CA_OBJECTS_NS,
     daemon::{
-        ca::{CaEvt, CertAuth, CertifiedKey, ChildCertificateUpdates, RoaUpdates},
+        ca::{CertAuth, CertAuthEvent, CertifiedKey, ChildCertificateUpdates, RoaUpdates},
         config::IssuanceTimingConfig,
     },
 };
@@ -58,16 +52,20 @@ use super::{AspaInfo, AspaObjectsUpdates, BgpSecCertInfo, BgpSecCertificateUpdat
 /// inspect, and causes issues with regards to replaying CA state from scratch.
 #[derive(Clone, Debug)]
 pub struct CaObjectsStore {
-    store: Arc<RwLock<KeyValueStore>>,
+    store: Arc<KeyValueStore>,
     signer: Arc<KrillSigner>,
     issuance_timing: IssuanceTimingConfig,
 }
 
 /// # Construct
 impl CaObjectsStore {
-    pub fn disk(work_dir: &Path, issuance_timing: IssuanceTimingConfig, signer: Arc<KrillSigner>) -> KrillResult<Self> {
-        let store = KeyValueStore::disk(work_dir, CA_OBJECTS_DIR)?;
-        let store = Arc::new(RwLock::new(store));
+    pub fn create(
+        storage_uri: &Url,
+        issuance_timing: IssuanceTimingConfig,
+        signer: Arc<KrillSigner>,
+    ) -> KrillResult<Self> {
+        let store = KeyValueStore::create(storage_uri, CA_OBJECTS_NS)?;
+        let store = Arc::new(store);
         Ok(CaObjectsStore {
             store,
             signer,
@@ -78,7 +76,7 @@ impl CaObjectsStore {
 
 /// # Process new objects as they are being produced
 impl PreSaveEventListener<CertAuth> for CaObjectsStore {
-    fn listen(&self, ca: &CertAuth, events: &[CaEvt]) -> KrillResult<()> {
+    fn listen(&self, ca: &CertAuth, events: &[CertAuthEvent]) -> KrillResult<()> {
         // Note that the `CertAuth` which is passed in has already been
         // updated with the state changes contained in the event.
 
@@ -89,57 +87,57 @@ impl PreSaveEventListener<CertAuth> for CaObjectsStore {
             let mut force_reissue = false;
 
             for event in events {
-                match event.details() {
-                    super::CaEvtDet::RoasUpdated {
+                match event {
+                    super::CertAuthEvent::RoasUpdated {
                         resource_class_name,
                         updates,
                     } => {
                         objects.update_roas(resource_class_name, updates)?;
                         force_reissue = true;
                     }
-                    super::CaEvtDet::AspaObjectsUpdated {
+                    super::CertAuthEvent::AspaObjectsUpdated {
                         resource_class_name,
                         updates,
                     } => {
                         objects.update_aspas(resource_class_name, updates)?;
                         force_reissue = true;
                     }
-                    super::CaEvtDet::BgpSecCertificatesUpdated {
+                    super::CertAuthEvent::BgpSecCertificatesUpdated {
                         resource_class_name,
                         updates,
                     } => {
                         objects.update_bgpsec_certs(resource_class_name, updates)?;
                         force_reissue = true;
                     }
-                    super::CaEvtDet::ChildCertificatesUpdated {
+                    super::CertAuthEvent::ChildCertificatesUpdated {
                         resource_class_name,
                         updates,
                     } => {
                         objects.update_certs(resource_class_name, updates)?;
                         force_reissue = true;
                     }
-                    super::CaEvtDet::KeyPendingToActive {
+                    super::CertAuthEvent::KeyPendingToActive {
                         resource_class_name,
                         current_key,
                     } => {
                         objects.add_class(resource_class_name, current_key, timing, signer)?;
                     }
-                    super::CaEvtDet::KeyPendingToNew {
+                    super::CertAuthEvent::KeyPendingToNew {
                         resource_class_name,
                         new_key,
                     } => {
                         objects.keyroll_stage(resource_class_name, new_key, timing, signer)?;
                     }
-                    super::CaEvtDet::KeyRollActivated {
+                    super::CertAuthEvent::KeyRollActivated {
                         resource_class_name, ..
                     } => {
                         objects.keyroll_activate(resource_class_name)?;
                         force_reissue = true;
                     }
-                    super::CaEvtDet::KeyRollFinished { resource_class_name } => {
+                    super::CertAuthEvent::KeyRollFinished { resource_class_name } => {
                         objects.keyroll_finish(resource_class_name)?;
                     }
-                    super::CaEvtDet::CertificateReceived {
+                    super::CertAuthEvent::CertificateReceived {
                         resource_class_name,
                         rcvd_cert,
                         ..
@@ -150,13 +148,13 @@ impl PreSaveEventListener<CertAuth> for CaObjectsStore {
                         // e.g. because a ROA became overclaiming, then we would see another
                         // event for that which *will* result in forcing re-issuance.
                     }
-                    super::CaEvtDet::ResourceClassRemoved {
+                    super::CertAuthEvent::ResourceClassRemoved {
                         resource_class_name, ..
                     } => {
                         objects.remove_class(resource_class_name);
                         force_reissue = true;
                     }
-                    super::CaEvtDet::RepoUpdated { contact } => {
+                    super::CertAuthEvent::RepoUpdated { contact } => {
                         objects.update_repo(contact);
                         force_reissue = true;
                     }
@@ -170,21 +168,19 @@ impl PreSaveEventListener<CertAuth> for CaObjectsStore {
 }
 
 impl CaObjectsStore {
-    fn key(ca: &CaHandle) -> KeyStoreKey {
-        KeyStoreKey::simple(format!("{}.json", ca))
+    fn key(ca: &CaHandle) -> Key {
+        Key::new_global(Segment::parse_lossy(&format!("{}.json", ca))) // ca should always be a valid Segment
     }
 
-    fn cas(&self) -> KrillResult<Vec<CaHandle>> {
+    pub fn cas(&self) -> KrillResult<Vec<CaHandle>> {
         let cas = self
             .store
-            .read()
-            .unwrap()
-            .keys(None, ".json")?
+            .keys(&Scope::global(), ".json")?
             .iter()
             .flat_map(|k| {
-                // Only add entries that end with .json AND for which the first part can be parsed as a handle
+                // Only add entries for which the first part can be parsed as a handle
                 let mut res = None;
-                if let Some(name) = k.name().strip_suffix(".json") {
+                if let Some(name) = k.name().as_str().strip_suffix(".json") {
                     if let Ok(handle) = CaHandle::from_str(name) {
                         res = Some(handle)
                     }
@@ -199,7 +195,7 @@ impl CaObjectsStore {
     pub fn ca_objects(&self, ca: &CaHandle) -> KrillResult<CaObjects> {
         let key = Self::key(ca);
 
-        match self.store.read().unwrap().get(&key).map_err(Error::KeyValueError)? {
+        match self.store.get(&key).map_err(Error::KeyValueError)? {
             None => {
                 let objects = CaObjects::new(ca.clone(), None, HashMap::new(), vec![]);
                 Ok(objects)
@@ -211,38 +207,37 @@ impl CaObjectsStore {
     /// Perform an action (closure) on a mutable instance of the CaObjects for a
     /// CA. If the CA did not have any CaObjects yet, one will be created. The
     /// closure is executed within a write lock.
-    pub fn with_ca_objects<F>(&self, ca: &CaHandle, op: F) -> KrillResult<()>
+    pub fn with_ca_objects<F>(&self, ca: &CaHandle, mut op: F) -> KrillResult<()>
     where
-        F: FnOnce(&mut CaObjects) -> KrillResult<()>,
+        F: FnMut(&mut CaObjects) -> KrillResult<()>,
     {
-        let lock = self.store.write().unwrap();
-
-        let key = Self::key(ca);
-
-        let mut objects = lock
-            .get(&key)
-            .map_err(Error::KeyValueError)?
-            .unwrap_or_else(|| CaObjects::new(ca.clone(), None, HashMap::new(), vec![]));
-
-        op(&mut objects)?;
-
-        lock.store(&key, &objects).map_err(Error::KeyValueError)?;
-
-        Ok(())
-    }
-
-    pub fn put_ca_objects(&self, ca: &CaHandle, objects: &CaObjects) -> KrillResult<()> {
         self.store
-            .write()
-            .unwrap()
-            .store(&Self::key(ca), objects)
-            .map_err(Error::KeyValueError)
+            .execute(&Scope::global(), |kv| {
+                let key = Self::key(ca);
+
+                let mut objects: CaObjects = if let Some(value) = kv.get(&key)? {
+                    serde_json::from_value(value)?
+                } else {
+                    CaObjects::new(ca.clone(), None, HashMap::new(), vec![])
+                };
+
+                match op(&mut objects) {
+                    Err(e) => Ok(Err(e)),
+                    Ok(()) => {
+                        let value = serde_json::to_value(&objects)?;
+                        kv.store(&key, value)?;
+                        Ok(Ok(()))
+                    }
+                }
+            })
+            .map_err(Error::KeyValueError)?
     }
 
     // Re-issue MFT and CRL for all CAs *if needed*, returns all CAs which were updated.
     pub fn reissue_all(&self, force: bool) -> KrillResult<Vec<CaHandle>> {
         let mut res = vec![];
         for ca in self.cas()? {
+            debug!("Re-issue for CA {} using force: {}", ca, force);
             self.with_ca_objects(&ca, |objects| {
                 if objects.re_issue(force, &self.issuance_timing, &self.signer)? {
                     res.push(ca.clone())
@@ -1005,6 +1000,13 @@ impl KeyObjectSet {
     }
 
     fn reissue(&mut self, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<()> {
+        debug!(
+            "Will re-issue for key: {}. Current revision: {} and next update: {}",
+            self.signing_cert.key_identifier(),
+            self.revision.number,
+            self.revision.next_update.to_rfc3339()
+        );
+
         self.revision.next(timing.publish_next());
 
         self.revocations.remove_expired();

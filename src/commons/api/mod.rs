@@ -39,7 +39,6 @@ use crate::{commons::error::RoaDeltaError, daemon::ca::RoaPayloadJsonMapKey};
 
 // Some syntactic sugar to help this old coder's brain deal with the mess of Strings
 pub type Message = String;
-pub type Label = String;
 pub type ArgKey = String;
 pub type ArgVal = String;
 

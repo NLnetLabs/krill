@@ -46,11 +46,11 @@ pub struct RepositoryManager {
 /// # Constructing
 ///
 impl RepositoryManager {
-    /// Builds a RepositoryManager. This will use a disk based KeyValueStore using the
-    /// the data directory specified in the supplied `Config`.
+    /// Builds a RepositoryManager. This will use a KeyValueStore using the
+    /// the storage uri specified in the supplied `Config`.
     pub fn build(config: Arc<Config>, tasks: Arc<TaskQueue>, signer: Arc<KrillSigner>) -> Result<Self, Error> {
-        let access_proxy = Arc::new(RepositoryAccessProxy::disk(&config)?);
-        let content_proxy = Arc::new(RepositoryContentProxy::disk(&config)?);
+        let access_proxy = Arc::new(RepositoryAccessProxy::create(&config)?);
+        let content_proxy = Arc::new(RepositoryContentProxy::create(&config)?);
 
         Ok(RepositoryManager {
             access: access_proxy,
@@ -71,8 +71,8 @@ impl RepositoryManager {
     /// Create the publication server, will fail if it was already created.
     pub fn init(&self, uris: PublicationServerUris) -> KrillResult<()> {
         info!("Initializing repository");
-        self.access.init(uris.clone(), &self.signer)?;
-        self.content.init(&self.config.data_dir, uris)?;
+        self.access.init(uris.clone(), self.signer.clone())?;
+        self.content.init(self.config.repo_dir(), uris)?;
         self.content.write_repository(self.config.rrdp_updates_config)?;
 
         Ok(())
@@ -83,15 +83,6 @@ impl RepositoryManager {
     pub fn repository_clear(&self) -> KrillResult<()> {
         self.access.clear()?;
         self.content.clear()
-    }
-
-    /// Update snapshots on disk for faster re-starts
-    pub fn update_snapshots(&self) -> KrillResult<()> {
-        if self.initialized()? {
-            self.content.update_snapshots()
-        } else {
-            Ok(())
-        }
     }
 
     /// List all current publishers
@@ -289,6 +280,7 @@ mod tests {
         str::{from_utf8, FromStr},
         time::Duration,
     };
+    use url::Url;
 
     use bytes::Bytes;
     use tokio::time::sleep;
@@ -314,12 +306,11 @@ mod tests {
         },
         constants::*,
         daemon::config::{SignerConfig, SignerType},
-        pubd::Publisher,
-        pubd::RrdpServer,
+        pubd::{Publisher, RrdpServer},
         test::{self, https, init_config, rsync},
     };
 
-    fn publisher_alice(work_dir: &Path) -> Publisher {
+    fn publisher_alice(storage_uri: &Url) -> Publisher {
         // When the "hsm" feature is enabled we could be running the tests with PKCS#11 as the default signer type.
         // In that case, if the backend signer is SoftHSMv2, attempting to create a second instance of KrillSigner in
         // the same process will fail because it will attempt to login to SoftHSMv2 a second time which SoftHSMv2 does
@@ -329,7 +320,7 @@ mod tests {
             let signer_type = SignerType::OpenSsl(OpenSslSignerConfig::default());
             let signer_config = SignerConfig::new("Alice".to_string(), signer_type);
             let signer_configs = &[signer_config];
-            KrillSignerBuilder::new(work_dir, Duration::from_secs(1), signer_configs)
+            KrillSignerBuilder::new(storage_uri, Duration::from_secs(1), signer_configs)
                 .build()
                 .unwrap()
         };
@@ -345,12 +336,12 @@ mod tests {
         idexchange::PublisherRequest::new(id_cert.base64().clone(), handle, None)
     }
 
-    fn make_server(work_dir: &Path) -> RepositoryManager {
+    fn make_server(storage_uri: &Url, data_dir: &Path) -> RepositoryManager {
         enable_test_mode();
-        let mut config = Config::test(work_dir, true, false, false, false);
+        let mut config = Config::test(storage_uri, Some(data_dir), true, false, false, false);
         init_config(&mut config);
 
-        let signer = KrillSignerBuilder::new(work_dir, Duration::from_secs(1), &config.signers)
+        let signer = KrillSignerBuilder::new(storage_uri, Duration::from_secs(1), &config.signers)
             .with_default_signer(config.default_signer())
             .with_one_off_signer(config.one_off_signer())
             .build()
@@ -373,15 +364,17 @@ mod tests {
 
     #[test]
     fn should_add_publisher() {
-        let d = test::tmp_dir();
-        let server = make_server(&d);
+        // we need a disk, as repo_dir, etc. use data_dir by default
+        let (data_dir, cleanup) = test::tmp_dir();
+        let storage_uri = test::mem_storage();
+        let server = make_server(&storage_uri, &data_dir);
 
-        let alice = publisher_alice(&d);
+        let alice = publisher_alice(&storage_uri);
 
         let alice_handle = Handle::from_str("alice").unwrap();
         let publisher_req = make_publisher_req(alice_handle.as_str(), alice.id_cert());
 
-        let actor = Actor::test_from_def(ACTOR_DEF_TEST);
+        let actor = Actor::actor_from_def(ACTOR_DEF_TEST);
         server.create_publisher(publisher_req, &actor).unwrap();
 
         let alice_found = server.get_publisher_details(&alice_handle).unwrap();
@@ -390,53 +383,62 @@ mod tests {
         assert_eq!(alice_found.id_cert(), alice.id_cert());
         assert!(alice_found.current_files().is_empty());
 
-        let _ = fs::remove_dir_all(d);
+        cleanup();
     }
 
     #[test]
     fn should_not_add_publisher_twice() {
-        let d = test::tmp_dir();
-        let server = make_server(&d);
+        // we need a disk, as repo_dir, etc. use data_dir by default
+        let (data_dir, cleanup) = test::tmp_dir();
+        let storage_uri = test::mem_storage();
 
-        let alice = publisher_alice(&d);
+        let server = make_server(&storage_uri, &data_dir);
+
+        let alice = publisher_alice(&storage_uri);
 
         let alice_handle = Handle::from_str("alice").unwrap();
         let publisher_req = make_publisher_req(alice_handle.as_str(), alice.id_cert());
 
-        let actor = Actor::test_from_def(ACTOR_DEF_TEST);
+        let actor = Actor::actor_from_def(ACTOR_DEF_TEST);
         server.create_publisher(publisher_req.clone(), &actor).unwrap();
 
         match server.create_publisher(publisher_req, &actor) {
             Err(Error::PublisherDuplicate(name)) => assert_eq!(name, alice_handle),
             _ => panic!("Expected error"),
         }
-        let _ = fs::remove_dir_all(d);
+
+        cleanup();
     }
 
     #[test]
     fn should_list_files() {
-        let d = test::tmp_dir();
-        let server = make_server(&d);
+        // we need a disk, as repo_dir, etc. use data_dir by default
+        let (data_dir, cleanup) = test::tmp_dir();
+        let storage_uri = test::mem_storage();
+        let server = make_server(&storage_uri, &data_dir);
 
-        let alice = publisher_alice(&d);
+        let alice = publisher_alice(&storage_uri);
 
         let alice_handle = Handle::from_str("alice").unwrap();
         let publisher_req = make_publisher_req(alice_handle.as_str(), alice.id_cert());
 
-        let actor = Actor::test_from_def(ACTOR_DEF_TEST);
+        let actor = Actor::actor_from_def(ACTOR_DEF_TEST);
         server.create_publisher(publisher_req, &actor).unwrap();
 
         let list_reply = server.list(&alice_handle).unwrap();
         assert_eq!(0, list_reply.elements().len());
 
-        let _ = fs::remove_dir_all(d);
+        cleanup();
     }
 
     #[tokio::test]
     async fn should_publish_files() {
-        let d = test::tmp_dir();
-        let server = make_server(&d);
-        let session = session_dir(&d);
+        // we need a disk, as repo_dir, etc. use data_dir by default
+        let (data_dir, cleanup) = test::tmp_dir();
+        let storage_uri = test::mem_storage();
+        let server = make_server(&storage_uri, &data_dir);
+
+        let session = session_dir(&data_dir);
 
         // Check that the server starts with dir for serial 1 for RRDP
         // and does not use 0 (RFC 8182)
@@ -444,12 +446,12 @@ mod tests {
         assert!(session_dir_contains_serial(&session, RRDP_FIRST_SERIAL));
 
         // set up server with default repository, and publisher alice
-        let alice = publisher_alice(&d);
+        let alice = publisher_alice(&storage_uri);
 
         let alice_handle = Handle::from_str("alice").unwrap();
         let publisher_req = make_publisher_req(alice_handle.as_str(), alice.id_cert());
 
-        let actor = Actor::test_from_def(ACTOR_DEF_TEST);
+        let actor = Actor::actor_from_def(ACTOR_DEF_TEST);
         server.create_publisher(publisher_req, &actor).unwrap();
 
         // get the file out of a list_reply
@@ -616,21 +618,22 @@ mod tests {
         assert!(!session_dir_contains_serial(&session, RRDP_FIRST_SERIAL + 2));
         assert!(!session_dir_contains_serial(&session, RRDP_FIRST_SERIAL + 3));
 
-        let _ = fs::remove_dir_all(d);
+        cleanup();
     }
 
     #[test]
     pub fn repository_session_reset() {
-        let d = test::tmp_dir();
-        let server = make_server(&d);
+        let (data_dir, cleanup) = test::tmp_dir();
+        let storage_uri = test::mem_storage();
+        let server = make_server(&storage_uri, &data_dir);
 
         // set up server with default repository, and publisher alice
-        let alice = publisher_alice(&d);
+        let alice = publisher_alice(&storage_uri);
 
         let alice_handle = Handle::from_str("alice").unwrap();
         let publisher_req = make_publisher_req(alice_handle.as_str(), alice.id_cert());
 
-        let actor = Actor::test_from_def(ACTOR_DEF_TEST);
+        let actor = Actor::actor_from_def(ACTOR_DEF_TEST);
         server.create_publisher(publisher_req, &actor).unwrap();
 
         // get the file out of a list_reply
@@ -667,7 +670,7 @@ mod tests {
         let stats_before = server.repo_stats().unwrap();
         let session_before = stats_before.session();
         let snapshot_before_session_reset =
-            find_in_session_and_serial_dir(&d, &session_before, RRDP_FIRST_SERIAL + 1, "snapshot.xml");
+            find_in_session_and_serial_dir(&data_dir, &session_before, RRDP_FIRST_SERIAL + 1, "snapshot.xml");
 
         assert!(snapshot_before_session_reset.is_some());
 
@@ -679,23 +682,23 @@ mod tests {
         let session_after = stats_after.session();
 
         let snapshot_after_session_reset =
-            find_in_session_and_serial_dir(&d, &session_after, RRDP_FIRST_SERIAL, "snapshot.xml");
+            find_in_session_and_serial_dir(&data_dir, &session_after, RRDP_FIRST_SERIAL, "snapshot.xml");
         assert_ne!(snapshot_before_session_reset, snapshot_after_session_reset);
 
         assert!(snapshot_after_session_reset.is_some());
 
         // and clean up old dir
         let snapshot_before_session_reset =
-            find_in_session_and_serial_dir(&d, &session_before, RRDP_FIRST_SERIAL + 1, "snapshot.xml");
+            find_in_session_and_serial_dir(&data_dir, &session_before, RRDP_FIRST_SERIAL + 1, "snapshot.xml");
 
         assert!(snapshot_before_session_reset.is_none());
 
-        let _ = fs::remove_dir_all(d);
+        cleanup();
     }
 
-    fn session_dir(work_dir: &Path) -> PathBuf {
-        let mut rrdp_dir = work_dir.to_path_buf();
-        rrdp_dir.push("repo/rrdp");
+    fn session_dir(base_dir: &Path) -> PathBuf {
+        let mut rrdp_dir = base_dir.to_path_buf();
+        rrdp_dir = rrdp_dir.join("repo/rrdp");
 
         for entry in fs::read_dir(&rrdp_dir).unwrap() {
             let entry = entry.unwrap();
@@ -703,25 +706,23 @@ mod tests {
                 return entry.path();
             }
         }
-        panic!("Could not find session dir under: {}", work_dir.to_string_lossy())
+        panic!("Could not find session dir under: {}", base_dir.to_string_lossy())
     }
 
-    fn session_dir_contains_serial(session_path: &Path, serial: u64) -> bool {
-        let mut path = session_path.to_path_buf();
+    fn session_dir_contains_serial(session_uri: &Path, serial: u64) -> bool {
+        let mut path = session_uri.to_path_buf();
         path.push(serial.to_string());
         path.is_dir()
     }
 
-    fn session_dir_contains_delta(session_path: &Path, serial: u64) -> bool {
-        RrdpServer::find_in_serial_dir(session_path, serial, "delta.xml")
+    fn session_dir_contains_delta(session_uri: &Path, serial: u64) -> bool {
+        RrdpServer::find_in_serial_dir(session_uri, serial, "delta.xml")
             .unwrap()
             .is_some()
     }
 
-    fn session_dir_contains_snapshot(session_path: &Path, serial: u64) -> bool {
-        RrdpServer::session_dir_snapshot(session_path, serial)
-            .unwrap()
-            .is_some()
+    fn session_dir_contains_snapshot(session_uri: &Path, serial: u64) -> bool {
+        RrdpServer::session_dir_snapshot(session_uri, serial).unwrap().is_some()
     }
 
     fn find_in_session_and_serial_dir(

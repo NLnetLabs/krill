@@ -39,45 +39,46 @@ mod tests {
         commons::{
             api::{PublicationServerInfo, RepositoryContact},
             crypto::KrillSignerBuilder,
-            eventsourcing::AggregateStore,
+            eventsourcing::{namespace, AggregateStore, Namespace},
         },
         daemon::config::ConfigDefaults,
-        test::*,
+        test,
     };
 
     #[test]
     fn init_ta() {
-        test_under_tmp(|d| {
-            init_logging();
+        test::test_in_memory(|storage_uri| {
+            let cleanup = test::init_logging();
 
-            let ta_signer_store: AggregateStore<TrustAnchorSigner> = AggregateStore::disk(&d, "ta_signer").unwrap();
-            let ta_proxy_store: AggregateStore<TrustAnchorProxy> = AggregateStore::disk(&d, "ta_proxy").unwrap();
+            let ta_signer_store: AggregateStore<TrustAnchorSigner> =
+                AggregateStore::create(storage_uri, namespace!("ta_signer"), false).unwrap();
+            let ta_proxy_store: AggregateStore<TrustAnchorProxy> =
+                AggregateStore::create(storage_uri, namespace!("ta_proxy"), false).unwrap();
 
             // We will import a TA key - this is only (supposed to be) supported for the openssl signer
             let signers = ConfigDefaults::openssl_signer_only();
             let signer = Arc::new(
-                KrillSignerBuilder::new(&d, Duration::from_secs(1), &signers)
+                KrillSignerBuilder::new(storage_uri, Duration::from_secs(1), &signers)
                     .build()
                     .unwrap(),
             );
 
-            let actor = test_actor();
+            let actor = test::test_actor();
 
             let proxy_handle = TrustAnchorHandle::new("proxy".into());
+            let proxy_init = TrustAnchorProxyInitCommand::make(&proxy_handle, signer.clone(), &actor);
 
-            let init = TrustAnchorProxy::create_init(proxy_handle.clone(), &signer).unwrap();
-
-            ta_proxy_store.add(init).unwrap();
+            ta_proxy_store.add(proxy_init).unwrap();
 
             let repository = {
                 let repo_info = RepoInfo::new(
-                    rsync("rsync://example.krill.cloud/repo/"),
-                    Some(https("https://exmple.krill.cloud/repo/notification.xml")),
+                    test::rsync("rsync://example.krill.cloud/repo/"),
+                    Some(test::https("https://exmple.krill.cloud/repo/notification.xml")),
                 );
                 let repo_key_id = signer.create_key().unwrap();
                 let repo_key = signer.get_key_info(&repo_key_id).unwrap();
 
-                let service_uri = ServiceUri::Https(https("https://example.krill.cloud/rfc8181/ta"));
+                let service_uri = ServiceUri::Https(test::https("https://example.krill.cloud/rfc8181/ta"));
                 let server_info = PublicationServerInfo::new(repo_key, service_uri);
 
                 RepositoryContact::new(repo_info, server_info)
@@ -87,24 +88,25 @@ mod tests {
             let mut proxy = ta_proxy_store.command(add_repo_cmd).unwrap();
 
             let signer_handle = TrustAnchorHandle::new("signer".into());
-            let tal_https = vec![https("https://example.krill.cloud/ta/ta.cer")];
-            let tal_rsync = rsync("rsync://example.krill.cloud/ta/ta.cer");
+            let tal_https = vec![test::https("https://example.krill.cloud/ta/ta.cer")];
+            let tal_rsync = test::rsync("rsync://example.krill.cloud/ta/ta.cer");
 
             let import_key_pem = include_str!("../../../test-resources/ta/example-pkcs1.pem");
 
-            let signer_init_cmd = TrustAnchorSignerInitCommand {
-                handle: signer_handle.clone(),
-                proxy_id: proxy.id().clone(),
-                repo_info: proxy.repository().unwrap().repo_info().clone(),
-                tal_https: tal_https.clone(),
-                tal_rsync: tal_rsync.clone(),
-                private_key_pem: Some(import_key_pem.to_string()),
-                signer: signer.clone(),
-            };
+            let signer_init_cmd = TrustAnchorSignerInitCommand::new(
+                &signer_handle,
+                TrustAnchorSignerInitCommandDetails {
+                    proxy_id: proxy.id().clone(),
+                    repo_info: proxy.repository().unwrap().repo_info().clone(),
+                    tal_https: tal_https.clone(),
+                    tal_rsync: tal_rsync.clone(),
+                    private_key_pem: Some(import_key_pem.to_string()),
+                    signer: signer.clone(),
+                },
+                &actor,
+            );
 
-            let signer_init = TrustAnchorSigner::create_init(signer_init_cmd).unwrap();
-
-            let mut ta_signer = ta_signer_store.add(signer_init).unwrap();
+            let mut ta_signer = ta_signer_store.add(signer_init_cmd).unwrap();
             let signer_info = ta_signer.get_signer_info();
             let add_signer_cmd = TrustAnchorProxyCommand::add_signer(&proxy_handle, signer_info, &actor);
 
@@ -153,6 +155,8 @@ mod tests {
             // This is hard to test at this level. So, will test this as part of the higher
             // order functional tests found under /tests. I.e. we will start a full krill
             // server with testbed support, which will use the TrustAnchorProxy and Signer.
+
+            cleanup();
         })
     }
 }

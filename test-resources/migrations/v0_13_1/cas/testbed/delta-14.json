@@ -1,0 +1,10 @@
+{
+  "id": "testbed",
+  "version": 14,
+  "details": {
+    "type": "child_certificate_issued",
+    "child": "NLnetLabs",
+    "resource_class_name": "0",
+    "ki": "B2F9D7A5A5A9D791BE2BB641C9AF19505D100C2F"
+  }
+}

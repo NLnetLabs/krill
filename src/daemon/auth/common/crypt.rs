@@ -16,18 +16,13 @@
 // 3: https://tools.ietf.org/html/rfc8439#section-4
 // 4: https://github.com/NLnetLabs/krill/issues/382
 
-// TODO: Fold this into OpenSslSigner?
-use std::{
-    fs::File,
-    io::Write,
-    path::Path,
-    sync::atomic::{AtomicU64, Ordering},
-};
+use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::commons::{
-    error::{Error, KrillIoError},
-    util::ext_serde,
-    KrillResult,
+use kvx::{namespace, segment, Key, Namespace, Segment};
+
+use crate::{
+    commons::{error::Error, util::ext_serde, KrillResult},
+    daemon::config::Config,
 };
 
 const CHACHA20_KEY_BIT_LEN: usize = 256;
@@ -38,6 +33,9 @@ const POLY1305_TAG_BIT_LEN: usize = 128;
 const POLY1305_TAG_BYTE_LEN: usize = POLY1305_TAG_BIT_LEN / 8;
 const CLEARTEXT_PREFIX_LEN: usize = CHACHA20_NONCE_BYTE_LEN + POLY1305_TAG_BYTE_LEN;
 const UNUSED_AAD: [u8; 0] = [0; 0];
+
+const CRYPT_STATE_NS: &Namespace = namespace!("login_sessions");
+const CRYPT_STATE_KEY: &Segment = segment!("main_key");
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct NonceState {
@@ -75,6 +73,7 @@ impl NonceState {
     }
 }
 
+#[derive(Deserialize, Serialize)]
 pub struct CryptState {
     pub key: [u8; CHACHA20_KEY_BYTE_LEN],
     pub nonce: NonceState,
@@ -134,24 +133,20 @@ pub(crate) fn decrypt(key: &[u8], payload: &[u8]) -> KrillResult<Vec<u8>> {
         .map_err(|err| Error::Custom(format!("Decryption error: {}", &err)))
 }
 
-pub(crate) fn crypt_init(key_path: &Path) -> KrillResult<CryptState> {
-    if key_path.exists() {
-        let key_bytes =
-            std::fs::read(key_path).map_err(|err| Error::Custom(format!("Unable to load symmetric key: {}", err)))?;
-        CryptState::from_key_vec(key_bytes)
+pub(crate) fn crypt_init(config: &Config) -> KrillResult<CryptState> {
+    let store = config.key_value_store(CRYPT_STATE_NS)?;
+    let key = Key::new_global(CRYPT_STATE_KEY);
+
+    if let Some(state) = store.get(&key)? {
+        Ok(state)
     } else {
         let mut key_bytes = [0; CHACHA20_KEY_BYTE_LEN];
         openssl::rand::rand_bytes(&mut key_bytes)
             .map_err(|err| Error::Custom(format!("Unable to generate symmetric key: {}", err)))?;
 
-        let mut f = File::create(key_path)
-            .map_err(|e| KrillIoError::new(format!("Could not create key file '{}'", key_path.to_string_lossy()), e))?;
-        f.write_all(&key_bytes).map_err(|e| {
-            KrillIoError::new(
-                format!("Could not write to key file '{}'", key_path.to_string_lossy()),
-                e,
-            )
-        })?;
-        Ok(CryptState::from_key_bytes(key_bytes)?)
+        let state = CryptState::from_key_bytes(key_bytes)?;
+        store.store_new(&key, &state)?;
+
+        Ok(state)
     }
 }

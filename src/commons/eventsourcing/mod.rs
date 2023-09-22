@@ -1,27 +1,27 @@
 //! Event sourcing support for Krill
 
 mod agg;
-pub use self::agg::Aggregate;
+pub use self::agg::*;
 
 mod wal;
 pub use self::wal::*;
 
 mod evt;
-pub use self::evt::{Event, StoredEvent};
+pub use self::evt::*;
 
 mod cmd;
-pub use self::cmd::{Command, CommandDetails, SentCommand, StoredCommand, WithStorableDetails};
+pub use self::cmd::*;
 
 mod store;
 pub use self::store::*;
 
 mod listener;
-pub use self::listener::{EventCounter, PostSaveEventListener, PreSaveEventListener};
-
-pub mod locks;
+pub use self::listener::*;
 
 mod kv;
-pub use self::kv::*;
+pub use self::kv::{
+    namespace, segment, Key, KeyValueError, KeyValueStore, Namespace, Scope, Segment, SegmentBuf, SegmentExt,
+};
 
 //------------ Tests ---------------------------------------------------------
 
@@ -33,48 +33,66 @@ mod tests {
     //! Goal is two-fold: document using a simple domain, and test the module.
     //!
 
-    use std::str::FromStr;
-    use std::sync::Arc;
-    use std::{fmt, fs};
+    use std::{fmt, str::FromStr, sync::Arc};
 
     use serde::Serialize;
 
     use rpki::ca::idexchange::MyHandle;
 
-    use crate::test;
     use crate::{
         commons::{
             actor::Actor,
             api::{CommandHistoryCriteria, CommandSummary},
         },
         constants::ACTOR_DEF_TEST,
+        test::mem_storage,
     };
 
     use super::*;
 
-    //------------ InitPersonEvent -----------------------------------------------
+    //------------ PersonInitEvent -----------------------------------------------
 
     /// Every aggregate defines their own initialization event. This is the first
     /// event stored for an instance.
-    ///
-    /// Here we define a type wrapping around the generic StoredEvent, so we only
-    /// need to define the unique initialization details.
-    type InitPersonEvent = StoredEvent<InitPersonDetails>;
-
-    impl InitPersonEvent {
-        pub fn init(id: &MyHandle, name: &str) -> Self {
-            StoredEvent::new(id, 0, InitPersonDetails { name: name.to_string() })
-        }
-    }
-
     #[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
-    struct InitPersonDetails {
+    struct PersonInitEvent {
         pub name: String,
     }
 
-    impl fmt::Display for InitPersonDetails {
+    impl InitEvent for PersonInitEvent {}
+
+    impl fmt::Display for PersonInitEvent {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             write!(f, "person initialized with name '{}'", self.name)
+        }
+    }
+
+    //------------ InitPersonCommand ---------------------------------------------
+    type PersonInitCommand = SentInitCommand<PersonInitCommandDetails>;
+
+    impl PersonInitCommand {
+        fn make(id: &MyHandle, name: String) -> Self {
+            let actor = Actor::actor_from_def(ACTOR_DEF_TEST);
+            PersonInitCommand::new(id, PersonInitCommandDetails { name }, &actor)
+        }
+    }
+
+    #[derive(Clone, Debug)]
+    struct PersonInitCommandDetails {
+        name: String,
+    }
+
+    impl fmt::Display for PersonInitCommandDetails {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            self.store().fmt(f)
+        }
+    }
+
+    impl InitCommandDetails for PersonInitCommandDetails {
+        type StorableDetails = PersonStorableCommand;
+
+        fn store(&self) -> Self::StorableDetails {
+            PersonStorableCommand::make_init()
         }
     }
 
@@ -84,34 +102,29 @@ mod tests {
     /// state of an aggregate can only change when events are applied. And events
     /// cannot have side effects. If they did, then replaying events would become
     /// problematic.
-    ///
-    /// Here we make a type alias wrapped around the generic StoredEvent and
-    /// include an enum with event details specific for Persons. Furthermore we
-    /// provide an implementation for this type alias so that we can have some
-    /// convenience functions for creating these events.
-    type PersonEvent = StoredEvent<PersonEventDetails>;
-
     #[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
-    enum PersonEventDetails {
+    enum PersonEvent {
         NameChanged(String),
         HadBirthday,
     }
 
     impl PersonEvent {
-        pub fn had_birthday(p: &Person) -> Self {
-            StoredEvent::new(p.id(), p.version, PersonEventDetails::HadBirthday)
+        pub fn had_birthday() -> Self {
+            PersonEvent::HadBirthday
         }
 
-        pub fn name_changed(p: &Person, name: String) -> Self {
-            StoredEvent::new(p.id(), p.version, PersonEventDetails::NameChanged(name))
+        pub fn name_changed(name: String) -> Self {
+            PersonEvent::NameChanged(name)
         }
     }
 
-    impl fmt::Display for PersonEventDetails {
+    impl Event for PersonEvent {}
+
+    impl fmt::Display for PersonEvent {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             match self {
-                PersonEventDetails::NameChanged(new_name) => write!(f, "changed name to '{}'", new_name),
-                PersonEventDetails::HadBirthday => write!(f, "went around the sun."),
+                PersonEvent::NameChanged(new_name) => write!(f, "changed name to '{}'", new_name),
+                PersonEvent::HadBirthday => write!(f, "went around the sun."),
             }
         }
     }
@@ -148,36 +161,63 @@ mod tests {
         }
     }
 
-    impl WithStorableDetails for PersonCommandDetails {
-        fn summary(&self) -> CommandSummary {
-            match self {
-                PersonCommandDetails::ChangeName(name) => {
-                    CommandSummary::new("person-change-name", self).with_arg("name", name)
-                }
-                PersonCommandDetails::GoAroundTheSun => CommandSummary::new("person-around-sun", self),
-            }
-        }
-    }
-
     impl CommandDetails for PersonCommandDetails {
         type Event = PersonEvent;
-        type StorableDetails = Self;
+        type StorableDetails = PersonStorableCommand;
 
         fn store(&self) -> Self::StorableDetails {
-            self.clone()
+            match self {
+                PersonCommandDetails::ChangeName(name) => PersonStorableCommand::ChangeName(name.clone()),
+                PersonCommandDetails::GoAroundTheSun => PersonStorableCommand::GoAroundTheSun,
+            }
         }
     }
 
     impl PersonCommand {
         pub fn go_around_sun(id: &MyHandle, version: Option<u64>) -> Self {
-            let actor = Actor::test_from_def(ACTOR_DEF_TEST);
+            let actor = Actor::actor_from_def(ACTOR_DEF_TEST);
             Self::new(id, version, PersonCommandDetails::GoAroundTheSun, &actor)
         }
 
         pub fn change_name(id: &MyHandle, version: Option<u64>, s: &str) -> Self {
             let details = PersonCommandDetails::ChangeName(s.to_string());
-            let actor = Actor::test_from_def(ACTOR_DEF_TEST);
+            let actor = Actor::actor_from_def(ACTOR_DEF_TEST);
             Self::new(id, version, details, &actor)
+        }
+    }
+
+    //------------ PersonStorableCommand -----------------------------------------
+
+    #[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
+    enum PersonStorableCommand {
+        Init,
+        ChangeName(String),
+        GoAroundTheSun,
+    }
+
+    impl fmt::Display for PersonStorableCommand {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match self {
+                PersonStorableCommand::Init => write!(f, "Initialise person"),
+                PersonStorableCommand::ChangeName(name) => write!(f, "Change name to {}", name),
+                PersonStorableCommand::GoAroundTheSun => write!(f, "Go around the sun"),
+            }
+        }
+    }
+
+    impl WithStorableDetails for PersonStorableCommand {
+        fn summary(&self) -> CommandSummary {
+            match self {
+                PersonStorableCommand::Init => CommandSummary::new("person-init", self),
+                PersonStorableCommand::ChangeName(name) => {
+                    CommandSummary::new("person-change-name", self).with_arg("name", name)
+                }
+                PersonStorableCommand::GoAroundTheSun => CommandSummary::new("person-around-sun", self),
+            }
+        }
+
+        fn make_init() -> Self {
+            Self::Init
         }
     }
 
@@ -208,12 +248,6 @@ mod tests {
 
     impl std::error::Error for PersonError {}
 
-    //------------ PersonResult --------------------------------------------------
-
-    /// A shorthand for the result type returned by the process_command function
-    /// of the Person aggregate.
-    type PersonResult = Result<Vec<PersonEvent>, PersonError>;
-
     //------------ Person ------------------------------------------------------
 
     /// Defines a person object. Persons have a name and an age.
@@ -235,9 +269,6 @@ mod tests {
     }
 
     impl Person {
-        pub fn id(&self) -> &MyHandle {
-            &self.id
-        }
         pub fn name(&self) -> &String {
             &self.name
         }
@@ -247,19 +278,28 @@ mod tests {
     }
 
     impl Aggregate for Person {
+        type InitCommand = PersonInitCommand;
+        type InitEvent = PersonInitEvent;
+
         type Command = PersonCommand;
-        type StorableCommandDetails = PersonCommandDetails;
         type Event = PersonEvent;
-        type InitEvent = InitPersonEvent;
+
+        type StorableCommandDetails = PersonStorableCommand;
+
         type Error = PersonError;
 
-        fn init(event: InitPersonEvent) -> Result<Self, PersonError> {
-            let (id, _version, init) = event.unpack();
-            Ok(Person {
+        fn init(id: MyHandle, event: PersonInitEvent) -> Self {
+            Person {
                 id,
                 version: 1,
-                name: init.name,
+                name: event.name,
                 age: 0,
+            }
+        }
+
+        fn process_init_command(command: Self::InitCommand) -> Result<Self::InitEvent, Self::Error> {
+            Ok(PersonInitEvent {
+                name: command.into_details().name,
             })
         }
 
@@ -267,25 +307,28 @@ mod tests {
             self.version
         }
 
-        fn apply(&mut self, event: PersonEvent) {
-            match event.into_details() {
-                PersonEventDetails::NameChanged(name) => self.name = name,
-                PersonEventDetails::HadBirthday => self.age += 1,
-            }
+        fn increment_version(&mut self) {
             self.version += 1;
         }
 
-        fn process_command(&self, command: Self::Command) -> PersonResult {
+        fn apply(&mut self, event: PersonEvent) {
+            match event {
+                PersonEvent::NameChanged(name) => self.name = name,
+                PersonEvent::HadBirthday => self.age += 1,
+            }
+        }
+
+        fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Event>, Self::Error> {
             match command.into_details() {
                 PersonCommandDetails::ChangeName(name) => {
-                    let event = PersonEvent::name_changed(self, name);
+                    let event = PersonEvent::name_changed(name);
                     Ok(vec![event])
                 }
                 PersonCommandDetails::GoAroundTheSun => {
                     if self.age == 255 {
                         Err(PersonError::TooOld)
                     } else {
-                        let event = PersonEvent::had_birthday(self);
+                        let event = PersonEvent::had_birthday();
                         Ok(vec![event])
                     }
                 }
@@ -295,24 +338,26 @@ mod tests {
 
     #[test]
     fn event_sourcing_framework() {
-        let d = test::tmp_dir();
+        let storage_uri = mem_storage();
 
         let counter = Arc::new(EventCounter::default());
-        let mut manager = AggregateStore::<Person>::disk(&d, "person").unwrap();
+
+        let mut manager = AggregateStore::<Person>::create(&storage_uri, namespace!("person"), false).unwrap();
         manager.add_post_save_listener(counter.clone());
 
-        let id_alice = MyHandle::from_str("alice").unwrap();
-        let alice_init = InitPersonEvent::init(&id_alice, "alice smith");
+        let alice_name = "alice smith".to_string();
+        let alice_handle = MyHandle::from_str("alice").unwrap();
+        let alice_init_cmd = PersonInitCommand::make(&alice_handle, alice_name);
 
-        manager.add(alice_init).unwrap();
+        manager.add(alice_init_cmd).unwrap();
 
-        let mut alice = manager.get_latest(&id_alice).unwrap();
+        let mut alice = manager.get_latest(&alice_handle).unwrap();
         assert_eq!("alice smith", alice.name());
         assert_eq!(0, alice.age());
 
         let mut age = 0;
         loop {
-            let get_older = PersonCommand::go_around_sun(&id_alice, None);
+            let get_older = PersonCommand::go_around_sun(&alice_handle, None);
             alice = manager.command(get_older).unwrap();
 
             age += 1;
@@ -324,15 +369,15 @@ mod tests {
         assert_eq!("alice smith", alice.name());
         assert_eq!(21, alice.age());
 
-        let change_name = PersonCommand::change_name(&id_alice, Some(22), "alice smith-doe");
+        let change_name = PersonCommand::change_name(&alice_handle, Some(22), "alice smith-doe");
         let alice = manager.command(change_name).unwrap();
         assert_eq!("alice smith-doe", alice.name());
         assert_eq!(21, alice.age());
 
-        // Should read state from disk
-        let manager = AggregateStore::<Person>::disk(&d, "person").unwrap();
+        // Should read state again when restarted with same data store mapping.
+        let manager = AggregateStore::<Person>::create(&storage_uri, namespace!("person"), false).unwrap();
 
-        let alice = manager.get_latest(&id_alice).unwrap();
+        let alice = manager.get_latest(&alice_handle).unwrap();
         assert_eq!("alice smith-doe", alice.name());
         assert_eq!(21, alice.age());
 
@@ -343,18 +388,17 @@ mod tests {
         crit.set_offset(3);
         crit.set_rows(10);
 
-        let history = manager.command_history(&id_alice, crit).unwrap();
+        let history = manager.command_history(&alice_handle, crit).unwrap();
         assert_eq!(history.total(), 22);
         assert_eq!(history.offset(), 3);
         assert_eq!(history.commands().len(), 10);
-        assert_eq!(history.commands().first().unwrap().sequence, 4);
+        assert_eq!(history.commands().first().unwrap().version, 4);
 
         // Get history excluding 'around the sun' commands
         let mut crit = CommandHistoryCriteria::default();
         crit.set_excludes(&["person-around-sun"]);
-        let history = manager.command_history(&id_alice, crit).unwrap();
+        let history = manager.command_history(&alice_handle, crit).unwrap();
         assert_eq!(history.total(), 1);
-
-        let _ = fs::remove_dir_all(d);
+        // })
     }
 }

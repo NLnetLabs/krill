@@ -29,7 +29,8 @@ use crate::{
         api::{IdCertInfo, ObjectName, ReceivedCert},
         crypto::{CsrInfo, KrillSigner, SignSupport},
         error::Error,
-        eventsourcing, KrillResult,
+        eventsourcing::{self, Event, InitCommandDetails, InitEvent, WithStorableDetails},
+        KrillResult,
     },
     daemon::ca::Rfc8183Id,
 };
@@ -62,20 +63,47 @@ pub struct TrustAnchorSigner {
 }
 
 //------------ TrustAnchorSigner: Commands and Events ----------------------
+
+pub type TrustAnchorSignerInitCommand = eventsourcing::SentInitCommand<TrustAnchorSignerInitCommandDetails>;
+
+#[derive(Clone, Debug)]
+pub struct TrustAnchorSignerInitCommandDetails {
+    pub proxy_id: IdCertInfo,
+    pub repo_info: RepoInfo,
+    pub tal_https: Vec<uri::Https>,
+    pub tal_rsync: uri::Rsync,
+    pub private_key_pem: Option<String>,
+    pub signer: Arc<KrillSigner>,
+}
+
+impl fmt::Display for TrustAnchorSignerInitCommandDetails {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.store().fmt(f)
+    }
+}
+
+impl InitCommandDetails for TrustAnchorSignerInitCommandDetails {
+    type StorableDetails = TrustAnchorSignerStorableCommand;
+
+    fn store(&self) -> Self::StorableDetails {
+        TrustAnchorSignerStorableCommand::make_init()
+    }
+}
+
 pub type TrustAnchorSignerCommand = eventsourcing::SentCommand<TrustAnchorSignerCommandDetails>;
-pub type TrustAnchorSignerInitEvent = eventsourcing::StoredEvent<TrustAnchorSignerInitDetails>;
-pub type TrustAnchorSignerEvent = eventsourcing::StoredEvent<TrustAnchorSignerEventDetails>;
 
 // Initialisation
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct TrustAnchorSignerInitDetails {
+pub struct TrustAnchorSignerInitEvent {
     id: IdCertInfo,
     proxy_id: IdCertInfo,
     ta_cert_details: TaCertDetails,
     objects: TrustAnchorObjects,
 }
 
-impl fmt::Display for TrustAnchorSignerInitDetails {
+impl InitEvent for TrustAnchorSignerInitEvent {}
+
+impl fmt::Display for TrustAnchorSignerInitEvent {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // note that this is a summary, full details are stored in the init event.
         write!(f, "Trust Anchor Signer was initialised.")
@@ -84,14 +112,16 @@ impl fmt::Display for TrustAnchorSignerInitDetails {
 
 // Events
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum TrustAnchorSignerEventDetails {
+pub enum TrustAnchorSignerEvent {
     ProxySignerExchangeDone(TrustAnchorProxySignerExchange),
 }
 
-impl fmt::Display for TrustAnchorSignerEventDetails {
+impl Event for TrustAnchorSignerEvent {}
+
+impl fmt::Display for TrustAnchorSignerEvent {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            TrustAnchorSignerEventDetails::ProxySignerExchangeDone(exchange) => {
+            TrustAnchorSignerEvent::ProxySignerExchangeDone(exchange) => {
                 write!(
                     f,
                     "Proxy signer exchange done on {} for nonce: {}",
@@ -143,6 +173,7 @@ impl TrustAnchorSignerCommand {
 // Storable Commands (KrillSigner cannot be de-/serialized)
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum TrustAnchorSignerStorableCommand {
+    Init,
     TrustAnchorSignerRequest(TrustAnchorSignedRequest),
 }
 
@@ -159,11 +190,18 @@ impl From<&TrustAnchorSignerCommandDetails> for TrustAnchorSignerStorableCommand
 impl eventsourcing::WithStorableDetails for TrustAnchorSignerStorableCommand {
     fn summary(&self) -> crate::commons::api::CommandSummary {
         match self {
+            TrustAnchorSignerStorableCommand::Init => {
+                crate::commons::api::CommandSummary::new("cmd-ta-signer-init", self)
+            }
             TrustAnchorSignerStorableCommand::TrustAnchorSignerRequest(request) => {
                 crate::commons::api::CommandSummary::new("cmd-ta-signer-process-request", self)
                     .with_arg("nonce", &request.content().nonce)
             }
         }
+    }
+
+    fn make_init() -> Self {
+        Self::Init
     }
 }
 
@@ -171,6 +209,9 @@ impl fmt::Display for TrustAnchorSignerStorableCommand {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // note that this is a summary, full details are stored in the json.
         match self {
+            TrustAnchorSignerStorableCommand::Init => {
+                write!(f, "Initialise TA signer")
+            }
             TrustAnchorSignerStorableCommand::TrustAnchorSignerRequest(req) => {
                 write!(f, "Process signer request with nonce: {}", req.content().nonce)
             }
@@ -182,20 +223,44 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
     type Command = TrustAnchorSignerCommand;
     type StorableCommandDetails = TrustAnchorSignerStorableCommand;
     type Event = TrustAnchorSignerEvent;
+
+    type InitCommand = TrustAnchorSignerInitCommand;
     type InitEvent = TrustAnchorSignerInitEvent;
     type Error = Error;
 
-    fn init(event: Self::InitEvent) -> Result<Self, Self::Error> {
-        let (handle, _version, details) = event.unpack();
-
-        Ok(TrustAnchorSigner {
+    fn init(handle: TrustAnchorHandle, event: Self::InitEvent) -> Self {
+        TrustAnchorSigner {
             handle,
             version: 1,
-            id: details.id,
-            proxy_id: details.proxy_id,
-            ta_cert_details: details.ta_cert_details,
-            objects: details.objects,
+            id: event.id,
+            proxy_id: event.proxy_id,
+            ta_cert_details: event.ta_cert_details,
+            objects: event.objects,
             exchanges: TrustAnchorProxySignerExchanges::default(),
+        }
+    }
+
+    fn process_init_command(command: TrustAnchorSignerInitCommand) -> Result<TrustAnchorSignerInitEvent, Error> {
+        let cmd = command.into_details();
+
+        let signer = cmd.signer;
+
+        let id = Rfc8183Id::generate(&signer)?.into();
+        let proxy_id = cmd.proxy_id;
+        let ta_cert_details = Self::create_ta_cert_details(
+            cmd.repo_info,
+            cmd.tal_https,
+            cmd.tal_rsync,
+            cmd.private_key_pem,
+            &signer,
+        )?;
+        let objects = TrustAnchorObjects::create(ta_cert_details.cert(), &signer)?;
+
+        Ok(TrustAnchorSignerInitEvent {
+            id,
+            proxy_id,
+            ta_cert_details,
+            objects,
         })
     }
 
@@ -203,21 +268,22 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
         self.version
     }
 
-    fn apply(&mut self, event: Self::Event) {
-        let (handle, _version, details) = event.unpack();
+    fn increment_version(&mut self) {
+        self.version += 1;
+    }
 
+    fn apply(&mut self, event: Self::Event) {
         if log_enabled!(log::Level::Trace) {
             trace!(
                 "Applying event to Trust Anchor Signer '{}', version: {}: {}",
-                handle,
+                self.handle,
                 self.version,
-                details
+                event
             );
         }
-        self.version += 1;
 
-        match details {
-            TrustAnchorSignerEventDetails::ProxySignerExchangeDone(exchange) => {
+        match event {
+            TrustAnchorSignerEvent::ProxySignerExchangeDone(exchange) => {
                 self.objects = exchange.response.content().objects.clone();
                 self.exchanges.0.push(exchange);
             }
@@ -256,44 +322,7 @@ impl TrustAnchorSigner {
     }
 }
 
-pub struct TrustAnchorSignerInitCommand {
-    pub handle: TrustAnchorHandle,
-    pub proxy_id: IdCertInfo,
-    pub repo_info: RepoInfo,
-    pub tal_https: Vec<uri::Https>,
-    pub tal_rsync: uri::Rsync,
-    pub private_key_pem: Option<String>,
-    pub signer: Arc<KrillSigner>,
-}
-
 impl TrustAnchorSigner {
-    /// Creates an initialisation event that can be used to create a new Trust Anchor Signer.
-    pub fn create_init(cmd: TrustAnchorSignerInitCommand) -> KrillResult<TrustAnchorSignerInitEvent> {
-        let signer = cmd.signer;
-
-        let id = Rfc8183Id::generate(&signer)?.into();
-        let proxy_id = cmd.proxy_id;
-        let ta_cert_details = Self::create_ta_cert_details(
-            cmd.repo_info,
-            cmd.tal_https,
-            cmd.tal_rsync,
-            cmd.private_key_pem,
-            &signer,
-        )?;
-        let objects = TrustAnchorObjects::create(ta_cert_details.cert(), &signer)?;
-
-        Ok(TrustAnchorSignerInitEvent::new(
-            &cmd.handle,
-            0,
-            TrustAnchorSignerInitDetails {
-                id,
-                proxy_id,
-                ta_cert_details,
-                objects,
-            },
-        ))
-    }
-
     fn create_ta_cert_details(
         repo_info: RepoInfo,
         tal_https: Vec<uri::Https>,
@@ -467,11 +496,7 @@ impl TrustAnchorSigner {
             response,
         };
 
-        Ok(vec![TrustAnchorSignerEvent::new(
-            &self.handle,
-            self.version,
-            TrustAnchorSignerEventDetails::ProxySignerExchangeDone(exchange),
-        )])
+        Ok(vec![TrustAnchorSignerEvent::ProxySignerExchangeDone(exchange)])
     }
 
     /// Get all exchanges

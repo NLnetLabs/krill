@@ -546,8 +546,8 @@ impl KrillClient {
             &format!("service_uri = \"{}\"", self.server),
         );
 
-        if let Some(data_dir) = details.data_dir() {
-            config = config.replace("### data_dir = \"./data\"", &format!("data_dir = \"{}\"", data_dir))
+        if let Some(storage_uri) = details.data_dir() {
+            config = config.replace("### storage_uri = \"./data\"", &format!("storage_uri = \"{}\"", storage_uri))
         }
 
         if let Some(log_file) = details.log_file() {

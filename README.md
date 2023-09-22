@@ -25,6 +25,11 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 # Changelog
 
+## 0.14.0-rc1
+
+- Improve upgrade failed error: tell users to downgrade #1042
+- Add traditional and simplified chinese translations #1075
+
 ## 0.13.1 'Scrollbars!'
 
 The Krill UI includes a CA selection dropdown in case you have multiple CAs.

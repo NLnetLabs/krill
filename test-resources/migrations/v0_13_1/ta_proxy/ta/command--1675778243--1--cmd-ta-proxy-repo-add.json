@@ -1,0 +1,25 @@
+{
+  "actor": "krill",
+  "time": "2023-02-07T13:57:23.296673240Z",
+  "handle": "ta",
+  "version": 1,
+  "sequence": 1,
+  "details": {
+    "AddRepository": {
+      "repo_info": {
+        "sia_base": "rsync://krill-ui-dev-testbed.krill.cloud/repo/",
+        "rrdp_notification_uri": "https://krill-ui-dev-testbed.krill.cloud/rrdp/notification.xml"
+      },
+      "server_info": {
+        "public_key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuQSceaQ4xwAmzHUoT4GVdXTqBhqtNbEFE4bDTlH0GmjSkPLrXcsDGEcDej/pdF9hIGPOYkrs1FaemUD21NhDXT+RNDSbgreyRtGYgHRy74Y56uzL+zf5JdJxtlNGayF7rwIPzQ633mjEBS8SC3wXJTTbMz7W4ZrzL4snH8JHNcMEggIJfnTI1jfEARJgAvvbtsccrtGR+rArSsuYksNyNos3cjRsY0ooRdVAqbzcM7R9bi+Kgm1IkUSEZYgPLW/2sjnguCqcVB4coQTE89R+o+w2btMmqUb2NEdrYN0BeMmOfEpHwn1T51gPJc0/NZWMmznR9xXc413FYafCc37kWQIDAQAB",
+        "service_uri": "https://krill-ui-dev-testbed.krill.cloud/rfc8181/ta/"
+      }
+    }
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      1
+    ]
+  }
+}

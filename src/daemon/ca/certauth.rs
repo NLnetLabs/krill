@@ -6,7 +6,7 @@ use chrono::Duration;
 use rpki::{
     ca::{
         idexchange,
-        idexchange::{CaHandle, ChildHandle, ParentHandle},
+        idexchange::{CaHandle, ChildHandle, MyHandle, ParentHandle},
         provisioning,
         provisioning::{
             IssuanceRequest, IssuanceResponse, ProvisioningCms, RequestResourceLimit, ResourceClassEntitlements,
@@ -26,33 +26,42 @@ use crate::{
     commons::{
         api::{
             AspaCustomer, AspaDefinition, AspaDefinitionList, AspaDefinitionUpdates, AspaProvidersUpdate, BgpSecAsnKey,
-            BgpSecCsrInfoList, BgpSecDefinitionUpdates, CertAuthInfo, ConfiguredRoa, IdCertInfo, IssuedCertificate,
-            ObjectName, ParentCaContact, ReceivedCert, RepositoryContact, Revocation, RoaConfiguration,
-            RoaConfigurationUpdates, RtaList, RtaName, RtaPrepResponse, StorableCaCommand,
+            BgpSecCsrInfoList, BgpSecDefinitionUpdates, CertAuthInfo, CertAuthStorableCommand, ConfiguredRoa,
+            IdCertInfo, IssuedCertificate, ObjectName, ParentCaContact, ReceivedCert, RepositoryContact, Revocation,
+            RoaConfiguration, RoaConfigurationUpdates, RtaList, RtaName, RtaPrepResponse,
         },
         crypto::{CsrInfo, KrillSigner},
         error::{Error, RoaDeltaError},
-        eventsourcing::{Aggregate, StoredEvent},
+        eventsourcing::Aggregate,
         KrillResult,
     },
     constants::test_mode_enabled,
     daemon::{
         ca::{
-            events::ChildCertificateUpdates, AspaDefinitions, BgpSecDefinitions, CaEvt, CaEvtDet, ChildDetails, Cmd,
-            CmdDet, DropReason, Ini, PreparedRta, ResourceClass, ResourceTaggedAttestation, Rfc8183Id,
-            RoaPayloadJsonMapKey, Routes, RtaContentRequest, RtaPrepareRequest, Rtas, SignedRta, StoredBgpSecCsr,
+            events::ChildCertificateUpdates, AspaDefinitions, BgpSecDefinitions, CertAuthCommand,
+            CertAuthCommandDetails, CertAuthEvent, CertAuthInitEvent, ChildDetails, DropReason, PreparedRta,
+            ResourceClass, ResourceTaggedAttestation, Rfc8183Id, RoaInfo, RoaPayloadJsonMapKey, Routes,
+            RtaContentRequest, RtaPrepareRequest, Rtas, SignedRta, StoredBgpSecCsr,
         },
         config::{Config, IssuanceTimingConfig},
     },
 };
 
-use super::RoaInfo;
+use super::CertAuthInitCommand;
 
 //------------ CertAuth ----------------------------------------------------
 
-/// This type defines a Certification Authority at a slightly higher level
-/// than one might expect.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+/// This type defines a Certification Authority (CA).
+///
+/// That is to say.. this is an "organisational" CA. It can have multiple
+/// parents, and multiple keys under each. Ultimately, it gets a number of
+/// resource classes this way - each with its own set of resources and an
+/// active (certified) key.
+///
+/// Configurations for ROAs, ASPA etc are kept at the level of the CA, and
+/// actual RPKI objects are then issued under each (and every) resource
+/// class that has matching resources.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CertAuth {
     handle: CaHandle,
     version: u64,
@@ -79,15 +88,17 @@ pub struct CertAuth {
 }
 
 impl Aggregate for CertAuth {
-    type Command = Cmd;
-    type StorableCommandDetails = StorableCaCommand;
-    type Event = CaEvt;
-    type InitEvent = Ini;
+    type Command = CertAuthCommand;
+    type StorableCommandDetails = CertAuthStorableCommand;
+    type Event = CertAuthEvent;
+
+    type InitCommand = CertAuthInitCommand;
+    type InitEvent = CertAuthInitEvent;
+
     type Error = Error;
 
-    fn init(event: Ini) -> KrillResult<Self> {
-        let (handle, _version, details) = event.unpack();
-        let id = details.unpack();
+    fn init(handle: MyHandle, event: CertAuthInitEvent) -> Self {
+        let id = event.unpack();
 
         let repository = None;
         let parents = HashMap::new();
@@ -102,7 +113,7 @@ impl Aggregate for CertAuth {
         let aspas = AspaDefinitions::default();
         let bgpsec_defs = BgpSecDefinitions::default();
 
-        Ok(CertAuth {
+        CertAuth {
             handle,
             version: 1,
 
@@ -120,20 +131,23 @@ impl Aggregate for CertAuth {
             rtas,
             aspas,
             bgpsec_defs,
-        })
+        }
     }
 
     fn version(&self) -> u64 {
         self.version
     }
 
-    fn apply(&mut self, event: CaEvt) {
+    fn increment_version(&mut self) {
         self.version += 1;
-        match event.into_details() {
+    }
+
+    fn apply(&mut self, event: CertAuthEvent) {
+        match event {
             //-----------------------------------------------------------------------
             // Being a parent
             //-----------------------------------------------------------------------
-            CaEvtDet::ChildAdded {
+            CertAuthEvent::ChildAdded {
                 child,
                 id_cert,
                 resources,
@@ -141,7 +155,7 @@ impl Aggregate for CertAuth {
                 let details = ChildDetails::new(id_cert, resources);
                 self.children.insert(child, details);
             }
-            CaEvtDet::ChildCertificateIssued {
+            CertAuthEvent::ChildCertificateIssued {
                 child,
                 resource_class_name,
                 ki,
@@ -152,7 +166,7 @@ impl Aggregate for CertAuth {
                     .add_issue_response(resource_class_name, ki);
             }
 
-            CaEvtDet::ChildKeyRevoked {
+            CertAuthEvent::ChildKeyRevoked {
                 child,
                 resource_class_name,
                 ki,
@@ -161,7 +175,7 @@ impl Aggregate for CertAuth {
                 self.children.get_mut(&child).unwrap().add_revoke_response(ki);
             }
 
-            CaEvtDet::ChildCertificatesUpdated {
+            CertAuthEvent::ChildCertificatesUpdated {
                 resource_class_name,
                 updates,
             } => {
@@ -193,40 +207,40 @@ impl Aggregate for CertAuth {
                 }
             }
 
-            CaEvtDet::ChildUpdatedIdCert { child, id_cert } => {
+            CertAuthEvent::ChildUpdatedIdCert { child, id_cert } => {
                 self.children.get_mut(&child).unwrap().set_id_cert(id_cert)
             }
 
-            CaEvtDet::ChildUpdatedResources { child, resources } => {
+            CertAuthEvent::ChildUpdatedResources { child, resources } => {
                 self.children.get_mut(&child).unwrap().set_resources(resources)
             }
 
-            CaEvtDet::ChildRemoved { child } => {
+            CertAuthEvent::ChildRemoved { child } => {
                 self.children.remove(&child);
             }
 
-            CaEvtDet::ChildSuspended { child } => self.children.get_mut(&child).unwrap().suspend(),
+            CertAuthEvent::ChildSuspended { child } => self.children.get_mut(&child).unwrap().suspend(),
 
-            CaEvtDet::ChildUnsuspended { child } => self.children.get_mut(&child).unwrap().unsuspend(),
+            CertAuthEvent::ChildUnsuspended { child } => self.children.get_mut(&child).unwrap().unsuspend(),
 
             //-----------------------------------------------------------------------
             // Being a child
             //-----------------------------------------------------------------------
-            CaEvtDet::IdUpdated { id } => {
+            CertAuthEvent::IdUpdated { id } => {
                 self.id = id;
             }
-            CaEvtDet::ParentAdded { parent, contact } => {
+            CertAuthEvent::ParentAdded { parent, contact } => {
                 self.parents.insert(parent, contact);
             }
-            CaEvtDet::ParentUpdated { parent, contact } => {
+            CertAuthEvent::ParentUpdated { parent, contact } => {
                 self.parents.insert(parent, contact);
             }
-            CaEvtDet::ParentRemoved { parent } => {
+            CertAuthEvent::ParentRemoved { parent } => {
                 self.parents.remove(&parent);
                 self.resources.retain(|_, rc| rc.parent_handle() != &parent);
             }
 
-            CaEvtDet::ResourceClassAdded {
+            CertAuthEvent::ResourceClassAdded {
                 resource_class_name,
                 parent,
                 parent_resource_class_name,
@@ -243,12 +257,12 @@ impl Aggregate for CertAuth {
                 );
                 self.resources.insert(resource_class_name, rc);
             }
-            CaEvtDet::ResourceClassRemoved {
+            CertAuthEvent::ResourceClassRemoved {
                 resource_class_name, ..
             } => {
                 self.resources.remove(&resource_class_name);
             }
-            CaEvtDet::CertificateRequested {
+            CertAuthEvent::CertificateRequested {
                 resource_class_name,
                 req,
                 ki,
@@ -258,7 +272,7 @@ impl Aggregate for CertAuth {
                     .unwrap()
                     .add_request(ki, req);
             }
-            CaEvtDet::CertificateReceived {
+            CertAuthEvent::CertificateReceived {
                 resource_class_name,
                 ki,
                 rcvd_cert,
@@ -272,7 +286,7 @@ impl Aggregate for CertAuth {
             //-----------------------------------------------------------------------
             // Key Life Cycle
             //-----------------------------------------------------------------------
-            CaEvtDet::KeyRollPendingKeyAdded {
+            CertAuthEvent::KeyRollPendingKeyAdded {
                 resource_class_name,
                 pending_key_id: pending_key,
             } => {
@@ -281,7 +295,7 @@ impl Aggregate for CertAuth {
                     .unwrap()
                     .pending_key_id_added(pending_key);
             }
-            CaEvtDet::KeyPendingToNew {
+            CertAuthEvent::KeyPendingToNew {
                 resource_class_name,
                 new_key,
             } => {
@@ -290,7 +304,7 @@ impl Aggregate for CertAuth {
                     .unwrap()
                     .pending_key_to_new(new_key);
             }
-            CaEvtDet::KeyPendingToActive {
+            CertAuthEvent::KeyPendingToActive {
                 resource_class_name,
                 current_key,
             } => {
@@ -299,7 +313,7 @@ impl Aggregate for CertAuth {
                     .unwrap()
                     .pending_key_to_active(current_key);
             }
-            CaEvtDet::KeyRollActivated {
+            CertAuthEvent::KeyRollActivated {
                 resource_class_name,
                 revoke_req,
             } => {
@@ -308,10 +322,10 @@ impl Aggregate for CertAuth {
                     .unwrap()
                     .new_key_activated(revoke_req);
             }
-            CaEvtDet::KeyRollFinished { resource_class_name } => {
+            CertAuthEvent::KeyRollFinished { resource_class_name } => {
                 self.resources.get_mut(&resource_class_name).unwrap().old_key_removed();
             }
-            CaEvtDet::UnexpectedKeyFound { .. } => {
+            CertAuthEvent::UnexpectedKeyFound { .. } => {
                 // no action needed, this is marked to flag that a key may be removed on the
                 // server side. The revocation requests are picked up by the `MessageQueue`
                 // listener.
@@ -320,13 +334,13 @@ impl Aggregate for CertAuth {
             //-----------------------------------------------------------------------
             // Route Authorizations
             //-----------------------------------------------------------------------
-            CaEvtDet::RouteAuthorizationAdded { auth } => self.routes.add(auth),
-            CaEvtDet::RouteAuthorizationComment { auth, comment } => self.routes.comment(&auth, comment),
-            CaEvtDet::RouteAuthorizationRemoved { auth } => {
+            CertAuthEvent::RouteAuthorizationAdded { auth } => self.routes.add(auth),
+            CertAuthEvent::RouteAuthorizationComment { auth, comment } => self.routes.comment(&auth, comment),
+            CertAuthEvent::RouteAuthorizationRemoved { auth } => {
                 self.routes.remove(&auth);
             }
 
-            CaEvtDet::RoasUpdated {
+            CertAuthEvent::RoasUpdated {
                 resource_class_name,
                 updates,
             } => self
@@ -338,10 +352,10 @@ impl Aggregate for CertAuth {
             //-----------------------------------------------------------------------
             // Autonomous System Provider Authorization
             //-----------------------------------------------------------------------
-            CaEvtDet::AspaConfigAdded { aspa_config } => self.aspas.add_or_replace(aspa_config),
-            CaEvtDet::AspaConfigUpdated { customer, update } => self.aspas.apply_update(customer, &update),
-            CaEvtDet::AspaConfigRemoved { customer } => self.aspas.remove(customer),
-            CaEvtDet::AspaObjectsUpdated {
+            CertAuthEvent::AspaConfigAdded { aspa_config } => self.aspas.add_or_replace(aspa_config),
+            CertAuthEvent::AspaConfigUpdated { customer, update } => self.aspas.apply_update(customer, &update),
+            CertAuthEvent::AspaConfigRemoved { customer } => self.aspas.remove(customer),
+            CertAuthEvent::AspaObjectsUpdated {
                 resource_class_name,
                 updates,
             } => self
@@ -353,12 +367,12 @@ impl Aggregate for CertAuth {
             //-----------------------------------------------------------------------
             // BGPSec
             //-----------------------------------------------------------------------
-            CaEvtDet::BgpSecDefinitionAdded { key, csr } => self.bgpsec_defs.add_or_replace(key, csr),
-            CaEvtDet::BgpSecDefinitionUpdated { key, csr } => self.bgpsec_defs.add_or_replace(key, csr),
-            CaEvtDet::BgpSecDefinitionRemoved { key } => {
+            CertAuthEvent::BgpSecDefinitionAdded { key, csr } => self.bgpsec_defs.add_or_replace(key, csr),
+            CertAuthEvent::BgpSecDefinitionUpdated { key, csr } => self.bgpsec_defs.add_or_replace(key, csr),
+            CertAuthEvent::BgpSecDefinitionRemoved { key } => {
                 self.bgpsec_defs.remove(&key);
             }
-            CaEvtDet::BgpSecCertificatesUpdated {
+            CertAuthEvent::BgpSecCertificatesUpdated {
                 resource_class_name,
                 updates,
             } => {
@@ -369,7 +383,7 @@ impl Aggregate for CertAuth {
             //-----------------------------------------------------------------------
             // Publication
             //-----------------------------------------------------------------------
-            CaEvtDet::RepoUpdated { contact } => {
+            CertAuthEvent::RepoUpdated { contact } => {
                 if let Some(current) = &self.repository {
                     for rc in self.resources.values_mut() {
                         rc.set_old_repo(current.repo_info().clone());
@@ -381,16 +395,16 @@ impl Aggregate for CertAuth {
             //-----------------------------------------------------------------------
             // Resource Tagged Attestations
             //-----------------------------------------------------------------------
-            CaEvtDet::RtaPrepared { name, prepared } => {
+            CertAuthEvent::RtaPrepared { name, prepared } => {
                 self.rtas.add_prepared(name, prepared);
             }
-            CaEvtDet::RtaSigned { name, rta } => {
+            CertAuthEvent::RtaSigned { name, rta } => {
                 self.rtas.add_signed(name, rta);
             }
         }
     }
 
-    fn process_command(&self, command: Cmd) -> KrillResult<Vec<CaEvt>> {
+    fn process_command(&self, command: CertAuthCommand) -> Result<Vec<CertAuthEvent>, Error> {
         if log_enabled!(log::Level::Trace) {
             trace!(
                 "Sending command to CA '{}', version: {}: {}",
@@ -402,82 +416,80 @@ impl Aggregate for CertAuth {
 
         match command.into_details() {
             // being a parent
-            CmdDet::ChildAdd(child, id_cert, resources) => self.child_add(child, id_cert, resources),
-            CmdDet::ChildUpdateResources(child, res) => self.child_update_resources(&child, res),
-            CmdDet::ChildUpdateId(child, id_cert) => self.child_update_id_cert(&child, id_cert),
-            CmdDet::ChildCertify(child, request, config, signer) => self.child_certify(child, request, &config, signer),
-            CmdDet::ChildRevokeKey(child, request) => self.child_revoke_key(child, request),
-            CmdDet::ChildRemove(child) => self.child_remove(&child),
-            CmdDet::ChildSuspendInactive(child) => self.child_suspend_inactive(&child),
-            CmdDet::ChildUnsuspend(child) => self.child_unsuspend(&child),
+            CertAuthCommandDetails::ChildAdd(child, id_cert, resources) => self.child_add(child, id_cert, resources),
+            CertAuthCommandDetails::ChildUpdateResources(child, res) => self.child_update_resources(&child, res),
+            CertAuthCommandDetails::ChildUpdateId(child, id_cert) => self.child_update_id_cert(&child, id_cert),
+            CertAuthCommandDetails::ChildCertify(child, request, config, signer) => {
+                self.child_certify(child, request, &config, signer)
+            }
+            CertAuthCommandDetails::ChildRevokeKey(child, request) => self.child_revoke_key(child, request),
+            CertAuthCommandDetails::ChildRemove(child) => self.child_remove(&child),
+            CertAuthCommandDetails::ChildSuspendInactive(child) => self.child_suspend_inactive(&child),
+            CertAuthCommandDetails::ChildUnsuspend(child) => self.child_unsuspend(&child),
 
             // being a child
-            CmdDet::GenerateNewIdKey(signer) => self.generate_new_id_key(signer),
-            CmdDet::AddParent(parent, info) => self.add_parent(parent, info),
-            CmdDet::UpdateParentContact(parent, info) => self.update_parent(parent, info),
-            CmdDet::RemoveParent(parent) => self.remove_parent(parent),
+            CertAuthCommandDetails::GenerateNewIdKey(signer) => self.generate_new_id_key(signer),
+            CertAuthCommandDetails::AddParent(parent, info) => self.add_parent(parent, info),
+            CertAuthCommandDetails::UpdateParentContact(parent, info) => self.update_parent(parent, info),
+            CertAuthCommandDetails::RemoveParent(parent) => self.remove_parent(parent),
 
-            CmdDet::UpdateEntitlements(parent, entitlements, signer) => {
+            CertAuthCommandDetails::UpdateEntitlements(parent, entitlements, signer) => {
                 self.update_entitlements(parent, entitlements, signer)
             }
-            CmdDet::UpdateRcvdCert(class_name, rcvd_cert, config, signer) => {
+            CertAuthCommandDetails::UpdateRcvdCert(class_name, rcvd_cert, config, signer) => {
                 self.update_received_cert(class_name, rcvd_cert, &config, signer)
             }
-            CmdDet::DropResourceClass(rcn, reason, signer) => self.drop_resource_class(rcn, reason, signer),
+            CertAuthCommandDetails::DropResourceClass(rcn, reason, signer) => {
+                self.drop_resource_class(rcn, reason, signer)
+            }
 
             // Key rolls
-            CmdDet::KeyRollInitiate(duration, signer) => self.keyroll_initiate(duration, signer),
-            CmdDet::KeyRollActivate(duration, config, signer) => self.keyroll_activate(duration, config, signer),
-            CmdDet::KeyRollFinish(rcn, response) => self.keyroll_finish(rcn, response),
+            CertAuthCommandDetails::KeyRollInitiate(duration, signer) => self.keyroll_initiate(duration, signer),
+            CertAuthCommandDetails::KeyRollActivate(duration, config, signer) => {
+                self.keyroll_activate(duration, config, signer)
+            }
+            CertAuthCommandDetails::KeyRollFinish(rcn, response) => self.keyroll_finish(rcn, response),
 
             // Route Authorizations
-            CmdDet::RouteAuthorizationsUpdate(updates, config, signer) => {
+            CertAuthCommandDetails::RouteAuthorizationsUpdate(updates, config, signer) => {
                 self.route_authorizations_update(updates, &config, signer)
             }
-            CmdDet::RouteAuthorizationsRenew(config, signer) => {
+            CertAuthCommandDetails::RouteAuthorizationsRenew(config, signer) => {
                 self.route_authorizations_renew(false, &config, &signer)
             }
-            CmdDet::RouteAuthorizationsForceRenew(config, signer) => {
+            CertAuthCommandDetails::RouteAuthorizationsForceRenew(config, signer) => {
                 self.route_authorizations_renew(true, &config, &signer)
             }
 
             // ASPA
-            CmdDet::AspasUpdate(updates, config, signer) => self.aspas_definitions_update(updates, &config, &signer),
-            CmdDet::AspasUpdateExisting(customer, update, config, signer) => {
+            CertAuthCommandDetails::AspasUpdate(updates, config, signer) => {
+                self.aspas_definitions_update(updates, &config, &signer)
+            }
+            CertAuthCommandDetails::AspasUpdateExisting(customer, update, config, signer) => {
                 self.aspas_update(customer, update, &config, &signer)
             }
-            CmdDet::AspasRenew(config, signer) => self.aspas_renew(&config, &signer),
+            CertAuthCommandDetails::AspasRenew(config, signer) => self.aspas_renew(&config, &signer),
 
             // BGPSec
-            CmdDet::BgpSecUpdateDefinitions(updates, config, signer) => {
+            CertAuthCommandDetails::BgpSecUpdateDefinitions(updates, config, signer) => {
                 self.bgpsec_definitions_update(updates, &config, &signer)
             }
-            CmdDet::BgpSecRenew(config, signer) => self.bgpsec_renew(&config, &signer),
+            CertAuthCommandDetails::BgpSecRenew(config, signer) => self.bgpsec_renew(&config, &signer),
 
             // Republish
-            CmdDet::RepoUpdate(contact, signer) => self.update_repo(contact, &signer),
+            CertAuthCommandDetails::RepoUpdate(contact, signer) => self.update_repo(contact, &signer),
 
             // Resource Tagged Attestations
-            CmdDet::RtaMultiPrepare(name, request, signer) => self.rta_multi_prep(name, request, signer.deref()),
-            CmdDet::RtaCoSign(name, rta, signer) => self.rta_cosign(name, rta, signer.deref()),
-            CmdDet::RtaSign(name, request, signer) => self.rta_sign(name, request, signer.deref()),
+            CertAuthCommandDetails::RtaMultiPrepare(name, request, signer) => {
+                self.rta_multi_prep(name, request, signer.deref())
+            }
+            CertAuthCommandDetails::RtaCoSign(name, rta, signer) => self.rta_cosign(name, rta, signer.deref()),
+            CertAuthCommandDetails::RtaSign(name, request, signer) => self.rta_sign(name, request, signer.deref()),
         }
     }
-}
 
-/// # Data presentation
-///
-impl CertAuth {
-    // For many commands with multiple resulting events, it's easier to build a list of event *details*
-    // and worry about numbering the versions here.
-    fn events_from_details(&self, event_details: Vec<CaEvtDet>) -> Vec<CaEvt> {
-        let mut res = vec![];
-        let mut version = self.version;
-        for event in event_details {
-            res.push(StoredEvent::new(&self.handle, version, event));
-            version += 1;
-        }
-        res
+    fn process_init_command(command: CertAuthInitCommand) -> Result<CertAuthInitEvent, Error> {
+        Rfc8183Id::generate(command.into_details().signer()).map(CertAuthInitEvent::new)
     }
 }
 
@@ -751,7 +763,12 @@ impl CertAuth {
 
     /// Adds the child, returns an error if the child is a duplicate,
     /// or if the resources are empty, or not held by this CA.
-    fn child_add(&self, child: ChildHandle, id_cert: IdCertInfo, resources: ResourceSet) -> KrillResult<Vec<CaEvt>> {
+    fn child_add(
+        &self,
+        child: ChildHandle,
+        id_cert: IdCertInfo,
+        resources: ResourceSet,
+    ) -> KrillResult<Vec<CertAuthEvent>> {
         if resources.is_empty() {
             Err(Error::CaChildMustHaveResources(self.handle.clone(), child))
         } else if !self.all_resources().contains(&resources) {
@@ -764,13 +781,7 @@ impl CertAuth {
                 self.handle, child, resources
             );
 
-            Ok(vec![CaEvtDet::child_added(
-                &self.handle,
-                self.version,
-                child,
-                id_cert,
-                resources,
-            )])
+            Ok(vec![CertAuthEvent::child_added(child, id_cert, resources)])
         }
     }
 
@@ -786,7 +797,7 @@ impl CertAuth {
         request: IssuanceRequest,
         config: &Config,
         signer: Arc<KrillSigner>,
-    ) -> KrillResult<Vec<CaEvt>> {
+    ) -> KrillResult<Vec<CertAuthEvent>> {
         let (rcn, limit, csr) = request.unpack();
         let csr_info = CsrInfo::try_from(&csr)?;
 
@@ -806,13 +817,11 @@ impl CertAuth {
             self.handle, cert_name, child
         );
 
-        let issued_event =
-            CaEvtDet::child_certificate_issued(&self.handle, self.version, child, rcn.clone(), issued.key_identifier());
+        let issued_event = CertAuthEvent::child_certificate_issued(child, rcn.clone(), issued.key_identifier());
 
         let mut cert_updates = ChildCertificateUpdates::default();
         cert_updates.issue(issued);
-        let child_certs_updated =
-            CaEvtDet::child_certificates_updated(&self.handle, self.version + 1, rcn, cert_updates);
+        let child_certs_updated = CertAuthEvent::child_certificates_updated(rcn, cert_updates);
 
         Ok(vec![issued_event, child_certs_updated])
     }
@@ -839,7 +848,11 @@ impl CertAuth {
     ///
     /// This does not yet revoke / reissue / republish anything.
     /// Also, this is a no-op if the child already has these resources.
-    fn child_update_resources(&self, child_handle: &ChildHandle, resources: ResourceSet) -> KrillResult<Vec<CaEvt>> {
+    fn child_update_resources(
+        &self,
+        child_handle: &ChildHandle,
+        resources: ResourceSet,
+    ) -> KrillResult<Vec<CertAuthEvent>> {
         if !self.all_resources().contains(&resources) {
             Err(Error::CaChildExtraResources(self.handle.clone(), child_handle.clone()))
         } else {
@@ -853,9 +866,7 @@ impl CertAuth {
                     self.handle, child_handle, resources_diff
                 );
 
-                Ok(vec![CaEvtDet::child_updated_resources(
-                    &self.handle,
-                    self.version,
+                Ok(vec![CertAuthEvent::child_updated_resources(
                     child_handle.clone(),
                     resources,
                 )])
@@ -873,7 +884,7 @@ impl CertAuth {
     }
 
     /// Updates child IdCert
-    fn child_update_id_cert(&self, child_handle: &ChildHandle, id_cert: IdCertInfo) -> KrillResult<Vec<CaEvt>> {
+    fn child_update_id_cert(&self, child_handle: &ChildHandle, id_cert: IdCertInfo) -> KrillResult<Vec<CertAuthEvent>> {
         let child = self.get_child(child_handle)?;
 
         if &id_cert != child.id_cert() {
@@ -884,12 +895,7 @@ impl CertAuth {
                 id_cert.public_key().key_identifier()
             );
 
-            Ok(vec![CaEvtDet::child_updated_cert(
-                &self.handle,
-                self.version,
-                child_handle.clone(),
-                id_cert,
-            )])
+            Ok(vec![CertAuthEvent::child_updated_cert(child_handle.clone(), id_cert)])
         } else {
             // Using 'debug' here, because of possible no-op use cases where the API is called from a background job.
             debug!(
@@ -902,7 +908,11 @@ impl CertAuth {
 
     /// Revokes a key for a child. So, add the last cert for the key to the CRL, and withdraw
     /// the .cer file for it.
-    fn child_revoke_key(&self, child_handle: ChildHandle, request: RevocationRequest) -> KrillResult<Vec<CaEvt>> {
+    fn child_revoke_key(
+        &self,
+        child_handle: ChildHandle,
+        request: RevocationRequest,
+    ) -> KrillResult<Vec<CertAuthEvent>> {
         let (rcn, key) = request.unpack();
 
         let child = self.get_child(&child_handle)?;
@@ -911,29 +921,23 @@ impl CertAuth {
             return Err(Error::KeyUseNoIssuedCert);
         }
 
-        let handle = &self.handle;
-        let version = self.version;
-
         let mut child_certificate_updates = ChildCertificateUpdates::default();
         child_certificate_updates.remove(key);
 
         let cert_name = ObjectName::new(&key, "cer");
         info!(
             "CA '{}' revoked certificate '{}' for child '{}'",
-            handle, cert_name, child_handle
+            self.handle, cert_name, child_handle
         );
 
-        let rev = CaEvtDet::child_revoke_key(handle, version, child_handle, rcn.clone(), key);
-        let upd = CaEvtDet::child_certificates_updated(handle, version + 1, rcn, child_certificate_updates);
+        let rev = CertAuthEvent::child_revoke_key(child_handle, rcn.clone(), key);
+        let upd = CertAuthEvent::child_certificates_updated(rcn, child_certificate_updates);
 
         Ok(vec![rev, upd])
     }
 
-    fn child_remove(&self, child_handle: &ChildHandle) -> KrillResult<Vec<CaEvt>> {
+    fn child_remove(&self, child_handle: &ChildHandle) -> KrillResult<Vec<CertAuthEvent>> {
         let child = self.get_child(child_handle)?;
-
-        let mut version = self.version;
-        let handle = &self.handle;
 
         let mut res = vec![];
 
@@ -956,23 +960,17 @@ impl CertAuth {
             for issued in issued_certs {
                 info!(
                     "CA '{}' revoked certificate '{}' for child '{}'",
-                    handle,
+                    self.handle,
                     issued.name(),
                     child_handle
                 );
                 cert_updates.remove(issued.key_identifier())
             }
-            res.push(CaEvtDet::child_certificates_updated(
-                handle,
-                version,
-                rcn.clone(),
-                cert_updates,
-            ));
-            version += 1;
+            res.push(CertAuthEvent::child_certificates_updated(rcn.clone(), cert_updates));
         }
 
-        info!("CA '{}' removed child '{}'", handle, child_handle);
-        res.push(CaEvtDet::child_removed(handle, version, child_handle.clone()));
+        info!("CA '{}' removed child '{}'", self.handle, child_handle);
+        res.push(CertAuthEvent::child_removed(child_handle.clone()));
 
         Ok(res)
     }
@@ -984,7 +982,7 @@ impl CertAuth {
     // When a child is suspended we need to:
     // - mark it as suspended
     // - withdraw all certificates issued to it (suspend them)
-    fn child_suspend_inactive(&self, child_handle: &ChildHandle) -> KrillResult<Vec<CaEvt>> {
+    fn child_suspend_inactive(&self, child_handle: &ChildHandle) -> KrillResult<Vec<CertAuthEvent>> {
         let mut res = vec![];
 
         let child = self.get_child(child_handle)?;
@@ -992,9 +990,6 @@ impl CertAuth {
         if child.is_suspended() {
             return Ok(res); // nothing to do, child is already suspended
         }
-
-        let mut version = self.version;
-        let handle = &self.handle;
 
         // Find all the certs in all RCs for this child and suspend them.
         for (rcn, rc) in self.resources.iter() {
@@ -1012,21 +1007,15 @@ impl CertAuth {
                 }
             }
 
-            res.push(CaEvtDet::child_certificates_updated(
-                handle,
-                version,
-                rcn.clone(),
-                cert_updates,
-            ));
-            version += 1;
+            res.push(CertAuthEvent::child_certificates_updated(rcn.clone(), cert_updates));
         }
 
         // Only mark the child as suspended if there was at least one certificate
         // to suspend above. If not this is a no-op - the child has not yet requested
         // any certificates so there is nothing to suspend.
         if !res.is_empty() {
-            info!("CA '{}' suspended inactive child '{}'", handle, child_handle);
-            res.push(CaEvtDet::child_suspended(handle, version, child_handle.clone()));
+            info!("CA '{}' suspended inactive child '{}'", self.handle, child_handle);
+            res.push(CertAuthEvent::child_suspended(child_handle.clone()));
         }
 
         Ok(res)
@@ -1045,7 +1034,7 @@ impl CertAuth {
     // Then the child may or may not request new certificates as it sees fit.
     // I.e. the unsuspend should be done before the child gets an answer to its
     // RFC 6492 list request.
-    fn child_unsuspend(&self, child_handle: &ChildHandle) -> KrillResult<Vec<CaEvt>> {
+    fn child_unsuspend(&self, child_handle: &ChildHandle) -> KrillResult<Vec<CertAuthEvent>> {
         let mut res = vec![];
 
         let child = self.get_child(child_handle)?;
@@ -1053,9 +1042,6 @@ impl CertAuth {
         if !child.is_suspended() {
             return Ok(res); // nothing to do, child is not suspended
         }
-
-        let mut version = self.version;
-        let handle = &self.handle;
 
         // Find all the certs in all RCs for this child and suspend them.
         for (rcn, rc) in self.resources.iter() {
@@ -1084,17 +1070,11 @@ impl CertAuth {
                 }
             }
 
-            res.push(CaEvtDet::child_certificates_updated(
-                handle,
-                version,
-                rcn.clone(),
-                cert_updates,
-            ));
-            version += 1;
+            res.push(CertAuthEvent::child_certificates_updated(rcn.clone(), cert_updates));
         }
 
-        info!("CA '{}' unsuspended child '{}'", handle, child_handle);
-        res.push(CaEvtDet::child_unsuspended(handle, version, child_handle.clone()));
+        info!("CA '{}' unsuspended child '{}'", self.handle, child_handle);
+        res.push(CertAuthEvent::child_unsuspended(child_handle.clone()));
 
         Ok(res)
     }
@@ -1109,7 +1089,7 @@ impl CertAuth {
 ///
 impl CertAuth {
     /// Generates a new ID key for this CA.
-    fn generate_new_id_key(&self, signer: Arc<KrillSigner>) -> KrillResult<Vec<CaEvt>> {
+    fn generate_new_id_key(&self, signer: Arc<KrillSigner>) -> KrillResult<Vec<CertAuthEvent>> {
         let id = Rfc8183Id::generate(&signer)?;
 
         info!(
@@ -1117,7 +1097,7 @@ impl CertAuth {
             self.handle,
             id.cert().public_key().key_identifier()
         );
-        Ok(vec![CaEvtDet::id_updated(&self.handle, self.version, id)])
+        Ok(vec![CertAuthEvent::id_updated(id)])
     }
 
     /// List all parents
@@ -1162,19 +1142,19 @@ impl CertAuth {
     /// Adds a parent. This method will return an error in case a parent
     /// by this name (handle) is already known. Or in case the same response
     /// is used for more than one parent.
-    fn add_parent(&self, parent: ParentHandle, info: ParentCaContact) -> KrillResult<Vec<CaEvt>> {
+    fn add_parent(&self, parent: ParentHandle, info: ParentCaContact) -> KrillResult<Vec<CertAuthEvent>> {
         if self.parent_known(&parent) {
             Err(Error::CaParentDuplicateName(self.handle.clone(), parent))
         } else if let Some(other) = self.parent_for_info(&info) {
             Err(Error::CaParentDuplicateInfo(self.handle.clone(), other.clone()))
         } else {
             info!("CA '{}' added parent '{}'", self.handle, parent);
-            Ok(vec![CaEvtDet::parent_added(&self.handle, self.version, parent, info)])
+            Ok(vec![CertAuthEvent::parent_added(parent, info)])
         }
     }
 
     /// Removes a parent. Returns an error if it doesn't exist.
-    fn remove_parent(&self, parent: ParentHandle) -> KrillResult<Vec<CaEvt>> {
+    fn remove_parent(&self, parent: ParentHandle) -> KrillResult<Vec<CertAuthEvent>> {
         if !self.parent_known(&parent) {
             Err(Error::CaParentUnknown(self.handle.clone(), parent))
         } else {
@@ -1184,7 +1164,7 @@ impl CertAuth {
 
             for (rcn, rc) in &self.resources {
                 if rc.parent_handle() == &parent {
-                    event_details.push(CaEvtDet::ResourceClassRemoved {
+                    event_details.push(CertAuthEvent::ResourceClassRemoved {
                         resource_class_name: rcn.clone(),
                         parent: parent.clone(),
                         revoke_requests: vec![], // We will do a best effort revoke request, but not triggered through this event
@@ -1192,20 +1172,20 @@ impl CertAuth {
                 }
             }
 
-            event_details.push(CaEvtDet::ParentRemoved { parent });
+            event_details.push(CertAuthEvent::ParentRemoved { parent });
 
-            Ok(self.events_from_details(event_details))
+            Ok(event_details)
         }
     }
 
     /// Updates an existing parent's contact. This will return an error if
     /// the parent is not known.
-    fn update_parent(&self, parent: ParentHandle, info: ParentCaContact) -> KrillResult<Vec<CaEvt>> {
+    fn update_parent(&self, parent: ParentHandle, info: ParentCaContact) -> KrillResult<Vec<CertAuthEvent>> {
         if !self.parent_known(&parent) {
             Err(Error::CaParentUnknown(self.handle.clone(), parent))
         } else {
             info!("CA '{}' updated contact info for parent '{}'", self.handle, parent);
-            Ok(vec![CaEvtDet::parent_updated(&self.handle, self.version, parent, info)])
+            Ok(vec![CertAuthEvent::parent_updated(parent, info)])
         }
     }
 
@@ -1236,7 +1216,7 @@ impl CertAuth {
         entitlement: &ResourceClassEntitlements,
         rc: &ResourceClass,
         signer: &KrillSigner,
-    ) -> KrillResult<Vec<CaEvtDet>> {
+    ) -> KrillResult<Vec<CertAuthEvent>> {
         let repo = self.repository_contact()?;
         rc.make_entitlement_events(self.handle(), entitlement, repo.repo_info(), signer)
     }
@@ -1287,8 +1267,8 @@ impl CertAuth {
         parent_handle: ParentHandle,
         entitlements: ResourceClassListResponse,
         signer: Arc<KrillSigner>,
-    ) -> KrillResult<Vec<CaEvt>> {
-        let mut event_details: Vec<CaEvtDet> = vec![];
+    ) -> KrillResult<Vec<CertAuthEvent>> {
+        let mut event_details: Vec<CertAuthEvent> = vec![];
 
         // Check if there is a resource class for each entitlement
 
@@ -1308,7 +1288,7 @@ impl CertAuth {
 
             info!("Updating Entitlements for CA: {}, Removing RC: {}", &self.handle, &rcn);
 
-            event_details.push(CaEvtDet::ResourceClassRemoved {
+            event_details.push(CertAuthEvent::ResourceClassRemoved {
                 resource_class_name: rcn.clone(),
                 parent: parent_handle.clone(),
                 revoke_requests,
@@ -1345,7 +1325,7 @@ impl CertAuth {
                         pending_key,
                     );
 
-                    let added = CaEvtDet::ResourceClassAdded {
+                    let added = CertAuthEvent::ResourceClassAdded {
                         resource_class_name,
                         parent: parent_handle.clone(),
                         parent_resource_class_name: parent_rc_name.clone(),
@@ -1359,7 +1339,7 @@ impl CertAuth {
             }
         }
 
-        Ok(self.events_from_details(event_details))
+        Ok(event_details)
     }
 
     /// This method updates the received certificate for the given parent
@@ -1379,12 +1359,12 @@ impl CertAuth {
         rcvd_cert: ReceivedCert,
         config: &Config,
         signer: Arc<KrillSigner>,
-    ) -> KrillResult<Vec<CaEvt>> {
+    ) -> KrillResult<Vec<CertAuthEvent>> {
         debug!("CA {}: Updating received cert for class: {}", self.handle, rcn);
 
         let rc = self.resources.get(&rcn).ok_or(Error::ResourceClassUnknown(rcn))?;
 
-        let evt_details = rc.update_received_cert(
+        rc.update_received_cert(
             self.handle(),
             rcvd_cert,
             &self.routes,
@@ -1392,17 +1372,7 @@ impl CertAuth {
             &self.bgpsec_defs,
             config,
             signer.deref(),
-        )?;
-
-        let mut res = vec![];
-        let mut version = self.version;
-
-        for details in evt_details.into_iter() {
-            res.push(StoredEvent::new(&self.handle, version, details));
-            version += 1;
-        }
-
-        Ok(res)
+        )
     }
 
     /// Drop a resource class because it no longer works under this parent for the specified
@@ -1414,37 +1384,35 @@ impl CertAuth {
         rcn: ResourceClassName,
         reason: DropReason,
         signer: Arc<KrillSigner>,
-    ) -> KrillResult<Vec<CaEvt>> {
+    ) -> KrillResult<Vec<CertAuthEvent>> {
         warn!("Dropping resource class '{}' because of reason: {}", rcn, reason);
-
         let rc = self
             .resources
             .get(&rcn)
             .ok_or_else(|| Error::ResourceClassUnknown(rcn.clone()))?;
-        let revoke_requests = rc.revoke(signer.deref())?;
 
-        Ok(self.events_from_details(vec![CaEvtDet::ResourceClassRemoved {
-            resource_class_name: rcn,
-            parent: rc.parent_handle().clone(),
-            revoke_requests,
-        }]))
+        rc.revoke(signer.deref()).map(|revoke_requests| {
+            vec![CertAuthEvent::ResourceClassRemoved {
+                resource_class_name: rcn,
+                parent: rc.parent_handle().clone(),
+                revoke_requests,
+            }]
+        })
     }
 }
 
 /// # Key Rolls
 ///
 impl CertAuth {
-    fn keyroll_initiate(&self, duration: Duration, signer: Arc<KrillSigner>) -> KrillResult<Vec<CaEvt>> {
-        let mut version = self.version;
+    fn keyroll_initiate(&self, duration: Duration, signer: Arc<KrillSigner>) -> KrillResult<Vec<CertAuthEvent>> {
         let mut res = vec![];
 
         for (rcn, rc) in self.resources.iter() {
             let mut started = false;
             let repo = self.repository_contact()?;
-            for details in rc.keyroll_initiate(repo.repo_info(), duration, &signer)?.into_iter() {
+            for event in rc.keyroll_initiate(repo.repo_info(), duration, &signer)?.into_iter() {
                 started = true;
-                res.push(StoredEvent::new(self.handle(), version, details));
-                version += 1;
+                res.push(event);
             }
 
             if started {
@@ -1465,20 +1433,18 @@ impl CertAuth {
         staging_time: Duration,
         config: Arc<Config>,
         signer: Arc<KrillSigner>,
-    ) -> KrillResult<Vec<CaEvt>> {
-        let mut version = self.version;
+    ) -> KrillResult<Vec<CertAuthEvent>> {
         let mut res = vec![];
 
         for (rcn, rc) in self.resources.iter() {
             let mut activated = false;
 
-            for details in rc
+            for event in rc
                 .keyroll_activate(staging_time, &config.issuance_timing, signer.deref())?
                 .into_iter()
             {
                 activated = true;
-                res.push(StoredEvent::new(self.handle(), version, details));
-                version += 1;
+                res.push(event);
             }
 
             if activated {
@@ -1494,13 +1460,13 @@ impl CertAuth {
         Ok(res)
     }
 
-    fn keyroll_finish(&self, rcn: ResourceClassName, _response: RevocationResponse) -> KrillResult<Vec<CaEvt>> {
+    fn keyroll_finish(&self, rcn: ResourceClassName, _response: RevocationResponse) -> KrillResult<Vec<CertAuthEvent>> {
         let my_rc = self
             .resources
             .get(&rcn)
             .ok_or_else(|| Error::ResourceClassUnknown(rcn.clone()))?;
 
-        let finish_details = my_rc.keyroll_finish()?;
+        let finish_event = my_rc.keyroll_finish()?;
 
         info!(
             "Finished key roll for ca: {}, rc: {}, under parent: {}",
@@ -1509,7 +1475,7 @@ impl CertAuth {
             my_rc.parent_handle()
         );
 
-        Ok(vec![StoredEvent::new(self.handle(), self.version, finish_details)])
+        Ok(vec![finish_event])
     }
 }
 
@@ -1520,8 +1486,8 @@ impl CertAuth {
     ///    - Will return an error in case the repo is already set (issue 481)
     ///    - Will support migrations using key rollover in future (issue 480)
     ///    - Assumes that the repository can be reached (this is checked by CaManager before issuing the command to this CA)
-    pub fn update_repo(&self, contact: RepositoryContact, signer: &KrillSigner) -> KrillResult<Vec<CaEvt>> {
-        let mut evt_dets = vec![];
+    pub fn update_repo(&self, contact: RepositoryContact, signer: &KrillSigner) -> KrillResult<Vec<CertAuthEvent>> {
+        let mut events = vec![];
         if let Some(existing_contact) = &self.repository {
             if existing_contact == &contact {
                 return Err(Error::CaRepoInUse(self.handle.clone()));
@@ -1538,7 +1504,7 @@ impl CertAuth {
                     return Err(Error::KeyRollInProgress);
                 }
 
-                evt_dets.append(&mut rc.keyroll_initiate(&info, Duration::seconds(0), signer)?);
+                events.append(&mut rc.keyroll_initiate(&info, Duration::seconds(0), signer)?);
             }
         }
 
@@ -1549,8 +1515,8 @@ impl CertAuth {
             contact.server_info().service_uri()
         );
 
-        evt_dets.push(CaEvtDet::RepoUpdated { contact });
-        Ok(self.events_from_details(evt_dets))
+        events.push(CertAuthEvent::RepoUpdated { contact });
+        Ok(events)
     }
 }
 
@@ -1565,10 +1531,10 @@ impl CertAuth {
         route_auth_updates: RoaConfigurationUpdates,
         config: &Config,
         signer: Arc<KrillSigner>,
-    ) -> KrillResult<Vec<CaEvt>> {
+    ) -> KrillResult<Vec<CertAuthEvent>> {
         let route_auth_updates = route_auth_updates.into_explicit_max_length();
 
-        let (routes, mut evt_dets) = self.update_authorizations(&route_auth_updates)?;
+        let (routes, mut events) = self.update_authorizations(&route_auth_updates)?;
 
         // for rc in self.resources
         for (rcn, rc) in self.resources.iter() {
@@ -1576,14 +1542,14 @@ impl CertAuth {
             if updates.contains_changes() {
                 info!("CA '{}' under RC '{}' updated ROAs: {}", self.handle, rcn, updates);
 
-                evt_dets.push(CaEvtDet::RoasUpdated {
+                events.push(CertAuthEvent::RoasUpdated {
                     resource_class_name: rcn.clone(),
                     updates,
                 });
             }
         }
 
-        Ok(self.events_from_details(evt_dets))
+        Ok(events)
     }
 
     /// Renew existing ROA objects if needed.
@@ -1592,8 +1558,8 @@ impl CertAuth {
         force: bool,
         config: &Config,
         signer: &KrillSigner,
-    ) -> KrillResult<Vec<CaEvt>> {
-        let mut evt_dets = vec![];
+    ) -> KrillResult<Vec<CertAuthEvent>> {
+        let mut events = vec![];
 
         for (rcn, rc) in self.resources.iter() {
             let updates = rc.renew_roas(force, &config.issuance_timing, signer)?;
@@ -1607,14 +1573,14 @@ impl CertAuth {
                     );
                 }
 
-                evt_dets.push(CaEvtDet::RoasUpdated {
+                events.push(CertAuthEvent::RoasUpdated {
                     resource_class_name: rcn.clone(),
                     updates,
                 });
             }
         }
 
-        Ok(self.events_from_details(evt_dets))
+        Ok(events)
     }
 
     /// Verifies that the updates are correct, i.e.:
@@ -1629,7 +1595,10 @@ impl CertAuth {
     ///
     /// Note: this does not re-issue the actual ROAs, this
     ///       can be used for the 'dry-run' option.
-    pub fn update_authorizations(&self, updates: &RoaConfigurationUpdates) -> KrillResult<(Routes, Vec<CaEvtDet>)> {
+    pub fn update_authorizations(
+        &self,
+        updates: &RoaConfigurationUpdates,
+    ) -> KrillResult<(Routes, Vec<CertAuthEvent>)> {
         let mut delta_errors = RoaDeltaError::default();
         let mut res = vec![];
 
@@ -1642,7 +1611,7 @@ impl CertAuth {
         for roa_payload in updates.removed() {
             let auth = RoaPayloadJsonMapKey::from(*roa_payload);
             if desired_routes.remove(&auth) {
-                res.push(CaEvtDet::RouteAuthorizationRemoved { auth });
+                res.push(CertAuthEvent::RouteAuthorizationRemoved { auth });
             } else {
                 delta_errors.add_unknown(*roa_payload)
             }
@@ -1665,7 +1634,7 @@ impl CertAuth {
                 // We have an existing info for this payload, this may be an attempt to update the comment.
                 if info.comment() != comment {
                     // Update comment
-                    res.push(CaEvtDet::RouteAuthorizationComment {
+                    res.push(CertAuthEvent::RouteAuthorizationComment {
                         auth,
                         comment: comment.cloned(),
                     });
@@ -1676,12 +1645,12 @@ impl CertAuth {
                 }
             } else {
                 // Ok, this seems okay now
-                res.push(CaEvtDet::RouteAuthorizationAdded { auth });
+                res.push(CertAuthEvent::RouteAuthorizationAdded { auth });
                 desired_routes.add(auth); // track to check if update has duplicates
 
                 if comment.is_some() {
                     desired_routes.comment(&auth, comment.cloned()); // track to check if update has duplicates
-                    res.push(CaEvtDet::RouteAuthorizationComment {
+                    res.push(CertAuthEvent::RouteAuthorizationComment {
                         auth,
                         comment: comment.cloned(),
                     });
@@ -1714,8 +1683,8 @@ impl CertAuth {
         updates: AspaDefinitionUpdates,
         config: &Config,
         signer: &KrillSigner,
-    ) -> KrillResult<Vec<CaEvt>> {
-        let mut res = vec![];
+    ) -> KrillResult<Vec<CertAuthEvent>> {
+        let mut events = vec![];
 
         let (add_or_replace, remove) = updates.unpack();
 
@@ -1726,7 +1695,7 @@ impl CertAuth {
             if !all_aspas.has(customer) {
                 return Err(Error::AspaCustomerUnknown(self.handle().clone(), customer));
             }
-            res.push(CaEvtDet::AspaConfigRemoved { customer });
+            events.push(CertAuthEvent::AspaConfigRemoved { customer });
             all_aspas.remove(customer);
         }
 
@@ -1756,7 +1725,7 @@ impl CertAuth {
             all_aspas.add_or_replace(aspa_config.clone());
 
             match self.aspas.get(customer) {
-                None => res.push(CaEvtDet::AspaConfigAdded { aspa_config }),
+                None => events.push(CertAuthEvent::AspaConfigAdded { aspa_config }),
                 Some(existing) => {
                     // Determine the update from existing to (new) aspa_config
                     let added = aspa_config
@@ -1776,15 +1745,15 @@ impl CertAuth {
                     let update = AspaProvidersUpdate::new(added, removed);
 
                     if update.contains_changes() {
-                        res.push(CaEvtDet::AspaConfigUpdated { customer, update })
+                        events.push(CertAuthEvent::AspaConfigUpdated { customer, update })
                     }
                 }
             }
         }
 
-        res.append(&mut self.create_updated_aspa_objects(&all_aspas, config, signer)?);
+        events.append(&mut self.create_updated_aspa_objects(&all_aspas, config, signer)?);
 
-        Ok(self.events_from_details(res))
+        Ok(events)
     }
 
     pub fn aspas_update(
@@ -1793,23 +1762,23 @@ impl CertAuth {
         update: AspaProvidersUpdate,
         config: &Config,
         signer: &KrillSigner,
-    ) -> KrillResult<Vec<CaEvt>> {
+    ) -> KrillResult<Vec<CertAuthEvent>> {
         if self.updated_allowed_and_needed(customer, &update)? {
             let mut all_aspas = self.aspas.clone();
             all_aspas.apply_update(customer, &update);
 
-            let mut res = self.create_updated_aspa_objects(&all_aspas, config, signer)?;
-            res.push(CaEvtDet::AspaConfigUpdated { customer, update });
+            let mut events = self.create_updated_aspa_objects(&all_aspas, config, signer)?;
+            events.push(CertAuthEvent::AspaConfigUpdated { customer, update });
 
-            Ok(self.events_from_details(res))
+            Ok(events)
         } else {
             Ok(vec![])
         }
     }
 
     /// Renew existing ASPA objects if needed.
-    pub fn aspas_renew(&self, config: &Config, signer: &KrillSigner) -> KrillResult<Vec<CaEvt>> {
-        let mut evt_dets = vec![];
+    pub fn aspas_renew(&self, config: &Config, signer: &KrillSigner) -> KrillResult<Vec<CertAuthEvent>> {
+        let mut events = vec![];
 
         for (rcn, rc) in self.resources.iter() {
             let updates = rc.renew_aspas(&config.issuance_timing, signer)?;
@@ -1819,14 +1788,14 @@ impl CertAuth {
                     self.handle, rcn
                 );
 
-                evt_dets.push(CaEvtDet::AspaObjectsUpdated {
+                events.push(CertAuthEvent::AspaObjectsUpdated {
                     resource_class_name: rcn.clone(),
                     updates,
                 });
             }
         }
 
-        Ok(self.events_from_details(evt_dets))
+        Ok(events)
     }
 
     fn create_updated_aspa_objects(
@@ -1834,19 +1803,19 @@ impl CertAuth {
         all_aspas: &AspaDefinitions,
         config: &Config,
         signer: &KrillSigner,
-    ) -> KrillResult<Vec<CaEvtDet>> {
-        let mut update_events = vec![];
+    ) -> KrillResult<Vec<CertAuthEvent>> {
+        let mut events = vec![];
 
         for (rcn, rc) in self.resources.iter() {
             let updates = rc.update_aspas(all_aspas, config, signer)?;
             if updates.contains_changes() {
-                update_events.push(CaEvtDet::AspaObjectsUpdated {
+                events.push(CertAuthEvent::AspaObjectsUpdated {
                     resource_class_name: rcn.clone(),
                     updates,
                 });
             }
         }
-        Ok(update_events)
+        Ok(events)
     }
 
     /// Verifies whether the update is allowed and needs to be applied.
@@ -1902,8 +1871,8 @@ impl CertAuth {
         updates: BgpSecDefinitionUpdates,
         config: &Config,
         signer: &KrillSigner,
-    ) -> KrillResult<Vec<CaEvt>> {
-        let mut res = vec![];
+    ) -> KrillResult<Vec<CertAuthEvent>> {
+        let mut events = vec![];
 
         let (additions, removals) = updates.unpack();
 
@@ -1919,7 +1888,7 @@ impl CertAuth {
             if !definitions.remove(&key) {
                 return Err(Error::BgpSecDefinitionUnknown(self.handle.clone(), key));
             } else {
-                res.push(CaEvtDet::BgpSecDefinitionRemoved { key });
+                events.push(CertAuthEvent::BgpSecDefinitionRemoved { key });
             }
         }
 
@@ -1941,11 +1910,11 @@ impl CertAuth {
 
             if let Some(stored_csr) = definitions.get_stored_csr(&key) {
                 if stored_csr != &csr {
-                    res.push(CaEvtDet::BgpSecDefinitionUpdated { key, csr: csr.clone() });
+                    events.push(CertAuthEvent::BgpSecDefinitionUpdated { key, csr: csr.clone() });
                     definitions.add_or_replace(key, csr);
                 }
             } else {
-                res.push(CaEvtDet::BgpSecDefinitionAdded { key, csr: csr.clone() });
+                events.push(CertAuthEvent::BgpSecDefinitionAdded { key, csr: csr.clone() });
                 definitions.add_or_replace(key, csr);
             }
         }
@@ -1955,19 +1924,19 @@ impl CertAuth {
         for (rcn, rc) in self.resources.iter() {
             let updates = rc.update_bgpsec_certs(&definitions, config, signer)?;
             if !updates.is_empty() {
-                res.push(CaEvtDet::BgpSecCertificatesUpdated {
+                events.push(CertAuthEvent::BgpSecCertificatesUpdated {
                     resource_class_name: rcn.clone(),
                     updates,
                 });
             }
         }
 
-        Ok(self.events_from_details(res))
+        Ok(events)
     }
 
     /// Renew any BGPSec certificates if needed.
-    pub fn bgpsec_renew(&self, config: &Config, signer: &KrillSigner) -> KrillResult<Vec<CaEvt>> {
-        let mut evt_dets = vec![];
+    pub fn bgpsec_renew(&self, config: &Config, signer: &KrillSigner) -> KrillResult<Vec<CertAuthEvent>> {
+        let mut events = vec![];
 
         for (rcn, rc) in self.resources.iter() {
             let updates = rc.renew_bgpsec_certs(&config.issuance_timing, signer)?;
@@ -1978,14 +1947,14 @@ impl CertAuth {
                     self.handle, rcn
                 );
 
-                evt_dets.push(CaEvtDet::BgpSecCertificatesUpdated {
+                events.push(CertAuthEvent::BgpSecCertificatesUpdated {
                     resource_class_name: rcn.clone(),
                     updates,
                 });
             }
         }
 
-        Ok(self.events_from_details(evt_dets))
+        Ok(events)
     }
 }
 
@@ -2007,7 +1976,12 @@ impl CertAuth {
     }
 
     /// Sign a new RTA
-    fn rta_sign(&self, name: RtaName, request: RtaContentRequest, signer: &KrillSigner) -> KrillResult<Vec<CaEvt>> {
+    fn rta_sign(
+        &self,
+        name: RtaName,
+        request: RtaContentRequest,
+        signer: &KrillSigner,
+    ) -> KrillResult<Vec<CertAuthEvent>> {
         let (resources, validity, mut keys, content) = request.unpack();
 
         if self.rtas.has(&name) {
@@ -2026,7 +2000,7 @@ impl CertAuth {
         name: RtaName,
         rta: ResourceTaggedAttestation,
         signer: &KrillSigner,
-    ) -> KrillResult<Vec<CaEvt>> {
+    ) -> KrillResult<Vec<CertAuthEvent>> {
         let builder = rta.to_builder()?;
 
         let resources = {
@@ -2049,7 +2023,7 @@ impl CertAuth {
         rc_ee: HashMap<ResourceClassName, Cert>,
         mut rta_builder: RtaBuilder,
         signer: &KrillSigner,
-    ) -> KrillResult<Vec<CaEvt>> {
+    ) -> KrillResult<Vec<CertAuthEvent>> {
         let revocation_info = rc_ee
             .iter()
             .map(|(rcn, ee)| (rcn.clone(), Revocation::from(ee)))
@@ -2069,11 +2043,7 @@ impl CertAuth {
         info!("CA '{}' signed an RTA object named '{}'", self.handle, name);
 
         // Return the RTA
-        Ok(vec![StoredEvent::new(
-            self.handle(),
-            self.version,
-            CaEvtDet::RtaSigned { name, rta },
-        )])
+        Ok(vec![CertAuthEvent::RtaSigned { name, rta }])
     }
 
     fn rta_ee_map_prepared(
@@ -2164,7 +2134,7 @@ impl CertAuth {
         name: RtaName,
         request: RtaPrepareRequest,
         signer: &KrillSigner,
-    ) -> KrillResult<Vec<CaEvt>> {
+    ) -> KrillResult<Vec<CertAuthEvent>> {
         let (resources, validity) = request.unpack();
 
         if self.all_resources().intersection(&resources).is_empty() {
@@ -2193,11 +2163,7 @@ impl CertAuth {
             self.handle, name
         );
 
-        Ok(vec![StoredEvent::new(
-            self.handle(),
-            self.version,
-            CaEvtDet::RtaPrepared { name, prepared },
-        )])
+        Ok(vec![CertAuthEvent::RtaPrepared { name, prepared }])
     }
 }
 
@@ -2209,13 +2175,13 @@ impl CertAuth {
         parent: &ParentHandle,
         signer: &KrillSigner,
     ) -> KrillResult<HashMap<ResourceClassName, Vec<RevocationRequest>>> {
-        let mut res = HashMap::new();
+        let mut events = HashMap::new();
         for (rcn, rc) in &self.resources {
             if rc.parent_handle() == parent {
-                res.insert(rcn.clone(), rc.revoke(signer)?);
+                events.insert(rcn.clone(), rc.revoke(signer)?);
             }
         }
-        Ok(res)
+        Ok(events)
     }
 }
 
@@ -2229,9 +2195,9 @@ mod tests {
 
     #[test]
     fn generate_id_cert() {
-        test::test_under_tmp(|d| {
+        test::test_in_memory(|storage_uri| {
             let signers = ConfigDefaults::signers();
-            let signer = KrillSignerBuilder::new(&d, Duration::from_secs(1), &signers)
+            let signer = KrillSignerBuilder::new(storage_uri, Duration::from_secs(1), &signers)
                 .build()
                 .unwrap();
 

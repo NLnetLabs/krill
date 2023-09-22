@@ -1,0 +1,19 @@
+{
+  "actor": "krill",
+  "time": "2023-06-30T08:48:01.398063119Z",
+  "handle": "ta",
+  "version": 15,
+  "sequence": 15,
+  "details": {
+    "GiveChildResponse": [
+      "testbed",
+      "1B73D6E56F851983B02CD2ED642B6A94BF368AEF"
+    ]
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      15
+    ]
+  }
+}

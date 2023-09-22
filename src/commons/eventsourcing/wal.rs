@@ -1,14 +1,16 @@
 use std::{
     collections::HashMap,
-    fmt::{self},
-    path::Path,
+    fmt,
     str::FromStr,
     sync::{Arc, RwLock},
 };
 
+use kvx::Namespace;
 use rpki::ca::idexchange::MyHandle;
+use serde::Serialize;
+use url::Url;
 
-use crate::commons::eventsourcing::{locks::HandleLocks, KeyStoreKey, KeyValueError, KeyValueStore, Storable};
+use crate::commons::eventsourcing::{segment, Key, KeyValueError, KeyValueStore, Scope, Segment, SegmentExt, Storable};
 
 //------------ WalSupport ----------------------------------------------------
 
@@ -77,7 +79,7 @@ pub trait WalSupport: Storable {
 
 //------------ WalCommand ----------------------------------------------------
 
-pub trait WalCommand: fmt::Display {
+pub trait WalCommand: Clone + fmt::Display {
     fn handle(&self) -> &MyHandle;
 }
 
@@ -120,21 +122,16 @@ impl<T: WalSupport> WalSet<T> {
 pub struct WalStore<T: WalSupport> {
     kv: KeyValueStore,
     cache: RwLock<HashMap<MyHandle, Arc<T>>>,
-    locks: HandleLocks,
 }
 
 impl<T: WalSupport> WalStore<T> {
     /// Creates a new store using a disk based keystore for the given data
     /// directory and namespace (directory).
-    pub fn disk(krill_data_dir: &Path, name_space: &str) -> WalStoreResult<Self> {
-        let mut path = krill_data_dir.to_path_buf();
-        path.push(name_space);
-
-        let kv = KeyValueStore::disk(krill_data_dir, name_space)?;
+    pub fn create(storage_uri: &Url, name_space: &Namespace) -> WalStoreResult<Self> {
+        let kv = KeyValueStore::create(storage_uri, name_space)?;
         let cache = RwLock::new(HashMap::new());
-        let locks = HandleLocks::default();
 
-        Ok(WalStore { kv, cache, locks })
+        Ok(WalStore { kv, cache })
     }
 
     /// Warms up the store: caches all instances.
@@ -151,20 +148,26 @@ impl<T: WalSupport> WalStore<T> {
 
     /// Add a new entity for the given handle. Fails if the handle is in use.
     pub fn add(&self, handle: &MyHandle, instance: T) -> WalStoreResult<()> {
-        let handle_lock = self.locks.for_handle(handle.clone());
-        let _write = handle_lock.write();
-
+        let scope = Self::scope_for_handle(handle);
         let instance = Arc::new(instance);
-        let key = Self::key_for_snapshot(handle);
-        self.kv.store_new(&key, &instance)?; // Fails if this key exists
-        self.cache.write().unwrap().insert(handle.clone(), instance);
-        Ok(())
+
+        self.kv
+            .execute(&scope, |kv| {
+                let key = Self::key_for_snapshot(handle);
+                let json = serde_json::to_value(instance.as_ref())?;
+                kv.store(&key, json)?;
+
+                self.cache_update(handle, instance.clone());
+
+                Ok(())
+            })
+            .map_err(WalStoreError::KeyStoreError)
     }
 
     /// Checks whether there is an instance for the given handle.
     pub fn has(&self, handle: &MyHandle) -> WalStoreResult<bool> {
-        let key = Self::key_for_snapshot(handle);
-        self.kv.has(&key).map_err(WalStoreError::KeyStoreError)
+        let scope = Self::scope_for_handle(handle);
+        self.kv.has_scope(&scope).map_err(WalStoreError::KeyStoreError)
     }
 
     /// Get the latest revision for the given handle.
@@ -172,52 +175,8 @@ impl<T: WalSupport> WalStore<T> {
     /// This will use the cache if it's available and otherwise get a snapshot
     /// from the keystore. Then it will check whether there are any further
     /// changes.
-    pub fn get_latest(&self, handle: &MyHandle) -> WalStoreResult<Arc<T>> {
-        let handle_lock = self.locks.for_handle(handle.clone());
-        let _read = handle_lock.read();
-
-        self.get_latest_no_lock(handle)
-    }
-
-    /// Get the latest revision without using a lock.
-    ///
-    /// Intended to be used by public functions which manage the locked read/write access
-    /// to this instance for this handle.
-    fn get_latest_no_lock(&self, handle: &MyHandle) -> WalStoreResult<Arc<T>> {
-        let mut instance = match self.cache.read().unwrap().get(handle).cloned() {
-            None => Arc::new(self.get_snapshot(handle)?),
-            Some(instance) => instance,
-        };
-
-        if !self.kv.has(&Self::key_for_wal_set(handle, instance.revision()))? {
-            // No further changes for this revision exist.
-            //
-            // Note: this is expected to be the case if our cached instances
-            //       are kept up-to-date, and we run on a single node. Double
-            //       checking this should not be too expensive though, and it
-            //       allows us to use same code path for warming the cache and
-            //       for getting the latest instance in other cases.
-            Ok(instance)
-        } else {
-            // Changes exist:
-            // - apply all of them
-            // - update the cache instance
-            // - return updated
-            let instance = Arc::make_mut(&mut instance);
-
-            loop {
-                let wal_set_key = Self::key_for_wal_set(handle, instance.revision());
-                if let Some(set) = self.kv.get(&wal_set_key)? {
-                    instance.apply(set)
-                } else {
-                    break;
-                }
-            }
-
-            let instance = Arc::new(instance.clone());
-            self.cache.write().unwrap().insert(handle.clone(), instance.clone());
-            Ok(instance)
-        }
+    pub fn get_latest(&self, handle: &MyHandle) -> Result<Arc<T>, T::Error> {
+        self.execute_opt_command(handle, None, false)
     }
 
     /// Remove an instance from this store. Irrevocable.
@@ -225,31 +184,16 @@ impl<T: WalSupport> WalStore<T> {
         if !self.has(handle)? {
             Err(WalStoreError::Unknown(handle.clone()))
         } else {
-            {
-                // First get a lock and remove the object
-                let handle_lock = self.locks.for_handle(handle.clone());
-                let _write = handle_lock.write();
-                self.cache.write().unwrap().remove(handle);
-                self.kv.drop_scope(handle.as_str())?;
-            }
+            let scope = Self::scope_for_handle(handle);
 
-            // Then drop the lock for it as well. We could not do this
-            // while holding the write lock.
-            //
-            // Note that the corresponding entity was removed from the key
-            // value store while we had a write lock for its handle.
-            // So, even if another concurrent thread would now try to update
-            // this same entity, that update would fail because the entity
-            // no longer exists.
-            self.locks.drop_handle(handle);
-            Ok(())
+            self.kv
+                .execute(&scope, |kv| {
+                    kv.delete_scope(&scope)?;
+                    self.cache_remove(handle);
+                    Ok(())
+                })
+                .map_err(WalStoreError::KeyStoreError)
         }
-    }
-
-    fn get_snapshot(&self, handle: &MyHandle) -> WalStoreResult<T> {
-        self.kv
-            .get(&Self::key_for_snapshot(handle))?
-            .ok_or_else(|| WalStoreError::Unknown(handle.clone()))
     }
 
     /// Returns a list of all instances managed in this store.
@@ -257,7 +201,7 @@ impl<T: WalSupport> WalStore<T> {
         let mut res = vec![];
 
         for scope in self.kv.scopes()? {
-            if let Ok(handle) = MyHandle::from_str(&scope) {
+            if let Ok(handle) = MyHandle::from_str(&scope.to_string()) {
                 res.push(handle)
             }
         }
@@ -272,98 +216,199 @@ impl<T: WalSupport> WalStore<T> {
     ///     - apply the wal set locally
     ///     - save the wal set
     ///     - if saved properly update the cache
-    ///     
-    ///
-    ///
     pub fn send_command(&self, command: T::Command) -> Result<Arc<T>, T::Error> {
         let handle = command.handle().clone();
-
-        let handle_lock = self.locks.for_handle(handle.clone());
-        let _write = handle_lock.write();
-
-        let mut latest = self.get_latest_no_lock(&handle)?;
-
-        let summary = command.to_string();
-        let revision = latest.revision();
-        let changes = latest.process_command(command)?;
-
-        if changes.is_empty() {
-            debug!("No changes need for '{}' when processing command: {}", handle, summary);
-            Ok(latest)
-        } else {
-            // lock the cache first, before writing any updates
-            let mut cache = self.cache.write().unwrap();
-
-            let set: WalSet<T> = WalSet {
-                revision,
-                summary,
-                changes,
-            };
-
-            let key_for_wal_set = Self::key_for_wal_set(&handle, revision);
-            self.kv
-                .store_new(&key_for_wal_set, &set)
-                .map_err(WalStoreError::KeyStoreError)?;
-
-            let latest = Arc::make_mut(&mut latest);
-            latest.apply(set);
-
-            let latest = Arc::new(latest.clone());
-            cache.insert(handle, latest.clone());
-
-            Ok(latest)
-        }
+        self.execute_opt_command(&handle, Some(command), false)
     }
 
-    /// Update snapshot and archive or delete old wal sets
-    ///
-    /// This is a separate function because serializing a large instance can
-    /// be expensive.
-    pub fn update_snapshot(&self, handle: &MyHandle, archive: bool) -> WalStoreResult<()> {
-        // Note that we do not need to keep a lock for the instance when we update the snapshot.
-        // This function just updates the latest snapshot in the key value store, and it removes
-        // or archives all write-ahead log ("wal-") changes predating the new snapshot.
-        //
-        // It is fine if another thread gets the entity for this handle and updates it while we
-        // do this. As it turns out, writing snapshots can be expensive for large objects, so
-        // we do not want block updates while we do this.
-        //
-        // This function is intended to be called in the back-ground at regular (slow) intervals
-        // so any updates that were just missed will simply be folded in to the new snapshot when
-        // this function is called again.
-        let latest = self.get_latest(handle)?;
-        let key = Self::key_for_snapshot(handle);
-        self.kv.store(&key, &latest)?;
+    fn execute_opt_command(
+        &self,
+        handle: &MyHandle,
+        cmd_opt: Option<T::Command>,
+        save_snapshot: bool,
+    ) -> Result<Arc<T>, T::Error> {
+        self.kv
+            .execute(&Self::scope_for_handle(handle), |kv| {
+                // Track whether anything has changed compared to the cached
+                // instance (if any) so that we will know whether the cache
+                // should be updated.
+                let mut changed_from_cached = false;
 
-        // Archive or delete old wal sets
-        for key in self.kv.keys(Some(handle.to_string()), "wal-")? {
-            // Carefully inspect the key, just ignore keys
-            // following a format that is not expected.
-            // Who knows what people write in this dir?
-            if let Some(remaining) = key.name().strip_prefix("wal-") {
-                if let Some(number) = remaining.strip_suffix(".json") {
-                    if let Ok(revision) = u64::from_str(number) {
-                        if revision < latest.revision() {
-                            if archive {
-                                self.kv.archive(&key)?;
-                            } else {
-                                self.kv.drop_key(&key)?;
+                // Get the instance from the cache, or get it from the store.
+                let latest_option = match self.cache_get(handle) {
+                    Some(t) => {
+                        debug!("Found cached instance for '{handle}', at revision: {}", t.revision());
+                        Some(t)
+                    }
+                    None => {
+                        trace!("No cached instance found for '{handle}'");
+                        changed_from_cached = true;
+
+                        let key = Self::key_for_snapshot(handle);
+
+                        match kv.get(&key)? {
+                            Some(value) => {
+                                debug!("Deserializing stored instance for '{handle}'");
+                                let latest: T = serde_json::from_value(value)?;
+                                Some(Arc::new(latest))
+                            }
+                            None => {
+                                debug!("No instance found instance for '{handle}'");
+                                None
+                            }
+                        }
+                    }
+                };
+
+                // Get a mutable instance to work with, or return with an
+                // inner Err informing the caller that there is no instance.
+                let mut latest = match latest_option {
+                    Some(latest) => latest,
+                    None => return Ok(Err(T::Error::from(WalStoreError::Unknown(handle.clone())))),
+                };
+
+                // Check for updates and apply changes
+                {
+                    // Check if there any new changes that ought to be applied.
+                    // If so, apply them and remember that the instance was changed
+                    // compared to the (possible) cached version.
+
+                    let latest_inner = Arc::make_mut(&mut latest);
+
+                    // Check for changes and apply them until:
+                    // - there are no more changes
+                    // - or we encountered an error
+                    loop {
+                        let revision = latest_inner.revision();
+                        let key = Self::key_for_wal_set(handle, revision);
+
+                        if let Some(value) = kv.get(&key)? {
+                            let set: WalSet<T> = serde_json::from_value(value)?;
+                            debug!("applying revision '{revision}' to '{handle}'");
+                            latest_inner.apply(set);
+                            changed_from_cached = true;
+                        } else {
+                            break;
+                        }
+                    }
+
+                    // Process the command
+                    if let Some(command) = cmd_opt.clone() {
+                        let summary = command.to_string();
+                        let revision = latest_inner.revision();
+
+                        debug!("Applying command {command} to {handle}");
+                        match latest_inner.process_command(command) {
+                            Err(e) => {
+                                debug!("Error applying command to '{handle}'. Error: {e}");
+                                return Ok(Err(e));
+                            }
+                            Ok(changes) => {
+                                if changes.is_empty() {
+                                    debug!(
+                                        "No changes needed for '{}' when processing command: {}",
+                                        handle, summary
+                                    );
+                                } else {
+                                    debug!(
+                                        "{} changes resulted for '{}' when processing command: {}",
+                                        changes.len(),
+                                        handle,
+                                        summary
+                                    );
+                                    changed_from_cached = true;
+
+                                    let set: WalSet<T> = WalSet {
+                                        revision,
+                                        summary,
+                                        changes,
+                                    };
+
+                                    let key_for_wal_set = Self::key_for_wal_set(handle, revision);
+
+                                    if kv.has(&key_for_wal_set)? {
+                                        error!("Change set for '{handle}' version '{revision}' already exists.");
+                                        error!("This is a bug. Please report this issue to rpki-team@nlnetlabs.nl.");
+                                        error!("Krill will exit. If this issue repeats, consider removing {}.", handle);
+                                        std::process::exit(1);
+                                    }
+
+                                    let json = serde_json::to_value(&set)?;
+
+                                    latest_inner.apply(set);
+
+                                    kv.store(&key_for_wal_set, json)?;
+                                }
                             }
                         }
                     }
                 }
-            }
-        }
 
+                if changed_from_cached {
+                    self.cache_update(handle, latest.clone());
+                }
+
+                if save_snapshot {
+                    // Save the latest version as snapshot
+                    let key = Self::key_for_snapshot(handle);
+                    let value = serde_json::to_value(latest.as_ref())?;
+                    kv.store(&key, value)?;
+
+                    // Delete all wal sets (changes), since we are doing
+                    // this inside a transaction or locked scope we can
+                    // assume that all changes were applied, and there
+                    // are no other threads creating additional changes
+                    // that we were not aware of.
+                    for key in kv.list_keys(&Self::scope_for_handle(handle))? {
+                        if key.name().as_str().starts_with("wal-") {
+                            kv.delete(&key)?;
+                        }
+                    }
+                }
+
+                Ok(Ok(latest))
+            })
+            .map_err(|e| T::Error::from(WalStoreError::KeyStoreError(e)))?
+    }
+
+    pub fn update_snapshots(&self) -> Result<(), T::Error> {
+        for handle in self.list()? {
+            self.update_snapshot(&handle)?;
+        }
         Ok(())
     }
 
-    fn key_for_snapshot(handle: &MyHandle) -> KeyStoreKey {
-        KeyStoreKey::scoped(handle.to_string(), "snapshot.json".to_string())
+    /// Update snapshot and archive or delete old wal sets
+    pub fn update_snapshot(&self, handle: &MyHandle) -> Result<Arc<T>, T::Error> {
+        self.execute_opt_command(handle, None, true)
     }
 
-    fn key_for_wal_set(handle: &MyHandle, revision: u64) -> KeyStoreKey {
-        KeyStoreKey::scoped(handle.to_string(), format!("wal-{}.json", revision))
+    fn cache_get(&self, id: &MyHandle) -> Option<Arc<T>> {
+        self.cache.read().unwrap().get(id).cloned()
+    }
+
+    fn cache_remove(&self, id: &MyHandle) {
+        self.cache.write().unwrap().remove(id);
+    }
+
+    fn cache_update(&self, id: &MyHandle, arc: Arc<T>) {
+        self.cache.write().unwrap().insert(id.clone(), arc);
+    }
+
+    fn scope_for_handle(handle: &MyHandle) -> Scope {
+        // handle should always be a valid Segment
+        Scope::from_segment(Segment::parse_lossy(handle.as_str()))
+    }
+
+    fn key_for_snapshot(handle: &MyHandle) -> Key {
+        Key::new_scoped(Self::scope_for_handle(handle), segment!("snapshot.json"))
+    }
+
+    fn key_for_wal_set(handle: &MyHandle, revision: u64) -> Key {
+        Key::new_scoped(
+            Self::scope_for_handle(handle),
+            Segment::parse(&format!("wal-{}.json", revision)).unwrap(), // cannot panic as a u64 cannot contain a Scope::SEPARATOR
+        )
     }
 }
 

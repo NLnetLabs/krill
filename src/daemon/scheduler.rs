@@ -3,25 +3,36 @@
 
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
+use kvx::Namespace;
 use tokio::time::sleep;
 
 use rpki::ca::{
     idexchange::{CaHandle, ParentHandle},
     provisioning::{ResourceClassName, RevocationRequest},
 };
+use url::Url;
 
 use crate::{
-    commons::{actor::Actor, api::Timestamp, bgp::BgpAnalyser, KrillResult},
+    commons::{
+        actor::Actor,
+        api::Timestamp,
+        bgp::BgpAnalyser,
+        crypto::dispatch::signerinfo::SignerInfo,
+        eventsourcing::{Aggregate, AggregateStore, WalStore, WalSupport},
+        KrillResult,
+    },
     constants::{
-        SCHEDULER_INTERVAL_RENEW_MINS, SCHEDULER_INTERVAL_REPUBLISH_MINS, SCHEDULER_RESYNC_REPO_CAS_THRESHOLD,
-        SCHEDULER_USE_JITTER_CAS_THRESHOLD,
+        CASERVER_NS, PROPERTIES_NS, PUBSERVER_CONTENT_NS, PUBSERVER_NS, SCHEDULER_INTERVAL_RENEW_MINS,
+        SCHEDULER_INTERVAL_REPUBLISH_MINS, SCHEDULER_RESYNC_REPO_CAS_THRESHOLD, SCHEDULER_USE_JITTER_CAS_THRESHOLD,
+        SIGNERS_NS,
     },
     daemon::{
-        ca::CaManager,
+        ca::{CaManager, CertAuth},
         config::Config,
         mq::{in_hours, in_minutes, now, Task, TaskQueue},
+        properties::Properties,
     },
-    pubd::RepositoryManager,
+    pubd::{RepositoryAccess, RepositoryContent, RepositoryManager},
 };
 
 #[cfg(feature = "multi-user")]
@@ -194,7 +205,10 @@ impl Scheduler {
         #[cfg(feature = "multi-user")]
         self.tasks.sweep_login_cache(in_minutes(1));
 
-        self.tasks.update_snapshots(in_hours(24));
+        // Plan updating snapshots soon after a restart.
+        // This also ensures that this task gets triggered in long
+        // running tests, such as functional_parent_child.rs.
+        self.tasks.update_snapshots(now());
 
         Ok(())
     }
@@ -322,10 +336,62 @@ impl Scheduler {
         Ok(())
     }
 
+    // Call update_snapshots on all AggregateStores and WalStores
     fn update_snapshots(&self) -> KrillResult<()> {
-        if let Err(e) = self.repo_manager.update_snapshots() {
-            error!("Could not update snapshots on disk! Error: {}", e);
+        fn update_aggregate_store_snapshots<A: Aggregate>(storage_uri: &Url, namespace: &Namespace) {
+            match AggregateStore::<A>::create(storage_uri, namespace, false) {
+                Err(e) => {
+                    // Note: this is highly unlikely.. probably something else is broken and Krill
+                    //       would have panicked as a result already.
+                    error!(
+                        "Could not update snapshots for {} will try again in 24 hours. Error: {}",
+                        namespace, e
+                    );
+                }
+                Ok(store) => {
+                    if let Err(e) = store.update_snapshots() {
+                        // Note: this is highly unlikely.. probably something else is broken and Krill
+                        //       would have panicked as a result already.
+                        error!(
+                            "Could not update snapshots for {} will try again in 24 hours. Error: {}",
+                            namespace, e
+                        );
+                    } else {
+                        info!("Updated snapshots for {}", namespace);
+                    }
+                }
+            }
         }
+
+        fn update_wal_store_snapshots<W: WalSupport>(storage_uri: &Url, namespace: &Namespace) {
+            match WalStore::<W>::create(storage_uri, namespace) {
+                Err(e) => {
+                    // Note: this is highly unlikely.. probably something else is broken and Krill
+                    //       would have panicked as a result already.
+                    error!(
+                        "Could not update snapshots for {} will try again in 24 hours. Error: {}",
+                        namespace, e
+                    );
+                }
+                Ok(store) => {
+                    if let Err(e) = store.update_snapshots() {
+                        // Note: this is highly unlikely.. probably something else is broken and Krill
+                        //       would have panicked as a result already.
+                        error!(
+                            "Could not update snapshots for {} will try again in 24 hours. Error: {}",
+                            namespace, e
+                        );
+                    }
+                }
+            }
+        }
+
+        update_aggregate_store_snapshots::<CertAuth>(&self.config.storage_uri, CASERVER_NS);
+        update_aggregate_store_snapshots::<SignerInfo>(&self.config.storage_uri, SIGNERS_NS);
+        update_aggregate_store_snapshots::<Properties>(&self.config.storage_uri, PROPERTIES_NS);
+        update_aggregate_store_snapshots::<RepositoryAccess>(&self.config.storage_uri, PUBSERVER_NS);
+
+        update_wal_store_snapshots::<RepositoryContent>(&self.config.storage_uri, PUBSERVER_CONTENT_NS);
 
         self.tasks.update_snapshots(in_hours(24));
 

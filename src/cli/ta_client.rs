@@ -12,6 +12,7 @@ use std::{
 
 use bytes::Bytes;
 use clap::{App, Arg, ArgMatches, SubCommand};
+
 use log::LevelFilter;
 use rpki::{
     ca::idexchange::{self, ChildHandle, RepoInfo, ServiceUri},
@@ -19,6 +20,7 @@ use rpki::{
     uri,
 };
 use serde::de::DeserializeOwned;
+use url::Url;
 
 use crate::{
     cli::report::Report,
@@ -27,7 +29,7 @@ use crate::{
         api::{AddChildRequest, ApiRepositoryContact, CertAuthInfo, IdCertInfo, RepositoryContact, Token},
         crypto::{KrillSigner, KrillSignerBuilder, OpenSslSignerConfig},
         error::Error as KrillError,
-        eventsourcing::{AggregateStore, AggregateStoreError},
+        eventsourcing::{namespace, AggregateStore, AggregateStoreError, Namespace},
         util::{file, httpclient},
     },
     constants::{
@@ -38,6 +40,7 @@ use crate::{
         ta::{
             TrustAnchorHandle, TrustAnchorProxySignerExchanges, TrustAnchorSignedRequest, TrustAnchorSignedResponse,
             TrustAnchorSigner, TrustAnchorSignerCommand, TrustAnchorSignerInfo, TrustAnchorSignerInitCommand,
+            TrustAnchorSignerInitCommandDetails,
         },
     },
 };
@@ -1000,7 +1003,8 @@ struct TrustAnchorSignerManager {
 
 impl TrustAnchorSignerManager {
     fn create(config: Config) -> Result<Self, Error> {
-        let store = AggregateStore::disk(&config.data_dir, "signer").map_err(KrillError::AggregateStoreError)?;
+        let store = AggregateStore::create(&config.storage_uri, namespace!("signer"), config.use_history_cache)
+            .map_err(KrillError::AggregateStoreError)?;
         let ta_handle = TrustAnchorHandle::new("ta".into());
         let signer = config.signer()?;
         let actor = Actor::krillta();
@@ -1017,18 +1021,20 @@ impl TrustAnchorSignerManager {
         if self.store.has(&self.ta_handle)? {
             Err(Error::other("Trust Anchor Signer was already initialised."))
         } else {
-            let signer_init_command = TrustAnchorSignerInitCommand {
-                handle: self.ta_handle.clone(),
-                proxy_id: info.proxy_id,
-                repo_info: info.repo_info,
-                tal_https: info.tal_https,
-                tal_rsync: info.tal_rsync,
-                private_key_pem: info.private_key_pem,
-                signer: self.signer.clone(),
-            };
+            let cmd = TrustAnchorSignerInitCommand::new(
+                &self.ta_handle,
+                TrustAnchorSignerInitCommandDetails {
+                    proxy_id: info.proxy_id,
+                    repo_info: info.repo_info,
+                    tal_https: info.tal_https,
+                    tal_rsync: info.tal_rsync,
+                    private_key_pem: info.private_key_pem,
+                    signer: self.signer.clone(),
+                },
+                &self.actor,
+            );
 
-            let signer_init_event = TrustAnchorSigner::create_init(signer_init_command)?;
-            self.store.add(signer_init_event)?;
+            self.store.add(cmd)?;
 
             Ok(TrustAnchorClientApiResponse::Empty)
         }
@@ -1075,7 +1081,7 @@ impl TrustAnchorSignerManager {
 
     fn get_signer(&self) -> Result<Arc<TrustAnchorSigner>, Error> {
         if self.store.has(&self.ta_handle)? {
-            self.store.get_latest(&self.ta_handle).map_err(Error::StorageError)
+            self.store.get_latest(&self.ta_handle).map_err(Error::KrillError)
         } else {
             Err(Error::other("Trust Anchor Signer is not initialised."))
         }
@@ -1086,10 +1092,15 @@ impl TrustAnchorSignerManager {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Config {
-    data_dir: PathBuf,
+    storage_uri: Url,
+
+    #[serde(default)]
+    use_history_cache: bool,
 
     #[serde(default = "crate::daemon::config::ConfigDefaults::log_type")]
     log_type: LogType,
+
+    log_file: Option<PathBuf>,
 
     #[serde(
         default = "crate::daemon::config::ConfigDefaults::log_level",
@@ -1127,10 +1138,6 @@ impl Config {
     fn parse_slice(slice: &[u8]) -> Result<Self, Error> {
         let mut config: Config =
             toml::from_slice(slice).map_err(|e| Error::Other(format!("Error parsing config file: {}", e)))?;
-
-        if !config.data_dir.exists() {
-            file::create_dir_all(&config.data_dir).map_err(KrillError::IoError)?;
-        }
 
         config.resolve_signers();
         config.init_logging()?;
@@ -1187,7 +1194,7 @@ impl Config {
         // Config::resolve() has been used to update signer name references to resolve to the corresponding signer
         // configurations.
         let probe_interval = std::time::Duration::from_secs(self.signer_probe_retry_seconds);
-        let signer = KrillSignerBuilder::new(&self.data_dir, probe_interval, &self.signers)
+        let signer = KrillSignerBuilder::new(&self.storage_uri, probe_interval, &self.signers)
             .with_default_signer(self.default_signer())
             .with_one_off_signer(self.one_off_signer())
             .build()
@@ -1219,8 +1226,10 @@ impl Config {
     }
 
     fn file_logger(&self) -> Result<(), Error> {
-        let path = self.data_dir.join("krillta.log");
-        let log_file = fern::log_file(&path)
+        let path = self.log_file.as_ref().ok_or(Error::Other(
+            "log_file not configured with log_type = \"file\"".to_owned(),
+        ))?;
+        let log_file = fern::log_file(path)
             .map_err(|e| Error::Other(format!("Failed to open log file '{}': {}", path.display(), e)))?;
 
         self.fern_logger()
@@ -1282,12 +1291,12 @@ impl Config {
 mod tests {
     use super::*;
 
-    use crate::test::*;
+    use crate::test;
 
     #[test]
     fn initialise_default_signers() {
-        test_under_tmp(|d| {
-            let config_string = format!("data_dir = \"{}\"", d.to_string_lossy());
+        test::test_in_memory(|storage_uri| {
+            let config_string = format!("log_type = \"stderr\"\nstorage_uri = \"{}\"", storage_uri);
             let config = Config::parse_slice(config_string.as_bytes()).unwrap();
             config.signer().unwrap();
         })

@@ -17,13 +17,7 @@ use crate::{
     },
 };
 
-// This is NOT an actual relative path to redirect to. Instead it is the path
-// string of an entry in the Vue router routes table to "route" to (in the
-// Lagosta single page application). See the routes array in router.js of the
-// Lagosta source code. Ideally we could instead return a route name and then
-// Lagosta could change this path without requiring that we update to match.
-const LAGOSTA_LOGIN_ROUTE_PATH: &str = "/login?withId=true";
-const LOGIN_SESSION_STATE_KEY_PATH: &str = "login_session_state.key"; // TODO: decide on proper location
+const UI_LOGIN_ROUTE_PATH: &str = "/login?withId=true";
 
 struct UserDetails {
     password_hash: Token,
@@ -68,7 +62,7 @@ impl ConfigFileAuthProvider {
                     users.insert(k.clone(), get_checked_config_user(k, v)?);
                 }
 
-                let session_key = Self::init_session_key(config.clone())?;
+                let session_key = Self::init_session_key(&config)?;
 
                 Ok(ConfigFileAuthProvider {
                     users,
@@ -82,10 +76,9 @@ impl ConfigFileAuthProvider {
         }
     }
 
-    fn init_session_key(config: Arc<Config>) -> KrillResult<CryptState> {
-        let key_path = config.data_dir.join(LOGIN_SESSION_STATE_KEY_PATH);
-        info!("Initializing login session encryption key {}", &key_path.display());
-        crypt::crypt_init(key_path.as_path())
+    fn init_session_key(config: &Config) -> KrillResult<CryptState> {
+        debug!("Initializing login session encryption key");
+        crypt::crypt_init(config)
     }
 
     /// Parse HTTP Basic Authorization header
@@ -96,10 +89,10 @@ impl ConfigFileAuthProvider {
         let auth = String::from_utf8(auth).ok()?;
         let (username, password) = auth.split_once(':')?;
 
-        return Some(Auth::UsernameAndPassword {
+        Some(Auth::UsernameAndPassword {
             username: username.to_string(),
             password: password.to_string(),
-        });
+        })
     }
 }
 
@@ -131,7 +124,7 @@ impl ConfigFileAuthProvider {
 
     pub fn get_login_url(&self) -> KrillResult<HttpResponse> {
         // Direct Lagosta to show the user the Lagosta API token login form
-        Ok(HttpResponse::text_no_cache(LAGOSTA_LOGIN_ROUTE_PATH.into()))
+        Ok(HttpResponse::text_no_cache(UI_LOGIN_ROUTE_PATH.into()))
     }
 
     pub fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
@@ -159,13 +152,7 @@ impl ConfigFileAuthProvider {
 
             let strong_salt: Vec<u8> = hex::decode(user_salt).unwrap();
             let mut hashed_hash: [u8; 32] = [0; 32];
-            scrypt(
-                &interim_hash,
-                strong_salt.as_slice(),
-                &params,
-                &mut hashed_hash,
-            )
-            .unwrap();
+            scrypt(&interim_hash, strong_salt.as_slice(), &params, &mut hashed_hash).unwrap();
 
             let encoded_hash = hex::encode(hashed_hash);
 
@@ -174,9 +161,13 @@ impl ConfigFileAuthProvider {
                 // and don't result in an obvious timing difference between the two scenarios which could potentially
                 // be used to discover user names.
                 if let Some(user) = self.users.get(&username) {
-                    let api_token =
-                        self.session_cache
-                            .encode(&username, &user.attributes, HashMap::new(), &self.session_key, None)?;
+                    let api_token = self.session_cache.encode(
+                        &username,
+                        &user.attributes,
+                        HashMap::new(),
+                        &self.session_key,
+                        None,
+                    )?;
 
                     Ok(LoggedInUser {
                         token: api_token,

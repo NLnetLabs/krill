@@ -25,7 +25,6 @@ use hyper::{
 };
 
 use tokio::select;
-use tokio::signal::unix::SignalKind;
 
 use rpki::{
     ca::{
@@ -60,6 +59,7 @@ use crate::{
             RoutingResult,
         },
         krillserver::KrillServer,
+        properties::PropertiesManager,
         ta::{self, TA_NAME},
     },
     upgrades::{finalise_data_migration, post_start_upgrade, prepare_upgrade_data_migrations, UpgradeMode},
@@ -80,8 +80,7 @@ fn print_write_error_hint_and_die(error_msg: String) {
 }
 
 fn write_pid_file_or_die(config: &Config) {
-    let pid_file = config.pid_file();
-    if let Err(e) = file::save(process::id().to_string().as_bytes(), &pid_file) {
+    if let Err(e) = file::save(process::id().to_string().as_bytes(), config.pid_file()) {
         print_write_error_hint_and_die(format!("Could not write PID file: {}", e));
     }
 }
@@ -107,7 +106,8 @@ fn test_data_dir_or_die(config_item: &str, dir: &Path) {
 }
 
 fn test_data_dirs_or_die(config: &Config) {
-    test_data_dir_or_die("data_dir", &config.data_dir);
+    test_data_dir_or_die("tls_keys_dir", config.tls_keys_dir());
+    test_data_dir_or_die("repo_dir", config.repo_dir());
     if let Some(rfc8181_log_dir) = &config.rfc8181_log_dir {
         test_data_dir_or_die("rfc8181_log_dir", rfc8181_log_dir);
     }
@@ -117,30 +117,28 @@ fn test_data_dirs_or_die(config: &Config) {
 }
 
 pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
-    let optional_lock = if config.data_dir_use_lock {
-        Some(KrillLock::create(&config))
-    } else {
-        None
-    };
-
     write_pid_file_or_die(&config);
     test_data_dirs_or_die(&config);
 
+    // Set up the runtime properties manager, so that we can check
+    // the version used for the current data in storage
+    let properties_manager = PropertiesManager::create(&config.storage_uri, config.use_history_cache)?;
+
     // Call upgrade, this will only do actual work if needed.
-    let upgrade_report = prepare_upgrade_data_migrations(UpgradeMode::PrepareToFinalise, config.clone())?;
+    let upgrade_report = prepare_upgrade_data_migrations(UpgradeMode::PrepareToFinalise, &config, &properties_manager)
+        .map_err(|e| Error::Custom(format!("Upgrade data migration failed with error: {}\n\nNOTE: your data was not changed. Please downgrade your krill instance to your previous version.", e)))?;
+
     if let Some(report) = &upgrade_report {
-        if report.data_migration() {
-            finalise_data_migration(report.versions(), config.as_ref()).map_err(|e| {
+        finalise_data_migration(report.versions(), &config, &properties_manager).map_err(|e| {
                 Error::Custom(format!(
-                    "Finishing prepared migration failed unexpectedly. Please check your data directory {}. If you find folders named 'arch-cas-{}' or 'arch-pubd-{}' there, then rename them to 'cas' and 'pubd' respectively and re-install krill version {}. Underlying error was: {}",
-                    config.data_dir.to_string_lossy(),
+                    "Finishing prepared migration failed unexpectedly. Please check your data {}. If you find folders named 'arch-cas-{}' or 'arch-pubd-{}' there, then rename them to 'cas' and 'pubd' respectively and re-install krill version {}. Underlying error was: {}",
+                    config.storage_uri,
                     report.versions().from(),
                     report.versions().from(),
                     report.versions().from(),
                     e
                 ))
             })?;
-        }
     }
 
     // Create the server, this will create the necessary data sub-directories if needed
@@ -167,7 +165,7 @@ pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
 
     // Create self-signed HTTPS cert if configured and not generated earlier.
     if config.https_mode().is_generate_https_cert() {
-        tls_keys::create_key_cert_if_needed(&config.data_dir).map_err(|e| Error::HttpsSetup(format!("{}", e)))?;
+        tls_keys::create_key_cert_if_needed(config.tls_keys_dir()).map_err(|e| Error::HttpsSetup(format!("{}", e)))?;
     }
 
     // Start a hyper server for the configured socket.
@@ -178,26 +176,10 @@ pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
             .map(|socket_addr| tokio::spawn(single_http_listener(krill_server.clone(), socket_addr, config.clone()))),
     );
 
-    if let Some(lock) = optional_lock {
-        #[cfg(not(unix))]
-        select!(
-            _ = server_futures => error!("http server stopped unexpectedly"),
-            _ = scheduler_future => error!("scheduler stopped unexpectedly"),
-            _ = lock.handle_ctrl_c() => info!("ctrl-c received"),
-        );
-        #[cfg(unix)]
-        select!(
-            _ = server_futures => error!("http server stopped unexpectedly"),
-            _ = scheduler_future => error!("scheduler stopped unexpectedly"),
-            _ = lock.handle_ctrl_c() => info!("ctrl-c received"),
-            _ = lock.handle_sig_term() => info!("sig TERM received"),
-        );
-    } else {
-        select!(
-            _ = server_futures => error!("http server stopped unexpectedly"),
-            _ = scheduler_future => error!("scheduler stopped unexpectedly"),
-        );
-    }
+    select!(
+        _ = server_futures => error!("http server stopped unexpectedly"),
+        _ = scheduler_future => error!("scheduler stopped unexpectedly"),
+    );
 
     Err(Error::custom("stopping krill process"))
 }
@@ -229,8 +211,8 @@ async fn single_http_listener(krill_server: Arc<KrillServer>, socket_addr: Socke
     } else {
         // Set up a TLS acceptor to use.
         let server_config_builder = tls::TlsConfigBuilder::new()
-            .cert_path(tls_keys::cert_file_path(&config.data_dir))
-            .key_path(tls_keys::key_file_path(&config.data_dir));
+            .cert_path(tls_keys::cert_file_path(config.tls_keys_dir()))
+            .key_path(tls_keys::key_file_path(config.tls_keys_dir()));
 
         let server_config = server_config_builder.build().unwrap();
         let acceptor = tls::TlsAcceptor::new(server_config, incoming);
@@ -2354,78 +2336,24 @@ async fn api_ta(req: Request, path: &mut RequestPath) -> RoutingResult {
     }
 }
 
-/// A naive lock implementation used to prevent that two Krill instances
-/// access the same krill data directory simultaneously.
-struct KrillLock(PathBuf);
-
-impl KrillLock {
-    fn create(config: &Config) -> Self {
-        let lock_file_path = config.data_dir.join("krill.lock");
-
-        if lock_file_path.exists() {
-            error!(
-                "Cannot start Krill: existing lock file found at: {}",
-                lock_file_path.display()
-            );
-            ::std::process::exit(1);
-        }
-
-        if let Err(e) = file::save(b"lock", &lock_file_path) {
-            error!(
-                "Cannot start Krill: cannot create lock file at: {}. Error: {}",
-                lock_file_path.display(),
-                e
-            );
-            ::std::process::exit(1);
-        }
-
-        KrillLock(lock_file_path)
-    }
-
-    fn clean(&self) {
-        // best effort clean up
-        let _ = std::fs::remove_file(&self.0);
-    }
-
-    async fn handle_ctrl_c(&self) {
-        tokio::signal::ctrl_c().await.unwrap();
-        self.clean();
-    }
-
-    #[cfg(unix)]
-    async fn handle_sig_term(&self) {
-        tokio::signal::unix::signal(SignalKind::terminate())
-            .unwrap()
-            .recv()
-            .await;
-        self.clean();
-    }
-}
-
-impl Drop for KrillLock {
-    fn drop(&mut self) {
-        self.clean()
-    }
-}
-
 //------------ Tests ---------------------------------------------------------
 #[cfg(test)]
 mod tests {
-
     // NOTE: This is extensively tested through the functional and e2e tests found under
     //       the $project/tests dir
     use crate::test;
-    use std::fs;
 
     #[tokio::test]
     async fn start_krill_daemon() {
-        let dir = test::start_krill_with_default_test_config(false, false, false, false).await;
-        let _ = fs::remove_dir_all(dir);
+        let cleanup = test::start_krill_with_default_test_config(false, false, false, false).await;
+
+        cleanup();
     }
 
     #[tokio::test]
     async fn start_krill_pubd_daemon() {
-        let dir = test::start_krill_pubd(0).await;
-        let _ = fs::remove_dir_all(dir);
+        let cleanup = test::start_krill_pubd(0).await;
+
+        cleanup();
     }
 }

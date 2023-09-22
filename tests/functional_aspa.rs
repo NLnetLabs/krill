@@ -1,6 +1,5 @@
 //! Perform functional tests on a Krill instance, using the API
 //!
-use std::fs;
 use std::str::FromStr;
 
 use rpki::{
@@ -15,8 +14,8 @@ use krill::{
 use rpki::repository::aspa::ProviderAs;
 
 #[tokio::test]
-pub async fn functional_aspa() {
-    let krill_dir = start_krill_with_default_test_config(true, false, false, false).await;
+async fn functional_aspa() {
+    let cleanup = start_krill_with_default_test_config(true, false, false, false).await;
 
     info("##################################################################");
     info("#                                                                #");
@@ -311,5 +310,5 @@ pub async fn functional_aspa() {
         expect_aspa_definitions(&ca, AspaDefinitionList::new(vec![])).await;
     }
 
-    let _ = fs::remove_dir_all(krill_dir);
+    cleanup();
 }

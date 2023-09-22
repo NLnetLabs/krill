@@ -30,7 +30,6 @@ use crate::{
         bgp::{BgpAnalyser, BgpAnalysisReport, BgpAnalysisSuggestion},
         crypto::KrillSignerBuilder,
         error::Error,
-        eventsourcing::CommandKey,
         KrillEmptyResult, KrillResult,
     },
     constants::*,
@@ -64,9 +63,6 @@ pub struct KrillServer {
     // The base URI for this service
     service_uri: uri::Https,
 
-    // The base working directory, used for various storage
-    work_dir: PathBuf,
-
     // Component responsible for API authorization checks
     authorizer: Authorizer,
 
@@ -98,9 +94,8 @@ pub struct KrillServer {
 /// # Set up and initialization
 impl KrillServer {
     /// Creates a new publication server. Note that state is preserved
-    /// on disk in the work_dir provided.
+    /// in the data storage.
     pub async fn build(config: Arc<Config>) -> KrillResult<Self> {
-        let work_dir = &config.data_dir;
         let service_uri = config.service_uri();
 
         info!("Starting {} v{}", KRILL_SERVER_APP, KRILL_VERSION);
@@ -110,7 +105,7 @@ impl KrillServer {
         // Config::resolve() has been used to update signer name references to resolve to the corresponding signer
         // configurations.
         let probe_interval = std::time::Duration::from_secs(config.signer_probe_retry_seconds);
-        let signer = KrillSignerBuilder::new(work_dir, probe_interval, &config.signers)
+        let signer = KrillSignerBuilder::new(&config.storage_uri, probe_interval, &config.signers)
             .with_default_signer(config.default_signer())
             .with_one_off_signer(config.one_off_signer())
             .build()?;
@@ -162,7 +157,6 @@ impl KrillServer {
 
         let server = KrillServer {
             service_uri,
-            work_dir: work_dir.clone(),
             authorizer,
             repo_manager,
             ca_manager,
@@ -350,9 +344,9 @@ impl KrillServer {
     }
 
     pub fn rrdp_base_path(&self) -> PathBuf {
-        let mut path = self.work_dir.clone();
-        path.push("repo/rrdp");
-        path
+        let mut path = self.config.repo_dir().to_path_buf();
+        path.push("rrdp");
+        path.to_path_buf()
     }
 }
 
@@ -852,8 +846,8 @@ impl KrillServer {
         self.ca_manager.ca_history(ca, crit).await
     }
 
-    pub fn ca_command_details(&self, ca: &CaHandle, command: CommandKey) -> KrillResult<CaCommandDetails> {
-        self.ca_manager.ca_command_details(ca, command)
+    pub fn ca_command_details(&self, ca: &CaHandle, version: u64) -> KrillResult<CaCommandDetails> {
+        self.ca_manager.ca_command_details(ca, version)
     }
 
     /// Returns the publisher request for a CA, or NONE of the CA cannot be found.

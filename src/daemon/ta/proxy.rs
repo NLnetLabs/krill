@@ -5,11 +5,11 @@
 /// is handled by the Trust Anchor Signer instead.
 use super::*;
 
-use std::{collections::HashMap, convert::TryFrom, fmt};
+use std::{collections::HashMap, convert::TryFrom, fmt, sync::Arc};
 
 use rpki::{
     ca::{
-        idexchange::{self, ChildHandle},
+        idexchange::{self, ChildHandle, MyHandle},
         provisioning::{ResourceClassEntitlements, SigningCert},
     },
     crypto::KeyIdentifier,
@@ -21,7 +21,8 @@ use crate::{
         api::{AddChildRequest, IdCertInfo, RepositoryContact},
         crypto::{CsrInfo, KrillSigner},
         error::Error,
-        eventsourcing, KrillResult,
+        eventsourcing::{self, Event, InitCommandDetails, InitEvent, WithStorableDetails},
+        KrillResult,
     },
     daemon::{
         ca::{Rfc8183Id, UsedKeyState},
@@ -90,17 +91,44 @@ pub struct TrustAnchorProxy {
 
 //------------ TrustAnchorProxy: Commands and Events -----------------------
 
+pub type TrustAnchorProxyInitCommand = eventsourcing::SentInitCommand<TrustAnchorProxyInitCommandDetails>;
+
+impl TrustAnchorProxyInitCommand {
+    pub fn make(id: &MyHandle, signer: Arc<KrillSigner>, actor: &Actor) -> Self {
+        TrustAnchorProxyInitCommand::new(id, TrustAnchorProxyInitCommandDetails { signer }, actor)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct TrustAnchorProxyInitCommandDetails {
+    signer: Arc<KrillSigner>,
+}
+
+impl fmt::Display for TrustAnchorProxyInitCommandDetails {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.store().fmt(f)
+    }
+}
+
+impl InitCommandDetails for TrustAnchorProxyInitCommandDetails {
+    type StorableDetails = TrustAnchorProxyCommandDetails;
+
+    fn store(&self) -> Self::StorableDetails {
+        TrustAnchorProxyCommandDetails::make_init()
+    }
+}
+
 pub type TrustAnchorProxyCommand = eventsourcing::SentCommand<TrustAnchorProxyCommandDetails>;
-pub type TrustAnchorProxyInitEvent = eventsourcing::StoredEvent<TrustAnchorProxyInitDetails>;
-pub type TrustAnchorProxyEvent = eventsourcing::StoredEvent<TrustAnchorProxyEventDetails>;
 
 // Initialisation
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct TrustAnchorProxyInitDetails {
+pub struct TrustAnchorProxyInitEvent {
     id: IdCertInfo,
 }
 
-impl fmt::Display for TrustAnchorProxyInitDetails {
+impl InitEvent for TrustAnchorProxyInitEvent {}
+
+impl fmt::Display for TrustAnchorProxyInitEvent {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // note that this is a summary, full details are stored in the init event.
         write!(f, "Trust Anchor Proxy was initialised.")
@@ -110,7 +138,7 @@ impl fmt::Display for TrustAnchorProxyInitDetails {
 // Events
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
-pub enum TrustAnchorProxyEventDetails {
+pub enum TrustAnchorProxyEvent {
     // Publication Support
     RepositoryAdded(RepositoryContact),
 
@@ -125,12 +153,14 @@ pub enum TrustAnchorProxyEventDetails {
     ChildResponseGiven(ChildHandle, KeyIdentifier),
 }
 
-impl fmt::Display for TrustAnchorProxyEventDetails {
+impl Event for TrustAnchorProxyEvent {}
+
+impl fmt::Display for TrustAnchorProxyEvent {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // note that this is a summary, full details are stored in the json.
         match self {
             // Publication Support
-            TrustAnchorProxyEventDetails::RepositoryAdded(repository) => {
+            TrustAnchorProxyEvent::RepositoryAdded(repository) => {
                 write!(
                     f,
                     "Added repository with service uri: {}",
@@ -139,24 +169,24 @@ impl fmt::Display for TrustAnchorProxyEventDetails {
             }
 
             // Proxy -> Signer interactions
-            TrustAnchorProxyEventDetails::SignerAdded(signer) => {
+            TrustAnchorProxyEvent::SignerAdded(signer) => {
                 write!(f, "Added signer with ID certificate hash: {}", signer.id.hash())
             }
-            TrustAnchorProxyEventDetails::SignerRequestMade(nonce) => {
+            TrustAnchorProxyEvent::SignerRequestMade(nonce) => {
                 write!(f, "Created signer request with nonce '{}'", nonce)
             }
-            TrustAnchorProxyEventDetails::SignerResponseReceived(response) => {
+            TrustAnchorProxyEvent::SignerResponseReceived(response) => {
                 write!(f, "Received signer response with nonce '{}'", response.content().nonce)
             }
 
             // Children
-            TrustAnchorProxyEventDetails::ChildAdded(child) => {
+            TrustAnchorProxyEvent::ChildAdded(child) => {
                 write!(f, "Added child: {}, with resources: {}", child.handle, child.resources)
             }
-            TrustAnchorProxyEventDetails::ChildRequestAdded(child_handle, request) => {
+            TrustAnchorProxyEvent::ChildRequestAdded(child_handle, request) => {
                 write!(f, "Added request for child {}: {}", child_handle, request)
             }
-            TrustAnchorProxyEventDetails::ChildResponseGiven(child_handle, key) => {
+            TrustAnchorProxyEvent::ChildResponseGiven(child_handle, key) => {
                 write!(f, "Given response to child {} for key: {}", child_handle, key)
             }
         }
@@ -168,6 +198,9 @@ impl fmt::Display for TrustAnchorProxyEventDetails {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum TrustAnchorProxyCommandDetails {
+    // Create new instance - cannot be sent to an existing instance
+    Init,
+
     // Publication Support
     AddRepository(RepositoryContact),
 
@@ -186,6 +219,9 @@ impl fmt::Display for TrustAnchorProxyCommandDetails {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // note that this is a summary, full details are stored in the json.
         match self {
+            TrustAnchorProxyCommandDetails::Init => {
+                write!(f, "Initialise TA proxy")
+            }
             // Publication Support
             TrustAnchorProxyCommandDetails::AddRepository(repository) => {
                 write!(f, "Add repository at: {}", repository.server_info().service_uri())
@@ -228,6 +264,10 @@ impl fmt::Display for TrustAnchorProxyCommandDetails {
 impl eventsourcing::WithStorableDetails for TrustAnchorProxyCommandDetails {
     fn summary(&self) -> crate::commons::api::CommandSummary {
         match self {
+            // Initialisation
+            TrustAnchorProxyCommandDetails::Init => {
+                crate::commons::api::CommandSummary::new("cmd-ta-proxy-init", self)
+            }
             // Publication Support
             TrustAnchorProxyCommandDetails::AddRepository(repository) => {
                 crate::commons::api::CommandSummary::new("cmd-ta-proxy-repo-add", self)
@@ -267,6 +307,10 @@ impl eventsourcing::WithStorableDetails for TrustAnchorProxyCommandDetails {
                 crate::commons::api::CommandSummary::new("cmd-ta-proxy-child-res", self).with_child(child_handle)
             }
         }
+    }
+
+    fn make_init() -> Self {
+        Self::Init
     }
 }
 
@@ -338,48 +382,53 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
     type Command = TrustAnchorProxyCommand;
     type StorableCommandDetails = TrustAnchorProxyCommandDetails;
     type Event = TrustAnchorProxyEvent;
+
+    type InitCommand = TrustAnchorProxyInitCommand;
     type InitEvent = TrustAnchorProxyInitEvent;
     type Error = Error;
 
-    fn init(event: Self::InitEvent) -> Result<Self, Self::Error> {
-        let (handle, _version, details) = event.unpack();
-
-        Ok(TrustAnchorProxy {
+    fn init(handle: TrustAnchorHandle, event: TrustAnchorProxyInitEvent) -> Self {
+        TrustAnchorProxy {
             handle,
             version: 1,
-            id: details.id,
+            id: event.id,
             repository: None,
             signer: None,
             child_details: HashMap::new(),
             open_signer_request: None,
-        })
+        }
+    }
+
+    fn process_init_command(command: TrustAnchorProxyInitCommand) -> Result<TrustAnchorProxyInitEvent, Error> {
+        Rfc8183Id::generate(&command.into_details().signer).map(|id| TrustAnchorProxyInitEvent { id: id.into() })
     }
 
     fn version(&self) -> u64 {
         self.version
     }
 
-    fn apply(&mut self, event: Self::Event) {
-        let (handle, _version, details) = event.unpack();
+    fn increment_version(&mut self) {
+        self.version += 1;
+    }
 
+    fn apply(&mut self, event: Self::Event) {
         if log_enabled!(log::Level::Trace) {
             trace!(
                 "Applying event to Trust Anchor Proxy '{}', version: {}: {}",
-                handle,
+                self.handle,
                 self.version,
-                details
+                event
             );
         }
 
-        self.version += 1;
-        match details {
+        match event {
             // Publication Support
-            TrustAnchorProxyEventDetails::RepositoryAdded(repository) => self.repository = Some(repository),
+            TrustAnchorProxyEvent::RepositoryAdded(repository) => self.repository = Some(repository),
 
             // Proxy -> Signer interactions
-            TrustAnchorProxyEventDetails::SignerAdded(signer) => self.signer = Some(signer),
-            TrustAnchorProxyEventDetails::SignerRequestMade(nonce) => self.open_signer_request = Some(nonce),
-            TrustAnchorProxyEventDetails::SignerResponseReceived(response) => {
+            TrustAnchorProxyEvent::SignerAdded(signer) => self.signer = Some(signer),
+            TrustAnchorProxyEvent::SignerRequestMade(nonce) => self.open_signer_request = Some(nonce),
+            TrustAnchorProxyEvent::SignerResponseReceived(response) => {
                 let content = response.into_content();
                 for (child_handle, child_responses) in content.child_responses {
                     if let Some(child_details) = self.child_details.get_mut(&child_handle) {
@@ -406,17 +455,17 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
             }
 
             // Children
-            TrustAnchorProxyEventDetails::ChildAdded(child) => {
+            TrustAnchorProxyEvent::ChildAdded(child) => {
                 self.child_details.insert(child.handle.clone(), child);
             }
-            TrustAnchorProxyEventDetails::ChildRequestAdded(child_handle, request) => {
+            TrustAnchorProxyEvent::ChildRequestAdded(child_handle, request) => {
                 self.child_details
                     .get_mut(&child_handle)
                     .unwrap() // safe - we can only have an event for this child if it exists
                     .open_requests
                     .insert(request.key_identifier(), request);
             }
-            TrustAnchorProxyEventDetails::ChildResponseGiven(child_handle, key) => {
+            TrustAnchorProxyEvent::ChildResponseGiven(child_handle, key) => {
                 self.child_details
                     .get_mut(&child_handle)
                     .unwrap() // safe - we can only have an event for this child if it exists
@@ -435,187 +484,186 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
                 command
             );
         }
+
         match command.into_details() {
-            // Publication Support
-            TrustAnchorProxyCommandDetails::AddRepository(repository) => {
-                if self.repository.is_none() {
-                    Ok(vec![TrustAnchorProxyEvent::new(
-                        &self.handle,
-                        self.version,
-                        TrustAnchorProxyEventDetails::RepositoryAdded(repository),
-                    )])
-                } else {
-                    Err(Error::TaProxyAlreadyHasRepository)
-                }
+            // Initialisation
+            TrustAnchorProxyCommandDetails::Init => {
+                // This can't happen really.. we would never send this command
+                // to an existing TrustAnchorProxy.
+                //
+                // This could be solved more elegantly, and more verbosely, if
+                // we create a separate TrustAnchorProxyStorableCommand that
+                // implements 'WithStorableDetails' - like we have in other cases -
+                // because then our initialisation command could map to that type
+                // instead of having this additional variant for storing.
+                Err(Error::custom("Trust Anchor Proxy already created"))
             }
+
+            // Publication Support
+            TrustAnchorProxyCommandDetails::AddRepository(repository) => self.process_add_repository(repository),
 
             // Proxy -> Signer interactions
-            TrustAnchorProxyCommandDetails::AddSigner(signer) => {
-                if self.signer.is_none() {
-                    Ok(vec![TrustAnchorProxyEvent::new(
-                        &self.handle,
-                        self.version,
-                        TrustAnchorProxyEventDetails::SignerAdded(signer),
-                    )])
-                } else {
-                    Err(Error::TaProxyAlreadyHasSigner)
-                }
-            }
-            TrustAnchorProxyCommandDetails::MakeSignerRequest => {
-                if self.open_signer_request.is_some() {
-                    Err(Error::TaProxyHasRequest)
-                } else {
-                    Ok(vec![TrustAnchorProxyEvent::new(
-                        &self.handle,
-                        self.version,
-                        TrustAnchorProxyEventDetails::SignerRequestMade(Nonce::new()),
-                    )])
-                }
-            }
-
-            TrustAnchorProxyCommandDetails::ProcessSignerResponse(response) => {
-                let open_request_nonce = self.open_signer_request.as_ref().ok_or(Error::TaProxyHasNoRequest)?;
-
-                if &response.content().nonce != open_request_nonce {
-                    // It seems that the user uploaded the wrong the response.
-                    Err(Error::TaProxyRequestNonceMismatch(
-                        response.into_content().nonce,
-                        open_request_nonce.clone(),
-                    ))
-                } else if let Some(signer) = &self.signer {
-                    // Ensure that the response was validly signed.
-                    response.validate(&signer.id)?;
-
-                    // We accept the response as is. Since children cannot be modified, and requests
-                    // cannot change as long as there is an open signer request we cannot have any
-                    // mismatches between the children and child requests in the proxy vs the
-                    // children and responses received from the signer.
-                    //
-                    // In other words.. we trust that the associated signer functions correctly and
-                    // we have no further defensive coding on this side.
-                    //
-                    // Note that if we would reject the response, then there would be no way of
-                    // telling the signer why. So, this is also a matter of the 'the signer is
-                    // always right'.
-                    Ok(vec![TrustAnchorProxyEvent::new(
-                        &self.handle,
-                        self.version,
-                        TrustAnchorProxyEventDetails::SignerResponseReceived(response),
-                    )])
-                } else {
-                    // This is rather unexpected.. it implies that we had a request, but no
-                    // signer. Still - return a clean error for this, so unlikely as this may
-                    // be, it can be investigated.
-                    Err(Error::TaProxyHasNoSigner)
-                }
-            }
+            TrustAnchorProxyCommandDetails::AddSigner(signer) => self.process_add_signer(signer),
+            TrustAnchorProxyCommandDetails::MakeSignerRequest => self.process_make_signer_request(),
+            TrustAnchorProxyCommandDetails::ProcessSignerResponse(response) => self.process_signer_response(response),
 
             // Children
-            TrustAnchorProxyCommandDetails::AddChild(child) => {
-                if self.child_details.contains_key(child.handle()) {
-                    Err(Error::CaChildDuplicate(self.handle.clone(), child.handle().clone()))
-                } else {
-                    let (handle, resources, id_cert) = child.unpack();
-                    Ok(vec![TrustAnchorProxyEvent::new(
-                        &self.handle,
-                        self.version,
-                        TrustAnchorProxyEventDetails::ChildAdded(TrustAnchorChild::new(
-                            handle,
-                            id_cert.into(),
-                            resources,
-                        )),
-                    )])
-                }
-            }
+            TrustAnchorProxyCommandDetails::AddChild(child) => self.process_add_child(child),
             TrustAnchorProxyCommandDetails::AddChildRequest(child_handle, request) => {
-                // We can do some basic checks on the request, like..
-                // - CSR is valid
-                // - CSR does not exceed entitled resources
-                // - CSR is for correct resource class
-                // - Revocation is for known key
-                // - Revocation is for correct resource class
-                //
-                // The signer will eventually handle the actual request. So we just
-                // schedule it as a manner of speaking. The signer will also do these
-                // checks - although that means that we have some duplication this helps
-                // to ensure that we can "fail fast" - and on the other hand leave the
-                // signer to be responsible for the final say (also.. things may have
-                // changed by the time the signer looks at it, like resource entitlements
-                // perhaps in future?)
-                let child = self.get_child_details(&child_handle)?;
-                let ta_resource_class_name = ta_resource_class_name();
-
-                match &request {
-                    ProvisioningRequest::Issuance(issuance) => {
-                        if issuance.class_name() != &ta_resource_class_name {
-                            return Err(Error::Custom(format!(
-                                "TA child certificate sign request uses unknown resource class name '{}'",
-                                issuance.class_name()
-                            )));
-                        }
-                        issuance.limit().apply_to(&child.resources)?; // Errors if request exceeds
-                        CsrInfo::try_from(issuance.csr())?; // Errors if the CSR is invalid
-                    }
-                    ProvisioningRequest::Revocation(revocation) => {
-                        if revocation.class_name() != &ta_resource_class_name {
-                            return Err(Error::Custom(format!(
-                                "TA child revocation request uses unknown resource class name '{}'",
-                                revocation.class_name()
-                            )));
-                        }
-                        if !child.used_keys.contains_key(&revocation.key()) {
-                            return Err(Error::Custom(format!(
-                                "TA child revocation requested for unknown key: {}",
-                                revocation.key()
-                            )));
-                        }
-                    }
-                }
-
-                Ok(vec![TrustAnchorProxyEvent::new(
-                    &self.handle,
-                    self.version,
-                    TrustAnchorProxyEventDetails::ChildRequestAdded(child_handle, request),
-                )])
+                self.process_add_child_request(child_handle, request)
             }
             TrustAnchorProxyCommandDetails::GiveChildResponse(child_handle, key) => {
-                let child = self.get_child_details(&child_handle)?;
-
-                if child.open_responses.contains_key(&key) {
-                    Ok(vec![TrustAnchorProxyEvent::new(
-                        &self.handle,
-                        self.version,
-                        TrustAnchorProxyEventDetails::ChildResponseGiven(child_handle, key),
-                    )])
-                } else {
-                    // This should not never happen. The command would not be sent, but let's
-                    // return some useful error anyway.
-                    Err(Error::Custom(format!(
-                        "No response found for child {} and key {}",
-                        child_handle, key
-                    )))
-                }
+                self.process_give_child_response(child_handle, key)
             }
         }
     }
 }
 
+// # Process command details
 impl TrustAnchorProxy {
-    /// Creates an initialisation event that can be used to create
-    /// a new TrustAnchorProxy.
-    //
-    // Perhaps we should refactor the eventsourcing support to have
-    // a create command instead, and let the init event become a
-    // normal event. But, not changing that now..
-    pub fn create_init(handle: TrustAnchorHandle, signer: &KrillSigner) -> KrillResult<TrustAnchorProxyInitEvent> {
-        let id = Rfc8183Id::generate(signer)?;
-        Ok(TrustAnchorProxyInitEvent::new(
-            &handle.into_converted(),
-            0,
-            TrustAnchorProxyInitDetails { id: id.into() },
-        ))
+    fn process_add_repository(&self, repository: RepositoryContact) -> KrillResult<Vec<TrustAnchorProxyEvent>> {
+        if self.repository.is_none() {
+            Ok(vec![TrustAnchorProxyEvent::RepositoryAdded(repository)])
+        } else {
+            Err(Error::TaProxyAlreadyHasRepository)
+        }
     }
 
+    fn process_add_signer(&self, signer: TrustAnchorSignerInfo) -> KrillResult<Vec<TrustAnchorProxyEvent>> {
+        if self.signer.is_none() {
+            Ok(vec![TrustAnchorProxyEvent::SignerAdded(signer)])
+        } else {
+            Err(Error::TaProxyAlreadyHasSigner)
+        }
+    }
+
+    fn process_make_signer_request(&self) -> KrillResult<Vec<TrustAnchorProxyEvent>> {
+        if self.open_signer_request.is_some() {
+            Err(Error::TaProxyHasRequest)
+        } else {
+            Ok(vec![TrustAnchorProxyEvent::SignerRequestMade(Nonce::new())])
+        }
+    }
+
+    fn process_signer_response(&self, response: TrustAnchorSignedResponse) -> KrillResult<Vec<TrustAnchorProxyEvent>> {
+        let open_request_nonce = self.open_signer_request.as_ref().ok_or(Error::TaProxyHasNoRequest)?;
+
+        if &response.content().nonce != open_request_nonce {
+            // It seems that the user uploaded the wrong the response.
+            Err(Error::TaProxyRequestNonceMismatch(
+                response.into_content().nonce,
+                open_request_nonce.clone(),
+            ))
+        } else if let Some(signer) = &self.signer {
+            // Ensure that the response was validly signed.
+            response.validate(&signer.id)?;
+
+            // We accept the response as is. Since children cannot be modified, and requests
+            // cannot change as long as there is an open signer request we cannot have any
+            // mismatches between the children and child requests in the proxy vs the
+            // children and responses received from the signer.
+            //
+            // In other words.. we trust that the associated signer functions correctly and
+            // we have no further defensive coding on this side.
+            //
+            // Note that if we would reject the response, then there would be no way of
+            // telling the signer why. So, this is also a matter of the 'the signer is
+            // always right'.
+            Ok(vec![TrustAnchorProxyEvent::SignerResponseReceived(response)])
+        } else {
+            // This is rather unexpected.. it implies that we had a request, but no
+            // signer. Still - return a clean error for this, so unlikely as this may
+            // be, it can be investigated.
+            Err(Error::TaProxyHasNoSigner)
+        }
+    }
+
+    fn process_add_child(&self, child: AddChildRequest) -> KrillResult<Vec<TrustAnchorProxyEvent>> {
+        if self.child_details.contains_key(child.handle()) {
+            Err(Error::CaChildDuplicate(self.handle.clone(), child.handle().clone()))
+        } else {
+            let (handle, resources, id_cert) = child.unpack();
+            Ok(vec![TrustAnchorProxyEvent::ChildAdded(TrustAnchorChild::new(
+                handle,
+                id_cert.into(),
+                resources,
+            ))])
+        }
+    }
+
+    fn process_add_child_request(
+        &self,
+        child_handle: ChildHandle,
+        request: ProvisioningRequest,
+    ) -> KrillResult<Vec<TrustAnchorProxyEvent>> {
+        // We can do some basic checks on the request, like..
+        // - CSR is valid
+        // - CSR does not exceed entitled resources
+        // - CSR is for correct resource class
+        // - Revocation is for known key
+        // - Revocation is for correct resource class
+        //
+        // The signer will eventually handle the actual request. So we just
+        // schedule it as a manner of speaking. The signer will also do these
+        // checks - although that means that we have some duplication this helps
+        // to ensure that we can "fail fast" - and on the other hand leave the
+        // signer to be responsible for the final say (also.. things may have
+        // changed by the time the signer looks at it, like resource entitlements
+        // perhaps in future?)
+        let child = self.get_child_details(&child_handle)?;
+        let ta_resource_class_name = ta_resource_class_name();
+
+        match &request {
+            ProvisioningRequest::Issuance(issuance) => {
+                if issuance.class_name() != &ta_resource_class_name {
+                    return Err(Error::Custom(format!(
+                        "TA child certificate sign request uses unknown resource class name '{}'",
+                        issuance.class_name()
+                    )));
+                }
+                issuance.limit().apply_to(&child.resources)?; // Errors if request exceeds
+                CsrInfo::try_from(issuance.csr())?; // Errors if the CSR is invalid
+            }
+            ProvisioningRequest::Revocation(revocation) => {
+                if revocation.class_name() != &ta_resource_class_name {
+                    return Err(Error::Custom(format!(
+                        "TA child revocation request uses unknown resource class name '{}'",
+                        revocation.class_name()
+                    )));
+                }
+                if !child.used_keys.contains_key(&revocation.key()) {
+                    return Err(Error::Custom(format!(
+                        "TA child revocation requested for unknown key: {}",
+                        revocation.key()
+                    )));
+                }
+            }
+        }
+
+        Ok(vec![TrustAnchorProxyEvent::ChildRequestAdded(child_handle, request)])
+    }
+
+    fn process_give_child_response(
+        &self,
+        child_handle: ChildHandle,
+        key: KeyIdentifier,
+    ) -> KrillResult<Vec<TrustAnchorProxyEvent>> {
+        let child = self.get_child_details(&child_handle)?;
+
+        if child.open_responses.contains_key(&key) {
+            Ok(vec![TrustAnchorProxyEvent::ChildResponseGiven(child_handle, key)])
+        } else {
+            // This should not never happen. The command would not be sent, but let's
+            // return some useful error anyway.
+            Err(Error::Custom(format!(
+                "No response found for child {} and key {}",
+                child_handle, key
+            )))
+        }
+    }
+}
+
+impl TrustAnchorProxy {
     pub fn get_signer_request(&self, signer: &KrillSigner) -> KrillResult<TrustAnchorSignedRequest> {
         if let Some(nonce) = self.open_signer_request.as_ref().cloned() {
             let mut child_requests = vec![];

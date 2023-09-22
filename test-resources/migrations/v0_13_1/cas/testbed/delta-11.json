@@ -1,0 +1,8 @@
+{
+  "id": "testbed",
+  "version": 11,
+  "details": {
+    "type": "child_removed",
+    "child": "testbed-client"
+  }
+}
