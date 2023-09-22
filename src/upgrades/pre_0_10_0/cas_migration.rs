@@ -71,8 +71,11 @@ impl CasMigration {
         let current_kv_store = KeyValueStore::create(&config.storage_uri, CASERVER_NS)?;
         let new_kv_store = KeyValueStore::create_upgrade_store(&config.storage_uri, CASERVER_NS)?;
 
-        let new_agg_store =
-            AggregateStore::<CertAuth>::create(&config.storage_uri, CASERVER_NS, config.use_history_cache)?;
+        let new_agg_store = AggregateStore::<CertAuth>::create_upgrade_store(
+            &config.storage_uri,
+            CASERVER_NS,
+            config.use_history_cache,
+        )?;
         let ca_objects_migration = CaObjectsMigration::create(config)?;
 
         CasMigration {

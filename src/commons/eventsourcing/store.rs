@@ -42,8 +42,18 @@ pub struct AggregateStore<A: Aggregate> {
 /// # Starting up
 ///
 impl<A: Aggregate> AggregateStore<A> {
-    /// Creates an AggregateStore using a disk based KeyValueStore
-    pub fn create(storage_uri: &Url, name_space: &Namespace, use_history_cache: bool) -> StoreResult<Self> {
+    /// Creates an AggregateStore using the given storage url
+    pub fn create(storage_uri: &Url, namespace: &Namespace, use_history_cache: bool) -> StoreResult<Self> {
+        let kv = KeyValueStore::create(storage_uri, namespace)?;
+        Self::create_from_kv(kv, use_history_cache)
+    }
+
+    /// Creates an AggregateStore for upgrades using the given storage url
+    pub fn create_upgrade_store(
+        storage_uri: &Url,
+        name_space: &Namespace,
+        use_history_cache: bool,
+    ) -> StoreResult<Self> {
         let kv = KeyValueStore::create_upgrade_store(storage_uri, name_space)?;
         Self::create_from_kv(kv, use_history_cache)
     }
@@ -132,13 +142,7 @@ where
         let scope = Self::scope_for_agg(cmd.handle());
 
         self.kv
-            .inner()
             .execute(&scope, move |kv| {
-                // The closure needs to return a Result<T, kvx::Error>.
-                // In our case T will be a Result<Arc<A>, A::Error>.
-                // So.. any kvx error will be in the outer result, while
-                // any aggregate related issues can still be returned
-                // as an err in the inner result.
                 let handle = cmd.handle().clone();
 
                 let init_command_key = Self::key_for_command(&handle, 0);
@@ -173,7 +177,7 @@ where
                     }
                 }
             })
-            .map_err(|kv_err| A::Error::from(AggregateStoreError::KeyStoreError(KeyValueError::KVError(kv_err))))?
+            .map_err(|e| A::Error::from(AggregateStoreError::KeyStoreError(e)))?
     }
 
     /// Send a command to the latest aggregate referenced by the handle in the command.
@@ -217,18 +221,11 @@ where
         save_snapshot: bool,
     ) -> Result<Arc<A>, A::Error> {
         self.kv
-            .inner()
             .execute(&Self::scope_for_agg(handle), |kv| {
-                // The closure needs to return a Result<T, kvx::Error>.
-                // In our case T will be a Result<Arc<A>, A::Error>.
-                // So.. any kvx error will be in the outer result, while
-                // any aggregate related issues can still be returned
-                // as an err in the inner result.
-
                 // Get the aggregate from the cache, or get it from the store.
                 let mut changed_from_cached = false;
 
-                let res = match self.cache_get(handle) {
+                let latest_result = match self.cache_get(handle) {
                     Some(arc) => Ok(arc),
                     None => {
                         // There was no cached aggregate, so try to get it
@@ -267,7 +264,7 @@ where
                     }
                 };
 
-                let mut agg = match res {
+                let mut agg = match latest_result {
                     Err(e) => return Ok(Err(e)),
                     Ok(agg) => agg,
                 };
@@ -411,7 +408,7 @@ where
                     Ok(Ok(agg))
                 }
             })
-            .map_err(|kv_err| A::Error::from(AggregateStoreError::KeyStoreError(KeyValueError::KVError(kv_err))))?
+            .map_err(|e| A::Error::from(AggregateStoreError::KeyStoreError(e)))?
     }
 }
 
@@ -561,10 +558,7 @@ where
     pub fn drop_aggregate(&self, id: &MyHandle) -> Result<(), AggregateStoreError> {
         let scope = Self::scope_for_agg(id);
 
-        self.kv
-            .inner()
-            .execute(&scope, |kv| kv.delete_scope(&scope))
-            .map_err(|kv_err| AggregateStoreError::KeyStoreError(KeyValueError::KVError(kv_err)))?;
+        self.kv.execute(&scope, |kv| kv.delete_scope(&scope))?;
 
         self.cache_remove(id);
         Ok(())

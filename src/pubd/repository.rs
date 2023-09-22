@@ -102,9 +102,7 @@ impl RepositoryContentProxy {
     }
 
     fn get_default_content(&self) -> KrillResult<Arc<RepositoryContent>> {
-        self.store
-            .get_latest(&self.default_handle)
-            .map_err(Error::WalStoreError)
+        self.store.get_latest(&self.default_handle)
     }
 
     // Clear all content, so it can be re-initialized.
