@@ -1,10 +1,10 @@
 [package]
 # Note: some of these values are also used when building Debian packages below.
-name    = "krill"
+name = "krill"
 version = "0.14.0-rc1"
 edition = "2018"
 rust-version = "1.65"
-authors = [ "The NLnet Labs RPKI team <rpki-team@nlnetlabs.nl>" ]
+authors = ["The NLnet Labs RPKI team <rpki-team@nlnetlabs.nl>"]
 description = "Resource Public Key Infrastructure (RPKI) daemon"
 homepage = "https://www.nlnetlabs.nl/projects/rpki/krill/"
 repository = "https://github.com/NLnetLabs/krill"
@@ -12,58 +12,70 @@ keywords = ["rpki", "routing-security", "bgp"]
 readme = "README.md"
 license = "MPL-2.0"
 exclude = [
-  "test-resources/*",
-  "tests/*",
-  ".github/*",
-  "docker/*",
-  "pkg/*",
-  "Dockerfile",
+    "test-resources/*",
+    "tests/*",
+    ".github/*",
+    "docker/*",
+    "pkg/*",
+    "Dockerfile",
 ]
 
 [dependencies]
-backoff               = { version = "0.3.0", optional = true }
-base64                = "^0.13"
-basic-cookies         = { version = "^0.1", optional = true }
-bytes                 = "1"
-chrono                = { version = "^0.4", features = ["serde"] }
-clap                  = "^2.33"
-fern                  = { version = "^0.5", features = ["syslog-4"] }
-futures               = "^0.3"
-futures-util          = "^0.3"
-fslock                = "0.2.1"
-hex                   = "^0.4"
-hyper                 = { version = "^0.14", features = ["server"] }
-intervaltree          = "0.2.6"
-jmespatch             = { version = "^0.3", features = ["sync"], optional = true }
-kmip                  = { version = "0.4.2", package = "kmip-protocol", features = ["tls-with-openssl"], optional = true }
+backoff = { version = "0.3.0", optional = true }
+base64 = "^0.13"
+basic-cookies = { version = "^0.1", optional = true }
+bytes = "1"
+chrono = { version = "^0.4", features = ["serde"] }
+clap = "^2.33"
+fern = { version = "^0.5", features = ["syslog-4"] }
+futures = "^0.3"
+futures-util = "^0.3"
+fslock = "0.2.1"
+hex = "^0.4"
+hyper = { version = "^0.14", features = ["server"] }
+intervaltree = "0.2.6"
+jmespatch = { version = "^0.3", features = ["sync"], optional = true }
+kmip = { version = "0.4.2", package = "kmip-protocol", features = [
+    "tls-with-openssl",
+], optional = true }
 # kvx                   = { version = "0.6.0", features = ["macros"] }
-kvx                   = { version = "0.7.0", git = "https://github.com/nlnetlabs/kvx", branch = "support-namespace-migrations", features = ["macros"] }
-libflate              = "^1"
-log                   = "^0.4"
-once_cell             = { version = "^1.7.2", optional = true }
-openidconnect         = { version = "^2.0.0", optional = true, default_features = false }
-openssl               = { version = "^0.10", features = ["v110"] }
-oso                   = { version = "^0.12", optional = true, default_features = false }
-cryptoki              = { version = "^0.3", optional = true }
-cryptoki-sys          = "=0.1.4" # pin cryptoki-sys because of compilation issues on various systems
-r2d2                  = { version = "0.8.9", optional = true }
-priority-queue        = "1.2.1"
-rand                  = "^0.8"
-regex                 = { version = "1.5.5", optional = true, default_features = false, features = ["std"] }
-reqwest               = { version = "0.11", features = ["json"] }
-rpassword             = { version = "^5.0", optional = true }
-rpki                  = { version = "0.16.1", features = [ "ca", "compat", "rrdp" ] }
+kvx = { version = "0.7.0", git = "https://github.com/nlnetlabs/kvx", branch = "prep-0.8.0", features = [
+    "macros",
+] }
+libflate = "^1"
+log = "^0.4"
+once_cell = { version = "^1.7.2", optional = true }
+openidconnect = { version = "^2.0.0", optional = true, default_features = false }
+openssl = { version = "^0.10", features = ["v110"] }
+oso = { version = "^0.12", optional = true, default_features = false }
+cryptoki = { version = "^0.3", optional = true }
+cryptoki-sys = "=0.1.4" # pin cryptoki-sys because of compilation issues on various systems
+r2d2 = { version = "0.8.9", optional = true }
+priority-queue = "1.2.1"
+rand = "^0.8"
+regex = { version = "1.5.5", optional = true, default_features = false, features = [
+    "std",
+] }
+reqwest = { version = "0.11", features = ["json"] }
+rpassword = { version = "^5.0", optional = true }
+rpki = { version = "0.16.1", features = ["ca", "compat", "rrdp"] }
 # rpki                  = { version = "0.16.0-dev", git = "https://github.com/nLnetLabs/rpki-rs", branch = "csr-ca-repo-trailing-slash", features = [ "ca", "compat", "rrdp" ] }
-scrypt                = { version = "^0.6", optional = true, default-features = false }
-serde                 = { version = "^1.0", features = ["derive", "rc"] }
-serde_json            = "^1.0"
-tokio                 = { version = "1", features = ["macros", "rt", "rt-multi-thread", "signal", "time"] }
-tokio-rustls          = "^0.22"
-toml                  = "^0.5"
+scrypt = { version = "^0.6", optional = true, default-features = false }
+serde = { version = "^1.0", features = ["derive", "rc"] }
+serde_json = "^1.0"
+tokio = { version = "1", features = [
+    "macros",
+    "rt",
+    "rt-multi-thread",
+    "signal",
+    "time",
+] }
+tokio-rustls = "^0.22"
+toml = "^0.5"
 unicode-normalization = { version = "^0.1", optional = true }
-url                   = { version = "2.3.1", features = ["serde"] }
-urlparse              = { version = "^0.7", optional = true }
-uuid                  = { version = "1.1", features = [ "v4" ] } # keep this in sync with rpki-rs
+url = { version = "2.3.1", features = ["serde"] }
+urlparse = { version = "^0.7", optional = true }
+uuid = { version = "1.1", features = ["v4"] } # keep this in sync with rpki-rs
 
 # Disable compiler optimizations for the pkcs11 crate because otherwise with a release build the
 # `pReserved = ptr::null_mut()` assignment done by `CK_C_INITIALIZE_ARGS::default()` appears to be optimized out. This
@@ -73,22 +85,32 @@ uuid                  = { version = "1.1", features = [ "v4" ] } # keep this in 
 # opt-level = 0
 
 [target.'cfg(unix)'.dependencies]
-libc            = "^0.2"
-syslog          = "^4.0"
+libc = "^0.2"
+syslog = "^4.0"
 
 [features]
-default = [ "multi-user", "hsm" ]
+default = ["multi-user", "hsm"]
 hsm = ["backoff", "kmip", "once_cell", "cryptoki", "r2d2"]
-multi-user = [ "basic-cookies", "jmespatch/sync", "regex", "oso", "openidconnect", "rpassword", "scrypt", "unicode-normalization", "urlparse" ]
-static-openssl = [ "openssl/vendored" ]
+multi-user = [
+    "basic-cookies",
+    "jmespatch/sync",
+    "regex",
+    "oso",
+    "openidconnect",
+    "rpassword",
+    "scrypt",
+    "unicode-normalization",
+    "urlparse",
+]
+static-openssl = ["openssl/vendored"]
 
 # Preview features - not ready for production use
 rta = []
 
 # Internal features - not for external use
-all = [ "multi-user", "rta", "static-openssl" ]
-hsm-tests-kmip = [ "hsm" ]
-hsm-tests-pkcs11 = [ "hsm" ]
+all = ["multi-user", "rta", "static-openssl"]
+hsm-tests-kmip = ["hsm"]
+hsm-tests-pkcs11 = ["hsm"]
 
 # Make sure that Krill crashes on panics, rather than losing threads and
 # limping on in a bad state.
@@ -96,8 +118,8 @@ hsm-tests-pkcs11 = [ "hsm" ]
 panic = "abort"
 
 [dev-dependencies]
-regex     = "1.5.5"
-urlparse  = "^0.7"
+regex = "1.5.5"
+urlparse = "^0.7"
 
 # ------------------------------------------------------------------------------
 # START DEBIAN PACKAGING
@@ -133,12 +155,36 @@ maintainer-scripts = "pkg/debian/"
 changelog = "target/debian/changelog" # this will be generated by the pkg workflow
 copyright = "Copyright (c) 2019, NLnet Labs. All rights reserved."
 assets = [
-    ["target/release/krill", "/usr/bin/krill", "755"],
-    ["target/release/krillc", "/usr/bin/krillc", "755"],
-    ["defaults/krill.conf", "/usr/share/doc/krill/krill.conf", "644"],
-    ["doc/krill.1", "/usr/share/man/man1/krill.1", "644"],
-    ["doc/krillc.1", "/usr/share/man/man1/krillc.1", "644"],
-    ["pkg/common/krill.service.preset", "/lib/systemd/system-preset/50-krill.preset", "644"],
+    [
+        "target/release/krill",
+        "/usr/bin/krill",
+        "755",
+    ],
+    [
+        "target/release/krillc",
+        "/usr/bin/krillc",
+        "755",
+    ],
+    [
+        "defaults/krill.conf",
+        "/usr/share/doc/krill/krill.conf",
+        "644",
+    ],
+    [
+        "doc/krill.1",
+        "/usr/share/man/man1/krill.1",
+        "644",
+    ],
+    [
+        "doc/krillc.1",
+        "/usr/share/man/man1/krillc.1",
+        "644",
+    ],
+    [
+        "pkg/common/krill.service.preset",
+        "/lib/systemd/system-preset/50-krill.preset",
+        "644",
+    ],
 ]
 systemd-units = { unit-name = "krill", unit-scripts = "pkg/common", enable = false }
 
@@ -161,8 +207,16 @@ depends = "$auto, passwd, libssl1.1"
 changelog = "target/debian/changelog" # this will be generated by the pkg workflow
 copyright = "Copyright (c) 2019, NLnet Labs. All rights reserved."
 assets = [
-    ["target/release/krillup", "/usr/bin/krillup", "755"],
-    ["doc/krillup.1", "/usr/share/man/man1/krillup.1", "644"],
+    [
+        "target/release/krillup",
+        "/usr/bin/krillup",
+        "755",
+    ],
+    [
+        "doc/krillup.1",
+        "/usr/share/man/man1/krillup.1",
+        "644",
+    ],
 ]
 
 [package.metadata.deb_alt_base_krillta]
@@ -175,8 +229,16 @@ depends = "$auto, passwd, libssl1.1"
 changelog = "target/debian/changelog" # this will be generated by the pkg workflow
 copyright = "Copyright (c) 2023, NLnet Labs. All rights reserved."
 assets = [
-    ["target/release/krillta", "/usr/bin/krillta", "755"],
-    ["doc/krillta.1", "/usr/share/man/man1/krillta.1", "644"],
+    [
+        "target/release/krillta",
+        "/usr/bin/krillta",
+        "755",
+    ],
+    [
+        "doc/krillta.1",
+        "/usr/share/man/man1/krillta.1",
+        "644",
+    ],
 ]
 
 # Variant of the Debian packaging configuration that:
@@ -187,7 +249,7 @@ assets = [
 #   b) uses a simpler systemd service unit file because Ubuntu 16.04 doesn't
 #      support newer features supported by Ubuntu 18.04 and 20.04.
 [package.metadata.deb.variants.ubuntu-xenial]
-features = [ "static-openssl" ]
+features = ["static-openssl"]
 depends = "$auto, passwd"
 
 [package.metadata.deb.variants.ubuntu-bionic]
@@ -198,7 +260,7 @@ depends = "$auto, passwd"
 depends = "$auto, passwd, libssl3"
 
 [package.metadata.deb.variants.debian-stretch]
-features = [ "static-openssl" ]
+features = ["static-openssl"]
 depends = "$auto, passwd"
 
 [package.metadata.deb.variants.debian-buster]

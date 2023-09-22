@@ -138,9 +138,9 @@ dependencies = [
 
 [[package]]
 name = "bcder"
-version = "0.7.1"
+version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69dfb7dc0d4aee3f8c723c43553b55662badf692b541ff8e4426df75dae8da9a"
+checksum = "bf16bec990f8ea25cab661199904ef452fcf11f565c404ce6cffbdf3f8cbbc47"
 dependencies = [
  "bytes",
  "smallvec",
@@ -1131,7 +1131,7 @@ dependencies = [
 [[package]]
 name = "kvx"
 version = "0.7.0"
-source = "git+https://github.com/nlnetlabs/kvx?branch=support-namespace-migrations#7bb8ee911d13655b86df4433c8000005f33678ee"
+source = "git+https://github.com/nlnetlabs/kvx?branch=prep-0.8.0#bc8fae8842fdaf653c1f54b2558c40794034ba9c"
 dependencies = [
  "kvx_macros",
  "kvx_types",
@@ -1141,6 +1141,7 @@ dependencies = [
  "r2d2_postgres",
  "rand",
  "serde_json",
+ "tempfile",
  "thiserror",
  "url",
 ]
@@ -1148,7 +1149,7 @@ dependencies = [
 [[package]]
 name = "kvx_macros"
 version = "0.7.0"
-source = "git+https://github.com/nlnetlabs/kvx?branch=support-namespace-migrations#7bb8ee911d13655b86df4433c8000005f33678ee"
+source = "git+https://github.com/nlnetlabs/kvx?branch=prep-0.8.0#bc8fae8842fdaf653c1f54b2558c40794034ba9c"
 dependencies = [
  "kvx_types",
  "proc-macro-error",
@@ -1160,7 +1161,7 @@ dependencies = [
 [[package]]
 name = "kvx_types"
 version = "0.7.0"
-source = "git+https://github.com/nlnetlabs/kvx?branch=support-namespace-migrations#7bb8ee911d13655b86df4433c8000005f33678ee"
+source = "git+https://github.com/nlnetlabs/kvx?branch=prep-0.8.0#bc8fae8842fdaf653c1f54b2558c40794034ba9c"
 dependencies = [
  "postgres",
  "postgres-types",
@@ -1476,9 +1477,9 @@ dependencies = [
 
 [[package]]
 name = "openssl"
-version = "0.10.51"
+version = "0.10.55"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97ea2d98598bf9ada7ea6ee8a30fb74f9156b63bbe495d64ec2b87c269d2dda3"
+checksum = "345df152bc43501c5eb9e4654ff05f794effb78d4efe3d53abc158baddc0703d"
 dependencies = [
  "bitflags",
  "cfg-if",
@@ -1517,9 +1518,9 @@ dependencies = [
 
 [[package]]
 name = "openssl-sys"
-version = "0.9.86"
+version = "0.9.90"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "992bac49bdbab4423199c654a5515bd2a6c6a23bf03f2dd3bdb7e5ae6259bc69"
+checksum = "374533b0e45f3a7ced10fcaeccca020e66656bc03dac384f852e4e5a7a8104a6"
 dependencies = [
  "cc",
  "libc",
