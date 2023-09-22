@@ -195,7 +195,7 @@ impl CaObjectsStore {
     pub fn ca_objects(&self, ca: &CaHandle) -> KrillResult<CaObjects> {
         let key = Self::key(ca);
 
-        match self.store.get_transactional(&key).map_err(Error::KeyValueError)? {
+        match self.store.get(&key).map_err(Error::KeyValueError)? {
             None => {
                 let objects = CaObjects::new(ca.clone(), None, HashMap::new(), vec![]);
                 Ok(objects)
