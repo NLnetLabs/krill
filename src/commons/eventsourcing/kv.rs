@@ -129,6 +129,27 @@ impl KeyValueStore {
         )?)
     }
 
+    /// Execute one or more `kvx::KeyValueStoreBackend` operations
+    /// within a transaction or scope lock context inside the given
+    /// closure.
+    ///
+    /// The closure needs to return a Result<T, kvx::Error>. This
+    /// allows the caller to simply use the ? operator on any kvx
+    /// calls that could result in an error within the closure. The
+    /// kvx::Error is mapped to a KeyValueError to avoid that the
+    /// caller needs to have any specific knowledge about the kvx::Error
+    /// type.
+    ///
+    /// T can be () if no return value is needed. If anything can
+    /// fail in the closure, other than kvx calls, then T can be
+    /// a Result<X,Y>.
+    pub fn execute<F, T>(&self, scope: &Scope, op: F) -> Result<T, KeyValueError>
+    where
+        F: FnMut(&dyn KeyValueStoreBackend) -> Result<T, kvx::Error>,
+    {
+        self.inner.execute(scope, op).map_err(KeyValueError::KVError)
+    }
+
     pub fn inner(&self) -> &kvx::KeyValueStore {
         &self.inner
     }
