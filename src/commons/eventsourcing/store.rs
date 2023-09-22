@@ -496,7 +496,7 @@ where
     pub fn get_command(&self, id: &MyHandle, version: u64) -> Result<StoredCommand<A>, AggregateStoreError> {
         let key = Self::key_for_command(id, version);
 
-        match self.kv.get_transactional(&key)? {
+        match self.kv.get(&key)? {
             Some(cmd) => Ok(cmd),
             None => Err(AggregateStoreError::CommandNotFound(id.clone(), version)),
         }
