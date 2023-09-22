@@ -191,6 +191,19 @@ impl CaObjectsStore {
         Ok(cas)
     }
 
+    pub fn remove_ca(&self, ca: &CaHandle) -> KrillResult<()> {
+        let ca_key = Self::key(ca);
+        self.store
+            .execute(&Scope::global(), |kv| {
+                if kv.has(&ca_key)? {
+                    kv.delete(&ca_key)
+                } else {
+                    Ok(())
+                }
+            })
+            .map_err(Error::KeyValueError)
+    }
+
     /// Get objects for this CA, create a new empty CaObjects if there is none.
     pub fn ca_objects(&self, ca: &CaHandle) -> KrillResult<CaObjects> {
         let key = Self::key(ca);
