@@ -35,7 +35,7 @@ pub trait WithStorableDetails: Storable + Send + Sync {
 /// It should be storable in the same way as normal commands, sent to this
 /// aggregate type so that they can use the same kind of ProcessedCommand
 /// and CommandHistoryRecord
-pub trait InitCommand: fmt::Display + Send + Sync {
+pub trait InitCommand: Clone + fmt::Display + Send + Sync {
     /// Identify the type of storable component for this command. Commands
     /// may contain short-lived things (e.g. an Arc<Signer>) or even secrets
     /// which should not be persisted.
@@ -57,6 +57,7 @@ pub trait InitCommand: fmt::Display + Send + Sync {
 
 /// Convenience wrapper so that implementations can just implement
 /// ['InitCommandDetails'] and leave the id and version boilerplate.
+#[derive(Clone, Debug)]
 pub struct SentInitCommand<I: InitCommandDetails> {
     handle: MyHandle,
     details: I,
@@ -103,7 +104,7 @@ impl<I: InitCommandDetails> fmt::Display for SentInitCommand<I> {
 
 /// Implement this for an enum with CommandDetails, so you you can reuse the
 /// id and version boilerplate from ['SentCommand'].
-pub trait InitCommandDetails: fmt::Display + Send + Sync + 'static {
+pub trait InitCommandDetails: Clone + fmt::Display + Send + Sync + 'static {
     type StorableDetails: WithStorableDetails;
 
     fn store(&self) -> Self::StorableDetails;
@@ -116,7 +117,7 @@ pub trait InitCommandDetails: fmt::Display + Send + Sync + 'static {
 /// Think of this as the data container for your update API, plus some
 /// meta-data to ensure that the command is sent to the right instance of an
 /// Aggregate, and that concurrency issues are handled.
-pub trait Command: fmt::Display + Send + Sync {
+pub trait Command: Clone + fmt::Display + Send + Sync {
     /// Identify the type of storable component for this command. Commands
     /// may contain short-lived things (e.g. an Arc<Signer>) or even secrets
     /// which should not be persisted.
@@ -211,7 +212,7 @@ impl<C: CommandDetails> fmt::Display for SentCommand<C> {
 
 /// Implement this for an enum with CommandDetails, so you you can reuse the
 /// id and version boilerplate from ['SentCommand'].
-pub trait CommandDetails: fmt::Display + Send + Sync + 'static {
+pub trait CommandDetails: Clone + fmt::Display + Send + Sync + 'static {
     type Event: Event;
     type StorableDetails: WithStorableDetails;
 

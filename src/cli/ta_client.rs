@@ -1081,7 +1081,7 @@ impl TrustAnchorSignerManager {
 
     fn get_signer(&self) -> Result<Arc<TrustAnchorSigner>, Error> {
         if self.store.has(&self.ta_handle)? {
-            self.store.get_latest(&self.ta_handle).map_err(Error::StorageError)
+            self.store.get_latest(&self.ta_handle).map_err(Error::KrillError)
         } else {
             Err(Error::other("Trust Anchor Signer is not initialised."))
         }
