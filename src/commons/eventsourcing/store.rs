@@ -42,18 +42,8 @@ pub struct AggregateStore<A: Aggregate> {
 /// # Starting up
 ///
 impl<A: Aggregate> AggregateStore<A> {
-    /// Creates an AggregateStore using the given storage url
-    pub fn create(storage_uri: &Url, namespace: &Namespace, use_history_cache: bool) -> StoreResult<Self> {
-        let kv = KeyValueStore::create(storage_uri, namespace)?;
-        Self::create_from_kv(kv, use_history_cache)
-    }
-
-    /// Creates an AggregateStore for upgrades using the given storage url
-    pub fn create_upgrade_store(
-        storage_uri: &Url,
-        name_space: &Namespace,
-        use_history_cache: bool,
-    ) -> StoreResult<Self> {
+    /// Creates an AggregateStore using a disk based KeyValueStore
+    pub fn create(storage_uri: &Url, name_space: &Namespace, use_history_cache: bool) -> StoreResult<Self> {
         let kv = KeyValueStore::create_upgrade_store(storage_uri, name_space)?;
         Self::create_from_kv(kv, use_history_cache)
     }
