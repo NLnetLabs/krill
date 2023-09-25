@@ -6,4 +6,3 @@ pub mod krillserver;
 pub mod mq;
 pub mod properties;
 pub mod scheduler;
-pub mod ta;

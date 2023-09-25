@@ -19,9 +19,9 @@ use crate::{
         ca::{CaObjectsStore, CertAuth},
         config::Config,
         properties::{Properties, PropertiesManager},
-        ta::{TrustAnchorProxy, TrustAnchorSigner},
     },
     pubd::{RepositoryAccess, RepositoryContent},
+    ta::{TrustAnchorProxy, TrustAnchorSigner},
     upgrades::{finalise_data_migration, prepare_upgrade_data_migrations, UpgradeError},
 };
 

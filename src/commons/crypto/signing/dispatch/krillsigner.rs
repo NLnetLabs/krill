@@ -40,10 +40,8 @@ use crate::{
         KrillResult,
     },
     constants::ID_CERTIFICATE_VALIDITY_YEARS,
-    daemon::{
-        config::{SignerConfig, SignerType},
-        ta::TA_SIGNED_MESSAGE_DAYS,
-    },
+    daemon::config::{SignerConfig, SignerType},
+    ta::TA_SIGNED_MESSAGE_DAYS,
 };
 
 #[cfg(feature = "hsm")]

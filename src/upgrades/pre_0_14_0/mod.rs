@@ -15,12 +15,12 @@ use crate::{
         ca::{CertAuth, CertAuthEvent, CertAuthInitEvent},
         config::Config,
         properties::Properties,
-        ta::{
-            TrustAnchorProxy, TrustAnchorProxyEvent, TrustAnchorProxyInitEvent, TrustAnchorSigner,
-            TrustAnchorSignerEvent, TrustAnchorSignerInitEvent,
-        },
     },
     pubd::{RepositoryAccess, RepositoryAccessEvent, RepositoryAccessInitEvent},
+    ta::{
+        TrustAnchorProxy, TrustAnchorProxyEvent, TrustAnchorProxyInitEvent, TrustAnchorSigner, TrustAnchorSignerEvent,
+        TrustAnchorSignerInitEvent,
+    },
 };
 
 use super::{UnconvertedEffect, UpgradeAggregateStorePre0_14, UpgradeMode, UpgradeResult};

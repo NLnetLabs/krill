@@ -23,7 +23,8 @@ use crate::{
         eventsourcing::{AggregateStoreError, KeyValueError},
         util::httpclient,
     },
-    daemon::{ca::RoaPayloadJsonMapKey, http::tls_keys, ta},
+    daemon::{ca::RoaPayloadJsonMapKey, http::tls_keys},
+    ta,
     upgrades::UpgradeError,
 };
 

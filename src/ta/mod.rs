@@ -91,7 +91,7 @@ mod tests {
             let tal_https = vec![test::https("https://example.krill.cloud/ta/ta.cer")];
             let tal_rsync = test::rsync("rsync://example.krill.cloud/ta/ta.cer");
 
-            let import_key_pem = include_str!("../../../test-resources/ta/example-pkcs1.pem");
+            let import_key_pem = include_str!("../../test-resources/ta/example-pkcs1.pem");
 
             let signer_init_cmd = TrustAnchorSignerInitCommand::new(
                 &signer_handle,

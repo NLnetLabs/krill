@@ -48,13 +48,13 @@ use crate::{
         },
         config::Config,
         mq::{now, TaskQueue},
-        ta::{
-            self, ta_handle, TrustAnchorProxy, TrustAnchorProxyCommand, TrustAnchorProxyInitCommand,
-            TrustAnchorSignedRequest, TrustAnchorSignedResponse, TrustAnchorSigner, TrustAnchorSignerCommand,
-            TrustAnchorSignerInfo, TrustAnchorSignerInitCommand, TrustAnchorSignerInitCommandDetails, TA_NAME,
-        },
     },
     pubd::RepositoryManager,
+    ta::{
+        self, ta_handle, TrustAnchorProxy, TrustAnchorProxyCommand, TrustAnchorProxyInitCommand,
+        TrustAnchorSignedRequest, TrustAnchorSignedResponse, TrustAnchorSigner, TrustAnchorSignerCommand,
+        TrustAnchorSignerInfo, TrustAnchorSignerInitCommand, TrustAnchorSignerInitCommandDetails, TA_NAME,
+    },
 };
 
 use super::{CertAuthInitCommand, CertAuthInitCommandDetails};

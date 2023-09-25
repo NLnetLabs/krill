@@ -35,13 +35,11 @@ use crate::{
     constants::{
         KRILL_CLI_API_ENV, KRILL_CLI_FORMAT_ENV, KRILL_TA_CLIENT_APP, KRILL_VERSION, OPENSSL_ONE_OFF_SIGNER_NAME,
     },
-    daemon::{
-        config::{LogType, SignerConfig, SignerReference, SignerType},
-        ta::{
-            TrustAnchorHandle, TrustAnchorProxySignerExchanges, TrustAnchorSignedRequest, TrustAnchorSignedResponse,
-            TrustAnchorSigner, TrustAnchorSignerCommand, TrustAnchorSignerInfo, TrustAnchorSignerInitCommand,
-            TrustAnchorSignerInitCommandDetails,
-        },
+    daemon::config::{LogType, SignerConfig, SignerReference, SignerType},
+    ta::{
+        TrustAnchorHandle, TrustAnchorProxySignerExchanges, TrustAnchorSignedRequest, TrustAnchorSignedResponse,
+        TrustAnchorSigner, TrustAnchorSignerCommand, TrustAnchorSignerInfo, TrustAnchorSignerInitCommand,
+        TrustAnchorSignerInitCommandDetails,
     },
 };
 

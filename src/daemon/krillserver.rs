@@ -35,25 +35,25 @@ use crate::{
     constants::*,
     daemon::{
         auth::{providers::AdminTokenAuthProvider, Authorizer, LoggedInUser},
-        ca::{self, testbed_ca_handle, CaStatus, ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest},
+        ca::{
+            self, testbed_ca_handle, CaManager, CaStatus, ResourceTaggedAttestation, RtaContentRequest,
+            RtaPrepareRequest,
+        },
         config::{AuthType, Config},
         http::HttpResponse,
         mq::TaskQueue,
         scheduler::Scheduler,
-        ta::{ta_handle, TaCertDetails, TA_NAME},
     },
     pubd::{RepoStats, RepositoryManager},
+    ta::{
+        ta_handle, TaCertDetails, TrustAnchorSignedRequest, TrustAnchorSignedResponse, TrustAnchorSignerInfo, TA_NAME,
+    },
 };
 
 #[cfg(feature = "multi-user")]
 use crate::daemon::auth::{
     common::session::LoginSessionCache,
     providers::{ConfigFileAuthProvider, OpenIDConnectAuthProvider},
-};
-
-use super::{
-    ca::CaManager,
-    ta::{TrustAnchorSignedRequest, TrustAnchorSignedResponse, TrustAnchorSignerInfo},
 };
 
 //------------ KrillServer ---------------------------------------------------

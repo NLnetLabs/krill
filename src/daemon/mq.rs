@@ -17,10 +17,8 @@ use rpki::{
 
 use crate::{
     commons::{api::Timestamp, eventsourcing},
-    daemon::{
-        ca::{CertAuth, CertAuthEvent},
-        ta::{ta_handle, TrustAnchorProxy, TrustAnchorProxyEvent},
-    },
+    daemon::ca::{CertAuth, CertAuthEvent},
+    ta::{ta_handle, TrustAnchorProxy, TrustAnchorProxyEvent},
 };
 
 //------------ Task ---------------------------------------------------------

@@ -32,8 +32,8 @@ use crate::{
         self, AspaInfo, AspaObjectsUpdates, CaObjects, CertAuthEvent, CertifiedKey, ChildCertificateUpdates,
         ObjectSetRevision, PreparedRta, PublishedObject, RoaInfo, RoaPayloadJsonMapKey, RoaUpdates, SignedRta,
     },
-    daemon::ta::{TaCertDetails, TrustAnchorLocator},
     pubd::{Publisher, RepositoryAccessEvent, RepositoryAccessInitEvent},
+    ta::{TaCertDetails, TrustAnchorLocator},
     upgrades::UpgradeError,
 };
 
