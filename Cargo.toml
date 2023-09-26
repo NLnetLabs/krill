@@ -268,6 +268,7 @@ depends = "$auto, passwd"
 [package.metadata.deb.variants.debian-bullseye]
 
 [package.metadata.deb.variants.debian-bookworm]
+depends = "$auto, passwd, libssl3"
 
 # Cross compilation variants:
 # Note: we have to specifiy dependencies manually because we don't run cargo-deb
