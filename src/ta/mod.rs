@@ -5,6 +5,9 @@ use rpki::ca::idexchange::CaHandle;
 mod common;
 pub use self::common::*;
 
+mod config;
+pub use self::config::*;
+
 mod proxy;
 pub use self::proxy::*;
 
