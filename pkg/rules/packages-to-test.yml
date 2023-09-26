@@ -70,8 +70,14 @@ include:
     image: "debian:buster"
     target: "aarch64-unknown-linux-gnu"
 
-# For all target, exclude upgrade testing of the krillta package as no prior released version exists to
-# test upgrading from.
+# Exclude upgrade testing on Debian Bookworm as no prior released versions exist to upgrade from.
 exclude:
+  - pkg: "krill"
+    image: "debian:bookworm"
+    mode: "upgrade-from-published"
   - pkg: "krillta"
+    image: "debian:bookworm"
+    mode: "upgrade-from-published"
+  - pkg: "krillup"
+    image: "debian:bookworm"
     mode: "upgrade-from-published"
