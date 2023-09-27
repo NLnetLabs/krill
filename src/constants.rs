@@ -19,7 +19,6 @@ pub const KRILL_DEFAULT_CONFIG_FILE: &str = "/etc/krill.conf";
 const KRILL_ENV_TEST: &str = "KRILL_TEST";
 const KRILL_ENV_TEST_ANN: &str = "KRILL_TEST_ANN";
 pub const KRILL_ENV_UPGRADE_ONLY: &str = "KRILL_UPGRADE_ONLY";
-pub const KRILL_ENV_FORCE_RECOVER: &str = "KRILL_FORCE_RECOVER";
 pub const KRILL_ENV_LOG_LEVEL: &str = "KRILL_LOG_LEVEL";
 pub const KRILL_ENV_LOG_TYPE: &str = "KRILL_LOG_TYPE";
 pub const KRILL_ENV_ADMIN_TOKEN: &str = "KRILL_ADMIN_TOKEN";
