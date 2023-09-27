@@ -21,7 +21,10 @@ use crate::{
         util::cmslogger::CmsLogger,
         KrillResult,
     },
-    daemon::{config::Config, mq::TaskQueue},
+    daemon::{
+        config::Config,
+        mq::{now, Task, TaskQueue},
+    },
     pubd::{RepoStats, RepositoryAccessProxy, RepositoryContentProxy},
 };
 
@@ -168,8 +171,7 @@ impl RepositoryManager {
         self.content
             .publish(publisher_handle.clone(), delta, publisher.base_uri())?;
 
-        self.tasks.update_rrdp_if_needed(Time::now().into());
-        Ok(())
+        self.tasks.schedule(Task::RrdpUpdateIfNeeded, now())
     }
 
     /// Update RRDP (make new delta) if needed. If there are staged changes, but
@@ -255,9 +257,7 @@ impl RepositoryManager {
         self.content.remove_publisher(name.clone())?;
         self.access.remove_publisher(name, actor)?;
 
-        self.tasks.update_rrdp_if_needed(Time::now().into());
-
-        Ok(())
+        self.tasks.schedule(Task::RrdpUpdateIfNeeded, now())
     }
 }
 
@@ -349,7 +349,7 @@ mod tests {
 
         let signer = Arc::new(signer);
         let config = Arc::new(config);
-        let mq = Arc::new(TaskQueue::default());
+        let mq = Arc::new(TaskQueue::new(&config.storage_uri).unwrap());
         let repository_manager = RepositoryManager::build(config, mq, signer).unwrap();
 
         let rsync_base = rsync("rsync://localhost/repo/");

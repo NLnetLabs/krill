@@ -8,6 +8,7 @@ use krill::{commons::api::RoaConfigurationUpdates, test::*};
 #[tokio::test]
 async fn functional_roas() {
     let cleanup = start_krill_with_default_test_config(true, false, false, false).await;
+    // let cleanup = start_krill_with_default_test_config_disk(true, false, false, false).await;
 
     info("##################################################################");
     info("#                                                                #");
