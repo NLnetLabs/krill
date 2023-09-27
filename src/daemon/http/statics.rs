@@ -17,17 +17,17 @@ pub async fn statics(req: Request) -> RoutingResult {
 
             "/assets/favicon-f84116cb.ico" => Ok(HttpResponse::fav(FAVICON)),
 
-            "/assets/index-a0777288.js" => Ok(HttpResponse::js(JS_INDEX)),
+            "/assets/index-23df6ad0.js" => Ok(HttpResponse::js(JS_INDEX)),
 
-            "/assets/en-6862b1fd.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_ENGLISH)),
-            "/assets/de-a07fd626.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_GERMAN)),
-            "/assets/es-398b7024.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_SPANISH)),
-            "/assets/fr-00def8c1.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_FRENCH)),
-            "/assets/gr-094d4ec7.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_GREEK)),
-            "/assets/nl-ac928f6f.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_DUTCH)),
-            "/assets/pt-108a6a72.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_PORTUGUESE)),
-            "/assets/zh-Hans-bcd9aebc.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_SIMPLIFIED_CHINESE)),
-            "/assets/zh-Hant-c9cf0678.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_TRADITIONAL_CHINESE)),
+            "/assets/en-d3d88bc8.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_ENGLISH)),
+            "/assets/de-aaa0f1e4.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_GERMAN)),
+            "/assets/es-52cbfc21.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_SPANISH)),
+            "/assets/fr-ac1aafd8.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_FRENCH)),
+            "/assets/gr-5a66c94a.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_GREEK)),
+            "/assets/nl-f2dd1189.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_DUTCH)),
+            "/assets/pt-e9bf4047.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_PORTUGUESE)),
+            "/assets/zh-Hans-f7c709f7.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_SIMPLIFIED_CHINESE)),
+            "/assets/zh-Hant-0d86c694.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_TRADITIONAL_CHINESE)),
 
             "/assets/index-3c0611ee.css" => Ok(HttpResponse::css(CSS)),
 
@@ -70,17 +70,17 @@ pub static INDEX: &[u8] = include_bytes!("../../../ui/index.html");
 
 static FAVICON: &[u8] = include_bytes!("../../../ui/assets/favicon-f84116cb.ico");
 
-static JS_INDEX: &[u8] = include_bytes!("../../../ui/assets/index-a0777288.js");
+static JS_INDEX: &[u8] = include_bytes!("../../../ui/assets/index-23df6ad0.js");
 
-static JS_TRANSLATIONS_GERMAN: &[u8] = include_bytes!("../../../ui/assets/de-a07fd626.js");
-static JS_TRANSLATIONS_ENGLISH: &[u8] = include_bytes!("../../../ui/assets/en-6862b1fd.js");
-static JS_TRANSLATIONS_SPANISH: &[u8] = include_bytes!("../../../ui/assets/es-398b7024.js");
-static JS_TRANSLATIONS_FRENCH: &[u8] = include_bytes!("../../../ui/assets/fr-00def8c1.js");
-static JS_TRANSLATIONS_GREEK: &[u8] = include_bytes!("../../../ui/assets/gr-094d4ec7.js");
-static JS_TRANSLATIONS_DUTCH: &[u8] = include_bytes!("../../../ui/assets/nl-ac928f6f.js");
-static JS_TRANSLATIONS_PORTUGUESE: &[u8] = include_bytes!("../../../ui/assets/pt-108a6a72.js");
-static JS_TRANSLATIONS_SIMPLIFIED_CHINESE: &[u8] = include_bytes!("../../../ui/assets/zh-Hans-bcd9aebc.js");
-static JS_TRANSLATIONS_TRADITIONAL_CHINESE: &[u8] = include_bytes!("../../../ui/assets/zh-Hant-c9cf0678.js");
+static JS_TRANSLATIONS_GERMAN: &[u8] = include_bytes!("../../../ui/assets/de-aaa0f1e4.js");
+static JS_TRANSLATIONS_ENGLISH: &[u8] = include_bytes!("../../../ui/assets/en-d3d88bc8.js");
+static JS_TRANSLATIONS_SPANISH: &[u8] = include_bytes!("../../../ui/assets/es-52cbfc21.js");
+static JS_TRANSLATIONS_FRENCH: &[u8] = include_bytes!("../../../ui/assets/fr-ac1aafd8.js");
+static JS_TRANSLATIONS_GREEK: &[u8] = include_bytes!("../../../ui/assets/gr-5a66c94a.js");
+static JS_TRANSLATIONS_DUTCH: &[u8] = include_bytes!("../../../ui/assets/nl-f2dd1189.js");
+static JS_TRANSLATIONS_PORTUGUESE: &[u8] = include_bytes!("../../../ui/assets/pt-e9bf4047.js");
+static JS_TRANSLATIONS_SIMPLIFIED_CHINESE: &[u8] = include_bytes!("../../../ui/assets/zh-Hans-f7c709f7.js");
+static JS_TRANSLATIONS_TRADITIONAL_CHINESE: &[u8] = include_bytes!("../../../ui/assets/zh-Hant-0d86c694.js");
 
 static CSS: &[u8] = include_bytes!("../../../ui/assets/index-3c0611ee.css");
 
