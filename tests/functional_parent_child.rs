@@ -6,7 +6,8 @@ use krill::test::*;
 
 #[tokio::test]
 async fn functional_parent_child() {
-    let cleanup = start_krill_with_default_test_config(true, false, false, false).await;
+    // let cleanup = start_krill_with_default_test_config(true, false, false, false).await;
+    let cleanup = start_krill_with_default_test_config_disk(true, false, false, false).await;
 
     info("##################################################################");
     info("#                                                                #");
@@ -293,7 +294,15 @@ async fn functional_parent_child() {
     info("##################################################################");
     info("");
     {
+        assert!(ca_details_opt(&ca3).await.is_some());
         delete_ca(&ca3).await;
+        assert!(ca_details_opt(&ca3).await.is_none());
+
+        // Also checked manually that ca_objects/CA3.json is gone
+        // using disk based storage. This is not so easy to check
+        // here (automated) because we don't have direct access to
+        // the in-memory store.
+
         // Expect that CA3 no longer publishes anything
         {
             assert!(

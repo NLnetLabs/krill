@@ -282,6 +282,10 @@ pub async fn krill_admin(command: Command) -> ApiResponse {
     admin(service_uri(KRILL_SERVER_URI), command).await
 }
 
+pub async fn krill_admin_may_fail(command: Command) -> Result<ApiResponse, Error> {
+    admin_may_fail(service_uri(KRILL_SERVER_URI), command).await
+}
+
 pub async fn krill2_admin(command: Command) -> ApiResponse {
     admin(service_uri(KRILL_SECOND_SERVER_URI), command).await
 }
@@ -294,17 +298,20 @@ pub async fn krill_dedicated_pubd_admin(command: PubServerCommand) -> ApiRespons
     admin(service_uri(KRILL_PUBD_SERVER_URI), Command::PubServer(command)).await
 }
 
-async fn admin(service_uri: ServiceUri, command: Command) -> ApiResponse {
+async fn admin_may_fail(service_uri: ServiceUri, command: Command) -> Result<ApiResponse, Error> {
     let options = Options::new(service_uri, "secret", ReportFormat::Json, command);
-    match KrillClient::process(options).await {
+    KrillClient::process(options).await
+}
+
+async fn admin(service_uri: ServiceUri, command: Command) -> ApiResponse {
+    match admin_may_fail(service_uri, command).await {
         Ok(res) => res, // ok
         Err(e) => panic!("{}", e),
     }
 }
 
 pub async fn krill_admin_expect_error(command: Command) -> Error {
-    let krillc_opts = Options::new(service_uri(KRILL_SERVER_URI), "secret", ReportFormat::Json, command);
-    match KrillClient::process(krillc_opts).await {
+    match admin_may_fail(service_uri(KRILL_SERVER_URI), command).await {
         Ok(_res) => panic!("Expected error"),
         Err(e) => e,
     }
@@ -618,9 +625,13 @@ pub async fn ca_aspas_remove(ca: &CaHandle, customer: AspaCustomer) {
 }
 
 pub async fn ca_details(ca: &CaHandle) -> CertAuthInfo {
-    match krill_admin(Command::CertAuth(CaCommand::Show(ca.clone()))).await {
-        ApiResponse::CertAuthInfo(inf) => inf,
-        _ => panic!("Expected cert auth info"),
+    ca_details_opt(ca).await.expect("Expected cert auth info")
+}
+
+pub async fn ca_details_opt(ca: &CaHandle) -> Option<CertAuthInfo> {
+    match krill_admin_may_fail(Command::CertAuth(CaCommand::Show(ca.clone()))).await {
+        Ok(ApiResponse::CertAuthInfo(inf)) => Some(inf),
+        _ => None,
     }
 }
 

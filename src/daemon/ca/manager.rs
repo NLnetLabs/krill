@@ -562,6 +562,7 @@ impl CaManager {
         }
 
         self.ca_store.drop_aggregate(ca_handle)?;
+        self.ca_objects_store.remove_ca(ca_handle)?;
         self.status_store.remove_ca(ca_handle)?;
 
         Ok(())
