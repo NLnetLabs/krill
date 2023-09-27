@@ -18,12 +18,6 @@ exclude = [
     "docker/*",
     "pkg/*",
     "Dockerfile",
-    "test-resources/*",
-    "tests/*",
-    ".github/*",
-    "docker/*",
-    "pkg/*",
-    "Dockerfile",
 ]
 
 [dependencies]
@@ -45,7 +39,7 @@ kmip = { version = "0.4.2", package = "kmip-protocol", features = [
     "tls-with-openssl",
 ], optional = true }
 kvx = { version = "0.8.0", features = ["macros"] }
-# kvx = { version = "0.7.0", git = "https://github.com/nlnetlabs/kvx", branch = "prep-0.8.0", features = [ "macros",] }
+# kvx                   = { version = "0.6.0", git = "https://github.com/nlnetlabs/kvx", features = ["macros"] }
 libflate = "^1"
 log = "^0.4"
 once_cell = { version = "^1.7.2", optional = true }
