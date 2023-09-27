@@ -269,10 +269,10 @@ impl RequestLogger {
 
                 if env::var(KRILL_ENV_HTTP_LOG_INFO).is_ok() {
                     info!("{} {} {}", self.req_method, self.req_path, response.status());
-                } else {
-                    debug!("{} {} {}", self.req_method, self.req_path, response.status());
                 }
+
                 if response.loggable() && log_enabled!(log::Level::Trace) {
+                    trace!("{} {} {}", self.req_method, self.req_path, response.status());
                     trace!("Response: headers={:?} body={:?}", response.headers(), response.body());
                 }
             }

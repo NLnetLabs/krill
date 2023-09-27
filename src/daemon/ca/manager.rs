@@ -47,7 +47,7 @@ use crate::{
             ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest, StatusStore,
         },
         config::Config,
-        mq::{now, TaskQueue},
+        mq::{now, Task, TaskQueue},
         ta::{
             self, ta_handle, TrustAnchorProxy, TrustAnchorProxyCommand, TrustAnchorProxyInitCommand,
             TrustAnchorSignedRequest, TrustAnchorSignedResponse, TrustAnchorSigner, TrustAnchorSignerCommand,
@@ -111,23 +111,22 @@ impl CaManager {
         let mut ca_store =
             AggregateStore::<CertAuth>::create(&config.storage_uri, CASERVER_NS, config.use_history_cache)?;
 
-        if config.always_recover_data {
-            // If the user chose to 'always recover data' then do so.
-            // This is slow, but it will ensure that all commands and events are accounted for,
-            // and there are no incomplete changes where some but not all files for a change were
-            // written to disk.
-            todo!("issue #1086");
-        } else if let Err(e) = ca_store.warm() {
-            // Otherwise we just tried to 'warm' the cache. This serves two purposes:
+        if let Err(e) = ca_store.warm() {
+            // Start to 'warm' the cache. This serves two purposes:
             // 1. this ensures that all `CertAuth` structs are available in memory
             // 2. this ensures that there are no apparent data issues
             //
-            // If there are issues, then complain and try to recover.
+            // If there are issues, then we need to bail out. Krill 0.14.0+ uses single
+            // files for all change sets, and files are first completely written to disk,
+            // and only then renamed.
+            //
+            // In other words, if we fail to warm the cache then this points at:
+            // - data corruption
+            // - user started
             error!(
-                "Could not warm up cache, data seems corrupt. Will try to recover!! Error was: {}",
+                "Could not warm up cache, data seems corrupt. You may need to restore a backup. Error was: {}",
                 e
             );
-            todo!("issue #1086");
         }
 
         // Create the `CaObjectStore` that is responsible for maintaining CA objects: the `CaObjects`
@@ -144,9 +143,22 @@ impl CaManager {
         // occur in a `CertAuth`.
         ca_store.add_pre_save_listener(ca_objects_store.clone());
 
-        // Register the `MessageQueue` as a post-save listener to 'ca_store' so that relevant changes in
-        // a `CertAuth` can trigger follow up actions. Most importantly: synchronize with a parent CA or
-        // the RPKI repository.
+        // Register the `MessageQueue` as a pre-save listener to 'ca_store' so that relevant changes in
+        // a `CertAuth` can trigger follow-up actions. This is done as pre-save listener, because commands
+        // that would result in a follow-up should fail, if the task cannot be planned.
+        //
+        // Tasks will typically be picked up after the CA changes are committed, but they may also be
+        // picked up sooner by another thread. Because of that the tasks will remember which minimal version
+        // of the CA they are intended for, so that they can be rescheduled should they have been picked up
+        // too soon.
+        //
+        // An example of a triggered task: schedule a synchronisation with the repository (publication
+        // server) in case ROAs have been updated.
+        ca_store.add_pre_save_listener(tasks.clone());
+
+        // Now also register the `MessageQueue` as a post-save listener. We use this to send best-effort
+        // post-save signals to children in case a certificate was updated or a child key was revoked.
+        // This is a no-op for remote children (we cannot send a signal over RFC 6492).
         ca_store.add_post_save_listener(tasks.clone());
 
         // Create TA proxy store if we need it.
@@ -157,11 +169,15 @@ impl CaManager {
                 config.use_history_cache,
             )?;
 
-            // We need to listen for proxy events so that we can schedule:
-            // 1. publication on updates
-            // 2. re-sync for local children when the proxy has new responses
-            // 3. signing by the Trust Anchor Signer when there are requests [in testbed mode]
+            // We need a pre-save listener so that we can schedule:
+            // - publication on updates
+            // - signing by the Trust Anchor Signer when there are requests [in testbed mode]
+            store.add_pre_save_listener(tasks.clone());
+
+            // We need a post-save listener so that we can schedule:
+            // - re-sync for local children when the proxy has new responses AND is saved
             store.add_post_save_listener(tasks.clone());
+
             Some(store)
         } else {
             None
@@ -419,7 +435,7 @@ impl CaManager {
         self.ta_proxy_signer_add(signer_info, &self.system_actor).await?;
 
         self.sync_ta_proxy_signer_if_possible().await?;
-        self.cas_repo_sync_single(repo_manager, &ta_handle).await?;
+        self.cas_repo_sync_single(repo_manager, &ta_handle, 0).await?;
 
         Ok(())
     }
@@ -546,8 +562,8 @@ impl CaManager {
         }
 
         self.ca_store.drop_aggregate(ca_handle)?;
+        self.ca_objects_store.remove_ca(ca_handle)?;
         self.status_store.remove_ca(ca_handle)?;
-        self.tasks.remove_tasks_for_ca(ca_handle);
 
         Ok(())
     }
@@ -1009,31 +1025,34 @@ impl CaManager {
     ///
     /// Note: this function can be called manually through the API, but normally the
     ///       CA refresh process is replanned on the task queue automatically.
-    pub async fn cas_schedule_refresh_all(&self) {
+    pub async fn cas_schedule_refresh_all(&self) -> KrillResult<()> {
         if let Ok(cas) = self.ca_store.list() {
             for ca_handle in cas {
-                self.cas_schedule_refresh_single(ca_handle).await;
+                self.cas_schedule_refresh_single(ca_handle).await?;
             }
         }
+        Ok(())
     }
 
     /// Refresh a single CA with its parents, and possibly suspend inactive children.
-    pub async fn cas_schedule_refresh_single(&self, ca_handle: CaHandle) {
-        self.ca_schedule_sync_parents(&ca_handle).await;
+    pub async fn cas_schedule_refresh_single(&self, ca_handle: CaHandle) -> KrillResult<()> {
+        self.ca_schedule_sync_parents(&ca_handle).await
     }
 
     /// Schedule check suspending any children under all CAs as soon as possible:
     ///
     /// Note: this function can be called manually through the API, but normally this
     ///       is replanned on the task queue automatically IF suspension is enabled.
-    pub fn cas_schedule_suspend_all(&self) {
+    pub fn cas_schedule_suspend_all(&self) -> KrillResult<()> {
         if self.config.suspend_child_after_inactive_seconds().is_some() {
             if let Ok(cas) = self.ca_store.list() {
-                for ca_handle in cas {
-                    self.tasks.suspend_children(ca_handle, now());
+                for ca in cas {
+                    self.tasks
+                        .schedule(Task::SuspendChildrenIfNeeded { ca_handle: ca }, now())?;
                 }
             }
         }
+        Ok(())
     }
 
     /// Suspend child CAs
@@ -1078,14 +1097,21 @@ impl CaManager {
 
     /// Synchronizes a CA with its parents - up to the configures batch size.
     /// Remaining parents will be done in a future run.
-    async fn ca_schedule_sync_parents(&self, ca_handle: &CaHandle) {
+    async fn ca_schedule_sync_parents(&self, ca_handle: &CaHandle) -> KrillResult<()> {
         if let Ok(ca) = self.get_ca(ca_handle).await {
             // get updates from parents
             {
                 if ca.nr_parents() <= self.config.ca_refresh_parents_batch_size {
                     // Nr of parents is below batch size, so just process all of them
                     for parent in ca.parents() {
-                        self.tasks.sync_parent(ca_handle.clone(), parent.clone(), now());
+                        self.tasks.schedule(
+                            Task::SyncParent {
+                                ca_handle: ca_handle.clone(),
+                                ca_version: 0,
+                                parent: parent.clone(),
+                            },
+                            now(),
+                        )?;
                     }
                 } else {
                     // more parents than the batch size exist, so get candidates based on
@@ -1096,27 +1122,53 @@ impl CaManager {
                         .parents()
                         .sync_candidates(ca.parents().collect(), self.config.ca_refresh_parents_batch_size)
                     {
-                        self.tasks.sync_parent(ca_handle.clone(), parent, now());
+                        self.tasks.schedule(
+                            Task::SyncParent {
+                                ca_handle: ca_handle.clone(),
+                                ca_version: 0,
+                                parent,
+                            },
+                            now(),
+                        )?;
                     }
                 }
             }
         }
+        Ok(())
     }
 
     /// Synchronizes a CA with one of its parents:
     ///   - send pending requests if present; otherwise
     ///   - get and process updated entitlements
     ///
+    /// Returns:
+    /// Ok(true) if successful
+    /// Ok(false) if premature
+    /// Err(Error) in case of issues
+    ///
     /// Note: if new request events are generated as a result of processing updated entitlements
     ///       then they will trigger that this synchronization is called again so that the pending
     ///       requests can be sent.
-    pub async fn ca_sync_parent(&self, handle: &CaHandle, parent: &ParentHandle, actor: &Actor) -> KrillResult<()> {
+    pub async fn ca_sync_parent(
+        &self,
+        handle: &CaHandle,
+        min_ca_version: u64, // set this 0 if it does not matter
+        parent: &ParentHandle,
+        actor: &Actor,
+    ) -> KrillResult<bool> {
         let ca = self.get_ca(handle).await?;
 
-        if ca.has_pending_requests(parent) {
-            self.send_requests(handle, parent, actor).await
+        trace!("CA version: {}, asked to wait until: {}", ca.version(), min_ca_version);
+        if ca.version() < min_ca_version {
+            // sync is premature - but not really an error as such
+            Ok(false)
         } else {
-            self.get_updates_from_parent(handle, parent, actor).await
+            if ca.has_pending_requests(parent) {
+                self.send_requests(handle, parent, actor).await?;
+            } else {
+                self.get_updates_from_parent(handle, parent, actor).await?;
+            }
+            Ok(true)
         }
     }
 
@@ -1798,23 +1850,25 @@ impl CaManager {
 ///
 impl CaManager {
     /// Schedule synchronizing all CAs with their repositories.
-    pub fn cas_schedule_repo_sync_all(&self, actor: &Actor) {
-        match self.ca_list(actor) {
-            Ok(ca_list) => {
-                for ca in ca_list.cas() {
-                    self.cas_schedule_repo_sync(ca.handle().clone());
-                }
-            }
-            Err(e) => error!("Could not get CA list! {}", e),
+    pub fn cas_schedule_repo_sync_all(&self, actor: &Actor) -> KrillResult<()> {
+        for ca in self.ca_list(actor)?.cas() {
+            self.cas_schedule_repo_sync(ca.handle().clone())?;
         }
+        Ok(())
     }
 
     /// Schedule synchronizing all CAs with their repositories.
-    pub fn cas_schedule_repo_sync(&self, ca: CaHandle) {
-        self.tasks.sync_repo(ca, now());
+    pub fn cas_schedule_repo_sync(&self, ca_handle: CaHandle) -> KrillResult<()> {
+        let ca_version = 0; // no need to wait for an updated CA to be committed.
+        self.tasks.schedule(Task::SyncRepo { ca_handle, ca_version }, now())
     }
 
     /// Synchronize a CA with its repositories.
+    ///
+    /// Returns:
+    /// Ok(true) in case the synchronization was successful.
+    /// Ok(false) in case it was premature wrt to given CA version.
+    /// Err(Error) in case of any issues.
     ///
     /// Note typically a CA will have only one active repository, but in case
     /// there are multiple during a migration, this function will ensure that
@@ -1831,46 +1885,57 @@ impl CaManager {
         &self,
         repo_manager: &RepositoryManager,
         ca_handle: &CaHandle,
-    ) -> KrillResult<()> {
+        ca_version: u64,
+    ) -> KrillResult<bool> {
         // Note that this is a no-op for new CAs which do not yet have any repository configured.
         if ca_handle.as_str() == TA_NAME {
             let proxy = self.get_trust_anchor_proxy().await?;
-            let id = proxy.id();
-            let repo = proxy.repository().ok_or(Error::TaProxyHasNoRepository)?;
-            let objects = proxy.get_trust_anchor_objects()?.publish_elements()?;
+            if proxy.version() < ca_version {
+                Ok(false)
+            } else {
+                let id = proxy.id();
+                let repo = proxy.repository().ok_or(Error::TaProxyHasNoRepository)?;
+                let objects = proxy.get_trust_anchor_objects()?.publish_elements()?;
 
-            self.ca_repo_sync(repo_manager, ca_handle, id, repo, objects).await
+                self.ca_repo_sync(repo_manager, ca_handle, id, repo, objects).await?;
+                Ok(true)
+            }
         } else {
             let ca = self.get_ca(ca_handle).await?;
-            for (repo_contact, objects) in self.ca_repo_elements(ca_handle).await? {
-                self.ca_repo_sync(repo_manager, ca_handle, ca.id_cert(), &repo_contact, objects)
-                    .await?;
-            }
 
-            // Clean-up of old repos
-            for deprecated in self.ca_deprecated_repos(ca_handle)? {
-                info!(
-                    "Will try to clean up deprecated repository '{}' for CA '{}'",
-                    deprecated.contact(),
-                    ca_handle
-                );
-
-                if let Err(e) = self
-                    .ca_repo_sync(repo_manager, ca_handle, ca.id_cert(), deprecated.contact(), vec![])
-                    .await
-                {
-                    warn!("Could not clean up deprecated repository: {}", e);
-
-                    if deprecated.clean_attempts() < 5 {
-                        self.ca_deprecated_repo_increment_clean_attempts(ca_handle, deprecated.contact())?;
-                        return Err(e);
-                    }
+            if ca.version() < ca_version {
+                Ok(false)
+            } else {
+                for (repo_contact, objects) in self.ca_repo_elements(ca_handle).await? {
+                    self.ca_repo_sync(repo_manager, ca_handle, ca.id_cert(), &repo_contact, objects)
+                        .await?;
                 }
 
-                self.ca_deprecated_repo_remove(ca_handle, deprecated.contact())?;
-            }
+                // Clean-up of old repos
+                for deprecated in self.ca_deprecated_repos(ca_handle)? {
+                    info!(
+                        "Will try to clean up deprecated repository '{}' for CA '{}'",
+                        deprecated.contact(),
+                        ca_handle
+                    );
 
-            Ok(())
+                    if let Err(e) = self
+                        .ca_repo_sync(repo_manager, ca_handle, ca.id_cert(), deprecated.contact(), vec![])
+                        .await
+                    {
+                        warn!("Could not clean up deprecated repository: {}", e);
+
+                        if deprecated.clean_attempts() < 5 {
+                            self.ca_deprecated_repo_increment_clean_attempts(ca_handle, deprecated.contact())?;
+                            return Err(e);
+                        }
+                    }
+
+                    self.ca_deprecated_repo_remove(ca_handle, deprecated.contact())?;
+                }
+
+                Ok(true)
+            }
         }
     }
 

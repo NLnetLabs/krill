@@ -56,27 +56,6 @@ impl KeyValueStore {
     pub fn wipe(&self) -> Result<(), KeyValueError> {
         self.execute(&Scope::global(), |kv| kv.clear())
     }
-}
-
-// # Keys and Values
-impl KeyValueStore {
-    /// Stores a key value pair, serialized as json, overwrite existing
-    pub fn store<V: Serialize>(&self, key: &Key, value: &V) -> Result<(), KeyValueError> {
-        self.execute(key.scope(), &mut move |kv: &dyn KeyValueStoreBackend| {
-            kv.store(key, serde_json::to_value(value)?)
-        })
-    }
-
-    /// Stores a key value pair, serialized as json, fails if existing
-    pub fn store_new<V: Serialize>(&self, key: &Key, value: &V) -> Result<(), KeyValueError> {
-        self.execute(
-            key.scope(),
-            &mut move |kv: &dyn KeyValueStoreBackend| match kv.get(key)? {
-                None => kv.store(key, serde_json::to_value(value)?),
-                _ => Err(kvx::Error::Unknown),
-            },
-        )
-    }
 
     /// Execute one or more `kvx::KeyValueStoreBackend` operations
     /// within a transaction or scope lock context inside the given
@@ -97,6 +76,27 @@ impl KeyValueStore {
         F: FnMut(&dyn KeyValueStoreBackend) -> Result<T, kvx::Error>,
     {
         self.inner.execute(scope, op).map_err(KeyValueError::KVError)
+    }
+}
+
+// # Keys and Values
+impl KeyValueStore {
+    /// Stores a key value pair, serialized as json, overwrite existing
+    pub fn store<V: Serialize>(&self, key: &Key, value: &V) -> Result<(), KeyValueError> {
+        self.execute(key.scope(), &mut move |kv: &dyn KeyValueStoreBackend| {
+            kv.store(key, serde_json::to_value(value)?)
+        })
+    }
+
+    /// Stores a key value pair, serialized as json, fails if existing
+    pub fn store_new<V: Serialize>(&self, key: &Key, value: &V) -> Result<(), KeyValueError> {
+        self.execute(
+            key.scope(),
+            &mut move |kv: &dyn KeyValueStoreBackend| match kv.get(key)? {
+                None => kv.store(key, serde_json::to_value(value)?),
+                _ => Err(kvx::Error::Unknown),
+            },
+        )
     }
 
     /// Gets a value for a key, returns an error if the value cannot be deserialized,
