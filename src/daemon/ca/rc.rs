@@ -30,8 +30,8 @@ use crate::{
             KeyState, NewKey, OldKey, PendingKey, Roas, Routes,
         },
         config::{Config, IssuanceTimingConfig},
-        ta::ta_handle,
     },
+    ta::ta_handle,
 };
 
 use super::{AspaDefinitions, BgpSecCertificateUpdates, BgpSecCertificates, BgpSecDefinitions, RoaInfo};

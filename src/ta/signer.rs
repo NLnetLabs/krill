@@ -73,6 +73,7 @@ pub struct TrustAnchorSignerInitCommandDetails {
     pub tal_https: Vec<uri::Https>,
     pub tal_rsync: uri::Rsync,
     pub private_key_pem: Option<String>,
+    pub timing: TaTimingConfig,
     pub signer: Arc<KrillSigner>,
 }
 
@@ -136,7 +137,7 @@ impl fmt::Display for TrustAnchorSignerEvent {
 // Commands
 #[derive(Clone, Debug)]
 pub enum TrustAnchorSignerCommandDetails {
-    TrustAnchorSignerRequest(TrustAnchorSignedRequest, Arc<KrillSigner>),
+    TrustAnchorSignerRequest(TrustAnchorSignedRequest, TaTimingConfig, Arc<KrillSigner>),
 }
 
 impl eventsourcing::CommandDetails for TrustAnchorSignerCommandDetails {
@@ -158,13 +159,14 @@ impl TrustAnchorSignerCommand {
     pub fn make_process_request_command(
         id: &TrustAnchorHandle,
         request: TrustAnchorSignedRequest,
+        timing: TaTimingConfig,
         signer: Arc<KrillSigner>,
         actor: &Actor,
     ) -> TrustAnchorSignerCommand {
         TrustAnchorSignerCommand::new(
             id,
             None,
-            TrustAnchorSignerCommandDetails::TrustAnchorSignerRequest(request, signer),
+            TrustAnchorSignerCommandDetails::TrustAnchorSignerRequest(request, timing, signer),
             actor,
         )
     }
@@ -180,7 +182,7 @@ pub enum TrustAnchorSignerStorableCommand {
 impl From<&TrustAnchorSignerCommandDetails> for TrustAnchorSignerStorableCommand {
     fn from(details: &TrustAnchorSignerCommandDetails) -> Self {
         match details {
-            TrustAnchorSignerCommandDetails::TrustAnchorSignerRequest(request, _) => {
+            TrustAnchorSignerCommandDetails::TrustAnchorSignerRequest(request, _, _) => {
                 TrustAnchorSignerStorableCommand::TrustAnchorSignerRequest(request.clone())
             }
         }
@@ -242,6 +244,7 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
 
     fn process_init_command(command: TrustAnchorSignerInitCommand) -> Result<TrustAnchorSignerInitEvent, Error> {
         let cmd = command.into_details();
+        let timing = cmd.timing;
 
         let signer = cmd.signer;
 
@@ -252,9 +255,10 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
             cmd.tal_https,
             cmd.tal_rsync,
             cmd.private_key_pem,
+            timing.certificate_validity_years,
             &signer,
         )?;
-        let objects = TrustAnchorObjects::create(ta_cert_details.cert(), &signer)?;
+        let objects = TrustAnchorObjects::create(ta_cert_details.cert(), timing.mft_next_update_weeks, &signer)?;
 
         Ok(TrustAnchorSignerInitEvent {
             id,
@@ -301,8 +305,8 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
         }
 
         match command.into_details() {
-            TrustAnchorSignerCommandDetails::TrustAnchorSignerRequest(request, signer) => {
-                self.process_signer_request(request, &signer)
+            TrustAnchorSignerCommandDetails::TrustAnchorSignerRequest(request, timing, signer) => {
+                self.process_signer_request(request, timing, &signer)
             }
         }
     }
@@ -328,6 +332,7 @@ impl TrustAnchorSigner {
         tal_https: Vec<uri::Https>,
         tal_rsync: uri::Rsync,
         private_key_pem: Option<String>,
+        years: i32,
         signer: &KrillSigner,
     ) -> KrillResult<TaCertDetails> {
         let key = match private_key_pem {
@@ -346,7 +351,7 @@ impl TrustAnchorSigner {
             let mut cert = TbsCert::new(
                 serial,
                 name.clone(),
-                SignSupport::sign_validity_years(TA_CERTIFICATE_VALIDITY_YEARS),
+                SignSupport::sign_validity_years(years),
                 Some(name),
                 pub_key.clone(),
                 KeyUsage::Ca,
@@ -387,6 +392,7 @@ impl TrustAnchorSigner {
     fn process_signer_request(
         &self,
         request: TrustAnchorSignedRequest,
+        timing: TaTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<Vec<TrustAnchorSignerEvent>> {
         // Let's first make sure this request is valid
@@ -415,7 +421,7 @@ impl TrustAnchorSigner {
                             )));
                         }
 
-                        let validity = SignSupport::sign_validity_weeks(TA_ISSUED_CERTIFICATE_VALIDITY_WEEKS);
+                        let validity = SignSupport::sign_validity_weeks(timing.issued_certificate_validity_weeks);
                         let issue_resources = limit.apply_to(&child_request.resources)?;
 
                         // Create issued certificate
@@ -481,14 +487,18 @@ impl TrustAnchorSigner {
             child_responses.insert(child_request.child.clone(), responses);
         }
 
-        objects.republish(signing_cert, signer)?;
+        objects.republish(signing_cert, timing.mft_next_update_weeks, signer)?;
 
         let response = TrustAnchorSignerResponse {
             nonce: request.content().nonce.clone(),
             objects,
             child_responses,
         }
-        .sign(self.id.public_key().key_identifier(), signer)?;
+        .sign(
+            timing.signed_message_validity_days,
+            self.id.public_key().key_identifier(),
+            signer,
+        )?;
 
         let exchange = TrustAnchorProxySignerExchange {
             time: Time::now(),

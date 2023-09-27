@@ -46,12 +46,12 @@ use crate::{
     daemon::{
         ca::Rfc8183Id,
         config::{Config, RrdpUpdatesConfig},
-        ta::TA_NAME,
     },
     pubd::{
         publishers::Publisher, RepositoryAccessCommand, RepositoryAccessCommandDetails, RepositoryAccessEvent,
         RepositoryAccessInitEvent,
     },
+    ta::TA_NAME,
 };
 
 use super::commands::{RepositoryAccessInitCommand, RepositoryAccessInitCommandDetails};

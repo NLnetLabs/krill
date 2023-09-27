@@ -25,10 +25,8 @@ use crate::{
     commons::eventsourcing,
     commons::{eventsourcing::Aggregate, Error, KrillResult},
     constants::TASK_QUEUE_NS,
-    daemon::{
-        ca::{CertAuth, CertAuthEvent},
-        ta::{ta_handle, TrustAnchorProxy, TrustAnchorProxyEvent},
-    },
+    daemon::ca::{CertAuth, CertAuthEvent},
+    ta::{ta_handle, TrustAnchorProxy, TrustAnchorProxyEvent},
 };
 
 //------------ Task ---------------------------------------------------------

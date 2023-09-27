@@ -15,13 +15,9 @@ use crate::{
         },
         bgp::{BgpAnalysisAdvice, BgpAnalysisReport, BgpAnalysisSuggestion},
     },
-    daemon::{
-        ca::ResourceTaggedAttestation,
-        ta::{
-            TrustAnchorProxySignerExchanges, TrustAnchorSignedRequest, TrustAnchorSignedResponse, TrustAnchorSignerInfo,
-        },
-    },
+    daemon::ca::ResourceTaggedAttestation,
     pubd::RepoStats,
+    ta::{TrustAnchorProxySignerExchanges, TrustAnchorSignedRequest, TrustAnchorSignedResponse, TrustAnchorSignerInfo},
 };
 
 //------------ ApiResponse ---------------------------------------------------

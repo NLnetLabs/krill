@@ -2170,7 +2170,7 @@ mod test {
 
     use rpki::crypto::PublicKeyFormat;
 
-    use crate::{commons::crypto::OpenSslSigner, daemon::ta::TrustAnchorLocator, test};
+    use crate::{commons::crypto::OpenSslSigner, ta::TrustAnchorLocator, test};
 
     use super::*;
 

@@ -48,13 +48,13 @@ use crate::{
         },
         config::Config,
         mq::{now, Task, TaskQueue},
-        ta::{
-            self, ta_handle, TrustAnchorProxy, TrustAnchorProxyCommand, TrustAnchorProxyInitCommand,
-            TrustAnchorSignedRequest, TrustAnchorSignedResponse, TrustAnchorSigner, TrustAnchorSignerCommand,
-            TrustAnchorSignerInfo, TrustAnchorSignerInitCommand, TrustAnchorSignerInitCommandDetails, TA_NAME,
-        },
     },
     pubd::RepositoryManager,
+    ta::{
+        self, ta_handle, TrustAnchorProxy, TrustAnchorProxyCommand, TrustAnchorProxyInitCommand,
+        TrustAnchorSignedRequest, TrustAnchorSignedResponse, TrustAnchorSigner, TrustAnchorSignerCommand,
+        TrustAnchorSignerInfo, TrustAnchorSignerInitCommand, TrustAnchorSignerInitCommandDetails, TA_NAME,
+    },
 };
 
 use super::{CertAuthInitCommand, CertAuthInitCommandDetails};
@@ -315,6 +315,7 @@ impl CaManager {
                 tal_https,
                 tal_rsync,
                 private_key_pem,
+                timing: self.config.ta_timing,
                 signer: self.signer.clone(),
             };
             let cmd = TrustAnchorSignerInitCommand::new(&handle, details, &self.system_actor);
@@ -375,7 +376,7 @@ impl CaManager {
         let cmd = TrustAnchorProxyCommand::make_signer_request(&ta_handle(), actor);
         let proxy = self.send_ta_proxy_command(cmd).await?;
 
-        proxy.get_signer_request(&self.signer)
+        proxy.get_signer_request(self.config.ta_timing, &self.signer)
     }
 
     /// Create a new request for the signer.
@@ -384,7 +385,9 @@ impl CaManager {
     /// - there is no proxy
     /// - the proxy already has a request
     pub async fn ta_proxy_signer_get_request(&self) -> KrillResult<TrustAnchorSignedRequest> {
-        self.get_trust_anchor_proxy().await?.get_signer_request(&self.signer)
+        self.get_trust_anchor_proxy()
+            .await?
+            .get_signer_request(self.config.ta_timing, &self.signer)
     }
 
     /// Process a sign response from the signer.
@@ -1183,13 +1186,14 @@ impl CaManager {
                 proxy = self.send_ta_proxy_command(sign_request_cmd).await?;
 
                 // get sign request for signer
-                let signed_request = proxy.get_signer_request(&self.signer)?;
+                let signed_request = proxy.get_signer_request(self.config.ta_timing, &self.signer)?;
                 let request_nonce = signed_request.content().nonce.clone(); // remember so we can retrieve it
 
                 // let signer process request
                 let signer_process_request_cmd = TrustAnchorSignerCommand::make_process_request_command(
                     &ta_handle,
                     signed_request,
+                    self.config.ta_timing,
                     self.signer.clone(),
                     &self.system_actor,
                 );

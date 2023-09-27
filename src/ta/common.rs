@@ -32,13 +32,6 @@ use crate::{
     },
 };
 
-// Some timing constants used by the Trust Anchor code. We may need to support
-// configuring these things instead..
-pub const TA_CERTIFICATE_VALIDITY_YEARS: i32 = 100;
-pub const TA_ISSUED_CERTIFICATE_VALIDITY_WEEKS: i64 = 52;
-pub const TA_MFT_NEXT_UPDATE_WEEKS: i64 = 12;
-pub const TA_SIGNED_MESSAGE_DAYS: i64 = 14;
-
 //------------ TrustAnchorObjects ------------------------------------------
 
 /// Contains all Trust Anchor objects, including the the TA certificate
@@ -77,8 +70,8 @@ pub struct TrustAnchorObjects {
 
 impl TrustAnchorObjects {
     /// Creates a new TrustAnchorObjects for the signing certificate.
-    pub fn create(signing_cert: &ReceivedCert, signer: &KrillSigner) -> KrillResult<Self> {
-        let revision = ObjectSetRevision::new(1, Self::this_update(), Self::next_update());
+    pub fn create(signing_cert: &ReceivedCert, next_update_weeks: i64, signer: &KrillSigner) -> KrillResult<Self> {
+        let revision = ObjectSetRevision::new(1, Self::this_update(), Self::next_update(next_update_weeks));
         let key_identifier = signing_cert.key_identifier();
         let base_uri = signing_cert.ca_repository().clone();
         let revocations = Revocations::default();
@@ -107,8 +100,13 @@ impl TrustAnchorObjects {
     /// Publish next revision of the published objects.
     /// - Update CRL (times and revocations)
     /// - Update Manifest (times and listed objects)
-    pub fn republish(&mut self, signing_cert: &ReceivedCert, signer: &KrillSigner) -> KrillResult<()> {
-        self.revision.next(Self::next_update());
+    pub fn republish(
+        &mut self,
+        signing_cert: &ReceivedCert,
+        next_update_weeks: i64,
+        signer: &KrillSigner,
+    ) -> KrillResult<()> {
+        self.revision.next(Self::next_update(next_update_weeks));
 
         let signing_key = signing_cert.key_identifier();
 
@@ -178,8 +176,8 @@ impl TrustAnchorObjects {
         Time::five_minutes_ago()
     }
 
-    pub fn next_update() -> Time {
-        Time::now() + chrono::Duration::weeks(TA_MFT_NEXT_UPDATE_WEEKS)
+    pub fn next_update(weeks: i64) -> Time {
+        Time::now() + chrono::Duration::weeks(weeks)
     }
 
     // Adds a new issued certificate, replaces and revokes the previous if present.
@@ -481,12 +479,17 @@ pub struct TrustAnchorSignerRequest {
 }
 
 impl TrustAnchorSignerRequest {
-    pub fn sign(&self, signing_key: KeyIdentifier, signer: &KrillSigner) -> Result<TrustAnchorSignedRequest, Error> {
+    pub fn sign(
+        &self,
+        signing_key: KeyIdentifier,
+        validity_days: i64,
+        signer: &KrillSigner,
+    ) -> Result<TrustAnchorSignedRequest, Error> {
         let data = serde_json::to_string_pretty(&self).unwrap();
         let data = Bytes::from(data);
 
         signer
-            .create_ta_signed_message(data, &signing_key)
+            .create_ta_signed_message(data, validity_days, &signing_key)
             .map(|msg| TrustAnchorSignedRequest {
                 request: self.clone(),
                 signed: msg.into(),
@@ -591,12 +594,17 @@ pub struct TrustAnchorSignerResponse {
 }
 
 impl TrustAnchorSignerResponse {
-    pub fn sign(&self, signing_key: KeyIdentifier, signer: &KrillSigner) -> Result<TrustAnchorSignedResponse, Error> {
+    pub fn sign(
+        &self,
+        validity_days: i64,
+        signing_key: KeyIdentifier,
+        signer: &KrillSigner,
+    ) -> Result<TrustAnchorSignedResponse, Error> {
         let data = serde_json::to_string_pretty(&self).unwrap();
         let data = Bytes::from(data);
 
         signer
-            .create_ta_signed_message(data, &signing_key)
+            .create_ta_signed_message(data, validity_days, &signing_key)
             .map(|msg| TrustAnchorSignedResponse {
                 response: self.clone(),
                 signed: msg.into(),
