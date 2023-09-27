@@ -19,7 +19,6 @@ pub const KRILL_DEFAULT_CONFIG_FILE: &str = "/etc/krill.conf";
 const KRILL_ENV_TEST: &str = "KRILL_TEST";
 const KRILL_ENV_TEST_ANN: &str = "KRILL_TEST_ANN";
 pub const KRILL_ENV_UPGRADE_ONLY: &str = "KRILL_UPGRADE_ONLY";
-pub const KRILL_ENV_FORCE_RECOVER: &str = "KRILL_FORCE_RECOVER";
 pub const KRILL_ENV_LOG_LEVEL: &str = "KRILL_LOG_LEVEL";
 pub const KRILL_ENV_LOG_TYPE: &str = "KRILL_LOG_TYPE";
 pub const KRILL_ENV_ADMIN_TOKEN: &str = "KRILL_ADMIN_TOKEN";
@@ -46,6 +45,7 @@ pub fn test_announcements_enabled() -> bool {
 
 // until const fn's are more versatile for str's, we need to use lazy_static to be able to expand the segment macro at
 // compile time, while running the expanded code, which actually makes it a Segment, at runtime
+pub const TASK_QUEUE_NS: &Namespace = namespace!("tasks");
 pub const CASERVER_NS: &Namespace = namespace!("cas");
 pub const CA_OBJECTS_NS: &Namespace = namespace!("ca_objects");
 pub const KEYS_NS: &Namespace = namespace!("keys");

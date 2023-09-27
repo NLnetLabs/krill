@@ -72,10 +72,6 @@ impl ConfigDefaults {
             .unwrap_or_else(|| Url::parse("local://./data").unwrap())
     }
 
-    fn always_recover_data() -> bool {
-        env::var(KRILL_ENV_FORCE_RECOVER).is_ok()
-    }
-
     pub fn log_level() -> LevelFilter {
         match env::var(KRILL_ENV_LOG_LEVEL) {
             Ok(level) => match LevelFilter::from_str(&level) {
@@ -472,9 +468,6 @@ pub struct Config {
     // for that reason.. not pub, but fn provided
     #[serde(default)]
     pub ta_signer_enabled: bool,
-
-    #[serde(default = "ConfigDefaults::always_recover_data")]
-    pub always_recover_data: bool,
 
     pid_file: Option<PathBuf>,
 
@@ -979,7 +972,6 @@ impl Config {
         let port = ConfigDefaults::port();
 
         let https_mode = HttpsMode::Generate;
-        let always_recover_data = false;
 
         let log_level = LevelFilter::Debug;
         let log_type = LogType::Stderr;
@@ -1092,7 +1084,6 @@ impl Config {
             repo_dir: data_dir.map(|d| d.join(REPOSITORY_DIR)),
             ta_support_enabled: false, // but, enabled by testbed where applicable
             ta_signer_enabled: false,  // same as above
-            always_recover_data,
             pid_file: data_dir.map(|d| d.join("krill.pid")),
             service_uri: None,
             log_level,

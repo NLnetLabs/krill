@@ -339,23 +339,8 @@ where
     /// Creates an AggregateStore using a disk based KeyValueStore 
     pub fn disk(work_dir: &PathBuf, name_space: &str) -> StoreResult<Self> { ... }
 
-    /// Warms up the cache, to be used after startup. Will fail if any aggregates fail to load,
-    /// or if any surplus commands or events not covered in their `StoredValueInfo` are found.
-    /// The latter indicates an incomplete write 'transaction' happened when saving an updated
-    /// version. Perhaps because a disk was full.
-    ///
-    /// In case this fails, the user may want to use the recover option to see what can be salvaged.
+    /// Warms up the cache, to be used after startup. Will fail if any aggregates fail to load.
     pub fn warm(&self) -> StoreResult<()> { ... }
-
-    /// Recovers aggregates to the latest consistent saved in the keystore by verifying
-    /// all commands, and the corresponding events. Use this in case the state on disk is
-    /// found to be inconsistent. I.e. the `warm` function failed and Krill exited.
-    ///
-    /// Note Krill has an option to *always* use this recover function when it starts,
-    /// but the default is that it just uses `warm` function instead. The reason for this
-    /// is that `recover` can take longer, and that it could lead silent recovery without
-    /// alerting to operators to underlying issues.
-    pub fn recover(&self) -> StoreResult<()> { .. }
 
     /// Adds a listener that will receive all events before they are stored.
     pub fn add_pre_save_listener<L: PreSaveEventListener<A>>(&mut self, sync_listener: Arc<L>) { ... }

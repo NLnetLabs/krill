@@ -79,8 +79,7 @@ impl<A: Aggregate> AggregateStore<A> {
         Ok(store)
     }
 
-    /// Warms up the cache, to be used after startup. Will fail if any aggregates fail to load
-    /// in which case a 'recover' operation can be tried.
+    /// Warms up the cache, to be used after startup. Will fail if any aggregates fail to load.
     pub fn warm(&self) -> StoreResult<()> {
         for handle in self.list()? {
             self.warm_aggregate(&handle)?;
@@ -580,7 +579,6 @@ pub enum AggregateStoreError {
     ConcurrentModification(MyHandle),
     UnknownCommand(MyHandle, u64),
     WarmupFailed(MyHandle, String),
-    CouldNotRecover(MyHandle),
     CouldNotArchive(MyHandle, String),
     CommandCorrupt(MyHandle, u64),
     CommandNotFound(MyHandle, u64),
@@ -611,11 +609,6 @@ impl fmt::Display for AggregateStoreError {
             AggregateStoreError::WarmupFailed(handle, e) => {
                 write!(f, "Could not rebuild state for '{}': {}", handle, e)
             }
-            AggregateStoreError::CouldNotRecover(handle) => write!(
-                f,
-                "Could not recover state for '{}', aborting recover. Use backup!!",
-                handle
-            ),
             AggregateStoreError::CouldNotArchive(handle, e) => write!(
                 f,
                 "Could not archive commands and events for '{}'. Error: {}",

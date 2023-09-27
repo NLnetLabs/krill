@@ -41,7 +41,7 @@ use crate::{
         },
         config::{AuthType, Config},
         http::HttpResponse,
-        mq::TaskQueue,
+        mq::{now, Task, TaskQueue},
         scheduler::Scheduler,
     },
     pubd::{RepoStats, RepositoryManager},
@@ -138,7 +138,7 @@ impl KrillServer {
         let system_actor = authorizer.actor_from_def(ACTOR_DEF_KRILL);
 
         // Used to have a shared queue for the ca_manager, repo_manager and the background job scheduler.
-        let mq = Arc::new(TaskQueue::default());
+        let mq = Arc::new(TaskQueue::new(&config.storage_uri)?);
 
         // for now, support that existing embedded repositories are still supported.
         // this should be removed in future after people have had a chance to separate.
@@ -153,7 +153,7 @@ impl KrillServer {
             &config.bgp_risdumps_v6_uri,
         ));
 
-        mq.server_started();
+        mq.schedule(Task::QueueStartTasks, now())?;
 
         let server = KrillServer {
             service_uri,
@@ -713,17 +713,17 @@ impl KrillServer {
 
                 // First sync will inform child of its entitlements and trigger that
                 // CSR is created.
-                ca_manager.ca_sync_parent(&ca_handle, &parent, &actor).await?;
+                ca_manager.ca_sync_parent(&ca_handle, 0, &parent, &actor).await?;
 
                 // Second sync will send that CSR to the parent
-                ca_manager.ca_sync_parent(&ca_handle, &parent, &actor).await?;
+                ca_manager.ca_sync_parent(&ca_handle, 0, &parent, &actor).await?;
 
                 // If the parent is a TA, then we will need to push a bit more..
                 // Normally this should be handled by triggered tasks, but the
                 // task scheduler is not running when we do this at startup.
                 if parent.as_str() == TA_NAME {
                     ca_manager.sync_ta_proxy_signer_if_possible().await?;
-                    ca_manager.ca_sync_parent(&ca_handle, &parent, &actor).await?;
+                    ca_manager.ca_sync_parent(&ca_handle, 0, &parent, &actor).await?;
                 }
             }
         }
@@ -781,32 +781,27 @@ impl KrillServer {
 
     /// Re-sync all CAs with their repositories
     pub fn cas_repo_sync_all(&self, actor: &Actor) -> KrillEmptyResult {
-        self.ca_manager.cas_schedule_repo_sync_all(actor);
-        Ok(())
+        self.ca_manager.cas_schedule_repo_sync_all(actor)
     }
 
     /// Re-sync a specific CA with its repository
     pub fn cas_repo_sync_single(&self, ca: &CaHandle) -> KrillEmptyResult {
-        self.ca_manager.cas_schedule_repo_sync(ca.clone());
-        Ok(())
+        self.ca_manager.cas_schedule_repo_sync(ca.clone())
     }
 
     /// Refresh all CAs: ask for updates and shrink as needed.
     pub async fn cas_refresh_all(&self) -> KrillEmptyResult {
-        self.ca_manager.cas_schedule_refresh_all().await;
-        Ok(())
+        self.ca_manager.cas_schedule_refresh_all().await
     }
 
     /// Refresh a specific CA with its parents
     pub async fn cas_refresh_single(&self, ca_handle: CaHandle) -> KrillEmptyResult {
-        self.ca_manager.cas_schedule_refresh_single(ca_handle).await;
-        Ok(())
+        self.ca_manager.cas_schedule_refresh_single(ca_handle).await
     }
 
     /// Schedule check suspend children for all CAs
     pub fn cas_schedule_suspend_all(&self) -> KrillEmptyResult {
-        self.ca_manager.cas_schedule_suspend_all();
-        Ok(())
+        self.ca_manager.cas_schedule_suspend_all()
     }
 }
 
