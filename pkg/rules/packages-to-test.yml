@@ -12,6 +12,7 @@ image:
   - "debian:stretch" # debian/9
   - "debian:buster" # debian/10
   - "debian:bullseye" # debian/11
+  - "debian:bookworm" # debian/12
   - "centos:7"
   - "rockylinux:8" # compatible with EOL centos:8
 target:
@@ -69,8 +70,14 @@ include:
     image: "debian:buster"
     target: "aarch64-unknown-linux-gnu"
 
-# For all target, exclude upgrade testing of the krillta package as no prior released version exists to
-# test upgrading from.
+# Exclude upgrade testing on Debian Bookworm as no prior released versions exist to upgrade from.
 exclude:
+  - pkg: "krill"
+    image: "debian:bookworm"
+    mode: "upgrade-from-published"
   - pkg: "krillta"
+    image: "debian:bookworm"
+    mode: "upgrade-from-published"
+  - pkg: "krillup"
+    image: "debian:bookworm"
     mode: "upgrade-from-published"
