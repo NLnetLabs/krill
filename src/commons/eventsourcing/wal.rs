@@ -237,7 +237,7 @@ impl<T: WalSupport> WalStore<T> {
                 // Get the instance from the cache, or get it from the store.
                 let latest_option = match self.cache_get(handle) {
                     Some(t) => {
-                        debug!("Found cached instance for '{handle}', at revision: {}", t.revision());
+                        trace!("Found cached instance for '{handle}', at revision: {}", t.revision());
                         Some(t)
                     }
                     None => {
@@ -248,12 +248,12 @@ impl<T: WalSupport> WalStore<T> {
 
                         match kv.get(&key)? {
                             Some(value) => {
-                                debug!("Deserializing stored instance for '{handle}'");
+                                trace!("Deserializing stored instance for '{handle}'");
                                 let latest: T = serde_json::from_value(value)?;
                                 Some(Arc::new(latest))
                             }
                             None => {
-                                debug!("No instance found instance for '{handle}'");
+                                trace!("No instance found instance for '{handle}'");
                                 None
                             }
                         }
@@ -284,7 +284,7 @@ impl<T: WalSupport> WalStore<T> {
 
                         if let Some(value) = kv.get(&key)? {
                             let set: WalSet<T> = serde_json::from_value(value)?;
-                            debug!("applying revision '{revision}' to '{handle}'");
+                            trace!("applying revision '{revision}' to '{handle}'");
                             latest_inner.apply(set);
                             changed_from_cached = true;
                         } else {
@@ -297,20 +297,21 @@ impl<T: WalSupport> WalStore<T> {
                         let summary = command.to_string();
                         let revision = latest_inner.revision();
 
-                        debug!("Applying command {command} to {handle}");
+                        trace!("Applying command {command} to {handle}");
                         match latest_inner.process_command(command) {
                             Err(e) => {
-                                debug!("Error applying command to '{handle}'. Error: {e}");
+                                warn!("Command '{summary}' for '{handle}' failed. Error: '{e}'");
                                 return Ok(Err(e));
                             }
                             Ok(changes) => {
                                 if changes.is_empty() {
-                                    debug!(
+                                    trace!(
                                         "No changes needed for '{}' when processing command: {}",
-                                        handle, summary
+                                        handle,
+                                        summary
                                     );
                                 } else {
-                                    debug!(
+                                    trace!(
                                         "{} changes resulted for '{}' when processing command: {}",
                                         changes.len(),
                                         handle,

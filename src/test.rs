@@ -177,6 +177,29 @@ pub async fn start_krill_with_default_test_config(
     cleanup
 }
 
+/// Starts krill server for testing using disk storage.
+/// This can be rather useful when debugging things...
+pub async fn start_krill_with_default_test_config_disk(
+    enable_testbed: bool,
+    enable_ca_refresh: bool,
+    enable_suspend: bool,
+    second_signer: bool,
+) -> impl FnOnce() {
+    let (data_dir, cleanup) = tmp_dir();
+    let storage_uri = Url::parse(&format!("local://{}", data_dir.display())).unwrap();
+    let config = test_config(
+        &storage_uri,
+        Some(&data_dir),
+        enable_testbed,
+        enable_ca_refresh,
+        enable_suspend,
+        second_signer,
+    );
+    start_krill(config).await;
+
+    cleanup
+}
+
 /// Starts a Krill server with a testbed and an RRDP interval, so that we can test that
 /// RRDP delta delays work properly.
 pub async fn start_krill_testbed_with_rrdp_interval(interval: u32) -> impl FnOnce() {
