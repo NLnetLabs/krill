@@ -12,7 +12,8 @@ use rpki::{
 
 use crate::{
     commons::{api::PublicationServerUris, error::Error, KrillResult},
-    daemon::{config, ta::ta_handle},
+    daemon::config,
+    ta::ta_handle,
 };
 
 use super::RoaConfiguration;

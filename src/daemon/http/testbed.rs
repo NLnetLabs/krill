@@ -13,8 +13,8 @@ use crate::{
             },
             HttpResponse, Request, RequestPath, RoutingResult,
         },
-        ta::ta_handle,
     },
+    ta::ta_handle,
 };
 
 //------------ Support acting as a testbed -------------------------------------

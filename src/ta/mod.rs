@@ -5,6 +5,9 @@ use rpki::ca::idexchange::CaHandle;
 mod common;
 pub use self::common::*;
 
+mod config;
+pub use self::config::*;
+
 mod proxy;
 pub use self::proxy::*;
 
@@ -63,6 +66,8 @@ mod tests {
                     .unwrap(),
             );
 
+            let timing = TaTimingConfig::default();
+
             let actor = test::test_actor();
 
             let proxy_handle = TrustAnchorHandle::new("proxy".into());
@@ -91,7 +96,7 @@ mod tests {
             let tal_https = vec![test::https("https://example.krill.cloud/ta/ta.cer")];
             let tal_rsync = test::rsync("rsync://example.krill.cloud/ta/ta.cer");
 
-            let import_key_pem = include_str!("../../../test-resources/ta/example-pkcs1.pem");
+            let import_key_pem = include_str!("../../test-resources/ta/example-pkcs1.pem");
 
             let signer_init_cmd = TrustAnchorSignerInitCommand::new(
                 &signer_handle,
@@ -101,6 +106,7 @@ mod tests {
                     tal_https: tal_https.clone(),
                     tal_rsync: tal_rsync.clone(),
                     private_key_pem: Some(import_key_pem.to_string()),
+                    timing,
                     signer: signer.clone(),
                 },
                 &actor,
@@ -126,11 +132,16 @@ mod tests {
             let make_publish_request_cmd = TrustAnchorProxyCommand::make_signer_request(&proxy_handle, &actor);
             proxy = ta_proxy_store.command(make_publish_request_cmd).unwrap();
 
-            let signed_request = proxy.get_signer_request(&signer).unwrap();
+            let signed_request = proxy.get_signer_request(timing, &signer).unwrap();
             let request_nonce = signed_request.content().nonce.clone();
 
-            let ta_signer_process_request_command =
-                TrustAnchorSignerCommand::make_process_request_command(&signer_handle, signed_request, signer, &actor);
+            let ta_signer_process_request_command = TrustAnchorSignerCommand::make_process_request_command(
+                &signer_handle,
+                signed_request,
+                timing,
+                signer,
+                &actor,
+            );
             ta_signer = ta_signer_store.command(ta_signer_process_request_command).unwrap();
 
             let exchange = ta_signer.get_exchange(&request_nonce).unwrap();

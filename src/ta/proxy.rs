@@ -265,9 +265,7 @@ impl eventsourcing::WithStorableDetails for TrustAnchorProxyCommandDetails {
     fn summary(&self) -> crate::commons::api::CommandSummary {
         match self {
             // Initialisation
-            TrustAnchorProxyCommandDetails::Init => {
-                crate::commons::api::CommandSummary::new("cmd-ta-proxy-init", self)
-            }
+            TrustAnchorProxyCommandDetails::Init => crate::commons::api::CommandSummary::new("cmd-ta-proxy-init", self),
             // Publication Support
             TrustAnchorProxyCommandDetails::AddRepository(repository) => {
                 crate::commons::api::CommandSummary::new("cmd-ta-proxy-repo-add", self)
@@ -664,7 +662,11 @@ impl TrustAnchorProxy {
 }
 
 impl TrustAnchorProxy {
-    pub fn get_signer_request(&self, signer: &KrillSigner) -> KrillResult<TrustAnchorSignedRequest> {
+    pub fn get_signer_request(
+        &self,
+        timing: TaTimingConfig,
+        signer: &KrillSigner,
+    ) -> KrillResult<TrustAnchorSignedRequest> {
         if let Some(nonce) = self.open_signer_request.as_ref().cloned() {
             let mut child_requests = vec![];
             for (child, details) in &self.child_details {
@@ -677,7 +679,11 @@ impl TrustAnchorProxy {
                 }
             }
 
-            TrustAnchorSignerRequest { nonce, child_requests }.sign(self.id.public_key().key_identifier(), signer)
+            TrustAnchorSignerRequest { nonce, child_requests }.sign(
+                self.id.public_key().key_identifier(),
+                timing.signed_message_validity_days,
+                signer,
+            )
         } else {
             Err(Error::TaProxyHasNoRequest)
         }

@@ -60,8 +60,8 @@ use crate::{
         },
         krillserver::KrillServer,
         properties::PropertiesManager,
-        ta::{self, TA_NAME},
     },
+    ta::{self, TA_NAME},
     upgrades::{finalise_data_migration, post_start_upgrade, prepare_upgrade_data_migrations, UpgradeMode},
 };
 

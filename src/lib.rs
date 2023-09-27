@@ -29,5 +29,6 @@ pub mod commons;
 pub mod constants;
 pub mod daemon;
 pub mod pubd;
+pub mod ta;
 pub mod test;
 pub mod upgrades;
