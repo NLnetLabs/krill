@@ -35,6 +35,7 @@ use crate::{
         http::tls_keys::{self, HTTPS_SUB_DIR},
         mq::{in_seconds, Priority},
     },
+    ta::TaTimingConfig,
 };
 
 #[cfg(feature = "multi-user")]
@@ -418,7 +419,7 @@ where
     OneOrMany::<IpAddr>::deserialize(deserializer).map(|oom| oom.into())
 }
 
-fn deserialize_storage_uri<'de, D>(deserializer: D) -> Result<Url, D::Error>
+pub fn deserialize_storage_uri<'de, D>(deserializer: D) -> Result<Url, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -584,6 +585,9 @@ pub struct Config {
     pub testbed: Option<TestBed>,
 
     pub benchmark: Option<Benchmark>,
+
+    #[serde(default)]
+    pub ta_timing: TaTimingConfig,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -1130,6 +1134,7 @@ impl Config {
             metrics,
             testbed,
             benchmark: None,
+            ta_timing: TaTimingConfig::default(),
         }
     }
 

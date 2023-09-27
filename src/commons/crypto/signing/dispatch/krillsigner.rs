@@ -41,7 +41,6 @@ use crate::{
     },
     constants::ID_CERTIFICATE_VALIDITY_YEARS,
     daemon::config::{SignerConfig, SignerType},
-    ta::TA_SIGNED_MESSAGE_DAYS,
 };
 
 #[cfg(feature = "hsm")]
@@ -325,8 +324,13 @@ impl KrillSigner {
         publication::PublicationCms::create(message, signing_key, &self.router).map_err(crypto::Error::signing)
     }
 
-    pub fn create_ta_signed_message(&self, data: Bytes, signing_key: &KeyIdentifier) -> CryptoResult<SignedMessage> {
-        let validity = SignSupport::sign_validity_days(TA_SIGNED_MESSAGE_DAYS);
+    pub fn create_ta_signed_message(
+        &self,
+        data: Bytes,
+        validity_days: i64,
+        signing_key: &KeyIdentifier,
+    ) -> CryptoResult<SignedMessage> {
+        let validity = SignSupport::sign_validity_days(validity_days);
 
         SignedMessage::create(data, validity, signing_key, &self.router).map_err(crypto::Error::signing)
     }

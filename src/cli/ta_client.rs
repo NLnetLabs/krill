@@ -997,6 +997,7 @@ impl ProxyClient {
 struct TrustAnchorSignerManager {
     store: AggregateStore<TrustAnchorSigner>,
     ta_handle: TrustAnchorHandle,
+    config: Arc<Config>,
     signer: Arc<KrillSigner>,
     actor: Actor,
 }
@@ -1006,12 +1007,14 @@ impl TrustAnchorSignerManager {
         let store = AggregateStore::create(&config.storage_uri, namespace!("signer"), config.use_history_cache)
             .map_err(KrillError::AggregateStoreError)?;
         let ta_handle = TrustAnchorHandle::new("ta".into());
+        let config = Arc::new(config);
         let signer = config.signer()?;
         let actor = Actor::krillta();
 
         Ok(TrustAnchorSignerManager {
             store,
             ta_handle,
+            config,
             signer,
             actor,
         })
@@ -1029,6 +1032,7 @@ impl TrustAnchorSignerManager {
                     tal_https: info.tal_https,
                     tal_rsync: info.tal_rsync,
                     private_key_pem: info.private_key_pem,
+                    timing: self.config.timing_config,
                     signer: self.signer.clone(),
                 },
                 &self.actor,
@@ -1050,6 +1054,7 @@ impl TrustAnchorSignerManager {
         let cmd = TrustAnchorSignerCommand::make_process_request_command(
             &self.ta_handle,
             request,
+            self.config.timing_config,
             self.signer.clone(),
             &self.actor,
         );

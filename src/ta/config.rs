@@ -14,26 +14,55 @@ use crate::{
     daemon::config::{LogType, SignerConfig, SignerReference, SignerType},
 };
 
-//------------------------ ConfigError ------------------------------------------
+// TA timing defaults
+const DFLT_TA_CERTIFICATE_VALIDITY_YEARS: i32 = 100;
+const DFLT_TA_ISSUED_CERTIFICATE_VALIDITY_WEEKS: i64 = 52;
+const DFLT_TA_MFT_NEXT_UPDATE_WEEKS: i64 = 12;
+const DFLT_TA_SIGNED_MESSAGE_VALIDITY_DAYS: i64 = 14;
 
-#[derive(Clone, Debug)]
-pub enum ConfigError {
-    Other(String),
+//------------------------ TaTimingConfig ---------------------------------------
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+pub struct TaTimingConfig {
+    #[serde(default = "TaTimingConfig::dflt_ta_certificate_validity_years")]
+    pub certificate_validity_years: i32,
+
+    #[serde(default = "TaTimingConfig::dflt_ta_issued_certificate_validity_weeks")]
+    pub issued_certificate_validity_weeks: i64,
+
+    #[serde(default = "TaTimingConfig::dflt_ta_mft_next_update_weeks")]
+    pub mft_next_update_weeks: i64,
+
+    #[serde(default = "TaTimingConfig::dflt_ta_signed_message_validity_days")]
+    pub signed_message_validity_days: i64,
 }
 
-impl ConfigError {
-    fn other(msg: impl std::fmt::Display) -> Self {
-        Self::Other(msg.to_string())
+impl Default for TaTimingConfig {
+    fn default() -> Self {
+        Self {
+            certificate_validity_years: DFLT_TA_CERTIFICATE_VALIDITY_YEARS,
+            issued_certificate_validity_weeks: DFLT_TA_ISSUED_CERTIFICATE_VALIDITY_WEEKS,
+            mft_next_update_weeks: DFLT_TA_MFT_NEXT_UPDATE_WEEKS,
+            signed_message_validity_days: DFLT_TA_SIGNED_MESSAGE_VALIDITY_DAYS,
+        }
     }
 }
 
-impl std::fmt::Display for ConfigError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            ConfigError::Other(msg) => {
-                write!(f, "{msg}")
-            }
-        }
+impl TaTimingConfig {
+    fn dflt_ta_certificate_validity_years() -> i32 {
+        DFLT_TA_CERTIFICATE_VALIDITY_YEARS
+    }
+
+    fn dflt_ta_issued_certificate_validity_weeks() -> i64 {
+        DFLT_TA_ISSUED_CERTIFICATE_VALIDITY_WEEKS
+    }
+
+    fn dflt_ta_mft_next_update_weeks() -> i64 {
+        DFLT_TA_MFT_NEXT_UPDATE_WEEKS
+    }
+
+    fn dflt_ta_signed_message_validity_days() -> i64 {
+        DFLT_TA_SIGNED_MESSAGE_VALIDITY_DAYS
     }
 }
 
@@ -41,6 +70,10 @@ impl std::fmt::Display for ConfigError {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Config {
+    #[serde(
+        alias = "data_dir",
+        deserialize_with = "crate::daemon::config::deserialize_storage_uri"
+    )]
     pub storage_uri: Url,
 
     #[serde(default)]
@@ -69,6 +102,9 @@ pub struct Config {
 
     #[serde(default = "crate::daemon::config::ConfigDefaults::signers")]
     pub signers: Vec<SignerConfig>,
+
+    #[serde(default)]
+    pub timing_config: TaTimingConfig,
 }
 
 impl Config {
@@ -89,7 +125,9 @@ impl Config {
             toml::from_slice(slice).map_err(|e| ConfigError::Other(format!("Error parsing config file: {}", e)))?;
 
         config.resolve_signers();
-        config.init_logging()?;
+        // ignore init errors
+        // they are normally due to double initialising logging
+        let _ = config.init_logging();
 
         Ok(config)
     }
@@ -236,6 +274,28 @@ impl Config {
     }
 }
 
+//------------------------ ConfigError ------------------------------------------
+
+#[derive(Clone, Debug)]
+pub enum ConfigError {
+    Other(String),
+}
+
+impl ConfigError {
+    fn other(msg: impl std::fmt::Display) -> Self {
+        Self::Other(msg.to_string())
+    }
+}
+
+impl std::fmt::Display for ConfigError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            ConfigError::Other(msg) => {
+                write!(f, "{msg}")
+            }
+        }
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -244,8 +304,8 @@ mod tests {
 
     #[test]
     fn initialise_default_signers() {
-        test::test_in_memory(|storage_uri| {
-            let config_string = format!("log_type = \"stderr\"\nstorage_uri = \"{}\"", storage_uri);
+        test::test_in_memory(|_storage_uri| {
+            let config_string = include_str!("../../test-resources/ta/ta.conf");
             let config = Config::parse_slice(config_string.as_bytes()).unwrap();
             config.signer().unwrap();
         })
