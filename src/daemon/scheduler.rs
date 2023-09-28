@@ -29,7 +29,7 @@ use crate::{
     daemon::{
         ca::{CaManager, CertAuth},
         config::Config,
-        mq::{in_hours, in_minutes, in_seconds, now, Task, TaskQueue},
+        mq::{in_hours, in_minutes, in_seconds, in_weeks, now, Task, TaskQueue},
         properties::Properties,
     },
     pubd::{RepositoryAccess, RepositoryContent, RepositoryManager},
@@ -134,6 +134,8 @@ impl Scheduler {
                 ca_version,
                 parent,
             } => self.sync_parent(ca, ca_version, parent).await,
+
+            Task::RenewTestbedTa => self.renew_testbed_ta().await,
 
             Task::SyncTrustAnchorProxySignerIfPossible => self.sync_ta_proxy_signer_if_possible().await,
 
@@ -269,6 +271,10 @@ impl Scheduler {
         // running tests, such as functional_parent_child.rs.
         self.tasks.schedule_missing(Task::UpdateSnapshots, now())?;
 
+        if self.config.testbed().is_some() {
+            self.tasks.schedule_missing(Task::RenewTestbedTa, now())?;
+        }
+
         Ok(TaskResult::Done)
     }
 
@@ -343,6 +349,15 @@ impl Scheduler {
             );
             Ok(TaskResult::Done)
         }
+    }
+
+    /// Resync the testbed TA signer and proxy
+    async fn renew_testbed_ta(&self) -> KrillResult<TaskResult> {
+        if let Err(e) = self.ca_manager.ta_renew_testbed_ta().await {
+            error!("There was an issue renewing the testbed TA: {}", e);
+        }
+        let weeks_to_resync = self.config.ta_timing.mft_next_update_weeks / 2;
+        Ok(TaskResult::FollowUp(Task::RenewTestbedTa, in_weeks(weeks_to_resync)))
     }
 
     /// Try to synchronise the Trust Anchor Proxy with the *local* Signer - if it exists

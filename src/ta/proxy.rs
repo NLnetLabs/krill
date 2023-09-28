@@ -662,6 +662,10 @@ impl TrustAnchorProxy {
 }
 
 impl TrustAnchorProxy {
+    pub fn has_open_request(&self) -> bool {
+        self.open_signer_request.is_some()
+    }
+
     pub fn get_signer_request(
         &self,
         timing: TaTimingConfig,

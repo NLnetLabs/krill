@@ -78,12 +78,13 @@ pub enum Task {
         revocation_request: RevocationRequest,
     },
 
-    // ------------- CA follow-up actions ------------------------
     SyncTrustAnchorProxySignerIfPossible,
 
     SuspendChildrenIfNeeded {
         ca_handle: CaHandle,
     },
+
+    RenewTestbedTa,
 
     RepublishIfNeeded,
     RenewObjectsIfNeeded,
@@ -135,6 +136,7 @@ impl Task {
             Task::RrdpUpdateIfNeeded => Ok(segment!("update_rrdp_if_needed").to_owned()),
             #[cfg(feature = "multi-user")]
             Task::SweepLoginCache => Ok(segment!("sweep_login_cache").to_owned()),
+            Task::RenewTestbedTa => Ok(segment!("renew_testbed_ta").to_owned()),
             Task::SyncTrustAnchorProxySignerIfPossible => Ok(segment!("sync_ta_proxy_signer").to_owned()),
             Task::QueueStartTasks => Ok(segment!("queue_start_tasks").to_owned()),
         }
@@ -150,6 +152,7 @@ impl fmt::Display for Task {
             Task::SyncParent {
                 ca_handle: ca, parent, ..
             } => write!(f, "synchronize CA '{}' with parent '{}'", ca, parent),
+            Task::RenewTestbedTa => write!(f, "renew testbed TA"),
             Task::SyncTrustAnchorProxySignerIfPossible => write!(f, "sync TA Proxy and Signer if both in this server."),
             Task::SuspendChildrenIfNeeded { ca_handle: ca } => {
                 write!(f, "verify if CA '{}' has children to suspend", ca)
@@ -556,6 +559,14 @@ pub fn in_minutes(mins: i64) -> Priority {
 
 pub fn in_hours(hours: i64) -> Priority {
     (Time::now() + chrono::Duration::hours(hours)).into()
+}
+
+pub fn in_days(days: i64) -> Priority {
+    (Time::now() + chrono::Duration::days(days)).into()
+}
+
+pub fn in_weeks(weeks: i64) -> Priority {
+    in_days(7 * weeks)
 }
 
 impl Ord for Priority {
