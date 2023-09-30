@@ -442,6 +442,18 @@ impl CaManager {
 
         Ok(())
     }
+
+    /// Renew the embedded testbed TA;
+    pub async fn ta_renew_testbed_ta(&self) -> KrillResult<()> {
+        if self.testbed_enabled() {
+            let proxy = self.get_trust_anchor_proxy().await?;
+            if !proxy.has_open_request() {
+                info!("Renew the testbed TA");
+                self.sync_ta_proxy_signer_if_possible().await?;
+            }
+        }
+        Ok(())
+    }
 }
 
 /// # CA instances and identity
