@@ -1904,6 +1904,9 @@ impl CaManager {
                 self.ca_repo_sync(repo_manager, ca_handle, id, repo, objects).await?;
                 Ok(true)
             }
+        } else if !self.has_ca(ca_handle)? {
+            debug!("Dropping task to sync removed CA '{ca_handle}' with its repository.");
+            Ok(true)
         } else {
             let ca = self.get_ca(ca_handle).await?;
 

@@ -357,15 +357,20 @@ impl Scheduler {
 
     /// Try to suspend children for a CA
     async fn suspend_children_if_needed(&self, ca_handle: CaHandle) -> KrillResult<TaskResult> {
-        debug!("Verify if CA '{}' has children that need to be suspended", ca_handle);
-        self.ca_manager
-            .ca_suspend_inactive_children(&ca_handle, self.started, &self.system_actor)
-            .await;
+        if self.ca_manager.has_ca(&ca_handle)? {
+            debug!("Verify if CA '{}' has children that need to be suspended", ca_handle);
+            self.ca_manager
+                .ca_suspend_inactive_children(&ca_handle, self.started, &self.system_actor)
+                .await;
 
-        Ok(TaskResult::FollowUp(
-            Task::SuspendChildrenIfNeeded { ca_handle },
-            in_hours(1),
-        ))
+            Ok(TaskResult::FollowUp(
+                Task::SuspendChildrenIfNeeded { ca_handle },
+                in_hours(1),
+            ))
+        } else {
+            debug!("Drop task to suspend children for removed CA {ca_handle}");
+            Ok(TaskResult::Done)
+        }
     }
 
     /// Let CAs that need it republish their CRL/MFT
@@ -521,7 +526,8 @@ impl Scheduler {
 
         let requests = HashMap::from([(rcn, revocation_requests)]);
 
-        if let Ok(ca) = self.ca_manager.get_ca(&ca_handle).await {
+        if self.ca_manager.has_ca(&ca_handle)? {
+            let ca = self.ca_manager.get_ca(&ca_handle).await?;
             if ca.version() < ca_version {
                 // premature, we need to wait for the CA to be committed.
                 Ok(TaskResult::Reschedule(in_seconds(1)))
@@ -538,7 +544,7 @@ impl Scheduler {
                 Ok(TaskResult::Done)
             }
         } else {
-            // Ignoring resource class removed task for removed CA
+            debug!("Dropping task for removed resource class of removed CA {ca_handle}");
             Ok(TaskResult::Done)
         }
     }
@@ -550,37 +556,35 @@ impl Scheduler {
         rcn: ResourceClassName,
         revocation_request: RevocationRequest,
     ) -> KrillResult<TaskResult> {
-        info!(
-            "Trigger sending revocation requests for unexpected key with id '{}' in RC '{}'",
-            revocation_request.key(),
-            rcn
-        );
-        match self.ca_manager.get_ca(&ca_handle).await {
-            Err(_e) => {
-                // Can't get CA - most likely because it's gone.
+        if self.ca_manager.has_ca(&ca_handle)? {
+            info!(
+                "Trigger sending revocation requests for unexpected key with id '{}' in RC '{}'",
+                revocation_request.key(),
+                rcn
+            );
+            let ca = self.ca_manager.get_ca(&ca_handle).await?;
+
+            if ca.version() < ca_version {
+                debug!("reschedule premature task");
+                let next = in_seconds(100);
+                Ok(TaskResult::Reschedule(next))
+            } else {
+                if let Err(e) = self
+                    .ca_manager
+                    .send_revoke_unexpected_key(&ca_handle, rcn, revocation_request)
+                    .await
+                {
+                    warn!(
+                        "Could not revoke surplus key, most likely already revoked by parent. Error was: {}",
+                        e
+                    );
+                }
 
                 Ok(TaskResult::Done)
             }
-            Ok(ca) => {
-                if ca.version() < ca_version {
-                    debug!("reschedule premature task");
-                    let next = in_seconds(100);
-                    Ok(TaskResult::Reschedule(next))
-                } else {
-                    if let Err(e) = self
-                        .ca_manager
-                        .send_revoke_unexpected_key(&ca_handle, rcn, revocation_request)
-                        .await
-                    {
-                        warn!(
-                            "Could not revoke surplus key, most likely already revoked by parent. Error was: {}",
-                            e
-                        );
-                    }
-
-                    Ok(TaskResult::Done)
-                }
-            }
+        } else {
+            debug!("Dropping task for surplus key for removed CA {ca_handle}");
+            Ok(TaskResult::Done)
         }
     }
 }
