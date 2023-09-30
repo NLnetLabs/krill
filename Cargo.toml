@@ -49,7 +49,6 @@ oso = { version = "^0.12", optional = true, default_features = false }
 cryptoki = { version = "^0.3", optional = true }
 cryptoki-sys = "=0.1.4" # pin cryptoki-sys because of compilation issues on various systems
 r2d2 = { version = "0.8.9", optional = true }
-priority-queue = "1.2.1"
 rand = "^0.8"
 regex = { version = "1.5.5", optional = true, default_features = false, features = [
     "std",
