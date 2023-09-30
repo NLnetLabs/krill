@@ -62,7 +62,9 @@ use crate::{
         properties::PropertiesManager,
     },
     ta::{self, TA_NAME},
-    upgrades::{finalise_data_migration, post_start_upgrade, prepare_upgrade_data_migrations, UpgradeMode},
+    upgrades::{
+        finalise_data_migration, post_start_upgrade, prepare_upgrade_data_migrations, UpgradeError, UpgradeMode,
+    },
 };
 
 //------------ State -----------------------------------------------------
@@ -126,7 +128,12 @@ pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
 
     // Call upgrade, this will only do actual work if needed.
     let upgrade_report = prepare_upgrade_data_migrations(UpgradeMode::PrepareToFinalise, &config, &properties_manager)
-        .map_err(|e| Error::Custom(format!("Upgrade data migration failed with error: {}\n\nNOTE: your data was not changed. Please downgrade your krill instance to your previous version.", e)))?;
+        .map_err(|e| match e {
+            UpgradeError::CodeOlderThanData(_,_) => {
+                Error::Custom(e.to_string())
+            },
+            _ => Error::Custom(format!("Upgrade data migration failed with error: {}\n\nNOTE: your data was not changed. Please downgrade your krill instance to your previous version.", e))
+        })?;
 
     if let Some(report) = &upgrade_report {
         finalise_data_migration(report.versions(), &config, &properties_manager).map_err(|e| {

@@ -131,7 +131,7 @@ impl fmt::Display for UpgradeError {
             UpgradeError::CannotLoadAggregate(h) => format!("Cannot load: {}", h),
             UpgradeError::IdExchange(s) => format!("Could not use exchanged id info: {}", s),
             UpgradeError::OldTaMigration => "Your installation cannot be upgraded to Krill 0.13.0 or later because it includes a CA called \"ta\". These CAs were used for the preliminary Trust Anchor support needed by testbed and benchmark setups. They cannot be migrated to the production grade Trust Anchor support that was introduced in Krill 0.13.0. If you want to continue to use your existing installation we recommend that you downgrade to Krill 0.12.1 or earlier. If you want to operate a testbed using Krill 0.13.0 or later, then you can create a fresh testbed instead of migrating your existing testbed. If you believe that you should not have a CA called \"ta\" - i.e. it may have been left over from an abandoned testbed set up - then you can delete the \"ta\" directory under your krill data \"cas\" directory and restart Krill.".to_string(),
-            UpgradeError::CodeOlderThanData(code, data) => format!("Krill version {} is older than data version {}. You will need to restore before you can downgrade.", code, data),
+            UpgradeError::CodeOlderThanData(code, data) => format!("Krill version {code} is older than data version {data}. You either need to upgrade krill, or restore the data from version {code}."),
             UpgradeError::Custom(s) => s.clone(),
         };
 
