@@ -44,7 +44,7 @@ impl KeyValueStore {
     pub fn create(storage_uri: &Url, namespace: &Namespace) -> Result<Self, KeyValueError> {
         kvx::KeyValueStore::new(storage_uri, namespace)
             .map(|inner| KeyValueStore { inner })
-            .map_err(KeyValueError::KVError)
+            .map_err(KeyValueError::Inner)
     }
 
     /// Returns true if this KeyValueStore (with this namespace) has any entries.
@@ -52,7 +52,7 @@ impl KeyValueStore {
         // NOTE: this is done using `self.execute` as this would result in a lockfile
         //       to be created for disk based inner stores, and that would make them
         //       appear as not empty.
-        self.inner.is_empty().map_err(KeyValueError::KVError)
+        self.inner.is_empty().map_err(KeyValueError::Inner)
     }
 
     /// Wipe the complete store. Needless to say perhaps.. use with care..
@@ -78,7 +78,7 @@ impl KeyValueStore {
     where
         F: FnMut(&dyn KeyValueStoreBackend) -> Result<T, kvx::Error>,
     {
-        self.inner.execute(scope, op).map_err(KeyValueError::KVError)
+        self.inner.execute(scope, op).map_err(KeyValueError::Inner)
     }
 }
 
@@ -168,7 +168,7 @@ impl KeyValueStore {
 
         kvx::KeyValueStore::new(storage_uri, namespace)
             .map(|inner| KeyValueStore { inner })
-            .map_err(KeyValueError::KVError)
+            .map_err(KeyValueError::Inner)
     }
 
     fn prefixed_namespace(namespace: &Namespace, prefix: &str) -> Result<NamespaceBuf, KeyValueError> {
@@ -186,7 +186,7 @@ impl KeyValueStore {
         let archive_store = KeyValueStore::create(storage_uri, &archive_ns)?;
         archive_store.wipe()?;
 
-        self.inner.migrate_namespace(archive_ns).map_err(KeyValueError::KVError)
+        self.inner.migrate_namespace(archive_ns).map_err(KeyValueError::Inner)
     }
 
     /// Make this (upgrade) store the current store.
@@ -202,7 +202,7 @@ impl KeyValueStore {
         } else {
             self.inner
                 .migrate_namespace(namespace.into())
-                .map_err(KeyValueError::KVError)
+                .map_err(KeyValueError::Inner)
         }
     }
 
@@ -219,8 +219,8 @@ impl KeyValueStore {
 
         for scope in scopes {
             for key in other.keys(&scope, "")? {
-                if let Some(value) = other.inner.get(&key).map_err(KeyValueError::KVError)? {
-                    self.inner.store(&key, value).map_err(KeyValueError::KVError)?;
+                if let Some(value) = other.inner.get(&key).map_err(KeyValueError::Inner)? {
+                    self.inner.store(&key, value).map_err(KeyValueError::Inner)?;
                 }
             }
         }
@@ -245,7 +245,7 @@ pub enum KeyValueError {
     JsonError(serde_json::Error),
     UnknownKey(Key),
     DuplicateKey(Key),
-    KVError(kvx::Error),
+    Inner(kvx::Error),
     Other(String),
 }
 
@@ -263,7 +263,7 @@ impl From<serde_json::Error> for KeyValueError {
 
 impl From<kvx::Error> for KeyValueError {
     fn from(e: kvx::Error) -> Self {
-        KeyValueError::KVError(e)
+        KeyValueError::Inner(e)
     }
 }
 
@@ -275,7 +275,7 @@ impl fmt::Display for KeyValueError {
             KeyValueError::JsonError(e) => write!(f, "JSON error: {}", e),
             KeyValueError::UnknownKey(key) => write!(f, "Unknown key: {}", key),
             KeyValueError::DuplicateKey(key) => write!(f, "Duplicate key: {}", key),
-            KeyValueError::KVError(e) => write!(f, "Store error: {}", e),
+            KeyValueError::Inner(e) => write!(f, "Store error: {}", e),
             KeyValueError::Other(msg) => write!(f, "{}", msg),
         }
     }
