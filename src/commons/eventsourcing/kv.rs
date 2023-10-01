@@ -47,9 +47,12 @@ impl KeyValueStore {
             .map_err(KeyValueError::KVError)
     }
 
-    /// Returns true if this KeyValueStore (with this namespace) has any entries
+    /// Returns true if this KeyValueStore (with this namespace) has any entries.
     pub fn is_empty(&self) -> Result<bool, KeyValueError> {
-        self.execute(&Scope::global(), |kv| kv.is_empty())
+        // NOTE: this is done using `self.execute` as this would result in a lockfile
+        //       to be created for disk based inner stores, and that would make them
+        //       appear as not empty.
+        self.inner.is_empty().map_err(KeyValueError::KVError)
     }
 
     /// Wipe the complete store. Needless to say perhaps.. use with care..
