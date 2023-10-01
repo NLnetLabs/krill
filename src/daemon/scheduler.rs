@@ -279,7 +279,7 @@ impl Scheduler {
     }
 
     async fn sync_repo(&self, ca: CaHandle, version: u64) -> KrillResult<TaskResult> {
-        debug!("Synchronize CA {} with repository", ca);
+        info!("Synchronize CA {} with repository", ca);
 
         match self
             .ca_manager
