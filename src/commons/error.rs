@@ -545,7 +545,7 @@ impl From<KeyValueError> for Error {
 
 impl From<kvx::Error> for Error {
     fn from(e: kvx::Error) -> Self {
-        Error::KeyValueError(KeyValueError::KVError(e))
+        Error::KeyValueError(KeyValueError::Inner(e))
     }
 }
 
