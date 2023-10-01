@@ -1967,7 +1967,7 @@ impl CaManager {
         repo_contact: &RepositoryContact,
         publish_elements: Vec<PublishElement>,
     ) -> KrillResult<()> {
-        info!("CA '{}' sends list query to repo", ca_handle);
+        debug!("CA '{}' sends list query to repo", ca_handle);
         let list_reply = self
             .send_rfc8181_list(repo_manager, ca_handle, id_cert, repo_contact.server_info())
             .await?;
@@ -1994,12 +1994,12 @@ impl CaManager {
         }
 
         if !delta.is_empty() {
-            info!("CA '{}' sends delta", ca_handle);
+            debug!("CA '{}' sends delta", ca_handle);
             self.send_rfc8181_delta(repo_manager, ca_handle, id_cert, repo_contact.server_info(), delta)
                 .await?;
             debug!("CA '{}' sent delta", ca_handle);
         } else {
-            info!("CA '{}' has nothing to publish", ca_handle);
+            debug!("CA '{}' has nothing to publish", ca_handle);
         }
 
         Ok(())
