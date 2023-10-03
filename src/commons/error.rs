@@ -151,6 +151,23 @@ impl From<Error> for ApiAuthError {
     }
 }
 
+//------------ FatalError --------------------------------------------------
+
+/// Wraps an error so horrible to contemplate that it should result in
+/// a server crash, as it would have lost its reason to live.
+/// 
+/// Note that we do not provide any From<Error> for this in an attempt
+/// to ensure that this is only ever used explicitly and when it is
+/// appropriate.
+#[derive(Debug)]
+pub struct FatalError(pub Error);
+
+impl fmt::Display for FatalError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 //------------ Error -------------------------------------------------------
 
 #[derive(Debug)]
