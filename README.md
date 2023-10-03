@@ -27,10 +27,11 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 ## 0.14.0-rc1
 
+- Add traditional and simplified chinese translations #1075
 - Improve transactionality of changes (e.g. #1076-1078, #1085, #1108, #1090)
 - Remove no longer needed 'always_recover_data' function #1086 
 - Improve upgrade failed error: tell users to downgrade #1042
-- Add traditional and simplified chinese translations #1075
+- Crash Krill if a fatal error is encountered by the task scheduler. #1132
 
 ## 0.13.1 'Scrollbars!'
 
