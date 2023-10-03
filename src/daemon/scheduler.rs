@@ -101,7 +101,9 @@ impl Scheduler {
                         Ok(result) => {
                             if let Err(e) = match result {
                                 TaskResult::Done => self.tasks.finish(&task_key),
-                                TaskResult::FollowUp(task, priority) => self.tasks.schedule(task, priority),
+                                TaskResult::FollowUp(task, priority) => {
+                                    self.tasks.schedule_and_finish_existing(task, priority)
+                                }
                                 TaskResult::Reschedule(priority) => self.tasks.reschedule(&task_key, priority),
                             } {
                                 error!("Error finishing / scheduling task {}. Krill will stop as there is no good way to recover from this. When Krill starts it will try to reschedule any missing tasks. Error was: {}", task_key, e);
@@ -220,7 +222,7 @@ impl Scheduler {
             let ca_handle = ca.handle();
             let ca_version = ca.version();
 
-            trace!("Adding tasks for CA {}, using jitter: {}", ca.handle(), use_jitter);
+            debug!("Adding tasks for CA {}, using jitter: {}", ca.handle(), use_jitter);
 
             for parent in ca.parents() {
                 self.tasks
