@@ -18,8 +18,9 @@ use crate::{
         api::Timestamp,
         bgp::BgpAnalyser,
         crypto::dispatch::signerinfo::SignerInfo,
+        error::FatalError,
         eventsourcing::{Aggregate, AggregateStore, WalStore, WalSupport},
-        KrillResult,
+        util::KrillVersion,
     },
     constants::{
         CASERVER_NS, PROPERTIES_NS, PUBSERVER_CONTENT_NS, PUBSERVER_NS, SCHEDULER_INTERVAL_RENEW_MINS,
@@ -93,25 +94,25 @@ impl Scheduler {
                         // So, if we ever change the content of tasks then we should make sure
                         // that Krill is either backward compatible, or the task queue is migrated
                         // on upgrade.
-                        error!("Fatal error. Cannot parse task: {}. Error: {}", task_key, e);
-                        return; // stops the server.
+                        error!("Fatal error parsing task: {}. Krill will now stop! This may be because this task is not for this Krill version ({}). If this issue persists, then try deleting this task from storage, it will appear in the 'tasks' dir if you use disk storage. The error was {}", task_key, KrillVersion::code_version(), e);
+                        std::process::exit(1);
                     }
-                    Ok(task) => {
-                        if let Err(e) = match self.process_task(task).await {
-                            Ok(result) => match result {
+                    Ok(task) => match self.process_task(task).await {
+                        Ok(result) => {
+                            if let Err(e) = match result {
                                 TaskResult::Done => self.tasks.finish(&task_key),
                                 TaskResult::FollowUp(task, priority) => self.tasks.schedule(task, priority),
                                 TaskResult::Reschedule(priority) => self.tasks.reschedule(&task_key, priority),
-                            },
-                            Err(e) => Err(e),
-                        } {
-                            // We really should not get any errors at this stage. If we do, then
-                            // this is most likely because of an issue with the key value store.
-                            // In this case we should probably just log the error and leave the
-                            // task to be cleaned up later.
-                            error!("Error processing task: {}. Error: {}", task_key, e);
+                            } {
+                                error!("Error finishing / scheduling task {}. Krill will stop as there is no good way to recover from this. When Krill starts it will try to reschedule any missing tasks. Error was: {}", task_key, e);
+                                std::process::exit(1);
+                            }
                         }
-                    }
+                        Err(e) => {
+                            error!("Error processing task: {}. Tasks are only allowed to return fatal errors. Krill will stop as there is no good way to recover from this. When Krill starts it will try to reschedule any missing tasks. Error was: {}", task_key, e);
+                            std::process::exit(1);
+                        }
+                    },
                 }
             }
 
@@ -120,7 +121,11 @@ impl Scheduler {
     }
 
     /// Process a single task
-    async fn process_task(&self, task: Task) -> KrillResult<TaskResult> {
+    ///
+    /// May only return fatal errors. Temporary, or suspected temporary, issues
+    /// such as not being able to contact a parent CA should result in an
+    /// Ok(TaskResult::Reschedule) instead.
+    async fn process_task(&self, task: Task) -> Result<TaskResult, FatalError> {
         match task {
             Task::QueueStartTasks => self.queue_start_tasks().await, // return error and stop server on failure
 
@@ -175,7 +180,7 @@ impl Scheduler {
     }
 
     /// Queues missing tasks for background jobs when the server is started
-    async fn queue_start_tasks(&self) -> KrillResult<TaskResult> {
+    async fn queue_start_tasks(&self) -> Result<TaskResult, FatalError> {
         // The task queue is persistent starting with Krill 0.14.0
         //
         // Tasks should not disappear. But.. to make sure that:
@@ -195,14 +200,14 @@ impl Scheduler {
         // to avoid a thundering herd. Note that the operator can always
         // choose to run bulk operations manually if they know that they
         // cannot wait.
-        let ca_list = self.ca_manager.ca_list(&self.system_actor)?;
+        let ca_list = self.ca_manager.ca_list(&self.system_actor).map_err(FatalError)?;
         let cas = ca_list.cas();
         debug!("Adding missing tasks at start up");
 
         // When multi-node set ups with a shared queue are
         // supported then we can no longer safely reschedule
         // ALL running tests. See issue: #1112
-        self.tasks.reschedule_tasks_at_startup()?;
+        self.tasks.reschedule_tasks_at_startup().map_err(FatalError)?;
 
         // If we have many CAs then we need to apply some jitter
         // in the priority of CA to parent and CA to repository
@@ -211,21 +216,23 @@ impl Scheduler {
         let use_jitter = cas.len() >= SCHEDULER_USE_JITTER_CAS_THRESHOLD;
 
         for summary in cas {
-            let ca = self.ca_manager.get_ca(summary.handle()).await?;
+            let ca = self.ca_manager.get_ca(summary.handle()).await.map_err(FatalError)?;
             let ca_handle = ca.handle();
             let ca_version = ca.version();
 
             trace!("Adding tasks for CA {}, using jitter: {}", ca.handle(), use_jitter);
 
             for parent in ca.parents() {
-                self.tasks.schedule_missing(
-                    Task::SyncParent {
-                        ca_handle: ca_handle.clone(),
-                        ca_version,
-                        parent: parent.clone(),
-                    },
-                    self.config.ca_refresh_start_up(use_jitter),
-                )?;
+                self.tasks
+                    .schedule_missing(
+                        Task::SyncParent {
+                            ca_handle: ca_handle.clone(),
+                            ca_version,
+                            parent: parent.clone(),
+                        },
+                        self.config.ca_refresh_start_up(use_jitter),
+                    )
+                    .map_err(FatalError)?;
             }
 
             // Plan a sync with the repo. But only in case we only have a handful
@@ -235,13 +242,15 @@ impl Scheduler {
             // then it will be scheduled accordingly. Furthermore, users can use the
             // 'bulk' function to explicitly force schedule a sync.
             if cas.len() <= SCHEDULER_RESYNC_REPO_CAS_THRESHOLD {
-                self.tasks.schedule_missing(
-                    Task::SyncRepo {
-                        ca_handle: ca_handle.clone(),
-                        ca_version,
-                    },
-                    now(),
-                )?;
+                self.tasks
+                    .schedule_missing(
+                        Task::SyncRepo {
+                            ca_handle: ca_handle.clone(),
+                            ca_version,
+                        },
+                        now(),
+                    )
+                    .map_err(FatalError)?;
             }
 
             // If suspension is enabled then plan a task for it. Since this is
@@ -250,35 +259,49 @@ impl Scheduler {
             // importantly.. by adding this task we ensure that it will keep being
             // re-scheduled when it's done.
             if self.config.suspend_child_after_inactive_seconds().is_some() {
-                self.tasks.schedule_missing(
-                    Task::SuspendChildrenIfNeeded {
-                        ca_handle: ca_handle.clone(),
-                    },
-                    now(),
-                )?;
+                self.tasks
+                    .schedule_missing(
+                        Task::SuspendChildrenIfNeeded {
+                            ca_handle: ca_handle.clone(),
+                        },
+                        now(),
+                    )
+                    .map_err(FatalError)?;
             }
         }
 
-        self.tasks.schedule_missing(Task::RepublishIfNeeded, now())?;
-        self.tasks.schedule_missing(Task::RenewObjectsIfNeeded, now())?;
-        self.tasks.schedule_missing(Task::RefreshAnnouncementsInfo, now())?;
+        self.tasks
+            .schedule_missing(Task::RepublishIfNeeded, now())
+            .map_err(FatalError)?;
+        self.tasks
+            .schedule_missing(Task::RenewObjectsIfNeeded, now())
+            .map_err(FatalError)?;
+        self.tasks
+            .schedule_missing(Task::RefreshAnnouncementsInfo, now())
+            .map_err(FatalError)?;
 
         #[cfg(feature = "multi-user")]
-        self.tasks.schedule_missing(Task::SweepLoginCache, in_minutes(1))?;
+        self.tasks
+            .schedule_missing(Task::SweepLoginCache, in_minutes(1))
+            .map_err(FatalError)?;
 
         // Plan updating snapshots soon after a restart.
         // This also ensures that this task gets triggered in long
         // running tests, such as functional_parent_child.rs.
-        self.tasks.schedule_missing(Task::UpdateSnapshots, now())?;
+        self.tasks
+            .schedule_missing(Task::UpdateSnapshots, now())
+            .map_err(FatalError)?;
 
         if self.config.testbed().is_some() {
-            self.tasks.schedule_missing(Task::RenewTestbedTa, now())?;
+            self.tasks
+                .schedule_missing(Task::RenewTestbedTa, now())
+                .map_err(FatalError)?;
         }
 
         Ok(TaskResult::Done)
     }
 
-    async fn sync_repo(&self, ca: CaHandle, version: u64) -> KrillResult<TaskResult> {
+    async fn sync_repo(&self, ca: CaHandle, version: u64) -> Result<TaskResult, FatalError> {
         info!("Synchronize CA {} with repository", ca);
 
         match self
@@ -306,8 +329,8 @@ impl Scheduler {
     }
 
     /// Try to synchronize a CA with a specific parent, reschedule if this fails
-    async fn sync_parent(&self, ca: CaHandle, ca_version: u64, parent: ParentHandle) -> KrillResult<TaskResult> {
-        if self.ca_manager.has_ca(&ca)? {
+    async fn sync_parent(&self, ca: CaHandle, ca_version: u64, parent: ParentHandle) -> Result<TaskResult, FatalError> {
+        if self.ca_manager.has_ca(&ca).map_err(FatalError)? {
             info!("Synchronize CA '{}' with its parent '{}'", ca, parent);
             match self
                 .ca_manager
@@ -352,7 +375,7 @@ impl Scheduler {
     }
 
     /// Resync the testbed TA signer and proxy
-    async fn renew_testbed_ta(&self) -> KrillResult<TaskResult> {
+    async fn renew_testbed_ta(&self) -> Result<TaskResult, FatalError> {
         if let Err(e) = self.ca_manager.ta_renew_testbed_ta().await {
             error!("There was an issue renewing the testbed TA: {}", e);
         }
@@ -362,7 +385,7 @@ impl Scheduler {
 
     /// Try to synchronise the Trust Anchor Proxy with the *local* Signer - if it exists
     /// in this server.
-    async fn sync_ta_proxy_signer_if_possible(&self) -> KrillResult<TaskResult> {
+    async fn sync_ta_proxy_signer_if_possible(&self) -> Result<TaskResult, FatalError> {
         debug!("Synchronise Trust Anchor Proxy with Signer - if Signer is local.");
         if let Err(e) = self.ca_manager.sync_ta_proxy_signer_if_possible().await {
             error!("There was an issue synchronising the TA Proxy and Signer: {}", e);
@@ -371,8 +394,8 @@ impl Scheduler {
     }
 
     /// Try to suspend children for a CA
-    async fn suspend_children_if_needed(&self, ca_handle: CaHandle) -> KrillResult<TaskResult> {
-        if self.ca_manager.has_ca(&ca_handle)? {
+    async fn suspend_children_if_needed(&self, ca_handle: CaHandle) -> Result<TaskResult, FatalError> {
+        if self.ca_manager.has_ca(&ca_handle).map_err(FatalError)? {
             debug!("Verify if CA '{}' has children that need to be suspended", ca_handle);
             self.ca_manager
                 .ca_suspend_inactive_children(&ca_handle, self.started, &self.system_actor)
@@ -389,7 +412,7 @@ impl Scheduler {
     }
 
     /// Let CAs that need it republish their CRL/MFT
-    async fn republish_if_needed(&self) -> KrillResult<TaskResult> {
+    async fn republish_if_needed(&self) -> Result<TaskResult, FatalError> {
         // Note that CRL/MFT re-issuance is handled by the `CaObjects` companion
         // struct, rather than the event-sourced `CertAuth`. Meaning... that we
         // do not get to see an event in case there is an actual update and
@@ -397,13 +420,15 @@ impl Scheduler {
         //
         // Instead we get back a list of CAs that had changes, and we need to
         // schedule a synchronisation for each of them here.
-        let cas = self.ca_manager.republish_all(false).await?; // can only fail on critical errors
+        let cas = self.ca_manager.republish_all(false).await.map_err(FatalError)?;
 
         for ca_handle in cas {
             info!("Re-issued MFT and CRL for CA: {}", ca_handle);
 
             let ca_version = 0; // we use 0 because we don't need to wait for an updated CertAuth
-            self.tasks.schedule(Task::SyncRepo { ca_handle, ca_version }, now())?;
+            self.tasks
+                .schedule(Task::SyncRepo { ca_handle, ca_version }, now())
+                .map_err(FatalError)?;
         }
 
         // check again in a short while.. no jitter needed as this is a cheap operation
@@ -416,7 +441,7 @@ impl Scheduler {
     }
 
     /// Update announcement info
-    async fn announcements_refresh(&self) -> KrillResult<TaskResult> {
+    async fn announcements_refresh(&self) -> Result<TaskResult, FatalError> {
         if let Err(e) = self.bgp_analyser.update().await {
             error!("Failed to update BGP announcements: {}", e)
         }
@@ -427,8 +452,11 @@ impl Scheduler {
     }
 
     /// Let CAs that need it re-issue signed objects
-    async fn renew_objects_if_needed(&self) -> KrillResult<TaskResult> {
-        self.ca_manager.renew_objects_all(&self.system_actor).await?; // only fails on fatal errors
+    async fn renew_objects_if_needed(&self) -> Result<TaskResult, FatalError> {
+        self.ca_manager
+            .renew_objects_all(&self.system_actor)
+            .await
+            .map_err(FatalError)?;
 
         // check again in a short while.. note that this is usually a cheap no-op
         Ok(TaskResult::FollowUp(
@@ -438,7 +466,7 @@ impl Scheduler {
     }
 
     #[cfg(feature = "multi-user")]
-    fn sweep_login_cache(&self) -> KrillResult<TaskResult> {
+    fn sweep_login_cache(&self) -> Result<TaskResult, FatalError> {
         if let Err(e) = self.login_session_cache.sweep() {
             error!("Background sweep of session decryption cache failed: {}", e);
         }
@@ -447,7 +475,7 @@ impl Scheduler {
     }
 
     // Call update_snapshots on all AggregateStores and WalStores
-    fn update_snapshots(&self) -> KrillResult<TaskResult> {
+    fn update_snapshots(&self) -> Result<TaskResult, FatalError> {
         fn update_aggregate_store_snapshots<A: Aggregate>(storage_uri: &Url, namespace: &Namespace) {
             match AggregateStore::<A>::create(storage_uri, namespace, false) {
                 Err(e) => {
@@ -506,7 +534,7 @@ impl Scheduler {
         Ok(TaskResult::FollowUp(Task::UpdateSnapshots, in_hours(24)))
     }
 
-    fn update_rrdp_if_needed(&self) -> KrillResult<TaskResult> {
+    fn update_rrdp_if_needed(&self) -> Result<TaskResult, FatalError> {
         match self.repo_manager.update_rrdp_if_needed() {
             Err(e) => {
                 error!("Could not update RRDP deltas! Error: {}", e);
@@ -533,7 +561,7 @@ impl Scheduler {
         parent: ParentHandle,
         rcn: ResourceClassName,
         revocation_requests: Vec<RevocationRequest>,
-    ) -> KrillResult<TaskResult> {
+    ) -> Result<TaskResult, FatalError> {
         info!(
             "Trigger send revoke requests for removed RC for '{}' under '{}'",
             ca_handle, parent
@@ -541,8 +569,8 @@ impl Scheduler {
 
         let requests = HashMap::from([(rcn, revocation_requests)]);
 
-        if self.ca_manager.has_ca(&ca_handle)? {
-            let ca = self.ca_manager.get_ca(&ca_handle).await?;
+        if self.ca_manager.has_ca(&ca_handle).map_err(FatalError)? {
+            let ca = self.ca_manager.get_ca(&ca_handle).await.map_err(FatalError)?;
             if ca.version() < ca_version {
                 // premature, we need to wait for the CA to be committed.
                 Ok(TaskResult::Reschedule(in_seconds(1)))
@@ -570,14 +598,14 @@ impl Scheduler {
         ca_version: u64,
         rcn: ResourceClassName,
         revocation_request: RevocationRequest,
-    ) -> KrillResult<TaskResult> {
-        if self.ca_manager.has_ca(&ca_handle)? {
+    ) -> Result<TaskResult, FatalError> {
+        if self.ca_manager.has_ca(&ca_handle).map_err(FatalError)? {
             info!(
                 "Trigger sending revocation requests for unexpected key with id '{}' in RC '{}'",
                 revocation_request.key(),
                 rcn
             );
-            let ca = self.ca_manager.get_ca(&ca_handle).await?;
+            let ca = self.ca_manager.get_ca(&ca_handle).await.map_err(FatalError)?;
 
             if ca.version() < ca_version {
                 debug!("reschedule premature task");
