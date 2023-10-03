@@ -216,7 +216,7 @@ impl TaskQueue {
                 trace!(
                     "fnd task: {} with priority: {}",
                     pending.name,
-                    Priority(pending.timestamp as i64)
+                    Priority::from_timestamp_ms(pending.timestamp_millis)
                 );
                 Some(pending)
             }
@@ -227,14 +227,16 @@ impl TaskQueue {
     /// was already present, then it will get the highest of the two
     /// priorities.
     ///
-    /// Many tasks are planned with a high priority - e.g. if they are
-    /// triggered through CA events. Other tasks may be planned for the
-    /// future (e.g. sync with parent tomorrow). The latter can be moved
-    /// forward when circumstances dictate.
-    ///
-    /// Recurring tasks will typically be re-added by the Scheduler when
-    /// needed (and can then be moved forward if needed).
+    /// This will NOT finish any possible running task by the same
+    /// name.
     pub fn schedule(&self, task: Task, priority: Priority) -> KrillResult<()> {
+        self.schedule_task(task, ScheduleMode::ReplaceExistingSoonest, priority)
+    }
+
+    /// Schedules a task for the given priority. If the equivalent task
+    /// was already present, then it will get the highest of the two
+    /// priorities.
+    pub fn schedule_and_finish_existing(&self, task: Task, priority: Priority) -> KrillResult<()> {
         self.schedule_task(task, ScheduleMode::FinishOrReplaceExistingSoonest, priority)
     }
 
@@ -244,24 +246,26 @@ impl TaskQueue {
 
     fn schedule_task(&self, task: Task, mode: ScheduleMode, priority: Priority) -> KrillResult<()> {
         let task_name = task.name()?;
-        trace!("add task: {} with priority: {}", task_name, priority.to_string());
+        debug!("add task: {} with priority: {}", task_name, priority.to_string());
         let json = serde_json::to_value(&task)
             .map_err(|e| Error::Custom(format!("could not serialize task {}. error: {}", task_name, e)))?;
 
         self.q
-            .schedule_task(task_name, json, Some(priority.into()), mode)
+            .schedule_task(task_name, json, Some(priority.to_millis()), mode)
             .map_err(Error::from)
     }
 
     /// Finish a running task, without rescheduling it.
     pub fn finish(&self, task: &kvx::Key) -> KrillResult<()> {
+        debug!("Finish task: {}", task);
         self.q.finish_running_task(task).map_err(Error::from)
     }
 
     /// Reschedule a running task, without finishing it.
     pub fn reschedule(&self, task: &kvx::Key, priority: Priority) -> KrillResult<()> {
+        debug!("Reschedule task: {} to: {}", task, priority);
         self.q
-            .reschedule_running_task(task, Some(priority.into()))
+            .reschedule_running_task(task, Some(priority.to_millis()))
             .map_err(Error::from)
     }
 
@@ -442,7 +446,7 @@ impl eventsourcing::PostSaveEventListener<CertAuth> for TaskQueue {
             match event {
                 CertAuthEvent::ChildUpdatedResources { child, .. } | CertAuthEvent::ChildKeyRevoked { child, .. } => {
                     debug!("Schedule a sync from the child to this CA as their parent. This will be a no-op for remote children.");
-                    if let Err(e) = self.schedule(
+                    if let Err(e) = self.schedule_and_finish_existing(
                         Task::SyncParent {
                             ca_handle: child.convert(),
                             ca_version: 0, // no need to wait for updated child
@@ -541,12 +545,21 @@ impl eventsourcing::PostSaveEventListener<TrustAnchorProxy> for TaskQueue {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Priority(i64);
 
-pub fn now() -> Priority {
-    Time::now().into()
+impl Priority {
+    /// Convenience function, but note that we don't
+    /// have ms granularity here, so this is rounded
+    /// down to seconds.
+    pub fn from_timestamp_ms(millis: u128) -> Self {
+        Priority((millis / 1000) as i64)
+    }
+
+    pub fn to_millis(&self) -> u128 {
+        (self.0 * 1000) as u128
+    }
 }
 
-pub fn in_millis(millis: i64) -> Priority {
-    (Time::now() + chrono::Duration::milliseconds(millis)).into()
+pub fn now() -> Priority {
+    Time::now().into()
 }
 
 pub fn in_seconds(secs: i64) -> Priority {
@@ -602,13 +615,5 @@ impl From<Timestamp> for Priority {
 impl From<Time> for Priority {
     fn from(time: Time) -> Self {
         Priority(time.timestamp())
-    }
-}
-
-impl From<Priority> for u64 {
-    fn from(p: Priority) -> Self {
-        // even though we use an i64 for the timestamp,
-        // we know that this can never be negative
-        p.0 as u64
     }
 }
