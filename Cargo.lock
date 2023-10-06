@@ -1130,7 +1130,7 @@ dependencies = [
 [[package]]
 name = "kvx"
 version = "0.9.0"
-source = "git+https://github.com/nlnetlabs/kvx?branch=lockfiles-outside-scope#3bffd945ae80182097fade9c0cdeb3b8dca5e9a1"
+source = "git+https://github.com/nlnetlabs/kvx?branch=lockfiles-outside-scope#90a0d0fbdc10fec4a94953cf91cd666c73bb484e"
 dependencies = [
  "kvx_macros",
  "kvx_types",
@@ -1148,7 +1148,7 @@ dependencies = [
 [[package]]
 name = "kvx_macros"
 version = "0.9.0"
-source = "git+https://github.com/nlnetlabs/kvx?branch=lockfiles-outside-scope#3bffd945ae80182097fade9c0cdeb3b8dca5e9a1"
+source = "git+https://github.com/nlnetlabs/kvx?branch=lockfiles-outside-scope#90a0d0fbdc10fec4a94953cf91cd666c73bb484e"
 dependencies = [
  "kvx_types",
  "proc-macro-error",
@@ -1160,7 +1160,7 @@ dependencies = [
 [[package]]
 name = "kvx_types"
 version = "0.9.0"
-source = "git+https://github.com/nlnetlabs/kvx?branch=lockfiles-outside-scope#3bffd945ae80182097fade9c0cdeb3b8dca5e9a1"
+source = "git+https://github.com/nlnetlabs/kvx?branch=lockfiles-outside-scope#90a0d0fbdc10fec4a94953cf91cd666c73bb484e"
 dependencies = [
  "postgres",
  "postgres-types",
