@@ -206,11 +206,6 @@ impl Scheduler {
         let cas = ca_list.cas();
         debug!("Adding missing tasks at start up");
 
-        // When multi-node set ups with a shared queue are
-        // supported then we can no longer safely reschedule
-        // ALL running tests. See issue: #1112
-        self.tasks.reschedule_tasks_at_startup().map_err(FatalError)?;
-
         // If we have many CAs then we need to apply some jitter
         // in the priority of CA to parent and CA to repository
         // syncs to avoid generating a thundering herd.
