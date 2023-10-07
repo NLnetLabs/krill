@@ -137,7 +137,7 @@ impl KrillServer {
         };
         let system_actor = authorizer.actor_from_def(ACTOR_DEF_KRILL);
 
-        // Used to have a shared queue for the ca_manager, repo_manager and the background job scheduler.
+        // Task queue Arc is shared between ca_manager, repo_manager and the scheduler.
         let mq = Arc::new(TaskQueue::new(&config.storage_uri)?);
 
         // for now, support that existing embedded repositories are still supported.
@@ -152,6 +152,11 @@ impl KrillServer {
             &config.bgp_risdumps_v4_uri,
             &config.bgp_risdumps_v6_uri,
         ));
+
+        // When multi-node set ups with a shared queue are
+        // supported then we can no longer safely reschedule
+        // ALL running tests. See issue: #1112
+        mq.reschedule_tasks_at_startup()?;
 
         mq.schedule(Task::QueueStartTasks, now())?;
 
