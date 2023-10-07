@@ -1129,8 +1129,9 @@ dependencies = [
 
 [[package]]
 name = "kvx"
-version = "0.9.0"
-source = "git+https://github.com/nlnetlabs/kvx?branch=lockfiles-outside-scope#90a0d0fbdc10fec4a94953cf91cd666c73bb484e"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "81ac98d13b1cc81be8b77286558858bb31f1d9bc643ec77142c1da4f47626a63"
 dependencies = [
  "kvx_macros",
  "kvx_types",
@@ -1147,8 +1148,9 @@ dependencies = [
 
 [[package]]
 name = "kvx_macros"
-version = "0.9.0"
-source = "git+https://github.com/nlnetlabs/kvx?branch=lockfiles-outside-scope#90a0d0fbdc10fec4a94953cf91cd666c73bb484e"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7c4c60bb89a1b1420cddf8e5d81f35f7f38a64d23a96cac2c395488ef219c9ff"
 dependencies = [
  "kvx_types",
  "proc-macro-error",
@@ -1159,8 +1161,9 @@ dependencies = [
 
 [[package]]
 name = "kvx_types"
-version = "0.9.0"
-source = "git+https://github.com/nlnetlabs/kvx?branch=lockfiles-outside-scope#90a0d0fbdc10fec4a94953cf91cd666c73bb484e"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "35cc4a6725d21de7d030b6cfccdd2e3b75d1ac351cbbe5b55938ae4bf71f0434"
 dependencies = [
  "postgres",
  "postgres-types",
