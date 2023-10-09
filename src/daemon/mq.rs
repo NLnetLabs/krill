@@ -590,7 +590,7 @@ impl Ord for Priority {
 
 impl PartialOrd for Priority {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        other.0.partial_cmp(&self.0) // is reverse cmp of inner 0
+        Some(self.cmp(other))
     }
 }
 

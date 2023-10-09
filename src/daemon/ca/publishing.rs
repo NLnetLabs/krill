@@ -901,7 +901,7 @@ impl KeyObjectSet {
         let crl_uri = self.signing_cert.crl_uri();
         let mft_uri = self.signing_cert.mft_uri();
 
-        let elements = map.entry(repo.clone()).or_insert_with(Vec::new);
+        let elements = map.entry(repo.clone()).or_default();
 
         elements.push(self.manifest.publish_element(mft_uri));
         elements.push(self.crl.publish_element(crl_uri));
