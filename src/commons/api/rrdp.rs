@@ -646,9 +646,7 @@ impl SnapshotData {
     ///
     /// This is a no-op in case the publisher already exists.
     pub fn apply_publisher_added(&mut self, publisher: PublisherHandle) {
-        self.publishers_current_objects
-            .entry(publisher)
-            .or_insert(CurrentObjects::default());
+        self.publishers_current_objects.entry(publisher).or_default();
     }
 
     /// Applies the removal of a publisher.
