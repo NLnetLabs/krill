@@ -7,12 +7,14 @@ use super::*;
 
 use std::{collections::HashMap, convert::TryFrom, fmt, sync::Arc};
 
+use chrono::Duration;
 use rpki::{
     ca::{
         idexchange::{self, ChildHandle, MyHandle},
         provisioning::{ResourceClassEntitlements, SigningCert},
     },
     crypto::KeyIdentifier,
+    repository::x509::Time,
 };
 
 use crate::{
@@ -24,10 +26,7 @@ use crate::{
         eventsourcing::{self, Event, InitCommandDetails, InitEvent, WithStorableDetails},
         KrillResult,
     },
-    daemon::{
-        ca::{Rfc8183Id, UsedKeyState},
-        config::IssuanceTimingConfig,
-    },
+    daemon::ca::{Rfc8183Id, UsedKeyState},
 };
 
 //------------ TrustAnchorProxy --------------------------------------------
@@ -743,7 +742,7 @@ impl TrustAnchorProxy {
     pub fn entitlements(
         &self,
         child_handle: &ChildHandle,
-        issuance_timing: &IssuanceTimingConfig,
+        ta_timing: &TaTimingConfig,
     ) -> KrillResult<ResourceClassEntitlements> {
         let signer = self.signer.as_ref().ok_or(Error::TaNotInitialized)?;
         let child = self.get_child_details(child_handle)?;
@@ -758,8 +757,8 @@ impl TrustAnchorProxy {
 
         let mut issued_certs = vec![];
 
-        let mut not_after = issuance_timing.new_child_cert_not_after();
-        let threshold = issuance_timing.new_child_cert_issuance_threshold();
+        let mut not_after = Time::now() + Duration::weeks(ta_timing.issued_certificate_validity_weeks);
+        let threshold = Time::now() + Duration::weeks(ta_timing.issued_certificate_reissue_weeks_before);
         for ki in child.used_keys.keys() {
             if let Some(issued) = signer.objects.get_issued(ki) {
                 issued_certs.push(issued.to_rfc6492_issued_cert().map_err(|e| {
