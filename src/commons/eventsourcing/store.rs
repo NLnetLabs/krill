@@ -199,8 +199,9 @@ where
 
     /// Returns true if an instance exists for the id
     pub fn has(&self, id: &MyHandle) -> Result<bool, AggregateStoreError> {
+        let init_command_key = Self::key_for_command(id, 0);
         self.kv
-            .has_scope(&Scope::from_segment(Segment::parse_lossy(id.as_str()))) // id should always be a valid Segment
+            .has(&init_command_key)
             .map_err(AggregateStoreError::KeyStoreError)
     }
 
