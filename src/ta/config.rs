@@ -17,6 +17,7 @@ use crate::{
 // TA timing defaults
 const DFLT_TA_CERTIFICATE_VALIDITY_YEARS: i32 = 100;
 const DFLT_TA_ISSUED_CERTIFICATE_VALIDITY_WEEKS: i64 = 52;
+const DFLT_TA_ISSUED_CERTIFICATE_REISSUE_WEEKS_BEFORE: i64 = 26;
 const DFLT_TA_MFT_NEXT_UPDATE_WEEKS: i64 = 12;
 const DFLT_TA_SIGNED_MESSAGE_VALIDITY_DAYS: i64 = 14;
 
@@ -30,6 +31,9 @@ pub struct TaTimingConfig {
     #[serde(default = "TaTimingConfig::dflt_ta_issued_certificate_validity_weeks")]
     pub issued_certificate_validity_weeks: i64,
 
+    #[serde(default = "TaTimingConfig::dflt_ta_issued_certificate_reissue_weeks_before")]
+    pub issued_certificate_reissue_weeks_before: i64,
+
     #[serde(default = "TaTimingConfig::dflt_ta_mft_next_update_weeks")]
     pub mft_next_update_weeks: i64,
 
@@ -42,6 +46,7 @@ impl Default for TaTimingConfig {
         Self {
             certificate_validity_years: DFLT_TA_CERTIFICATE_VALIDITY_YEARS,
             issued_certificate_validity_weeks: DFLT_TA_ISSUED_CERTIFICATE_VALIDITY_WEEKS,
+            issued_certificate_reissue_weeks_before: DFLT_TA_ISSUED_CERTIFICATE_REISSUE_WEEKS_BEFORE,
             mft_next_update_weeks: DFLT_TA_MFT_NEXT_UPDATE_WEEKS,
             signed_message_validity_days: DFLT_TA_SIGNED_MESSAGE_VALIDITY_DAYS,
         }
@@ -55,6 +60,10 @@ impl TaTimingConfig {
 
     fn dflt_ta_issued_certificate_validity_weeks() -> i64 {
         DFLT_TA_ISSUED_CERTIFICATE_VALIDITY_WEEKS
+    }
+
+    fn dflt_ta_issued_certificate_reissue_weeks_before() -> i64 {
+        DFLT_TA_ISSUED_CERTIFICATE_REISSUE_WEEKS_BEFORE
     }
 
     fn dflt_ta_mft_next_update_weeks() -> i64 {

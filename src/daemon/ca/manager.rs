@@ -878,7 +878,7 @@ impl CaManager {
         } else {
             self.get_trust_anchor_proxy()
                 .await?
-                .entitlements(child, &self.config.issuance_timing)
+                .entitlements(child, &self.config.ta_timing)
                 .map(|entitlements| ResourceClassListResponse::new(vec![entitlements]))
         }?;
 
