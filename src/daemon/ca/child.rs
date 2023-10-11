@@ -41,6 +41,8 @@ pub struct ChildDetails {
     id_cert: IdCertInfo,
     resources: ResourceSet,
     used_keys: HashMap<KeyIdentifier, UsedKeyState>,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    rcn_map: HashMap<ResourceClassName, ResourceClassName>,
 }
 
 impl ChildDetails {
@@ -50,6 +52,7 @@ impl ChildDetails {
             id_cert,
             resources,
             used_keys: HashMap::new(),
+            rcn_map: HashMap::new(),
         }
     }
 
@@ -79,6 +82,38 @@ impl ChildDetails {
 
     pub fn set_resources(&mut self, resources: ResourceSet) {
         self.resources = resources;
+    }
+
+    pub fn add_mapping(&mut self, name_in_parent: ResourceClassName, name_for_child: ResourceClassName) {
+        self.rcn_map.insert(name_in_parent, name_for_child);
+    }
+
+    /// Resolve the resource class name used by the child, to the
+    /// internal name used by its parent.
+    ///
+    /// Note that the parent and child usually use the same name, but
+    /// we need this mapping in case a delegated child CA was exported
+    /// from somewhere and then imported into Krill. In such cases the
+    /// resource class names that were used for the child may not match
+    /// the internal resource class names used. See issue: 1133
+    pub(super) fn name_for_parent_rcn(&self, name_in_parent: &ResourceClassName) -> ResourceClassName {
+        self.rcn_map.get(name_in_parent).unwrap_or(name_in_parent).clone()
+    }
+
+    /// Resolve the resource class name used by the parent, to the
+    /// name used by the child in request and responses.
+    ///
+    /// Note that the parent and child usually use the same name, but
+    /// we need this mapping in case a delegated child CA was exported
+    /// from somewhere and then imported into Krill. In such cases the
+    /// resource class names that were used for the child may not match
+    /// the internal resource class names used. See issue: 1133
+    pub(super) fn parent_name_for_rcn(&self, name_in_child: &ResourceClassName) -> ResourceClassName {
+        self.rcn_map
+            .iter()
+            .find(|(_k, v)| *v == name_in_child)
+            .map(|(k, _v)| k.clone())
+            .unwrap_or_else(|| name_in_child.clone())
     }
 
     pub fn issued(&self, rcn: &ResourceClassName) -> Vec<KeyIdentifier> {

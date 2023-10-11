@@ -695,7 +695,7 @@ impl CaManager {
         req: UpdateChildRequest,
         actor: &Actor,
     ) -> KrillResult<()> {
-        let (id_opt, resources_opt, suspend_opt) = req.unpack();
+        let (id_opt, resources_opt, suspend_opt, resource_class_name_mapping_opt) = req.unpack();
 
         if let Some(id) = id_opt {
             self.send_ca_command(CertAuthCommandDetails::child_update_id(
@@ -717,12 +717,18 @@ impl CaManager {
         }
         if let Some(suspend) = suspend_opt {
             if suspend {
-                self.send_ca_command(CertAuthCommandDetails::child_suspend_inactive(ca, child, actor))
+                self.send_ca_command(CertAuthCommandDetails::child_suspend_inactive(ca, child.clone(), actor))
                     .await?;
             } else {
-                self.send_ca_command(CertAuthCommandDetails::child_unsuspend(ca, child, actor))
+                self.send_ca_command(CertAuthCommandDetails::child_unsuspend(ca, child.clone(), actor))
                     .await?;
             }
+        }
+        if let Some(mapping) = resource_class_name_mapping_opt {
+            self.send_ca_command(CertAuthCommandDetails::child_update_resource_class_name_mapping(
+                ca, child, mapping, actor,
+            ))
+            .await?;
         }
         Ok(())
     }
@@ -880,20 +886,21 @@ impl CaManager {
     async fn issue(
         &self,
         ca_handle: &CaHandle,
-        child: ChildHandle,
+        child_handle: ChildHandle,
         issue_req: IssuanceRequest,
         actor: &Actor,
     ) -> KrillResult<provisioning::Message> {
         if ca_handle.as_str() == TA_NAME {
             let request = ta::ProvisioningRequest::Issuance(issue_req);
-            self.ta_slow_rfc6492_request(ca_handle, child, request, actor).await
+            self.ta_slow_rfc6492_request(ca_handle, child_handle, request, actor)
+                .await
         } else {
-            let class_name = issue_req.class_name();
+            let child_rcn = issue_req.class_name();
             let pub_key = issue_req.csr().public_key();
 
             let cmd = CertAuthCommandDetails::child_certify(
                 ca_handle,
-                child.clone(),
+                child_handle.clone(),
                 issue_req.clone(),
                 self.config.clone(),
                 self.signer.clone(),
@@ -903,11 +910,14 @@ impl CaManager {
             let ca = self.send_ca_command(cmd).await?;
 
             // The updated CA will now include the newly issued certificate.
-            let response = ca.issuance_response(&child, class_name, pub_key, &self.config.issuance_timing)?;
+            let child = ca.get_child(&child_handle)?;
+            let my_rcn = child.parent_name_for_rcn(child_rcn);
+
+            let response = ca.issuance_response(&child_handle, &my_rcn, pub_key, &self.config.issuance_timing)?;
 
             Ok(provisioning::Message::issue_response(
                 ca_handle.convert(),
-                child.into_converted(),
+                child_handle.into_converted(),
                 response,
             ))
         }
