@@ -247,18 +247,14 @@ impl CaObjectsStore {
     }
 
     // Re-issue MFT and CRL for all CAs *if needed*, returns all CAs which were updated.
-    pub fn reissue_all(&self, force: bool) -> KrillResult<Vec<CaHandle>> {
-        let mut res = vec![];
-        for ca in self.cas()? {
-            debug!("Re-issue for CA {} using force: {}", ca, force);
-            self.with_ca_objects(&ca, |objects| {
-                if objects.re_issue(force, &self.issuance_timing, &self.signer)? {
-                    res.push(ca.clone())
-                }
-                Ok(())
-            })?;
-        }
-        Ok(res)
+    pub fn reissue_if_needed(&self, force: bool, ca_handle: &CaHandle) -> KrillResult<bool> {
+        debug!("Re-issue for CA {} using force: {}", ca_handle, force);
+        let mut re_issued = false;
+        self.with_ca_objects(ca_handle, |objects| {
+            re_issued = objects.re_issue(force, &self.issuance_timing, &self.signer)?;
+            Ok(())
+        })?;
+        Ok(re_issued)
     }
 }
 

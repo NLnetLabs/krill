@@ -222,7 +222,22 @@ impl CaManager {
     /// Republish the embedded TA and CAs if needed, i.e. if they are close
     /// to their next update time.
     pub async fn republish_all(&self, force: bool) -> KrillResult<Vec<CaHandle>> {
-        self.ca_objects_store.reissue_all(force)
+        let mut res = vec![];
+        for ca in self.ca_store.list()? {
+            match self.ca_objects_store.reissue_if_needed(force, &ca) {
+                Err(e) => {
+                    error!("Could not reissue manifest and crl for {ca}. Error: {e}");
+                }
+                Ok(false) => {
+                    trace!("No re-issuance of manifest and crl needed for {ca}");
+                }
+                Ok(true) => {
+                    debug!("Re-issued manifest(s) and CRL(s) for {ca}");
+                    res.push(ca.clone())
+                }
+            }
+        }
+        Ok(res)
     }
 }
 
