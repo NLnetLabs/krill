@@ -6,9 +6,9 @@ use serde::{Deserialize, Deserializer};
 
 use rpki::{
     ca::{
+        idcert::IdCert,
         idexchange::{CaHandle, ChildHandle, ParentHandle},
         provisioning::ResourceClassName,
-        publication::Base64,
     },
     repository::resources::ResourceSet,
     uri,
@@ -199,7 +199,7 @@ pub type ExportChild = ImportChild;
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ImportChild {
     pub name: ChildHandle,
-    pub id_cert: Base64,
+    pub id_cert: IdCert,
     pub resources: ResourceSet,
     pub issued_cert: ImportChildCertificate,
 }
@@ -217,18 +217,23 @@ pub struct ImportChildCertificate {
 impl fmt::Display for ImportChild {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         writeln!(f, "Name:         {}", self.name)?;
-        writeln!(f, "IdCert:       {}", self.id_cert)?;
+        writeln!(
+            f,
+            "Id Key:       {}",
+            self.id_cert.public_key().key_identifier().to_string()
+        )?;
         writeln!(f, "Resources:    {}", self.resources)?;
         if let Some(class_name) = &self.issued_cert.class_name {
             writeln!(f, "Classname:    {}", class_name)?;
         }
         let (ca_repository, rpki_manifest, rpki_notify, key) = self.issued_cert.csr.clone().unpack();
 
-        writeln!(f, "Key Id:       {}", key.key_identifier())?;
-        writeln!(f, "CA repo:      {}", ca_repository)?;
-        writeln!(f, "CA mft:       {}", rpki_manifest)?;
+        writeln!(f, "Issued Certificate:")?;
+        writeln!(f, "  Key Id:       {}", key.key_identifier())?;
+        writeln!(f, "  CA repo:      {}", ca_repository)?;
+        writeln!(f, "  CA mft:       {}", rpki_manifest)?;
         if let Some(rrdp) = rpki_notify {
-            writeln!(f, "RRDP:         {}", rrdp)?;
+            writeln!(f, "  RRDP:         {}", rrdp)?;
         }
 
         Ok(())

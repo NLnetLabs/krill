@@ -17,9 +17,9 @@ use crate::{
     commons::{
         actor::Actor,
         api::{
-            AspaCustomer, AspaDefinitionUpdates, AspaProvidersUpdate, BgpSecDefinitionUpdates, CertAuthStorableCommand,
-            IdCertInfo, ParentCaContact, ReceivedCert, RepositoryContact, ResourceClassNameMapping,
-            RoaConfigurationUpdates, RtaName, StorableRcEntitlement,
+            import::ImportChild, AspaCustomer, AspaDefinitionUpdates, AspaProvidersUpdate, BgpSecDefinitionUpdates,
+            CertAuthStorableCommand, IdCertInfo, ParentCaContact, ReceivedCert, RepositoryContact,
+            ResourceClassNameMapping, RoaConfigurationUpdates, RtaName, StorableRcEntitlement,
         },
         crypto::KrillSigner,
         eventsourcing::{self, InitCommandDetails, SentCommand, SentInitCommand, WithStorableDetails},
@@ -82,6 +82,9 @@ pub enum CertAuthCommandDetails {
 
     // Add a new child under this parent CA
     ChildAdd(ChildHandle, IdCertInfo, ResourceSet),
+
+    // Import a child under this parent CA
+    ChildImport(ImportChild, Arc<Config>, Arc<KrillSigner>),
 
     // Update the resource entitlements for an existing child.
     ChildUpdateResources(ChildHandle, ResourceSet),
@@ -262,6 +265,11 @@ impl From<CertAuthCommandDetails> for CertAuthStorableCommand {
                 ski: id_cert.public_key().key_identifier().to_string(),
                 resources,
             },
+            CertAuthCommandDetails::ChildImport(import_child, _, _) => CertAuthStorableCommand::ChildImport {
+                child: import_child.name,
+                ski: import_child.id_cert.public_key().key_identifier().to_string(),
+                resources: import_child.resources,
+            },
             CertAuthCommandDetails::ChildUpdateResources(child, resources) => {
                 CertAuthStorableCommand::ChildUpdateResources { child, resources }
             }
@@ -400,6 +408,21 @@ impl CertAuthCommandDetails {
             handle,
             None,
             CertAuthCommandDetails::ChildAdd(child_handle, id_cert, resources),
+            actor,
+        )
+    }
+
+    pub fn child_import(
+        handle: &CaHandle,
+        child: ImportChild,
+        config: Arc<Config>,
+        signer: Arc<KrillSigner>,
+        actor: &Actor,
+    ) -> CertAuthCommand {
+        eventsourcing::SentCommand::new(
+            handle,
+            None,
+            CertAuthCommandDetails::ChildImport(child, config, signer),
             actor,
         )
     }

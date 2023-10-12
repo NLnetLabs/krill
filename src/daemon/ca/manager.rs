@@ -24,8 +24,10 @@ use crate::{
     commons::{
         actor::Actor,
         api::{
-            import::ExportChild, rrdp::PublishElement, BgpSecCsrInfoList, BgpSecDefinitionUpdates, IdCertInfo,
-            ParentServerInfo, PublicationServerInfo, RoaConfigurationUpdates, Timestamp,
+            import::{ExportChild, ImportChild},
+            rrdp::PublishElement,
+            BgpSecCsrInfoList, BgpSecDefinitionUpdates, IdCertInfo, ParentServerInfo, PublicationServerInfo,
+            RoaConfigurationUpdates, Timestamp,
         },
         api::{
             AddChildRequest, AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates, AspaProvidersUpdate,
@@ -643,7 +645,25 @@ impl CaManager {
     /// Primarily meant for testing that the child import function works.
     pub async fn ca_child_export(&self, ca: &CaHandle, child_handle: &ChildHandle) -> KrillResult<ExportChild> {
         trace!("Exporting CA: {} under parent: {}", child_handle, ca);
-        self.get_ca(ca).await?.export_child(child_handle)
+        self.get_ca(ca).await?.child_export(child_handle)
+    }
+
+    /// Import a child under the given CA. Will fail if:
+    /// - the ca does not exist
+    /// - the ca has less than, or more than one resource class
+    /// - the ca does not hold the resources for the child
+    /// - the child already exists
+    pub async fn ca_child_import(&self, ca: &CaHandle, import_child: ImportChild, actor: &Actor) -> KrillResult<()> {
+        trace!("Importing CA: {} under parent: {}", import_child.name, ca);
+        self.send_ca_command(CertAuthCommandDetails::child_import(
+            ca,
+            import_child,
+            self.config.clone(),
+            self.signer.clone(),
+            actor,
+        ))
+        .await?;
+        Ok(())
     }
 
     /// Show a contact for a child.

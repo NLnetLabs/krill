@@ -286,6 +286,11 @@ impl KrillClient {
                 let response = get_json(&self.server, &self.token, &uri).await?;
                 Ok(ApiResponse::ChildExported(response))
             }
+            CaCommand::ChildImport(handle, child) => {
+                let uri = format!("api/v1/cas/{}/children/{}/import", handle, child.name);
+                post_json(&self.server, &self.token, &uri, child).await?;
+                Ok(ApiResponse::Empty)
+            }
             CaCommand::ChildConnections(handle) => {
                 let uri = format!("api/v1/cas/{}/stats/children/connections", handle);
                 let stats: ChildrenConnectionStats = get_json(&self.server, &self.token, &uri).await?;

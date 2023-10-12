@@ -7,7 +7,10 @@ use krill::{
         options::{CaCommand, Command},
         report::ApiResponse,
     },
-    commons::api::{import::ExportChild, ParentCaReq, ResourceClassNameMapping, UpdateChildRequest},
+    commons::api::{
+        import::{ExportChild, ImportChild},
+        ParentCaReq, ResourceClassNameMapping, UpdateChildRequest,
+    },
     test::*,
 };
 use rpki::{
@@ -36,6 +39,7 @@ async fn functional_delegated_ca_import() {
     // Export the child in testbed one
     // Import the child in testbed two
     // Update the child to use testbed two
+    // Update the child resources
 
     let testbed = ca_handle("testbed");
     let child = ca_handle("child");
@@ -46,14 +50,17 @@ async fn functional_delegated_ca_import() {
     let testbed_1_clean = start_testbed(3000).await;
 
     // Start a second testbed
-    let testbed_2_clean = start_testbed(3001).await;
+    let testbed_2_clean = start_testbed(3002).await;
 
     // Add child in testbed one
     set_up_ca_with_repo(&child).await;
     set_up_ca_under_parent(&child, &testbed, &child_res, child_rcn).await;
 
     // Export the child
-    let _exported_child = export_child_main_krill(&testbed, &child).await;
+    let exported_child = export_child_main_krill(&testbed, &child).await;
+
+    // Import into the other server
+    import_child_secondary_krill(&testbed, exported_child).await;
 
     testbed_1_clean();
     testbed_2_clean();
@@ -67,6 +74,15 @@ async fn export_child_main_krill(parent: &CaHandle, child: &CaHandle) -> ExportC
     .await
     {
         ApiResponse::ChildExported(child) => child,
+        _ => {
+            panic!("Expected exported child")
+        }
+    }
+}
+
+async fn import_child_secondary_krill(parent: &CaHandle, child: ImportChild) {
+    match krill2_admin(Command::CertAuth(CaCommand::ChildImport(parent.clone(), child))).await {
+        ApiResponse::Empty => {}
         _ => {
             panic!("Expected exported child")
         }

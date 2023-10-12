@@ -367,6 +367,11 @@ pub enum CertAuthStorableCommand {
         ski: String,
         resources: ResourceSet,
     },
+    ChildImport {
+        child: ChildHandle,
+        ski: String,
+        resources: ResourceSet,
+    },
     ChildUpdateResources {
         child: ChildHandle,
         resources: ResourceSet,
@@ -476,6 +481,12 @@ impl WithStorableDetails for CertAuthStorableCommand {
                 CommandSummary::new("cmd-ca-child-add", self)
                     .with_child(child)
                     .with_id_ski(ski.as_ref())
+                    .with_resources(resources)
+            }
+            CertAuthStorableCommand::ChildImport { child, ski, resources } => {
+                CommandSummary::new("cmd-ca-child-import", self)
+                    .with_child(child)
+                    .with_id_ski(ski)
                     .with_resources(resources)
             }
             CertAuthStorableCommand::ChildUpdateResources { child, resources } => {
@@ -621,6 +632,14 @@ impl fmt::Display for CertAuthStorableCommand {
                 write!(
                     f,
                     "Add child '{}' with RFC8183 key '{}' and resources '{}'",
+                    child, ski, summary
+                )
+            }
+            CertAuthStorableCommand::ChildImport { child, ski, resources } => {
+                let summary = ResourceSetSummary::from(resources);
+                write!(
+                    f,
+                    "Import child '{}' with RFC8183 key '{}' and resources '{}'",
                     child, ski, summary
                 )
             }

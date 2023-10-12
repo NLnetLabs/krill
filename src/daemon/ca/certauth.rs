@@ -1,4 +1,10 @@
-use std::{collections::HashMap, convert::TryFrom, ops::Deref, sync::Arc, vec};
+use std::{
+    collections::HashMap,
+    convert::{TryFrom, TryInto},
+    ops::Deref,
+    sync::Arc,
+    vec,
+};
 
 use bytes::Bytes;
 use chrono::Duration;
@@ -25,12 +31,11 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            import::{ExportChild, ImportChildCertificate},
+            import::{ExportChild, ImportChild, ImportChildCertificate},
             AspaCustomer, AspaDefinition, AspaDefinitionList, AspaDefinitionUpdates, AspaProvidersUpdate, BgpSecAsnKey,
             BgpSecCsrInfoList, BgpSecDefinitionUpdates, CertAuthInfo, CertAuthStorableCommand, ConfiguredRoa,
-            IdCertInfo, IssuedCertificate, ObjectName, ParentCaContact, ReceivedCert, RepositoryContact,
-            ResourceClassNameMapping, Revocation, RoaConfiguration, RoaConfigurationUpdates, RtaList, RtaName,
-            RtaPrepResponse,
+            IdCertInfo, ObjectName, ParentCaContact, ReceivedCert, RepositoryContact, ResourceClassNameMapping,
+            Revocation, RoaConfiguration, RoaConfigurationUpdates, RtaList, RtaName, RtaPrepResponse,
         },
         crypto::{CsrInfo, KrillSigner},
         error::{Error, RoaDeltaError},
@@ -429,13 +434,16 @@ impl Aggregate for CertAuth {
         match command.into_details() {
             // being a parent
             CertAuthCommandDetails::ChildAdd(child, id_cert, resources) => self.child_add(child, id_cert, resources),
+            CertAuthCommandDetails::ChildImport(import_child, config, signer) => {
+                self.child_import(import_child, &config, signer)
+            }
             CertAuthCommandDetails::ChildUpdateResources(child, res) => self.child_update_resources(&child, res),
             CertAuthCommandDetails::ChildUpdateId(child, id_cert) => self.child_update_id_cert(&child, id_cert),
             CertAuthCommandDetails::ChildUpdateResourceClassNameMapping(child, mapping) => {
                 self.child_resource_class_name_mapping(child, mapping)
             }
             CertAuthCommandDetails::ChildCertify(child, request, config, signer) => {
-                self.child_certify(child, request, &config, signer)
+                self.child_certify_from_command(child, request, &config, signer)
             }
             CertAuthCommandDetails::ChildRevokeKey(child, request) => self.child_revoke_key(child, request),
             CertAuthCommandDetails::ChildRemove(child) => self.child_remove(&child),
@@ -598,12 +606,24 @@ impl CertAuth {
         }
         resources
     }
+}
 
+/// # Publishing
+///
+impl CertAuth {
+    pub fn repository_contact(&self) -> KrillResult<&RepositoryContact> {
+        self.repository.as_ref().ok_or(Error::RepoNotSet)
+    }
+}
+
+/// # Being a parent
+///
+impl CertAuth {
     /// Export a child under this CA, if possible.
-    pub fn export_child(&self, child_handle: &ChildHandle) -> KrillResult<ExportChild> {
+    pub fn child_export(&self, child_handle: &ChildHandle) -> KrillResult<ExportChild> {
         let child = self.get_child(child_handle)?;
 
-        let id_cert = child.id_cert().base64().clone();
+        let id_cert = child.id_cert().try_into()?;
         let resources = child.resources().clone();
 
         if self.resources.len() != 1 {
@@ -614,7 +634,7 @@ impl CertAuth {
         let (my_rcn, rc) = self.resources.iter().next().unwrap(); // there is exactly 1 entry
 
         let issued_key = {
-            let issued_keys = child.issued(&my_rcn);
+            let issued_keys = child.issued(my_rcn);
             if issued_keys.len() != 1 {
                 return Err(Error::custom(
                     "export child is not supported if child has no issued certificate, or is doing a key rollover.",
@@ -647,19 +667,7 @@ impl CertAuth {
             issued_cert,
         })
     }
-}
 
-/// # Publishing
-///
-impl CertAuth {
-    pub fn repository_contact(&self) -> KrillResult<&RepositoryContact> {
-        self.repository.as_ref().ok_or(Error::RepoNotSet)
-    }
-}
-
-/// # Being a parent
-///
-impl CertAuth {
     pub fn verify_rfc6492(&self, cms: ProvisioningCms) -> KrillResult<provisioning::Message> {
         let child_handle = cms.message().sender().convert();
         let child = self.get_child(&child_handle).map_err(|e| {
@@ -851,13 +859,78 @@ impl CertAuth {
         }
     }
 
+    /// Import a child (from another CA) and adopt it as our own.
+    fn child_import(
+        &self,
+        import_child: ImportChild,
+        config: &Config,
+        signer: Arc<KrillSigner>,
+    ) -> KrillResult<Vec<CertAuthEvent>> {
+        // overview:
+        // - perform checks (e.g. not supported in case we have multiple RCs)
+        // - add the child
+        // - add the resource class mapping if given
+        // - sign a new certificate for the child
+        // Combine all events and return them.
+
+        let (child_handle, id_cert, resources, issued_cert) = (
+            import_child.name,
+            import_child.id_cert,
+            import_child.resources,
+            import_child.issued_cert,
+        );
+        let id_cert_info = IdCertInfo::from(id_cert);
+
+        let (class_name_override, csr_info) = (issued_cert.class_name, issued_cert.csr);
+        let limit = RequestResourceLimit::default(); // i.e. no limit
+
+        // Ensure that we have one, and only one, resource class
+        // and get its name.
+        let my_rcn = if self.resources.len() != 1 {
+            Err(Error::custom(
+                "cannot import CA unless parent has exactly one resource class",
+            ))
+        } else {
+            self.resources
+                .keys()
+                .next()
+                .ok_or(Error::custom("cannot get resource class"))
+        }?
+        .clone();
+
+        let mut events = vec![];
+
+        // Add the child
+        events.append(&mut self.child_add(child_handle.clone(), id_cert_info, resources.clone())?);
+
+        // Add a resource class name mapping if applicable
+        if let Some(name_for_child) = class_name_override {
+            if name_for_child != my_rcn {
+                let mapping = ResourceClassNameMapping {
+                    name_in_parent: my_rcn.clone(),
+                    name_for_child,
+                };
+
+                events.push(CertAuthEvent::child_updated_resource_class_name_mapping(
+                    child_handle.clone(),
+                    mapping,
+                ));
+            }
+        }
+
+        // Issue a certificate for the imported child
+        events.append(&mut self.child_certify(child_handle, &resources, my_rcn, csr_info, limit, config, signer)?);
+
+        Ok(events)
+    }
+
     /// Certifies a child, unless:
     /// = the child is unknown,
     /// = the child is not authorized,
     /// = the csr is invalid,
     /// = the limit exceeds the child allocation,
     /// = the signer throws up..
-    fn child_certify(
+    fn child_certify_from_command(
         &self,
         child_handle: ChildHandle,
         request: IssuanceRequest,
@@ -868,24 +941,33 @@ impl CertAuth {
 
         let child = self.get_child(&child_handle)?;
         let my_rcn = child.parent_name_for_rcn(&child_rcn);
-
         let csr_info = CsrInfo::try_from(&csr)?;
 
+        self.child_certify(child_handle, child.resources(), my_rcn, csr_info, limit, config, signer)
+    }
+
+    fn child_certify(
+        &self,
+        child_handle: ChildHandle,
+        resources: &ResourceSet,
+        my_rcn: ResourceClassName,
+        csr_info: CsrInfo,
+        limit: RequestResourceLimit,
+        config: &Config,
+        signer: Arc<KrillSigner>,
+    ) -> KrillResult<Vec<CertAuthEvent>> {
         if !csr_info.global_uris() && !test_mode_enabled() {
             return Err(Error::invalid_csr(
                 "MUST use hostnames in URIs for certificate requests.",
             ));
         }
 
-        let issued = self.issue_child_certificate(
-            &child_handle,
-            my_rcn.clone(),
-            csr_info,
-            limit,
-            &config.issuance_timing,
-            &signer,
-        )?;
+        let my_rc = self
+            .resources
+            .get(&my_rcn)
+            .ok_or_else(|| Error::ResourceClassUnknown(my_rcn.clone()))?;
 
+        let issued = my_rc.issue_cert(csr_info, resources, limit, &config.issuance_timing, &signer)?;
         let cert_name = ObjectName::new(&issued.key_identifier(), "cer");
 
         info!(
@@ -901,24 +983,6 @@ impl CertAuth {
         let child_certs_updated = CertAuthEvent::child_certificates_updated(my_rcn, cert_updates);
 
         Ok(vec![issued_event, child_certs_updated])
-    }
-
-    /// Issue a new child certificate.
-    fn issue_child_certificate(
-        &self,
-        child: &ChildHandle,
-        rcn: ResourceClassName,
-        csr_info: CsrInfo,
-        limit: RequestResourceLimit,
-        issuance_timing: &IssuanceTimingConfig,
-        signer: &KrillSigner,
-    ) -> KrillResult<IssuedCertificate> {
-        let my_rc = self.resources.get(&rcn).ok_or(Error::ResourceClassUnknown(rcn))?;
-        let child = self.get_child(child)?;
-
-        // note this will ultimately return an error if the requested limit exceeds
-        // the child's resources.
-        my_rc.issue_cert(csr_info, child.resources(), limit, issuance_timing, signer)
     }
 
     /// Updates child Resource entitlements.

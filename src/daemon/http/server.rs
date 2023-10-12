@@ -1449,6 +1449,17 @@ async fn api_ca_child_export(req: Request, ca: CaHandle, child: ChildHandle) -> 
     )
 }
 
+async fn api_ca_child_import(req: Request, ca: CaHandle) -> RoutingResult {
+    aa!(req, Permission::CA_ADMIN, Handle::from(&ca), {
+        let actor = req.actor();
+        let server = req.state().clone();
+        match req.json().await {
+            Ok(import_child) => render_empty_res(server.api_ca_child_import(&ca, import_child, &actor).await),
+            Err(e) => render_error(e),
+        }
+    })
+}
+
 async fn api_ca_stats_child_connections(req: Request, ca: CaHandle) -> RoutingResult {
     aa!(
         req,
@@ -1658,6 +1669,7 @@ async fn api_ca_children(req: Request, path: &mut RequestPath, ca: CaHandle) -> 
             Some("contact") | Some("parent_response.json") => api_ca_parent_res_json(req, ca, child).await,
             Some("parent_response.xml") => api_ca_parent_res_xml(req, ca, child).await,
             Some("export") => api_ca_child_export(req, ca, child).await,
+            Some("import") => api_ca_child_import(req, ca).await,
             _ => render_unknown_method(),
         },
         None => match *req.method() {
