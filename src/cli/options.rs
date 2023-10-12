@@ -2542,6 +2542,7 @@ pub enum CaCommand {
     ChildAdd(CaHandle, AddChildRequest),
     ChildUpdate(CaHandle, ChildHandle, UpdateChildRequest),
     ChildDelete(CaHandle, ChildHandle),
+    ChildExport(CaHandle, ChildHandle),
     ChildConnections(CaHandle),
 
     // Key Management

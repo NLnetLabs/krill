@@ -435,7 +435,7 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
                                 ProvisioningResponse::Issuance(_) => {
                                     child_details
                                         .used_keys
-                                        .insert(key_id, UsedKeyState::Current("default".into()));
+                                        .insert(key_id, UsedKeyState::InUse("default".into()));
                                 }
                                 ProvisioningResponse::Revocation(_) => {
                                     child_details.used_keys.insert(key_id, UsedKeyState::Revoked);

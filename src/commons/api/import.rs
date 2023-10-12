@@ -1,22 +1,28 @@
 //! Data types used to support importing a CA structure for testing or automated set ups.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt};
 
 use serde::{Deserialize, Deserializer};
 
 use rpki::{
-    ca::idexchange::{CaHandle, ParentHandle},
+    ca::{
+        idexchange::{CaHandle, ChildHandle, ParentHandle},
+        provisioning::ResourceClassName,
+        publication::Base64,
+    },
     repository::resources::ResourceSet,
     uri,
 };
 
 use crate::{
-    commons::{api::PublicationServerUris, error::Error, KrillResult},
+    commons::{api::PublicationServerUris, crypto::CsrInfo, error::Error, KrillResult},
     daemon::config,
     ta::ta_handle,
 };
 
 use super::RoaConfiguration;
+
+//------------ Structure -----------------------------------------------------
 
 /// This type contains the full structure of CAs and signed objects etc that is
 /// set up when the import API is used.
@@ -28,19 +34,6 @@ pub struct Structure {
     pub publication_server: Option<PublicationServerUris>,
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
     pub cas: Vec<ImportCa>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ImportTa {
-    pub ta_aia: uri::Rsync,
-    pub ta_uri: uri::Https,
-    pub ta_key_pem: Option<String>,
-}
-
-impl ImportTa {
-    pub fn unpack(self) -> (uri::Rsync, Vec<uri::Https>, Option<String>) {
-        (self.ta_aia, vec![self.ta_uri], self.ta_key_pem)
-    }
 }
 
 impl Structure {
@@ -129,6 +122,23 @@ where
     config::OneOrMany::<ImportParent>::deserialize(deserializer).map(|oom| oom.into())
 }
 
+//------------ ImportTa ------------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ImportTa {
+    pub ta_aia: uri::Rsync,
+    pub ta_uri: uri::Https,
+    pub ta_key_pem: Option<String>,
+}
+
+impl ImportTa {
+    pub fn unpack(self) -> (uri::Rsync, Vec<uri::Https>, Option<String>) {
+        (self.ta_aia, vec![self.ta_uri], self.ta_key_pem)
+    }
+}
+
+//------------ ImportCa ------------------------------------------------------
+
 /// This type describes a CaStructure that needs to be imported. I.e. it describes
 /// a CA at the top of a branch and recursively includes 0 or more children of this
 /// same type.
@@ -155,6 +165,8 @@ impl ImportCa {
     }
 }
 
+//------------ ImportParent --------------------------------------------------
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ImportParent {
     handle: ParentHandle,
@@ -172,6 +184,54 @@ impl ImportParent {
 
     pub fn unpack(self) -> (ParentHandle, ResourceSet) {
         (self.handle, self.resources)
+    }
+}
+
+//------------ ImportChild ---------------------------------------------------
+
+pub type ExportChild = ImportChild;
+
+/// Describes a child CA that can be imported from, or exported to,
+/// another parent CA instance.
+///
+/// Only supports the simplest scenario where the child has only
+/// one certificate, in only one resource class.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ImportChild {
+    pub name: ChildHandle,
+    pub id_cert: Base64,
+    pub resources: ResourceSet,
+    pub issued_cert: ImportChildCertificate,
+}
+
+pub type ChildResourceClassName = ResourceClassName;
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ImportChildCertificate {
+    #[serde(flatten)]
+    pub csr: CsrInfo,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub class_name: Option<ChildResourceClassName>,
+}
+
+impl fmt::Display for ImportChild {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(f, "Name:         {}", self.name)?;
+        writeln!(f, "IdCert:       {}", self.id_cert)?;
+        writeln!(f, "Resources:    {}", self.resources)?;
+        if let Some(class_name) = &self.issued_cert.class_name {
+            writeln!(f, "Classname:    {}", class_name)?;
+        }
+        let (ca_repository, rpki_manifest, rpki_notify, key) = self.issued_cert.csr.clone().unpack();
+
+        writeln!(f, "Key Id:       {}", key.key_identifier())?;
+        writeln!(f, "CA repo:      {}", ca_repository)?;
+        writeln!(f, "CA mft:       {}", rpki_manifest)?;
+        if let Some(rrdp) = rpki_notify {
+            writeln!(f, "RRDP:         {}", rrdp)?;
+        }
+
+        Ok(())
     }
 }
 

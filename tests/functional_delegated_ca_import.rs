@@ -3,8 +3,11 @@
 //! Krill instance.
 
 use krill::{
-    cli::options::CaCommand,
-    commons::api::{ParentCaReq, ResourceClassNameMapping, UpdateChildRequest},
+    cli::{
+        options::{CaCommand, Command},
+        report::ApiResponse,
+    },
+    commons::api::{import::ExportChild, ParentCaReq, ResourceClassNameMapping, UpdateChildRequest},
     test::*,
 };
 use rpki::{
@@ -49,8 +52,25 @@ async fn functional_delegated_ca_import() {
     set_up_ca_with_repo(&child).await;
     set_up_ca_under_parent(&child, &testbed, &child_res, child_rcn).await;
 
+    // Export the child
+    let _exported_child = export_child_main_krill(&testbed, &child).await;
+
     testbed_1_clean();
     testbed_2_clean();
+}
+
+async fn export_child_main_krill(parent: &CaHandle, child: &CaHandle) -> ExportChild {
+    match krill_admin(Command::CertAuth(CaCommand::ChildExport(
+        parent.clone(),
+        child.convert(),
+    )))
+    .await
+    {
+        ApiResponse::ChildExported(child) => child,
+        _ => {
+            panic!("Expected exported child")
+        }
+    }
 }
 
 pub async fn set_up_ca_under_parent(

@@ -24,8 +24,8 @@ use crate::{
     commons::{
         actor::Actor,
         api::{
-            rrdp::PublishElement, BgpSecCsrInfoList, BgpSecDefinitionUpdates, IdCertInfo, ParentServerInfo,
-            PublicationServerInfo, RoaConfigurationUpdates, Timestamp,
+            import::ExportChild, rrdp::PublishElement, BgpSecCsrInfoList, BgpSecDefinitionUpdates, IdCertInfo,
+            ParentServerInfo, PublicationServerInfo, RoaConfigurationUpdates, Timestamp,
         },
         api::{
             AddChildRequest, AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates, AspaProvidersUpdate,
@@ -633,6 +633,17 @@ impl CaManager {
         trace!("Finding details for CA: {} under parent: {}", child, ca);
         let ca = self.get_ca(ca).await?;
         ca.get_child(child).map(|details| details.clone().into())
+    }
+
+    /// Export a child. Fails if:
+    /// - the child does not exist
+    /// - the child has no received certificate
+    /// - the child has more than one received certificate or resource class
+    ///
+    /// Primarily meant for testing that the child import function works.
+    pub async fn ca_child_export(&self, ca: &CaHandle, child_handle: &ChildHandle) -> KrillResult<ExportChild> {
+        trace!("Exporting CA: {} under parent: {}", child_handle, ca);
+        self.get_ca(ca).await?.export_child(child_handle)
     }
 
     /// Show a contact for a child.

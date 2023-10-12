@@ -25,6 +25,7 @@ use rpki::{
 use crate::{
     commons::{
         api::{
+            import::{ExportChild, ImportChildCertificate},
             AspaCustomer, AspaDefinition, AspaDefinitionList, AspaDefinitionUpdates, AspaProvidersUpdate, BgpSecAsnKey,
             BgpSecCsrInfoList, BgpSecDefinitionUpdates, CertAuthInfo, CertAuthStorableCommand, ConfiguredRoa,
             IdCertInfo, IssuedCertificate, ObjectName, ParentCaContact, ReceivedCert, RepositoryContact,
@@ -596,6 +597,55 @@ impl CertAuth {
             }
         }
         resources
+    }
+
+    /// Export a child under this CA, if possible.
+    pub fn export_child(&self, child_handle: &ChildHandle) -> KrillResult<ExportChild> {
+        let child = self.get_child(child_handle)?;
+
+        let id_cert = child.id_cert().base64().clone();
+        let resources = child.resources().clone();
+
+        if self.resources.len() != 1 {
+            return Err(Error::custom(
+                "export child is not supported for multiple resource classes.",
+            ));
+        }
+        let (my_rcn, rc) = self.resources.iter().next().unwrap(); // there is exactly 1 entry
+
+        let issued_key = {
+            let issued_keys = child.issued(&my_rcn);
+            if issued_keys.len() != 1 {
+                return Err(Error::custom(
+                    "export child is not supported if child has no issued certificate, or is doing a key rollover.",
+                ));
+            }
+            issued_keys[0]
+        };
+
+        let issued_cert = rc
+            .issued(&issued_key)
+            .ok_or(Error::custom("no issued certificate found for child to export"))?;
+
+        let csr = issued_cert.csr_info().clone();
+
+        let class_name = {
+            let child_rcn = child.name_for_parent_rcn(my_rcn);
+            if my_rcn != &child_rcn {
+                Some(child_rcn)
+            } else {
+                None
+            }
+        };
+
+        let issued_cert = ImportChildCertificate { csr, class_name };
+
+        Ok(ExportChild {
+            name: child_handle.clone(),
+            id_cert,
+            resources,
+            issued_cert,
+        })
     }
 }
 

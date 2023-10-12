@@ -1440,6 +1440,15 @@ async fn api_ca_child_show(req: Request, ca: CaHandle, child: ChildHandle) -> Ro
     )
 }
 
+async fn api_ca_child_export(req: Request, ca: CaHandle, child: ChildHandle) -> RoutingResult {
+    aa!(
+        req,
+        Permission::CA_READ,
+        Handle::from(&ca),
+        render_json_res(req.state().api_ca_child_export(&ca, &child).await)
+    )
+}
+
 async fn api_ca_stats_child_connections(req: Request, ca: CaHandle) -> RoutingResult {
     aa!(
         req,
@@ -1648,6 +1657,7 @@ async fn api_ca_children(req: Request, path: &mut RequestPath, ca: CaHandle) -> 
             },
             Some("contact") | Some("parent_response.json") => api_ca_parent_res_json(req, ca, child).await,
             Some("parent_response.xml") => api_ca_parent_res_xml(req, ca, child).await,
+            Some("export") => api_ca_child_export(req, ca, child).await,
             _ => render_unknown_method(),
         },
         None => match *req.method() {

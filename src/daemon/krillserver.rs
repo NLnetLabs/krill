@@ -19,9 +19,9 @@ use crate::{
     commons::{
         actor::{Actor, ActorDef},
         api::{
-            self, AddChildRequest, AllCertAuthIssues, AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates,
-            AspaProvidersUpdate, BgpSecCsrInfoList, BgpSecDefinitionUpdates, CaCommandDetails, CaRepoDetails,
-            CertAuthInfo, CertAuthInit, CertAuthIssues, CertAuthList, CertAuthStats, ChildCaInfo,
+            self, import::ExportChild, AddChildRequest, AllCertAuthIssues, AspaCustomer, AspaDefinitionList,
+            AspaDefinitionUpdates, AspaProvidersUpdate, BgpSecCsrInfoList, BgpSecDefinitionUpdates, CaCommandDetails,
+            CaRepoDetails, CertAuthInfo, CertAuthInit, CertAuthIssues, CertAuthList, CertAuthStats, ChildCaInfo,
             ChildrenConnectionStats, CommandHistory, CommandHistoryCriteria, ConfiguredRoa, IdCertInfo,
             ParentCaContact, ParentCaReq, PublicationServerUris, PublisherDetails, ReceivedCert,
             RepoFileDeleteCriteria, RepositoryContact, RoaConfiguration, RoaConfigurationUpdates, RoaPayload, RtaList,
@@ -482,8 +482,12 @@ impl KrillServer {
 
     /// Show details for a child under the CA.
     pub async fn ca_child_show(&self, ca: &CaHandle, child: &ChildHandle) -> KrillResult<ChildCaInfo> {
-        let child = self.ca_manager.ca_show_child(ca, child).await?;
-        Ok(child)
+        self.ca_manager.ca_show_child(ca, child).await
+    }
+
+    /// Show details for a child under the CA.
+    pub async fn api_ca_child_export(&self, ca: &CaHandle, child: &ChildHandle) -> KrillResult<ExportChild> {
+        self.ca_manager.ca_child_export(ca, child).await
     }
 
     /// Show children stats under the CA.

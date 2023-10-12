@@ -24,7 +24,7 @@ use crate::{
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case")]
 pub enum UsedKeyState {
-    Current(ResourceClassName),
+    InUse(ResourceClassName), // Multiple keys are possible during a key rollover.
     Revoked,
 }
 
@@ -116,12 +116,12 @@ impl ChildDetails {
             .unwrap_or_else(|| name_in_child.clone())
     }
 
-    pub fn issued(&self, rcn: &ResourceClassName) -> Vec<KeyIdentifier> {
+    pub fn issued(&self, parent_rcn: &ResourceClassName) -> Vec<KeyIdentifier> {
         let mut res = vec![];
 
         for (ki, used_key_state) in self.used_keys.iter() {
-            if let UsedKeyState::Current(found_rcn) = used_key_state {
-                if found_rcn == rcn {
+            if let UsedKeyState::InUse(found_rcn) = used_key_state {
+                if found_rcn == parent_rcn {
                     res.push(*ki)
                 }
             }
@@ -131,11 +131,11 @@ impl ChildDetails {
     }
 
     pub fn is_issued(&self, ki: &KeyIdentifier) -> bool {
-        matches!(self.used_keys.get(ki), Some(UsedKeyState::Current(_)))
+        matches!(self.used_keys.get(ki), Some(UsedKeyState::InUse(_)))
     }
 
-    pub fn add_issue_response(&mut self, rcn: ResourceClassName, ki: KeyIdentifier) {
-        self.used_keys.insert(ki, UsedKeyState::Current(rcn));
+    pub fn add_issue_response(&mut self, parent_rcn: ResourceClassName, ki: KeyIdentifier) {
+        self.used_keys.insert(ki, UsedKeyState::InUse(parent_rcn));
     }
 
     pub fn add_revoke_response(&mut self, ki: KeyIdentifier) {
@@ -143,11 +143,11 @@ impl ChildDetails {
     }
 
     /// Returns an error in case the key is already in use in another class.
-    pub fn verify_key_allowed(&self, ki: &KeyIdentifier, rcn: &ResourceClassName) -> KrillResult<()> {
+    pub fn verify_key_allowed(&self, ki: &KeyIdentifier, parent_rcn: &ResourceClassName) -> KrillResult<()> {
         if let Some(last_response) = self.used_keys.get(ki) {
             let allowed = match last_response {
                 UsedKeyState::Revoked => false,
-                UsedKeyState::Current(found) => found == rcn,
+                UsedKeyState::InUse(found) => found == parent_rcn,
             };
             if !allowed {
                 return Err(Error::KeyUseAttemptReuse);
