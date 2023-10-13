@@ -47,6 +47,7 @@ async fn functional_delegated_ca_import() {
     let testbed = ca_handle("testbed");
     let child = ca_handle("child");
     let child_res = resources("AS65000", "10.0.0.0/16", "");
+    let child_res_2 = resources("AS65000-AS65010", "10.0.0.0/8", "2001:db8::/32");
     let child_rcn = ResourceClassName::from("custom");
 
     // Start a testbed
@@ -69,6 +70,15 @@ async fn functional_delegated_ca_import() {
     let response = parent_contact_secondary_krill(&testbed, &child).await;
     let parent_ca_req = ParentCaReq::new(testbed.convert(), response);
     add_parent_to_ca(&child, parent_ca_req).await;
+
+    // Remove the child from the original parent
+    delete_child(&testbed, &child).await;
+
+    // Update the resources for the child in the new
+    // parent, then synchronise it, and verify that
+    // the resources are received.
+    update_child_resources_secondary_krill(&testbed, &child, &child_res_2).await;
+    assert!(ca_contains_resources(&child, &child_res_2).await);
 
     testbed_1_clean();
     testbed_2_clean();
@@ -131,5 +141,14 @@ async fn parent_contact_secondary_krill(ca: &CaHandle, child: &CaHandle) -> Pare
     {
         ApiResponse::Rfc8183ParentResponse(response) => response,
         _ => panic!("Expected RFC 8183 Parent Response"),
+    }
+}
+
+async fn update_child_resources_secondary_krill(ca: &CaHandle, child: &CaHandle, resources: &ResourceSet) {
+    let child_handle = child.convert();
+    let req = UpdateChildRequest::resources(resources.clone());
+    match krill2_admin(Command::CertAuth(CaCommand::ChildUpdate(ca.clone(), child_handle, req))).await {
+        ApiResponse::Empty => {}
+        _ => panic!("Expected empty ok response"),
     }
 }
