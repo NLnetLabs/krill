@@ -79,7 +79,9 @@ async fn functional_delegated_ca_import() {
     // the resources are received.
     update_child_resources_secondary_krill(&testbed, &child, &child_res_2).await;
 
-    assert!(ca_contains_resources_main_krill(&child, &child_res_2).await);
+    sleep_seconds(5).await; // because CI can be slow
+    cas_refresh_single(&child).await;
+    assert!(ca_contains_resources(&child, &child_res_2).await);
 
     testbed_1_clean();
     testbed_2_clean();
@@ -152,18 +154,4 @@ async fn update_child_resources_secondary_krill(ca: &CaHandle, child: &CaHandle,
         ApiResponse::Empty => {}
         _ => panic!("Expected empty ok response"),
     }
-}
-
-async fn ca_contains_resources_main_krill(ca: &CaHandle, resources: &ResourceSet) -> bool {
-    for _ in 0..30_u8 {
-        // CI on github seems to have issues where the sync could happen before
-        // resources on the parent side are fully updated. Re-syncing in this
-        // check loop should help to deal with this issue.
-        cas_refresh_single(ca).await;
-        if ca_current_resources(ca).await.contains(resources) {
-            return true;
-        }
-        sleep_seconds(1).await
-    }
-    false
 }
