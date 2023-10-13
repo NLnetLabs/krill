@@ -14,7 +14,10 @@ use krill::{
     test::*,
 };
 use rpki::{
-    ca::{idexchange::CaHandle, provisioning::ResourceClassName},
+    ca::{
+        idexchange::{CaHandle, ParentResponse},
+        provisioning::ResourceClassName,
+    },
     repository::resources::ResourceSet,
 };
 
@@ -54,13 +57,18 @@ async fn functional_delegated_ca_import() {
 
     // Add child in testbed one
     set_up_ca_with_repo(&child).await;
-    set_up_ca_under_parent(&child, &testbed, &child_res, child_rcn).await;
+    set_up_ca_under_parent_main_krill(&child, &testbed, &child_res, child_rcn).await;
 
     // Export the child
     let exported_child = export_child_main_krill(&testbed, &child).await;
 
-    // Import into the other server
+    // Import child into testbed on the other server
     import_child_secondary_krill(&testbed, exported_child).await;
+
+    // Add testbed in other server as parent to child
+    let response = parent_contact_secondary_krill(&testbed, &child).await;
+    let parent_ca_req = ParentCaReq::new(testbed.convert(), response);
+    add_parent_to_ca(&child, parent_ca_req).await;
 
     testbed_1_clean();
     testbed_2_clean();
@@ -89,7 +97,7 @@ async fn import_child_secondary_krill(parent: &CaHandle, child: ImportChild) {
     }
 }
 
-pub async fn set_up_ca_under_parent(
+async fn set_up_ca_under_parent_main_krill(
     ca: &CaHandle,
     parent: &CaHandle,
     resources: &ResourceSet,
@@ -112,4 +120,16 @@ pub async fn set_up_ca_under_parent(
     .await;
     add_parent_to_ca(ca, parent_ca_req).await;
     assert!(ca_contains_resources(ca, resources).await);
+}
+
+async fn parent_contact_secondary_krill(ca: &CaHandle, child: &CaHandle) -> ParentResponse {
+    match krill2_admin(Command::CertAuth(CaCommand::ParentResponse(
+        ca.clone(),
+        child.convert(),
+    )))
+    .await
+    {
+        ApiResponse::Rfc8183ParentResponse(response) => response,
+        _ => panic!("Expected RFC 8183 Parent Response"),
+    }
 }
