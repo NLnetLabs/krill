@@ -30,10 +30,10 @@ use crate::{
     cli::report::{ReportError, ReportFormat},
     commons::{
         api::{
-            self, AddChildRequest, AspaCustomer, AspaDefinition, AspaDefinitionFormatError, AspaProvidersUpdate,
-            AuthorizationFmtError, BgpSecAsnKey, BgpSecDefinition, CertAuthInit, ParentCaReq, PublicationServerUris,
-            RepoFileDeleteCriteria, RoaConfiguration, RoaConfigurationUpdates, RoaPayload, RtaName, Token,
-            UpdateChildRequest,
+            self, import::ImportChild, AddChildRequest, AspaCustomer, AspaDefinition, AspaDefinitionFormatError,
+            AspaProvidersUpdate, AuthorizationFmtError, BgpSecAsnKey, BgpSecDefinition, CertAuthInit, ParentCaReq,
+            PublicationServerUris, RepoFileDeleteCriteria, RoaConfiguration, RoaConfigurationUpdates, RoaPayload,
+            RtaName, Token, UpdateChildRequest,
         },
         crypto::SignSupport,
         error::KrillIoError,
@@ -2542,6 +2542,8 @@ pub enum CaCommand {
     ChildAdd(CaHandle, AddChildRequest),
     ChildUpdate(CaHandle, ChildHandle, UpdateChildRequest),
     ChildDelete(CaHandle, ChildHandle),
+    ChildExport(CaHandle, ChildHandle),
+    ChildImport(CaHandle, ImportChild),
     ChildConnections(CaHandle),
 
     // Key Management

@@ -366,7 +366,7 @@ impl TaskQueue {
                 now(),
             ),
 
-            CertAuthEvent::ParentAdded { parent, .. } => {
+            CertAuthEvent::ParentAdded { parent, .. } | CertAuthEvent::ParentUpdated { parent, .. } => {
                 if ca.repository_contact().is_ok() {
                     debug!("Parent {} added to CA {}, scheduling sync", parent, ca_handle);
                     self.schedule(

@@ -9,6 +9,7 @@ use rpki::{
         idcert::IdCert,
         idexchange::{self, ServiceUri},
         idexchange::{CaHandle, ChildHandle, ParentHandle, PublisherHandle, RepoInfo},
+        provisioning::ResourceClassName,
     },
     crypto::PublicKey,
     repository::resources::ResourceSet,
@@ -546,6 +547,15 @@ pub struct UpdateChildRequest {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     suspend: Option<bool>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    resource_class_name_mapping: Option<ResourceClassNameMapping>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ResourceClassNameMapping {
+    pub name_in_parent: ResourceClassName,
+    pub name_for_child: ResourceClassName,
 }
 
 impl UpdateChildRequest {
@@ -554,6 +564,7 @@ impl UpdateChildRequest {
             id_cert,
             resources,
             suspend,
+            resource_class_name_mapping: None,
         }
     }
     pub fn id_cert(id_cert: IdCert) -> Self {
@@ -561,6 +572,7 @@ impl UpdateChildRequest {
             id_cert: Some(id_cert),
             resources: None,
             suspend: None,
+            resource_class_name_mapping: None,
         }
     }
 
@@ -569,6 +581,7 @@ impl UpdateChildRequest {
             id_cert: None,
             resources: Some(resources),
             suspend: None,
+            resource_class_name_mapping: None,
         }
     }
 
@@ -577,6 +590,7 @@ impl UpdateChildRequest {
             id_cert: None,
             resources: None,
             suspend: Some(true),
+            resource_class_name_mapping: None,
         }
     }
 
@@ -585,11 +599,33 @@ impl UpdateChildRequest {
             id_cert: None,
             resources: None,
             suspend: Some(false),
+            resource_class_name_mapping: None,
         }
     }
 
-    pub fn unpack(self) -> (Option<IdCert>, Option<ResourceSet>, Option<bool>) {
-        (self.id_cert, self.resources, self.suspend)
+    pub fn resource_class_name_mapping(mapping: ResourceClassNameMapping) -> Self {
+        UpdateChildRequest {
+            id_cert: None,
+            resources: None,
+            suspend: None,
+            resource_class_name_mapping: Some(mapping),
+        }
+    }
+
+    pub fn unpack(
+        self,
+    ) -> (
+        Option<IdCert>,
+        Option<ResourceSet>,
+        Option<bool>,
+        Option<ResourceClassNameMapping>,
+    ) {
+        (
+            self.id_cert,
+            self.resources,
+            self.suspend,
+            self.resource_class_name_mapping,
+        )
     }
 }
 

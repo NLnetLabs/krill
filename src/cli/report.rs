@@ -8,10 +8,10 @@ use rpki::ca::idexchange;
 use crate::{
     commons::{
         api::{
-            AllCertAuthIssues, AspaDefinitionList, BgpSecCsrInfoList, CaCommandDetails, CaRepoDetails, CertAuthInfo,
-            CertAuthIssues, CertAuthList, ChildCaInfo, ChildrenConnectionStats, CommandHistory, ConfiguredRoas,
-            IdCertInfo, ParentCaContact, ParentStatuses, PublisherDetails, PublisherList, RepoStatus,
-            RepositoryContact, RtaList, RtaPrepResponse, ServerInfo,
+            import::ExportChild, AllCertAuthIssues, AspaDefinitionList, BgpSecCsrInfoList, CaCommandDetails,
+            CaRepoDetails, CertAuthInfo, CertAuthIssues, CertAuthList, ChildCaInfo, ChildrenConnectionStats,
+            CommandHistory, ConfiguredRoas, IdCertInfo, ParentCaContact, ParentStatuses, PublisherDetails,
+            PublisherList, RepoStatus, RepositoryContact, RtaList, RtaPrepResponse, ServerInfo,
         },
         bgp::{BgpAnalysisAdvice, BgpAnalysisReport, BgpAnalysisSuggestion},
     },
@@ -50,6 +50,7 @@ pub enum ApiResponse {
     ParentStatuses(ParentStatuses),
 
     ChildInfo(ChildCaInfo),
+    ChildExported(ExportChild),
     ChildrenStats(ChildrenConnectionStats),
 
     PublisherDetails(PublisherDetails),
@@ -98,6 +99,7 @@ impl ApiResponse {
                 ApiResponse::ParentCaContact(contact) => Ok(Some(contact.report(fmt)?)),
                 ApiResponse::ParentStatuses(statuses) => Ok(Some(statuses.report(fmt)?)),
                 ApiResponse::ChildInfo(info) => Ok(Some(info.report(fmt)?)),
+                ApiResponse::ChildExported(child) => Ok(Some(child.report(fmt)?)),
                 ApiResponse::ChildrenStats(stats) => Ok(Some(stats.report(fmt)?)),
                 ApiResponse::PublisherList(list) => Ok(Some(list.report(fmt)?)),
                 ApiResponse::PublisherDetails(details) => Ok(Some(details.report(fmt)?)),
@@ -187,6 +189,7 @@ impl Report for IdCertInfo {}
 impl Report for RepositoryContact {}
 
 impl Report for ChildCaInfo {}
+impl Report for ExportChild {}
 
 impl Report for ParentCaContact {}
 impl Report for ParentStatuses {}

@@ -17,9 +17,9 @@ use crate::{
     commons::{
         actor::Actor,
         api::{
-            AspaCustomer, AspaDefinitionUpdates, AspaProvidersUpdate, BgpSecDefinitionUpdates, CertAuthStorableCommand,
-            IdCertInfo, ParentCaContact, ReceivedCert, RepositoryContact, RoaConfigurationUpdates, RtaName,
-            StorableRcEntitlement,
+            import::ImportChild, AspaCustomer, AspaDefinitionUpdates, AspaProvidersUpdate, BgpSecDefinitionUpdates,
+            CertAuthStorableCommand, IdCertInfo, ParentCaContact, ReceivedCert, RepositoryContact,
+            ResourceClassNameMapping, RoaConfigurationUpdates, RtaName, StorableRcEntitlement,
         },
         crypto::KrillSigner,
         eventsourcing::{self, InitCommandDetails, SentCommand, SentInitCommand, WithStorableDetails},
@@ -83,12 +83,19 @@ pub enum CertAuthCommandDetails {
     // Add a new child under this parent CA
     ChildAdd(ChildHandle, IdCertInfo, ResourceSet),
 
+    // Import a child under this parent CA
+    ChildImport(ImportChild, Arc<Config>, Arc<KrillSigner>),
+
     // Update the resource entitlements for an existing child.
     ChildUpdateResources(ChildHandle, ResourceSet),
 
     // Update the IdCert used by the child for the RFC 6492 RPKI
     // provisioning protocol.
     ChildUpdateId(ChildHandle, IdCertInfo),
+
+    // Update the mapping the parent uses to map its own resource
+    // class name to another name for the child.
+    ChildUpdateResourceClassNameMapping(ChildHandle, ResourceClassNameMapping),
 
     // Process an issuance request sent by an existing child.
     ChildCertify(ChildHandle, IssuanceRequest, Arc<Config>, Arc<KrillSigner>),
@@ -258,6 +265,11 @@ impl From<CertAuthCommandDetails> for CertAuthStorableCommand {
                 ski: id_cert.public_key().key_identifier().to_string(),
                 resources,
             },
+            CertAuthCommandDetails::ChildImport(import_child, _, _) => CertAuthStorableCommand::ChildImport {
+                child: import_child.name,
+                ski: import_child.id_cert.public_key().key_identifier().to_string(),
+                resources: import_child.resources,
+            },
             CertAuthCommandDetails::ChildUpdateResources(child, resources) => {
                 CertAuthStorableCommand::ChildUpdateResources { child, resources }
             }
@@ -265,6 +277,9 @@ impl From<CertAuthCommandDetails> for CertAuthStorableCommand {
                 child,
                 ski: id_cert.public_key().key_identifier().to_string(),
             },
+            CertAuthCommandDetails::ChildUpdateResourceClassNameMapping(child, mapping) => {
+                CertAuthStorableCommand::ChildUpdateResourceClassNameMapping { child, mapping }
+            }
             CertAuthCommandDetails::ChildCertify(child, req, _, _) => {
                 let (resource_class_name, limit, csr) = req.unpack();
                 let ki = csr.public_key().key_identifier();
@@ -397,6 +412,21 @@ impl CertAuthCommandDetails {
         )
     }
 
+    pub fn child_import(
+        handle: &CaHandle,
+        child: ImportChild,
+        config: Arc<Config>,
+        signer: Arc<KrillSigner>,
+        actor: &Actor,
+    ) -> CertAuthCommand {
+        eventsourcing::SentCommand::new(
+            handle,
+            None,
+            CertAuthCommandDetails::ChildImport(child, config, signer),
+            actor,
+        )
+    }
+
     pub fn child_update_resources(
         handle: &CaHandle,
         child_handle: ChildHandle,
@@ -421,6 +451,20 @@ impl CertAuthCommandDetails {
             handle,
             None,
             CertAuthCommandDetails::ChildUpdateId(child_handle, id_cert),
+            actor,
+        )
+    }
+
+    pub fn child_update_resource_class_name_mapping(
+        handle: &CaHandle,
+        child_handle: ChildHandle,
+        mapping: ResourceClassNameMapping,
+        actor: &Actor,
+    ) -> CertAuthCommand {
+        eventsourcing::SentCommand::new(
+            handle,
+            None,
+            CertAuthCommandDetails::ChildUpdateResourceClassNameMapping(child_handle, mapping),
             actor,
         )
     }
