@@ -281,6 +281,16 @@ impl KrillClient {
                 delete(&self.server, &self.token, &uri).await?;
                 Ok(ApiResponse::Empty)
             }
+            CaCommand::ChildExport(handle, child) => {
+                let uri = format!("api/v1/cas/{}/children/{}/export", handle, child);
+                let response = get_json(&self.server, &self.token, &uri).await?;
+                Ok(ApiResponse::ChildExported(response))
+            }
+            CaCommand::ChildImport(handle, child) => {
+                let uri = format!("api/v1/cas/{}/children/{}/import", handle, child.name);
+                post_json(&self.server, &self.token, &uri, child).await?;
+                Ok(ApiResponse::Empty)
+            }
             CaCommand::ChildConnections(handle) => {
                 let uri = format!("api/v1/cas/{}/stats/children/connections", handle);
                 let stats: ChildrenConnectionStats = get_json(&self.server, &self.token, &uri).await?;
@@ -547,7 +557,10 @@ impl KrillClient {
         );
 
         if let Some(storage_uri) = details.data_dir() {
-            config = config.replace("### storage_uri = \"./data\"", &format!("storage_uri = \"{}\"", storage_uri))
+            config = config.replace(
+                "### storage_uri = \"./data\"",
+                &format!("storage_uri = \"{}\"", storage_uri),
+            )
         }
 
         if let Some(log_file) = details.log_file() {

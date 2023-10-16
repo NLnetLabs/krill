@@ -24,7 +24,7 @@ use crate::{
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case")]
 pub enum UsedKeyState {
-    Current(ResourceClassName),
+    InUse(ResourceClassName), // Multiple keys are possible during a key rollover.
     Revoked,
 }
 
@@ -41,6 +41,8 @@ pub struct ChildDetails {
     id_cert: IdCertInfo,
     resources: ResourceSet,
     used_keys: HashMap<KeyIdentifier, UsedKeyState>,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    rcn_map: HashMap<ResourceClassName, ResourceClassName>,
 }
 
 impl ChildDetails {
@@ -50,6 +52,7 @@ impl ChildDetails {
             id_cert,
             resources,
             used_keys: HashMap::new(),
+            rcn_map: HashMap::new(),
         }
     }
 
@@ -81,12 +84,44 @@ impl ChildDetails {
         self.resources = resources;
     }
 
-    pub fn issued(&self, rcn: &ResourceClassName) -> Vec<KeyIdentifier> {
+    pub fn add_mapping(&mut self, name_in_parent: ResourceClassName, name_for_child: ResourceClassName) {
+        self.rcn_map.insert(name_in_parent, name_for_child);
+    }
+
+    /// Resolve the resource class name used by the child, to the
+    /// internal name used by its parent.
+    ///
+    /// Note that the parent and child usually use the same name, but
+    /// we need this mapping in case a delegated child CA was exported
+    /// from somewhere and then imported into Krill. In such cases the
+    /// resource class names that were used for the child may not match
+    /// the internal resource class names used. See issue: 1133
+    pub(super) fn name_for_parent_rcn(&self, name_in_parent: &ResourceClassName) -> ResourceClassName {
+        self.rcn_map.get(name_in_parent).unwrap_or(name_in_parent).clone()
+    }
+
+    /// Resolve the resource class name used by the parent, to the
+    /// name used by the child in request and responses.
+    ///
+    /// Note that the parent and child usually use the same name, but
+    /// we need this mapping in case a delegated child CA was exported
+    /// from somewhere and then imported into Krill. In such cases the
+    /// resource class names that were used for the child may not match
+    /// the internal resource class names used. See issue: 1133
+    pub(super) fn parent_name_for_rcn(&self, name_in_child: &ResourceClassName) -> ResourceClassName {
+        self.rcn_map
+            .iter()
+            .find(|(_k, v)| *v == name_in_child)
+            .map(|(k, _v)| k.clone())
+            .unwrap_or_else(|| name_in_child.clone())
+    }
+
+    pub fn issued(&self, parent_rcn: &ResourceClassName) -> Vec<KeyIdentifier> {
         let mut res = vec![];
 
         for (ki, used_key_state) in self.used_keys.iter() {
-            if let UsedKeyState::Current(found_rcn) = used_key_state {
-                if found_rcn == rcn {
+            if let UsedKeyState::InUse(found_rcn) = used_key_state {
+                if found_rcn == parent_rcn {
                     res.push(*ki)
                 }
             }
@@ -96,11 +131,11 @@ impl ChildDetails {
     }
 
     pub fn is_issued(&self, ki: &KeyIdentifier) -> bool {
-        matches!(self.used_keys.get(ki), Some(UsedKeyState::Current(_)))
+        matches!(self.used_keys.get(ki), Some(UsedKeyState::InUse(_)))
     }
 
-    pub fn add_issue_response(&mut self, rcn: ResourceClassName, ki: KeyIdentifier) {
-        self.used_keys.insert(ki, UsedKeyState::Current(rcn));
+    pub fn add_issue_response(&mut self, parent_rcn: ResourceClassName, ki: KeyIdentifier) {
+        self.used_keys.insert(ki, UsedKeyState::InUse(parent_rcn));
     }
 
     pub fn add_revoke_response(&mut self, ki: KeyIdentifier) {
@@ -108,11 +143,11 @@ impl ChildDetails {
     }
 
     /// Returns an error in case the key is already in use in another class.
-    pub fn verify_key_allowed(&self, ki: &KeyIdentifier, rcn: &ResourceClassName) -> KrillResult<()> {
+    pub fn verify_key_allowed(&self, ki: &KeyIdentifier, parent_rcn: &ResourceClassName) -> KrillResult<()> {
         if let Some(last_response) = self.used_keys.get(ki) {
             let allowed = match last_response {
                 UsedKeyState::Revoked => false,
-                UsedKeyState::Current(found) => found == rcn,
+                UsedKeyState::InUse(found) => found == parent_rcn,
             };
             if !allowed {
                 return Err(Error::KeyUseAttemptReuse);

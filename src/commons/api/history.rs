@@ -23,7 +23,7 @@ use crate::{
     daemon::ca::{CertAuth, DropReason},
 };
 
-use super::{AspaDefinitionUpdates, ResourceSetSummary};
+use super::{AspaDefinitionUpdates, ResourceClassNameMapping, ResourceSetSummary};
 
 //------------ CommandHistory ------------------------------------------------
 
@@ -367,6 +367,11 @@ pub enum CertAuthStorableCommand {
         ski: String,
         resources: ResourceSet,
     },
+    ChildImport {
+        child: ChildHandle,
+        ski: String,
+        resources: ResourceSet,
+    },
     ChildUpdateResources {
         child: ChildHandle,
         resources: ResourceSet,
@@ -374,6 +379,10 @@ pub enum CertAuthStorableCommand {
     ChildUpdateId {
         child: ChildHandle,
         ski: String,
+    },
+    ChildUpdateResourceClassNameMapping {
+        child: ChildHandle,
+        mapping: ResourceClassNameMapping,
     },
     ChildCertify {
         child: ChildHandle,
@@ -474,6 +483,12 @@ impl WithStorableDetails for CertAuthStorableCommand {
                     .with_id_ski(ski.as_ref())
                     .with_resources(resources)
             }
+            CertAuthStorableCommand::ChildImport { child, ski, resources } => {
+                CommandSummary::new("cmd-ca-child-import", self)
+                    .with_child(child)
+                    .with_id_ski(ski)
+                    .with_resources(resources)
+            }
             CertAuthStorableCommand::ChildUpdateResources { child, resources } => {
                 CommandSummary::new("cmd-ca-child-update-res", self)
                     .with_child(child)
@@ -483,6 +498,12 @@ impl WithStorableDetails for CertAuthStorableCommand {
                 CommandSummary::new("cmd-ca-child-update-id", self)
                     .with_child(child)
                     .with_id_ski(ski)
+            }
+            CertAuthStorableCommand::ChildUpdateResourceClassNameMapping { child, mapping } => {
+                CommandSummary::new("cmd-ca-child-update-rcn-mapping", self)
+                    .with_child(child)
+                    .with_arg("parent_rcn", &mapping.name_in_parent)
+                    .with_arg("child_rcn", &mapping.name_for_child)
             }
             CertAuthStorableCommand::ChildCertify {
                 child,
@@ -614,12 +635,27 @@ impl fmt::Display for CertAuthStorableCommand {
                     child, ski, summary
                 )
             }
+            CertAuthStorableCommand::ChildImport { child, ski, resources } => {
+                let summary = ResourceSetSummary::from(resources);
+                write!(
+                    f,
+                    "Import child '{}' with RFC8183 key '{}' and resources '{}'",
+                    child, ski, summary
+                )
+            }
             CertAuthStorableCommand::ChildUpdateResources { child, resources } => {
                 let summary = ResourceSetSummary::from(resources);
                 write!(f, "Update resources for child '{}' to: {}", child, summary)
             }
             CertAuthStorableCommand::ChildUpdateId { child, ski } => {
                 write!(f, "Update child '{}' RFC 8183 key '{}'", child, ski)
+            }
+            CertAuthStorableCommand::ChildUpdateResourceClassNameMapping { child, mapping } => {
+                write!(
+                    f,
+                    "Update child '{}' map parent RC '{}' to '{}' for child",
+                    child, mapping.name_in_parent, mapping.name_for_child
+                )
             }
             CertAuthStorableCommand::ChildCertify { child, ki, .. } => {
                 write!(f, "Issue certificate to child '{}' for key '{}'", child, ki)

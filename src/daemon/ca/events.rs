@@ -13,7 +13,8 @@ use crate::{
     commons::{
         api::{
             AspaCustomer, AspaDefinition, AspaProvidersUpdate, BgpSecAsnKey, IdCertInfo, IssuedCertificate, ObjectName,
-            ParentCaContact, ReceivedCert, RepositoryContact, RoaAggregateKey, RtaName, SuspendedCert, UnsuspendedCert,
+            ParentCaContact, ReceivedCert, RepositoryContact, ResourceClassNameMapping, RoaAggregateKey, RtaName,
+            SuspendedCert, UnsuspendedCert,
         },
         crypto::KrillSigner,
         eventsourcing::{Event, InitEvent},
@@ -460,6 +461,11 @@ pub enum CertAuthEvent {
         child: ChildHandle,
         resources: ResourceSet,
     },
+    ChildUpdatedResourceClassNameMapping {
+        child: ChildHandle,
+        name_in_parent: ResourceClassName,
+        name_for_child: ResourceClassName,
+    },
     ChildRemoved {
         child: ChildHandle,
     },
@@ -704,7 +710,6 @@ impl CertAuthEvent {
             updates,
         }
     }
-
     pub(super) fn child_removed(child: ChildHandle) -> CertAuthEvent {
         CertAuthEvent::ChildRemoved { child }
     }
@@ -715,6 +720,17 @@ impl CertAuthEvent {
 
     pub(super) fn child_unsuspended(child: ChildHandle) -> CertAuthEvent {
         CertAuthEvent::ChildUnsuspended { child }
+    }
+
+    pub(super) fn child_updated_resource_class_name_mapping(
+        child: ChildHandle,
+        mapping: ResourceClassNameMapping,
+    ) -> CertAuthEvent {
+        CertAuthEvent::ChildUpdatedResourceClassNameMapping {
+            child,
+            name_in_parent: mapping.name_in_parent,
+            name_for_child: mapping.name_for_child,
+        }
     }
 }
 
@@ -804,6 +820,18 @@ impl fmt::Display for CertAuthEvent {
             CertAuthEvent::ChildUpdatedResources { child, resources } => {
                 write!(f, "updated child '{}' resources to '{}'", child, resources)
             }
+            CertAuthEvent::ChildUpdatedResourceClassNameMapping {
+                child,
+                name_in_parent,
+                name_for_child,
+            } => {
+                write!(
+                    f,
+                    "updated child '{}' map parent RC name '{}' to '{}' for child",
+                    child, name_in_parent, name_for_child
+                )
+            }
+
             CertAuthEvent::ChildRemoved { child } => write!(f, "removed child '{}'", child),
             CertAuthEvent::ChildSuspended { child } => write!(f, "suspended child '{}'", child),
             CertAuthEvent::ChildUnsuspended { child } => write!(f, "unsuspended child '{}'", child),
