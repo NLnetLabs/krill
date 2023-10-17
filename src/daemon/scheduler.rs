@@ -273,9 +273,15 @@ impl Scheduler {
         self.tasks
             .schedule_missing(Task::RenewObjectsIfNeeded, now())
             .map_err(FatalError)?;
-        self.tasks
-            .schedule_missing(Task::RefreshAnnouncementsInfo, now())
-            .map_err(FatalError)?;
+
+        // BGP announcement info is only kept in-memory, so it
+        // is lost after a restart, so schedule refreshing this
+        // immediately.
+        if self.config.bgp_risdumps_enabled {
+            self.tasks
+                .schedule(Task::RefreshAnnouncementsInfo, now())
+                .map_err(FatalError)?;
+        }
 
         #[cfg(feature = "multi-user")]
         self.tasks
