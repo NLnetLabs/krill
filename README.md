@@ -27,11 +27,29 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 ## 0.14.0-rc1
 
-- Add traditional and simplified chinese translations #1075
+This is the release candidate for the coming 0.14.0 release. We invite all
+interested users to test this version, but please do not upgrade your
+production environment until 0.14.0 has been released.
+
+This release introduces the following small features and fixes:
+- Add traditional and simplified Chinese translations #1075
+- Let the testbed automatically renew the TA manifest and CRL #1095
+- Show the delete icon for AS0 ROA when there is another existing announcement #1109
+
+But we spent the main effort in this release on improving the way that
+Krill stores its data. This will help to improve robustness today, and
+it paves the way for introducing support for Krill clustering using
+a database back-end in a future release. For now, these issues were
+done:
 - Improve transactionality of changes (e.g. #1076-1078, #1085, #1108, #1090)
 - Remove no longer needed 'always_recover_data' function #1086 
 - Improve upgrade failed error: tell users to downgrade #1042
-- Crash Krill if a fatal error is encountered by the task scheduler. #1132
+- Crash Krill if the task scheduler encounters a fatal error. #1132
+- Add support for importing delegated child CAs #1133
+
+Note that this release still uses the now outdated ASPA object syntax. We plan
+to make another focused release to address this immediately after 0.14.0 is
+released. See issue #1080.
 
 ## 0.13.1 'Scrollbars!'
 
