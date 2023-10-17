@@ -1,0 +1,17 @@
+{
+  "name": "nicbr_repo",
+  "id_cert": "MIIDEzCCAfugAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEygwMkREQ0M0NzAwMzBCRTE2NTZCMzVBODQ0RjFBODU3MjBFREMyMkFFMB4XDTIzMTAxMTA4MjkwNFoXDTM4MTAxMTA4MzQwNFowMzExMC8GA1UEAxMoMDJERENDNDcwMDMwQkUxNjU2QjM1QTg0NEYxQTg1NzIwRURDMjJBRTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBANpjm5zsABUOp6qmhqqSbRL4BvktTm1mYkK3y7y47dq08I/Ba3JI8GtCMeQs3s9iLrJIGanCmzDD7Gyzu1/iH8P58D/hs/jRbQiYNAJLt7ETnR2tLEUUcaU2Y30TEwxO704WUsD3JpWXMykg92Vy2HVpHPuGaW2rseZLBBNXr/YMnSpGNw+7IFi7GU43Zv1gLg96+Yc+RibCWg7BcxaCvr7UACl01mLQwT/hKpKyV6vmexk1sxOwYfyTj41d/oztWDYYPAHCV+4h7dwyK2VnYbrStwquQdFxcCnxYfYsdypGib3lc2FkdVp+Dw2gG0y596YS7xZonJYN/etz/tb+6FsCAwEAAaMyMDAwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUAt3MRwAwvhZWs1qETxqFcg7cIq4wDQYJKoZIhvcNAQELBQADggEBABVck90fEt5ETN33+rXmJhfPn2s9CNifJmBJyTdHOhDIFZdLURaMJ6bAXyT2BGEVcx8tqH4tKRSfC78/XGxY6mBYie2W2yvm1lXPSjjkkrXH/0JsgzUUVvimguPh3kZ3rrYBLdZU0ejGSPQ4X2sdpopbCMf21sum/8jEnZG1u4svA5otF0n7LhEgZy30UqFglvC5TVzKz4wziYhFRcDEbvjtQ859mLJJSlbyFXWx/Clc6+KoLxgUzAnxXzgVS+gE2E/5cAGrPVJ2dggNxJpPN94V2bifuUTnfZ725gUoHvxJpYQ6RdvwGBgZ1jLuhUaD5kpBjpr24Xj3RCBmliNCVg0=",
+  "resources": {
+    "asn": "as65000",
+    "ipv4": "10.0.0.0/8",
+    "ipv6": "2001:db8::/32"
+  },
+  "issued_cert": {
+    "ca_repository": "rsync://rpki-repo.registro.br/repo/nicbr_repo/0/",
+    "rpki_manifest": "rsync://rpki-repo.registro.br/repo/nicbr_repo/0/EE917EBC7A158783B44BC6ED82217434F28ADEFB.mft",
+    "rpki_notify": "https://rpki-repo.registro.br/rrdp/notification.xml",
+    "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuFTPER/lWsLXFFUgoicRbYCHQM46XeuZdXRgklLD9zKCqwro/qTONwqMfsl6fgPcqSqtejmoFKWwQT5+RyV3niF/igCzz+Ko6IGVGs057jfk/2YyT5YJp5PEslHgaDbFhSGxAdOuDYu5G1V/VUs/F/U4rP1SqYnS9B/kRGmTcaHW7bJOFQDI6H57rKBbMKk7Ayt6+kQ7j0BsREo6fdUV3w5BlV/R276iwHBqDd7FTKE/o38PrxFL1fBJADiIq/Hbqc4VKqxoaXjZaBdT76OQ4RBE5y4oVl37EU0MhC8GDwnOgKN0iTSfx0p3FLZM1PT3dzCtgxFe+oXb+7w783yo5QIDAQAB",
+    "class_name": "lacnic"
+  }
+}
+
