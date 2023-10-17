@@ -24,6 +24,7 @@ use crate::{
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case")]
 pub enum UsedKeyState {
+    #[serde(alias = "current")]
     InUse(ResourceClassName), // Multiple keys are possible during a key rollover.
     Revoked,
 }
