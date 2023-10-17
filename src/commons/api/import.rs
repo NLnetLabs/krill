@@ -252,4 +252,11 @@ mod tests {
         let structure: Structure = serde_json::from_str(json).unwrap();
         assert!(structure.validate_ca_hierarchy(HashMap::new()).is_ok());
     }
+
+    #[test]
+    fn parse_import_delegated_child() {
+        let json = include_str!("../../../test-resources/bulk-ca-import/import-nicbr.json");
+
+        let _child: ImportChild = serde_json::from_str(json).unwrap();
+    }
 }
