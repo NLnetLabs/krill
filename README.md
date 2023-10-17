@@ -51,6 +51,12 @@ Note that this release still uses the now outdated ASPA object syntax. We plan
 to make another focused release to address this immediately after 0.14.0 is
 released. See issue #1080.
 
+Note that if you were running 0.13.1 as a testbed, you may have symlinked
+the "signer" directory to "ta_signer" to support a manual work around for
+re-signing the trust anchor CRL and manifest (issue #1095). If you did,
+then you may need to delete any surplus files and directories under
+"/var/lib/krill/data/ta_signer" other than the directory called "ta".
+
 ## 0.13.1 'Scrollbars!'
 
 The Krill UI includes a CA selection dropdown in case you have multiple CAs.
