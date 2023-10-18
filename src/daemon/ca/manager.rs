@@ -30,8 +30,8 @@ use crate::{
             RoaConfigurationUpdates, Timestamp,
         },
         api::{
-            AddChildRequest, AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates, AspaProvidersUpdate,
-            CaCommandDetails, CertAuthList, CertAuthSummary, ChildCaInfo, CommandHistory, CommandHistoryCriteria,
+            AddChildRequest, AspaDefinitionList, AspaDefinitionUpdates, AspaProvidersUpdate, CaCommandDetails,
+            CertAuthList, CertAuthSummary, ChildCaInfo, CommandHistory, CommandHistoryCriteria, CustomerAsn,
             ParentCaContact, ParentCaReq, ReceivedCert, RepositoryContact, RtaName, UpdateChildRequest,
         },
         crypto::KrillSigner,
@@ -2294,7 +2294,7 @@ impl CaManager {
     pub async fn ca_aspas_update_aspa(
         &self,
         ca: CaHandle,
-        customer: AspaCustomer,
+        customer: CustomerAsn,
         update: AspaProvidersUpdate,
         actor: &Actor,
     ) -> KrillResult<()> {

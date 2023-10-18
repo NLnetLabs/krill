@@ -32,10 +32,11 @@ use crate::{
     commons::{
         api::{
             import::{ExportChild, ImportChild, ImportChildCertificate},
-            AspaCustomer, AspaDefinition, AspaDefinitionList, AspaDefinitionUpdates, AspaProvidersUpdate, BgpSecAsnKey,
+            AspaDefinition, AspaDefinitionList, AspaDefinitionUpdates, AspaProvidersUpdate, BgpSecAsnKey,
             BgpSecCsrInfoList, BgpSecDefinitionUpdates, CertAuthInfo, CertAuthStorableCommand, ConfiguredRoa,
-            IdCertInfo, ObjectName, ParentCaContact, ReceivedCert, RepositoryContact, ResourceClassNameMapping,
-            Revocation, RoaConfiguration, RoaConfigurationUpdates, RtaList, RtaName, RtaPrepResponse,
+            CustomerAsn, IdCertInfo, ObjectName, ParentCaContact, ReceivedCert, RepositoryContact,
+            ResourceClassNameMapping, Revocation, RoaConfiguration, RoaConfigurationUpdates, RtaList, RtaName,
+            RtaPrepResponse,
         },
         crypto::{CsrInfo, KrillSigner},
         error::{Error, RoaDeltaError},
@@ -1877,10 +1878,6 @@ impl CertAuth {
                 return Err(Error::AspaCustomerAsProvider(self.handle.clone(), customer));
             }
 
-            if !aspa_config.providers_has_both_afis() {
-                return Err(Error::AspaProvidersSingleAfi(self.handle.clone(), customer));
-            }
-
             if aspa_config.contains_duplicate_providers() {
                 return Err(Error::AspaProvidersDuplicates(self.handle.clone(), customer));
             }
@@ -1926,7 +1923,7 @@ impl CertAuth {
 
     pub fn aspas_update(
         &self,
-        customer: AspaCustomer,
+        customer: CustomerAsn,
         update: AspaProvidersUpdate,
         config: &Config,
         signer: &KrillSigner,
@@ -1992,7 +1989,7 @@ impl CertAuth {
     /// the configured AspaDefinition. I.e. this gives us idempotence and e.g. allows
     /// an operator just issue a command to add a provider for a customer ASN, and
     /// if it was already authorised then no work is needed.
-    fn updated_allowed_and_needed(&self, customer: AspaCustomer, update: &AspaProvidersUpdate) -> KrillResult<bool> {
+    fn updated_allowed_and_needed(&self, customer: CustomerAsn, update: &AspaProvidersUpdate) -> KrillResult<bool> {
         // The easiest way to check this is by getting the existing definition,
         // or a default empty one if we did not have one, then apply the update
         // on a copy and verify if it's actually changed, and if so if the
@@ -2018,8 +2015,6 @@ impl CertAuth {
             Err(Error::AspaCustomerAsNotEntitled(self.handle().clone(), customer))
         } else if updated.customer_used_as_provider() {
             Err(Error::AspaCustomerAsProvider(self.handle().clone(), customer))
-        } else if !updated.providers_has_both_afis() {
-            Err(Error::AspaProvidersSingleAfi(self.handle().clone(), customer))
         } else {
             Ok(true)
         }

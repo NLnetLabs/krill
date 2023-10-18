@@ -21,7 +21,7 @@ use rpki::{
 
 use crate::{
     commons::{
-        api::{AspaCustomer, AspaDefinition, AspaProvidersUpdate, ObjectName},
+        api::{AspaDefinition, AspaProvidersUpdate, CustomerAsn, ObjectName},
         crypto::KrillSigner,
         error::Error,
         KrillResult,
@@ -71,7 +71,7 @@ pub fn make_aspa_object(
 /// holds the ASN.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AspaDefinitions {
-    attestations: HashMap<AspaCustomer, AspaDefinition>,
+    attestations: HashMap<CustomerAsn, AspaDefinition>,
 }
 
 impl AspaDefinitions {
@@ -82,12 +82,12 @@ impl AspaDefinitions {
     }
 
     // Remove an existing definition (if it is present)
-    pub fn remove(&mut self, customer: AspaCustomer) {
+    pub fn remove(&mut self, customer: CustomerAsn) {
         self.attestations.remove(&customer);
     }
 
     // Applies an update. This assumes that the update was verified beforehand.
-    pub fn apply_update(&mut self, customer: AspaCustomer, update: &AspaProvidersUpdate) {
+    pub fn apply_update(&mut self, customer: CustomerAsn, update: &AspaProvidersUpdate) {
         if let Some(current) = self.attestations.get_mut(&customer) {
             current.apply_update(update);
 
@@ -114,11 +114,11 @@ impl AspaDefinitions {
 /// # Set operations
 ///
 impl AspaDefinitions {
-    pub fn get(&self, customer: AspaCustomer) -> Option<&AspaDefinition> {
+    pub fn get(&self, customer: CustomerAsn) -> Option<&AspaDefinition> {
         self.attestations.get(&customer)
     }
 
-    pub fn has(&self, customer: AspaCustomer) -> bool {
+    pub fn has(&self, customer: CustomerAsn) -> bool {
         self.attestations.contains_key(&customer)
     }
 
@@ -135,7 +135,7 @@ impl AspaDefinitions {
 
 /// ASPA objects held by a resource class in a CA.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-pub struct AspaObjects(HashMap<AspaCustomer, AspaInfo>);
+pub struct AspaObjects(HashMap<CustomerAsn, AspaInfo>);
 
 impl AspaObjects {
     pub fn make_aspa(
@@ -292,7 +292,7 @@ impl AspaInfo {
         &self.definition
     }
 
-    pub fn customer(&self) -> AspaCustomer {
+    pub fn customer(&self) -> CustomerAsn {
         self.definition.customer()
     }
 

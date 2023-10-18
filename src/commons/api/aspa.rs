@@ -8,23 +8,23 @@
 use std::fmt;
 use std::str::FromStr;
 
-use rpki::repository::aspa::*;
-use rpki::repository::resources::{AddressFamily, Asn};
+use rpki::repository::resources::Asn;
 
-pub type AspaCustomer = Asn;
+pub type CustomerAsn = Asn;
+pub type ProviderAsn = Asn;
 
 //------------ AspaDefinitionUpdates -------------------------------------
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AspaDefinitionUpdates {
     add_or_replace: Vec<AspaDefinition>,
-    remove: Vec<AspaCustomer>,
+    remove: Vec<CustomerAsn>,
 }
 
 impl AspaDefinitionUpdates {
-    pub fn new(add_or_replace: Vec<AspaDefinition>, remove: Vec<AspaCustomer>) -> Self {
+    pub fn new(add_or_replace: Vec<AspaDefinition>, remove: Vec<CustomerAsn>) -> Self {
         AspaDefinitionUpdates { add_or_replace, remove }
     }
-    pub fn unpack(self) -> (Vec<AspaDefinition>, Vec<AspaCustomer>) {
+    pub fn unpack(self) -> (Vec<AspaDefinition>, Vec<CustomerAsn>) {
         (self.add_or_replace, self.remove)
     }
 }
@@ -72,24 +72,24 @@ impl fmt::Display for AspaDefinitionList {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AspaDefinition {
-    customer: AspaCustomer,
-    providers: Vec<ProviderAs>,
+    customer: CustomerAsn,
+    providers: Vec<ProviderAsn>,
 }
 
 impl AspaDefinition {
-    pub fn new(customer: AspaCustomer, providers: Vec<ProviderAs>) -> Self {
+    pub fn new(customer: CustomerAsn, providers: Vec<ProviderAsn>) -> Self {
         AspaDefinition { customer, providers }
     }
 
-    pub fn unpack(self) -> (AspaCustomer, Vec<ProviderAs>) {
+    pub fn unpack(self) -> (CustomerAsn, Vec<ProviderAsn>) {
         (self.customer, self.providers)
     }
 
-    pub fn customer(&self) -> AspaCustomer {
+    pub fn customer(&self) -> CustomerAsn {
         self.customer
     }
 
-    pub fn providers(&self) -> &Vec<ProviderAs> {
+    pub fn providers(&self) -> &Vec<ProviderAsn> {
         &self.providers
     }
 
@@ -97,14 +97,14 @@ impl AspaDefinition {
     /// This is not allowed by spec, and these definitions should
     /// be rejected by Krill.
     pub fn customer_used_as_provider(&self) -> bool {
-        self.providers.iter().any(|p| p.provider() == self.customer)
+        self.providers.contains(&self.customer)
     }
 
     /// Returns true if there are duplicate provider ASNs. This
     /// is not allowed by spec and these definitions should be
     /// rejected by Krill.
     pub fn contains_duplicate_providers(&self) -> bool {
-        let mut providers: Vec<Asn> = self.providers.iter().map(|p| p.provider()).collect();
+        let mut providers: Vec<Asn> = self.providers.clone();
 
         let len_before_duplicates = providers.len();
 
@@ -114,105 +114,25 @@ impl AspaDefinition {
         len_before_duplicates > providers.len()
     }
 
-    /// Returns true if this contains both IPv4 and IPv6 providers.
-    ///
-    /// Technically,it is allowed to omit one address family entirely,
-    /// but this will be interpreted as though the user specified an
-    /// AS0 provider for the omitted AFI. This may be counterintuitive,
-    /// so we'd better force people to make an explicit choice.
-    pub fn providers_has_both_afis(&self) -> bool {
-        let mut v4 = false;
-        let mut v6 = false;
-        for p in &self.providers {
-            if !v4 {
-                v4 = p.includes_v4();
-            }
-            if !v6 {
-                v6 = p.includes_v6();
-            }
-
-            if v4 && v6 {
-                break;
-            }
-        }
-
-        v4 && v6
-    }
-
     /// Applies an update. This is a no-op in case there is no
     /// actual change needed (i.e. this is idempotent).
     pub fn apply_update(&mut self, update: &AspaProvidersUpdate) {
         for removed in update.removed() {
-            // If the operators tries to remove a provider for a specific AFI limit
-            // only, and we have an existing provider without limit, then we should
-            // keep the provider with the remaining limit.
-            if let Some(limit) = removed.afi_limit() {
-                if let Some(existing) = self
-                    .providers
-                    .iter()
-                    .find(|existing| existing.provider() == removed.provider())
-                {
-                    match existing.afi_limit() {
-                        None => {
-                            let remaining = match limit {
-                                AddressFamily::Ipv4 => ProviderAs::new_v6(existing.provider()),
-                                AddressFamily::Ipv6 => ProviderAs::new_v4(existing.provider()),
-                            };
-
-                            self.providers.retain(|p| p.provider() != remaining.provider());
-                            self.providers.push(remaining);
-                        }
-                        Some(_) => {
-                            // retain all other ProviderAS, this will retain
-                            // a possible ProviderAS for the removed ASN if
-                            // its afiLimit was different.
-                            self.providers.retain(|p| p != removed);
-                        }
-                    }
-                }
-            } else {
-                // there is no limit in the removal, we should remove any existing
-                // ProviderAS for the removed provider ASN regardless of limit.
-                self.providers
-                    .retain(|provider| provider.provider() != removed.provider());
-            }
+            self.providers.retain(|provider| provider != removed);
         }
 
         for added in update.added() {
-            if let Some(existing) = self
-                .providers
-                .iter()
-                .find(|e| e.provider() == added.provider())
-                .copied()
-            {
-                // If there is any existing provider for the added, and if
-                // that was using an afiLimit which was different, then we
-                // need to merge this into an entry without a limit.
-                //
-                // In other words, if we hade provider listed for IPv4 and
-                // the operator now adds the same provider for IPv6, then
-                // we need to have this provider without afiLimit.
-                //
-                // And, if we hade provider listed for IPv4 and the operator
-                // now adds the same provider without afiLimit, then we need
-                // to have this provider without afiLimit.
-                if existing.afi_limit().is_some() && existing.afi_limit() != added.afi_limit() {
-                    // remove the existing entry, then add a new entry without limit
-                    self.providers.retain(|p| p != &existing);
-                    self.providers.push(ProviderAs::new(added.provider()));
-                }
-            } else {
-                // no entry for this new provider ASN, add it as-is
+            if !self.providers.contains(added) {
                 self.providers.push(*added);
             }
         }
-        self.providers.sort_by_key(|p| p.provider());
+        self.providers.sort();
     }
 }
 
 impl fmt::Display for AspaDefinition {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // example: 65000 => 65001, 65002(v4), 65003(v6)
+        // example: 65000 => 65001, 65002, 65003
         write!(f, "{} => ", self.customer)?;
         if self.providers.is_empty() {
             write!(f, "<none>")?;
@@ -238,7 +158,7 @@ impl FromStr for AspaDefinition {
 
         let customer = {
             let customer_str = parts.next().ok_or(AspaDefinitionFormatError::CustomerAsMissing)?;
-            AspaCustomer::from_str(customer_str.trim())
+            CustomerAsn::from_str(customer_str.trim())
                 .map_err(|_| AspaDefinitionFormatError::CustomerAsInvalid(customer_str.trim().to_string()))?
         };
 
@@ -249,7 +169,7 @@ impl FromStr for AspaDefinition {
             if providers_str.trim() != "<none>" {
                 let provider_parts = providers_str.split(',');
                 for provider_part in provider_parts {
-                    let provider = ProviderAs::from_str(provider_part.trim())
+                    let provider = ProviderAsn::from_str(provider_part.trim())
                         .map_err(|_| AspaDefinitionFormatError::ProviderAsInvalid(provider_part.trim().to_string()))?;
                     providers.push(provider);
                 }
@@ -263,12 +183,9 @@ impl FromStr for AspaDefinition {
             Err(AspaDefinitionFormatError::ExtraParts)
         } else {
             // Ensure that the providers are sorted,  and there are no duplicates
-            providers.sort_by_key(|p| p.provider());
+            providers.sort();
 
-            match providers
-                .windows(2)
-                .find(|pair| pair[0].provider() == pair[1].provider())
-            {
+            match providers.windows(2).find(|pair| pair[0] == pair[1]) {
                 Some(dup) => Err(AspaDefinitionFormatError::ProviderAsDuplicate(dup[0], dup[1])),
                 None => Ok(AspaDefinition::new(customer, providers)),
             }
@@ -283,7 +200,7 @@ pub enum AspaDefinitionFormatError {
     CustomerAsMissing,
     CustomerAsInvalid(String),
     ProviderAsInvalid(String),
-    ProviderAsDuplicate(ProviderAs, ProviderAs),
+    ProviderAsDuplicate(ProviderAsn, ProviderAsn),
     ExtraParts,
 }
 
@@ -310,12 +227,12 @@ impl std::error::Error for AspaDefinitionFormatError {}
 /// AspaDefinition.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AspaProvidersUpdate {
-    added: Vec<ProviderAs>,
-    removed: Vec<ProviderAs>,
+    added: Vec<ProviderAsn>,
+    removed: Vec<ProviderAsn>,
 }
 
 impl AspaProvidersUpdate {
-    pub fn new(added: Vec<ProviderAs>, removed: Vec<ProviderAs>) -> Self {
+    pub fn new(added: Vec<ProviderAsn>, removed: Vec<ProviderAsn>) -> Self {
         AspaProvidersUpdate { added, removed }
     }
     pub fn empty() -> Self {
@@ -334,19 +251,19 @@ impl AspaProvidersUpdate {
     }
 
     // Add a provider for both v4 and v6
-    pub fn add(&mut self, provider: ProviderAs) {
+    pub fn add(&mut self, provider: ProviderAsn) {
         self.added.push(provider);
     }
 
-    pub fn remove(&mut self, provider: ProviderAs) {
+    pub fn remove(&mut self, provider: ProviderAsn) {
         self.removed.push(provider);
     }
 
-    pub fn added(&self) -> &Vec<ProviderAs> {
+    pub fn added(&self) -> &Vec<ProviderAsn> {
         &self.added
     }
 
-    pub fn removed(&self) -> &Vec<ProviderAs> {
+    pub fn removed(&self) -> &Vec<ProviderAsn> {
         &self.removed
     }
 }
@@ -379,17 +296,17 @@ mod tests {
         Asn::from_str(s).unwrap()
     }
 
-    fn provider(s: &str) -> ProviderAs {
-        ProviderAs::from_str(s).unwrap()
+    fn provider(s: &str) -> ProviderAsn {
+        ProviderAsn::from_str(s).unwrap()
     }
 
     #[test]
     fn aspa_configuration_to_from_str() {
         let config = AspaDefinition::new(
             customer("AS65000"),
-            vec![provider("AS65001"), provider("AS65002(v4)"), provider("AS65003(v6)")],
+            vec![provider("AS65001"), provider("AS65002"), provider("AS65003")],
         );
-        let config_str = "AS65000 => AS65001, AS65002(v4), AS65003(v6)";
+        let config_str = "AS65000 => AS65001, AS65002, AS65003";
 
         let to_str = config.to_string();
         assert_eq!(config_str, to_str.as_str());

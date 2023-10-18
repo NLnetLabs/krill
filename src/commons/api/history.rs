@@ -15,7 +15,7 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            ArgKey, ArgVal, AspaCustomer, AspaProvidersUpdate, Message, RoaConfigurationUpdates, RtaName,
+            ArgKey, ArgVal, AspaProvidersUpdate, CustomerAsn, Message, RoaConfigurationUpdates, RtaName,
             StorableParentContact,
         },
         eventsourcing::{Event, InitEvent, StoredCommand, StoredEffect, WithStorableDetails},
@@ -445,11 +445,11 @@ pub enum CertAuthStorableCommand {
         updates: AspaDefinitionUpdates,
     },
     AspasUpdateExisting {
-        customer: AspaCustomer,
+        customer: CustomerAsn,
         update: AspaProvidersUpdate,
     },
     AspaRemove {
-        customer: AspaCustomer,
+        customer: CustomerAsn,
     },
     BgpSecDefinitionUpdates, // details in events
     RepoUpdate {

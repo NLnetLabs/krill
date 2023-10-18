@@ -12,7 +12,7 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            AspaCustomer, AspaDefinition, AspaProvidersUpdate, BgpSecAsnKey, IdCertInfo, IssuedCertificate, ObjectName,
+            AspaDefinition, AspaProvidersUpdate, BgpSecAsnKey, CustomerAsn, IdCertInfo, IssuedCertificate, ObjectName,
             ParentCaContact, ReceivedCert, RepositoryContact, ResourceClassNameMapping, RoaAggregateKey, RtaName,
             SuspendedCert, UnsuspendedCert,
         },
@@ -236,11 +236,11 @@ pub struct AspaObjectsUpdates {
     updated: Vec<AspaInfo>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    removed: Vec<AspaCustomer>,
+    removed: Vec<CustomerAsn>,
 }
 
 impl AspaObjectsUpdates {
-    pub fn new(updated: Vec<AspaInfo>, removed: Vec<AspaCustomer>) -> Self {
+    pub fn new(updated: Vec<AspaInfo>, removed: Vec<CustomerAsn>) -> Self {
         AspaObjectsUpdates { updated, removed }
     }
 
@@ -255,7 +255,7 @@ impl AspaObjectsUpdates {
         self.updated.push(update)
     }
 
-    pub fn add_removed(&mut self, customer: AspaCustomer) {
+    pub fn add_removed(&mut self, customer: CustomerAsn) {
         self.removed.push(customer)
     }
 
@@ -267,7 +267,7 @@ impl AspaObjectsUpdates {
         !self.is_empty()
     }
 
-    pub fn unpack(self) -> (Vec<AspaInfo>, Vec<AspaCustomer>) {
+    pub fn unpack(self) -> (Vec<AspaInfo>, Vec<CustomerAsn>) {
         (self.updated, self.removed)
     }
 
@@ -275,7 +275,7 @@ impl AspaObjectsUpdates {
         &self.updated
     }
 
-    pub fn removed(&self) -> &Vec<AspaCustomer> {
+    pub fn removed(&self) -> &Vec<CustomerAsn> {
         &self.removed
     }
 }
@@ -588,11 +588,11 @@ pub enum CertAuthEvent {
         aspa_config: AspaDefinition,
     },
     AspaConfigUpdated {
-        customer: AspaCustomer,
+        customer: CustomerAsn,
         update: AspaProvidersUpdate,
     },
     AspaConfigRemoved {
-        customer: AspaCustomer,
+        customer: CustomerAsn,
     },
     AspaObjectsUpdated {
         // Tracks ASPA *object* which are (re-)issued in a resource class.

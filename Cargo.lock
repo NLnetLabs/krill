@@ -1774,9 +1774,9 @@ dependencies = [
 
 [[package]]
 name = "quick-xml"
-version = "0.23.1"
+version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "11bafc859c6815fbaffbbbf4229ecb767ac913fecb27f9ad4343662e9ef099ea"
+checksum = "81b9228215d82c7b61490fec1de287136b5de6f5700f6e58ea9ad61a7964ca51"
 dependencies = [
  "memchr",
 ]
@@ -1961,16 +1961,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3582f63211428f83597b51b2ddb88e2a91a9d52d12831f9d08f5e624e8977422"
 
 [[package]]
-name = "routecore"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8e2f02d8dd21010b44bf2ca4502cca2fbb2a8ddfd982a18feff149279dc236c"
-dependencies = [
- "bcder",
- "serde",
-]
-
-[[package]]
 name = "rpassword"
 version = "5.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1982,18 +1972,17 @@ dependencies = [
 
 [[package]]
 name = "rpki"
-version = "0.16.1"
+version = "0.17.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "207f773b99ae73e14f8e8ab0f789a5892fc46548b1b79caccec8f33e2d303c40"
+checksum = "98a05b958a41ba8c923cf14bd2ad5f1aca3f3509c8ffd147c36e094346a0290b"
 dependencies = [
- "base64 0.13.1",
+ "base64 0.21.0",
  "bcder",
  "bytes",
  "chrono",
  "log",
  "quick-xml",
  "ring",
- "routecore",
  "serde",
  "untrusted",
  "uuid",

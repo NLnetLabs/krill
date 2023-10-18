@@ -53,7 +53,7 @@ async fn functional_keyroll() {
     // be re-issued during the roll.
     let roa_payload = RoaPayload::from_str("10.0.0.0/16-16 => 64496").unwrap();
     let roa_configuration = RoaConfiguration::from(roa_payload);
-    let aspa_def = AspaDefinition::from_str("AS65000 => AS65002, AS65003(v4), AS65005(v6)").unwrap();
+    let aspa_def = AspaDefinition::from_str("AS65000 => AS65002, AS65003, AS65005").unwrap();
     let bgpsec_def = {
         let csr_bytes = include_bytes!("../test-resources/bgpsec/router-csr.der");
         let csr_bytes = Bytes::copy_from_slice(csr_bytes);

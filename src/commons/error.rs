@@ -18,7 +18,7 @@ use rpki::{
 
 use crate::{
     commons::{
-        api::{rrdp::PublicationDeltaError, AspaCustomer, ErrorResponse, RoaPayload},
+        api::{rrdp::PublicationDeltaError, CustomerAsn, ErrorResponse, RoaPayload},
         crypto::SignerError,
         eventsourcing::{AggregateStoreError, KeyValueError},
         util::httpclient,
@@ -288,13 +288,12 @@ pub enum Error {
     //-----------------------------------------------------------------
     // Autonomous System Provider Authorization - ASPA
     //-----------------------------------------------------------------
-    AspaCustomerAsNotEntitled(CaHandle, AspaCustomer),
-    AspaCustomerAlreadyPresent(CaHandle, AspaCustomer),
-    AspaCustomerUnknown(CaHandle, AspaCustomer),
-    AspaCustomerAsProvider(CaHandle, AspaCustomer),
-    AspaProvidersDuplicates(CaHandle, AspaCustomer),
-    AspaProvidersEmpty(CaHandle, AspaCustomer),
-    AspaProvidersSingleAfi(CaHandle, AspaCustomer),
+    AspaCustomerAsNotEntitled(CaHandle, CustomerAsn),
+    AspaCustomerAlreadyPresent(CaHandle, CustomerAsn),
+    AspaCustomerUnknown(CaHandle, CustomerAsn),
+    AspaCustomerAsProvider(CaHandle, CustomerAsn),
+    AspaProvidersDuplicates(CaHandle, CustomerAsn),
+    AspaProvidersEmpty(CaHandle, CustomerAsn),
 
     //-----------------------------------------------------------------
     // BGP Sec
@@ -485,7 +484,6 @@ impl fmt::Display for Error {
             Error::AspaCustomerAsProvider(_ca, asn) => write!(f, "ASPA for customer AS '{}' cannot have that AS as provider", asn),
             Error::AspaProvidersDuplicates(_ca, asn) => write!(f, "ASPA for customer AS '{}' cannot have duplicate providers", asn),
             Error::AspaCustomerUnknown(_ca, asn) => write!(f, "No current ASPA exists for customer AS '{}'", asn),
-            Error::AspaProvidersSingleAfi(_ca, asn) => write!(f, "ASPA for customer AS '{}' only has providers for one address family. Please include an explicit AS0 provider for the missing address family if this is intentional.", asn),
             
             //-----------------------------------------------------------------
             // BGPSec
@@ -912,9 +910,6 @@ impl Error {
                 .with_ca(ca)
                 .with_asn(*asn),
             Error::AspaCustomerUnknown(ca, asn) => ErrorResponse::new("ca-aspa-unknown-customer-as", self)
-                .with_ca(ca)
-                .with_asn(*asn),
-            Error::AspaProvidersSingleAfi(ca, asn) => ErrorResponse::new("ca-aspa-providers-single-afi", self)
                 .with_ca(ca)
                 .with_asn(*asn),
 
