@@ -25,6 +25,11 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 # Changelog
 
+## 0.14.0-rc2
+
+This RC fixes the following issue, also present in 0.13.x:
+- Show delete ROA button when no BGP preview is available #1139
+
 ## 0.14.0-rc1
 
 This is the release candidate for the coming 0.14.0 release. We invite all
