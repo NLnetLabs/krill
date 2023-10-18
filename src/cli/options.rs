@@ -19,7 +19,7 @@ use rpki::{
     },
     crypto::KeyIdentifier,
     repository::{
-        aspa::{DuplicateProviderAs, ProviderAs},
+        aspa::DuplicateProviderAs,
         resources::{Asn, ResourceSet},
         x509::Time,
     },
@@ -30,8 +30,8 @@ use crate::{
     cli::report::{ReportError, ReportFormat},
     commons::{
         api::{
-            self, import::ImportChild, AddChildRequest, AspaCustomer, AspaDefinition, AspaDefinitionFormatError,
-            AspaProvidersUpdate, AuthorizationFmtError, BgpSecAsnKey, BgpSecDefinition, CertAuthInit, ParentCaReq,
+            self, import::ImportChild, AddChildRequest, AspaDefinition, AspaDefinitionFormatError, AspaProvidersUpdate,
+            AuthorizationFmtError, BgpSecAsnKey, BgpSecDefinition, CertAuthInit, CustomerAsn, ParentCaReq, ProviderAsn,
             PublicationServerUris, RepoFileDeleteCriteria, RoaConfiguration, RoaConfigurationUpdates, RoaPayload,
             RtaName, Token, UpdateChildRequest,
         },
@@ -823,7 +823,7 @@ impl Options {
         sub = sub.arg(
             Arg::with_name("aspa")
                 .long("aspa")
-                .help("ASPA formatted like: 65000 => 65001, 65002(v4), 65003(v6)")
+                .help("ASPA formatted like: 65000 => 65001, 65002, 65003")
                 .value_name("definition")
                 .required(true),
         );
@@ -1979,8 +1979,6 @@ impl Options {
             Err(Error::general("Customer AS may not be used as provider."))
         } else if aspa.contains_duplicate_providers() {
             Err(Error::general("ASPA may not have duplicate providers."))
-        } else if !aspa.providers_has_both_afis() {
-            Err(Error::general("Definition has providers for one address family only. Please include an explicit AS0 provider for the missing address family if this is intentional."))
         } else if aspa.providers().is_empty() {
             Err(Error::general("At least one provider MUST be specified."))
         } else {
@@ -1993,7 +1991,7 @@ impl Options {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
         let customer_str = matches.value_of("customer").unwrap();
-        let customer = AspaCustomer::from_str(customer_str).map_err(|_| Error::invalid_asn(customer_str))?;
+        let customer = CustomerAsn::from_str(customer_str).map_err(|_| Error::invalid_asn(customer_str))?;
 
         let command = Command::CertAuth(CaCommand::AspasRemove(my_ca, customer));
 
@@ -2008,13 +2006,13 @@ impl Options {
         let mut removed = vec![];
 
         let customer_str = matches.value_of("customer").unwrap();
-        let customer = AspaCustomer::from_str(customer_str).map_err(|_| Error::invalid_asn(customer_str))?;
+        let customer = CustomerAsn::from_str(customer_str).map_err(|_| Error::invalid_asn(customer_str))?;
 
         if let Some(add) = matches.values_of("add") {
             for provider_str in add {
-                let provider = ProviderAs::from_str(provider_str).map_err(|_| Error::invalid_asn(provider_str))?;
+                let provider = ProviderAsn::from_str(provider_str).map_err(|_| Error::invalid_asn(provider_str))?;
 
-                if provider.provider() == customer {
+                if provider == customer {
                     return Err(Error::general("Customer AS may not be added as provider."));
                 }
 
@@ -2025,9 +2023,9 @@ impl Options {
         if let Some(remove) = matches.values_of("remove") {
             for provider_as_str in remove {
                 let provider_as =
-                    ProviderAs::from_str(provider_as_str).map_err(|_| Error::invalid_asn(provider_as_str))?;
+                    ProviderAsn::from_str(provider_as_str).map_err(|_| Error::invalid_asn(provider_as_str))?;
 
-                if added.iter().any(|added| added.provider() == provider_as.provider()) {
+                if added.iter().any(|added| *added == provider_as) {
                     return Err(Error::general("Do not add and remove the same AS in a single update."));
                 }
 
@@ -2561,8 +2559,8 @@ pub enum CaCommand {
     // ASPAs
     AspasList(CaHandle),
     AspasAddOrReplace(CaHandle, AspaDefinition),
-    AspasUpdate(CaHandle, AspaCustomer, AspaProvidersUpdate),
-    AspasRemove(CaHandle, AspaCustomer),
+    AspasUpdate(CaHandle, CustomerAsn, AspaProvidersUpdate),
+    AspasRemove(CaHandle, CustomerAsn),
 
     // BGPSec
     BgpSecList(CaHandle),

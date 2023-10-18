@@ -17,8 +17,8 @@ use crate::{
     commons::{
         actor::Actor,
         api::{
-            import::ImportChild, AspaCustomer, AspaDefinitionUpdates, AspaProvidersUpdate, BgpSecDefinitionUpdates,
-            CertAuthStorableCommand, IdCertInfo, ParentCaContact, ReceivedCert, RepositoryContact,
+            import::ImportChild, AspaDefinitionUpdates, AspaProvidersUpdate, BgpSecDefinitionUpdates,
+            CertAuthStorableCommand, CustomerAsn, IdCertInfo, ParentCaContact, ReceivedCert, RepositoryContact,
             ResourceClassNameMapping, RoaConfigurationUpdates, RtaName, StorableRcEntitlement,
         },
         crypto::KrillSigner,
@@ -199,7 +199,7 @@ pub enum CertAuthCommandDetails {
     AspasUpdate(AspaDefinitionUpdates, Arc<Config>, Arc<KrillSigner>),
 
     // Updates an existing AspaProviders for the given AspaCustomer
-    AspasUpdateExisting(AspaCustomer, AspaProvidersUpdate, Arc<Config>, Arc<KrillSigner>),
+    AspasUpdateExisting(CustomerAsn, AspaProvidersUpdate, Arc<Config>, Arc<KrillSigner>),
 
     // Re-issue any and all ASPA objects which would otherwise expire in
     // some time (default 4 weeks, configurable). Note that this command
@@ -690,7 +690,7 @@ impl CertAuthCommandDetails {
 
     pub fn aspas_update_aspa(
         ca: &CaHandle,
-        customer: AspaCustomer,
+        customer: CustomerAsn,
         update: AspaProvidersUpdate,
         config: Arc<Config>,
         signer: Arc<KrillSigner>,

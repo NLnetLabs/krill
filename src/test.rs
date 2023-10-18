@@ -32,11 +32,11 @@ use crate::{
     },
     commons::{
         api::{
-            self, AddChildRequest, AspaCustomer, AspaDefinition, AspaDefinitionList, AspaProvidersUpdate, BgpSecAsnKey,
+            self, AddChildRequest, AspaDefinition, AspaDefinitionList, AspaProvidersUpdate, BgpSecAsnKey,
             BgpSecCsrInfoList, BgpSecDefinition, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ConfiguredRoa,
-            ConfiguredRoas, ObjectName, ParentCaContact, ParentCaReq, ParentStatuses, PublicationServerUris,
-            PublisherDetails, PublisherList, ResourceClassKeysInfo, RoaConfiguration, RoaConfigurationUpdates,
-            RoaPayload, RtaList, RtaName, RtaPrepResponse, TypedPrefix, UpdateChildRequest,
+            ConfiguredRoas, CustomerAsn, ObjectName, ParentCaContact, ParentCaReq, ParentStatuses,
+            PublicationServerUris, PublisherDetails, PublisherList, ResourceClassKeysInfo, RoaConfiguration,
+            RoaConfigurationUpdates, RoaPayload, RtaList, RtaName, RtaPrepResponse, TypedPrefix, UpdateChildRequest,
         },
         bgp::{Announcement, BgpAnalysisReport, BgpAnalysisSuggestion},
         crypto::SignSupport,
@@ -612,15 +612,15 @@ pub async fn expect_aspa_definitions(ca: &CaHandle, expected_aspas: AspaDefiniti
     }
 }
 
-pub async fn ca_aspas_update(ca: &CaHandle, customer: AspaCustomer, update: AspaProvidersUpdate) {
+pub async fn ca_aspas_update(ca: &CaHandle, customer: CustomerAsn, update: AspaProvidersUpdate) {
     krill_admin(Command::CertAuth(CaCommand::AspasUpdate(ca.clone(), customer, update))).await;
 }
 
-pub async fn ca_aspas_update_expect_error(ca: &CaHandle, customer: AspaCustomer, update: AspaProvidersUpdate) {
+pub async fn ca_aspas_update_expect_error(ca: &CaHandle, customer: CustomerAsn, update: AspaProvidersUpdate) {
     krill_admin_expect_error(Command::CertAuth(CaCommand::AspasUpdate(ca.clone(), customer, update))).await;
 }
 
-pub async fn ca_aspas_remove(ca: &CaHandle, customer: AspaCustomer) {
+pub async fn ca_aspas_remove(ca: &CaHandle, customer: CustomerAsn) {
     krill_admin(Command::CertAuth(CaCommand::AspasRemove(ca.clone(), customer))).await;
 }
 
