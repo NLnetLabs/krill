@@ -25,6 +25,15 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 # Changelog
 
+## 0.14.0-rc3
+
+This RC adds support for the updated ASPA v1 profile (issue #1080).
+
+Earlier, we were planning to add this in a later release, but as it turns out,
+it was easier than expected to support this transition, so we included it in the coming release.
+
+Please note that the upgrade will fail if you are already using ASPA and upgraded to 0.14.0-rc1 or rc2.
+
 ## 0.14.0-rc2
 
 This RC fixes the following issue, also present in 0.13.x:
