@@ -154,7 +154,7 @@ pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
     // Call post-start upgrades to trigger any upgrade related runtime actions, such as
     // re-issuing ROAs because subject name strategy has changed.
     if let Some(report) = upgrade_report {
-        post_start_upgrade(report.versions(), &krill_server).await?;
+        post_start_upgrade(report, &krill_server).await?;
     }
 
     // If the operator wanted to do the upgrade only, now is a good time to report success and stop

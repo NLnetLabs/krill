@@ -2,15 +2,19 @@
 //! - Updating the format of commands or events
 //! - Export / Import data
 
-use std::{convert::TryInto, fmt, str::FromStr};
+use std::{collections::HashMap, convert::TryInto, fmt, str::FromStr};
 
 use serde::{de::DeserializeOwned, Deserialize};
 
-use rpki::{ca::idexchange::MyHandle, repository::x509::Time};
+use rpki::{
+    ca::idexchange::{CaHandle, MyHandle},
+    repository::x509::Time,
+};
 
 use crate::{
     commons::{
         actor::Actor,
+        api::{AspaDefinition, AspaDefinitionUpdates, CustomerAsn, ProviderAsn},
         error::KrillIoError,
         eventsourcing::{
             segment, Aggregate, AggregateStore, AggregateStoreError, Key, KeyValueError, KeyValueStore, Scope, Segment,
@@ -21,7 +25,7 @@ use crate::{
     },
     constants::{
         CASERVER_NS, CA_OBJECTS_NS, KEYS_NS, KRILL_VERSION, PUBSERVER_CONTENT_NS, PUBSERVER_NS, SIGNERS_NS, STATUS_NS,
-        TA_PROXY_SERVER_NS, TA_SIGNER_SERVER_NS, UPGRADE_REISSUE_ROAS_CAS_LIMIT,
+        TA_PROXY_SERVER_NS, TA_SIGNER_SERVER_NS,
     },
     daemon::{config::Config, krillserver::KrillServer, properties::PropertiesManager},
     pubd,
@@ -45,23 +49,63 @@ pub mod pre_0_13_0;
 
 pub mod pre_0_14_0;
 
+//------------ UpgradeResult -------------------------------------------------
+
 pub type UpgradeResult<T> = Result<T, UpgradeError>;
+
+//------------ CommandMigrationEffect ----------------------------------------
+
+pub enum CommandMigrationEffect<A: Aggregate> {
+    StoredCommand(StoredCommand<A>),
+    AspaObjectsUpdates(AspaMigrationConfigUpdates),
+    Nothing,
+}
+
+//------------ AspaMigrationConfigUpdates ------------------------------------
+
+pub struct AspaMigrationConfigUpdates {
+    pub ca: CaHandle,
+    pub added_or_updated: HashMap<CustomerAsn, Vec<ProviderAsn>>,
+    pub removed: Vec<CustomerAsn>,
+}
+
+//------------ AspaMigrationConfigs ------------------------------------------
+
+#[derive(Debug, Default)]
+pub struct AspaMigrationConfigs(HashMap<CaHandle, Vec<AspaDefinition>>);
+
+impl AspaMigrationConfigs {
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn into_iter(self) -> impl Iterator<Item = (CaHandle, Vec<AspaDefinition>)> {
+        self.0.into_iter()
+    }
+}
 
 //------------ KrillUpgradeReport --------------------------------------------
 
 #[derive(Debug)]
 pub struct UpgradeReport {
+    aspa_migration_configs: AspaMigrationConfigs,
     data_migration: bool,
     versions: UpgradeVersions,
 }
 
 impl UpgradeReport {
-    pub fn new(data_migration: bool, versions: UpgradeVersions) -> Self {
+    pub fn new(aspa_migration_configs: AspaMigrationConfigs, data_migration: bool, versions: UpgradeVersions) -> Self {
         UpgradeReport {
+            aspa_migration_configs,
             data_migration,
             versions,
         }
     }
+
+    pub fn into_aspa_configs(self) -> AspaMigrationConfigs {
+        self.aspa_migration_configs
+    }
+
     pub fn data_migration(&self) -> bool {
         self.data_migration
     }
@@ -187,10 +231,10 @@ impl From<rpki::ca::idexchange::Error> for UpgradeError {
 impl std::error::Error for UpgradeError {}
 
 //------------ DataUpgradeInfo -----------------------------------------------
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct DataUpgradeInfo {
-    pub to_krill_version: KrillVersion,
     pub last_command: Option<u64>,
+    pub aspa_configs: HashMap<CustomerAsn, Vec<ProviderAsn>>,
 }
 
 impl DataUpgradeInfo {
@@ -205,13 +249,13 @@ impl DataUpgradeInfo {
             self.last_command = Some(0)
         }
     }
-}
 
-impl Default for DataUpgradeInfo {
-    fn default() -> Self {
-        Self {
-            to_krill_version: KrillVersion::code_version(),
-            last_command: None,
+    fn update_aspa_configs(&mut self, updates: AspaMigrationConfigUpdates) {
+        for removed in updates.removed {
+            self.aspa_configs.remove(&removed);
+        }
+        for (customer, providers) in updates.added_or_updated {
+            self.aspa_configs.insert(customer, providers);
         }
     }
 }
@@ -237,6 +281,15 @@ impl UpgradeMode {
 pub enum UnconvertedEffect<T> {
     Error { msg: String },
     Success { events: Vec<T> },
+}
+
+impl<T> UnconvertedEffect<T> {
+    pub fn into_events(self) -> Option<Vec<T>> {
+        match self {
+            UnconvertedEffect::Error { .. } => None,
+            UnconvertedEffect::Success { events } => Some(events),
+        }
+    }
 }
 
 //------------ UpgradeStore --------------------------------------------------
@@ -272,10 +325,6 @@ pub trait UpgradeAggregateStorePre0_14 {
     /// Implement this to convert an old command and convert the
     /// included old events.
     ///
-    /// Implementers may decide that the command does not need to
-    /// be preserved - if it has become irrelevant (may be needed
-    /// for the ASPA migration wrt AFI limit stuff in particular).
-    ///
     /// The version for the new command is given, as it might differ
     /// from the old command sequence.
     fn convert_old_command(
@@ -283,7 +332,7 @@ pub trait UpgradeAggregateStorePre0_14 {
         old_command: OldStoredCommand<Self::OldStorableDetails>,
         old_effect: UnconvertedEffect<Self::OldEvent>,
         version: u64,
-    ) -> UpgradeResult<Option<StoredCommand<Self::Aggregate>>>;
+    ) -> UpgradeResult<CommandMigrationEffect<Self::Aggregate>>;
 
     /// Override this to get a call when the migration of commands for
     /// an aggregate is done.
@@ -296,7 +345,7 @@ pub trait UpgradeAggregateStorePre0_14 {
     ///
     /// Expects implementers of this trait to provide function for converting
     /// old command/event/init types to the current types.
-    fn upgrade(&self, mode: UpgradeMode) -> UpgradeResult<()> {
+    fn upgrade(&self, mode: UpgradeMode) -> UpgradeResult<AspaMigrationConfigs> {
         // check existing version, wipe it if there is an unfinished upgrade
         // in progress for another Krill version.
         self.preparation_store_prepare()?;
@@ -319,6 +368,7 @@ pub trait UpgradeAggregateStorePre0_14 {
             let mut data_upgrade_info = self.data_upgrade_info(&scope)?;
 
             // Get the list of commands to prepare, starting with the last_command we got to (may be 0)
+            trace!("migrataaaaaaaa");
             let old_cmd_keys = self.command_keys(&scope, data_upgrade_info.last_command.unwrap_or(0))?;
 
             // Migrate the initialisation event, if not done in a previous run. This
@@ -363,6 +413,7 @@ pub trait UpgradeAggregateStorePre0_14 {
             // Process remaining commands
             for old_cmd_key in old_cmd_keys {
                 // Read and parse the command.
+                trace!("  +- command: {}", old_cmd_key);
                 let old_command: OldStoredCommand<Self::OldStorableDetails> = self.get(&old_cmd_key)?;
 
                 // And the unconverted effects
@@ -371,7 +422,7 @@ pub trait UpgradeAggregateStorePre0_14 {
                         let mut full_events: Vec<Self::OldEvent> = vec![]; // We just had numbers, we need to include the full events
                         for v in events {
                             let event_key = Self::event_key(scope.clone(), *v);
-                            trace!("  +- event: {}", event_key);
+                            trace!("    +- event: {}", event_key);
                             let evt: OldStoredEvent<Self::OldEvent> =
                                 self.deployed_store().get(&event_key)?.ok_or_else(|| {
                                     UpgradeError::Custom(format!("Cannot parse old event: {}", event_key))
@@ -383,11 +434,17 @@ pub trait UpgradeAggregateStorePre0_14 {
                     OldStoredEffect::Error { msg } => UnconvertedEffect::Error { msg: msg.clone() },
                 };
 
-                if let Some(command) =
-                    self.convert_old_command(old_command, old_effect, data_upgrade_info.next_command())?
-                {
-                    self.store_new_command(&scope, &command)?;
-                    data_upgrade_info.increment_command();
+                match self.convert_old_command(old_command, old_effect, data_upgrade_info.next_command())? {
+                    CommandMigrationEffect::StoredCommand(command) => {
+                        self.store_new_command(&scope, &command)?;
+                        data_upgrade_info.increment_command();
+                    }
+                    CommandMigrationEffect::AspaObjectsUpdates(updates) => {
+                        data_upgrade_info.update_aspa_configs(updates);
+                    }
+                    CommandMigrationEffect::Nothing => {
+                        // nothing to do
+                    }
                 }
 
                 // Report progress and expected time to finish on every 100 commands evaluated.
@@ -442,14 +499,31 @@ pub trait UpgradeAggregateStorePre0_14 {
                     "Prepared migrating data to Krill version {}. Will save progress for final upgrade when Krill restarts.",
                     KRILL_VERSION
                 );
+                Ok(AspaMigrationConfigs::default())
             }
             UpgradeMode::PrepareToFinalise => {
+                let mut aspa_configs = AspaMigrationConfigs::default();
+                for scope in self.deployed_store().scopes()? {
+                    // Getting the Handle should never fail, but if it does then we should bail out asap.
+                    let ca = MyHandle::from_str(&scope.to_string())
+                        .map_err(|_| UpgradeError::Custom(format!("Found invalid handle '{}'", scope)))?;
+                    let info = self.data_upgrade_info(&scope)?;
+                    let aspa_configs_for_ca: Vec<AspaDefinition> = info
+                        .aspa_configs
+                        .into_iter()
+                        .map(|(customer, providers)| AspaDefinition::new(customer, providers))
+                        .collect();
+
+                    if !aspa_configs_for_ca.is_empty() {
+                        aspa_configs.0.insert(ca, aspa_configs_for_ca);
+                    }
+                }
                 self.clean_migration_help_files()?;
                 info!("Prepared migrating data to Krill version {}.", KRILL_VERSION);
+
+                Ok(aspa_configs)
             }
         }
-
-        Ok(())
     }
 
     //-- Internal helper functions for this trait. Should not be used or
@@ -635,7 +709,7 @@ pub fn prepare_upgrade_data_migrations(
             } else if versions.from < KrillVersion::candidate(0, 10, 0, 1) {
                 // Complex migrations involving command / event conversions
                 pre_0_10_0::PublicationServerRepositoryAccessMigration::upgrade(mode, config, &versions)?;
-                pre_0_10_0::CasMigration::upgrade(mode, config)?;
+                let aspa_configs = pre_0_10_0::CasMigration::upgrade(mode, config)?;
 
                 // The way that pubd objects were stored was changed as well (since 0.13.0)
                 migrate_pre_0_12_pubd_objects(config)?;
@@ -644,7 +718,7 @@ pub fn prepare_upgrade_data_migrations(
                 // in 0.14.0 where we combine commands and events into a single key-value pair.
                 pre_0_14_0::UpgradeAggregateStoreSignerInfo::upgrade(SIGNERS_NS, mode, config)?;
 
-                Ok(Some(UpgradeReport::new(true, versions)))
+                Ok(Some(UpgradeReport::new(aspa_configs, true, versions)))
             } else if versions.from < KrillVersion::candidate(0, 10, 0, 3) {
                 Err(UpgradeError::custom(
                     "Cannot upgrade from 0.10.0 RC1 or RC2. Please contact rpki-team@nlnetlabs.nl",
@@ -662,32 +736,36 @@ pub fn prepare_upgrade_data_migrations(
                 // Migrate aggregate stores used in < 0.12.0 to the new format in 0.14.0 where
                 // we combine commands and events into a single key-value pair.
                 pre_0_14_0::UpgradeAggregateStoreSignerInfo::upgrade(SIGNERS_NS, mode, config)?;
-                pre_0_14_0::UpgradeAggregateStoreCertAuth::upgrade(CASERVER_NS, mode, config)?;
+                let aspa_configs = pre_0_14_0::CasMigration::upgrade(mode, config)?;
                 pre_0_14_0::UpgradeAggregateStoreRepositoryAccess::upgrade(PUBSERVER_NS, mode, config)?;
 
-                Ok(Some(UpgradeReport::new(true, versions)))
+                Ok(Some(UpgradeReport::new(aspa_configs, true, versions)))
             } else if versions.from < KrillVersion::candidate(0, 13, 0, 0) {
                 migrate_0_12_pubd_objects(config)?;
 
                 // Migrate aggregate stores used in < 0.13.0 to the new format in 0.14.0 where
                 // we combine commands and events into a single key-value pair.
                 pre_0_14_0::UpgradeAggregateStoreSignerInfo::upgrade(SIGNERS_NS, mode, config)?;
-                pre_0_14_0::UpgradeAggregateStoreCertAuth::upgrade(CASERVER_NS, mode, config)?;
+                let aspa_configs = pre_0_14_0::CasMigration::upgrade(mode, config)?;
                 pre_0_14_0::UpgradeAggregateStoreRepositoryAccess::upgrade(PUBSERVER_NS, mode, config)?;
 
-                Ok(Some(UpgradeReport::new(true, versions)))
+                Ok(Some(UpgradeReport::new(aspa_configs, true, versions)))
             } else if versions.from < KrillVersion::candidate(0, 14, 0, 0) {
                 // Migrate aggregate stores used in < 0.14.0 to the new format in 0.14.0 where
                 // we combine commands and events into a single key-value pair.
-                pre_0_14_0::UpgradeAggregateStoreCertAuth::upgrade(CASERVER_NS, mode, config)?;
+                let aspa_configs = pre_0_14_0::CasMigration::upgrade(mode, config)?;
                 pre_0_14_0::UpgradeAggregateStoreRepositoryAccess::upgrade(PUBSERVER_NS, mode, config)?;
                 pre_0_14_0::UpgradeAggregateStoreSignerInfo::upgrade(SIGNERS_NS, mode, config)?;
                 pre_0_14_0::UpgradeAggregateStoreTrustAnchorSigner::upgrade(TA_SIGNER_SERVER_NS, mode, config)?;
                 pre_0_14_0::UpgradeAggregateStoreTrustAnchorProxy::upgrade(TA_PROXY_SERVER_NS, mode, config)?;
 
-                Ok(Some(UpgradeReport::new(true, versions)))
+                Ok(Some(UpgradeReport::new(aspa_configs, true, versions)))
             } else {
-                Ok(Some(UpgradeReport::new(false, versions)))
+                Ok(Some(UpgradeReport::new(
+                    AspaMigrationConfigs::default(),
+                    false,
+                    versions,
+                )))
             }
         }
     }
@@ -877,23 +955,21 @@ fn record_preexisting_openssl_keys_in_signer_mapper(config: &Config) -> Result<(
 
 /// Should be called after the KrillServer is started, but before the web server is started
 /// and operators can make changes.
-pub async fn post_start_upgrade(upgrade_versions: &UpgradeVersions, server: &KrillServer) -> KrillResult<()> {
-    if upgrade_versions.from() < &KrillVersion::candidate(0, 9, 3, 2) {
-        if server.ca_list(server.system_actor())?.as_ref().len() <= UPGRADE_REISSUE_ROAS_CAS_LIMIT {
-            info!("Reissue ROAs on upgrade to force short EE certificate subjects in the objects");
-            server.force_renew_roas().await
-        } else {
-            // We do not re-issue ROAs to avoid a load spike on the repository. Long ROA subjects
-            // are accepted by all RPs and ROAs will be replaced by the system automatically. Using
-            // default settings that are replaced 4 weeks before expiry and issued with a validity
-            // of 52 weeks -> i.e. 48 weeks after issuance.
-            //
-            // If users want to force the ROAs are re-issued they can do a key roll.
-            Ok(())
-        }
-    } else {
-        Ok(())
+pub async fn post_start_upgrade(report: UpgradeReport, server: &KrillServer) -> KrillResult<()> {
+    if report.versions().from() < &KrillVersion::candidate(0, 9, 3, 2) {
+        info!("Reissue ROAs on upgrade to force short EE certificate subjects in the objects");
+        server.force_renew_roas().await?;
     }
+
+    for (ca, configs) in report.into_aspa_configs().into_iter() {
+        info!("Re-import ASPA configurations after migration for CA '{ca}'");
+        let aspa_updates = AspaDefinitionUpdates::new(configs, vec![]);
+        server
+            .ca_aspas_definitions_update(ca, aspa_updates, server.system_actor())
+            .await?;
+    }
+
+    Ok(())
 }
 
 /// Checks if we should upgrade:
@@ -955,6 +1031,7 @@ mod tests {
     use std::path::PathBuf;
 
     use kvx::Namespace;
+    use log::LevelFilter;
     use url::Url;
 
     use crate::test;
@@ -965,7 +1042,8 @@ mod tests {
         // Copy data for the given names spaces into memory for testing.
         let mem_storage_base_uri = test::mem_storage();
         let bogus_path = PathBuf::from("/dev/null"); // needed for tls_dir etc, but will be ignored here
-        let config = Config::test(&mem_storage_base_uri, Some(&bogus_path), false, false, false, false);
+        let mut config = Config::test(&mem_storage_base_uri, Some(&bogus_path), false, false, false, false);
+        config.log_level = LevelFilter::Trace;
         let _ = config.init_logging();
 
         let source_url = Url::parse(&format!("local://{}", base_dir)).unwrap();
@@ -992,22 +1070,65 @@ mod tests {
     }
 
     #[test]
-    fn prepare_then_upgrade_0_9_5() {
+    fn prepare_then_upgrade_0_9_6() {
         test_upgrade(
-            "test-resources/migrations/v0_9_5/",
+            "test-resources/migrations/v0_9_6/data/",
             &["ca_objects", "cas", "pubd", "pubd_objects"],
         );
     }
 
     #[test]
-    fn prepare_then_upgrade_0_12_1() {
-        test_upgrade("test-resources/migrations/v0_12_1/", &["pubd", "pubd_objects"]);
+    fn prepare_then_upgrade_0_9_5_pubserver() {
+        test_upgrade(
+            "test-resources/migrations/v0_9_5_pubserver/",
+            &["ca_objects", "cas", "pubd", "pubd_objects"],
+        );
     }
 
     #[test]
-    fn prepare_then_upgrade_0_13_0() {
+    fn prepare_then_upgrade_0_10_3() {
         test_upgrade(
-            "test-resources/migrations/v0_13_1/",
+            "test-resources/migrations/v0_10_3/data/",
+            &["ca_objects", "cas", "pubd", "pubd_objects"],
+        );
+    }
+
+    #[test]
+    fn prepare_then_upgrade_0_11_0() {
+        test_upgrade(
+            "test-resources/migrations/v0_11_0/data/",
+            &["ca_objects", "cas", "pubd", "pubd_objects"],
+        );
+    }
+
+    #[test]
+    fn prepare_then_upgrade_0_12_1_pubserver() {
+        test_upgrade(
+            "test-resources/migrations/v0_12_1_pubserver/",
+            &["pubd", "pubd_objects"],
+        );
+    }
+
+    #[test]
+    fn prepare_then_upgrade_0_12_3() {
+        test_upgrade(
+            "test-resources/migrations/v0_12_3/data/",
+            &["ca_objects", "cas", "pubd", "pubd_objects"],
+        );
+    }
+
+    #[test]
+    fn prepare_then_upgrade_0_13_1() {
+        test_upgrade(
+            "test-resources/migrations/v0_13_1/data/",
+            &["ca_objects", "cas", "keys", "pubd", "pubd_objects", "signers", "status"],
+        );
+    }
+
+    #[test]
+    fn prepare_then_upgrade_0_13_1_pubserver() {
+        test_upgrade(
+            "test-resources/migrations/v0_13_1_pubserver/",
             &[
                 "ca_objects",
                 "cas",
@@ -1024,7 +1145,7 @@ mod tests {
 
     #[test]
     fn parse_0_10_0_rc3_repository_content() {
-        let json = include_str!("../../test-resources/migrations/v0_10_0/0.json");
+        let json = include_str!("../../test-resources/migrations/v0_10_0_pubserver/0.json");
         let _repo: pre_0_13_0::OldRepositoryContent = serde_json::from_str(json).unwrap();
     }
 

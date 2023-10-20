@@ -1,61 +1,27 @@
-use std::convert::TryInto;
-
 use rpki::ca::idexchange::MyHandle;
-use rpki::{ca::idexchange::CaHandle, repository::x509::Time};
+use rpki::repository::x509::Time;
 
 use crate::commons::api::ProviderAsn;
 use crate::commons::eventsourcing::StoredCommandBuilder;
-use crate::daemon::ca::CaObjects;
-use crate::upgrades::{AspaMigrationConfigUpdates, AspaMigrationConfigs, CommandMigrationEffect, UnconvertedEffect};
+use crate::upgrades::pre_0_14_0::Pre0_14_0CertAuthStorableCommand;
+use crate::upgrades::{
+    AspaMigrationConfigUpdates, AspaMigrationConfigs, CommandMigrationEffect, UnconvertedEffect,
+    UpgradeAggregateStorePre0_14, UpgradeMode,
+};
 use crate::{
     commons::{
         api::CertAuthStorableCommand,
-        eventsourcing::{AggregateStore, Key, KeyValueStore, Segment, SegmentExt},
+        eventsourcing::{AggregateStore, KeyValueStore},
     },
-    constants::{CASERVER_NS, CA_OBJECTS_NS},
+    constants::CASERVER_NS,
     daemon::{
         ca::{CertAuth, CertAuthEvent, CertAuthInitEvent},
         config::Config,
     },
-    upgrades::{
-        pre_0_10_0::{Pre0_10CertAuthEvent, Pre0_10CertAuthInitEvent},
-        pre_0_14_0::OldStoredCommand,
-        UpgradeAggregateStorePre0_14, UpgradeError, UpgradeMode, UpgradeResult,
-    },
+    upgrades::UpgradeResult,
 };
 
-use super::{OldCaObjects, Pre0_10_0CertAuthStorableCommand};
-
-/// Migrates the CaObjects for a given CA.
-///
-/// i.e. the CA content which is NOT event-sourced.
-struct CaObjectsMigration {
-    current_store: KeyValueStore,
-    new_store: KeyValueStore,
-}
-
-impl CaObjectsMigration {
-    fn create(config: &Config) -> Result<Self, UpgradeError> {
-        let current_store = KeyValueStore::create(&config.storage_uri, CA_OBJECTS_NS)?;
-        let new_store = KeyValueStore::create_upgrade_store(&config.storage_uri, CA_OBJECTS_NS)?;
-        Ok(CaObjectsMigration {
-            current_store,
-            new_store,
-        })
-    }
-
-    fn prepare_new_data_for(&self, ca: &CaHandle) -> Result<(), UpgradeError> {
-        let key = Key::new_global(Segment::parse_lossy(&format!("{}.json", ca))); // ca should always be a valid Segment
-
-        if let Some(old_objects) = self.current_store.get::<OldCaObjects>(&key)? {
-            let converted: CaObjects = old_objects.try_into()?;
-            self.new_store.store(&key, &converted)?;
-            debug!("Stored updated objects for CA {} in {}", ca, self.new_store);
-        }
-
-        Ok(())
-    }
-}
+use super::{OldStoredCommand, Pre0_14_0CertAuthEvent};
 
 /// Migrates the CAs:
 /// - The events, snapshots and info in the AggregateStore
@@ -64,7 +30,6 @@ pub struct CasMigration {
     current_kv_store: KeyValueStore,
     new_kv_store: KeyValueStore,
     new_agg_store: AggregateStore<CertAuth>,
-    ca_objects_migration: CaObjectsMigration,
 }
 
 impl CasMigration {
@@ -77,13 +42,11 @@ impl CasMigration {
             CASERVER_NS,
             config.use_history_cache,
         )?;
-        let ca_objects_migration = CaObjectsMigration::create(config)?;
 
         CasMigration {
             current_kv_store,
             new_kv_store,
             new_agg_store,
-            ca_objects_migration,
         }
         .upgrade(mode)
     }
@@ -92,9 +55,9 @@ impl CasMigration {
 impl UpgradeAggregateStorePre0_14 for CasMigration {
     type Aggregate = CertAuth;
 
-    type OldInitEvent = Pre0_10CertAuthInitEvent;
-    type OldEvent = Pre0_10CertAuthEvent;
-    type OldStorableDetails = Pre0_10_0CertAuthStorableCommand;
+    type OldInitEvent = CertAuthInitEvent;
+    type OldEvent = Pre0_14_0CertAuthEvent;
+    type OldStorableDetails = Pre0_14_0CertAuthStorableCommand;
 
     fn store_name(&self) -> &str {
         "CAs"
@@ -108,7 +71,7 @@ impl UpgradeAggregateStorePre0_14 for CasMigration {
         time: Time,
     ) -> UpgradeResult<crate::commons::eventsourcing::StoredCommand<Self::Aggregate>> {
         let details = CertAuthStorableCommand::Init;
-        let init_event = CertAuthInitEvent::new(old_init.into());
+        let init_event = old_init;
 
         let builder = StoredCommandBuilder::<CertAuth>::new(actor, time, handle, 0, details);
 
@@ -134,23 +97,20 @@ impl UpgradeAggregateStorePre0_14 for CasMigration {
         version: u64,
     ) -> UpgradeResult<CommandMigrationEffect<Self::Aggregate>> {
         match old_command.details() {
-            Pre0_10_0CertAuthStorableCommand::AspaRemove { .. }
-            | Pre0_10_0CertAuthStorableCommand::AspasUpdate { .. }
-            | Pre0_10_0CertAuthStorableCommand::AspasUpdateExisting { .. } => {
+            Pre0_14_0CertAuthStorableCommand::AspaRemove { .. }
+            | Pre0_14_0CertAuthStorableCommand::AspasUpdate { .. }
+            | Pre0_14_0CertAuthStorableCommand::AspasUpdateExisting { .. } => {
                 if let Some(events) = old_effect.into_events() {
                     for old_event in events {
                         match old_event {
-                            Pre0_10CertAuthEvent::AspaObjectsUpdated { updates, .. } => {
+                            Pre0_14_0CertAuthEvent::AspaObjectsUpdated { updates, .. } => {
                                 let ca = old_command.handle().clone();
                                 let removed = updates.removed;
                                 let added_or_updated = updates
                                     .updated
                                     .into_iter()
                                     .map(|info| {
-                                        // strange mapping is correct, we re-use the Pre0_14_0ProviderAsn
-                                        // for the customer AS because of the string, rather than u32, mapping
-                                        // that was used in the pre <0.10 json.
-                                        let customer = info.definition.customer.provider;
+                                        let customer = info.definition.customer;
                                         let providers: Vec<ProviderAsn> =
                                             info.definition.providers.into_iter().map(|p| p.provider).collect();
                                         (customer, providers)
@@ -187,7 +147,7 @@ impl UpgradeAggregateStorePre0_14 for CasMigration {
                     UnconvertedEffect::Success { events } => {
                         let mut full_events: Vec<CertAuthEvent> = vec![]; // We just had numbers, we need to include the full events
                         for old_event in events {
-                            full_events.push(old_event.try_into()?);
+                            full_events.push(old_event.into());
                         }
                         new_command_builder.finish_with_events(full_events)
                     }
@@ -196,11 +156,5 @@ impl UpgradeAggregateStorePre0_14 for CasMigration {
                 Ok(CommandMigrationEffect::StoredCommand(new_command))
             }
         }
-    }
-
-    /// Override post migration, we need to do extra stuff.
-    fn post_command_migration(&self, handle: &MyHandle) -> UpgradeResult<()> {
-        info!("Will migrate the current repository objects for CA '{}'", handle);
-        self.ca_objects_migration.prepare_new_data_for(handle)
     }
 }
