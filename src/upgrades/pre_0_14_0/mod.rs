@@ -1,10 +1,20 @@
 use std::{fmt, str::FromStr};
 
 use kvx::Namespace;
-use rpki::{ca::idexchange::MyHandle, repository::x509::Time};
+use rpki::{
+    ca::{idexchange::MyHandle, publication::Base64},
+    repository::{
+        resources::AddressFamily,
+        x509::{Serial, Time, Validity},
+    },
+    resources::Asn,
+    rrdp::Hash,
+    uri,
+};
 
 use crate::{
     commons::{
+        api::{AspaDefinition, CustomerAsn},
         crypto::dispatch::signerinfo::{SignerInfo, SignerInfoEvent, SignerInfoInitEvent},
         eventsourcing::{
             Aggregate, AggregateStore, KeyValueStore, Storable, StoredCommand, StoredCommandBuilder,
@@ -12,7 +22,7 @@ use crate::{
         },
     },
     daemon::{
-        ca::{CertAuth, CertAuthEvent, CertAuthInitEvent},
+        ca::{CertAuthEvent, CertAuthInitEvent},
         config::Config,
         properties::Properties,
     },
@@ -23,7 +33,59 @@ use crate::{
     },
 };
 
-use super::{UnconvertedEffect, UpgradeAggregateStorePre0_14, UpgradeMode, UpgradeResult};
+use super::{
+    AspaMigrationConfigs, CommandMigrationEffect, UnconvertedEffect, UpgradeAggregateStorePre0_14, UpgradeMode,
+    UpgradeResult,
+};
+
+// Stuff in modules
+mod old_commands;
+pub use self::old_commands::*;
+
+mod old_events;
+pub use self::old_events::*;
+
+mod cas_migration;
+pub use self::cas_migration::*;
+
+//------------ Pre0_14_0AspaDefinition ----------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct Pre0_14_0AspaDefinition {
+    pub customer: CustomerAsn,
+    pub providers: Vec<Pre0_14_0ProviderAs>,
+}
+
+impl From<Pre0_14_0AspaDefinition> for AspaDefinition {
+    fn from(old: Pre0_14_0AspaDefinition) -> Self {
+        AspaDefinition::new(old.customer, old.providers.into_iter().map(|o| o.provider).collect())
+    }
+}
+
+//------------ Pre_0_14_0AspaInfo ---------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct Pre0_14_0AspaInfo {
+    pub definition: Pre0_14_0AspaDefinition,
+    validity: Validity,
+    serial: Serial,
+    uri: uri::Rsync,
+    base64: Base64,
+    hash: Hash,
+}
+
+//------------ Pre_0_14_0AspaObjectsUpdates -----------------------------------
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct Pre0_14_0AspaObjectsUpdates {
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub updated: Vec<Pre0_14_0AspaInfo>,
+
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub removed: Vec<CustomerAsn>,
+}
+
+//------------ OldEvent -------------------------------------------------------
 
 pub type OldInitSignerInfoEvent = OldStoredEvent<SignerInfoInitEvent>;
 pub type OldSignerInfoEvent = OldStoredEvent<SignerInfoEvent>;
@@ -140,7 +202,7 @@ impl<S: WithStorableDetails> OldStoredCommand<S> {
     }
 }
 
-//------------ StoredEffect --------------------------------------------------
+//------------ OldStoredEffect -----------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case", tag = "result")]
@@ -222,7 +284,6 @@ pub type UpgradeAggregateStoreProperties = GenericUpgradeAggregateStore<Properti
 pub type UpgradeAggregateStoreSignerInfo = GenericUpgradeAggregateStore<SignerInfo>;
 pub type UpgradeAggregateStoreTrustAnchorSigner = GenericUpgradeAggregateStore<TrustAnchorSigner>;
 pub type UpgradeAggregateStoreTrustAnchorProxy = GenericUpgradeAggregateStore<TrustAnchorProxy>;
-pub type UpgradeAggregateStoreCertAuth = GenericUpgradeAggregateStore<CertAuth>;
 pub type UpgradeAggregateStoreRepositoryAccess = GenericUpgradeAggregateStore<RepositoryAccess>;
 
 //------------ GenericUpgradeAggrateStore ------------------------------------
@@ -239,12 +300,12 @@ pub struct GenericUpgradeAggregateStore<A: Aggregate> {
 }
 
 impl<A: Aggregate> GenericUpgradeAggregateStore<A> {
-    pub fn upgrade(name_space: &Namespace, mode: UpgradeMode, config: &Config) -> UpgradeResult<()> {
+    pub fn upgrade(name_space: &Namespace, mode: UpgradeMode, config: &Config) -> UpgradeResult<AspaMigrationConfigs> {
         let current_kv_store = KeyValueStore::create(&config.storage_uri, name_space)?;
 
         if current_kv_store.scopes()?.is_empty() {
             // nothing to do here
-            Ok(())
+            Ok(AspaMigrationConfigs::default())
         } else {
             let new_kv_store = KeyValueStore::create_upgrade_store(&config.storage_uri, name_space)?;
             let new_agg_store =
@@ -303,7 +364,7 @@ impl<A: Aggregate> UpgradeAggregateStorePre0_14 for GenericUpgradeAggregateStore
         old_command: OldStoredCommand<Self::OldStorableDetails>,
         old_effect: UnconvertedEffect<Self::OldEvent>,
         version: u64,
-    ) -> UpgradeResult<Option<StoredCommand<Self::Aggregate>>> {
+    ) -> UpgradeResult<CommandMigrationEffect<Self::Aggregate>> {
         let new_command_builder = StoredCommandBuilder::<A>::new(
             old_command.actor().clone(),
             old_command.time(),
@@ -317,6 +378,135 @@ impl<A: Aggregate> UpgradeAggregateStorePre0_14 for GenericUpgradeAggregateStore
             UnconvertedEffect::Success { events } => new_command_builder.finish_with_events(events),
         };
 
-        Ok(Some(new_command))
+        Ok(CommandMigrationEffect::StoredCommand(new_command))
     }
 }
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct Pre0_14_0AspaDefinitionUpdates {
+    add_or_replace: Vec<Pre0_14_0AspaDefinition>,
+    remove: Vec<CustomerAsn>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Pre0_14_0ProviderAs {
+    pub provider: Asn,
+    pub afi_limit: Option<AddressFamily>,
+}
+
+impl Pre0_14_0ProviderAs {
+    pub fn new(provider: Asn) -> Self {
+        Pre0_14_0ProviderAs {
+            provider,
+            afi_limit: None,
+        }
+    }
+
+    pub fn new_v4(provider: Asn) -> Self {
+        Pre0_14_0ProviderAs {
+            provider,
+            afi_limit: Some(AddressFamily::Ipv4),
+        }
+    }
+
+    pub fn new_v6(provider: Asn) -> Self {
+        Pre0_14_0ProviderAs {
+            provider,
+            afi_limit: Some(AddressFamily::Ipv6),
+        }
+    }
+}
+
+//--- FromStr
+
+impl FromStr for Pre0_14_0ProviderAs {
+    type Err = <Asn as FromStr>::Err;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // Possible options:
+        //  AS#
+        //  AS#(v4)
+        //  AS#(v6)
+        if let Some(as_str) = s.strip_suffix("(v4)") {
+            Ok(Pre0_14_0ProviderAs::new_v4(Asn::from_str(as_str)?))
+        } else if let Some(as_str) = s.strip_suffix("(v6)") {
+            Ok(Pre0_14_0ProviderAs::new_v6(Asn::from_str(as_str)?))
+        } else {
+            Ok(Pre0_14_0ProviderAs::new(Asn::from_str(s)?))
+        }
+    }
+}
+
+//--- Display
+
+impl fmt::Display for Pre0_14_0ProviderAs {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.afi_limit {
+            None => write!(f, "{}", self.provider),
+            Some(family) => {
+                let fam_str = match &family {
+                    AddressFamily::Ipv4 => "v4",
+                    AddressFamily::Ipv6 => "v6",
+                };
+                write!(f, "{}({})", self.provider, fam_str)
+            }
+        }
+    }
+}
+
+//--- Deserialize and Serialize
+
+impl serde::Serialize for Pre0_14_0ProviderAs {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.to_string().serialize(serializer)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Pre0_14_0ProviderAs {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de;
+
+        let string = String::deserialize(deserializer)?;
+        Pre0_14_0ProviderAs::from_str(&string).map_err(de::Error::custom)
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct Pre0_14_0AspaProvidersUpdate {
+    added: Vec<Pre0_14_0ProviderAs>,
+    removed: Vec<Pre0_14_0ProviderAs>,
+}
+
+// //------------ AspaObjectsUpdates ------------------------------------------
+
+// #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+// pub struct Pre0_14_0AspaObjectsUpdates {
+//     #[serde(skip_serializing_if = "Vec::is_empty", default)]
+//     updated: Vec<Pre0_14_0AspaInfo>,
+
+//     #[serde(skip_serializing_if = "Vec::is_empty", default)]
+//     removed: Vec<CustomerAsn>,
+// }
+
+// //------------ Pre0_14_0AspaInfo -------------------------------------------
+
+// #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+// pub struct Pre0_14_0AspaInfo {
+//     // The customer ASN and all Provider ASNs
+//     definition: Pre0_14_0AspaDefinition,
+
+//     // The validity time for this ASPA.
+//     validity: Validity,
+
+//     // The serial number (needed for revocation)
+//     serial: Serial,
+
+//     // The URI where this object is expected to be published
+//     uri: uri::Rsync,
+
+//     // The actual ASPA object in base64 format.
+//     base64: Base64,
+
+//     // The ASPA object's hash
+//     hash: Hash,
+// }

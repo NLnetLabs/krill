@@ -3,14 +3,14 @@ use rpki::{ca::idexchange::MyHandle, repository::x509::Time};
 use crate::{
     commons::{
         api::StorableRepositoryCommand,
-        eventsourcing::{segment, AggregateStore, KeyValueStore, Scope, Segment, StoredCommand, StoredCommandBuilder},
+        eventsourcing::{segment, AggregateStore, KeyValueStore, Scope, Segment, StoredCommandBuilder},
         util::KrillVersion,
     },
     constants::PUBSERVER_NS,
     daemon::config::Config,
     pubd::{RepositoryAccess, RepositoryAccessEvent, RepositoryAccessInitEvent},
     upgrades::pre_0_10_0::{Pre0_10RepositoryAccessEventDetails, Pre0_10RepositoryAccessInitDetails},
-    upgrades::pre_0_14_0::OldStoredCommand,
+    upgrades::{pre_0_14_0::OldStoredCommand, CommandMigrationEffect},
     upgrades::{UnconvertedEffect, UpgradeAggregateStorePre0_14, UpgradeMode, UpgradeResult, UpgradeVersions},
 };
 
@@ -41,7 +41,7 @@ impl PublicationServerRepositoryAccessMigration {
             && versions.from >= KrillVersion::release(0, 9, 0)
             && versions.from < KrillVersion::candidate(0, 10, 0, 1)
         {
-            store_migration.upgrade(mode)
+            store_migration.upgrade(mode).map(|_| ()) // aspa configs are irrelevant here
         } else {
             Ok(())
         }
@@ -90,7 +90,7 @@ impl UpgradeAggregateStorePre0_14 for PublicationServerRepositoryAccessMigration
         old_command: OldStoredCommand<Self::OldStorableDetails>,
         old_effect: UnconvertedEffect<Self::OldEvent>,
         version: u64,
-    ) -> UpgradeResult<Option<StoredCommand<Self::Aggregate>>> {
+    ) -> UpgradeResult<CommandMigrationEffect<Self::Aggregate>> {
         let new_command_builder = StoredCommandBuilder::<RepositoryAccess>::new(
             old_command.actor().clone(),
             old_command.time(),
@@ -107,6 +107,6 @@ impl UpgradeAggregateStorePre0_14 for PublicationServerRepositoryAccessMigration
             }
         };
 
-        Ok(Some(new_command))
+        Ok(CommandMigrationEffect::StoredCommand(new_command))
     }
 }

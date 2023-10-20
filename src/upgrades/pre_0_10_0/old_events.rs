@@ -15,27 +15,32 @@ use rpki::{
         publication::Base64,
     },
     crypto::KeyIdentifier,
-    repository::{aspa::Aspa, resources::ResourceSet, x509::Time, Cert, Crl, Manifest, Roa},
+    repository::{resources::ResourceSet, x509::Time, Cert, Crl, Manifest, Roa},
     rrdp, uri,
 };
 
 use crate::{
     commons::{
         api::{
-            AspaCustomer, AspaDefinition, AspaProvidersUpdate, CertInfo, IdCertInfo, IssuedCertificate, ObjectName,
-            ParentCaContact, ParentServerInfo, PublicationServerInfo, ReceivedCert, RepositoryContact, Revocation,
-            Revocations, RoaAggregateKey, RtaName, SuspendedCert, UnsuspendedCert,
+            CertInfo, IdCertInfo, IssuedCertificate, ObjectName, ParentCaContact, ParentServerInfo,
+            PublicationServerInfo, ReceivedCert, RepositoryContact, Revocation, Revocations, RoaAggregateKey, RtaName,
+            SuspendedCert, UnsuspendedCert,
         },
         util::ext_serde,
     },
     daemon::ca::{
-        self, AspaInfo, AspaObjectsUpdates, CaObjects, CertAuthEvent, CertifiedKey, ChildCertificateUpdates,
-        ObjectSetRevision, PreparedRta, PublishedObject, RoaInfo, RoaPayloadJsonMapKey, RoaUpdates, SignedRta,
+        self, CaObjects, CertAuthEvent, CertifiedKey, ChildCertificateUpdates, ObjectSetRevision, PreparedRta,
+        PublishedObject, RoaInfo, RoaPayloadJsonMapKey, RoaUpdates, SignedRta,
     },
     pubd::{Publisher, RepositoryAccessEvent, RepositoryAccessInitEvent},
     ta::{TaCertDetails, TrustAnchorLocator},
-    upgrades::UpgradeError,
+    upgrades::{
+        pre_0_14_0::{Pre0_14_0AspaProvidersUpdate, Pre0_14_0ProviderAs},
+        UpgradeError,
+    },
 };
+
+use super::{Pre0_10_0AspaDefinition, Pre0_10_0AspaObjectsUpdates};
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Pre0_10Rfc8183Id {
@@ -574,47 +579,6 @@ mod aggregate_removed_sorted_map {
     }
 }
 
-//------------ OldAspaInfo ----------------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct OldAspaInfo {
-    definition: AspaDefinition,
-    aspa: Aspa,
-    since: Time, // Creation time
-}
-
-impl PartialEq for OldAspaInfo {
-    fn eq(&self, other: &Self) -> bool {
-        self.aspa.to_captured().as_slice() == other.aspa.to_captured().as_slice()
-    }
-}
-
-impl Eq for OldAspaInfo {}
-
-impl From<OldAspaInfo> for AspaInfo {
-    fn from(old: OldAspaInfo) -> Self {
-        AspaInfo::new(old.definition, old.aspa)
-    }
-}
-
-//------------ OldAspaObjectsUpdates ------------------------------------------
-
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-pub struct OldAspaObjectsUpdates {
-    #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    updated: Vec<OldAspaInfo>,
-
-    #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    removed: Vec<AspaCustomer>,
-}
-
-impl From<OldAspaObjectsUpdates> for AspaObjectsUpdates {
-    fn from(old: OldAspaObjectsUpdates) -> Self {
-        let updated = old.updated.into_iter().map(|old| old.into()).collect();
-        AspaObjectsUpdates::new(updated, old.removed)
-    }
-}
-
 //------------ OldRepositoryResponse --------------------------------------------
 
 /// pre rpki-0.15.0 <repository_response/>
@@ -834,19 +798,19 @@ pub enum Pre0_10CertAuthEventDetails {
 
     // ASPA
     AspaConfigAdded {
-        aspa_config: AspaDefinition,
+        aspa_config: Pre0_10_0AspaDefinition,
     },
     AspaConfigUpdated {
-        customer: AspaCustomer,
-        update: AspaProvidersUpdate,
+        customer: Pre0_14_0ProviderAs, // re-use because of string "as.." instead of u32
+        update: Pre0_14_0AspaProvidersUpdate,
     },
     AspaConfigRemoved {
-        customer: AspaCustomer,
+        customer: Pre0_14_0ProviderAs, // re-use because of string "as.." instead of u32
     },
     AspaObjectsUpdated {
         // Tracks ASPA *object* which are (re-)issued in a resource class.
         resource_class_name: ResourceClassName,
-        updates: OldAspaObjectsUpdates,
+        updates: Pre0_10_0AspaObjectsUpdates,
     },
 
     // BGPSec - not present before 0.10.0
@@ -1025,22 +989,10 @@ impl TryFrom<Pre0_10CertAuthEventDetails> for CertAuthEvent {
                 resource_class_name,
                 updates: updates.into(),
             },
-            Pre0_10CertAuthEventDetails::AspaConfigAdded { aspa_config } => {
-                CertAuthEvent::AspaConfigAdded { aspa_config }
-            }
-            Pre0_10CertAuthEventDetails::AspaConfigUpdated { customer, update } => {
-                CertAuthEvent::AspaConfigUpdated { customer, update }
-            }
-            Pre0_10CertAuthEventDetails::AspaConfigRemoved { customer } => {
-                CertAuthEvent::AspaConfigRemoved { customer }
-            }
-            Pre0_10CertAuthEventDetails::AspaObjectsUpdated {
-                resource_class_name,
-                updates,
-            } => CertAuthEvent::AspaObjectsUpdated {
-                resource_class_name,
-                updates: updates.into(),
-            },
+            Pre0_10CertAuthEventDetails::AspaConfigAdded { .. } => unimplemented!("not migrated"),
+            Pre0_10CertAuthEventDetails::AspaConfigUpdated { .. } => unimplemented!("not migrated"),
+            Pre0_10CertAuthEventDetails::AspaConfigRemoved { .. } => unimplemented!("not migrated"),
+            Pre0_10CertAuthEventDetails::AspaObjectsUpdated { .. } => unimplemented!("not migrated"),
             Pre0_10CertAuthEventDetails::RepoUpdated { contact } => CertAuthEvent::RepoUpdated {
                 contact: contact.into(),
             },
@@ -1240,9 +1192,6 @@ pub struct OldCurrentKeyObjectSet {
     #[serde(with = "objects_to_roas_serde")]
     roas: HashMap<ObjectName, OldPublishedRoa>,
 
-    #[serde(with = "objects_to_aspas_serde", skip_serializing_if = "HashMap::is_empty", default)]
-    aspas: HashMap<ObjectName, OldPublishedAspa>,
-
     #[serde(with = "objects_to_certs_serde")]
     certs: HashMap<ObjectName, OldPublishedCert>,
 }
@@ -1269,14 +1218,6 @@ impl TryFrom<OldCurrentKeyObjectSet> for ca::KeyObjectSet {
             let base64 = Base64::from(&old_roa.0);
             let serial = old_roa.0.cert().serial_number();
             let expires = old_roa.0.cert().validity().not_after();
-            let published_object = PublishedObject::new(name.clone(), base64, serial, expires);
-            published_objects.insert(name, published_object);
-        }
-
-        for (name, old_aspa) in old.aspas.into_iter() {
-            let base64 = Base64::from(&old_aspa.0);
-            let serial = old_aspa.0.cert().serial_number();
-            let expires = old_aspa.0.cert().validity().not_after();
             let published_object = PublishedObject::new(name.clone(), base64, serial, expires);
             published_objects.insert(name, published_object);
         }
@@ -1332,42 +1273,6 @@ mod objects_to_roas_serde {
         let mut map = HashMap::new();
         for item in Vec::<NameRoaItem>::deserialize(deserializer)? {
             map.insert(item.name, item.roa);
-        }
-        Ok(map)
-    }
-}
-
-mod objects_to_aspas_serde {
-    use super::*;
-
-    use serde::de::{Deserialize, Deserializer};
-    use serde::ser::Serializer;
-    #[derive(Debug, Deserialize)]
-    struct NameItem {
-        name: ObjectName,
-        aspa: OldPublishedAspa,
-    }
-
-    #[derive(Debug, Serialize)]
-    struct NameItemRef<'a> {
-        name: &'a ObjectName,
-        aspa: &'a OldPublishedAspa,
-    }
-
-    pub fn serialize<S>(map: &HashMap<ObjectName, OldPublishedAspa>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.collect_seq(map.iter().map(|(name, aspa)| NameItemRef { name, aspa }))
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<HashMap<ObjectName, OldPublishedAspa>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let mut map = HashMap::new();
-        for item in Vec::<NameItem>::deserialize(deserializer)? {
-            map.insert(item.name, item.aspa);
         }
         Ok(map)
     }
@@ -1463,17 +1368,6 @@ impl PartialEq for OldPublishedRoa {
 }
 
 impl Eq for OldPublishedRoa {}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct OldPublishedAspa(Aspa);
-
-impl PartialEq for OldPublishedAspa {
-    fn eq(&self, other: &Self) -> bool {
-        self.0.to_captured().into_bytes() == other.0.to_captured().into_bytes()
-    }
-}
-
-impl Eq for OldPublishedAspa {}
 
 //------------ PublishedManifest ------------------------------------------
 

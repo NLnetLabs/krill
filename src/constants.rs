@@ -109,9 +109,6 @@ pub const ACTOR_DEF_ANON: ActorDef = ActorDef::anonymous();
 pub const ACTOR_DEF_ADMIN_TOKEN: ActorDef = ActorDef::system("admin-token", "admin");
 pub const ACTOR_DEF_TESTBED: ActorDef = ActorDef::system("testbed", "testbed");
 
-// If we have more than 50 do not re-issue all ROAs. See issue #772
-pub const UPGRADE_REISSUE_ROAS_CAS_LIMIT: usize = 50;
-
 #[cfg(test)]
 pub const ACTOR_DEF_TEST: ActorDef = ActorDef::system("test", "admin");
 
