@@ -368,7 +368,6 @@ pub trait UpgradeAggregateStorePre0_14 {
             let mut data_upgrade_info = self.data_upgrade_info(&scope)?;
 
             // Get the list of commands to prepare, starting with the last_command we got to (may be 0)
-            trace!("migrataaaaaaaa");
             let old_cmd_keys = self.command_keys(&scope, data_upgrade_info.last_command.unwrap_or(0))?;
 
             // Migrate the initialisation event, if not done in a previous run. This
