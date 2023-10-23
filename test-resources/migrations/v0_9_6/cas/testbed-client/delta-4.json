@@ -1,0 +1,18 @@
+{
+  "id": "testbed-client",
+  "version": 4,
+  "details": {
+    "type": "certificate_requested",
+    "resource_class_name": "0",
+    "req": {
+      "class_name": "0",
+      "limit": {
+        "asn": "none",
+        "v4": "none",
+        "v6": "none"
+      },
+      "csr": "MIIDsjCCApoCAQAwMzExMC8GA1UEAxMoQUE2REZBOEMyNzYyODdFNkE2OEJCRjI2NENBQzk3NTRBNzIxNDZBQjCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAKoc6m+v6A/oCkP0U7LbpYtauMRhttM77Suzt98ArsEhROPOK0fc/Pi3A7FQg+hrrXrpgjv43kEQ/L/w8gaT0vw8AIwAlk/CN9nqsHwOnrPgq8Xc9u9t6YZyX0uRb89iGVDnFXXJd/SVysBHOdpWTP7nqVa4S77sVKt76SfbQLV5+m0IOLB8MzJjDTcZLl9SklcvqiAvGQ6Ifvz4aHJDK+rb4SniV0/8uZ2HQrPfFRcP2RCnmT18GiYWEPGwxBGpwE5CvD7i5EcucpVrniajnZ9/aLXzgkfLFJ1hBwYQIZDLJ2pqp4/yGMBVADaqFYr36H/oLPLv9u7lzXmoIj77qEECAwEAAaCCATgwggE0BgkqhkiG9w0BCQ4xggElMIIBITAPBgNVHRMBAf8EBTADAQH/MA4GA1UdDwEB/wQEAwIBBjCB/QYIKwYBBQUHAQsBAQAEge0wgeowPQYIKwYBBQUHMAWGMXJzeW5jOi8vdGVzdGJlZC5rcmlsbC5jbG91ZC9yZXBvL3Rlc3RiZWQtY2xpZW50LzAwagYIKwYBBQUHMAqGXnJzeW5jOi8vdGVzdGJlZC5rcmlsbC5jbG91ZC9yZXBvL3Rlc3RiZWQtY2xpZW50LzAvQUE2REZBOEMyNzYyODdFNkE2OEJCRjI2NENBQzk3NTRBNzIxNDZBQi5tZnQwPQYIKwYBBQUHMA2GMWh0dHBzOi8vdGVzdGJlZC5rcmlsbC5jbG91ZC9ycmRwL25vdGlmaWNhdGlvbi54bWwwDQYJKoZIhvcNAQELBQADggEBAE8HZoMijbTGouJx7Pu6gvx7Pi3X4fA+qE/Stb7nN/v6yVVmj7mPi9XKqNsaldc+TKDq+qoEPax8104vdYnbYtqKvb61sqiSwjsUm3yM1vk/xW5r68eUS/IrwH/gXhmXLPkVzMeMEs2EbT6oJu5r82CbSxRiaXLsYQiJAuvnOagfLGkRYV+oNj2NUcu+jECKAspvnIf3dsAHlccBd8p2jzvw/Y/k4fd5xnEl97wBYqE1yV8qsUjj8AIHxpZQQV3qFIGqUC2M4AqVlSnVohZRnoCeBw5Budb7/r17tcKzpgTNOPbfv+J+p37XeZaro+pF8DshhrS+h7MXuW/qJtEQUmY="
+    },
+    "ki": "AA6DFA8C276287E6A68BBF264CAC9754A72146AB"
+  }
+}

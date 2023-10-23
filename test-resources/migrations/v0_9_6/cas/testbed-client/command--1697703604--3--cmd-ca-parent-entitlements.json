@@ -1,0 +1,28 @@
+{
+  "actor": "krill",
+  "time": "2023-10-19T08:20:04.680568334Z",
+  "handle": "testbed-client",
+  "version": 3,
+  "sequence": 3,
+  "details": {
+    "type": "update_resource_entitlements",
+    "parent": "testbed",
+    "entitlements": [
+      {
+        "resource_class_name": "0",
+        "resources": {
+          "asn": "AS204325, AS211321",
+          "v4": "185.49.140.0/22",
+          "v6": "2a04:b900::/29"
+        }
+      }
+    ]
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      3,
+      4
+    ]
+  }
+}

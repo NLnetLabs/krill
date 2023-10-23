@@ -1,0 +1,22 @@
+{
+  "actor": "krill",
+  "time": "2023-10-19T08:50:54.471671039Z",
+  "handle": "testbed-client",
+  "version": 21,
+  "sequence": 11,
+  "details": {
+    "type": "update_rcvd_cert",
+    "resource_class_name": "0",
+    "resources": {
+      "asn": "AS204325, AS211321",
+      "ipv4": "185.49.140.0/22",
+      "ipv6": "2a04:b900::/29"
+    }
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      21
+    ]
+  }
+}

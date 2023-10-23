@@ -1,0 +1,27 @@
+{
+  "actor": "krill",
+  "time": "2023-10-19T08:50:47.442639418Z",
+  "handle": "testbed-client",
+  "version": 20,
+  "sequence": 10,
+  "details": {
+    "type": "update_resource_entitlements",
+    "parent": "testbed",
+    "entitlements": [
+      {
+        "resource_class_name": "0",
+        "resources": {
+          "asn": "AS204325, AS211321",
+          "ipv4": "185.49.140.0/22",
+          "ipv6": "2a04:b900::/29"
+        }
+      }
+    ]
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      20
+    ]
+  }
+}
