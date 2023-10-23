@@ -1,0 +1,22 @@
+{
+  "actor": "admin-token",
+  "time": "2023-10-19T08:28:19.078095128Z",
+  "handle": "testbed-client",
+  "version": 16,
+  "sequence": 6,
+  "details": {
+    "type": "aspas_update_existing",
+    "customer": "AS204325",
+    "update": {
+      "added": [
+        "AS65005",
+        "AS65006"
+      ],
+      "removed": []
+    }
+  },
+  "effect": {
+    "result": "error",
+    "msg": "No current ASPA exists for customer AS 'AS204325'"
+  }
+}

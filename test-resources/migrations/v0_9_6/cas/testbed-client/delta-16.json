@@ -1,0 +1,14 @@
+{
+  "id": "testbed-client",
+  "version": 16,
+  "details": {
+    "type": "aspa_config_added",
+    "aspa_config": {
+      "customer": "AS204325",
+      "providers": [
+        "AS65000",
+        "AS65001"
+      ]
+    }
+  }
+}
