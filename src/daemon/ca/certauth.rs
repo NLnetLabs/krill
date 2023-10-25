@@ -947,6 +947,7 @@ impl CertAuth {
         self.child_certify(child_handle, child.resources(), my_rcn, csr_info, limit, config, signer)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn child_certify(
         &self,
         child_handle: ChildHandle,
