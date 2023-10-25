@@ -217,11 +217,7 @@ pub struct ImportChildCertificate {
 impl fmt::Display for ImportChild {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         writeln!(f, "Name:         {}", self.name)?;
-        writeln!(
-            f,
-            "Id Key:       {}",
-            self.id_cert.public_key().key_identifier().to_string()
-        )?;
+        writeln!(f, "Id Key:       {}", self.id_cert.public_key().key_identifier())?;
         writeln!(f, "Resources:    {}", self.resources)?;
         if let Some(class_name) = &self.issued_cert.class_name {
             writeln!(f, "Classname:    {}", class_name)?;

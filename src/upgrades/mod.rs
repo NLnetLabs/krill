@@ -78,8 +78,13 @@ impl AspaMigrationConfigs {
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
+}
 
-    pub fn into_iter(self) -> impl Iterator<Item = (CaHandle, Vec<AspaDefinition>)> {
+impl std::iter::IntoIterator for AspaMigrationConfigs {
+    type Item = (CaHandle, Vec<AspaDefinition>);
+    type IntoIter = std::collections::hash_map::IntoIter<CaHandle, Vec<AspaDefinition>>;
+
+    fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
     }
 }
