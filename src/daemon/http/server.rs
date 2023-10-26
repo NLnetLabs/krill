@@ -803,7 +803,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
 
                     res.push('\n');
                     res.push_str("# HELP krill_cas_bgp_roas_total total number of ROAs for this CA\n");
-                    res.push_str("# TYPE krill_cas_bgp_roas_stale gauge\n");
+                    res.push_str("# TYPE krill_cas_bgp_roas_total gauge\n");
                     for (ca, nr) in all_bgp_stats.roas_total.iter() {
                         res.push_str(&format!("krill_cas_bgp_roas_total{{ca=\"{}\"}} {}\n", ca, nr));
                     }
