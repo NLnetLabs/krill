@@ -1,9 +1,7 @@
 use std::sync::Arc;
 use std::{collections::HashMap, sync::RwLock};
 
-use rpki::crypto::{
-    signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError,
-};
+use rpki::crypto::KeyIdentifier;
 
 use crate::commons::{
     crypto::{
@@ -157,7 +155,20 @@ impl SignerRouter {
     }
 
     pub fn get_active_signers(&self) -> HashMap<SignerHandle, Arc<SignerProvider>> {
+        self.bind_ready_signers();
         self.active_signers.read().unwrap().clone()
+    }
+
+    /// Get the default signer
+    pub fn get_default_signer(&self) -> &Arc<SignerProvider> {
+        self.bind_ready_signers();
+        &self.default_signer
+    }
+
+    /// Get the one-off signer (usually OpenSSL)
+    pub fn get_one_off_signer(&self) -> &Arc<SignerProvider> {
+        self.bind_ready_signers();
+        &self.one_off_signer
     }
 
     /// Locate the [SignerProvider] that owns a given [KeyIdentifier], if the signer is active.
@@ -165,7 +176,7 @@ impl SignerRouter {
     /// If the signer that owns the key has not yet been promoted from the pending set to the active set or if no
     /// the key was not created by us or was not registered with the [SignerMapper] then this lookup will fail with
     /// [SignerError::KeyNotFound].
-    fn get_signer_for_key(&self, key_id: &KeyIdentifier) -> Result<Arc<SignerProvider>, SignerError> {
+    pub fn get_signer_for_key(&self, key_id: &KeyIdentifier) -> Result<Arc<SignerProvider>, SignerError> {
         match &self.signer_mapper {
             None => Ok(self.default_signer.clone()),
             Some(mapper) => {
@@ -584,52 +595,10 @@ impl SignerRouter {
     }
 }
 
-impl Signer for SignerRouter {
-    type KeyId = KeyIdentifier;
-    type Error = SignerError;
-
-    fn create_key(&self, algorithm: PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
-        self.bind_ready_signers();
-        self.default_signer.create_key(algorithm)
-    }
-
-    fn get_key_info(&self, key_id: &KeyIdentifier) -> Result<PublicKey, KeyError<Self::Error>> {
-        self.bind_ready_signers();
-        self.get_signer_for_key(key_id)?.get_key_info(key_id)
-    }
-
-    fn destroy_key(&self, key_id: &KeyIdentifier) -> Result<(), KeyError<Self::Error>> {
-        self.bind_ready_signers();
-        self.get_signer_for_key(key_id)?.destroy_key(key_id)
-    }
-
-    fn sign<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
-        &self,
-        key_id: &KeyIdentifier,
-        algorithm: Alg,
-        data: &D,
-    ) -> Result<Signature<Alg>, SigningError<Self::Error>> {
-        self.bind_ready_signers();
-        self.get_signer_for_key(key_id)?.sign(key_id, algorithm, data)
-    }
-
-    fn sign_one_off<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
-        &self,
-        algorithm: Alg,
-        data: &D,
-    ) -> Result<(Signature<Alg>, PublicKey), Self::Error> {
-        self.bind_ready_signers();
-        self.one_off_signer.sign_one_off(algorithm, data)
-    }
-
-    fn rand(&self, target: &mut [u8]) -> Result<(), Self::Error> {
-        self.bind_ready_signers();
-        openssl::rand::rand_bytes(target).map_err(SignerError::OpenSslError)
-    }
-}
-
 #[cfg(all(test, feature = "hsm"))]
 pub mod tests {
+    use rpki::crypto::signer::KeyError;
+    use rpki::crypto::PublicKeyFormat;
     use rpki::crypto::RpkiSignatureAlgorithm;
 
     use crate::{
@@ -639,6 +608,7 @@ pub mod tests {
                 CreateRegistrationKeyErrorCb, FnIdx, MockSigner, MockSignerCallCounts, SignRegistrationChallengeErrorCb,
             },
         },
+        rpki::crypto::Signer,
         test,
     };
 
@@ -681,12 +651,11 @@ pub mod tests {
             assert_eq!(0, call_counts.get(FnIdx::Sign));
             assert_eq!(0, call_counts.get(FnIdx::DestroyKey));
 
-            // Try to use the SignerRouter to generate a random value. This should cause the SignerRouter to contact
+            // Try to use the SignerRouter to bind ready signers. This should cause the SignerRouter to contact
             // the mock signer, ask it to create a registration key, verify that it can sign correctly with that key,
             // assign a signer mapper handle to the signer, then check for random number generation support and finally
             // actually generate the random number.
-            let mut out_buf: [u8; 1] = [0; 1];
-            router.rand(&mut out_buf).unwrap();
+            router.bind_ready_signers();
             assert_eq!(1, call_counts.get(FnIdx::CreateRegistrationKey));
             assert_eq!(1, call_counts.get(FnIdx::SignRegistrationChallenge));
             assert_eq!(1, call_counts.get(FnIdx::GetInfo));
@@ -695,20 +664,28 @@ pub mod tests {
             // One signer has been registered with the SignerMapper now
             assert_eq!(1, signer_mapper.get_signer_handles().unwrap().len());
 
-            // Ask for another random number. This time none of the registration steps should be performed as the signer
+            // Ask to bind the signers again. This time none of the registration steps should be performed as the signer
             // is already registered and active.
-            router.rand(&mut out_buf).unwrap();
+            router.bind_ready_signers();
 
             // Check that we can create a new key with the mock signer via the SignerRouter and that the key gets
             // registered with the signer mapper.
-            let key_identifier = router.create_key(PublicKeyFormat::Rsa).unwrap();
+            let key_identifier = router
+                .get_default_signer()
+                .create_key(rpki::crypto::PublicKeyFormat::Rsa)
+                .unwrap();
             assert!(signer_mapper.get_signer_for_key(&key_identifier).is_ok());
             assert_eq!(1, call_counts.get(FnIdx::CreateKey));
 
             // Check that we can sign with the SignerRouter using the Krill key identifier. The SignerRouter should
             // discover from the SignerMapper that the key belongs to the mock signer and so dispatch the signing
             // request to the mock signer.
-            router.sign(&key_identifier, DEF_SIG_ALG, &out_buf).unwrap();
+            let random_data = test::random_bytes();
+
+            router
+                .get_default_signer()
+                .sign(&key_identifier, DEF_SIG_ALG, &random_data)
+                .unwrap();
             assert_eq!(1, call_counts.get(FnIdx::Sign));
 
             // Throw the SignerRouter away and create a new one. This is like restarting Krill. Keep the mock signer as
@@ -720,21 +697,22 @@ pub mod tests {
             // Try to use the SignerRouter to sign again. This time around the SignerMapper should find the existing
             // signer in its records and only ask the signer to sign the registration challenge, but not ask it to
             // create a registration key.
-            router.sign(&key_identifier, DEF_SIG_ALG, &out_buf).unwrap();
+            router
+                .get_default_signer()
+                .sign(&key_identifier, DEF_SIG_ALG, &random_data)
+                .unwrap();
             assert_eq!(1, call_counts.get(FnIdx::CreateRegistrationKey));
             assert_eq!(2, call_counts.get(FnIdx::SignRegistrationChallenge));
             assert_eq!(2, call_counts.get(FnIdx::GetInfo));
             assert_eq!(2, call_counts.get(FnIdx::SetHandle));
             assert_eq!(2, call_counts.get(FnIdx::Sign));
 
-            // Now delete the key and verify that we can no longer sign with it.
-            router.destroy_key(&key_identifier).unwrap();
+            // Now delete the key and verify that we no longer have it.
+            router.get_default_signer().destroy_key(&key_identifier).unwrap();
             assert_eq!(1, call_counts.get(FnIdx::DestroyKey));
 
-            let err = router.sign(&key_identifier, RpkiSignatureAlgorithm::default(), &out_buf);
-            // TODO: Should this error from the SignerRouter actually be SigningError::KeyNotFound instead of
-            // SigningError::Signer(SignerError::KeyNotFound)?
-            assert!(matches!(err, Err(SigningError::Signer(SignerError::KeyNotFound))));
+            let err = router.get_default_signer().get_key_info(&key_identifier);
+            assert!(matches!(err, Err(KeyError::Signer(SignerError::KeyNotFound))));
 
             // The Sign call count is still 2 because the SignerRouter fails to determine which signer owns the key
             // and fails.
@@ -746,8 +724,11 @@ pub mod tests {
 
             // The mock signer still works for the moment because the SignerRouter doesn't do registration again as
             // it thinks it still has an active signer.
-            let key_identifier = router.create_key(PublicKeyFormat::Rsa).unwrap();
-            router.sign(&key_identifier, DEF_SIG_ALG, &out_buf).unwrap();
+            let key_identifier = router.get_default_signer().create_key(PublicKeyFormat::Rsa).unwrap();
+            router
+                .get_default_signer()
+                .sign(&key_identifier, DEF_SIG_ALG, &random_data)
+                .unwrap();
 
             assert_eq!(1, call_counts.get(FnIdx::CreateRegistrationKey));
             assert_eq!(2, call_counts.get(FnIdx::SignRegistrationChallenge));
@@ -764,8 +745,8 @@ pub mod tests {
             // registered again (and then sign challenged again, hence the double increment).
             let router = create_signer_router(&[mock_signer], signer_mapper.clone());
 
-            let err = router.sign(&key_identifier, DEF_SIG_ALG, &out_buf);
-            assert!(matches!(err, Err(SigningError::Signer(SignerError::KeyNotFound))));
+            let err = router.get_default_signer().get_key_info(&key_identifier);
+            assert!(matches!(err, Err(KeyError::Signer(SignerError::KeyNotFound))));
 
             assert_eq!(2, call_counts.get(FnIdx::CreateRegistrationKey));
             assert_eq!(4, call_counts.get(FnIdx::SignRegistrationChallenge));
@@ -836,13 +817,11 @@ pub mod tests {
             // No signers have been registered with the SignerMapper yet
             assert_eq!(0, signer_mapper.get_signer_handles().unwrap().len());
 
-            let mut rand_out: [u8; 1] = [0; 1];
-
-            // Try to use the SignerRouter to generate a random value. This should cause the SignerRouter to contact
+            // Try to use the SignerRouter to bind the ready signers. This should cause the SignerRouter to contact
             // all of the mock signers, asking them to create a registration key, and if that succeeds to then verify
             // that the signer can sign correctly with that key. None of the broken signers will succeed at these steps
             // and so the counter of registered signers will remain at zero.
-            router.rand(&mut rand_out).unwrap();
+            router.bind_ready_signers();
 
             // The number of attempts to register a signer should have increased by the number of signers.
             // Half of the signers should fail at the registration step, the other half at the challenge signing step.
@@ -855,7 +834,7 @@ pub mod tests {
             //
             // Try again.
             //
-            router.rand(&mut rand_out).unwrap();
+            router.bind_ready_signers();
 
             // The signers that were permanently unusable at registration should not be tried again.
             assert_eq!(6 + 2, call_counts.get(FnIdx::CreateRegistrationKey));
@@ -901,14 +880,12 @@ pub mod tests {
             // No signers have been registered with the SignerMapper yet
             assert_eq!(0, signer_mapper.get_signer_handles().unwrap().len());
 
-            let mut rand_out: [u8; 1] = [0; 1];
-
-            // Try to use the SignerRouter to generate a random value. This should cause the SignerRouter to contact
+            // Try to use the SignerRouter to bind ready signers. This should cause the SignerRouter to contact
             // the mock signer, ask it to create a registration key, verify that it can sign correctly with that key,
             // assign a signer mapper handle to the signer, then check for random number generation support and finally
             // actually generate the random number. This should fail the first time due to the logic imlpemented by the
             // temp_avail() function above.
-            router.rand(&mut rand_out).unwrap();
+            router.bind_ready_signers();
 
             // The number of attempts to register a signer should have increased by one.
             assert_eq!(1, call_counts.get(FnIdx::CreateRegistrationKey));
@@ -916,10 +893,10 @@ pub mod tests {
             assert_eq!(0, signer_mapper.get_signer_handles().unwrap().len());
 
             //
-            // Try again. We should succeed the second time due to the logic imlpemented by the temp_avail() function
+            // Try again. We should succeed the second time due to the logic implemented by the temp_avail() function
             // above.
             //
-            router.rand(&mut rand_out).unwrap();
+            router.bind_ready_signers();
 
             // We should be all green now
             assert_eq!(2, call_counts.get(FnIdx::CreateRegistrationKey));

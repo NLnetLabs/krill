@@ -36,7 +36,7 @@ use crate::{
 use rpki::crypto::KeyIdentifier;
 
 #[cfg(feature = "hsm")]
-use crate::commons::crypto::SignerHandle;
+use crate::{commons::crypto::SignerHandle, rpki::crypto::Signer};
 
 use self::{pre_0_13_0::OldRepositoryContent, pre_0_14_0::OldCommandKey};
 
@@ -1153,7 +1153,8 @@ mod tests {
         let _repo: pre_0_13_0::OldRepositoryContent = serde_json::from_str(json).unwrap();
     }
 
-    #[cfg(all(feature = "hsm", not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11"))))]
+    // #[cfg(all(feature = "hsm", not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11"))))]
+    #[allow(dead_code)] // this only looks dead because of complex features.
     fn unmapped_keys_test_core(do_upgrade: bool) {
         let expected_key_id = KeyIdentifier::from_str("5CBCAB14B810C864F3EEA8FD102B79F4E53FCC70").unwrap();
 
@@ -1197,7 +1198,7 @@ mod tests {
 
         if do_upgrade {
             // Verify that the mapper has a record of the test key belonging to the signer
-            mapper.get_signer_for_key(&expected_key_id).unwrap();
+            krill_signer.get_key_info(&expected_key_id).unwrap();
         } else {
             // Verify that the mapper does NOT have a record of the test key belonging to the signer
             assert!(mapper.get_signer_for_key(&expected_key_id).is_err());

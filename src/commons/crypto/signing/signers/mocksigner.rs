@@ -230,7 +230,7 @@ impl MockSigner {
 
     pub fn get_key_info(&self, key_identifier: &KeyIdentifier) -> Result<PublicKey, KeyError<SignerError>> {
         self.inc_fn_call_count(FnIdx::GetKeyInfo);
-        let internal_id = self.internal_id_from_key_identifier(key_identifier).unwrap();
+        let internal_id = self.internal_id_from_key_identifier(key_identifier)?;
         let pkey = self.load_key(&internal_id).ok_or(KeyError::KeyNotFound)?;
         let public_key = Self::public_key_from_pkey(&pkey).unwrap();
         Ok(public_key)
