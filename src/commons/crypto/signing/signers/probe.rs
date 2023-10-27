@@ -340,7 +340,7 @@ pub mod tests {
         let config = Arc::new(Config::default());
 
         // Probing is only done when .get() is called
-        let conn = StatefulProbe::<_, SomeError, State>::new("dummy".to_string(), config, Duration::from_millis(100));
+        let conn = StatefulProbe::<_, SomeError, State>::new("dummy".to_string(), config, Duration::from_millis(200));
         assert_eq!(None, conn.last_probe_time()?);
 
         // The first call to .get() should trigger a probe
@@ -355,7 +355,7 @@ pub mod tests {
         assert!(t2 == t1);
 
         // A call to .get() after the next probe interval SHOULD result in an updated last probe time
-        std::thread::sleep(Duration::from_millis(200));
+        std::thread::sleep(Duration::from_millis(191)); // plus 10 earlier is >200
         let _probe3 = conn.status(|_, _| Err(ProbeError::AwaitingNextProbe));
         let t3 = conn.last_probe_time()?;
         assert!(t3 > t1);
