@@ -25,51 +25,36 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 # Changelog
 
-## 0.14.0-rc3
+## 0.14.0 ASPA
 
-This RC adds support for the updated ASPA v1 profile (issue #1080).
+This release adds support for the updated ASPA v1 profile (issue #1080).
+Any existing ASPA objects will be re-issued automatically.
 
-Earlier, we were planning to add this in a later release, but as it turns out,
-it was easier than expected to support this transition, so we included it in the coming release.
-
-Please note that the upgrade will fail if you are already using ASPA and upgraded to 0.14.0-rc1 or rc2.
-
-## 0.14.0-rc2
-
-This RC fixes the following issue, also present in 0.13.x:
+In addition, the following small features and fixes were done:
 - Show delete ROA button when no BGP preview is available #1139
-
-## 0.14.0-rc1
-
-This is the release candidate for the coming 0.14.0 release. We invite all
-interested users to test this version, but please do not upgrade your
-production environment until 0.14.0 has been released.
-
-This release introduces the following small features and fixes:
 - Add traditional and simplified Chinese translations #1075
-- Let the testbed automatically renew the TA manifest and CRL #1095
+- Let the testbed automatically renew the TA manifest and CRL #1095 (see below)
 - Show the delete icon for AS0 ROA when there is another existing announcement #1109
 
-But we spent the main effort in this release on improving the way that
-Krill stores its data. This will help to improve robustness today, and
-it paves the way for introducing support for Krill clustering using
-a database back-end in a future release. For now, these issues were
-done:
+The main effort in this release was spent on less user-visible
+improvements in the way that Krill stores its data. This will
+help to improve robustness today, and it paves the way for introducing
+support for Krill clustering using a database back-end in a future release.
+
+For now, these issues have been done:
 - Improve transactionality of changes (e.g. #1076-1078, #1085, #1108, #1090)
 - Remove no longer needed 'always_recover_data' function #1086 
 - Improve upgrade failed error: tell users to downgrade #1042
 - Crash Krill if the task scheduler encounters a fatal error. #1132
-- Add support for importing delegated child CAs #1133
 
-Note that this release still uses the now outdated ASPA object syntax. We plan
-to make another focused release to address this immediately after 0.14.0 is
-released. See issue #1080.
+You can find the full list of issues here:
+https://github.com/NLnetLabs/krill/projects/25
 
-Note that if you were running 0.13.1 as a testbed, you may have symlinked
-the "signer" directory to "ta_signer" to support a manual work around for
-re-signing the trust anchor CRL and manifest (issue #1095). If you did,
-then you may need to delete any surplus files and directories under
-"/var/lib/krill/data/ta_signer" other than the directory called "ta".
+Finally, regarding issue #1095. If you were running 0.13.1 as a testbed, you
+may have symlinked the "signer" directory to "ta_signer" to support a manual
+workaround for re-signing the trust anchor CRL and manifest. If you did, you
+may need to delete any surplus files and directories under "data/ta_signer"
+other than the directory called "ta".
 
 ## 0.13.1 'Scrollbars!'
 
