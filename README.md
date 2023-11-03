@@ -25,7 +25,12 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 # Changelog
 
-## 0.14.0 ASPA
+## 0.14.1 'Extra, Extra!'
+
+This release fixes a bug in the migration code where 'surplus' directories
+for archived events should be skipped (issue: #1147).
+
+## 0.14.0 'ASPA'
 
 This release adds support for the updated ASPA v1 profile (issue #1080).
 Any existing ASPA objects will be re-issued automatically.
