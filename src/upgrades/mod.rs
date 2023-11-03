@@ -358,6 +358,12 @@ pub trait UpgradeAggregateStorePre0_14 {
 
         // Migrate the event sourced data for each scope and create new snapshots
         for scope in self.deployed_store().scopes()? {
+            // We only need top-level scopes, not sub-scopes such as 'surplus' archive dirs
+            if scope.len() != 1 {
+                trace!("Skipping migration for sub-scope: {}", scope);
+                continue;
+            }
+
             // Getting the Handle should never fail, but if it does then we should bail out asap.
             let handle = MyHandle::from_str(&scope.to_string())
                 .map_err(|_| UpgradeError::Custom(format!("Found invalid handle '{}'", scope)))?;
