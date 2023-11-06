@@ -131,9 +131,12 @@ impl KeyValueStore {
     /// If matching is not empty then the key must contain the given `&str`.
     pub fn keys(&self, scope: &Scope, matching: &str) -> Result<Vec<Key>, KeyValueError> {
         self.execute(scope, |kv| {
+            // kvx list_keys returns keys in sub-scopes
             kv.list_keys(scope).map(|keys| {
                 keys.into_iter()
-                    .filter(|key| matching.is_empty() || key.name().as_str().contains(matching))
+                    .filter(|key| {
+                        key.scope() == scope && (matching.is_empty() || key.name().as_str().contains(matching))
+                    })
                     .collect()
             })
         })
