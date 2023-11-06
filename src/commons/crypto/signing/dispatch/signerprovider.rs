@@ -1,6 +1,6 @@
 use rpki::crypto::{
     signer::{KeyError, SigningAlgorithm},
-    KeyIdentifier, PublicKey, PublicKeyFormat, RpkiSignature, Signature, SignatureAlgorithm, SigningError,
+    KeyIdentifier, PublicKey, PublicKeyFormat, RpkiSignature, Signature, SignatureAlgorithm, Signer, SigningError,
 };
 
 use crate::commons::crypto::{
@@ -165,22 +165,6 @@ impl SignerProvider {
             signer.wipe_all_keys()
         }
     }
-}
-
-// Implement the functions defined by the `Signer` trait because `SignerRouter` expects to invoke them, but as the
-// dispatching is not trait based we don't actually have to implement the `Signer` trait.
-impl SignerProvider {
-    pub fn create_key(&self, algorithm: PublicKeyFormat) -> Result<KeyIdentifier, SignerError> {
-        match self {
-            SignerProvider::OpenSsl(_, signer) => signer.create_key(algorithm),
-            #[cfg(feature = "hsm")]
-            SignerProvider::Kmip(_, signer) => signer.create_key(algorithm),
-            #[cfg(feature = "hsm")]
-            SignerProvider::Pkcs11(_, signer) => signer.create_key(algorithm),
-            #[cfg(all(test, feature = "hsm"))]
-            SignerProvider::Mock(_, signer) => signer.create_key(algorithm),
-        }
-    }
 
     /// Import an existing private key. Only supported for OpenSslSigner. Other
     /// signers will return an error.
@@ -195,8 +179,27 @@ impl SignerProvider {
             SignerProvider::Mock(_, _) => Err(SignerError::other("import key not supported for the mock signer")),
         }
     }
+}
 
-    pub fn get_key_info(&self, key: &KeyIdentifier) -> Result<PublicKey, KeyError<SignerError>> {
+// Implement the functions defined by the `Signer` trait because `SignerRouter` expects to invoke them, but as the
+// dispatching is not trait based we don't actually have to implement the `Signer` trait.
+impl Signer for SignerProvider {
+    type KeyId = KeyIdentifier;
+    type Error = SignerError;
+
+    fn create_key(&self, algorithm: PublicKeyFormat) -> Result<KeyIdentifier, SignerError> {
+        match self {
+            SignerProvider::OpenSsl(_, signer) => signer.create_key(algorithm),
+            #[cfg(feature = "hsm")]
+            SignerProvider::Kmip(_, signer) => signer.create_key(algorithm),
+            #[cfg(feature = "hsm")]
+            SignerProvider::Pkcs11(_, signer) => signer.create_key(algorithm),
+            #[cfg(all(test, feature = "hsm"))]
+            SignerProvider::Mock(_, signer) => signer.create_key(algorithm),
+        }
+    }
+
+    fn get_key_info(&self, key: &KeyIdentifier) -> Result<PublicKey, KeyError<SignerError>> {
         match self {
             SignerProvider::OpenSsl(_, signer) => signer.get_key_info(key),
             #[cfg(feature = "hsm")]
@@ -208,7 +211,7 @@ impl SignerProvider {
         }
     }
 
-    pub fn destroy_key(&self, key: &KeyIdentifier) -> Result<(), KeyError<SignerError>> {
+    fn destroy_key(&self, key: &KeyIdentifier) -> Result<(), KeyError<SignerError>> {
         match self {
             SignerProvider::OpenSsl(_, signer) => signer.destroy_key(key),
             #[cfg(feature = "hsm")]
@@ -220,7 +223,7 @@ impl SignerProvider {
         }
     }
 
-    pub fn sign<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
+    fn sign<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
         &self,
         key: &KeyIdentifier,
         algorithm: Alg,
@@ -242,7 +245,7 @@ impl SignerProvider {
         }
     }
 
-    pub fn sign_one_off<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
+    fn sign_one_off<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
         &self,
         algorithm: Alg,
         data: &D,
@@ -261,5 +264,9 @@ impl SignerProvider {
             #[cfg(all(test, feature = "hsm"))]
             SignerProvider::Mock(_, signer) => signer.sign_one_off(algorithm, data),
         }
+    }
+
+    fn rand(&self, target: &mut [u8]) -> Result<(), Self::Error> {
+        openssl::rand::rand_bytes(target).map_err(SignerError::OpenSslError)
     }
 }
