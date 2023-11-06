@@ -18,11 +18,6 @@ pub use self::store::*;
 mod listener;
 pub use self::listener::*;
 
-mod kv;
-pub use self::kv::{
-    namespace, segment, Key, KeyValueError, KeyValueStore, Namespace, Scope, Segment, SegmentBuf, SegmentExt,
-};
-
 //------------ Tests ---------------------------------------------------------
 
 #[cfg(test)]
@@ -43,6 +38,7 @@ mod tests {
         commons::{
             actor::Actor,
             api::{CommandHistoryCriteria, CommandSummary},
+            storage::{namespace, Namespace},
         },
         constants::ACTOR_DEF_TEST,
         test::mem_storage,

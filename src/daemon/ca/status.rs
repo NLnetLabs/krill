@@ -14,7 +14,7 @@ use crate::commons::{
         RepoStatus,
     },
     error::Error,
-    eventsourcing::{segment, Key, KeyValueStore, Scope, Segment, SegmentExt},
+    storage::{segment, Key, KeyValueStore, Scope, Segment, SegmentExt},
     util::httpclient,
     KrillResult,
 };

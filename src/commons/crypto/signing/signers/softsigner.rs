@@ -22,7 +22,7 @@ use url::Url;
 use crate::{
     commons::{
         crypto::{dispatch::signerinfo::SignerMapper, signers::error::SignerError, SignerHandle},
-        eventsourcing::{Key, KeyValueStore, Segment, SegmentExt},
+        storage::{Key, KeyValueStore, Segment, SegmentExt},
     },
     constants::KEYS_NS,
 };

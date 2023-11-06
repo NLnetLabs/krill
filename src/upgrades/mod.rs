@@ -17,9 +17,10 @@ use crate::{
         api::{AspaDefinition, AspaDefinitionUpdates, CustomerAsn, ProviderAsn},
         error::KrillIoError,
         eventsourcing::{
-            segment, Aggregate, AggregateStore, AggregateStoreError, Key, KeyValueError, KeyValueStore, Scope, Segment,
-            SegmentExt, Storable, StoredCommand, WalStore, WalStoreError, WithStorableDetails,
+            Aggregate, AggregateStore, AggregateStoreError, Storable, StoredCommand, WalStore, WalStoreError,
+            WithStorableDetails,
         },
+        storage::{segment, Key, KeyValueError, KeyValueStore, Scope, Segment, SegmentExt},
         util::KrillVersion,
         KrillResult,
     },

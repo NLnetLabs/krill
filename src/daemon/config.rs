@@ -26,7 +26,7 @@ use crate::{
         api::{PublicationServerUris, Token},
         crypto::{OpenSslSignerConfig, SignSupport},
         error::{Error, KrillIoError},
-        eventsourcing::KeyValueStore,
+        storage::KeyValueStore,
         util::ext_serde,
         KrillResult,
     },

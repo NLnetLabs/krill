@@ -10,7 +10,8 @@ use rpki::ca::idexchange::MyHandle;
 use serde::Serialize;
 use url::Url;
 
-use crate::commons::eventsourcing::{segment, Key, KeyValueError, KeyValueStore, Scope, Segment, SegmentExt, Storable};
+use crate::commons::eventsourcing::Storable;
+use crate::commons::storage::{segment, Key, KeyValueError, KeyValueStore, Scope, Segment, SegmentExt};
 
 //------------ WalSupport ----------------------------------------------------
 

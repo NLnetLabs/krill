@@ -42,7 +42,8 @@ mod tests {
         commons::{
             api::{PublicationServerInfo, RepositoryContact},
             crypto::KrillSignerBuilder,
-            eventsourcing::{namespace, AggregateStore, Namespace},
+            eventsourcing::AggregateStore,
+            storage::{namespace, Namespace},
         },
         daemon::config::ConfigDefaults,
         test,

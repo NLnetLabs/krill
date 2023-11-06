@@ -10,7 +10,8 @@ use crate::upgrades::{AspaMigrationConfigUpdates, AspaMigrationConfigs, CommandM
 use crate::{
     commons::{
         api::CertAuthStorableCommand,
-        eventsourcing::{AggregateStore, Key, KeyValueStore, Segment, SegmentExt},
+        eventsourcing::AggregateStore,
+        storage::{Key, KeyValueStore, Segment, SegmentExt},
     },
     constants::{CASERVER_NS, CA_OBJECTS_NS},
     daemon::{

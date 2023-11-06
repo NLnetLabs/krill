@@ -14,9 +14,9 @@ use crate::commons::{
     api::{CommandHistory, CommandHistoryCriteria, CommandHistoryRecord},
     error::KrillIoError,
     eventsourcing::{
-        cmd::Command, segment, Aggregate, Key, KeyValueError, KeyValueStore, PostSaveEventListener,
-        PreSaveEventListener, Scope, Segment, SegmentExt, StoredCommand, StoredCommandBuilder,
+        cmd::Command, Aggregate, PostSaveEventListener, PreSaveEventListener, StoredCommand, StoredCommandBuilder,
     },
+    storage::{segment, Key, KeyValueError, KeyValueStore, Scope, Segment, SegmentExt},
 };
 
 use super::InitCommand;

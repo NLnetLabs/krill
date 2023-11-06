@@ -1,7 +1,7 @@
 use kvx::Namespace;
 
 use crate::{
-    commons::{actor::ActorDef, eventsourcing::namespace},
+    commons::{actor::ActorDef, storage::namespace},
     daemon::auth::common::NoResourceType,
 };
 

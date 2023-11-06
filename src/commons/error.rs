@@ -20,7 +20,8 @@ use crate::{
     commons::{
         api::{rrdp::PublicationDeltaError, CustomerAsn, ErrorResponse, RoaPayload},
         crypto::SignerError,
-        eventsourcing::{AggregateStoreError, KeyValueError},
+        eventsourcing::AggregateStoreError,
+        storage::KeyValueError,
         util::httpclient,
     },
     daemon::{ca::RoaPayloadJsonMapKey, http::tls_keys},
