@@ -509,6 +509,10 @@ pub trait UpgradeAggregateStorePre0_14 {
             UpgradeMode::PrepareToFinalise => {
                 let mut aspa_configs = AspaMigrationConfigs::default();
                 for scope in self.deployed_store().scopes()? {
+                    if scope.len() != 1 {
+                        continue;
+                    }
+
                     // Getting the Handle should never fail, but if it does then we should bail out asap.
                     let ca = MyHandle::from_str(&scope.to_string())
                         .map_err(|_| UpgradeError::Custom(format!("Found invalid handle '{}'", scope)))?;
