@@ -25,10 +25,17 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 # Changelog
 
+## 0.14.2 'Extra, Extra, Extra!'
+
+This release fixes an additional corner case in the migration code that affects
+certain installations that archived 'surplus' commands (issue: #1147). There is
+no need to upgrade to this version if you already upgraded to 0.14.0 or 0.14.1.
+
 ## 0.14.1 'Extra, Extra!'
 
-This release fixes a bug in the migration code where 'surplus' directories
-for archived events should be skipped (issue: #1147).
+This release fixes a bug in the migration code that affects certain installations
+that archived 'surplus' data (issue: #1147). There is no need to upgrade to
+this version if you already upgraded to 0.14.0.
 
 ## 0.14.0 'ASPA'
 
