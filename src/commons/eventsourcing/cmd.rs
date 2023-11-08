@@ -5,7 +5,8 @@ use rpki::{ca::idexchange::MyHandle, repository::x509::Time};
 use crate::commons::{
     actor::Actor,
     api::{CommandHistoryRecord, CommandSummary},
-    eventsourcing::{Event, InitEvent, Storable},
+    eventsourcing::{Event, InitEvent},
+    storage::Storable,
 };
 
 use super::Aggregate;

@@ -1,7 +1,9 @@
 use rpki::ca::idexchange::MyHandle;
 
-use super::{AggregateStoreError, Command, Event, InitCommand, InitEvent, Storable, StoredCommand};
-use crate::commons::eventsourcing::WithStorableDetails;
+use crate::commons::{
+    eventsourcing::{AggregateStoreError, Command, Event, InitCommand, InitEvent, StoredCommand, WithStorableDetails},
+    storage::Storable,
+};
 
 //------------ Aggregate -----------------------------------------------------
 

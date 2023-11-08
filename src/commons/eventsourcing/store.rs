@@ -7,7 +7,6 @@ use std::{
 
 use kvx::Namespace;
 use rpki::{ca::idexchange::MyHandle, repository::x509::Time};
-use serde::{de::DeserializeOwned, Serialize};
 use url::Url;
 
 use crate::commons::{
@@ -22,11 +21,6 @@ use crate::commons::{
 use super::InitCommand;
 
 pub type StoreResult<T> = Result<T, AggregateStoreError>;
-
-//------------ Storable ------------------------------------------------------
-
-pub trait Storable: Clone + Serialize + DeserializeOwned + Sized + 'static {}
-impl<T: Clone + Serialize + DeserializeOwned + Sized + 'static> Storable for T {}
 
 //------------ AggregateStore ------------------------------------------------
 

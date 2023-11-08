@@ -16,10 +16,9 @@ use crate::{
     commons::{
         api::{AspaDefinition, CustomerAsn},
         crypto::dispatch::signerinfo::{SignerInfo, SignerInfoEvent, SignerInfoInitEvent},
-        eventsourcing::{
-            Aggregate, AggregateStore, Storable, StoredCommand, StoredCommandBuilder, WithStorableDetails,
-        },
+        eventsourcing::{Aggregate, AggregateStore, StoredCommand, StoredCommandBuilder, WithStorableDetails},
         storage::KeyValueStore,
+        storage::Storable,
     },
     daemon::{
         ca::{CertAuthEvent, CertAuthInitEvent},
