@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use bytes::Bytes;
 use rpki::{
@@ -34,7 +34,7 @@ use crate::{
                 signerprovider::{SignerFlags, SignerProvider},
                 signerrouter::SignerRouter,
             },
-            CryptoResult, OpenSslSigner, SignSupport,
+            CryptoResult, OpenSslSigner, SignSupport, SignerHandle,
         },
         error::Error,
         KrillResult,
@@ -44,13 +44,7 @@ use crate::{
 };
 
 #[cfg(feature = "hsm")]
-use std::collections::HashMap;
-
-#[cfg(feature = "hsm")]
-use crate::commons::crypto::{
-    signers::{kmip::KmipSigner, pkcs11::Pkcs11Signer},
-    SignerHandle,
-};
+use crate::commons::crypto::signers::{kmip::KmipSigner, pkcs11::Pkcs11Signer};
 
 /// High level signing interface between Krill and the [SignerRouter].
 ///
@@ -186,12 +180,10 @@ impl KrillSigner {
         Ok(KrillSigner { router })
     }
 
-    #[cfg(feature = "hsm")]
     pub fn get_mapper(&self) -> Option<Arc<SignerMapper>> {
         self.router.get_mapper()
     }
 
-    #[cfg(feature = "hsm")]
     pub fn get_active_signers(&self) -> HashMap<SignerHandle, Arc<SignerProvider>> {
         self.router.get_active_signers()
     }
