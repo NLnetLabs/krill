@@ -18,10 +18,14 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use kvx::{namespace, segment, Key, Namespace, Segment};
-
 use crate::{
-    commons::{error::Error, util::ext_serde, KrillResult},
+    commons::storage::Key,
+    commons::{
+        error::Error,
+        storage::{Namespace, Segment},
+        util::ext_serde,
+        KrillResult,
+    },
     daemon::config::Config,
 };
 
@@ -34,8 +38,8 @@ const POLY1305_TAG_BYTE_LEN: usize = POLY1305_TAG_BIT_LEN / 8;
 const CLEARTEXT_PREFIX_LEN: usize = CHACHA20_NONCE_BYTE_LEN + POLY1305_TAG_BYTE_LEN;
 const UNUSED_AAD: [u8; 0] = [0; 0];
 
-const CRYPT_STATE_NS: &Namespace = namespace!("login_sessions");
-const CRYPT_STATE_KEY: &Segment = segment!("main_key");
+const CRYPT_STATE_NS: &Namespace = unsafe { Namespace::from_str_unchecked("login_sessions") };
+const CRYPT_STATE_KEY: &Segment = unsafe { Segment::from_str_unchecked("main_key") };
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct NonceState {

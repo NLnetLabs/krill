@@ -1,6 +1,5 @@
 use std::{collections::HashMap, str::FromStr, sync::RwLock};
 
-use kvx::Namespace;
 use rpki::ca::{
     idexchange::{CaHandle, ChildHandle, ParentHandle, ServiceUri},
     provisioning::ResourceClassListResponse as Entitlements,
@@ -14,13 +13,13 @@ use crate::commons::{
         RepoStatus,
     },
     error::Error,
-    storage::{segment, Key, KeyValueStore, Scope, Segment, SegmentExt},
+    storage::{Key, KeyValueStore, Namespace, Scope, Segment, SegmentBuf},
     util::httpclient,
     KrillResult,
 };
 
-const PARENTS_PREFIX: &Segment = segment!("parents-");
-const CHILDREN_PREFIX: &Segment = segment!("children-");
+const PARENTS_PREFIX: &Segment = unsafe { Segment::from_str_unchecked("parents-") };
+const CHILDREN_PREFIX: &Segment = unsafe { Segment::from_str_unchecked("children-") };
 const JSON_SUFFIX: &str = ".json";
 
 //------------ CaStatus ------------------------------------------------------
@@ -105,7 +104,7 @@ impl StatusStore {
         // parents
         let mut parents = ParentStatuses::default();
         let keys = self.store.keys(
-            &Scope::from_segment(Segment::parse_lossy(ca.as_str())), // ca should always be a valid Segment
+            &Scope::from_segment(SegmentBuf::parse_lossy(ca.as_str())), // ca should always be a valid Segment
             PARENTS_PREFIX.as_str(),
         )?;
         for parent_key in keys {
@@ -133,7 +132,7 @@ impl StatusStore {
         // children
         let mut children = HashMap::new();
         let keys = self.store.keys(
-            &Scope::from_segment(Segment::parse_lossy(ca.as_str())), // ca should always be a valid Segment
+            &Scope::from_segment(SegmentBuf::parse_lossy(ca.as_str())), // ca should always be a valid Segment
             CHILDREN_PREFIX.as_str(),
         )?;
         for child_key in keys {
@@ -171,8 +170,8 @@ impl StatusStore {
 
     fn convert_pre_0_9_5_full_status_if_present(&self, ca: &CaHandle) -> KrillResult<()> {
         let key = Key::new_scoped(
-            Scope::from_segment(Segment::parse_lossy(ca.as_str())),
-            segment!("status.json"),
+            Scope::from_segment(SegmentBuf::parse_lossy(ca.as_str())),
+            SegmentBuf::parse_lossy("status.json"),
         ); // ca should always be a valid Segment
 
         let status = self.store.get::<CaStatus>(&key).ok().flatten();
@@ -203,22 +202,22 @@ impl StatusStore {
     fn repo_status_key(ca: &CaHandle) -> Key {
         // we may need to support multiple repos in future
         Key::new_scoped(
-            Scope::from_segment(Segment::parse_lossy(ca.as_str())), // ca should always be a valid Segment
-            segment!("repos-main.json"),
+            Scope::from_segment(SegmentBuf::parse_lossy(ca.as_str())), // ca should always be a valid Segment
+            SegmentBuf::parse_lossy("repos-main.json"),
         )
     }
 
     fn parent_status_key(ca: &CaHandle, parent: &ParentHandle) -> Key {
         Key::new_scoped(
-            Scope::from_segment(Segment::parse_lossy(ca.as_str())), // ca should always be a valid Segment
-            Segment::parse_lossy(&format!("{}{}{}", PARENTS_PREFIX, parent, JSON_SUFFIX)),
+            Scope::from_segment(SegmentBuf::parse_lossy(ca.as_str())), // ca should always be a valid Segment
+            SegmentBuf::parse_lossy(&format!("{}{}{}", PARENTS_PREFIX, parent, JSON_SUFFIX)),
         )
     }
 
     fn child_status_key(ca: &CaHandle, child: &ChildHandle) -> Key {
         Key::new_scoped(
-            Scope::from_segment(Segment::parse_lossy(ca.as_str())), // ca should always be a valid Segment
-            Segment::parse_lossy(&format!("{}{}{}", CHILDREN_PREFIX, child, JSON_SUFFIX)),
+            Scope::from_segment(SegmentBuf::parse_lossy(ca.as_str())), // ca should always be a valid Segment
+            SegmentBuf::parse_lossy(&format!("{}{}{}", CHILDREN_PREFIX, child, JSON_SUFFIX)),
         )
     }
 
@@ -290,8 +289,8 @@ impl StatusStore {
         self.cache.write().unwrap().remove(ca);
 
         self.store
-            .drop_scope(&Scope::from_segment(Segment::parse_lossy(ca.as_str())))?; // will only fail if scope is present and cannot be removed
-                                                                                   // ca should always be a valid Segment
+            .drop_scope(&Scope::from_segment(SegmentBuf::parse_lossy(ca.as_str())))?; // will only fail if scope is present and cannot be removed
+                                                                                      // ca should always be a valid Segment
 
         Ok(())
     }
@@ -402,7 +401,7 @@ impl StatusStore {
 mod tests {
     use super::*;
 
-    use crate::{constants::STATUS_NS, test};
+    use crate::{commons::storage::Segment, constants::STATUS_NS, test};
 
     #[test]
     fn read_save_status() {
@@ -421,7 +420,7 @@ mod tests {
         // using the copied the data - that will be done next and start
         // a migration.
         let testbed_status_key = Key::new_scoped(
-            Scope::from_segment(segment!("testbed")),
+            Scope::from_segment(SegmentBuf::parse_lossy("testbed")),
             Segment::parse("status.json").unwrap(),
         );
         let status_testbed_before_migration: CaStatus = status_kv_store.get(&testbed_status_key).unwrap().unwrap();

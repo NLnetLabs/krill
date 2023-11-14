@@ -5,7 +5,6 @@ use std::{
     sync::{Arc, Mutex, RwLock},
 };
 
-use kvx::Namespace;
 use rpki::{ca::idexchange::MyHandle, repository::x509::Time};
 use url::Url;
 
@@ -15,7 +14,7 @@ use crate::commons::{
     eventsourcing::{
         cmd::Command, Aggregate, PostSaveEventListener, PreSaveEventListener, StoredCommand, StoredCommandBuilder,
     },
-    storage::{segment, Key, KeyValueError, KeyValueStore, Scope, Segment, SegmentExt},
+    storage::{Key, KeyValueError, KeyValueStore, Namespace, Scope, SegmentBuf},
 };
 
 use super::InitCommand;
@@ -204,10 +203,8 @@ where
         self.aggregates()
     }
 
-    /// Get the latest aggregate and optionally apply a command to it.
-    ///
-    /// Uses `kvx::execute` to ensure that the whole operation is done inside
-    /// a transaction (postgres) or lock (disk).
+    /// Get the latest aggregate and optionally apply a command to it, all
+    /// inside a single transaction (postgres) or lock (disk).
     fn execute_opt_command(
         &self,
         handle: &MyHandle,
@@ -521,17 +518,17 @@ where
     A::Error: From<AggregateStoreError>,
 {
     fn scope_for_agg(agg: &MyHandle) -> Scope {
-        Scope::from_segment(Segment::parse_lossy(agg.as_str())) // agg should always be a valid Segment
+        Scope::from_segment(SegmentBuf::parse_lossy(agg.as_str())) // agg should always be a valid Segment
     }
 
     fn key_for_snapshot(agg: &MyHandle) -> Key {
-        Key::new_scoped(Self::scope_for_agg(agg), segment!("snapshot.json"))
+        Key::new_scoped(Self::scope_for_agg(agg), SegmentBuf::parse_lossy("snapshot.json"))
     }
 
     fn key_for_command(agg: &MyHandle, version: u64) -> Key {
         Key::new_scoped(
             Self::scope_for_agg(agg),
-            Segment::parse(&format!("command-{}.json", version)).unwrap(), // cannot panic as a u64 cannot contain a Scope::SEPARATOR
+            SegmentBuf::parse_lossy(&format!("command-{}.json", version)),
         )
     }
 

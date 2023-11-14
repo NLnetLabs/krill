@@ -38,7 +38,7 @@ mod tests {
         commons::{
             actor::Actor,
             api::{CommandHistoryCriteria, CommandSummary},
-            storage::{namespace, Namespace},
+            storage::NamespaceBuf,
         },
         constants::ACTOR_DEF_TEST,
         test::mem_storage,
@@ -338,7 +338,9 @@ mod tests {
 
         let counter = Arc::new(EventCounter::default());
 
-        let mut manager = AggregateStore::<Person>::create(&storage_uri, namespace!("person"), false).unwrap();
+        let mut manager =
+            AggregateStore::<Person>::create(&storage_uri, NamespaceBuf::parse_lossy("person").as_ref(), false)
+                .unwrap();
         manager.add_post_save_listener(counter.clone());
 
         let alice_name = "alice smith".to_string();
@@ -371,7 +373,8 @@ mod tests {
         assert_eq!(21, alice.age());
 
         // Should read state again when restarted with same data store mapping.
-        let manager = AggregateStore::<Person>::create(&storage_uri, namespace!("person"), false).unwrap();
+        let manager =
+            AggregateStore::<Person>::create(&storage_uri, &NamespaceBuf::parse_lossy("person"), false).unwrap();
 
         let alice = manager.get_latest(&alice_handle).unwrap();
         assert_eq!("alice smith-doe", alice.name());

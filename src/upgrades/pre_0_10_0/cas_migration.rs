@@ -1,31 +1,29 @@
 use std::convert::TryInto;
 
-use rpki::ca::idexchange::MyHandle;
-use rpki::{ca::idexchange::CaHandle, repository::x509::Time};
+use rpki::{
+    ca::idexchange::{CaHandle, MyHandle},
+    repository::x509::Time,
+};
 
-use crate::commons::api::ProviderAsn;
-use crate::commons::eventsourcing::StoredCommandBuilder;
-use crate::daemon::ca::CaObjects;
-use crate::upgrades::{AspaMigrationConfigUpdates, AspaMigrationConfigs, CommandMigrationEffect, UnconvertedEffect};
 use crate::{
     commons::{
-        api::CertAuthStorableCommand,
-        eventsourcing::AggregateStore,
-        storage::{Key, KeyValueStore, Segment, SegmentExt},
+        api::{CertAuthStorableCommand, ProviderAsn},
+        eventsourcing::{AggregateStore, StoredCommandBuilder},
+        storage::{Key, KeyValueStore, SegmentBuf},
     },
     constants::{CASERVER_NS, CA_OBJECTS_NS},
     daemon::{
-        ca::{CertAuth, CertAuthEvent, CertAuthInitEvent},
+        ca::{CaObjects, CertAuth, CertAuthEvent, CertAuthInitEvent},
         config::Config,
     },
+    upgrades::pre_0_10_0::{OldCaObjects, Pre0_10_0CertAuthStorableCommand},
     upgrades::{
         pre_0_10_0::{Pre0_10CertAuthEvent, Pre0_10CertAuthInitEvent},
         pre_0_14_0::OldStoredCommand,
         UpgradeAggregateStorePre0_14, UpgradeError, UpgradeMode, UpgradeResult,
     },
+    upgrades::{AspaMigrationConfigUpdates, AspaMigrationConfigs, CommandMigrationEffect, UnconvertedEffect},
 };
-
-use super::{OldCaObjects, Pre0_10_0CertAuthStorableCommand};
 
 /// Migrates the CaObjects for a given CA.
 ///
@@ -46,7 +44,7 @@ impl CaObjectsMigration {
     }
 
     fn prepare_new_data_for(&self, ca: &CaHandle) -> Result<(), UpgradeError> {
-        let key = Key::new_global(Segment::parse_lossy(&format!("{}.json", ca))); // ca should always be a valid Segment
+        let key = Key::new_global(SegmentBuf::parse_lossy(&format!("{}.json", ca))); // ca should always be a valid Segment
 
         if let Some(old_objects) = self.current_store.get::<OldCaObjects>(&key)? {
             let converted: CaObjects = old_objects.try_into()?;

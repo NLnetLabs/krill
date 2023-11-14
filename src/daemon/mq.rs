@@ -3,14 +3,9 @@
 //! signed material, or asking a newly added parent for resource
 //! entitlements.
 
-use std::{fmt, str::FromStr};
+use std::fmt;
 
 use url::Url;
-
-use kvx::{
-    queue::{Queue, RunningTask, ScheduleMode},
-    segment, Segment, SegmentBuf,
-};
 
 use rpki::{
     ca::{
@@ -21,9 +16,12 @@ use rpki::{
 };
 
 use crate::{
-    commons::api::Timestamp,
-    commons::eventsourcing,
-    commons::{eventsourcing::Aggregate, Error, KrillResult},
+    commons::{
+        api::Timestamp,
+        eventsourcing::{self, Aggregate},
+        storage::{Key, KeyValueStore, Queue, RunningTask, ScheduleMode, SegmentBuf},
+        {Error, KrillResult},
+    },
     constants::TASK_QUEUE_NS,
     daemon::ca::{CertAuth, CertAuthEvent},
     ta::{ta_handle, TrustAnchorProxy, TrustAnchorProxyEvent},
@@ -100,23 +98,23 @@ pub enum Task {
 }
 
 impl Task {
-    fn name(&self) -> KrillResult<SegmentBuf> {
+    fn name(&self) -> SegmentBuf {
         match self {
-            Task::SyncRepo { ca_handle: ca, .. } => SegmentBuf::from_str(&format!("sync_repo_{}", ca)),
+            Task::SyncRepo { ca_handle: ca, .. } => SegmentBuf::parse_lossy(&format!("sync_repo_{}", ca)),
             Task::SyncParent {
                 ca_handle: ca, parent, ..
-            } => SegmentBuf::from_str(&format!("sync_{}_with_parent_{}", ca, parent)),
+            } => SegmentBuf::parse_lossy(&format!("sync_{}_with_parent_{}", ca, parent)),
             Task::SuspendChildrenIfNeeded { ca_handle: ca } => {
-                SegmentBuf::from_str(&format!("suspend_children_if_needed_{}", ca))
+                SegmentBuf::parse_lossy(&format!("suspend_children_if_needed_{}", ca))
             }
-            Task::RepublishIfNeeded => Ok(segment!("all_cas_republish_if_needed").to_owned()),
-            Task::RenewObjectsIfNeeded => Ok(segment!("all_cas_renew_objects_if_needed").to_owned()),
+            Task::RepublishIfNeeded => SegmentBuf::parse_lossy("all_cas_republish_if_needed"),
+            Task::RenewObjectsIfNeeded => SegmentBuf::parse_lossy("all_cas_renew_objects_if_needed"),
             Task::ResourceClassRemoved {
                 ca_handle: ca,
                 parent,
                 rcn,
                 ..
-            } => SegmentBuf::from_str(&format!(
+            } => SegmentBuf::parse_lossy(&format!(
                 "resource_class_removed_ca_{}_parent_{}_rcn_{}",
                 ca, parent, rcn
             )),
@@ -125,22 +123,21 @@ impl Task {
                 rcn,
                 revocation_request,
                 ..
-            } => SegmentBuf::from_str(&format!(
+            } => SegmentBuf::parse_lossy(&format!(
                 "unexpected_key_{}_ca_{}_rcn_{}",
                 revocation_request.key(),
                 ca,
                 rcn
             )),
-            Task::RefreshAnnouncementsInfo => Ok(segment!("refresh_bgp_announcements_info").to_owned()),
-            Task::UpdateSnapshots => Ok(segment!("update_stored_snapshots").to_owned()),
-            Task::RrdpUpdateIfNeeded => Ok(segment!("update_rrdp_if_needed").to_owned()),
+            Task::RefreshAnnouncementsInfo => SegmentBuf::parse_lossy("refresh_bgp_announcements_info"),
+            Task::UpdateSnapshots => SegmentBuf::parse_lossy("update_stored_snapshots"),
+            Task::RrdpUpdateIfNeeded => SegmentBuf::parse_lossy("update_rrdp_if_needed"),
             #[cfg(feature = "multi-user")]
-            Task::SweepLoginCache => Ok(segment!("sweep_login_cache").to_owned()),
-            Task::RenewTestbedTa => Ok(segment!("renew_testbed_ta").to_owned()),
-            Task::SyncTrustAnchorProxySignerIfPossible => Ok(segment!("sync_ta_proxy_signer").to_owned()),
-            Task::QueueStartTasks => Ok(segment!("queue_start_tasks").to_owned()),
+            Task::SweepLoginCache => SegmentBuf::parse_lossy("sweep_login_cache"),
+            Task::RenewTestbedTa => SegmentBuf::parse_lossy("renew_testbed_ta"),
+            Task::SyncTrustAnchorProxySignerIfPossible => SegmentBuf::parse_lossy("sync_ta_proxy_signer"),
+            Task::QueueStartTasks => SegmentBuf::parse_lossy("queue_start_tasks"),
         }
-        .map_err(|e| Error::Custom(format!("could not create name: {}", e)))
     }
 }
 
@@ -185,12 +182,12 @@ pub enum TaskResult {
 
 #[derive(Debug)]
 pub struct TaskQueue {
-    q: kvx::KeyValueStore,
+    q: KeyValueStore,
 }
 
 impl TaskQueue {
     pub fn new(storage_uri: &Url) -> KrillResult<Self> {
-        kvx::KeyValueStore::new(storage_uri, TASK_QUEUE_NS)
+        KeyValueStore::create(storage_uri, TASK_QUEUE_NS)
             .map(|q| TaskQueue { q })
             .map_err(Error::from)
     }
@@ -245,7 +242,7 @@ impl TaskQueue {
     }
 
     fn schedule_task(&self, task: Task, mode: ScheduleMode, priority: Priority) -> KrillResult<()> {
-        let task_name = task.name()?;
+        let task_name = task.name();
         debug!("add task: {} with priority: {}", task_name, priority.to_string());
         let json = serde_json::to_value(&task)
             .map_err(|e| Error::Custom(format!("could not serialize task {}. error: {}", task_name, e)))?;
@@ -256,13 +253,13 @@ impl TaskQueue {
     }
 
     /// Finish a running task, without rescheduling it.
-    pub fn finish(&self, task: &kvx::Key) -> KrillResult<()> {
+    pub fn finish(&self, task: &Key) -> KrillResult<()> {
         debug!("Finish task: {}", task);
         self.q.finish_running_task(task).map_err(Error::from)
     }
 
     /// Reschedule a running task, without finishing it.
-    pub fn reschedule(&self, task: &kvx::Key, priority: Priority) -> KrillResult<()> {
+    pub fn reschedule(&self, task: &Key, priority: Priority) -> KrillResult<()> {
         debug!("Reschedule task: {} to: {}", task, priority);
         self.q
             .reschedule_running_task(task, Some(priority.to_millis()))
@@ -274,7 +271,7 @@ impl TaskQueue {
     pub fn reschedule_tasks_at_startup(&self) -> KrillResult<()> {
         let keys = self.q.running_tasks_keys()?;
 
-        let queue_started_key_name = Task::QueueStartTasks.name()?;
+        let queue_started_key_name = Task::QueueStartTasks.name();
 
         if keys.len() > 1 {
             warn!("Rescheduling running tasks at startup, note that multi-node Krill servers are not yet supported.");

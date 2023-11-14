@@ -5,12 +5,11 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use kvx::Namespace;
 use rpki::ca::idexchange::MyHandle;
 use serde::Serialize;
 use url::Url;
 
-use crate::commons::storage::{segment, Key, KeyValueError, KeyValueStore, Scope, Segment, SegmentExt, Storable};
+use crate::commons::storage::{Key, KeyValueError, KeyValueStore, Namespace, Scope, Segment, SegmentBuf, Storable};
 
 //------------ WalSupport ----------------------------------------------------
 
@@ -398,11 +397,11 @@ impl<T: WalSupport> WalStore<T> {
 
     fn scope_for_handle(handle: &MyHandle) -> Scope {
         // handle should always be a valid Segment
-        Scope::from_segment(Segment::parse_lossy(handle.as_str()))
+        Scope::from_segment(SegmentBuf::parse_lossy(handle.as_str()))
     }
 
     fn key_for_snapshot(handle: &MyHandle) -> Key {
-        Key::new_scoped(Self::scope_for_handle(handle), segment!("snapshot.json"))
+        Key::new_scoped(Self::scope_for_handle(handle), SegmentBuf::parse_lossy("snapshot.json"))
     }
 
     fn key_for_wal_set(handle: &MyHandle, revision: u64) -> Key {

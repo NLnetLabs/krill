@@ -1,6 +1,5 @@
 use std::{fmt, str::FromStr};
 
-use kvx::Namespace;
 use rpki::{
     ca::{idexchange::MyHandle, publication::Base64},
     repository::{
@@ -17,8 +16,7 @@ use crate::{
         api::{AspaDefinition, CustomerAsn},
         crypto::dispatch::signerinfo::{SignerInfo, SignerInfoEvent, SignerInfoInitEvent},
         eventsourcing::{Aggregate, AggregateStore, StoredCommand, StoredCommandBuilder, WithStorableDetails},
-        storage::KeyValueStore,
-        storage::Storable,
+        storage::{KeyValueStore, Namespace, Storable},
     },
     daemon::{
         ca::{CertAuthEvent, CertAuthInitEvent},

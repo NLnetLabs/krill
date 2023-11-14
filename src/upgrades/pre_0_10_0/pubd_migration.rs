@@ -4,7 +4,7 @@ use crate::{
     commons::{
         api::StorableRepositoryCommand,
         eventsourcing::{AggregateStore, StoredCommandBuilder},
-        storage::{segment, KeyValueStore, Scope, Segment},
+        storage::{KeyValueStore, Scope, SegmentBuf},
         util::KrillVersion,
     },
     constants::PUBSERVER_NS,
@@ -38,7 +38,7 @@ impl PublicationServerRepositoryAccessMigration {
 
         if store_migration
             .current_kv_store
-            .has_scope(&Scope::from_segment(segment!("0")))?
+            .has_scope(&Scope::from_segment(SegmentBuf::parse_lossy("0")))?
             && versions.from >= KrillVersion::release(0, 9, 0)
             && versions.from < KrillVersion::candidate(0, 10, 0, 1)
         {
