@@ -53,7 +53,7 @@ jobs:
         args: ["--no-default-features", "", "--features all"]
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
     - name: Install Rust
       uses: hecrj/setup-rust-action@v1
       with:
@@ -70,22 +70,22 @@ jobs:
         features: ["hsm", "hsm,hsm-tests-kmip"]
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v1
+      uses: actions/checkout@v4
 
     - name: Install Rust
-      uses: hecrj/setup-rust-action@v1
+      uses: hecrj/setup-rust-action@v2
       with:
         rust-version: ${{ matrix.rust }}
 
-    - uses: actions/setup-python@v2
+    - uses: actions/setup-python@v4
       with:
-        python-version: '3.x'
+        # Pin to Python 3.11 because 3.12 removes the ssl.wrap_socket()
+        # function which PyKMIP uses.
+        python-version: '3.11'
 
     - name: Install PyKMIP
-      uses: BSFishy/pip-action@v1
-      with:
-        packages: pykmip
-        constraints: test-resources/pykmip/constraints.txt
+      run: |
+        pip install pykmip --constraint test-resources/pykmip/constraints.txt
 
     - name: Compile the tests
       run: |
@@ -116,10 +116,10 @@ jobs:
         features: ["hsm,hsm-tests-pkcs11"]
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v1
+      uses: actions/checkout@v2
 
     - name: Install Rust
-      uses: hecrj/setup-rust-action@v1
+      uses: hecrj/setup-rust-action@v2
       with:
         rust-version: ${{ matrix.rust }}
 

@@ -25,6 +25,8 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 # Changelog
 
+## Unreleased Version
+
 ## 0.14.2 'Extra, Extra, Extra!'
 
 This release fixes an additional corner case in the migration code that affects
