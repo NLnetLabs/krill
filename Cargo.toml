@@ -38,10 +38,7 @@ jmespatch = { version = "^0.3", features = ["sync"], optional = true }
 kmip = { version = "0.4.2", package = "kmip-protocol", features = [
     "tls-with-openssl",
 ], optional = true }
-kvx = { version = "0.9.1", features = ["macros"] }
-# kvx = { version = "0.9.0", git = "https://github.com/nlnetlabs/kvx", branch = "lockfiles-outside-scope", features = [
-#     "macros",
-# ] }
+lazy_static = "1.4.0"
 libflate = "^1"
 log = "^0.4"
 once_cell = { version = "^1.7.2", optional = true }
@@ -62,6 +59,7 @@ rpki = { version = "0.17.2", features = ["ca", "compat", "rrdp"] }
 scrypt = { version = "^0.6", optional = true, default-features = false }
 serde = { version = "^1.0", features = ["derive", "rc"] }
 serde_json = "^1.0"
+tempfile = "3.1.0"
 tokio = { version = "1", features = [
     "macros",
     "rt",

@@ -19,7 +19,8 @@ use crate::{
         api::{AddChildRequest, ApiRepositoryContact, CertAuthInfo, IdCertInfo, RepositoryContact, Token},
         crypto::KrillSigner,
         error::Error as KrillError,
-        eventsourcing::{namespace, AggregateStore, AggregateStoreError, Namespace},
+        eventsourcing::{AggregateStore, AggregateStoreError},
+        storage::NamespaceBuf,
         util::{file, httpclient},
     },
     constants::{KRILL_CLI_API_ENV, KRILL_CLI_FORMAT_ENV, KRILL_TA_CLIENT_APP, KRILL_VERSION},
@@ -1004,8 +1005,12 @@ struct TrustAnchorSignerManager {
 
 impl TrustAnchorSignerManager {
     fn create(config: Config) -> Result<Self, TaClientError> {
-        let store = AggregateStore::create(&config.storage_uri, namespace!("signer"), config.use_history_cache)
-            .map_err(KrillError::AggregateStoreError)?;
+        let store = AggregateStore::create(
+            &config.storage_uri,
+            NamespaceBuf::parse_lossy("signer").as_ref(),
+            config.use_history_cache,
+        )
+        .map_err(KrillError::AggregateStoreError)?;
         let ta_handle = TrustAnchorHandle::new("ta".into());
         let config = Arc::new(config);
         let signer = config.signer()?;

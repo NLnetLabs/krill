@@ -25,7 +25,8 @@ use crate::{
         },
         crypto::KrillSigner,
         error::Error,
-        eventsourcing::{Key, KeyValueStore, PreSaveEventListener, Scope, Segment, SegmentExt},
+        eventsourcing::PreSaveEventListener,
+        storage::{Key, KeyValueStore, Scope, SegmentBuf},
         KrillResult,
     },
     constants::CA_OBJECTS_NS,
@@ -169,7 +170,7 @@ impl PreSaveEventListener<CertAuth> for CaObjectsStore {
 
 impl CaObjectsStore {
     fn key(ca: &CaHandle) -> Key {
-        Key::new_global(Segment::parse_lossy(&format!("{}.json", ca))) // ca should always be a valid Segment
+        Key::new_global(SegmentBuf::parse_lossy(&format!("{}.json", ca))) // ca should always be a valid Segment
     }
 
     pub fn cas(&self) -> KrillResult<Vec<CaHandle>> {

@@ -22,7 +22,7 @@ use url::Url;
 use crate::{
     commons::{
         crypto::{dispatch::signerinfo::SignerMapper, signers::error::SignerError, SignerHandle},
-        eventsourcing::{Key, KeyValueStore, Segment, SegmentExt},
+        storage::{Key, KeyValueStore, SegmentBuf},
     },
     constants::KEYS_NS,
 };
@@ -136,7 +136,7 @@ impl OpenSslSigner {
         let json = serde_json::to_value(&kp)?;
         match self
             .keys_store
-            .store(&Key::new_global(Segment::parse_lossy(&key_id.to_string())), &json) // key_id should always be a valid Segment
+            .store(&Key::new_global(SegmentBuf::parse_lossy(&key_id.to_string())), &json) // key_id should always be a valid Segment
         {
             Ok(_) => Ok(key_id),
             Err(err) => Err(SignerError::Other(format!("Failed to store key: {}:", err))),
@@ -165,7 +165,7 @@ impl OpenSslSigner {
         // TODO decrypt key after read
         match self
             .keys_store
-            .get(&Key::new_global(Segment::parse_lossy(&key_id.to_string()))) // key_id should always be a valid Segment
+            .get(&Key::new_global(SegmentBuf::parse_lossy(&key_id.to_string()))) // key_id should always be a valid Segment
         {
             Ok(Some(kp)) => Ok(kp),
             Ok(None) => Err(SignerError::KeyNotFound),
@@ -218,7 +218,7 @@ impl OpenSslSigner {
 
     pub fn destroy_key(&self, key_id: &KeyIdentifier) -> Result<(), KeyError<SignerError>> {
         self.keys_store
-            .drop_key(&Key::new_global(Segment::parse_lossy(&key_id.to_string()))) // key_id should always be a valid Segment
+            .drop_key(&Key::new_global(SegmentBuf::parse_lossy(&key_id.to_string()))) // key_id should always be a valid Segment
             .map_err(|_| KeyError::Signer(SignerError::KeyNotFound))
     }
 

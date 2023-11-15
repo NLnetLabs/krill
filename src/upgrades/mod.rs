@@ -8,6 +8,7 @@ use serde::{de::DeserializeOwned, Deserialize};
 
 use rpki::{
     ca::idexchange::{CaHandle, MyHandle},
+    crypto::Signer,
     repository::x509::Time,
 };
 
@@ -17,9 +18,10 @@ use crate::{
         api::{AspaDefinition, AspaDefinitionUpdates, CustomerAsn, ProviderAsn},
         error::KrillIoError,
         eventsourcing::{
-            segment, Aggregate, AggregateStore, AggregateStoreError, Key, KeyValueError, KeyValueStore, Scope, Segment,
-            SegmentExt, Storable, StoredCommand, WalStore, WalStoreError, WithStorableDetails,
+            Aggregate, AggregateStore, AggregateStoreError, StoredCommand, WalStore, WalStoreError, WithStorableDetails,
         },
+        storage::Storable,
+        storage::{Key, KeyValueError, KeyValueStore, Scope, Segment, SegmentBuf},
         util::KrillVersion,
         KrillResult,
     },
@@ -31,12 +33,6 @@ use crate::{
     pubd,
     upgrades::pre_0_14_0::{OldStoredCommand, OldStoredEffect, OldStoredEvent},
 };
-
-#[cfg(feature = "hsm")]
-use rpki::crypto::KeyIdentifier;
-
-#[cfg(feature = "hsm")]
-use crate::{commons::crypto::SignerHandle, rpki::crypto::Signer};
 
 use self::{pre_0_13_0::OldRepositoryContent, pre_0_14_0::OldCommandKey};
 
@@ -547,7 +543,7 @@ pub trait UpgradeAggregateStorePre0_14 {
     /// version set as the target.
     fn preparation_store_prepare(&self) -> UpgradeResult<()> {
         let code_version = KrillVersion::code_version();
-        let version_key = Key::new_global(segment!("version"));
+        let version_key = Key::new_global(SegmentBuf::parse_lossy("version"));
 
         if let Ok(Some(existing_migration_version)) =
             self.preparation_key_value_store().get::<KrillVersion>(&version_key)
@@ -595,7 +591,7 @@ pub trait UpgradeAggregateStorePre0_14 {
     }
 
     fn data_upgrade_info_key(scope: Scope) -> Key {
-        Key::new_scoped(scope, segment!("upgrade_info.json"))
+        Key::new_scoped(scope, SegmentBuf::parse_lossy("upgrade_info.json"))
     }
 
     /// Return the DataUpgradeInfo telling us to where we got to with this migration.
@@ -618,7 +614,7 @@ pub trait UpgradeAggregateStorePre0_14 {
 
     /// Clean up keys used for tracking migration progress
     fn clean_migration_help_files(&self) -> UpgradeResult<()> {
-        let version_key = Key::new_global(segment!("version"));
+        let version_key = Key::new_global(SegmentBuf::parse_lossy("version"));
         self.preparation_key_value_store()
             .drop_key(&version_key)
             .map_err(UpgradeError::KeyStoreError)?;
@@ -647,7 +643,7 @@ pub trait UpgradeAggregateStorePre0_14 {
         cmd_keys.sort_by_key(|k| k.sequence);
         let cmd_keys = cmd_keys
             .into_iter()
-            .map(|ck| Key::new_scoped(scope.clone(), Segment::parse_lossy(&format!("{}.json", ck)))) // ck should always be a valid Segment
+            .map(|ck| Key::new_scoped(scope.clone(), SegmentBuf::parse_lossy(&format!("{}.json", ck)))) // ck should always be a valid Segment
             .collect();
 
         Ok(cmd_keys)
@@ -708,7 +704,7 @@ pub fn prepare_upgrade_data_migrations(
             // be migrated to the new setup in 0.13.0. Well.. it could be done, if there would be a strong use
             // case to put in the effort, but there really isn't.
             let ca_kv_store = KeyValueStore::create(&config.storage_uri, CASERVER_NS)?;
-            if ca_kv_store.has_scope(&Scope::from_segment(segment!("ta")))? {
+            if ca_kv_store.has_scope(&Scope::from_segment(SegmentBuf::parse_lossy("ta")))? {
                 return Err(UpgradeError::OldTaMigration);
             }
 
@@ -794,7 +790,10 @@ fn migrate_0_12_pubd_objects(config: &Config) -> KrillResult<bool> {
     if old_store.has(&repo_content_handle)? {
         let old_repo_content = old_store.get_latest(&repo_content_handle)?.as_ref().clone();
         let repo_content: pubd::RepositoryContent = old_repo_content.try_into()?;
-        let new_key = Key::new_scoped(Scope::from_segment(segment!("0")), segment!("snapshot.json"));
+        let new_key = Key::new_scoped(
+            Scope::from_segment(SegmentBuf::parse_lossy("0")),
+            SegmentBuf::parse_lossy("snapshot.json"),
+        );
         let upgrade_store = KeyValueStore::create_upgrade_store(&config.storage_uri, PUBSERVER_CONTENT_NS)?;
         upgrade_store.store(&new_key, &repo_content)?;
         Ok(true)
@@ -807,12 +806,15 @@ fn migrate_0_12_pubd_objects(config: &Config) -> KrillResult<bool> {
 /// the location and way of storing it did. So, migrate if present.
 fn migrate_pre_0_12_pubd_objects(config: &Config) -> KrillResult<()> {
     let old_store = KeyValueStore::create(&config.storage_uri, PUBSERVER_CONTENT_NS)?;
-    let old_key = Key::new_global(segment!("0.json"));
+    let old_key = Key::new_global(SegmentBuf::parse_lossy("0.json"));
     if let Ok(Some(old_repo_content)) = old_store.get::<pre_0_13_0::OldRepositoryContent>(&old_key) {
         info!("Found pre 0.12.0 RC2 publication server data. Migrating..");
         let repo_content: pubd::RepositoryContent = old_repo_content.try_into()?;
 
-        let new_key = Key::new_scoped(Scope::from_segment(segment!("0")), segment!("snapshot.json"));
+        let new_key = Key::new_scoped(
+            Scope::from_segment(SegmentBuf::parse_lossy("0")),
+            SegmentBuf::parse_lossy("snapshot.json"),
+        );
         let upgrade_store = KeyValueStore::create_upgrade_store(&config.storage_uri, PUBSERVER_CONTENT_NS)?;
         upgrade_store.store(&new_key, &repo_content)?;
     }
@@ -870,7 +872,7 @@ pub fn finalise_data_migration(
             // for this namespace that still includes a version file. If
             // so, remove it.
             let current_store = KeyValueStore::create(&config.storage_uri, ns)?;
-            let version_key = Key::new_global(segment!("version"));
+            let version_key = Key::new_global(SegmentBuf::parse_lossy("version"));
             if current_store.has(&version_key)? {
                 debug!("Removing excess version key in ns: {}", ns);
                 current_store.drop_key(&version_key)?;
@@ -897,7 +899,7 @@ pub fn finalise_data_migration(
 /// never created. So we detect the case that the signer store SIGNERS_DIR directory has not yet been created, i.e. no
 /// signers have been registered and no key mappings have been recorded, and then walk KEYS_NS adding the keys one by
 /// one to the mapping in the signer store, if any.
-#[cfg(feature = "hsm")]
+#[allow(dead_code)] // Remove when the hsm feature is removed.
 fn record_preexisting_openssl_keys_in_signer_mapper(config: &Config) -> Result<(), UpgradeError> {
     let signers_key_store = KeyValueStore::create(&config.storage_uri, SIGNERS_NS)?;
     if signers_key_store.is_empty()? {
@@ -919,12 +921,12 @@ fn record_preexisting_openssl_keys_in_signer_mapper(config: &Config) -> Result<(
 
         // For every file (key) in the legacy OpenSSL signer keys directory
 
-        let mut openssl_signer_handle: Option<SignerHandle> = None;
+        let mut openssl_signer_handle: Option<crate::commons::crypto::SignerHandle> = None;
 
         for key in keys_key_store.keys(&Scope::global(), "")? {
             debug!("Found key: {}", key);
             // Is it a key identifier?
-            if let Ok(key_id) = KeyIdentifier::from_str(key.name().as_str()) {
+            if let Ok(key_id) = rpki::crypto::KeyIdentifier::from_str(key.name().as_str()) {
                 // Is the key already recorded in the mapper? It shouldn't be, but asking will cause the initial
                 // registration of the OpenSSL signer to occur and for it to be assigned a handle. We need the
                 // handle so that we can register keys with the mapper.
@@ -1018,7 +1020,8 @@ fn upgrade_versions(
         // latest version (if any) that counts here.
         for ns in &[CASERVER_NS, CA_OBJECTS_NS, PUBSERVER_NS, PUBSERVER_CONTENT_NS] {
             let kv_store = KeyValueStore::create(&config.storage_uri, ns)?;
-            let key = Key::new_global(segment!("version"));
+            trace!("checking for version in key value store: {}", kv_store);
+            let key = Key::new_global(SegmentBuf::parse_lossy("version"));
 
             if let Some(key_store_version) = kv_store.get::<KrillVersion>(&key)? {
                 if let Some(last_seen) = &current {
@@ -1044,11 +1047,10 @@ fn upgrade_versions(
 mod tests {
     use std::path::PathBuf;
 
-    use kvx::Namespace;
     use log::LevelFilter;
     use url::Url;
 
-    use crate::test;
+    use crate::{commons::storage::NamespaceBuf, test};
 
     use super::*;
 
@@ -1062,9 +1064,9 @@ mod tests {
 
         let source_url = Url::parse(&format!("local://{}", base_dir)).unwrap();
         for ns in namespaces {
-            let namespace = Namespace::parse(ns).unwrap();
-            let source_store = KeyValueStore::create(&source_url, namespace).unwrap();
-            let target_store = KeyValueStore::create(&mem_storage_base_uri, namespace).unwrap();
+            let namespace = NamespaceBuf::parse_lossy(ns);
+            let source_store = KeyValueStore::create(&source_url, namespace.as_ref()).unwrap();
+            let target_store = KeyValueStore::create(&mem_storage_base_uri, namespace.as_ref()).unwrap();
 
             target_store.import(&source_store).unwrap();
         }
@@ -1132,7 +1134,7 @@ mod tests {
     }
 
     #[test]
-    fn prepare_then_upgrade_0_13_1() {
+    fn prepare_then_upgrade_0_13_1_cas() {
         test_upgrade(
             "test-resources/migrations/v0_13_1/",
             &["ca_objects", "cas", "keys", "pubd", "pubd_objects", "signers", "status"],
@@ -1166,7 +1168,8 @@ mod tests {
     // #[cfg(all(feature = "hsm", not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11"))))]
     #[allow(dead_code)] // this only looks dead because of complex features.
     fn unmapped_keys_test_core(do_upgrade: bool) {
-        let expected_key_id = KeyIdentifier::from_str("5CBCAB14B810C864F3EEA8FD102B79F4E53FCC70").unwrap();
+        let expected_key_id =
+            rpki::crypto::KeyIdentifier::from_str("5CBCAB14B810C864F3EEA8FD102B79F4E53FCC70").unwrap();
 
         // Copy test data into test storage
         let mem_storage_base_uri = test::mem_storage();
