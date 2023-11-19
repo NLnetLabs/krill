@@ -88,7 +88,7 @@ pub struct PendingTask {
 }
 
 impl PendingTask {
-    const SEGMENT: &Segment = unsafe { Segment::from_str_unchecked("pending") };
+    const SEGMENT: &'static Segment = unsafe { Segment::from_str_unchecked("pending") };
 }
 
 impl PartialEq for PendingTask {
@@ -117,7 +117,7 @@ pub struct RunningTask {
 }
 
 impl RunningTask {
-    const SEGMENT: &Segment = unsafe { Segment::from_str_unchecked("running") };
+    const SEGMENT: &'static Segment = unsafe { Segment::from_str_unchecked("running") };
 }
 
 impl Display for RunningTask {
