@@ -262,7 +262,7 @@ enum RegisterResult {
 
 #[cfg(not(feature = "hsm"))]
 impl SignerRouter {
-    fn bind_ready_signers(&self) {}
+    async fn bind_ready_signers(&self) {}
 }
 
 #[cfg(feature = "hsm")]
