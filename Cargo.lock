@@ -1792,6 +1792,7 @@ dependencies = [
 [[package]]
 name = "rpki"
 version = "0.17.3-dev"
+source = "git+https://github.com/nLnetLabs/rpki-rs?branch=async-signer-trait#c9522c615dd2834019bd64619e2304b99137a4bf"
 dependencies = [
  "async-trait",
  "base64 0.21.0",
