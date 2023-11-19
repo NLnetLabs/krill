@@ -407,7 +407,7 @@ impl Roas {
     }
 
     /// Process authorization updates below the aggregation threshold
-    fn update_simple(
+    async fn update_simple(
         &self,
         relevant_routes: &Routes,
         certified_key: &CertifiedKey,
@@ -427,7 +427,8 @@ impl Roas {
                     certified_key,
                     issuance_timing.new_roa_validity(),
                     signer,
-                )?;
+                )
+                .await?;
                 let info = RoaInfo::new(authorizations, roa);
                 roa_updates.update(*auth, info);
             }
@@ -444,7 +445,7 @@ impl Roas {
     }
 
     /// Process authorization updates that triggered de-aggregating ROAs
-    fn update_stop_aggregating(
+    async fn update_stop_aggregating(
         &self,
         relevant_routes: &Routes,
         certified_key: &CertifiedKey,
@@ -453,7 +454,9 @@ impl Roas {
     ) -> KrillResult<RoaUpdates> {
         // First trigger the simple update, this will make sure that all current routes
         // are added as simple (one prefix) ROAs
-        let mut roa_updates = self.update_simple(relevant_routes, certified_key, issuance_timing, signer)?;
+        let mut roa_updates = self
+            .update_simple(relevant_routes, certified_key, issuance_timing, signer)
+            .await?;
 
         // Then remove all aggregate ROAs
         for roa_key in self.aggregate.keys() {
@@ -464,7 +467,7 @@ impl Roas {
     }
 
     /// Process authorization updates that triggered aggregating ROAs
-    fn update_start_aggregating(
+    async fn update_start_aggregating(
         &self,
         relevant_routes: &Routes,
         certified_key: &CertifiedKey,
@@ -473,7 +476,9 @@ impl Roas {
     ) -> KrillResult<RoaUpdates> {
         // First trigger the aggregate update, this will make sure that all current routes
         // are added as aggregate ROAs
-        let mut roa_updates = self.update_aggregate(relevant_routes, certified_key, issuance_timing, signer)?;
+        let mut roa_updates = self
+            .update_aggregate(relevant_routes, certified_key, issuance_timing, signer)
+            .await?;
 
         // Then remove all simple ROAs
         for roa_key in self.simple.keys() {
@@ -485,7 +490,7 @@ impl Roas {
     }
 
     /// Process authorization updates in aggregation mode
-    fn update_aggregate(
+    async fn update_aggregate(
         &self,
         relevant_routes: &Routes,
         certified_key: &CertifiedKey,
@@ -508,13 +513,15 @@ impl Roas {
                 if authorizations != &existing_authorizations {
                     // replace ROA
                     let aggregate =
-                        Self::make_aggregate_roa(key, authorizations.clone(), certified_key, issuance_timing, signer)?;
+                        Self::make_aggregate_roa(key, authorizations.clone(), certified_key, issuance_timing, signer)
+                            .await?;
                     roa_updates.update_aggregate(*key, aggregate);
                 }
             } else {
                 // new ROA
                 let aggregate =
-                    Self::make_aggregate_roa(key, authorizations.clone(), certified_key, issuance_timing, signer)?;
+                    Self::make_aggregate_roa(key, authorizations.clone(), certified_key, issuance_timing, signer)
+                        .await?;
                 roa_updates.update_aggregate(*key, aggregate);
             }
         }
@@ -531,7 +538,7 @@ impl Roas {
 
     /// Process updates, return [`RoaUpdates`] and create new ROA objects if
     /// authorizations change, or if ROAs are about to expire.
-    pub fn update(
+    pub async fn update(
         &self,
         all_routes: &Routes,
         certified_key: &CertifiedKey,
@@ -545,15 +552,21 @@ impl Roas {
             config.roa_deaggregate_threshold,
             config.roa_aggregate_threshold,
         ) {
-            RoaMode::Simple => self.update_simple(&relevant_routes, certified_key, &config.issuance_timing, signer),
+            RoaMode::Simple => {
+                self.update_simple(&relevant_routes, certified_key, &config.issuance_timing, signer)
+                    .await
+            }
             RoaMode::StopAggregating => {
                 self.update_stop_aggregating(&relevant_routes, certified_key, &config.issuance_timing, signer)
+                    .await
             }
             RoaMode::StartAggregating => {
                 self.update_start_aggregating(&relevant_routes, certified_key, &config.issuance_timing, signer)
+                    .await
             }
             RoaMode::Aggregate => {
                 self.update_aggregate(&relevant_routes, certified_key, &config.issuance_timing, signer)
+                    .await
             }
         }
     }
@@ -561,7 +574,7 @@ impl Roas {
     /// Re-new ROAs before they would expire, or when forced e.g. in case
     /// ROAs need to be reissued because of a keyroll, or because of a change
     /// in encoding (like forcing shorter subject names, see issue #700)
-    pub fn renew(
+    pub async fn renew(
         &self,
         force: bool,
         certified_key: &CertifiedKey,
@@ -582,7 +595,8 @@ impl Roas {
                     certified_key,
                     issuance_timing.new_roa_validity(),
                     signer,
-                )?;
+                )
+                .await?;
                 let new_roa_info = RoaInfo::new(authorizations, roa);
                 updates.update(*auth, new_roa_info);
             }
@@ -598,7 +612,8 @@ impl Roas {
                     certified_key,
                     issuance_timing.new_roa_validity(),
                     signer,
-                )?;
+                )
+                .await?;
 
                 let new_roa_info = RoaInfo::new(authorizations, new_roa);
                 updates.update_aggregate(*roa_key, new_roa_info);
@@ -608,7 +623,7 @@ impl Roas {
         Ok(updates)
     }
 
-    pub fn make_roa(
+    pub async fn make_roa(
         authorizations: &[RoaPayloadJsonMapKey],
         name: &ObjectName,
         certified_key: &CertifiedKey,
@@ -642,14 +657,14 @@ impl Roas {
         }
 
         let mut object_builder =
-            SignedObjectBuilder::new(signer.random_serial()?, validity, crl_uri, aia.clone(), roa_uri);
+            SignedObjectBuilder::new(signer.random_serial().await?, validity, crl_uri, aia.clone(), roa_uri);
         object_builder.set_issuer(Some(incoming_cert.subject().clone()));
         object_builder.set_signing_time(Some(Time::now()));
 
-        Ok(signer.sign_roa(roa_builder, object_builder, signing_key)?)
+        Ok(signer.sign_roa(roa_builder, object_builder, signing_key).await?)
     }
 
-    pub fn make_aggregate_roa(
+    pub async fn make_aggregate_roa(
         key: &RoaAggregateKey,
         authorizations: Vec<RoaPayloadJsonMapKey>,
         certified_key: &CertifiedKey,
@@ -663,7 +678,8 @@ impl Roas {
             certified_key,
             issuance_timing.new_roa_validity(),
             signer,
-        )?;
+        )
+        .await?;
         Ok(RoaInfo::new(authorizations, roa))
     }
 }

@@ -68,9 +68,9 @@ pub struct RepositoryContentProxy {
 }
 
 impl RepositoryContentProxy {
-    pub fn create(config: &Config) -> KrillResult<Self> {
+    pub async fn create(config: &Config) -> KrillResult<Self> {
         let store = Arc::new(WalStore::create(&config.storage_uri, PUBSERVER_CONTENT_NS)?);
-        store.warm()?;
+        store.warm().await?;
 
         let default_handle = MyHandle::new("0".into());
 
@@ -78,8 +78,8 @@ impl RepositoryContentProxy {
     }
 
     /// Initialize
-    pub fn init(&self, repo_dir: &Path, uris: PublicationServerUris) -> KrillResult<()> {
-        if self.store.has(&self.default_handle)? {
+    pub async fn init(&self, repo_dir: &Path, uris: PublicationServerUris) -> KrillResult<()> {
+        if self.store.has(&self.default_handle).await? {
             Err(Error::RepositoryServerAlreadyInitialized)
         } else {
             // initialize new repo content
@@ -95,29 +95,29 @@ impl RepositoryContentProxy {
             };
 
             // Store newly initialized repo content on disk
-            self.store.add(&self.default_handle, repository_content)?;
+            self.store.add(&self.default_handle, repository_content).await?;
 
             Ok(())
         }
     }
 
-    fn get_default_content(&self) -> KrillResult<Arc<RepositoryContent>> {
-        self.store.get_latest(&self.default_handle)
+    async fn get_default_content(&self) -> KrillResult<Arc<RepositoryContent>> {
+        self.store.get_latest(&self.default_handle).await
     }
 
     // Clear all content, so it can be re-initialized.
     // Only to be called after all publishers have been removed from the RepoAccess as well.
-    pub fn clear(&self) -> KrillResult<()> {
-        let content = self.get_default_content()?;
+    pub async fn clear(&self) -> KrillResult<()> {
+        let content = self.get_default_content().await?;
         content.clear();
-        self.store.remove(&self.default_handle)?;
+        self.store.remove(&self.default_handle).await?;
 
         Ok(())
     }
 
     /// Return the repository content stats
-    pub fn stats(&self) -> KrillResult<RepoStats> {
-        self.get_default_content().map(|content| content.stats())
+    pub async fn stats(&self) -> KrillResult<RepoStats> {
+        self.get_default_content().await.map(|content| content.stats())
     }
 
     /// Add a publisher with an empty set of published objects.
@@ -127,16 +127,16 @@ impl RepositoryContentProxy {
     /// to the RepositoryAccess was successful (and *that* will fail if
     /// the publisher is a duplicate). This method can only fail if
     /// there is an issue with the underlying key value store.
-    pub fn add_publisher(&self, publisher: PublisherHandle) -> KrillResult<()> {
+    pub async fn add_publisher(&self, publisher: PublisherHandle) -> KrillResult<()> {
         let command = RepositoryContentCommand::add_publisher(self.default_handle.clone(), publisher);
-        self.store.send_command(command)?;
+        self.store.send_command(command).await?;
         Ok(())
     }
 
     /// Removes a publisher and its content.
-    pub fn remove_publisher(&self, publisher: PublisherHandle) -> KrillResult<()> {
+    pub async fn remove_publisher(&self, publisher: PublisherHandle) -> KrillResult<()> {
         let command = RepositoryContentCommand::remove_publisher(self.default_handle.clone(), publisher);
-        self.store.send_command(command)?;
+        self.store.send_command(command).await?;
 
         Ok(())
     }
@@ -145,45 +145,46 @@ impl RepositoryContentProxy {
     ///
     /// Assumes that the RFC 8181 CMS has been verified, but will check that all objects
     /// are within the publisher's uri space (jail).
-    pub fn publish(&self, publisher: PublisherHandle, delta: PublishDelta, jail: &uri::Rsync) -> KrillResult<()> {
+    pub async fn publish(&self, publisher: PublisherHandle, delta: PublishDelta, jail: &uri::Rsync) -> KrillResult<()> {
         debug!("Publish delta for {}", publisher);
         let delta = DeltaElements::from(delta);
 
         let command = RepositoryContentCommand::publish(self.default_handle.clone(), publisher, jail.clone(), delta);
-        self.store.send_command(command)?;
+        self.store.send_command(command).await?;
 
         Ok(())
     }
 
     /// Checks whether an RRDP update is needed
-    pub fn rrdp_update_needed(&self, rrdp_updates_config: RrdpUpdatesConfig) -> KrillResult<RrdpUpdateNeeded> {
+    pub async fn rrdp_update_needed(&self, rrdp_updates_config: RrdpUpdatesConfig) -> KrillResult<RrdpUpdateNeeded> {
         self.get_default_content()
+            .await
             .map(|content| content.rrdp.update_rrdp_needed(rrdp_updates_config))
     }
 
     /// Delete matching files from the repository and publishers
-    pub fn delete_matching_files(&self, uri: uri::Rsync) -> KrillResult<Arc<RepositoryContent>> {
+    pub async fn delete_matching_files(&self, uri: uri::Rsync) -> KrillResult<Arc<RepositoryContent>> {
         let command = RepositoryContentCommand::delete_matching_files(self.default_handle.clone(), uri);
-        self.store.send_command(command)
+        self.store.send_command(command).await
     }
 
     /// Update RRDP and return the RepositoryContent so it can be used for writing.
-    pub fn update_rrdp(&self, rrdp_updates_config: RrdpUpdatesConfig) -> KrillResult<Arc<RepositoryContent>> {
+    pub async fn update_rrdp(&self, rrdp_updates_config: RrdpUpdatesConfig) -> KrillResult<Arc<RepositoryContent>> {
         let command = RepositoryContentCommand::create_rrdp_delta(self.default_handle.clone(), rrdp_updates_config);
-        self.store.send_command(command)
+        self.store.send_command(command).await
     }
 
     /// Write all current files to disk
-    pub fn write_repository(&self, rrdp_updates_config: RrdpUpdatesConfig) -> KrillResult<()> {
-        let content = self.get_default_content()?;
+    pub async fn write_repository(&self, rrdp_updates_config: RrdpUpdatesConfig) -> KrillResult<()> {
+        let content = self.get_default_content().await?;
         content.write_repository(rrdp_updates_config)
     }
 
     /// Reset the RRDP session if it is initialized. Otherwise do nothing.
-    pub fn session_reset(&self, rrdp_updates_config: RrdpUpdatesConfig) -> KrillResult<()> {
-        if self.store.has(&self.default_handle)? {
+    pub async fn session_reset(&self, rrdp_updates_config: RrdpUpdatesConfig) -> KrillResult<()> {
+        if self.store.has(&self.default_handle).await? {
             let command = RepositoryContentCommand::session_reset(self.default_handle.clone());
-            let content = self.store.send_command(command)?;
+            let content = self.store.send_command(command).await?;
 
             content.write_repository(rrdp_updates_config)
         } else {
@@ -193,13 +194,14 @@ impl RepositoryContentProxy {
     }
 
     /// Create a list reply containing all current objects for a publisher
-    pub fn list_reply(&self, publisher: &PublisherHandle) -> KrillResult<ListReply> {
-        self.get_default_content()?.list_reply(publisher)
+    pub async fn list_reply(&self, publisher: &PublisherHandle) -> KrillResult<ListReply> {
+        self.get_default_content().await?.list_reply(publisher)
     }
 
     // Get all current objects for a publisher
-    pub fn current_objects(&self, name: &PublisherHandle) -> KrillResult<CurrentObjects> {
+    pub async fn current_objects(&self, name: &PublisherHandle) -> KrillResult<CurrentObjects> {
         self.get_default_content()
+            .await
             .map(|content| content.objects_for_publisher(name).into_owned())
     }
 }
@@ -1506,13 +1508,13 @@ pub struct RepositoryAccessProxy {
 }
 
 impl RepositoryAccessProxy {
-    pub fn create(config: &Config) -> KrillResult<Self> {
+    pub async fn create(config: &Config) -> KrillResult<Self> {
         let store =
             AggregateStore::<RepositoryAccess>::create(&config.storage_uri, PUBSERVER_NS, config.use_history_cache)?;
         let key = MyHandle::from_str(PUBSERVER_DFLT).unwrap();
 
-        if store.has(&key)? {
-            if let Err(e) = store.warm() {
+        if store.has(&key).await? {
+            if let Err(e) = store.warm().await {
                 // Start to 'warm' the cache. This serves two purposes:
                 // 1. this ensures that the `RepositoryAccess` struct is available in memory
                 // 2. this ensures that there are no apparent data issues
@@ -1534,12 +1536,12 @@ impl RepositoryAccessProxy {
         Ok(RepositoryAccessProxy { store, key })
     }
 
-    pub fn initialized(&self) -> KrillResult<bool> {
-        self.store.has(&self.key).map_err(Error::AggregateStoreError)
+    pub async fn initialized(&self) -> KrillResult<bool> {
+        self.store.has(&self.key).await.map_err(Error::AggregateStoreError)
     }
 
-    pub fn init(&self, uris: PublicationServerUris, signer: Arc<KrillSigner>) -> KrillResult<()> {
-        if self.initialized()? {
+    pub async fn init(&self, uris: PublicationServerUris, signer: Arc<KrillSigner>) -> KrillResult<()> {
+        if self.initialized().await? {
             Err(Error::RepositoryServerAlreadyInitialized)
         } else {
             let actor = Actor::system_actor();
@@ -1552,95 +1554,96 @@ impl RepositoryAccessProxy {
                 &actor,
             );
 
-            self.store.add(cmd)?;
+            self.store.add(cmd).await?;
 
             Ok(())
         }
     }
 
-    pub fn clear(&self) -> KrillResult<()> {
-        if !self.initialized()? {
+    pub async fn clear(&self) -> KrillResult<()> {
+        if !self.initialized().await? {
             Err(Error::RepositoryServerNotInitialized)
-        } else if !self.publishers()?.is_empty() {
+        } else if !self.publishers().await?.is_empty() {
             Err(Error::RepositoryServerHasPublishers)
         } else {
-            self.store.drop_aggregate(&self.key)?;
+            self.store.drop_aggregate(&self.key).await?;
             Ok(())
         }
     }
 
-    fn read(&self) -> KrillResult<Arc<RepositoryAccess>> {
-        if !self.initialized()? {
+    async fn read(&self) -> KrillResult<Arc<RepositoryAccess>> {
+        if !self.initialized().await? {
             Err(Error::RepositoryServerNotInitialized)
         } else {
             self.store
                 .get_latest(&self.key)
+                .await
                 .map_err(|e| Error::custom(format!("Publication Server data issue: {}", e)))
         }
     }
 
-    pub fn publishers(&self) -> KrillResult<Vec<PublisherHandle>> {
-        Ok(self.read()?.publishers())
+    pub async fn publishers(&self) -> KrillResult<Vec<PublisherHandle>> {
+        Ok(self.read().await?.publishers())
     }
 
-    pub fn get_publisher(&self, name: &PublisherHandle) -> KrillResult<Publisher> {
-        self.read()?.get_publisher(name).map(|p| p.clone())
+    pub async fn get_publisher(&self, name: &PublisherHandle) -> KrillResult<Publisher> {
+        self.read().await?.get_publisher(name).map(|p| p.clone())
     }
 
-    pub fn add_publisher(&self, req: idexchange::PublisherRequest, actor: &Actor) -> KrillResult<()> {
+    pub async fn add_publisher(&self, req: idexchange::PublisherRequest, actor: &Actor) -> KrillResult<()> {
         let name = req.publisher_handle().clone();
         let id_cert = req.validate().map_err(Error::rfc8183)?;
-        let base_uri = self.read()?.base_uri_for(&name)?;
+        let base_uri = self.read().await?.base_uri_for(&name)?;
 
         let cmd = RepositoryAccessCommandDetails::add_publisher(&self.key, id_cert.into(), name, base_uri, actor);
-        self.store.command(cmd)?;
+        self.store.command(cmd).await?;
         Ok(())
     }
 
-    pub fn remove_publisher(&self, name: PublisherHandle, actor: &Actor) -> KrillResult<()> {
-        if !self.initialized()? {
+    pub async fn remove_publisher(&self, name: PublisherHandle, actor: &Actor) -> KrillResult<()> {
+        if !self.initialized().await? {
             Err(Error::RepositoryServerNotInitialized)
         } else {
             let cmd = RepositoryAccessCommandDetails::remove_publisher(&self.key, name, actor);
-            self.store.command(cmd)?;
+            self.store.command(cmd).await?;
             Ok(())
         }
     }
 
     /// Returns the repository URI information for a publisher.
-    pub fn repo_info_for(&self, name: &PublisherHandle) -> KrillResult<RepoInfo> {
-        self.read()?.repo_info_for(name)
+    pub async fn repo_info_for(&self, name: &PublisherHandle) -> KrillResult<RepoInfo> {
+        self.read().await?.repo_info_for(name)
     }
 
     /// Returns the RFC8183 Repository Response for the publisher
-    pub fn repository_response(
+    pub async fn repository_response(
         &self,
         rfc8181_uri: uri::Https,
         publisher: &PublisherHandle,
     ) -> KrillResult<idexchange::RepositoryResponse> {
-        self.read()?.repository_response(rfc8181_uri, publisher)
+        self.read().await?.repository_response(rfc8181_uri, publisher)
     }
 
     /// Parse submitted bytes by a Publisher as an RFC8181 ProtocolCms object, and validates it.
-    pub fn decode_and_validate(
+    pub async fn decode_and_validate(
         &self,
         publisher: &PublisherHandle,
         bytes: &[u8],
     ) -> KrillResult<publication::PublicationCms> {
-        let publisher = self.get_publisher(publisher)?;
+        let publisher = self.get_publisher(publisher).await?;
         let msg = PublicationCms::decode(bytes).map_err(Error::Rfc8181)?;
         msg.validate(publisher.id_cert().public_key()).map_err(Error::Rfc8181)?;
         Ok(msg)
     }
 
     // /// Creates and signs an RFC8181 CMS response.
-    pub fn respond(
+    pub async fn respond(
         &self,
         message: publication::Message,
         signer: &KrillSigner,
     ) -> KrillResult<publication::PublicationCms> {
-        let key_id = self.read()?.key_id();
-        signer.create_rfc8181_cms(message, &key_id).map_err(Error::signer)
+        let key_id = self.read().await?.key_id();
+        signer.create_rfc8181_cms(message, &key_id).await.map_err(Error::signer)
     }
 }
 
@@ -1669,6 +1672,7 @@ impl RepositoryAccess {
 
 /// # Event Sourcing support
 ///
+#[async_trait::async_trait]
 impl Aggregate for RepositoryAccess {
     type Command = RepositoryAccessCommand;
     type StorableCommandDetails = StorableRepositoryCommand;
@@ -1691,11 +1695,11 @@ impl Aggregate for RepositoryAccess {
         }
     }
 
-    fn process_init_command(command: Self::InitCommand) -> Result<Self::InitEvent, Self::Error> {
+    async fn process_init_command(command: Self::InitCommand) -> Result<Self::InitEvent, Self::Error> {
         let details = command.into_details();
         let (rrdp_base_uri, rsync_jail, signer) = details.unpack();
 
-        let id_cert_info = Rfc8183Id::generate(&signer)?.into();
+        let id_cert_info = Rfc8183Id::generate(&signer).await?.into();
 
         Ok(RepositoryAccessInitEvent::new(id_cert_info, rrdp_base_uri, rsync_jail))
     }
@@ -1719,7 +1723,7 @@ impl Aggregate for RepositoryAccess {
         }
     }
 
-    fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Event>, Self::Error> {
+    async fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Event>, Self::Error> {
         info!(
             "Sending command to publisher '{}', version: {}: {}",
             self.handle, self.version, command

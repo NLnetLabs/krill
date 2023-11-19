@@ -13,7 +13,8 @@ use krill::{
 };
 use url::Url;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let matches = make_matches();
 
     match parse_matches(matches) {
@@ -36,7 +37,7 @@ fn main() {
                     }
                 };
 
-                match prepare_upgrade_data_migrations(UpgradeMode::PrepareOnly, &config, &properties_manager) {
+                match prepare_upgrade_data_migrations(UpgradeMode::PrepareOnly, &config, &properties_manager).await {
                     Err(e) => {
                         eprintln!("*** Error Preparing Data Migration ***");
                         eprintln!("{}", e);
@@ -62,7 +63,7 @@ fn main() {
                 }
             }
             KrillUpMode::Migrate { config, target } => {
-                if let Err(e) = migrate(config, target) {
+                if let Err(e) = migrate(config, target).await {
                     eprintln!("*** Error Migrating DATA ***");
                     eprintln!("{}", e);
                     eprintln!();

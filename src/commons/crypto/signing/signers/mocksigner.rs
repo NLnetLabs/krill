@@ -11,6 +11,7 @@ use openssl::{
 };
 
 use rpki::{
+    ca::idexchange::MyHandle,
     crypto::signer::KeyError,
     crypto::{
         signer::SigningAlgorithm, KeyIdentifier, PublicKey, PublicKeyFormat, RpkiSignature, RpkiSignatureAlgorithm,
@@ -104,6 +105,19 @@ impl MockSigner {
         }
     }
 
+    /// Gets the current handle, drops the std::sync::RwLock as
+    /// quickly as possible so that the handle can be used in
+    /// async functions
+    ///
+    /// Converting to use tokio::sync::RwLock is too difficult
+    /// at this time.
+    fn handle(&self) -> Result<MyHandle, SignerError> {
+        let lock = self.handle.read().unwrap();
+
+        lock.clone()
+            .ok_or_else(|| SignerError::Other("Signer has no handle".to_string()))
+    }
+
     fn inc_fn_call_count(&self, fn_idx: FnIdx) {
         self.fn_call_counts.inc(fn_idx)
     }
@@ -149,11 +163,12 @@ impl MockSigner {
         PublicKey::decode(bytes).map_err(|_| SignerError::DecodeError)
     }
 
-    fn internal_id_from_key_identifier(&self, key_identifier: &KeyIdentifier) -> Result<String, SignerError> {
-        let lock = self.handle.read().unwrap();
-        let signer_handle = lock.as_ref().unwrap();
+    async fn internal_id_from_key_identifier(&self, key_identifier: &KeyIdentifier) -> Result<String, SignerError> {
+        let signer_handle = self.handle()?;
+
         self.mapper
-            .get_key(signer_handle, key_identifier)
+            .get_key(&signer_handle, key_identifier)
+            .await
             .map_err(|_| SignerError::KeyNotFound)
     }
 
@@ -214,51 +229,53 @@ impl MockSigner {
 // Implement the functions defined by the `Signer` trait because `SignerProvider` expects to invoke them, but as the
 // dispatching is not trait based we don't actually have to implement the `Signer` trait.
 impl MockSigner {
-    pub fn create_key(&self, _algorithm: PublicKeyFormat) -> Result<KeyIdentifier, SignerError> {
+    pub async fn create_key(&self, _algorithm: PublicKeyFormat) -> Result<KeyIdentifier, SignerError> {
         self.inc_fn_call_count(FnIdx::CreateKey);
         let (_, _, key_identifier, internal_id) = self.build_key().unwrap();
 
         // tell the signer mapper we own this key identifier which maps to our "internal id"
-        let lock = self.handle.read().unwrap();
-        let signer_handle = lock.as_ref().unwrap();
+        let signer_handle = self.handle()?;
+
         self.mapper
-            .add_key(signer_handle, &key_identifier, &internal_id)
+            .add_key(&signer_handle, &key_identifier, &internal_id)
+            .await
             .unwrap();
 
         Ok(key_identifier)
     }
 
-    pub fn get_key_info(&self, key_identifier: &KeyIdentifier) -> Result<PublicKey, KeyError<SignerError>> {
+    pub async fn get_key_info(&self, key_identifier: &KeyIdentifier) -> Result<PublicKey, KeyError<SignerError>> {
         self.inc_fn_call_count(FnIdx::GetKeyInfo);
-        let internal_id = self.internal_id_from_key_identifier(key_identifier)?;
+        let internal_id = self.internal_id_from_key_identifier(key_identifier).await?;
         let pkey = self.load_key(&internal_id).ok_or(KeyError::KeyNotFound)?;
         let public_key = Self::public_key_from_pkey(&pkey).unwrap();
         Ok(public_key)
     }
 
-    pub fn destroy_key(&self, key_id: &KeyIdentifier) -> Result<(), KeyError<SignerError>> {
+    pub async fn destroy_key(&self, key_id: &KeyIdentifier) -> Result<(), KeyError<SignerError>> {
         self.inc_fn_call_count(FnIdx::DestroyKey);
-        let internal_id = self.internal_id_from_key_identifier(key_id).unwrap();
+        let internal_id = self.internal_id_from_key_identifier(key_id).await.unwrap();
         let _ = self.keys.write().unwrap().remove(&internal_id);
 
         // remove the key from the signer mapper as well
-        if let Some(signer_handle) = self.handle.read().unwrap().as_ref() {
+        if let Ok(signer_handle) = self.handle() {
             self.mapper
-                .remove_key(signer_handle, key_id)
+                .remove_key(&signer_handle, key_id)
+                .await
                 .map_err(|err| KeyError::Signer(SignerError::Other(err.to_string())))?;
         }
 
         Ok(())
     }
 
-    pub fn sign<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
+    pub async fn sign<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized + Sync>(
         &self,
         key_identifier: &KeyIdentifier,
         algorithm: Alg,
         data: &D,
     ) -> Result<Signature<Alg>, SigningError<SignerError>> {
         self.inc_fn_call_count(FnIdx::Sign);
-        let internal_id = self.internal_id_from_key_identifier(key_identifier)?;
+        let internal_id = self.internal_id_from_key_identifier(key_identifier).await?;
         let pkey = self.load_key(&internal_id).ok_or(SignerError::KeyNotFound)?;
         Self::sign_with_key(algorithm, &pkey, data).map_err(SigningError::Signer)
     }

@@ -296,11 +296,12 @@ impl<T> UnconvertedEffect<T> {
 //------------ UpgradeStore --------------------------------------------------
 
 /// Implement this for automatic upgrades to key stores
+#[async_trait::async_trait]
 pub trait UpgradeAggregateStorePre0_14 {
     type Aggregate: Aggregate;
 
-    type OldInitEvent: fmt::Display + Eq + PartialEq + Storable + 'static;
-    type OldEvent: fmt::Display + Eq + PartialEq + Storable + 'static;
+    type OldInitEvent: fmt::Display + Eq + PartialEq + Storable + Send + Sync + 'static;
+    type OldEvent: fmt::Display + Eq + PartialEq + Storable + Send + Sync + 'static;
     type OldStorableDetails: WithStorableDetails;
 
     //--- Mandatory functions to implement
@@ -337,7 +338,7 @@ pub trait UpgradeAggregateStorePre0_14 {
 
     /// Override this to get a call when the migration of commands for
     /// an aggregate is done.
-    fn post_command_migration(&self, handle: &MyHandle) -> UpgradeResult<()> {
+    async fn post_command_migration(&self, handle: &MyHandle) -> UpgradeResult<()> {
         trace!("default post migration hook called for '{handle}'");
         Ok(())
     }
@@ -346,10 +347,10 @@ pub trait UpgradeAggregateStorePre0_14 {
     ///
     /// Expects implementers of this trait to provide function for converting
     /// old command/event/init types to the current types.
-    fn upgrade(&self, mode: UpgradeMode) -> UpgradeResult<AspaMigrationConfigs> {
+    async fn upgrade(&self, mode: UpgradeMode) -> UpgradeResult<AspaMigrationConfigs> {
         // check existing version, wipe it if there is an unfinished upgrade
         // in progress for another Krill version.
-        self.preparation_store_prepare()?;
+        self.preparation_store_prepare().await?;
 
         info!(
             "Prepare upgrading {} to Krill version {}",
@@ -358,7 +359,7 @@ pub trait UpgradeAggregateStorePre0_14 {
         );
 
         // Migrate the event sourced data for each scope and create new snapshots
-        for scope in self.deployed_store().scopes()? {
+        for scope in self.deployed_store().scopes().await? {
             // We only need top-level scopes, not sub-scopes such as 'surplus' archive dirs
             if scope.len() != 1 {
                 trace!("Skipping migration for sub-scope: {}", scope);
@@ -372,17 +373,19 @@ pub trait UpgradeAggregateStorePre0_14 {
             // Get the upgrade info to see where we got to.
             // We may be continuing from an earlier migration, e.g. by krillup.
 
-            let mut data_upgrade_info = self.data_upgrade_info(&scope)?;
+            let mut data_upgrade_info = self.data_upgrade_info(&scope).await?;
 
             // Get the list of commands to prepare, starting with the last_command we got to (may be 0)
-            let old_cmd_keys = self.command_keys(&scope, data_upgrade_info.last_command.unwrap_or(0))?;
+            let old_cmd_keys = self
+                .command_keys(&scope, data_upgrade_info.last_command.unwrap_or(0))
+                .await?;
 
             // Migrate the initialisation event, if not done in a previous run. This
             // is a special event that has no command, so we need to do this separately.
             if data_upgrade_info.last_command.is_none() {
                 let old_init_key = Self::event_key(scope.clone(), 0);
 
-                let old_init: OldStoredEvent<Self::OldInitEvent> = self.get(&old_init_key)?;
+                let old_init: OldStoredEvent<Self::OldInitEvent> = self.get(&old_init_key).await?;
                 let old_init = old_init.into_details();
 
                 // From 0.14.x and up we will have command '0' for the init, where beforehand
@@ -394,7 +397,7 @@ pub trait UpgradeAggregateStorePre0_14 {
                 // case that there is no first command, then we might as well set
                 // it to now.
                 let time = if let Some(first_command) = old_cmd_keys.first() {
-                    let cmd: OldStoredCommand<Self::OldStorableDetails> = self.get(first_command)?;
+                    let cmd: OldStoredCommand<Self::OldStorableDetails> = self.get(first_command).await?;
                     cmd.time()
                 } else {
                     Time::now()
@@ -404,7 +407,7 @@ pub trait UpgradeAggregateStorePre0_14 {
                 // init event we found to a StoredCommand that we can save.
                 let command = self.convert_init_event(old_init, handle.clone(), actor, time)?;
 
-                self.store_new_command(&scope, &command)?;
+                self.store_new_command(&scope, &command).await?;
                 data_upgrade_info.increment_command();
             }
 
@@ -420,7 +423,7 @@ pub trait UpgradeAggregateStorePre0_14 {
             for old_cmd_key in old_cmd_keys {
                 // Read and parse the command.
                 trace!("  +- command: {}", old_cmd_key);
-                let old_command: OldStoredCommand<Self::OldStorableDetails> = self.get(&old_cmd_key)?;
+                let old_command: OldStoredCommand<Self::OldStorableDetails> = self.get(&old_cmd_key).await?;
 
                 // And the unconverted effects
                 let old_effect = match old_command.effect() {
@@ -430,7 +433,7 @@ pub trait UpgradeAggregateStorePre0_14 {
                             let event_key = Self::event_key(scope.clone(), *v);
                             trace!("    +- event: {}", event_key);
                             let evt: OldStoredEvent<Self::OldEvent> =
-                                self.deployed_store().get(&event_key)?.ok_or_else(|| {
+                                self.deployed_store().get(&event_key).await?.ok_or_else(|| {
                                     UpgradeError::Custom(format!("Cannot parse old event: {}", event_key))
                                 })?;
                             full_events.push(evt.into_details());
@@ -442,7 +445,7 @@ pub trait UpgradeAggregateStorePre0_14 {
 
                 match self.convert_old_command(old_command, old_effect, data_upgrade_info.next_command())? {
                     CommandMigrationEffect::StoredCommand(command) => {
-                        self.store_new_command(&scope, &command)?;
+                        self.store_new_command(&scope, &command).await?;
                         data_upgrade_info.increment_command();
                     }
                     CommandMigrationEffect::AspaObjectsUpdates(updates) => {
@@ -480,21 +483,25 @@ pub trait UpgradeAggregateStorePre0_14 {
                 "Will verify the migration by rebuilding '{}' from migrated commands",
                 &scope
             );
-            let _latest = self.preparation_aggregate_store().save_snapshot(&handle).map_err(|e| {
-                UpgradeError::Custom(format!(
-                    "Could not rebuild state after migrating CA '{}'! Error was: {}.",
-                    handle, e
-                ))
-            })?;
+            let _latest = self
+                .preparation_aggregate_store()
+                .save_snapshot(&handle)
+                .await
+                .map_err(|e| {
+                    UpgradeError::Custom(format!(
+                        "Could not rebuild state after migrating CA '{}'! Error was: {}.",
+                        handle, e
+                    ))
+                })?;
 
             // Call the post command migration hook, this will do nothing
             // unless the implementer of this trait overrode it.
-            self.post_command_migration(&handle)?;
+            self.post_command_migration(&handle).await?;
 
             // Update the upgrade info as this could be a prepare only
             // run, and this migration could be resumed later after more
             // changes were applied.
-            self.update_data_upgrade_info(&scope, &data_upgrade_info)?;
+            self.update_data_upgrade_info(&scope, &data_upgrade_info).await?;
 
             info!("Verified migration of '{}'", handle);
         }
@@ -509,7 +516,7 @@ pub trait UpgradeAggregateStorePre0_14 {
             }
             UpgradeMode::PrepareToFinalise => {
                 let mut aspa_configs = AspaMigrationConfigs::default();
-                for scope in self.deployed_store().scopes()? {
+                for scope in self.deployed_store().scopes().await? {
                     if scope.len() != 1 {
                         continue;
                     }
@@ -517,7 +524,7 @@ pub trait UpgradeAggregateStorePre0_14 {
                     // Getting the Handle should never fail, but if it does then we should bail out asap.
                     let ca = MyHandle::from_str(&scope.to_string())
                         .map_err(|_| UpgradeError::Custom(format!("Found invalid handle '{}'", scope)))?;
-                    let info = self.data_upgrade_info(&scope)?;
+                    let info = self.data_upgrade_info(&scope).await?;
                     let aspa_configs_for_ca: Vec<AspaDefinition> = info
                         .aspa_configs
                         .into_iter()
@@ -528,7 +535,7 @@ pub trait UpgradeAggregateStorePre0_14 {
                         aspa_configs.0.insert(ca, aspa_configs_for_ca);
                     }
                 }
-                self.clean_migration_help_files()?;
+                self.clean_migration_help_files().await?;
                 info!("Prepared migrating data to Krill version {}.", KRILL_VERSION);
 
                 Ok(aspa_configs)
@@ -541,20 +548,24 @@ pub trait UpgradeAggregateStorePre0_14 {
 
     /// Saves the version of the target upgrade. Wipes the store if there is another
     /// version set as the target.
-    fn preparation_store_prepare(&self) -> UpgradeResult<()> {
+    async fn preparation_store_prepare(&self) -> UpgradeResult<()> {
         let code_version = KrillVersion::code_version();
         let version_key = Key::new_global(SegmentBuf::parse_lossy("version"));
 
-        if let Ok(Some(existing_migration_version)) =
-            self.preparation_key_value_store().get::<KrillVersion>(&version_key)
+        if let Ok(Some(existing_migration_version)) = self
+            .preparation_key_value_store()
+            .get::<KrillVersion>(&version_key)
+            .await
         {
             if existing_migration_version != code_version {
                 warn!("Found prepared data for Krill version {existing_migration_version}, will remove it and start from scratch for {code_version}");
-                self.preparation_key_value_store().wipe()?;
+                self.preparation_key_value_store().wipe().await?;
             }
         }
 
-        self.preparation_key_value_store().store(&version_key, &code_version)?;
+        self.preparation_key_value_store()
+            .store(&version_key, &code_version)
+            .await?;
 
         Ok(())
     }
@@ -583,10 +594,11 @@ pub trait UpgradeAggregateStorePre0_14 {
         Ok(())
     }
 
-    fn store_new_command(&self, scope: &Scope, command: &StoredCommand<Self::Aggregate>) -> UpgradeResult<()> {
+    async fn store_new_command(&self, scope: &Scope, command: &StoredCommand<Self::Aggregate>) -> UpgradeResult<()> {
         let key = Self::new_stored_command_key(scope.clone(), command.version());
         self.preparation_key_value_store()
             .store_new(&key, command)
+            .await
             .map_err(UpgradeError::KeyStoreError)
     }
 
@@ -595,9 +607,10 @@ pub trait UpgradeAggregateStorePre0_14 {
     }
 
     /// Return the DataUpgradeInfo telling us to where we got to with this migration.
-    fn data_upgrade_info(&self, scope: &Scope) -> UpgradeResult<DataUpgradeInfo> {
+    async fn data_upgrade_info(&self, scope: &Scope) -> UpgradeResult<DataUpgradeInfo> {
         self.preparation_key_value_store()
             .get(&Self::data_upgrade_info_key(scope.clone()))
+            .await
             .map(|opt| match opt {
                 None => DataUpgradeInfo::default(),
                 Some(info) => info,
@@ -606,22 +619,25 @@ pub trait UpgradeAggregateStorePre0_14 {
     }
 
     /// Update the DataUpgradeInfo
-    fn update_data_upgrade_info(&self, scope: &Scope, info: &DataUpgradeInfo) -> UpgradeResult<()> {
+    async fn update_data_upgrade_info(&self, scope: &Scope, info: &DataUpgradeInfo) -> UpgradeResult<()> {
         self.preparation_key_value_store()
             .store(&Self::data_upgrade_info_key(scope.clone()), info)
+            .await
             .map_err(UpgradeError::KeyStoreError)
     }
 
     /// Clean up keys used for tracking migration progress
-    fn clean_migration_help_files(&self) -> UpgradeResult<()> {
+    async fn clean_migration_help_files(&self) -> UpgradeResult<()> {
         let version_key = Key::new_global(SegmentBuf::parse_lossy("version"));
         self.preparation_key_value_store()
             .drop_key(&version_key)
+            .await
             .map_err(UpgradeError::KeyStoreError)?;
 
-        for scope in self.preparation_key_value_store().scopes()? {
+        for scope in self.preparation_key_value_store().scopes().await? {
             self.preparation_key_value_store()
                 .drop_key(&Self::data_upgrade_info_key(scope))
+                .await
                 .map_err(UpgradeError::KeyStoreError)?;
         }
         Ok(())
@@ -629,8 +645,8 @@ pub trait UpgradeAggregateStorePre0_14 {
 
     /// Find all command keys for the scope, starting from the provided sequence. Then sort them
     /// by sequence and turn them back into key store keys for further processing.
-    fn command_keys(&self, scope: &Scope, from: u64) -> Result<Vec<Key>, UpgradeError> {
-        let keys = self.deployed_store().keys(scope, "command--")?;
+    async fn command_keys(&self, scope: &Scope, from: u64) -> Result<Vec<Key>, UpgradeError> {
+        let keys = self.deployed_store().keys(scope, "command--").await?;
         let mut cmd_keys: Vec<OldCommandKey> = vec![];
         for key in keys {
             let cmd_key = OldCommandKey::from_str(key.name().as_str()).map_err(|_| {
@@ -649,9 +665,10 @@ pub trait UpgradeAggregateStorePre0_14 {
         Ok(cmd_keys)
     }
 
-    fn get<V: DeserializeOwned>(&self, key: &Key) -> Result<V, UpgradeError> {
+    async fn get<V: DeserializeOwned>(&self, key: &Key) -> Result<V, UpgradeError> {
         self.deployed_store()
-            .get(key)?
+            .get(key)
+            .await?
             .ok_or_else(|| UpgradeError::Custom(format!("Cannot read key: {}", key)))
     }
 
@@ -680,7 +697,7 @@ pub trait UpgradeAggregateStorePre0_14 {
 /// started, it will call this again - to do the final preparation for a migration -
 /// knowing that no changes are added to the event history at this time. After this,
 /// the migration will be finalised.
-pub fn prepare_upgrade_data_migrations(
+pub async fn prepare_upgrade_data_migrations(
     mode: UpgradeMode,
     config: &Config,
     properties_manager: &PropertiesManager,
@@ -692,9 +709,9 @@ pub fn prepare_upgrade_data_migrations(
     // cheap operation that we can just do at startup. It is done here, because in effect it *is* a data
     // migration.
     #[cfg(feature = "hsm")]
-    record_preexisting_openssl_keys_in_signer_mapper(config)?;
+    record_preexisting_openssl_keys_in_signer_mapper(config).await?;
 
-    match upgrade_versions(config, properties_manager)? {
+    match upgrade_versions(config, properties_manager).await? {
         None => Ok(None),
         Some(versions) => {
             info!("Preparing upgrade from {} to {}", versions.from(), versions.to());
@@ -704,7 +721,10 @@ pub fn prepare_upgrade_data_migrations(
             // be migrated to the new setup in 0.13.0. Well.. it could be done, if there would be a strong use
             // case to put in the effort, but there really isn't.
             let ca_kv_store = KeyValueStore::create(&config.storage_uri, CASERVER_NS)?;
-            if ca_kv_store.has_scope(&Scope::from_segment(SegmentBuf::parse_lossy("ta")))? {
+            if ca_kv_store
+                .has_scope(&Scope::from_segment(SegmentBuf::parse_lossy("ta")))
+                .await?
+            {
                 return Err(UpgradeError::OldTaMigration);
             }
 
@@ -718,15 +738,15 @@ pub fn prepare_upgrade_data_migrations(
                 Err(UpgradeError::custom(msg))
             } else if versions.from < KrillVersion::candidate(0, 10, 0, 1) {
                 // Complex migrations involving command / event conversions
-                pre_0_10_0::PublicationServerRepositoryAccessMigration::upgrade(mode, config, &versions)?;
-                let aspa_configs = pre_0_10_0::CasMigration::upgrade(mode, config)?;
+                pre_0_10_0::PublicationServerRepositoryAccessMigration::upgrade(mode, config, &versions).await?;
+                let aspa_configs = pre_0_10_0::CasMigration::upgrade(mode, config).await?;
 
                 // The way that pubd objects were stored was changed as well (since 0.13.0)
-                migrate_pre_0_12_pubd_objects(config)?;
+                migrate_pre_0_12_pubd_objects(config).await?;
 
                 // Migrate remaining aggregate stores used in < 0.10.0 to the new format
                 // in 0.14.0 where we combine commands and events into a single key-value pair.
-                pre_0_14_0::UpgradeAggregateStoreSignerInfo::upgrade(SIGNERS_NS, mode, config)?;
+                pre_0_14_0::UpgradeAggregateStoreSignerInfo::upgrade(SIGNERS_NS, mode, config).await?;
 
                 Ok(Some(UpgradeReport::new(aspa_configs, true, versions)))
             } else if versions.from < KrillVersion::candidate(0, 10, 0, 3) {
@@ -741,33 +761,33 @@ pub fn prepare_upgrade_data_migrations(
                 );
 
                 // The pubd objects storage changed in 0.13.0
-                migrate_pre_0_12_pubd_objects(config)?;
+                migrate_pre_0_12_pubd_objects(config).await?;
 
                 // Migrate aggregate stores used in < 0.12.0 to the new format in 0.14.0 where
                 // we combine commands and events into a single key-value pair.
-                pre_0_14_0::UpgradeAggregateStoreSignerInfo::upgrade(SIGNERS_NS, mode, config)?;
-                let aspa_configs = pre_0_14_0::CasMigration::upgrade(mode, config)?;
-                pre_0_14_0::UpgradeAggregateStoreRepositoryAccess::upgrade(PUBSERVER_NS, mode, config)?;
+                pre_0_14_0::UpgradeAggregateStoreSignerInfo::upgrade(SIGNERS_NS, mode, config).await?;
+                let aspa_configs = pre_0_14_0::CasMigration::upgrade(mode, config).await?;
+                pre_0_14_0::UpgradeAggregateStoreRepositoryAccess::upgrade(PUBSERVER_NS, mode, config).await?;
 
                 Ok(Some(UpgradeReport::new(aspa_configs, true, versions)))
             } else if versions.from < KrillVersion::candidate(0, 13, 0, 0) {
-                migrate_0_12_pubd_objects(config)?;
+                migrate_0_12_pubd_objects(config).await?;
 
                 // Migrate aggregate stores used in < 0.13.0 to the new format in 0.14.0 where
                 // we combine commands and events into a single key-value pair.
-                pre_0_14_0::UpgradeAggregateStoreSignerInfo::upgrade(SIGNERS_NS, mode, config)?;
-                let aspa_configs = pre_0_14_0::CasMigration::upgrade(mode, config)?;
-                pre_0_14_0::UpgradeAggregateStoreRepositoryAccess::upgrade(PUBSERVER_NS, mode, config)?;
+                pre_0_14_0::UpgradeAggregateStoreSignerInfo::upgrade(SIGNERS_NS, mode, config).await?;
+                let aspa_configs = pre_0_14_0::CasMigration::upgrade(mode, config).await?;
+                pre_0_14_0::UpgradeAggregateStoreRepositoryAccess::upgrade(PUBSERVER_NS, mode, config).await?;
 
                 Ok(Some(UpgradeReport::new(aspa_configs, true, versions)))
             } else if versions.from < KrillVersion::candidate(0, 14, 0, 0) {
                 // Migrate aggregate stores used in < 0.14.0 to the new format in 0.14.0 where
                 // we combine commands and events into a single key-value pair.
-                let aspa_configs = pre_0_14_0::CasMigration::upgrade(mode, config)?;
-                pre_0_14_0::UpgradeAggregateStoreRepositoryAccess::upgrade(PUBSERVER_NS, mode, config)?;
-                pre_0_14_0::UpgradeAggregateStoreSignerInfo::upgrade(SIGNERS_NS, mode, config)?;
-                pre_0_14_0::UpgradeAggregateStoreTrustAnchorSigner::upgrade(TA_SIGNER_SERVER_NS, mode, config)?;
-                pre_0_14_0::UpgradeAggregateStoreTrustAnchorProxy::upgrade(TA_PROXY_SERVER_NS, mode, config)?;
+                let aspa_configs = pre_0_14_0::CasMigration::upgrade(mode, config).await?;
+                pre_0_14_0::UpgradeAggregateStoreRepositoryAccess::upgrade(PUBSERVER_NS, mode, config).await?;
+                pre_0_14_0::UpgradeAggregateStoreSignerInfo::upgrade(SIGNERS_NS, mode, config).await?;
+                pre_0_14_0::UpgradeAggregateStoreTrustAnchorSigner::upgrade(TA_SIGNER_SERVER_NS, mode, config).await?;
+                pre_0_14_0::UpgradeAggregateStoreTrustAnchorProxy::upgrade(TA_PROXY_SERVER_NS, mode, config).await?;
 
                 Ok(Some(UpgradeReport::new(aspa_configs, true, versions)))
             } else {
@@ -783,19 +803,19 @@ pub fn prepare_upgrade_data_migrations(
 
 /// Migrate v0.12.x RepositoryContent to the new 0.13.0+ format.
 /// Apply any open WAL changes to the source first.
-fn migrate_0_12_pubd_objects(config: &Config) -> KrillResult<bool> {
+async fn migrate_0_12_pubd_objects(config: &Config) -> KrillResult<bool> {
     let old_store: WalStore<OldRepositoryContent> = WalStore::create(&config.storage_uri, PUBSERVER_CONTENT_NS)?;
     let repo_content_handle = MyHandle::new("0".into());
 
-    if old_store.has(&repo_content_handle)? {
-        let old_repo_content = old_store.get_latest(&repo_content_handle)?.as_ref().clone();
+    if old_store.has(&repo_content_handle).await? {
+        let old_repo_content = old_store.get_latest(&repo_content_handle).await?.as_ref().clone();
         let repo_content: pubd::RepositoryContent = old_repo_content.try_into()?;
         let new_key = Key::new_scoped(
             Scope::from_segment(SegmentBuf::parse_lossy("0")),
             SegmentBuf::parse_lossy("snapshot.json"),
         );
         let upgrade_store = KeyValueStore::create_upgrade_store(&config.storage_uri, PUBSERVER_CONTENT_NS)?;
-        upgrade_store.store(&new_key, &repo_content)?;
+        upgrade_store.store(&new_key, &repo_content).await?;
         Ok(true)
     } else {
         Ok(false)
@@ -804,10 +824,10 @@ fn migrate_0_12_pubd_objects(config: &Config) -> KrillResult<bool> {
 
 /// The format of the RepositoryContent did not change in 0.12, but
 /// the location and way of storing it did. So, migrate if present.
-fn migrate_pre_0_12_pubd_objects(config: &Config) -> KrillResult<()> {
+async fn migrate_pre_0_12_pubd_objects(config: &Config) -> KrillResult<()> {
     let old_store = KeyValueStore::create(&config.storage_uri, PUBSERVER_CONTENT_NS)?;
     let old_key = Key::new_global(SegmentBuf::parse_lossy("0.json"));
-    if let Ok(Some(old_repo_content)) = old_store.get::<pre_0_13_0::OldRepositoryContent>(&old_key) {
+    if let Ok(Some(old_repo_content)) = old_store.get::<pre_0_13_0::OldRepositoryContent>(&old_key).await {
         info!("Found pre 0.12.0 RC2 publication server data. Migrating..");
         let repo_content: pubd::RepositoryContent = old_repo_content.try_into()?;
 
@@ -816,7 +836,7 @@ fn migrate_pre_0_12_pubd_objects(config: &Config) -> KrillResult<()> {
             SegmentBuf::parse_lossy("snapshot.json"),
         );
         let upgrade_store = KeyValueStore::create_upgrade_store(&config.storage_uri, PUBSERVER_CONTENT_NS)?;
-        upgrade_store.store(&new_key, &repo_content)?;
+        upgrade_store.store(&new_key, &repo_content).await?;
     }
 
     Ok(())
@@ -827,7 +847,7 @@ fn migrate_pre_0_12_pubd_objects(config: &Config) -> KrillResult<()> {
 /// If there is any prepared data, then:
 /// - archive the current data
 /// - make the prepared data current
-pub fn finalise_data_migration(
+pub async fn finalise_data_migration(
     upgrade: &UpgradeVersions,
     config: &Config,
     properties_manager: &PropertiesManager,
@@ -859,23 +879,23 @@ pub fn finalise_data_migration(
         // Check if there is a non-empty upgrade store for this namespace
         // that would need to be migrated.
         let mut upgrade_store = KeyValueStore::create_upgrade_store(&config.storage_uri, ns)?;
-        if !upgrade_store.is_empty()? {
+        if !upgrade_store.is_empty().await? {
             info!("Migrate new data for {} and archive old", ns);
             let mut current_store = KeyValueStore::create(&config.storage_uri, ns)?;
-            if !current_store.is_empty()? {
-                current_store.migrate_to_archive(&config.storage_uri, ns)?;
+            if !current_store.is_empty().await? {
+                current_store.migrate_to_archive(&config.storage_uri, ns).await?;
             }
 
-            upgrade_store.migrate_to_current(&config.storage_uri, ns)?;
+            upgrade_store.migrate_to_current(&config.storage_uri, ns).await?;
         } else {
             // No migration needed, but check if we have a current store
             // for this namespace that still includes a version file. If
             // so, remove it.
             let current_store = KeyValueStore::create(&config.storage_uri, ns)?;
             let version_key = Key::new_global(SegmentBuf::parse_lossy("version"));
-            if current_store.has(&version_key)? {
+            if current_store.has(&version_key).await? {
                 debug!("Removing excess version key in ns: {}", ns);
-                current_store.drop_key(&version_key)?;
+                current_store.drop_key(&version_key).await?;
             }
         }
     }
@@ -883,10 +903,10 @@ pub fn finalise_data_migration(
     // Set the current version of the store to that of the running code
     let code_version = KrillVersion::code_version();
     info!("Finished upgrading Krill to version: {code_version}");
-    if properties_manager.is_initialized() {
-        properties_manager.upgrade_krill_version(code_version)?;
+    if properties_manager.is_initialized().await {
+        properties_manager.upgrade_krill_version(code_version).await?;
     } else {
-        properties_manager.init(code_version)?;
+        properties_manager.init(code_version).await?;
     }
 
     Ok(())
@@ -900,9 +920,9 @@ pub fn finalise_data_migration(
 /// signers have been registered and no key mappings have been recorded, and then walk KEYS_NS adding the keys one by
 /// one to the mapping in the signer store, if any.
 #[allow(dead_code)] // Remove when the hsm feature is removed.
-fn record_preexisting_openssl_keys_in_signer_mapper(config: &Config) -> Result<(), UpgradeError> {
+async fn record_preexisting_openssl_keys_in_signer_mapper(config: &Config) -> Result<(), UpgradeError> {
     let signers_key_store = KeyValueStore::create(&config.storage_uri, SIGNERS_NS)?;
-    if signers_key_store.is_empty()? {
+    if signers_key_store.is_empty().await? {
         let mut num_recorded_keys = 0;
         // If the key value store for the "signers" namespace is empty, then it was not yet initialised
         // and we may need to import keys from a previous krill installation (earlier version, or a custom
@@ -923,14 +943,14 @@ fn record_preexisting_openssl_keys_in_signer_mapper(config: &Config) -> Result<(
 
         let mut openssl_signer_handle: Option<crate::commons::crypto::SignerHandle> = None;
 
-        for key in keys_key_store.keys(&Scope::global(), "")? {
+        for key in keys_key_store.keys(&Scope::global(), "").await? {
             debug!("Found key: {}", key);
             // Is it a key identifier?
             if let Ok(key_id) = rpki::crypto::KeyIdentifier::from_str(key.name().as_str()) {
                 // Is the key already recorded in the mapper? It shouldn't be, but asking will cause the initial
                 // registration of the OpenSSL signer to occur and for it to be assigned a handle. We need the
                 // handle so that we can register keys with the mapper.
-                if krill_signer.get_key_info(&key_id).is_err() {
+                if krill_signer.get_key_info(&key_id).await.is_err() {
                     // No, record it
 
                     // Find out the handle of the OpenSSL signer used to create this key, if not yet known.
@@ -939,8 +959,8 @@ fn record_preexisting_openssl_keys_in_signer_mapper(config: &Config) -> Result<(
                         // them must have it and it should be the one and only OpenSSL signer that Krill was
                         // using previously. We can't just find and use the only OpenSSL signers as Krill may
                         // have been configured with more than one each with separate keys directories.
-                        for (a_signer_handle, a_signer) in krill_signer.get_active_signers().iter() {
-                            if a_signer.get_key_info(&key_id).is_ok() {
+                        for (a_signer_handle, a_signer) in krill_signer.get_active_signers().await.iter() {
+                            if a_signer.get_key_info(&key_id).await.is_ok() {
                                 openssl_signer_handle = Some(a_signer_handle.clone());
                                 break;
                             }
@@ -951,7 +971,7 @@ fn record_preexisting_openssl_keys_in_signer_mapper(config: &Config) -> Result<(
                     if let Some(signer_handle) = &openssl_signer_handle {
                         let internal_key_id = key_id.to_string();
                         if let Some(mapper) = krill_signer.get_mapper() {
-                            mapper.add_key(signer_handle, &key_id, &internal_key_id)?;
+                            mapper.add_key(signer_handle, &key_id, &internal_key_id).await?;
                             num_recorded_keys += 1;
                         }
                     }
@@ -992,14 +1012,14 @@ pub async fn post_start_upgrade(report: UpgradeReport, server: &KrillServer) -> 
 ///  - if the code is newer than the version used then we upgrade
 ///  - if the code is the same version then we do not upgrade
 ///  - if the code is older then we need to error out
-fn upgrade_versions(
+async fn upgrade_versions(
     config: &Config,
     properties_manager: &PropertiesManager,
 ) -> Result<Option<UpgradeVersions>, UpgradeError> {
-    if properties_manager.is_initialized() {
+    if properties_manager.is_initialized().await {
         // The properties manager was introduced in Krill 0.14.0.
         // If it's initialised then it MUST have a Krill Version.
-        let current = properties_manager.current_krill_version()?;
+        let current = properties_manager.current_krill_version().await?;
         UpgradeVersions::for_current(current)
     } else {
         // No KrillVersion yet. So, either this is an older Krill version,
@@ -1023,7 +1043,7 @@ fn upgrade_versions(
             trace!("checking for version in key value store: {}", kv_store);
             let key = Key::new_global(SegmentBuf::parse_lossy("version"));
 
-            if let Some(key_store_version) = kv_store.get::<KrillVersion>(&key)? {
+            if let Some(key_store_version) = kv_store.get::<KrillVersion>(&key).await? {
                 if let Some(last_seen) = &current {
                     if &key_store_version > last_seen {
                         current = Some(key_store_version)
@@ -1054,7 +1074,7 @@ mod tests {
 
     use super::*;
 
-    fn test_upgrade(base_dir: &str, namespaces: &[&str]) {
+    async fn test_upgrade(base_dir: &str, namespaces: &[&str]) {
         // Copy data for the given names spaces into memory for testing.
         let mem_storage_base_uri = test::mem_storage();
         let bogus_path = PathBuf::from("/dev/null"); // needed for tls_dir etc, but will be ignored here
@@ -1068,81 +1088,92 @@ mod tests {
             let source_store = KeyValueStore::create(&source_url, namespace.as_ref()).unwrap();
             let target_store = KeyValueStore::create(&mem_storage_base_uri, namespace.as_ref()).unwrap();
 
-            target_store.import(&source_store).unwrap();
+            target_store.import(&source_store).await.unwrap();
         }
 
         let properties_manager = PropertiesManager::create(&config.storage_uri, config.use_history_cache).unwrap();
 
         prepare_upgrade_data_migrations(UpgradeMode::PrepareOnly, &config, &properties_manager)
+            .await
             .unwrap()
             .unwrap();
 
         // and continue - immediately, but still tests that this can pick up again.
         let report = prepare_upgrade_data_migrations(UpgradeMode::PrepareToFinalise, &config, &properties_manager)
+            .await
             .unwrap()
             .unwrap();
 
-        finalise_data_migration(report.versions(), &config, &properties_manager).unwrap();
+        finalise_data_migration(report.versions(), &config, &properties_manager)
+            .await
+            .unwrap();
     }
 
-    #[test]
-    fn prepare_then_upgrade_0_9_6() {
+    #[tokio::test]
+    async fn prepare_then_upgrade_0_9_6() {
         test_upgrade(
             "test-resources/migrations/v0_9_6/",
             &["ca_objects", "cas", "pubd", "pubd_objects"],
-        );
+        )
+        .await;
     }
 
-    #[test]
-    fn prepare_then_upgrade_0_9_5_pubserver() {
+    #[tokio::test]
+    async fn prepare_then_upgrade_0_9_5_pubserver() {
         test_upgrade(
             "test-resources/migrations/v0_9_5_pubserver/",
             &["ca_objects", "cas", "pubd", "pubd_objects"],
-        );
+        )
+        .await;
     }
 
-    #[test]
-    fn prepare_then_upgrade_0_10_3() {
+    #[tokio::test]
+    async fn prepare_then_upgrade_0_10_3() {
         test_upgrade(
             "test-resources/migrations/v0_10_3/",
             &["ca_objects", "cas", "pubd", "pubd_objects"],
-        );
+        )
+        .await;
     }
 
-    #[test]
-    fn prepare_then_upgrade_0_11_0() {
+    #[tokio::test]
+    async fn prepare_then_upgrade_0_11_0() {
         test_upgrade(
             "test-resources/migrations/v0_11_0/",
             &["ca_objects", "cas", "pubd", "pubd_objects"],
-        );
+        )
+        .await;
     }
 
-    #[test]
-    fn prepare_then_upgrade_0_12_1_pubserver() {
+    #[tokio::test]
+    async fn prepare_then_upgrade_0_12_1_pubserver() {
         test_upgrade(
             "test-resources/migrations/v0_12_1_pubserver/",
             &["pubd", "pubd_objects"],
-        );
+        )
+        .await;
     }
 
-    #[test]
-    fn prepare_then_upgrade_0_12_3() {
+    #[tokio::test]
+    async fn prepare_then_upgrade_0_12_3() {
         test_upgrade(
             "test-resources/migrations/v0_12_3/",
             &["ca_objects", "cas", "pubd", "pubd_objects"],
-        );
+        )
+        .await;
     }
 
-    #[test]
-    fn prepare_then_upgrade_0_13_1_cas() {
+    #[tokio::test]
+    async fn prepare_then_upgrade_0_13_1_cas() {
         test_upgrade(
             "test-resources/migrations/v0_13_1/",
             &["ca_objects", "cas", "keys", "pubd", "pubd_objects", "signers", "status"],
-        );
+        )
+        .await;
     }
 
-    #[test]
-    fn prepare_then_upgrade_0_13_1_pubserver() {
+    #[tokio::test]
+    async fn prepare_then_upgrade_0_13_1_pubserver() {
         test_upgrade(
             "test-resources/migrations/v0_13_1_pubserver/",
             &[
@@ -1156,7 +1187,8 @@ mod tests {
                 "ta_proxy",
                 "ta_signer",
             ],
-        );
+        )
+        .await;
     }
 
     #[test]
@@ -1167,7 +1199,7 @@ mod tests {
 
     // #[cfg(all(feature = "hsm", not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11"))))]
     #[allow(dead_code)] // this only looks dead because of complex features.
-    fn unmapped_keys_test_core(do_upgrade: bool) {
+    async fn unmapped_keys_test_core(do_upgrade: bool) {
         let expected_key_id =
             rpki::crypto::KeyIdentifier::from_str("5CBCAB14B810C864F3EEA8FD102B79F4E53FCC70").unwrap();
 
@@ -1178,7 +1210,7 @@ mod tests {
         let source_store = KeyValueStore::create(&source_url, KEYS_NS).unwrap();
 
         let target_store = KeyValueStore::create(&mem_storage_base_uri, KEYS_NS).unwrap();
-        target_store.import(&source_store).unwrap();
+        target_store.import(&source_store).await.unwrap();
 
         let bogus_path = PathBuf::from("/dev/null"); // needed for tls_dir etc, but will be ignored here
 
@@ -1187,7 +1219,7 @@ mod tests {
         config.process().unwrap();
 
         if do_upgrade {
-            record_preexisting_openssl_keys_in_signer_mapper(&config).unwrap();
+            record_preexisting_openssl_keys_in_signer_mapper(&config).await.unwrap();
         }
 
         // Now test that a newly initialized `KrillSigner` with a default OpenSSL signer
@@ -1202,31 +1234,31 @@ mod tests {
                 .unwrap();
 
         // Trigger the signer to be bound to the one the migration just registered in the mapper
-        krill_signer.random_serial().unwrap();
+        krill_signer.random_serial().await.unwrap();
 
         // Verify that the mapper has a single registered signer
         let mapper = krill_signer.get_mapper().unwrap();
-        let signer_handles = mapper.get_signer_handles().unwrap();
+        let signer_handles = mapper.get_signer_handles().await.unwrap();
         assert_eq!(1, signer_handles.len());
 
         if do_upgrade {
             // Verify that the mapper has a record of the test key belonging to the signer
-            krill_signer.get_key_info(&expected_key_id).unwrap();
+            krill_signer.get_key_info(&expected_key_id).await.unwrap();
         } else {
             // Verify that the mapper does NOT have a record of the test key belonging to the signer
-            assert!(mapper.get_signer_for_key(&expected_key_id).is_err());
+            assert!(mapper.get_signer_for_key(&expected_key_id).await.is_err());
         }
     }
 
     #[cfg(all(feature = "hsm", not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11"))))]
-    #[test]
-    fn test_key_not_found_error_if_unmapped_keys_are_not_mapped_on_upgrade() {
-        unmapped_keys_test_core(false);
+    #[tokio::test]
+    async fn test_key_not_found_error_if_unmapped_keys_are_not_mapped_on_upgrade() {
+        unmapped_keys_test_core(false).await;
     }
 
     #[cfg(all(feature = "hsm", not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11"))))]
-    #[test]
-    fn test_upgrading_with_unmapped_keys() {
-        unmapped_keys_test_core(true);
+    #[tokio::test]
+    async fn test_upgrading_with_unmapped_keys() {
+        unmapped_keys_test_core(true).await;
     }
 }

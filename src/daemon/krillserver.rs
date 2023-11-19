@@ -129,12 +129,16 @@ impl KrillServer {
             #[cfg(feature = "multi-user")]
             AuthType::ConfigFile => Authorizer::new(
                 config.clone(),
-                ConfigFileAuthProvider::new(config.clone(), login_session_cache.clone())?.into(),
+                ConfigFileAuthProvider::new(config.clone(), login_session_cache.clone())
+                    .await?
+                    .into(),
             )?,
             #[cfg(feature = "multi-user")]
             AuthType::OpenIDConnect => Authorizer::new(
                 config.clone(),
-                OpenIDConnectAuthProvider::new(config.clone(), login_session_cache.clone())?.into(),
+                OpenIDConnectAuthProvider::new(config.clone(), login_session_cache.clone())
+                    .await?
+                    .into(),
             )?,
         };
         let system_actor = authorizer.actor_from_def(ACTOR_DEF_KRILL);
@@ -144,7 +148,7 @@ impl KrillServer {
 
         // for now, support that existing embedded repositories are still supported.
         // this should be removed in future after people have had a chance to separate.
-        let repo_manager = Arc::new(RepositoryManager::build(config.clone(), mq.clone(), signer.clone())?);
+        let repo_manager = Arc::new(RepositoryManager::build(config.clone(), mq.clone(), signer.clone()).await?);
 
         let ca_manager =
             Arc::new(ca::CaManager::build(config.clone(), mq.clone(), signer, system_actor.clone()).await?);
@@ -158,9 +162,9 @@ impl KrillServer {
         // When multi-node set ups with a shared queue are
         // supported then we can no longer safely reschedule
         // ALL running tests. See issue: #1112
-        mq.reschedule_tasks_at_startup()?;
+        mq.reschedule_tasks_at_startup().await?;
 
-        mq.schedule(Task::QueueStartTasks, now())?;
+        mq.schedule(Task::QueueStartTasks, now()).await?;
 
         let server = KrillServer {
             service_uri,
@@ -180,7 +184,7 @@ impl KrillServer {
         let testbed_handle = testbed_ca_handle();
 
         if let Some(testbed) = config.testbed() {
-            if server.ca_manager.has_ca(&testbed_handle)? {
+            if server.ca_manager.has_ca(&testbed_handle).await? {
                 if config.benchmark.is_some() {
                     info!("Resuming BENCHMARK mode - will NOT recreate CAs. If you wanted this, then wipe the data dir and restart.");
                 } else {
@@ -315,39 +319,39 @@ impl KrillServer {
 /// # Configure publishers
 impl KrillServer {
     /// Returns the repository server stats
-    pub fn repo_stats(&self) -> KrillResult<RepoStats> {
-        self.repo_manager.repo_stats()
+    pub async fn repo_stats(&self) -> KrillResult<RepoStats> {
+        self.repo_manager.repo_stats().await
     }
 
     /// Returns all current publishers.
-    pub fn publishers(&self) -> KrillResult<Vec<PublisherHandle>> {
-        self.repo_manager.publishers()
+    pub async fn publishers(&self) -> KrillResult<Vec<PublisherHandle>> {
+        self.repo_manager.publishers().await
     }
 
     /// Adds the publishers, blows up if it already existed.
-    pub fn add_publisher(
+    pub async fn add_publisher(
         &self,
         req: idexchange::PublisherRequest,
         actor: &Actor,
     ) -> KrillResult<idexchange::RepositoryResponse> {
         let publisher_handle = req.publisher_handle().clone();
-        self.repo_manager.create_publisher(req, actor)?;
-        self.repository_response(&publisher_handle)
+        self.repo_manager.create_publisher(req, actor).await?;
+        self.repository_response(&publisher_handle).await
     }
 
     /// Removes a publisher, blows up if it didn't exist.
-    pub fn remove_publisher(&self, publisher: PublisherHandle, actor: &Actor) -> KrillEmptyResult {
-        self.repo_manager.remove_publisher(publisher, actor)
+    pub async fn remove_publisher(&self, publisher: PublisherHandle, actor: &Actor) -> KrillEmptyResult {
+        self.repo_manager.remove_publisher(publisher, actor).await
     }
 
     /// Removes a publisher, blows up if it didn't exist.
-    pub fn delete_matching_files(&self, criteria: RepoFileDeleteCriteria) -> KrillEmptyResult {
-        self.repo_manager.delete_matching_files(criteria)
+    pub async fn delete_matching_files(&self, criteria: RepoFileDeleteCriteria) -> KrillEmptyResult {
+        self.repo_manager.delete_matching_files(criteria).await
     }
 
     /// Returns a publisher.
-    pub fn get_publisher(&self, publisher: &PublisherHandle) -> KrillResult<PublisherDetails> {
-        self.repo_manager.get_publisher_details(publisher)
+    pub async fn get_publisher(&self, publisher: &PublisherHandle) -> KrillResult<PublisherDetails> {
+        self.repo_manager.get_publisher_details(publisher).await
     }
 
     pub fn rrdp_base_path(&self) -> PathBuf {
@@ -360,12 +364,15 @@ impl KrillServer {
 /// # Manage RFC8181 clients
 ///
 impl KrillServer {
-    pub fn repository_response(&self, publisher: &PublisherHandle) -> KrillResult<idexchange::RepositoryResponse> {
-        self.repo_manager.repository_response(publisher)
+    pub async fn repository_response(
+        &self,
+        publisher: &PublisherHandle,
+    ) -> KrillResult<idexchange::RepositoryResponse> {
+        self.repo_manager.repository_response(publisher).await
     }
 
-    pub fn rfc8181(&self, publisher: PublisherHandle, msg_bytes: Bytes) -> KrillResult<Bytes> {
-        self.repo_manager.rfc8181(publisher, msg_bytes)
+    pub async fn rfc8181(&self, publisher: PublisherHandle, msg_bytes: Bytes) -> KrillResult<Bytes> {
+        self.repo_manager.rfc8181(publisher, msg_bytes).await
     }
 }
 
@@ -549,7 +556,7 @@ impl KrillServer {
     pub async fn cas_stats(&self) -> KrillResult<HashMap<CaHandle, CertAuthStats>> {
         let mut res = HashMap::new();
 
-        for ca in self.ca_list(&self.system_actor)?.cas() {
+        for ca in self.ca_list(&self.system_actor).await?.cas() {
             // can't fail really, but to be sure
             if let Ok(ca) = self.ca_manager.get_ca(ca.handle()).await {
                 let roas = ca.configured_roas();
@@ -580,7 +587,7 @@ impl KrillServer {
         // We need to know which CAs already exist. They should not be imported again,
         // but can serve as parents.
         let mut existing_cas = HashMap::new();
-        for ca in self.ca_list(&actor)?.cas() {
+        for ca in self.ca_list(&actor).await?.cas() {
             let parent_handle = ca.handle().convert();
             let resources = self.ca_manager.get_ca(ca.handle()).await?.all_resources();
             existing_cas.insert(parent_handle, resources);
@@ -589,7 +596,7 @@ impl KrillServer {
 
         if let Some(publication_server_uris) = structure.publication_server.clone() {
             info!("Initialising publication server");
-            self.repo_manager.init(publication_server_uris)?;
+            self.repo_manager.init(publication_server_uris).await?;
         }
 
         if let Some(import_ta) = structure.ta.clone() {
@@ -611,13 +618,13 @@ impl KrillServer {
         let mut import_fns = vec![];
         let service_uri = Arc::new(self.config.service_uri());
         for ca in structure.into_cas() {
-            import_fns.push(tokio::spawn(Self::import_ca(
+            import_fns.push(Self::import_ca(
                 ca,
                 self.ca_manager.clone(),
                 self.repo_manager.clone(),
                 service_uri.clone(),
                 actor.clone(),
-            )));
+            ));
         }
         try_join_all(import_fns)
             .await
@@ -643,7 +650,7 @@ impl KrillServer {
         info!("Importing CA: '{}'", ca_handle);
 
         // init CA
-        ca_manager.init_ca(&ca_handle)?;
+        ca_manager.init_ca(&ca_handle).await?;
 
         // Get Publisher Request
         let pub_req = {
@@ -652,11 +659,11 @@ impl KrillServer {
         };
 
         // Add Publisher
-        repo_manager.create_publisher(pub_req, &actor)?;
+        repo_manager.create_publisher(pub_req, &actor).await?;
 
         // Get Repository Contact for CA
         let repo_contact = {
-            let repo_response = repo_manager.repository_response(&ca_handle.convert())?;
+            let repo_response = repo_manager.repository_response(&ca_handle.convert()).await?;
             RepositoryContact::for_response(repo_response).map_err(Error::rfc8183)?
         };
 
@@ -753,7 +760,7 @@ impl KrillServer {
 
     pub async fn all_ca_issues(&self, actor: &Actor) -> KrillResult<AllCertAuthIssues> {
         let mut all_issues = AllCertAuthIssues::default();
-        for ca in self.ca_list(actor)?.cas() {
+        for ca in self.ca_list(actor).await?.cas() {
             let issues = self.ca_issues(ca.handle()).await?;
             if !issues.is_empty() {
                 all_issues.add(ca.handle().clone(), issues);
@@ -789,20 +796,20 @@ impl KrillServer {
     pub async fn republish_all(&self, force: bool) -> KrillEmptyResult {
         let cas = self.ca_manager.republish_all(force).await?;
         for ca in cas {
-            self.cas_repo_sync_single(&ca)?;
+            self.cas_repo_sync_single(&ca).await?;
         }
 
         Ok(())
     }
 
     /// Re-sync all CAs with their repositories
-    pub fn cas_repo_sync_all(&self, actor: &Actor) -> KrillEmptyResult {
-        self.ca_manager.cas_schedule_repo_sync_all(actor)
+    pub async fn cas_repo_sync_all(&self, actor: &Actor) -> KrillEmptyResult {
+        self.ca_manager.cas_schedule_repo_sync_all(actor).await
     }
 
     /// Re-sync a specific CA with its repository
-    pub fn cas_repo_sync_single(&self, ca: &CaHandle) -> KrillEmptyResult {
-        self.ca_manager.cas_schedule_repo_sync(ca.clone())
+    pub async fn cas_repo_sync_single(&self, ca: &CaHandle) -> KrillEmptyResult {
+        self.ca_manager.cas_schedule_repo_sync(ca.clone()).await
     }
 
     /// Refresh all CAs: ask for updates and shrink as needed.
@@ -816,16 +823,16 @@ impl KrillServer {
     }
 
     /// Schedule check suspend children for all CAs
-    pub fn cas_schedule_suspend_all(&self) -> KrillEmptyResult {
-        self.ca_manager.cas_schedule_suspend_all()
+    pub async fn cas_schedule_suspend_all(&self) -> KrillEmptyResult {
+        self.ca_manager.cas_schedule_suspend_all().await
     }
 }
 
 /// # Admin CAS
 ///
 impl KrillServer {
-    pub fn ca_list(&self, actor: &Actor) -> KrillResult<CertAuthList> {
-        self.ca_manager.ca_list(actor)
+    pub async fn ca_list(&self, actor: &Actor) -> KrillResult<CertAuthList> {
+        self.ca_manager.ca_list(actor).await
     }
 
     /// Returns the public CA info for a CA, or NONE if the CA cannot be found.
@@ -857,8 +864,8 @@ impl KrillServer {
         self.ca_manager.ca_history(ca, crit).await
     }
 
-    pub fn ca_command_details(&self, ca: &CaHandle, version: u64) -> KrillResult<CaCommandDetails> {
-        self.ca_manager.ca_command_details(ca, version)
+    pub async fn ca_command_details(&self, ca: &CaHandle, version: u64) -> KrillResult<CaCommandDetails> {
+        self.ca_manager.ca_command_details(ca, version).await
     }
 
     /// Returns the publisher request for a CA, or NONE of the CA cannot be found.
@@ -866,9 +873,9 @@ impl KrillServer {
         self.ca_manager.get_ca(ca).await.map(|ca| ca.publisher_request())
     }
 
-    pub fn ca_init(&self, init: CertAuthInit) -> KrillEmptyResult {
+    pub async fn ca_init(&self, init: CertAuthInit) -> KrillEmptyResult {
         let handle = init.unpack();
-        self.ca_manager.init_ca(&handle)
+        self.ca_manager.init_ca(&handle).await
     }
 
     /// Return the info about the CONFIGured repository server for a given Ca.
@@ -1029,20 +1036,20 @@ impl KrillServer {
 ///
 impl KrillServer {
     /// Create the publication server, will fail if it was already created.
-    pub fn repository_init(&self, uris: PublicationServerUris) -> KrillResult<()> {
-        self.repo_manager.init(uris)
+    pub async fn repository_init(&self, uris: PublicationServerUris) -> KrillResult<()> {
+        self.repo_manager.init(uris).await
     }
 
     /// Clear the publication server. Will fail if it still has publishers. Or if it does not exist
-    pub fn repository_clear(&self) -> KrillResult<()> {
-        self.repo_manager.repository_clear()
+    pub async fn repository_clear(&self) -> KrillResult<()> {
+        self.repo_manager.repository_clear().await
     }
 
     /// Perform an RRDP session reset. Useful after a restart of the server as we can never be
     /// certain whether the previous state was the last public state seen by validators, or..
     /// the server was started using a back up.
-    pub fn repository_session_reset(&self) -> KrillResult<()> {
-        self.repo_manager.rrdp_session_reset()
+    pub async fn repository_session_reset(&self) -> KrillResult<()> {
+        self.repo_manager.rrdp_session_reset().await
     }
 }
 

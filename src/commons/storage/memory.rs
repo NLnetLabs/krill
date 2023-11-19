@@ -5,6 +5,7 @@ use std::{
     sync::{Mutex, MutexGuard},
 };
 
+use futures_util::Future;
 use lazy_static::lazy_static;
 
 use crate::commons::storage::{Key, KeyValueError, NamespaceBuf, Scope, StorageResult};
@@ -181,9 +182,10 @@ impl Display for Memory {
 }
 
 impl Memory {
-    pub fn execute<F, T>(&self, scope: &Scope, op: F) -> Result<T, KeyValueError>
+    pub async fn execute<'f, F, T, Ret>(&self, scope: &Scope, op: F) -> Result<T, KeyValueError>
     where
-        F: FnOnce(&KeyValueStoreDispatcher) -> Result<T, KeyValueError>,
+        F: FnOnce(KeyValueStoreDispatcher) -> Ret,
+        Ret: Future<Output = Result<T, KeyValueError>>,
     {
         //     fn transaction(&self, scope: &Scope, callback: TransactionCallback) -> Result<()> {
         // Try to get a lock for 10 seconds. We may need to make this configurable.
@@ -213,8 +215,8 @@ impl Memory {
             }
         }
 
-        let dispatcher = KeyValueStoreDispatcher::Memory(self);
-        let res = op(&dispatcher);
+        let dispatcher = KeyValueStoreDispatcher::Memory(self.clone());
+        let res = op(dispatcher).await;
 
         let mut locks = self
             .locks

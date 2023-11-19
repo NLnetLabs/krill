@@ -573,7 +573,7 @@ pub(super) struct KmipKeyPairIds {
 
 impl KmipSigner {
     /// Remember that the given KMIP public and private key pair IDs correspond to the given KeyIdentifier.
-    pub(super) fn remember_kmip_key_ids(
+    pub(super) async fn remember_kmip_key_ids(
         &self,
         key_id: &KeyIdentifier,
         kmip_key_ids: KmipKeyPairIds,
@@ -581,25 +581,34 @@ impl KmipSigner {
         // TODO: Don't assume colons cannot appear in HSM key ids.
         let internal_key_id = format!("{}:{}", kmip_key_ids.public_key_id, kmip_key_ids.private_key_id);
 
-        let readable_handle = self.handle.read().unwrap();
-        let signer_handle = readable_handle.as_ref().ok_or_else(|| {
-            SignerError::Other("KMIP: Failed to record signer key: Signer handle not set".to_string())
-        })?;
+        let signer_handle = {
+            // Note: Perhaps we should change the implementation to use a tokio::sync::RwLock for
+            //       the handle instead. Or we should not keep these handles here? However, for the
+            //       moment that change opens a rabbit hole that is too deep.
+            self.handle.read().unwrap().clone().ok_or_else(|| {
+                SignerError::Other("KMIP: Failed to record signer key: Signer handle not set".to_string())
+            })?
+        };
+
         self.mapper
-            .add_key(signer_handle, key_id, &internal_key_id)
+            .add_key(&signer_handle, key_id, &internal_key_id)
+            .await
             .map_err(|err| SignerError::KmipError(format!("Failed to record signer key: {}", err)))?;
 
         Ok(())
     }
 
     /// Given a KeyIdentifier lookup the corresponding KMIP public and private key pair IDs.
-    pub(super) fn lookup_kmip_key_ids(&self, key_id: &KeyIdentifier) -> Result<KmipKeyPairIds, KeyError<SignerError>> {
-        let readable_handle = self.handle.read().unwrap();
-        let signer_handle = readable_handle.as_ref().ok_or(KeyError::KeyNotFound)?;
+    pub(super) async fn lookup_kmip_key_ids(
+        &self,
+        key_id: &KeyIdentifier,
+    ) -> Result<KmipKeyPairIds, KeyError<SignerError>> {
+        let signer_handle = { self.handle.read().unwrap().clone().ok_or(KeyError::KeyNotFound)? };
 
         let internal_key_id = self
             .mapper
-            .get_key(signer_handle, key_id)
+            .get_key(&signer_handle, key_id)
+            .await
             .map_err(|_| KeyError::KeyNotFound)?;
 
         let (public_key_id, private_key_id) = internal_key_id.split_once(':').ok_or(KeyError::KeyNotFound)?;
@@ -843,21 +852,21 @@ impl KmipSigner {
 // dispatching is not trait based we don't actually have to implement the `Signer` trait.
 
 impl KmipSigner {
-    pub fn create_key(&self, algorithm: PublicKeyFormat) -> Result<KeyIdentifier, SignerError> {
+    pub async fn create_key(&self, algorithm: PublicKeyFormat) -> Result<KeyIdentifier, SignerError> {
         let (key, kmip_key_pair_ids) = self.build_key(algorithm)?;
         let key_id = key.key_identifier();
-        self.remember_kmip_key_ids(&key_id, kmip_key_pair_ids)?;
+        self.remember_kmip_key_ids(&key_id, kmip_key_pair_ids).await?;
         Ok(key_id)
     }
 
-    pub fn get_key_info(&self, key_id: &KeyIdentifier) -> Result<PublicKey, KeyError<SignerError>> {
-        let kmip_key_pair_ids = self.lookup_kmip_key_ids(key_id)?;
+    pub async fn get_key_info(&self, key_id: &KeyIdentifier) -> Result<PublicKey, KeyError<SignerError>> {
+        let kmip_key_pair_ids = self.lookup_kmip_key_ids(key_id).await?;
         self.get_public_key_from_id(&kmip_key_pair_ids.public_key_id)
             .map_err(KeyError::Signer)
     }
 
-    pub fn destroy_key(&self, key_id: &KeyIdentifier) -> Result<(), KeyError<SignerError>> {
-        let kmip_key_pair_ids = self.lookup_kmip_key_ids(key_id)?;
+    pub async fn destroy_key(&self, key_id: &KeyIdentifier) -> Result<(), KeyError<SignerError>> {
+        let kmip_key_pair_ids = self.lookup_kmip_key_ids(key_id).await?;
 
         let mut res = self
             .destroy_key_pair(&kmip_key_pair_ids, KeyStatus::Active)
@@ -874,10 +883,17 @@ impl KmipSigner {
         }
 
         // remove the key from the signer mapper as well
-        if let Some(signer_handle) = self.handle.read().unwrap().as_ref() {
+        let signer_handle_opt = {
+            // We need to clone this because the RwLock cannot be sent. We could use tokio::sync::RwLock
+            // in future, but that's a difficult change right now.
+            self.handle.read().unwrap().clone()
+        };
+
+        if let Some(signer_handle) = signer_handle_opt {
             let res2 = self
                 .mapper
-                .remove_key(signer_handle, key_id)
+                .remove_key(&signer_handle, key_id)
+                .await
                 .map_err(|err| KeyError::Signer(SignerError::Other(err.to_string())));
 
             if let Err(err) = &res2 {
@@ -893,13 +909,13 @@ impl KmipSigner {
         res
     }
 
-    pub fn sign<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
+    pub async fn sign<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
         &self,
         key_id: &KeyIdentifier,
         algorithm: Alg,
         data: &D,
     ) -> Result<Signature<Alg>, SigningError<SignerError>> {
-        let kmip_key_pair_ids = self.lookup_kmip_key_ids(key_id)?;
+        let kmip_key_pair_ids = self.lookup_kmip_key_ids(key_id).await?;
 
         let signature = self
             .sign_with_key(&kmip_key_pair_ids.private_key_id, algorithm, data.as_ref())

@@ -308,37 +308,45 @@ impl KeyState {
     }
 
     /// Revoke all current keys
-    pub fn revoke(&self, class_name: ResourceClassName, signer: &KrillSigner) -> KrillResult<Vec<RevocationRequest>> {
+    pub async fn revoke(
+        &self,
+        class_name: ResourceClassName,
+        signer: &KrillSigner,
+    ) -> KrillResult<Vec<RevocationRequest>> {
         match self {
             KeyState::Pending(_pending) => Ok(vec![]), // nothing to revoke
             KeyState::Active(current) | KeyState::RollPending(_, current) => {
-                let revoke_current = Self::revoke_key(class_name, current.key_id(), signer)?;
+                let revoke_current = Self::revoke_key(class_name, current.key_id(), signer).await?;
                 Ok(vec![revoke_current])
             }
             KeyState::RollNew(new, current) => {
-                let revoke_new = Self::revoke_key(class_name.clone(), new.key_id(), signer)?;
-                let revoke_current = Self::revoke_key(class_name, current.key_id(), signer)?;
+                let revoke_new = Self::revoke_key(class_name.clone(), new.key_id(), signer).await?;
+                let revoke_current = Self::revoke_key(class_name, current.key_id(), signer).await?;
                 Ok(vec![revoke_new, revoke_current])
             }
             KeyState::RollOld(current, old) => {
-                let revoke_current = Self::revoke_key(class_name, current.key_id(), signer)?;
+                let revoke_current = Self::revoke_key(class_name, current.key_id(), signer).await?;
                 let revoke_old = old.revoke_req().clone();
                 Ok(vec![revoke_current, revoke_old])
             }
         }
     }
 
-    fn revoke_key(
+    async fn revoke_key(
         class_name: ResourceClassName,
         key_id: &KeyIdentifier,
         signer: &KrillSigner,
     ) -> KrillResult<RevocationRequest> {
-        let ki = signer.get_key_info(key_id).map_err(Error::signer)?.key_identifier();
+        let ki = signer
+            .get_key_info(key_id)
+            .await
+            .map_err(Error::signer)?
+            .key_identifier();
 
         Ok(RevocationRequest::new(class_name, ki))
     }
 
-    pub fn make_entitlement_events(
+    pub async fn make_entitlement_events(
         &self,
         handle: &CaHandle,
         rcn: ResourceClassName,
@@ -391,8 +399,9 @@ impl KeyState {
         let mut res = vec![];
 
         for (base_repo, key_id) in keys_for_requests.into_iter() {
-            let req =
-                self.create_issuance_req(base_repo, name_space, entitlement.class_name().clone(), key_id, signer)?;
+            let req = self
+                .create_issuance_req(base_repo, name_space, entitlement.class_name().clone(), key_id, signer)
+                .await?;
 
             res.push(CertAuthEvent::CertificateRequested {
                 resource_class_name: rcn.clone(),
@@ -418,34 +427,37 @@ impl KeyState {
         Ok(res)
     }
 
-    pub fn request_certs_new_repo(
-        &self,
-        rcn: ResourceClassName,
-        base_repo: &RepoInfo,
-        name_space: &str,
-        signer: &KrillSigner,
-    ) -> KrillResult<Vec<CertAuthEvent>> {
-        let mut res = vec![];
+    // pub async fn request_certs_new_repo(
+    //     &self,
+    //     rcn: ResourceClassName,
+    //     base_repo: &RepoInfo,
+    //     name_space: &str,
+    //     signer: &KrillSigner,
+    // ) -> KrillResult<Vec<CertAuthEvent>> {
+    //     let mut res = vec![];
 
-        let keys = match self {
-            KeyState::Pending(pending) => vec![pending.key_id()],
-            KeyState::Active(current) => vec![current.key_id()],
-            KeyState::RollPending(pending, current) => vec![pending.key_id(), current.key_id()],
-            KeyState::RollNew(new, current) => vec![new.key_id(), current.key_id()],
-            KeyState::RollOld(current, old) => vec![current.key_id(), old.key_id()],
-        };
+    //     let keys = match self {
+    //         KeyState::Pending(pending) => vec![pending.key_id()],
+    //         KeyState::Active(current) => vec![current.key_id()],
+    //         KeyState::RollPending(pending, current) => vec![pending.key_id(), current.key_id()],
+    //         KeyState::RollNew(new, current) => vec![new.key_id(), current.key_id()],
+    //         KeyState::RollOld(current, old) => vec![current.key_id(), old.key_id()],
+    //     };
 
-        for ki in keys {
-            let req = self.create_issuance_req(base_repo, name_space, rcn.clone(), ki, signer)?;
-            res.push(CertAuthEvent::CertificateRequested {
-                resource_class_name: rcn.clone(),
-                req,
-                ki: *ki,
-            });
-        }
+    //     for ki in keys {
+    //         let req = self
+    //             .create_issuance_req(base_repo, name_space, rcn.clone(), ki, signer)
+    //             .await?;
 
-        Ok(res)
-    }
+    //         res.push(CertAuthEvent::CertificateRequested {
+    //             resource_class_name: rcn.clone(),
+    //             req,
+    //             ki: *ki,
+    //         });
+    //     }
+
+    //     Ok(res)
+    // }
 
     /// Returns all open certificate requests
     pub fn cert_requests(&self) -> Vec<IssuanceRequest> {
@@ -490,7 +502,7 @@ impl KeyState {
     }
 
     /// Creates a Csr for the given key.
-    fn create_issuance_req(
+    async fn create_issuance_req(
         &self,
         base_repo: &RepoInfo,
         name_space: &str,
@@ -498,7 +510,7 @@ impl KeyState {
         key: &KeyIdentifier,
         signer: &KrillSigner,
     ) -> KrillResult<IssuanceRequest> {
-        let csr = signer.sign_csr(base_repo, name_space, key)?;
+        let csr = signer.sign_csr(base_repo, name_space, key).await?;
         Ok(IssuanceRequest::new(class_name, RequestResourceLimit::default(), csr))
     }
 
@@ -539,7 +551,7 @@ impl KeyState {
 impl KeyState {
     /// Initiates a key roll if the current state is 'Active'. This will return event details
     /// for a newly create pending key and requested certificate for it.
-    pub fn keyroll_initiate(
+    pub async fn keyroll_initiate(
         &self,
         resource_class_name: ResourceClassName,
         parent_class_name: ResourceClassName,
@@ -549,10 +561,11 @@ impl KeyState {
     ) -> KrillResult<Vec<CertAuthEvent>> {
         match self {
             KeyState::Active(_current) => {
-                let pending_key_id = signer.create_key()?;
+                let pending_key_id = signer.create_key().await?;
 
-                let req =
-                    self.create_issuance_req(base_repo, name_space, parent_class_name, &pending_key_id, signer)?;
+                let req = self
+                    .create_issuance_req(base_repo, name_space, parent_class_name, &pending_key_id, signer)
+                    .await?;
 
                 Ok(vec![
                     CertAuthEvent::KeyRollPendingKeyAdded {
@@ -572,7 +585,7 @@ impl KeyState {
 
     /// Marks the new key as current, and the current key as old, and requests revocation of
     /// the old key.
-    pub fn keyroll_activate(
+    pub async fn keyroll_activate(
         &self,
         resource_class_name: ResourceClassName,
         parent_class_name: ResourceClassName,
@@ -583,7 +596,7 @@ impl KeyState {
                 if new.request().is_some() || current.request().is_some() {
                     Err(Error::KeyRollActivatePendingRequests)
                 } else {
-                    let revoke_req = Self::revoke_key(parent_class_name, current.key_id(), signer)?;
+                    let revoke_req = Self::revoke_key(parent_class_name, current.key_id(), signer).await?;
                     Ok(CertAuthEvent::KeyRollActivated {
                         resource_class_name,
                         revoke_req,

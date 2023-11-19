@@ -32,7 +32,7 @@ use crate::{
     },
 };
 
-pub fn make_aspa_object(
+pub async fn make_aspa_object(
     aspa_def: AspaDefinition,
     certified_key: &CertifiedKey,
     validity: Validity,
@@ -53,14 +53,16 @@ pub fn make_aspa_object(
         let ca_issuer = incoming_cert.uri().clone();
 
         let mut object_builder =
-            SignedObjectBuilder::new(signer.random_serial()?, validity, crl_uri, ca_issuer, aspa_uri);
+            SignedObjectBuilder::new(signer.random_serial().await?, validity, crl_uri, ca_issuer, aspa_uri);
         object_builder.set_issuer(Some(incoming_cert.subject().clone()));
         object_builder.set_signing_time(Some(Time::now()));
 
         object_builder
     };
 
-    Ok(signer.sign_aspa(aspa_builder, object_builder, certified_key.key_id())?)
+    Ok(signer
+        .sign_aspa(aspa_builder, object_builder, certified_key.key_id())
+        .await?)
 }
 
 //------------ AspaDefinitions ---------------------------------------------
@@ -138,7 +140,7 @@ impl AspaDefinitions {
 pub struct AspaObjects(HashMap<CustomerAsn, AspaInfo>);
 
 impl AspaObjects {
-    pub fn make_aspa(
+    pub async fn make_aspa(
         &self,
         aspa_def: AspaDefinition,
         certified_key: &CertifiedKey,
@@ -150,7 +152,8 @@ impl AspaObjects {
             certified_key,
             issuance_timing.new_aspa_validity(),
             signer,
-        )?;
+        )
+        .await?;
         Ok(AspaInfo::new_aspa(aspa_def, aspa))
     }
 
@@ -160,7 +163,7 @@ impl AspaObjects {
     /// Note: we pass in *all* AspaDefinitions for the CA, not all
     ///   definitions will be relevant for the RC (key) holding
     ///   this AspaObjects.
-    pub fn update(
+    pub async fn update(
         &self,
         all_aspa_defs: &AspaDefinitions,
         certified_key: &CertifiedKey,
@@ -182,8 +185,9 @@ impl AspaObjects {
                 .unwrap_or(true);
 
             if need_to_issue {
-                let aspa_info =
-                    self.make_aspa(relevant_aspa.clone(), certified_key, &config.issuance_timing, signer)?;
+                let aspa_info = self
+                    .make_aspa(relevant_aspa.clone(), certified_key, &config.issuance_timing, signer)
+                    .await?;
                 object_updates.add_updated(aspa_info);
             }
         }
@@ -202,7 +206,7 @@ impl AspaObjects {
     // Re-new ASPAs, if the renew_threshold is specified, then
     // only objects which will expire before that time will be
     // renewed.
-    pub fn renew(
+    pub async fn renew(
         &self,
         certified_key: &CertifiedKey,
         renew_threshold: Option<Time>,
@@ -219,7 +223,9 @@ impl AspaObjects {
             if renew {
                 let aspa_definition = aspa.definition().clone();
 
-                let new_aspa = self.make_aspa(aspa_definition, certified_key, issuance_timing, signer)?;
+                let new_aspa = self
+                    .make_aspa(aspa_definition, certified_key, issuance_timing, signer)
+                    .await?;
                 updates.add_updated(new_aspa);
             }
         }

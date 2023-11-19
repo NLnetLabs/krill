@@ -876,11 +876,11 @@ impl TrustAnchorClient {
                 let signer_manager = TrustAnchorSignerManager::create(signer_command.config)?;
 
                 match signer_command.details {
-                    SignerCommandDetails::Init(info) => signer_manager.init(info),
-                    SignerCommandDetails::ShowInfo => signer_manager.show(),
-                    SignerCommandDetails::ProcessRequest(request) => signer_manager.process(request),
-                    SignerCommandDetails::ShowLastResponse => signer_manager.show_last_response(),
-                    SignerCommandDetails::ShowExchanges => signer_manager.show_exchanges(),
+                    SignerCommandDetails::Init(info) => signer_manager.init(info).await,
+                    SignerCommandDetails::ShowInfo => signer_manager.show().await,
+                    SignerCommandDetails::ProcessRequest(request) => signer_manager.process(request).await,
+                    SignerCommandDetails::ShowLastResponse => signer_manager.show_last_response().await,
+                    SignerCommandDetails::ShowExchanges => signer_manager.show_exchanges().await,
                 }
             }
         }
@@ -1025,8 +1025,8 @@ impl TrustAnchorSignerManager {
         })
     }
 
-    fn init(&self, info: SignerInitInfo) -> Result<TrustAnchorClientApiResponse, TaClientError> {
-        if self.store.has(&self.ta_handle)? {
+    async fn init(&self, info: SignerInitInfo) -> Result<TrustAnchorClientApiResponse, TaClientError> {
+        if self.store.has(&self.ta_handle).await? {
             Err(TaClientError::other("Trust Anchor Signer was already initialised."))
         } else {
             let cmd = TrustAnchorSignerInitCommand::new(
@@ -1043,19 +1043,19 @@ impl TrustAnchorSignerManager {
                 &self.actor,
             );
 
-            self.store.add(cmd)?;
+            self.store.add(cmd).await?;
 
             Ok(TrustAnchorClientApiResponse::Empty)
         }
     }
 
-    fn show(&self) -> Result<TrustAnchorClientApiResponse, TaClientError> {
-        let ta_signer = self.get_signer()?;
+    async fn show(&self) -> Result<TrustAnchorClientApiResponse, TaClientError> {
+        let ta_signer = self.get_signer().await?;
         let info = ta_signer.get_signer_info();
         Ok(TrustAnchorClientApiResponse::TrustAnchorProxySignerInfo(info))
     }
 
-    fn process(&self, request: TrustAnchorSignedRequest) -> Result<TrustAnchorClientApiResponse, TaClientError> {
+    async fn process(&self, request: TrustAnchorSignedRequest) -> Result<TrustAnchorClientApiResponse, TaClientError> {
         let cmd = TrustAnchorSignerCommand::make_process_request_command(
             &self.ta_handle,
             request,
@@ -1063,20 +1063,21 @@ impl TrustAnchorSignerManager {
             self.signer.clone(),
             &self.actor,
         );
-        self.store.command(cmd)?;
+        self.store.command(cmd).await?;
 
-        self.show_last_response()
+        self.show_last_response().await
     }
 
-    fn show_last_response(&self) -> Result<TrustAnchorClientApiResponse, TaClientError> {
-        self.get_signer()?
+    async fn show_last_response(&self) -> Result<TrustAnchorClientApiResponse, TaClientError> {
+        self.get_signer()
+            .await?
             .get_latest_exchange()
             .map(|exchange| TrustAnchorClientApiResponse::SignerResponse(exchange.response.clone()))
             .ok_or_else(|| TaClientError::other("No response found."))
     }
 
-    fn show_exchanges(&self) -> Result<TrustAnchorClientApiResponse, TaClientError> {
-        let signer = self.get_signer()?;
+    async fn show_exchanges(&self) -> Result<TrustAnchorClientApiResponse, TaClientError> {
+        let signer = self.get_signer().await?;
         // In this context it's okay to clone the exchanges.
         // If we are afraid that this would become too expensive, then we will
         // need to rethink the model where we return data in the enum that we
@@ -1089,10 +1090,11 @@ impl TrustAnchorSignerManager {
         Ok(TrustAnchorClientApiResponse::ProxySignerExchanges(exchanges))
     }
 
-    fn get_signer(&self) -> Result<Arc<TrustAnchorSigner>, TaClientError> {
-        if self.store.has(&self.ta_handle)? {
+    async fn get_signer(&self) -> Result<Arc<TrustAnchorSigner>, TaClientError> {
+        if self.store.has(&self.ta_handle).await? {
             self.store
                 .get_latest(&self.ta_handle)
+                .await
                 .map_err(TaClientError::KrillError)
         } else {
             Err(TaClientError::other("Trust Anchor Signer is not initialised."))

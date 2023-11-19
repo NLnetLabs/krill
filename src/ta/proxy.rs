@@ -375,6 +375,7 @@ impl eventsourcing::CommandDetails for TrustAnchorProxyCommandDetails {
     }
 }
 
+#[async_trait::async_trait]
 impl eventsourcing::Aggregate for TrustAnchorProxy {
     type Command = TrustAnchorProxyCommand;
     type StorableCommandDetails = TrustAnchorProxyCommandDetails;
@@ -396,8 +397,10 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
         }
     }
 
-    fn process_init_command(command: TrustAnchorProxyInitCommand) -> Result<TrustAnchorProxyInitEvent, Error> {
-        Rfc8183Id::generate(&command.into_details().signer).map(|id| TrustAnchorProxyInitEvent { id: id.into() })
+    async fn process_init_command(command: TrustAnchorProxyInitCommand) -> Result<TrustAnchorProxyInitEvent, Error> {
+        Rfc8183Id::generate(&command.into_details().signer)
+            .await
+            .map(|id| TrustAnchorProxyInitEvent { id: id.into() })
     }
 
     fn version(&self) -> u64 {
@@ -472,7 +475,7 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
         }
     }
 
-    fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Event>, Self::Error> {
+    async fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Event>, Self::Error> {
         if log_enabled!(log::Level::Trace) {
             trace!(
                 "Sending command to Trust Anchor Proxy '{}', version: {}: {}",
@@ -665,7 +668,7 @@ impl TrustAnchorProxy {
         self.open_signer_request.is_some()
     }
 
-    pub fn get_signer_request(
+    pub async fn get_signer_request(
         &self,
         timing: TaTimingConfig,
         signer: &KrillSigner,
@@ -682,11 +685,13 @@ impl TrustAnchorProxy {
                 }
             }
 
-            TrustAnchorSignerRequest { nonce, child_requests }.sign(
-                self.id.public_key().key_identifier(),
-                timing.signed_message_validity_days,
-                signer,
-            )
+            TrustAnchorSignerRequest { nonce, child_requests }
+                .sign(
+                    self.id.public_key().key_identifier(),
+                    timing.signed_message_validity_days,
+                    signer,
+                )
+                .await
         } else {
             Err(Error::TaProxyHasNoRequest)
         }

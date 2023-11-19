@@ -8,6 +8,7 @@ use std::{
     time::Duration,
 };
 
+use futures_util::Future;
 use serde_json::Value;
 
 use crate::commons::{
@@ -293,16 +294,18 @@ impl Disk {
 }
 
 impl Disk {
-    pub fn execute<F, T>(&self, scope: &Scope, op: F) -> Result<T, KeyValueError>
+    pub async fn execute<'f, F, T, Ret>(&self, scope: &Scope, op: F) -> Result<T, KeyValueError>
     where
-        F: FnOnce(&KeyValueStoreDispatcher) -> Result<T, KeyValueError>,
+        F: FnOnce(KeyValueStoreDispatcher) -> Ret,
+        Ret: Future<Output = Result<T, KeyValueError>>,
     {
         let lock_file_dir = self.root.join(LOCK_FILE_DIR);
 
         let _lock = FileLock::lock(scope.as_path(lock_file_dir))?;
 
-        let dispatcher = KeyValueStoreDispatcher::Disk(self);
-        op(&dispatcher)
+        let dispatcher = KeyValueStoreDispatcher::Disk(self.clone());
+
+        op(dispatcher).await
     }
 }
 

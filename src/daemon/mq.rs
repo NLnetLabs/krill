@@ -182,20 +182,20 @@ pub enum TaskResult {
 
 #[derive(Debug)]
 pub struct TaskQueue {
-    q: KeyValueStore,
+    q: Queue,
 }
 
 impl TaskQueue {
     pub fn new(storage_uri: &Url) -> KrillResult<Self> {
         KeyValueStore::create(storage_uri, TASK_QUEUE_NS)
-            .map(|q| TaskQueue { q })
+            .map(|kv| TaskQueue { q: Queue::new(kv) })
             .map_err(Error::from)
     }
 }
 impl TaskQueue {
-    pub fn pop(&self) -> Option<RunningTask> {
+    pub async fn pop(&self) -> Option<RunningTask> {
         trace!("Try to get a task off the queue");
-        match self.q.claim_scheduled_pending_task() {
+        match self.q.claim_scheduled_pending_task().await {
             Err(e) => {
                 // Log error and return nothing.
                 // We do this, because the key value store - if in future
@@ -226,22 +226,24 @@ impl TaskQueue {
     ///
     /// This will NOT finish any possible running task by the same
     /// name.
-    pub fn schedule(&self, task: Task, priority: Priority) -> KrillResult<()> {
+    pub async fn schedule(&self, task: Task, priority: Priority) -> KrillResult<()> {
         self.schedule_task(task, ScheduleMode::ReplaceExistingSoonest, priority)
+            .await
     }
 
     /// Schedules a task for the given priority. If the equivalent task
     /// was already present, then it will get the highest of the two
     /// priorities.
-    pub fn schedule_and_finish_existing(&self, task: Task, priority: Priority) -> KrillResult<()> {
+    pub async fn schedule_and_finish_existing(&self, task: Task, priority: Priority) -> KrillResult<()> {
         self.schedule_task(task, ScheduleMode::FinishOrReplaceExistingSoonest, priority)
+            .await
     }
 
-    pub fn schedule_missing(&self, task: Task, priority: Priority) -> KrillResult<()> {
-        self.schedule_task(task, ScheduleMode::IfMissing, priority)
+    pub async fn schedule_missing(&self, task: Task, priority: Priority) -> KrillResult<()> {
+        self.schedule_task(task, ScheduleMode::IfMissing, priority).await
     }
 
-    fn schedule_task(&self, task: Task, mode: ScheduleMode, priority: Priority) -> KrillResult<()> {
+    async fn schedule_task(&self, task: Task, mode: ScheduleMode, priority: Priority) -> KrillResult<()> {
         let task_name = task.name();
         debug!("add task: {} with priority: {}", task_name, priority.to_string());
         let json = serde_json::to_value(&task)
@@ -249,27 +251,29 @@ impl TaskQueue {
 
         self.q
             .schedule_task(task_name, json, Some(priority.to_millis()), mode)
+            .await
             .map_err(Error::from)
     }
 
     /// Finish a running task, without rescheduling it.
-    pub fn finish(&self, task: &Key) -> KrillResult<()> {
+    pub async fn finish(&self, task: &Key) -> KrillResult<()> {
         debug!("Finish task: {}", task);
-        self.q.finish_running_task(task).map_err(Error::from)
+        self.q.finish_running_task(task).await.map_err(Error::from)
     }
 
     /// Reschedule a running task, without finishing it.
-    pub fn reschedule(&self, task: &Key, priority: Priority) -> KrillResult<()> {
+    pub async fn reschedule(&self, task: &Key, priority: Priority) -> KrillResult<()> {
         debug!("Reschedule task: {} to: {}", task, priority);
         self.q
             .reschedule_running_task(task, Some(priority.to_millis()))
+            .await
             .map_err(Error::from)
     }
 
     /// Reschedule all running tasks to pending. This assumes that we only
     /// have a single active node. See issue #1112
-    pub fn reschedule_tasks_at_startup(&self) -> KrillResult<()> {
-        let keys = self.q.running_tasks_keys()?;
+    pub async fn reschedule_tasks_at_startup(&self) -> KrillResult<()> {
+        let keys = self.q.running_tasks_keys().await?;
 
         let queue_started_key_name = Task::QueueStartTasks.name();
 
@@ -278,7 +282,7 @@ impl TaskQueue {
             for key in keys {
                 if key.name() != queue_started_key_name.as_ref() {
                     warn!("  - rescheduling: {}", key.name());
-                    self.q.reschedule_running_task(&key, None)?;
+                    self.q.reschedule_running_task(&key, None).await?;
                 }
             }
         }
@@ -289,7 +293,7 @@ impl TaskQueue {
 
 /// Implement listening for CertAuth events.
 impl TaskQueue {
-    fn schedule_for_ca_event(&self, ca: &CertAuth, ca_version: u64, event: &CertAuthEvent) -> KrillResult<()> {
+    async fn schedule_for_ca_event(&self, ca: &CertAuth, ca_version: u64, event: &CertAuthEvent) -> KrillResult<()> {
         let ca_handle = ca.handle().clone();
 
         debug!("Seen event for CA {} version {}: '{}'", ca_handle, ca_version, event);
@@ -302,7 +306,9 @@ impl TaskQueue {
             | CertAuthEvent::ChildKeyRevoked { .. }
             | CertAuthEvent::KeyPendingToNew { .. }
             | CertAuthEvent::KeyPendingToActive { .. }
-            | CertAuthEvent::KeyRollFinished { .. } => self.schedule(Task::SyncRepo { ca_handle, ca_version }, now()),
+            | CertAuthEvent::KeyRollFinished { .. } => {
+                self.schedule(Task::SyncRepo { ca_handle, ca_version }, now()).await
+            }
 
             CertAuthEvent::KeyRollActivated {
                 resource_class_name, ..
@@ -317,13 +323,14 @@ impl TaskQueue {
                             parent: parent.clone(),
                         },
                         now(),
-                    )?;
+                    )
+                    .await?;
                 }
                 // update published objects - remove old mft and crl
-                self.schedule(Task::SyncRepo { ca_handle, ca_version }, now())
+                self.schedule(Task::SyncRepo { ca_handle, ca_version }, now()).await
             }
 
-            CertAuthEvent::ParentRemoved { .. } => self.schedule(Task::SyncRepo { ca_handle, ca_version }, now()),
+            CertAuthEvent::ParentRemoved { .. } => self.schedule(Task::SyncRepo { ca_handle, ca_version }, now()).await,
 
             CertAuthEvent::ResourceClassRemoved {
                 resource_class_name,
@@ -336,7 +343,8 @@ impl TaskQueue {
                         ca_version,
                     },
                     now(),
-                )?;
+                )
+                .await?;
 
                 self.schedule(
                     Task::ResourceClassRemoved {
@@ -348,20 +356,24 @@ impl TaskQueue {
                     },
                     now(),
                 )
+                .await
             }
 
             CertAuthEvent::UnexpectedKeyFound {
                 resource_class_name,
                 revoke_req,
-            } => self.schedule(
-                Task::UnexpectedKey {
-                    ca_handle: ca_handle.clone(),
-                    ca_version,
-                    rcn: resource_class_name.clone(),
-                    revocation_request: revoke_req.clone(),
-                },
-                now(),
-            ),
+            } => {
+                self.schedule(
+                    Task::UnexpectedKey {
+                        ca_handle: ca_handle.clone(),
+                        ca_version,
+                        rcn: resource_class_name.clone(),
+                        revocation_request: revoke_req.clone(),
+                    },
+                    now(),
+                )
+                .await
+            }
 
             CertAuthEvent::ParentAdded { parent, .. } | CertAuthEvent::ParentUpdated { parent, .. } => {
                 if ca.repository_contact().is_ok() {
@@ -374,6 +386,7 @@ impl TaskQueue {
                         },
                         now(),
                     )
+                    .await
                 } else {
                     // Postpone parent sync. I.e. it will be triggered below when the event
                     // for updating the repository is seen.
@@ -393,7 +406,8 @@ impl TaskQueue {
                             parent: parent.clone(),
                         },
                         now(),
-                    )?;
+                    )
+                    .await?;
                 }
                 Ok(())
             }
@@ -413,7 +427,8 @@ impl TaskQueue {
                             parent: parent.clone(),
                         },
                         now(),
-                    )?;
+                    )
+                    .await?;
                 }
                 Ok(())
             }
@@ -424,10 +439,11 @@ impl TaskQueue {
 }
 
 /// Implement pre-save listening for CertAuth events.
+#[async_trait::async_trait]
 impl eventsourcing::PreSaveEventListener<CertAuth> for TaskQueue {
-    fn listen(&self, ca: &CertAuth, events: &[CertAuthEvent]) -> KrillResult<()> {
+    async fn listen(&self, ca: &CertAuth, events: &[CertAuthEvent]) -> KrillResult<()> {
         for event in events {
-            self.schedule_for_ca_event(ca, ca.version(), event)?;
+            self.schedule_for_ca_event(ca, ca.version(), event).await?;
         }
         Ok(())
     }
@@ -437,20 +453,24 @@ impl eventsourcing::PreSaveEventListener<CertAuth> for TaskQueue {
 ///
 /// Used for best effort signaling to local child CAs that a sync with
 /// their parent is needed.
+#[async_trait::async_trait]
 impl eventsourcing::PostSaveEventListener<CertAuth> for TaskQueue {
-    fn listen(&self, ca: &CertAuth, events: &[CertAuthEvent]) {
+    async fn listen(&self, ca: &CertAuth, events: &[CertAuthEvent]) {
         for event in events {
             match event {
                 CertAuthEvent::ChildUpdatedResources { child, .. } | CertAuthEvent::ChildKeyRevoked { child, .. } => {
                     debug!("Schedule a sync from the child to this CA as their parent. This will be a no-op for remote children.");
-                    if let Err(e) = self.schedule_and_finish_existing(
-                        Task::SyncParent {
-                            ca_handle: child.convert(),
-                            ca_version: 0, // no need to wait for updated child
-                            parent: ca.handle().convert(),
-                        },
-                        now(),
-                    ) {
+                    if let Err(e) = self
+                        .schedule_and_finish_existing(
+                            Task::SyncParent {
+                                ca_handle: child.convert(),
+                                ca_version: 0, // no need to wait for updated child
+                                parent: ca.handle().convert(),
+                            },
+                            now(),
+                        )
+                        .await
+                    {
                         error!(
                                 "Could not schedule sync from {} to {}. Restart Krill or run 'krillc bulk refresh'. Error was: {}",
                                 child,
@@ -469,14 +489,15 @@ impl eventsourcing::PostSaveEventListener<CertAuth> for TaskQueue {
 }
 
 /// Implement pre-save listening for TrustAnchorProxy events.
+#[async_trait::async_trait]
 impl eventsourcing::PreSaveEventListener<TrustAnchorProxy> for TaskQueue {
-    fn listen(&self, proxy: &TrustAnchorProxy, events: &[TrustAnchorProxyEvent]) -> KrillResult<()> {
+    async fn listen(&self, proxy: &TrustAnchorProxy, events: &[TrustAnchorProxyEvent]) -> KrillResult<()> {
         for event in events {
             trace!("Seen TrustAnchorProxy event '{}'", event);
             match event {
                 TrustAnchorProxyEvent::ChildRequestAdded(_child, _request) => {
                     // schedule proxy -> signer sync
-                    self.schedule(Task::SyncTrustAnchorProxySignerIfPossible, now())?;
+                    self.schedule(Task::SyncTrustAnchorProxySignerIfPossible, now()).await?;
                 }
                 TrustAnchorProxyEvent::SignerResponseReceived(_response) => {
                     // schedule publication for the TA
@@ -486,7 +507,8 @@ impl eventsourcing::PreSaveEventListener<TrustAnchorProxy> for TaskQueue {
                             ca_version: proxy.version(),
                         },
                         now(),
-                    )?;
+                    )
+                    .await?;
                 }
                 TrustAnchorProxyEvent::RepositoryAdded(_)
                 | TrustAnchorProxyEvent::SignerAdded(_)
@@ -502,22 +524,26 @@ impl eventsourcing::PreSaveEventListener<TrustAnchorProxy> for TaskQueue {
 }
 
 /// Implement post-save listening for TrustAnchorProxy events.
+#[async_trait::async_trait]
 impl eventsourcing::PostSaveEventListener<TrustAnchorProxy> for TaskQueue {
-    fn listen(&self, _proxy: &TrustAnchorProxy, events: &[TrustAnchorProxyEvent]) {
+    async fn listen(&self, _proxy: &TrustAnchorProxy, events: &[TrustAnchorProxyEvent]) {
         for event in events {
             match event {
                 TrustAnchorProxyEvent::SignerResponseReceived(response) => {
                     // Schedule child->ta sync(s) now that there is a response.
                     for ca in response.content().child_responses.keys() {
                         trace!("Received signed response for TA child {}", ca);
-                        if let Err(e) = self.schedule(
-                            Task::SyncParent {
-                                ca_handle: ca.convert(),
-                                ca_version: 0,
-                                parent: ta_handle().into_converted(),
-                            },
-                            now(),
-                        ) {
+                        if let Err(e) = self
+                            .schedule(
+                                Task::SyncParent {
+                                    ca_handle: ca.convert(),
+                                    ca_version: 0,
+                                    parent: ta_handle().into_converted(),
+                                },
+                                now(),
+                            )
+                            .await
+                        {
                             error!(
                                 "Could not schedule sync from {} to {}. Restart Krill or run 'krillc bulk refresh'. Error was: {}",
                                 ca,

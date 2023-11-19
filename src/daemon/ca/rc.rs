@@ -198,7 +198,7 @@ impl ResourceClass {
 impl ResourceClass {
     /// Returns event details for receiving the certificate.
     #[allow(clippy::too_many_arguments)]
-    pub fn update_received_cert(
+    pub async fn update_received_cert(
         &self,
         handle: &CaHandle,
         rcvd_cert: ReceivedCert,
@@ -227,11 +227,12 @@ impl ResourceClass {
 
                     let current_key = CertifiedKey::create(rcvd_cert);
 
-                    let roa_updates = self.roas.update(all_routes, &current_key, config, signer)?;
-                    let aspa_updates = self.aspas.update(all_aspas, &current_key, config, signer)?;
+                    let roa_updates = self.roas.update(all_routes, &current_key, config, signer).await?;
+                    let aspa_updates = self.aspas.update(all_aspas, &current_key, config, signer).await?;
                     let bgpsec_updates = self
                         .bgpsec_certificates
-                        .update(all_bgpsecs, &current_key, config, signer)?;
+                        .update(all_bgpsecs, &current_key, config, signer)
+                        .await?;
 
                     let mut events = vec![CertAuthEvent::KeyPendingToActive {
                         resource_class_name: self.name.clone(),
@@ -262,16 +263,19 @@ impl ResourceClass {
                     Ok(events)
                 }
             }
-            KeyState::Active(current) => self.update_rcvd_cert_current(
-                handle,
-                current,
-                rcvd_cert,
-                all_routes,
-                all_aspas,
-                all_bgpsecs,
-                config,
-                signer,
-            ),
+            KeyState::Active(current) => {
+                self.update_rcvd_cert_current(
+                    handle,
+                    current,
+                    rcvd_cert,
+                    all_routes,
+                    all_aspas,
+                    all_bgpsecs,
+                    config,
+                    signer,
+                )
+                .await
+            }
             KeyState::RollPending(pending, current) => {
                 if rcvd_cert_ki == pending.key_id() {
                     let new_key = CertifiedKey::create(rcvd_cert);
@@ -290,6 +294,7 @@ impl ResourceClass {
                         config,
                         signer,
                     )
+                    .await
                 }
             }
             KeyState::RollNew(new, current) => {
@@ -310,6 +315,7 @@ impl ResourceClass {
                         config,
                         signer,
                     )
+                    .await
                 }
             }
             KeyState::RollOld(current, _old) => {
@@ -324,12 +330,13 @@ impl ResourceClass {
                     config,
                     signer,
                 )
+                .await
             }
         }
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn update_rcvd_cert_current(
+    async fn update_rcvd_cert_current(
         &self,
         handle: &CaHandle,
         current_key: &CurrentKey,
@@ -368,9 +375,11 @@ impl ResourceClass {
             let updated_key = CertifiedKey::create(rcvd_cert);
 
             // Shrink any overclaiming child certificates
-            let updates =
-                self.certificates
-                    .shrink_overclaiming(updated_key.incoming_cert(), &config.issuance_timing, signer)?;
+            let updates = self
+                .certificates
+                .shrink_overclaiming(updated_key.incoming_cert(), &config.issuance_timing, signer)
+                .await?;
+
             if !updates.is_empty() {
                 res.push(CertAuthEvent::ChildCertificatesUpdated {
                     resource_class_name: self.name.clone(),
@@ -381,7 +390,7 @@ impl ResourceClass {
             // Re-issue ROAs based on updated resources.
             // Note that route definitions will not have changed in this case, but the decision logic is all the same.
             {
-                let updates = self.roas.update(all_routes, &updated_key, config, signer)?;
+                let updates = self.roas.update(all_routes, &updated_key, config, signer).await?;
                 if !updates.is_empty() {
                     res.push(CertAuthEvent::RoasUpdated {
                         resource_class_name: self.name.clone(),
@@ -393,7 +402,7 @@ impl ResourceClass {
             // Re-issue ASPA objects based on updated resources.
             // Note that aspa definitions will not have changed in this case, but the decision logic is all the same.
             {
-                let updates = self.aspas.update(all_aspas, &updated_key, config, signer)?;
+                let updates = self.aspas.update(all_aspas, &updated_key, config, signer).await?;
                 if !updates.is_empty() {
                     res.push(CertAuthEvent::AspaObjectsUpdated {
                         resource_class_name: self.name.clone(),
@@ -407,7 +416,8 @@ impl ResourceClass {
             {
                 let updates = self
                     .bgpsec_certificates
-                    .update(all_bgpsecs, &updated_key, config, signer)?;
+                    .update(all_bgpsecs, &updated_key, config, signer)
+                    .await?;
                 if !updates.is_empty() {
                     res.push(CertAuthEvent::BgpSecCertificatesUpdated {
                         resource_class_name: self.name.clone(),
@@ -433,32 +443,35 @@ impl ResourceClass {
     /// can happen in corner cases where re-initialization of Krill as a child
     /// is done without proper revocation at the parent, or as is the case with
     /// ARIN - Krill is sometimes told to just drop all resources.
-    pub fn make_entitlement_events(
+    pub async fn make_entitlement_events(
         &self,
         handle: &CaHandle,
         entitlement: &ResourceClassEntitlements,
         base_repo: &RepoInfo,
         signer: &KrillSigner,
     ) -> KrillResult<Vec<CertAuthEvent>> {
-        self.key_state.make_entitlement_events(
-            handle,
-            self.name.clone(),
-            entitlement,
-            base_repo,
-            &self.name_space,
-            signer,
-        )
+        self.key_state
+            .make_entitlement_events(
+                handle,
+                self.name.clone(),
+                entitlement,
+                base_repo,
+                &self.name_space,
+                signer,
+            )
+            .await
     }
 
-    /// Request new certificates for all keys when the base repo changes.
-    pub fn make_request_events_new_repo(
-        &self,
-        base_repo: &RepoInfo,
-        signer: &KrillSigner,
-    ) -> KrillResult<Vec<CertAuthEvent>> {
-        self.key_state
-            .request_certs_new_repo(self.name.clone(), base_repo, &self.name_space, signer)
-    }
+    // /// Request new certificates for all keys when the base repo changes.
+    // pub async fn make_request_events_new_repo(
+    //     &self,
+    //     base_repo: &RepoInfo,
+    //     signer: &KrillSigner,
+    // ) -> KrillResult<Vec<CertAuthEvent>> {
+    //     self.key_state
+    //         .request_certs_new_repo(self.name.clone(), base_repo, &self.name_space, signer)
+    //         .await
+    // }
 
     /// This function returns all current certificate requests.
     pub fn cert_requests(&self) -> Vec<IssuanceRequest> {
@@ -479,8 +492,8 @@ impl ResourceClass {
 ///
 impl ResourceClass {
     /// Returns revocation requests for all certified keys in this resource class.
-    pub fn revoke(&self, signer: &KrillSigner) -> KrillResult<Vec<RevocationRequest>> {
-        self.key_state.revoke(self.parent_rc_name.clone(), signer)
+    pub async fn revoke(&self, signer: &KrillSigner) -> KrillResult<Vec<RevocationRequest>> {
+        self.key_state.revoke(self.parent_rc_name.clone(), signer).await
     }
 }
 
@@ -568,7 +581,7 @@ impl ResourceClass {
     }
 
     /// Initiate a key roll
-    pub fn keyroll_initiate(
+    pub async fn keyroll_initiate(
         &self,
         base_repo: &RepoInfo,
         duration: Duration,
@@ -578,17 +591,19 @@ impl ResourceClass {
             return Ok(vec![]);
         }
 
-        self.key_state.keyroll_initiate(
-            self.name.clone(),
-            self.parent_rc_name.clone(),
-            base_repo,
-            &self.name_space,
-            signer,
-        )
+        self.key_state
+            .keyroll_initiate(
+                self.name.clone(),
+                self.parent_rc_name.clone(),
+                base_repo,
+                &self.name_space,
+                signer,
+            )
+            .await
     }
 
     /// Activate a new key, if it's been longer than the staging period.
-    pub fn keyroll_activate(
+    pub async fn keyroll_activate(
         &self,
         staging_time: Duration,
         issuance_timing: &IssuanceTimingConfig,
@@ -598,13 +613,14 @@ impl ResourceClass {
             if staging_time > Duration::seconds(0) && self.last_key_change + staging_time > Time::now() {
                 Ok(vec![])
             } else {
-                let key_activated =
-                    self.key_state
-                        .keyroll_activate(self.name.clone(), self.parent_rc_name.clone(), signer)?;
+                let key_activated = self
+                    .key_state
+                    .keyroll_activate(self.name.clone(), self.parent_rc_name.clone(), signer)
+                    .await?;
 
                 let mut events = vec![key_activated];
 
-                let roa_updates = self.roas.renew(true, new_key, issuance_timing, signer)?;
+                let roa_updates = self.roas.renew(true, new_key, issuance_timing, signer).await?;
                 if !roa_updates.is_empty() {
                     let roas_updated = CertAuthEvent::RoasUpdated {
                         resource_class_name: self.name.clone(),
@@ -613,7 +629,7 @@ impl ResourceClass {
                     events.push(roas_updated);
                 }
 
-                let aspa_updates = self.aspas.renew(new_key, None, issuance_timing, signer)?;
+                let aspa_updates = self.aspas.renew(new_key, None, issuance_timing, signer).await?;
                 if !aspa_updates.is_empty() {
                     let aspas_updated = CertAuthEvent::AspaObjectsUpdated {
                         resource_class_name: self.name.clone(),
@@ -624,7 +640,9 @@ impl ResourceClass {
 
                 let cert_updates = self
                     .certificates
-                    .activate_key(new_key.incoming_cert(), issuance_timing, signer)?;
+                    .activate_key(new_key.incoming_cert(), issuance_timing, signer)
+                    .await?;
+
                 if !cert_updates.is_empty() {
                     let certs_updated = CertAuthEvent::ChildCertificatesUpdated {
                         resource_class_name: self.name.clone(),
@@ -633,7 +651,11 @@ impl ResourceClass {
                     events.push(certs_updated);
                 }
 
-                let bgpsec_updates = self.bgpsec_certificates.renew(new_key, None, issuance_timing, signer)?;
+                let bgpsec_updates = self
+                    .bgpsec_certificates
+                    .renew(new_key, None, issuance_timing, signer)
+                    .await?;
+
                 if !bgpsec_updates.is_empty() {
                     events.push(CertAuthEvent::BgpSecCertificatesUpdated {
                         resource_class_name: self.name.clone(),
@@ -671,7 +693,7 @@ impl ResourceClass {
     ///
     /// Note that this certificate still needs to be added to this RC by
     /// calling the update_certs function.
-    pub fn issue_cert(
+    pub async fn issue_cert(
         &self,
         csr: CsrInfo,
         child_resources: &ResourceSet,
@@ -690,7 +712,8 @@ impl ResourceClass {
             signing_cert,
             issuance_timing.new_child_cert_validity(),
             signer,
-        )?;
+        )
+        .await?;
 
         Ok(issued)
     }
@@ -729,36 +752,26 @@ impl ResourceClass {
 impl ResourceClass {
     /// Renew all ROAs under the current for which the not-after time closer
     /// than the given number of weeks
-    pub fn renew_roas(
+    pub async fn renew_roas(
         &self,
         force: bool,
         issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<RoaUpdates> {
         if let Ok(key) = self.get_current_key() {
-            self.roas.renew(force, key, issuance_timing, signer)
+            self.roas.renew(force, key, issuance_timing, signer).await
         } else {
             debug!("no ROAs to renew - resource class has no current key");
             Ok(RoaUpdates::default())
         }
     }
 
-    /// Publish all ROAs under the new key
-    pub fn active_key_roas(
-        &self,
-        issuance_timing: &IssuanceTimingConfig,
-        signer: &KrillSigner,
-    ) -> KrillResult<RoaUpdates> {
-        let key = self.get_new_key()?;
-        self.roas.renew(true, key, issuance_timing, signer)
-    }
-
     /// Updates the ROAs in accordance with the current authorizations
-    pub fn update_roas(&self, routes: &Routes, config: &Config, signer: &KrillSigner) -> KrillResult<RoaUpdates> {
+    pub async fn update_roas(&self, routes: &Routes, config: &Config, signer: &KrillSigner) -> KrillResult<RoaUpdates> {
         if let Ok(key) = self.get_current_key() {
             let resources = key.incoming_cert().resources();
             let routes = routes.filter(resources);
-            self.roas.update(&routes, key, config, signer)
+            self.roas.update(&routes, key, config, signer).await
         } else {
             debug!("no ROAs to update - resource class has no current key");
             Ok(RoaUpdates::default())
@@ -781,14 +794,14 @@ impl ResourceClass {
 impl ResourceClass {
     /// Renew all ASPA objects under the current for which the not-after time
     /// is closer than the given number of weeks
-    pub fn renew_aspas(
+    pub async fn renew_aspas(
         &self,
         issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<AspaObjectsUpdates> {
         if let Ok(key) = self.get_current_key() {
             let renew_threshold = Some(issuance_timing.new_aspa_issuance_threshold());
-            self.aspas.renew(key, renew_threshold, issuance_timing, signer)
+            self.aspas.renew(key, renew_threshold, issuance_timing, signer).await
         } else {
             debug!("no ASPAs to renew - resource class has no current key");
             Ok(AspaObjectsUpdates::default())
@@ -796,14 +809,14 @@ impl ResourceClass {
     }
 
     /// Updates the ASPA objects in accordance with the supplied definitions
-    pub fn update_aspas(
+    pub async fn update_aspas(
         &self,
         all_aspas: &AspaDefinitions,
         config: &Config,
         signer: &KrillSigner,
     ) -> KrillResult<AspaObjectsUpdates> {
         if let Ok(key) = self.get_current_key() {
-            self.aspas.update(all_aspas, key, config, signer)
+            self.aspas.update(all_aspas, key, config, signer).await
         } else {
             debug!("no ASPAs to update - resource class has no current key");
             Ok(AspaObjectsUpdates::default())
@@ -821,14 +834,14 @@ impl ResourceClass {
 impl ResourceClass {
     /// Updates the BGPSec certificates in accordance with the supplied definitions
     /// and the resources (still) held in this resource class
-    pub fn update_bgpsec_certs(
+    pub async fn update_bgpsec_certs(
         &self,
         definitions: &BgpSecDefinitions,
         config: &Config,
         signer: &KrillSigner,
     ) -> KrillResult<BgpSecCertificateUpdates> {
         if let Ok(key) = self.get_current_key() {
-            self.bgpsec_certificates.update(definitions, key, config, signer)
+            self.bgpsec_certificates.update(definitions, key, config, signer).await
         } else {
             debug!("no BGPSec certificates to update - resource class has no current key");
             Ok(BgpSecCertificateUpdates::default())
@@ -836,7 +849,7 @@ impl ResourceClass {
     }
 
     /// Renew BGPSec certificates that would expire otherwise.
-    pub fn renew_bgpsec_certs(
+    pub async fn renew_bgpsec_certs(
         &self,
         issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
@@ -846,6 +859,7 @@ impl ResourceClass {
 
             self.bgpsec_certificates
                 .renew(key, renew_threshold, issuance_timing, signer)
+                .await
         } else {
             debug!("no BGPSec certificates to renew - resource class has no current key");
             Ok(BgpSecCertificateUpdates::default())
@@ -865,7 +879,7 @@ impl ResourceClass {
     /// returns None if there is no overlap in resources
     /// between the desired resources on the RTA and this
     /// ResourceClass current resources.
-    pub fn create_rta_ee(
+    pub async fn create_rta_ee(
         &self,
         resources: &ResourceSet,
         validity: Validity,
@@ -880,8 +894,8 @@ impl ResourceClass {
             return Err(Error::custom("Resources for RTA not held"));
         }
 
-        let pub_key = signer.get_key_info(&key).map_err(Error::signer)?;
-        let ee = SignSupport::make_rta_ee_cert(resources, current, validity, pub_key, signer)?;
+        let pub_key = signer.get_key_info(&key).await.map_err(Error::signer)?;
+        let ee = SignSupport::make_rta_ee_cert(resources, current, validity, pub_key, signer).await?;
 
         Ok(ee)
     }

@@ -54,7 +54,7 @@ pub struct ConfigFileAuthProvider {
 }
 
 impl ConfigFileAuthProvider {
-    pub fn new(config: Arc<Config>, session_cache: Arc<LoginSessionCache>) -> KrillResult<Self> {
+    pub async fn new(config: Arc<Config>, session_cache: Arc<LoginSessionCache>) -> KrillResult<Self> {
         match &config.auth_users {
             Some(auth_users) => {
                 let mut users = HashMap::new();
@@ -62,7 +62,7 @@ impl ConfigFileAuthProvider {
                     users.insert(k.clone(), get_checked_config_user(k, v)?);
                 }
 
-                let session_key = Self::init_session_key(&config)?;
+                let session_key = Self::init_session_key(&config).await?;
 
                 Ok(ConfigFileAuthProvider {
                     users,
@@ -76,9 +76,9 @@ impl ConfigFileAuthProvider {
         }
     }
 
-    fn init_session_key(config: &Config) -> KrillResult<CryptState> {
+    async fn init_session_key(config: &Config) -> KrillResult<CryptState> {
         debug!("Initializing login session encryption key");
-        crypt::crypt_init(config)
+        crypt::crypt_init(config).await
     }
 
     /// Parse HTTP Basic Authorization header

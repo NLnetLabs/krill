@@ -27,7 +27,7 @@ use crate::{
 
 use super::UpgradeResult;
 
-pub fn migrate(mut config: Config, target_storage: Url) -> UpgradeResult<()> {
+pub async fn migrate(mut config: Config, target_storage: Url) -> UpgradeResult<()> {
     // Copy the source data from config unmodified into the target_storage
     info!("-----------------------------------------------------------");
     info!("                 Krill Data Migration");
@@ -41,7 +41,7 @@ pub fn migrate(mut config: Config, target_storage: Url) -> UpgradeResult<()> {
     info!("-----------------------------------------------------------");
     info!("");
 
-    copy_data_for_migration(&config, &target_storage)?;
+    copy_data_for_migration(&config, &target_storage).await?;
 
     // Update the config file with the new target_storage
     // and perform a normal data migration - the source data
@@ -57,8 +57,10 @@ pub fn migrate(mut config: Config, target_storage: Url) -> UpgradeResult<()> {
         crate::upgrades::UpgradeMode::PrepareToFinalise,
         &config,
         &properties_manager,
-    )? {
-        finalise_data_migration(upgrade.versions(), &config, &properties_manager)?;
+    )
+    .await?
+    {
+        finalise_data_migration(upgrade.versions(), &config, &properties_manager).await?;
     }
 
     info!("-----------------------------------------------------------");
@@ -77,34 +79,34 @@ pub fn migrate(mut config: Config, target_storage: Url) -> UpgradeResult<()> {
     // That said, it's a pretty easy check to perform and it kind of makes
     // sense to do it to now, even if it would be to point users at deeper
     // source data issues.
-    verify_target_data(&config)
+    verify_target_data(&config).await
 }
 
-fn verify_target_data(config: &Config) -> UpgradeResult<()> {
-    check_agg_store::<Properties>(config, PROPERTIES_NS, "Properties")?;
-    check_agg_store::<SignerInfo>(config, SIGNERS_NS, "Signer")?;
+async fn verify_target_data(config: &Config) -> UpgradeResult<()> {
+    check_agg_store::<Properties>(config, PROPERTIES_NS, "Properties").await?;
+    check_agg_store::<SignerInfo>(config, SIGNERS_NS, "Signer").await?;
 
-    let ca_store = check_agg_store::<CertAuth>(config, CASERVER_NS, "CAs")?;
-    check_ca_objects(config, ca_store)?;
+    let ca_store = check_agg_store::<CertAuth>(config, CASERVER_NS, "CAs").await?;
+    check_ca_objects(config, ca_store).await?;
 
-    check_agg_store::<RepositoryAccess>(config, PUBSERVER_NS, "Publication Server Access")?;
-    check_wal_store::<RepositoryContent>(config, PUBSERVER_CONTENT_NS, "Publication Server Objects")?;
-    check_agg_store::<TrustAnchorProxy>(config, TA_PROXY_SERVER_NS, "TA Proxy")?;
-    check_agg_store::<TrustAnchorSigner>(config, TA_SIGNER_SERVER_NS, "TA Signer")?;
+    check_agg_store::<RepositoryAccess>(config, PUBSERVER_NS, "Publication Server Access").await?;
+    check_wal_store::<RepositoryContent>(config, PUBSERVER_CONTENT_NS, "Publication Server Objects").await?;
+    check_agg_store::<TrustAnchorProxy>(config, TA_PROXY_SERVER_NS, "TA Proxy").await?;
+    check_agg_store::<TrustAnchorSigner>(config, TA_SIGNER_SERVER_NS, "TA Signer").await?;
 
-    check_openssl_keys(config)?;
+    check_openssl_keys(config).await?;
 
     Ok(())
 }
 
-fn check_openssl_keys(config: &Config) -> UpgradeResult<()> {
+async fn check_openssl_keys(config: &Config) -> UpgradeResult<()> {
     info!("");
     info!("Verify: OpenSSL keys");
     let open_ssl_signer = OpenSslSigner::build(&config.storage_uri, "test", None)
         .map_err(|e| UpgradeError::Custom(format!("Cannot create openssl signer: {}", e)))?;
     let keys_key_store = KeyValueStore::create(&config.storage_uri, KEYS_NS)?;
 
-    for key in keys_key_store.keys(&Scope::global(), "")? {
+    for key in keys_key_store.keys(&Scope::global(), "").await? {
         let key_id = KeyIdentifier::from_str(key.name().as_str()).map_err(|e| {
             UpgradeError::Custom(format!(
                 "Cannot parse as key identifier: {}. Error: {}",
@@ -112,7 +114,7 @@ fn check_openssl_keys(config: &Config) -> UpgradeResult<()> {
                 e
             ))
         })?;
-        open_ssl_signer.get_key_info(&key_id).map_err(|e| {
+        open_ssl_signer.get_key_info(&key_id).await.map_err(|e| {
             UpgradeError::Custom(format!(
                 "Cannot get key with key_id {} from openssl keystore. Error: {}",
                 key_id, e
@@ -124,12 +126,16 @@ fn check_openssl_keys(config: &Config) -> UpgradeResult<()> {
     Ok(())
 }
 
-fn check_agg_store<A: Aggregate>(config: &Config, ns: &Namespace, name: &str) -> UpgradeResult<AggregateStore<A>> {
+async fn check_agg_store<A: Aggregate>(
+    config: &Config,
+    ns: &Namespace,
+    name: &str,
+) -> UpgradeResult<AggregateStore<A>> {
     info!("");
     info!("Verify: {name}");
     let store: AggregateStore<A> = AggregateStore::create(&config.storage_uri, ns, false)?;
-    if !store.list()?.is_empty() {
-        store.warm()?;
+    if !store.list().await?.is_empty() {
+        store.warm().await?;
         info!("Ok");
     } else {
         info!("not applicable");
@@ -137,12 +143,12 @@ fn check_agg_store<A: Aggregate>(config: &Config, ns: &Namespace, name: &str) ->
     Ok(store)
 }
 
-fn check_wal_store<W: WalSupport>(config: &Config, ns: &Namespace, name: &str) -> UpgradeResult<()> {
+async fn check_wal_store<W: WalSupport>(config: &Config, ns: &Namespace, name: &str) -> UpgradeResult<()> {
     info!("");
     info!("Verify: {name}");
     let store: WalStore<W> = WalStore::create(&config.storage_uri, ns)?;
-    if !store.list()?.is_empty() {
-        store.warm()?;
+    if !store.list().await?.is_empty() {
+        store.warm().await?;
         info!("Ok");
     } else {
         info!("not applicable");
@@ -150,7 +156,7 @@ fn check_wal_store<W: WalSupport>(config: &Config, ns: &Namespace, name: &str) -
     Ok(())
 }
 
-fn check_ca_objects(config: &Config, ca_store: AggregateStore<CertAuth>) -> UpgradeResult<()> {
+async fn check_ca_objects(config: &Config, ca_store: AggregateStore<CertAuth>) -> UpgradeResult<()> {
     // make a dummy Signer to use for the CaObjectsStore - it won't be used,
     // but it's needed for construction.
     let probe_interval = std::time::Duration::from_secs(config.signer_probe_retry_seconds);
@@ -163,16 +169,16 @@ fn check_ca_objects(config: &Config, ca_store: AggregateStore<CertAuth>) -> Upgr
 
     let ca_objects_store = CaObjectsStore::create(&config.storage_uri, config.issuance_timing.clone(), signer)?;
 
-    let cas_with_objects = ca_objects_store.cas()?;
+    let cas_with_objects = ca_objects_store.cas().await?;
 
     for ca in &cas_with_objects {
-        ca_objects_store.ca_objects(ca)?;
-        if !ca_store.has(ca)? {
+        ca_objects_store.ca_objects(ca).await?;
+        if !ca_store.has(ca).await? {
             warn!("  Objects found for CA '{}' which no longer exists.", ca);
         }
     }
 
-    for ca in ca_store.list()? {
+    for ca in ca_store.list().await? {
         if !cas_with_objects.contains(&ca) {
             debug!("  CA '{}' did not have any CA objects yet.", ca);
         }
@@ -181,7 +187,7 @@ fn check_ca_objects(config: &Config, ca_store: AggregateStore<CertAuth>) -> Upgr
     Ok(())
 }
 
-fn copy_data_for_migration(config: &Config, target_storage: &Url) -> UpgradeResult<()> {
+async fn copy_data_for_migration(config: &Config, target_storage: &Url) -> UpgradeResult<()> {
     for ns in &[
         "ca_objects",
         "cas",
@@ -196,9 +202,9 @@ fn copy_data_for_migration(config: &Config, target_storage: &Url) -> UpgradeResu
         let namespace = Namespace::parse(ns)
             .map_err(|_| UpgradeError::Custom(format!("Cannot parse namespace '{}'. This is a bug.", ns)))?;
         let source_kv_store = KeyValueStore::create(&config.storage_uri, namespace)?;
-        if !source_kv_store.is_empty()? {
+        if !source_kv_store.is_empty().await? {
             let target_kv_store = KeyValueStore::create(target_storage, namespace)?;
-            target_kv_store.import(&source_kv_store)?;
+            target_kv_store.import(&source_kv_store).await?;
         }
     }
 
@@ -216,8 +222,8 @@ pub mod tests {
 
     use super::*;
 
-    #[test]
-    fn test_data_migration() {
+    #[tokio::test]
+    async fn test_data_migration() {
         // Create a config file that uses test data for its storage_uri
         let test_sources_base = "test-resources/migrations/v0_9_5/";
         let test_sources_url = Url::parse(&format!("local://{}", test_sources_base)).unwrap();
@@ -231,6 +237,6 @@ pub mod tests {
         // Create an in-memory target store to migrate to
         let target_store = test::mem_storage();
 
-        migrate(config, target_store).unwrap();
+        migrate(config, target_store).await.unwrap();
     }
 }

@@ -3,6 +3,7 @@
 use std::{borrow::BorrowMut, collections::HashMap, str::FromStr, sync::Arc};
 
 use chrono::Duration;
+use futures_util::Future;
 use rpki::{
     ca::{idexchange::CaHandle, provisioning::ResourceClassName, publication::Base64},
     crypto::{DigestAlgorithm, KeyIdentifier},
@@ -76,15 +77,16 @@ impl CaObjectsStore {
 }
 
 /// # Process new objects as they are being produced
+#[async_trait::async_trait]
 impl PreSaveEventListener<CertAuth> for CaObjectsStore {
-    fn listen(&self, ca: &CertAuth, events: &[CertAuthEvent]) -> KrillResult<()> {
+    async fn listen(&self, ca: &CertAuth, events: &[CertAuthEvent]) -> KrillResult<()> {
         // Note that the `CertAuth` which is passed in has already been
         // updated with the state changes contained in the event.
 
         let timing = &self.issuance_timing;
         let signer = &self.signer;
 
-        self.with_ca_objects(ca.handle(), |objects| {
+        self.with_ca_objects(ca.handle(), |mut objects| async move {
             let mut force_reissue = false;
 
             for event in events {
@@ -121,13 +123,17 @@ impl PreSaveEventListener<CertAuth> for CaObjectsStore {
                         resource_class_name,
                         current_key,
                     } => {
-                        objects.add_class(resource_class_name, current_key, timing, signer)?;
+                        objects
+                            .add_class(resource_class_name, current_key, timing, signer)
+                            .await?;
                     }
                     super::CertAuthEvent::KeyPendingToNew {
                         resource_class_name,
                         new_key,
                     } => {
-                        objects.keyroll_stage(resource_class_name, new_key, timing, signer)?;
+                        objects
+                            .keyroll_stage(resource_class_name, new_key, timing, signer)
+                            .await?;
                     }
                     super::CertAuthEvent::KeyRollActivated {
                         resource_class_name, ..
@@ -162,9 +168,10 @@ impl PreSaveEventListener<CertAuth> for CaObjectsStore {
                     _ => {}
                 }
             }
-            objects.re_issue(force_reissue, timing, signer)?;
-            Ok(())
+            objects.re_issue(force_reissue, timing, signer).await?;
+            Ok(objects)
         })
+        .await
     }
 }
 
@@ -173,10 +180,11 @@ impl CaObjectsStore {
         Key::new_global(SegmentBuf::parse_lossy(&format!("{}.json", ca))) // ca should always be a valid Segment
     }
 
-    pub fn cas(&self) -> KrillResult<Vec<CaHandle>> {
+    pub async fn cas(&self) -> KrillResult<Vec<CaHandle>> {
         let cas = self
             .store
-            .keys(&Scope::global(), ".json")?
+            .keys(&Scope::global(), ".json")
+            .await?
             .iter()
             .flat_map(|k| {
                 // Only add entries for which the first part can be parsed as a handle
@@ -192,24 +200,25 @@ impl CaObjectsStore {
         Ok(cas)
     }
 
-    pub fn remove_ca(&self, ca: &CaHandle) -> KrillResult<()> {
+    pub async fn remove_ca(&self, ca: &CaHandle) -> KrillResult<()> {
         let ca_key = Self::key(ca);
         self.store
-            .execute(&Scope::global(), |kv| {
+            .execute(&Scope::global(), |kv| async move {
                 if kv.has(&ca_key)? {
                     kv.delete(&ca_key)
                 } else {
                     Ok(())
                 }
             })
+            .await
             .map_err(Error::KeyValueError)
     }
 
     /// Get objects for this CA, create a new empty CaObjects if there is none.
-    pub fn ca_objects(&self, ca: &CaHandle) -> KrillResult<CaObjects> {
+    pub async fn ca_objects(&self, ca: &CaHandle) -> KrillResult<CaObjects> {
         let key = Self::key(ca);
 
-        match self.store.get(&key).map_err(Error::KeyValueError)? {
+        match self.store.get(&key).await.map_err(Error::KeyValueError)? {
             None => {
                 let objects = CaObjects::new(ca.clone(), None, HashMap::new(), vec![]);
                 Ok(objects)
@@ -218,44 +227,56 @@ impl CaObjectsStore {
         }
     }
 
-    /// Perform an action (closure) on a mutable instance of the CaObjects for a
+    /// Perform an action (async closure) on a mutable instance of the CaObjects for a
     /// CA. If the CA did not have any CaObjects yet, one will be created. The
-    /// closure is executed within a write lock.
-    pub fn with_ca_objects<F>(&self, ca: &CaHandle, mut op: F) -> KrillResult<()>
+    /// closure is executed within a write lock and needs to return the CaObjects
+    /// whether it's actually updated or not.
+    pub async fn with_ca_objects<F, R>(&self, ca: &CaHandle, op: F) -> KrillResult<()>
     where
-        F: FnMut(&mut CaObjects) -> KrillResult<()>,
+        F: FnOnce(CaObjects) -> R,
+        R: Future<Output = KrillResult<CaObjects>>,
     {
         self.store
-            .execute(&Scope::global(), |kv| {
+            .execute(&Scope::global(), |kv| async move {
                 let key = Self::key(ca);
 
-                let mut objects: CaObjects = if let Some(value) = kv.get(&key)? {
+                let objects: CaObjects = if let Some(value) = kv.get(&key)? {
                     serde_json::from_value(value)?
                 } else {
                     CaObjects::new(ca.clone(), None, HashMap::new(), vec![])
                 };
 
-                match op(&mut objects) {
+                match op(objects).await {
                     Err(e) => Ok(Err(e)),
-                    Ok(()) => {
+                    Ok(objects) => {
                         let value = serde_json::to_value(&objects)?;
                         kv.store(&key, value)?;
                         Ok(Ok(()))
                     }
                 }
             })
+            .await
             .map_err(Error::KeyValueError)?
     }
 
-    // Re-issue MFT and CRL for all CAs *if needed*, returns all CAs which were updated.
-    pub fn reissue_if_needed(&self, force: bool, ca_handle: &CaHandle) -> KrillResult<bool> {
+    // Re-issue MFT and CRL for all CAs *if needed*.
+    pub async fn reissue_if_needed(&self, force: bool, ca_handle: &CaHandle) -> KrillResult<bool> {
         debug!("Re-issue for CA {} using force: {}", ca_handle, force);
-        let mut re_issued = false;
-        self.with_ca_objects(ca_handle, |objects| {
-            re_issued = objects.re_issue(force, &self.issuance_timing, &self.signer)?;
-            Ok(())
-        })?;
-        Ok(re_issued)
+        let is_required = force
+            || self
+                .ca_objects(ca_handle)
+                .await?
+                .re_issue_required(&self.issuance_timing);
+
+        if is_required {
+            self.with_ca_objects(ca_handle, |mut objects| async move {
+                objects.re_issue(force, &self.issuance_timing, &self.signer).await?;
+                Ok(objects)
+            })
+            .await?;
+        }
+
+        Ok(is_required)
     }
 }
 
@@ -353,8 +374,8 @@ impl CaObjects {
         &self.deprecated_repos
     }
 
-    pub fn deprecated_repo_remove(&mut self, to_remove: &RepositoryContact) {
-        self.deprecated_repos.retain(|current| current.contact() != to_remove);
+    pub fn deprecated_repo_remove(&mut self, to_remove: RepositoryContact) {
+        self.deprecated_repos.retain(|current| current.contact() != &to_remove);
     }
 
     pub fn deprecated_repo_inc_clean_attempts(&mut self, contact: &RepositoryContact) {
@@ -366,7 +387,7 @@ impl CaObjects {
     }
 
     /// Add a new resource class, this returns an error in case the class already exists.
-    fn add_class(
+    async fn add_class(
         &mut self,
         class_name: &ResourceClassName,
         key: &CertifiedKey,
@@ -376,8 +397,10 @@ impl CaObjects {
         if self.classes.contains_key(class_name) {
             Err(Error::publishing("Duplicate resource class"))
         } else {
-            self.classes
-                .insert(class_name.clone(), ResourceClassObjects::create(key, timing, signer)?);
+            self.classes.insert(
+                class_name.clone(),
+                ResourceClassObjects::create(key, timing, signer).await?,
+            );
             Ok(())
         }
     }
@@ -400,14 +423,14 @@ impl CaObjects {
 
     // Add a staging key to the set, this will fail in case the class is missing, or in case
     // the class is not in state 'current'.
-    fn keyroll_stage(
+    async fn keyroll_stage(
         &mut self,
         rcn: &ResourceClassName,
         key: &CertifiedKey,
         timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<()> {
-        self.get_class_mut(rcn)?.keyroll_stage(key, timing, signer)
+        self.get_class_mut(rcn)?.keyroll_stage(key, timing, signer).await
     }
 
     // Activates the keyset by retiring the current set, and promoting
@@ -460,18 +483,29 @@ impl CaObjects {
     /// in case any of the content changed. Otherwise re-issuance will only happen if it's
     /// close to the next update time, or the AIA has changed.. the latter may happen if
     /// the parent migrated repositories.
-    fn re_issue(&mut self, force: bool, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<bool> {
+    async fn re_issue(
+        &mut self,
+        force: bool,
+        timing: &IssuanceTimingConfig,
+        signer: &KrillSigner,
+    ) -> KrillResult<bool> {
         let hours = timing.publish_hours_before_next();
         let mut required = false;
 
         for (_, resource_class_objects) in self.classes.iter_mut() {
             if force || resource_class_objects.requires_re_issuance(hours) {
                 required = true;
-                resource_class_objects.reissue(timing, signer)?;
+                resource_class_objects.reissue(timing, signer).await?;
             }
         }
 
         Ok(required)
+    }
+
+    /// Checks if reissuance is required for any resource class.
+    fn re_issue_required(&self, timing: &IssuanceTimingConfig) -> bool {
+        let hours = timing.publish_hours_before_next();
+        self.classes.values().any(|rco| rco.requires_re_issuance(hours))
     }
 
     // Update the repository.
@@ -528,15 +562,15 @@ impl ResourceClassObjects {
         }
     }
 
-    fn create(key: &CertifiedKey, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<Self> {
-        let current_set = KeyObjectSet::create(key, timing, signer)?;
+    async fn create(key: &CertifiedKey, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<Self> {
+        let current_set = KeyObjectSet::create(key, timing, signer).await?;
 
         Ok(ResourceClassObjects {
             keys: ResourceClassKeyState::Current(CurrentKeyState { current_set }),
         })
     }
 
-    fn keyroll_stage(
+    async fn keyroll_stage(
         &mut self,
         key: &CertifiedKey,
         timing: &IssuanceTimingConfig,
@@ -547,7 +581,7 @@ impl ResourceClassObjects {
             _ => return Err(Error::publishing("published resource class in the wrong key state")),
         };
 
-        let staging_set = KeyObjectSet::create(key, timing, signer)?;
+        let staging_set = KeyObjectSet::create(key, timing, signer).await?;
 
         self.keys = ResourceClassKeyState::Staging(StagingKeyState {
             staging_set,
@@ -630,16 +664,16 @@ impl ResourceClassObjects {
         }
     }
 
-    fn reissue(&mut self, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<()> {
+    async fn reissue(&mut self, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<()> {
         match self.keys.borrow_mut() {
-            ResourceClassKeyState::Current(state) => state.current_set.reissue(timing, signer),
+            ResourceClassKeyState::Current(state) => state.current_set.reissue(timing, signer).await,
             ResourceClassKeyState::Staging(state) => {
-                state.staging_set.reissue(timing, signer)?;
-                state.current_set.reissue(timing, signer)
+                state.staging_set.reissue(timing, signer).await?;
+                state.current_set.reissue(timing, signer).await
             }
             ResourceClassKeyState::Old(state) => {
-                state.old_set.reissue(timing, signer)?;
-                state.current_set.reissue(timing, signer)
+                state.old_set.reissue(timing, signer).await?;
+                state.current_set.reissue(timing, signer).await
             }
         }
     }
@@ -861,7 +895,7 @@ impl KeyObjectSet {
         }
     }
 
-    fn create(key: &CertifiedKey, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<Self> {
+    async fn create(key: &CertifiedKey, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<Self> {
         let signing_cert = key.incoming_cert().clone();
 
         let signing_key = signing_cert.key_identifier();
@@ -869,12 +903,13 @@ impl KeyObjectSet {
         let revocations = Revocations::default();
         let revision = ObjectSetRevision::create(timing.publish_next());
 
-        let crl = CrlBuilder::build(signing_key, issuer, &revocations, revision, signer)?;
+        let crl = CrlBuilder::build(signing_key, issuer, &revocations, revision, signer).await?;
         let published_objects = HashMap::new();
 
         let manifest = ManifestBuilder::new(revision)
             .with_objects(&crl, &published_objects)
             .build_new_mft(&signing_cert, signer)
+            .await
             .map(|m| m.into())?;
 
         Ok(KeyObjectSet {
@@ -1009,7 +1044,7 @@ impl KeyObjectSet {
         }
     }
 
-    fn reissue(&mut self, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<()> {
+    async fn reissue(&mut self, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<()> {
         debug!(
             "Will re-issue for key: {}. Current revision: {} and next update: {}",
             self.signing_cert.key_identifier(),
@@ -1023,11 +1058,12 @@ impl KeyObjectSet {
         let signing_key = self.signing_cert.key_identifier();
         let issuer = self.signing_cert.subject().clone();
 
-        self.crl = CrlBuilder::build(signing_key, issuer, &self.revocations, self.revision, signer)?;
+        self.crl = CrlBuilder::build(signing_key, issuer, &self.revocations, self.revision, signer).await?;
 
         self.manifest = ManifestBuilder::new(self.revision)
             .with_objects(&self.crl, &self.published_objects)
             .build_new_mft(&self.signing_cert, signer)
+            .await
             .map(|m| m.into())?;
 
         Ok(())
@@ -1224,7 +1260,7 @@ impl PublishedObject {
 pub struct CrlBuilder {}
 
 impl CrlBuilder {
-    pub fn build(
+    pub async fn build(
         aki: KeyIdentifier,
         issuer: Name,
         revocations: &Revocations,
@@ -1243,7 +1279,7 @@ impl CrlBuilder {
             serial_number,
         );
 
-        let crl = signer.sign_crl(crl, &aki)?;
+        let crl = signer.sign_crl(crl, &aki).await?;
 
         Ok(crl.into())
     }
@@ -1280,7 +1316,7 @@ impl ManifestBuilder {
         self
     }
 
-    pub fn build_new_mft(self, signing_cert: &ReceivedCert, signer: &KrillSigner) -> KrillResult<Manifest> {
+    pub async fn build_new_mft(self, signing_cert: &ReceivedCert, signer: &KrillSigner) -> KrillResult<Manifest> {
         let mft_uri = signing_cert.mft_uri();
         let crl_uri = signing_cert.crl_uri();
 
@@ -1299,7 +1335,7 @@ impl ManifestBuilder {
                 entries,
             );
             let mut object_builder = SignedObjectBuilder::new(
-                signer.random_serial()?,
+                signer.random_serial().await?,
                 Validity::new(self.revision.this_update, self.revision.next_update),
                 crl_uri,
                 aia.clone(),
@@ -1308,7 +1344,7 @@ impl ManifestBuilder {
             object_builder.set_issuer(Some(signing_cert.subject().clone()));
             object_builder.set_signing_time(Some(Time::now()));
 
-            signer.sign_manifest(mft_content, object_builder, &aki)?
+            signer.sign_manifest(mft_content, object_builder, &aki).await?
         };
 
         Ok(manifest)
