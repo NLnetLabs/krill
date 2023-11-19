@@ -128,6 +128,7 @@ pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
 
     // Call upgrade, this will only do actual work if needed.
     let upgrade_report = prepare_upgrade_data_migrations(UpgradeMode::PrepareToFinalise, &config, &properties_manager)
+        .await
         .map_err(|e| match e {
             UpgradeError::CodeOlderThanData(_,_) => {
                 Error::Custom(e.to_string())
@@ -136,7 +137,7 @@ pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
         })?;
 
     if let Some(report) = &upgrade_report {
-        finalise_data_migration(report.versions(), &config, &properties_manager).map_err(|e| {
+        finalise_data_migration(report.versions(), &config, &properties_manager).await.map_err(|e| {
                 Error::Custom(format!(
                     "Finishing prepared migration failed unexpectedly. Please check your data {}. If you find folders named 'arch-cas-{}' or 'arch-pubd-{}' there, then rename them to 'cas' and 'pubd' respectively and re-install krill version {}. Underlying error was: {}",
                     config.storage_uri,
@@ -172,7 +173,9 @@ pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
 
     // Create self-signed HTTPS cert if configured and not generated earlier.
     if config.https_mode().is_generate_https_cert() {
-        tls_keys::create_key_cert_if_needed(config.tls_keys_dir()).map_err(|e| Error::HttpsSetup(format!("{}", e)))?;
+        tls_keys::create_key_cert_if_needed(config.tls_keys_dir())
+            .await
+            .map_err(|e| Error::HttpsSetup(format!("{}", e)))?;
     }
 
     // Start a hyper server for the configured socket.
@@ -811,7 +814,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
             }
         }
 
-        if let Ok(stats) = server.repo_stats() {
+        if let Ok(stats) = server.repo_stats().await {
             let publishers = stats.get_publishers();
 
             res.push('\n');
@@ -895,7 +898,7 @@ pub async fn rfc8181(req: Request) -> RoutingResult {
             Err(e) => return render_error(e),
         };
 
-        match state.rfc8181(publisher, bytes) {
+        match state.rfc8181(publisher, bytes).await {
             Ok(bytes) => Ok(HttpResponse::rfc8181(bytes.to_vec())),
             Err(e) => render_error(e),
         }
@@ -966,7 +969,7 @@ async fn stats(req: Request) -> RoutingResult {
     match *req.method() {
         Method::GET => match req.path().full() {
             "/stats/info" => render_json(req.state().server_info()),
-            "/stats/repo" => render_json_res(req.state().repo_stats()),
+            "/stats/repo" => render_json_res(req.state().repo_stats().await),
             "/stats/cas" => render_json_res(req.state().cas_stats().await),
             _ => Err(req),
         },
@@ -1245,7 +1248,7 @@ async fn api_ca_sync(req: Request, path: &mut RequestPath, ca: CaHandle) -> Rout
         if req.is_post() {
             match path.next() {
                 Some("parents") => render_empty_res(req.state().cas_refresh_single(ca).await),
-                Some("repo") => render_empty_res(req.state().cas_repo_sync_single(&ca)),
+                Some("repo") => render_empty_res(req.state().cas_repo_sync_single(&ca).await),
                 _ => render_unknown_method(),
             }
         } else {
@@ -1262,7 +1265,7 @@ async fn api_publication_server(req: Request, path: &mut RequestPath) -> Routing
                 let state = req.state.clone();
 
                 match req.json().await {
-                    Ok(criteria) => render_empty_res(state.delete_matching_files(criteria)),
+                    Ok(criteria) => render_empty_res(state.delete_matching_files(criteria).await),
                     Err(e) => render_error(e),
                 }
             }
@@ -1273,15 +1276,15 @@ async fn api_publication_server(req: Request, path: &mut RequestPath) -> Routing
             Method::POST => {
                 let state = req.state.clone();
                 match req.json().await {
-                    Ok(uris) => render_empty_res(state.repository_init(uris)),
+                    Ok(uris) => render_empty_res(state.repository_init(uris).await),
                     Err(e) => render_error(e),
                 }
             }
-            Method::DELETE => render_empty_res(req.state.repository_clear()),
+            Method::DELETE => render_empty_res(req.state.repository_clear().await),
             _ => render_unknown_method(),
         },
         Some("session_reset") => match *req.method() {
-            Method::POST => render_empty_res(req.state().repository_session_reset()),
+            Method::POST => render_empty_res(req.state().repository_session_reset().await),
             _ => render_unknown_method(),
         },
         _ => render_unknown_method(),
@@ -1323,6 +1326,7 @@ pub async fn api_stale_publishers(req: Request, seconds: Option<&str>) -> Routin
             Ok(seconds) => render_json_res(
                 req.state()
                     .repo_stats()
+                    .await
                     .map(|stats| PublisherList::build(&stats.stale_publishers(seconds))),
             ),
             Err(_) => render_error(Error::ApiInvalidSeconds),
@@ -1336,6 +1340,7 @@ pub async fn api_list_pbl(req: Request) -> RoutingResult {
         render_json_res(
             req.state()
                 .publishers()
+                .await
                 .map(|publishers| PublisherList::build(&publishers)),
         )
     })
@@ -1347,7 +1352,7 @@ pub async fn api_add_pbl(req: Request) -> RoutingResult {
         let actor = req.actor();
         let server = req.state().clone();
         match req.json().await {
-            Ok(pbl) => render_json_res(server.add_publisher(pbl, &actor)),
+            Ok(pbl) => render_json_res(server.add_publisher(pbl, &actor).await),
             Err(e) => render_error(e),
         }
     })
@@ -1359,7 +1364,7 @@ pub async fn api_add_pbl(req: Request) -> RoutingResult {
 pub async fn api_remove_pbl(req: Request, publisher: PublisherHandle) -> RoutingResult {
     aa!(req, Permission::PUB_DELETE, {
         let actor = req.actor();
-        render_empty_res(req.state().remove_publisher(publisher, &actor))
+        render_empty_res(req.state().remove_publisher(publisher, &actor).await)
     })
 }
 
@@ -1369,7 +1374,7 @@ pub async fn api_show_pbl(req: Request, publisher: PublisherHandle) -> RoutingRe
     aa!(
         req,
         Permission::PUB_READ,
-        render_json_res(req.state().get_publisher(&publisher))
+        render_json_res(req.state().get_publisher(&publisher).await)
     )
 }
 
@@ -1399,7 +1404,7 @@ async fn repository_response(
     req: &Request,
     publisher: &PublisherHandle,
 ) -> Result<idexchange::RepositoryResponse, Error> {
-    req.state().repository_response(publisher)
+    req.state().repository_response(publisher).await
 }
 
 pub async fn api_ca_add_child(req: Request, ca: CaHandle) -> RoutingResult {
@@ -1528,7 +1533,7 @@ async fn api_ca_issues(req: Request, ca: CaHandle) -> RoutingResult {
 async fn api_cas_list(req: Request) -> RoutingResult {
     aa!(req, Permission::CA_LIST, {
         let actor = req.actor();
-        render_json_res(req.state().ca_list(&actor))
+        render_json_res(req.state().ca_list(&actor).await)
     })
 }
 
@@ -1537,7 +1542,7 @@ pub async fn api_ca_init(req: Request) -> RoutingResult {
         let state = req.state().clone();
 
         match req.json().await {
-            Ok(ca_init) => render_empty_res(state.ca_init(ca_init)),
+            Ok(ca_init) => render_empty_res(state.ca_init(ca_init).await),
             Err(e) => render_error(e),
         }
     })
@@ -1723,7 +1728,7 @@ async fn api_ca_command_details(req: Request, path: &mut RequestPath, ca: CaHand
     match path.path_arg() {
         Some(key) => match *req.method() {
             Method::GET => aa!(req, Permission::CA_READ, Handle::from(&ca), {
-                match req.state().ca_command_details(&ca, key) {
+                match req.state().ca_command_details(&ca, key).await {
                     Ok(details) => render_json(details),
                     Err(e) => match e {
                         Error::AggregateStoreError(AggregateStoreError::UnknownCommand(_, _)) => {
@@ -2096,7 +2101,7 @@ async fn api_resync_all(req: Request) -> RoutingResult {
     match *req.method() {
         Method::POST => aa!(req, Permission::CA_ADMIN, {
             let actor = req.actor();
-            render_empty_res(req.state().cas_repo_sync_all(&actor))
+            render_empty_res(req.state().cas_repo_sync_all(&actor).await)
         }),
         _ => render_unknown_method(),
     }
@@ -2116,7 +2121,7 @@ async fn api_refresh_all(req: Request) -> RoutingResult {
 async fn api_suspend_all(req: Request) -> RoutingResult {
     match *req.method() {
         Method::POST => aa!(req, Permission::CA_ADMIN, {
-            render_empty_res(req.state().cas_schedule_suspend_all())
+            render_empty_res(req.state().cas_schedule_suspend_all().await)
         }),
         _ => render_unknown_method(),
     }

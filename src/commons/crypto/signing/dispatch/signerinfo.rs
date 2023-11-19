@@ -265,6 +265,7 @@ pub struct SignerInfo {
     keys: HashMap<KeyIdentifier, String>,
 }
 
+#[async_trait::async_trait]
 impl Aggregate for SignerInfo {
     type Command = SignerInfoCommand;
     type StorableCommandDetails = SignerInfoCommandDetails;
@@ -311,7 +312,7 @@ impl Aggregate for SignerInfo {
         }
     }
 
-    fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Event>, Self::Error> {
+    async fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Event>, Self::Error> {
         Ok(match command.into_details() {
             SignerInfoCommandDetails::Init => {
                 // This can't happen really.. we would never send this command
@@ -347,7 +348,7 @@ impl Aggregate for SignerInfo {
         })
     }
 
-    fn process_init_command(command: SignerInfoInitCommand) -> Result<SignerInfoInitEvent, Self::Error> {
+    async fn process_init_command(command: SignerInfoInitCommand) -> Result<SignerInfoInitEvent, Self::Error> {
         let details = command.into_details();
         Ok(SignerInfoInitEvent {
             signer_name: details.signer_name,
@@ -403,7 +404,7 @@ impl SignerMapper {
     ///   `change_signer_info()`. This could be useful for example if the signer backend retains its content but is
     ///   upgraded to a newer version, we can then update the info string in the signer store and the upgrade will be
     ///   visible in the history of the store.
-    pub fn add_signer(
+    pub async fn add_signer(
         &self,
         signer_name: &str,
         signer_info: &str,
@@ -426,66 +427,74 @@ impl SignerMapper {
             &actor,
         );
 
-        self.store.add(cmd)?;
+        self.store.add(cmd).await?;
         Ok(signer_handle)
     }
 
-    pub fn _remove_signer(&self, signer_handle: &SignerHandle) -> KrillResult<()> {
-        self.store.drop_aggregate(signer_handle)?;
+    pub async fn _remove_signer(&self, signer_handle: &SignerHandle) -> KrillResult<()> {
+        self.store.drop_aggregate(signer_handle).await?;
         Ok(())
     }
 
-    pub fn get_signer_name(&self, signer_handle: &SignerHandle) -> KrillResult<String> {
-        Ok(self.store.get_latest(signer_handle)?.signer_name.clone())
+    pub async fn get_signer_name(&self, signer_handle: &SignerHandle) -> KrillResult<String> {
+        Ok(self.store.get_latest(signer_handle).await?.signer_name.clone())
     }
 
-    pub fn change_signer_name(&self, signer_handle: &SignerHandle, signer_name: &str) -> KrillResult<()> {
+    pub async fn change_signer_name(&self, signer_handle: &SignerHandle, signer_name: &str) -> KrillResult<()> {
         let cmd = SignerInfoCommand::change_signer_name(signer_handle, None, signer_name);
-        self.store.command(cmd)?;
+        self.store.command(cmd).await?;
         Ok(())
     }
 
-    pub fn get_signer_public_key(&self, signer_handle: &SignerHandle) -> KrillResult<PublicKey> {
-        Ok(self.store.get_latest(signer_handle)?.signer_identity.public_key.clone())
-    }
-
-    pub fn get_signer_private_key_internal_id(&self, signer_handle: &SignerHandle) -> KrillResult<String> {
+    pub async fn get_signer_public_key(&self, signer_handle: &SignerHandle) -> KrillResult<PublicKey> {
         Ok(self
             .store
-            .get_latest(signer_handle)?
+            .get_latest(signer_handle)
+            .await?
+            .signer_identity
+            .public_key
+            .clone())
+    }
+
+    pub async fn get_signer_private_key_internal_id(&self, signer_handle: &SignerHandle) -> KrillResult<String> {
+        Ok(self
+            .store
+            .get_latest(signer_handle)
+            .await?
             .signer_identity
             .private_key_internal_id
             .clone())
     }
 
-    pub fn change_signer_info(&self, signer_handle: &SignerHandle, signer_info: &str) -> KrillResult<()> {
+    pub async fn change_signer_info(&self, signer_handle: &SignerHandle, signer_info: &str) -> KrillResult<()> {
         let cmd = SignerInfoCommand::change_signer_info(signer_handle, None, signer_info);
-        self.store.command(cmd)?;
+        self.store.command(cmd).await?;
         Ok(())
     }
 
     /// Record the owner of a Krill key and its corresponding signer specific internal id.
-    pub fn add_key(
+    pub async fn add_key(
         &self,
         signer_handle: &SignerHandle,
         key_id: &KeyIdentifier,
         internal_key_id: &str,
     ) -> KrillResult<()> {
         let cmd = SignerInfoCommand::add_key(signer_handle, None, key_id, internal_key_id);
-        self.store.command(cmd)?;
+        self.store.command(cmd).await?;
         Ok(())
     }
 
-    pub fn remove_key(&self, signer_handle: &SignerHandle, key_id: &KeyIdentifier) -> KrillResult<()> {
+    pub async fn remove_key(&self, signer_handle: &SignerHandle, key_id: &KeyIdentifier) -> KrillResult<()> {
         let cmd = SignerInfoCommand::remove_key(signer_handle, None, key_id);
-        self.store.command(cmd)?;
+        self.store.command(cmd).await?;
         Ok(())
     }
 
     /// Retrieve the signer specific internal id corresponding to the given Krill key.
-    pub fn get_key(&self, signer_handle: &SignerHandle, key_id: &KeyIdentifier) -> KrillResult<String> {
+    pub async fn get_key(&self, signer_handle: &SignerHandle, key_id: &KeyIdentifier) -> KrillResult<String> {
         self.store
-            .get_latest(signer_handle)?
+            .get_latest(signer_handle)
+            .await?
             .keys
             .get(key_id)
             .cloned()
@@ -493,16 +502,16 @@ impl SignerMapper {
     }
 
     /// Get the complete set of known signer handles.
-    pub fn get_signer_handles(&self) -> KrillResult<Vec<SignerHandle>> {
-        self.store.list().map_err(Error::AggregateStoreError)
+    pub async fn get_signer_handles(&self) -> KrillResult<Vec<SignerHandle>> {
+        self.store.list().await.map_err(Error::AggregateStoreError)
     }
 
     /// Get the handle of the signer that possesses the given Krill key, if any.
-    pub fn get_signer_for_key(&self, key_id: &KeyIdentifier) -> KrillResult<SignerHandle> {
+    pub async fn get_signer_for_key(&self, key_id: &KeyIdentifier) -> KrillResult<SignerHandle> {
         // Look for the key id in the key set of each set. Not very efficient but can be improved upon later if
         // needed, e.g. by creating on startup and maintaining an in-memory map of KeyIdentifier to signer Handles.
-        for signer_handle in self.store.list()? {
-            let signer_info = self.store.get_latest(&signer_handle)?;
+        for signer_handle in self.store.list().await? {
+            let signer_info = self.store.get_latest(&signer_handle).await?;
             if signer_info.keys.contains_key(key_id) {
                 return Ok(signer_handle);
             }

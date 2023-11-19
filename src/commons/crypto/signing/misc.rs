@@ -113,7 +113,7 @@ pub struct SignSupport;
 
 impl SignSupport {
     /// Create an IssuedCert
-    pub fn make_issued_cert(
+    pub async fn make_issued_cert(
         csr: CsrInfo,
         resources: &ResourceSet,
         limit: RequestResourceLimit,
@@ -128,8 +128,8 @@ impl SignSupport {
 
         let request = CertRequest::Ca(csr, validity);
 
-        let tbs = Self::make_tbs_cert(&resources, signing_cert, request, signer)?;
-        let cert = signer.sign_cert(tbs, &signing_cert.key_identifier())?;
+        let tbs = Self::make_tbs_cert(&resources, signing_cert, request, signer).await?;
+        let cert = signer.sign_cert(tbs, &signing_cert.key_identifier()).await?;
 
         let uri = signing_cert.uri_for_object(&cert);
 
@@ -146,7 +146,7 @@ impl SignSupport {
     /// Create an EE certificate for use in ResourceTaggedAttestations.
     /// Note that for RPKI signed objects such as ROAs and Manifests, the
     /// EE certificate is created by the rpki.rs library instead.
-    pub fn make_rta_ee_cert(
+    pub async fn make_rta_ee_cert(
         resources: &ResourceSet,
         signing_key: &CertifiedKey,
         validity: Validity,
@@ -155,19 +155,19 @@ impl SignSupport {
     ) -> KrillResult<Cert> {
         let signing_cert = signing_key.incoming_cert();
         let request = CertRequest::Ee(pub_key, validity);
-        let tbs = Self::make_tbs_cert(resources, signing_cert, request, signer)?;
+        let tbs = Self::make_tbs_cert(resources, signing_cert, request, signer).await?;
 
-        let cert = signer.sign_cert(tbs, signing_key.key_id())?;
+        let cert = signer.sign_cert(tbs, signing_key.key_id()).await?;
         Ok(cert)
     }
 
-    fn make_tbs_cert(
+    async fn make_tbs_cert(
         resources: &ResourceSet,
         signing_cert: &ReceivedCert,
         request: CertRequest,
         signer: &KrillSigner,
     ) -> KrillResult<TbsCert> {
-        let serial = signer.random_serial()?;
+        let serial = signer.random_serial().await?;
         let issuer = signing_cert.subject().clone();
 
         let validity = match &request {

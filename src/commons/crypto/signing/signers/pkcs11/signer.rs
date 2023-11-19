@@ -19,6 +19,7 @@ use cryptoki::{
 };
 
 use rpki::{
+    ca::idexchange::MyHandle,
     crypto::signer::KeyError,
     crypto::{
         KeyIdentifier, PublicKey, PublicKeyFormat, RpkiSignature, RpkiSignatureAlgorithm, Signature,
@@ -338,6 +339,18 @@ impl Pkcs11Signer {
 
     pub fn get_name(&self) -> &str {
         &self.name
+    }
+
+    /// Gets the handle and drops the lock. Returns an error if the
+    /// handle is not yet set. We need this because std::sync::RwLock
+    /// cannot be sent to async fns and changing the lock to tokio::sync::RwLock
+    /// is too difficult right now. In particular with regards to closures.
+    fn handle(&self) -> Result<MyHandle, SignerError> {
+        self.handle
+            .read()
+            .unwrap()
+            .clone()
+            .ok_or_else(|| SignerError::Other("handle is not set".to_string()))
     }
 
     pub fn set_handle(&self, handle: SignerHandle) {
@@ -779,29 +792,28 @@ impl Pkcs11Signer {
 //------------ High level helper functions for use by the public Signer interface implementation ----------------------
 
 impl Pkcs11Signer {
-    pub(super) fn remember_key_id(
+    pub(super) async fn remember_key_id(
         &self,
         key_id: &rpki::crypto::KeyIdentifier,
         internal_key_id: String,
     ) -> Result<(), SignerError> {
-        let readable_handle = self.handle.read().unwrap();
-        let signer_handle = readable_handle.as_ref().ok_or_else(|| {
-            SignerError::Other("PKCS#11: Failed to record signer key: Signer handle not set".to_string())
-        })?;
+        let signer_handle = self.handle()?;
+
         self.mapper
-            .add_key(signer_handle, key_id, &internal_key_id)
+            .add_key(&signer_handle, key_id, &internal_key_id)
+            .await
             .map_err(|err| SignerError::Pkcs11Error(format!("Failed to record signer key: {}", err)))?;
 
         Ok(())
     }
 
-    pub(super) fn lookup_key_id(&self, key_id: &KeyIdentifier) -> Result<String, KeyError<SignerError>> {
-        let readable_handle = self.handle.read().unwrap();
-        let signer_handle = readable_handle.as_ref().ok_or(KeyError::KeyNotFound)?;
+    pub(super) async fn lookup_key_id(&self, key_id: &KeyIdentifier) -> Result<String, KeyError<SignerError>> {
+        let signer_handle = self.handle().map_err(|_| KeyError::KeyNotFound)?;
 
         let internal_key_id = self
             .mapper
-            .get_key(signer_handle, key_id)
+            .get_key(&signer_handle, key_id)
+            .await
             .map_err(|_| KeyError::KeyNotFound)?;
 
         Ok(internal_key_id)
@@ -996,22 +1008,22 @@ impl Pkcs11Signer {
 // dispatching is not trait based we don't actually have to implement the `Signer` trait.
 
 impl Pkcs11Signer {
-    pub fn create_key(&self, algorithm: PublicKeyFormat) -> Result<KeyIdentifier, SignerError> {
+    pub async fn create_key(&self, algorithm: PublicKeyFormat) -> Result<KeyIdentifier, SignerError> {
         let (key, _, _, internal_key_id) = self.build_key(algorithm)?;
         let key_id = key.key_identifier();
-        self.remember_key_id(&key_id, internal_key_id)?;
+        self.remember_key_id(&key_id, internal_key_id).await?;
         Ok(key_id)
     }
 
-    pub fn get_key_info(&self, key_id: &KeyIdentifier) -> Result<PublicKey, KeyError<SignerError>> {
-        let internal_key_id = self.lookup_key_id(key_id)?;
+    pub async fn get_key_info(&self, key_id: &KeyIdentifier) -> Result<PublicKey, KeyError<SignerError>> {
+        let internal_key_id = self.lookup_key_id(key_id).await?;
         let pub_handle = self.find_key(&internal_key_id, ObjectClass::PUBLIC_KEY)?;
         self.get_public_key_from_handle(pub_handle).map_err(KeyError::Signer)
     }
 
-    pub fn destroy_key(&self, key_id: &KeyIdentifier) -> Result<(), KeyError<SignerError>> {
+    pub async fn destroy_key(&self, key_id: &KeyIdentifier) -> Result<(), KeyError<SignerError>> {
         debug!("[{}] Destroying key pair with ID {}", self.name, key_id);
-        let internal_key_id = self.lookup_key_id(key_id)?;
+        let internal_key_id = self.lookup_key_id(key_id).await?;
         let mut res: Result<(), KeyError<SignerError>> = Ok(());
 
         // try deleting the public key
@@ -1047,10 +1059,11 @@ impl Pkcs11Signer {
         }
 
         // remove the key from the signer mapper as well
-        if let Some(signer_handle) = self.handle.read().unwrap().as_ref() {
+        if let Ok(signer_handle) = self.handle() {
             let res3 = self
                 .mapper
-                .remove_key(signer_handle, key_id)
+                .remove_key(&signer_handle, key_id)
+                .await
                 .map_err(|err| KeyError::Signer(SignerError::Other(err.to_string())));
 
             if let Err(err) = &res3 {
@@ -1066,13 +1079,14 @@ impl Pkcs11Signer {
         res
     }
 
-    pub fn sign<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
+    pub async fn sign<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
         &self,
         key_id: &KeyIdentifier,
         algorithm: Alg,
         data: &D,
     ) -> Result<Signature<Alg>, SigningError<SignerError>> {
-        let internal_key_id = self.lookup_key_id(key_id)?;
+        let internal_key_id = self.lookup_key_id(key_id).await?;
+
         let priv_handle = self
             .find_key(&internal_key_id, ObjectClass::PRIVATE_KEY)
             .map_err(|err| match err {

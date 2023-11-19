@@ -137,11 +137,11 @@ pub(crate) fn decrypt(key: &[u8], payload: &[u8]) -> KrillResult<Vec<u8>> {
         .map_err(|err| Error::Custom(format!("Decryption error: {}", &err)))
 }
 
-pub(crate) fn crypt_init(config: &Config) -> KrillResult<CryptState> {
+pub(crate) async fn crypt_init(config: &Config) -> KrillResult<CryptState> {
     let store = config.key_value_store(CRYPT_STATE_NS)?;
     let key = Key::new_global(CRYPT_STATE_KEY);
 
-    if let Some(state) = store.get(&key)? {
+    if let Some(state) = store.get(&key).await? {
         Ok(state)
     } else {
         let mut key_bytes = [0; CHACHA20_KEY_BYTE_LEN];
@@ -149,7 +149,7 @@ pub(crate) fn crypt_init(config: &Config) -> KrillResult<CryptState> {
             .map_err(|err| Error::Custom(format!("Unable to generate symmetric key: {}", err)))?;
 
         let state = CryptState::from_key_bytes(key_bytes)?;
-        store.store_new(&key, &state)?;
+        store.store_new(&key, &state).await?;
 
         Ok(state)
     }

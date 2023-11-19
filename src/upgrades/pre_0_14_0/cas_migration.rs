@@ -30,7 +30,7 @@ pub struct CasMigration {
 }
 
 impl CasMigration {
-    pub fn upgrade(mode: UpgradeMode, config: &Config) -> UpgradeResult<AspaMigrationConfigs> {
+    pub async fn upgrade(mode: UpgradeMode, config: &Config) -> UpgradeResult<AspaMigrationConfigs> {
         let current_kv_store = KeyValueStore::create(&config.storage_uri, CASERVER_NS)?;
         let new_kv_store = KeyValueStore::create_upgrade_store(&config.storage_uri, CASERVER_NS)?;
 
@@ -46,6 +46,7 @@ impl CasMigration {
             new_agg_store,
         }
         .upgrade(mode)
+        .await
     }
 }
 

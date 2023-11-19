@@ -43,12 +43,12 @@ impl CaObjectsMigration {
         })
     }
 
-    fn prepare_new_data_for(&self, ca: &CaHandle) -> Result<(), UpgradeError> {
+    async fn prepare_new_data_for(&self, ca: &CaHandle) -> Result<(), UpgradeError> {
         let key = Key::new_global(SegmentBuf::parse_lossy(&format!("{}.json", ca))); // ca should always be a valid Segment
 
-        if let Some(old_objects) = self.current_store.get::<OldCaObjects>(&key)? {
+        if let Some(old_objects) = self.current_store.get::<OldCaObjects>(&key).await? {
             let converted: CaObjects = old_objects.try_into()?;
-            self.new_store.store(&key, &converted)?;
+            self.new_store.store(&key, &converted).await?;
             debug!("Stored updated objects for CA {} in {}", ca, self.new_store);
         }
 
@@ -67,7 +67,7 @@ pub struct CasMigration {
 }
 
 impl CasMigration {
-    pub fn upgrade(mode: UpgradeMode, config: &Config) -> UpgradeResult<AspaMigrationConfigs> {
+    pub async fn upgrade(mode: UpgradeMode, config: &Config) -> UpgradeResult<AspaMigrationConfigs> {
         let current_kv_store = KeyValueStore::create(&config.storage_uri, CASERVER_NS)?;
         let new_kv_store = KeyValueStore::create_upgrade_store(&config.storage_uri, CASERVER_NS)?;
 
@@ -85,9 +85,11 @@ impl CasMigration {
             ca_objects_migration,
         }
         .upgrade(mode)
+        .await
     }
 }
 
+#[async_trait::async_trait]
 impl UpgradeAggregateStorePre0_14 for CasMigration {
     type Aggregate = CertAuth;
 
@@ -198,8 +200,8 @@ impl UpgradeAggregateStorePre0_14 for CasMigration {
     }
 
     /// Override post migration, we need to do extra stuff.
-    fn post_command_migration(&self, handle: &MyHandle) -> UpgradeResult<()> {
+    async fn post_command_migration(&self, handle: &MyHandle) -> UpgradeResult<()> {
         info!("Will migrate the current repository objects for CA '{}'", handle);
-        self.ca_objects_migration.prepare_new_data_for(handle)
+        self.ca_objects_migration.prepare_new_data_for(handle).await
     }
 }

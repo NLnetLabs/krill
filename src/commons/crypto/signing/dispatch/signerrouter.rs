@@ -1,5 +1,8 @@
+use std::collections::HashMap;
+use std::ops::Deref;
 use std::sync::Arc;
-use std::{collections::HashMap, sync::RwLock};
+
+use tokio::sync::RwLock;
 
 use rpki::crypto::KeyIdentifier;
 
@@ -154,20 +157,20 @@ impl SignerRouter {
         self.signer_mapper.clone()
     }
 
-    pub fn get_active_signers(&self) -> HashMap<SignerHandle, Arc<SignerProvider>> {
-        self.bind_ready_signers();
-        self.active_signers.read().unwrap().clone()
+    pub async fn get_active_signers(&self) -> HashMap<SignerHandle, Arc<SignerProvider>> {
+        self.bind_ready_signers().await;
+        self.active_signers.read().await.clone()
     }
 
     /// Get the default signer
-    pub fn get_default_signer(&self) -> &Arc<SignerProvider> {
-        self.bind_ready_signers();
+    pub async fn get_default_signer(&self) -> &Arc<SignerProvider> {
+        self.bind_ready_signers().await;
         &self.default_signer
     }
 
     /// Get the one-off signer (usually OpenSSL)
-    pub fn get_one_off_signer(&self) -> &Arc<SignerProvider> {
-        self.bind_ready_signers();
+    pub async fn get_one_off_signer(&self) -> &Arc<SignerProvider> {
+        self.bind_ready_signers().await;
         &self.one_off_signer
     }
 
@@ -176,17 +179,18 @@ impl SignerRouter {
     /// If the signer that owns the key has not yet been promoted from the pending set to the active set or if no
     /// the key was not created by us or was not registered with the [SignerMapper] then this lookup will fail with
     /// [SignerError::KeyNotFound].
-    pub fn get_signer_for_key(&self, key_id: &KeyIdentifier) -> Result<Arc<SignerProvider>, SignerError> {
+    pub async fn get_signer_for_key(&self, key_id: &KeyIdentifier) -> Result<Arc<SignerProvider>, SignerError> {
         match &self.signer_mapper {
             None => Ok(self.default_signer.clone()),
             Some(mapper) => {
                 // Get the signer handle for the key
                 let signer_handle = mapper
                     .get_signer_for_key(key_id)
+                    .await
                     .map_err(|_| SignerError::KeyNotFound)?;
 
                 // Get the SignerProvider for the handle, if the signer is active
-                let signer = self.active_signers.read().unwrap().get(&signer_handle).cloned();
+                let signer = self.active_signers.read().await.get(&signer_handle).cloned();
 
                 signer.ok_or(SignerError::KeyNotFound)
             }
@@ -204,9 +208,9 @@ impl SignerRouter {
 
     /// Import an existing private RSA key. Will only work for the OpenSslSigner.
     /// Returns an error if another signer is used.
-    pub fn import_key(&self, pem: &str) -> Result<KeyIdentifier, SignerError> {
-        self.bind_ready_signers();
-        self.default_signer.import_key(pem)
+    pub async fn import_key(&self, pem: &str) -> Result<KeyIdentifier, SignerError> {
+        self.bind_ready_signers().await;
+        self.default_signer.import_key(pem).await
     }
 }
 
@@ -278,119 +282,107 @@ impl SignerRouter {
     /// but in such cases should implement retry and backoff such that not every attempt to use the signer is blocked
     /// trying to connect to the backend. Instead most attempts to use a temporarily unavailable signer should fail
     /// very quickly because the signer handling code is "sleeping" between binding attempts.
-    fn bind_ready_signers(&self) {
-        if let Err(err) = self.do_ready_signer_binding() {
+    async fn bind_ready_signers(&self) {
+        if let Err(err) = self.do_ready_signer_binding().await {
             error!("Internal error: Unable to bind ready signers: {}", err);
         }
     }
 
     /// Attempt to bind pending signers.
-    fn do_ready_signer_binding(&self) -> Result<(), String> {
-        let num_pending_signers = self.pending_signers.read().unwrap().len();
+    async fn do_ready_signer_binding(&self) -> Result<(), String> {
+        let num_pending_signers = self.pending_signers.read().await.len();
         if num_pending_signers > 0 {
             trace!("Attempting to bind {} pending signers", num_pending_signers);
 
             // Fetch the handle of every signer previously created in the [SignerMapper] to see if any of the pending
             // signers is actually one of these or is a new signer that we haven't seen before.
-            let candidate_handles = self.get_candidate_signer_handles()?;
+            let candidate_handles = self.get_candidate_signer_handles().await?;
             trace!("{} signers were previously registered", candidate_handles.len());
 
             // Block until we can get a write lock on the set of pending_signers as we will hopefully remove one or
             // more items from the set. Standard practice in Krill is to panic if a lock cannot be obtained.
-            let mut pending_signers = self.pending_signers.write().unwrap();
-
-            let mut abort_flag = false;
+            let mut pending_signers = self.pending_signers.write().await;
 
             // For each pending signer see if we can verify it and if so move it from the pending set to the active set.
-            pending_signers.retain(|signer_provider| -> bool {
-                if abort_flag {
-                    return true;
-                }
+            // - if it needs to be kept we put it in the retain_signers vec
+            let mut retain_signers = vec![];
 
+            // let mut abort_flag = false;
+            for signer_provider in pending_signers.iter() {
                 let signer_name = signer_provider.get_name().to_string();
 
-                // See if this is a known signer that whose signature matches the public key stored in the
-                // [SignerMapper] for the signer.
-                self.identify_signer(signer_provider, &candidate_handles)
-                    .and_then(|verify_result| match verify_result {
-                        IdentifyResult::Unavailable => {
-                            // Signer isn't ready yet, leave it in the pending set and try again next time.
-                            trace!("Signer '{}' is unavailable", signer_name);
-                            Ok(true)
-                        }
-                        IdentifyResult::Identified(signer_handle) => {
-                            // Signer is ready and verified, add it to the active set.
-                            self.active_signers
-                                .write()
-                                .unwrap()
-                                .insert(signer_handle, signer_provider.clone());
-                            info!("Signer '{}' is ready for use", signer_name);
-                            // And remove it from the pending set
-                            Ok(false)
-                        }
-                        IdentifyResult::Unidentified => {
-                            // Signer is ready and new, register it and move it to the active set
-                            self.register_new_signer(signer_provider)
-                                .map(|register_result| match register_result {
-                                    RegisterResult::NotReady => {
-                                        // Strange, it was ready just now when we verified it ... leave it in the
-                                        // pending set and try again next time.
-                                        trace!("Signer '{}' is not ready", signer_name);
-                                        true
-                                    }
-                                    RegisterResult::ReadyVerified(signer_handle) => {
-                                        // Signer is ready and verified, add it to the active set.
-                                        self.active_signers
-                                            .write()
-                                            .unwrap()
-                                            .insert(signer_handle, signer_provider.clone());
-                                        info!("Signer '{}' is ready for use", signer_name);
-                                        // And remove it from the pending set
-                                        false
-                                    }
-                                    RegisterResult::ReadyUnusable(err) => {
-                                        // Signer registration failed, remove it from the pending set
-                                        error!(
-                                            "Signer '{}' could not be registered: signer is not usable: {}",
-                                            signer_name, err
-                                        );
-                                        false
-                                    }
-                                })
-                        }
-                        IdentifyResult::Unusable => {
-                            // Signer is ready and unusable, remove it from the pending set
-                            error!("Signer '{}' could not be identified: signer is not usable", signer_name);
-                            Ok(false)
-                        }
-                        IdentifyResult::Corrupt => {
-                            // This case should never happen as this variant is handled in the called code
-                            Err(ErrorString::new("Internal error: invalid handle"))
-                        }
-                    })
-                    .unwrap_or_else(|err| {
-                        error!("Signer '{}' could not be bound: {}. Aborting.", signer_name, *err);
-                        abort_flag = true;
-                        true
-                    })
-            });
+                match self.identify_signer(signer_provider, &candidate_handles).await? {
+                    IdentifyResult::Unavailable => {
+                        // Signer isn't ready yet, leave it in the pending set and try again next time.
+                        trace!("Signer '{}' is unavailable", signer_name);
+                        retain_signers.push(signer_provider.clone());
+                    }
+                    IdentifyResult::Identified(signer_handle) => {
+                        // Signer is ready and verified, add it to the active set.
+                        self.active_signers
+                            .write()
+                            .await
+                            .insert(signer_handle, signer_provider.clone());
+                        info!("Signer '{}' is ready for use", signer_name);
+                    }
+                    IdentifyResult::Unidentified => {
+                        // Signer is ready and new, register it and move it to the active set
+                        match self.register_new_signer(signer_provider).await {
+                            Ok(RegisterResult::NotReady) => {
+                                // Strange, it was ready just now when we verified it ... leave it in the
+                                // pending set and try again next time.
+                                trace!("Signer '{}' is not ready", signer_name);
+                                retain_signers.push(signer_provider.clone());
+                            }
+                            Ok(RegisterResult::ReadyVerified(signer_handle)) => {
+                                // Signer is ready and verified, add it to the active set.
+                                self.active_signers
+                                    .write()
+                                    .await
+                                    .insert(signer_handle, signer_provider.clone());
+                                info!("Signer '{}' is ready for use", signer_name);
+                            }
+                            Ok(RegisterResult::ReadyUnusable(e)) => {
+                                // Signer registration failed, remove it from the pending set
+                                error!("Signer '{signer_name}' could not be registered: {e}");
+                            }
+                            Err(e) => {
+                                // Signer registration failed, remove it from the pending set
+                                error!("Signer '{signer_name}' could not be registered: {}", e.deref());
+                            }
+                        };
+                    }
+                    IdentifyResult::Unusable => {
+                        // Signer is ready and unusable, remove it from the pending set
+                        error!("Signer '{}' could not be identified: signer is not usable", signer_name);
+                    }
+                    IdentifyResult::Corrupt => {
+                        // This case should never happen as this variant is handled in the called code
+                        error!("Internal error: invalid handle");
+                    }
+                }
+            }
+
+            pending_signers.clear();
+            pending_signers.append(&mut retain_signers);
         }
 
         Ok(())
     }
 
     /// Retrieves the set of signer handles known to the signer mapper.
-    fn get_candidate_signer_handles(&self) -> Result<Vec<SignerHandle>, String> {
+    async fn get_candidate_signer_handles(&self) -> Result<Vec<SignerHandle>, String> {
         // TODO: Filter out already bound signers?
         self.signer_mapper
             .as_ref()
             .unwrap()
             .get_signer_handles()
+            .await
             .map_err(|err| format!("Failed to get signer handles: {}", err))
     }
 
     /// Checks if the signer identity can be shown to match one of the known signer public keys.
-    fn identify_signer(
+    async fn identify_signer(
         &self,
         signer_provider: &Arc<SignerProvider>,
         candidate_handles: &[SignerHandle],
@@ -403,7 +395,13 @@ impl SignerRouter {
         // candidate handles.
         let mut ordered_candidate_handles = Vec::new();
         for candidate_handle in candidate_handles {
-            let stored_signer_name = self.signer_mapper.as_ref().unwrap().get_signer_name(candidate_handle)?;
+            let stored_signer_name = self
+                .signer_mapper
+                .as_ref()
+                .unwrap()
+                .get_signer_name(candidate_handle)
+                .await?;
+
             if stored_signer_name == config_signer_name {
                 ordered_candidate_handles.insert(0, candidate_handle);
             } else {
@@ -412,7 +410,9 @@ impl SignerRouter {
         }
 
         for candidate_handle in ordered_candidate_handles {
-            let res = self.is_signer_identified_by_handle(signer_provider, candidate_handle)?;
+            let res = self
+                .is_signer_identified_by_handle(signer_provider, candidate_handle)
+                .await?;
             match res {
                 IdentifyResult::Unidentified => {
                     // Signer was contacted and no errors were encountered but it doesn't know the key encoded in the
@@ -441,12 +441,18 @@ impl SignerRouter {
     /// To match the signer backend must have access to a key whose signer internal key ID matches one we stored when
     /// the signer was previously registered, and when used to sign a challenge the signature must match the public
     /// key we have on record (also stored when the signer was previously registered).
-    fn is_signer_identified_by_handle(
+    async fn is_signer_identified_by_handle(
         &self,
         signer_provider: &Arc<SignerProvider>,
         candidate_handle: &SignerHandle,
     ) -> Result<IdentifyResult, ErrorString> {
-        let handle_name = self.signer_mapper.as_ref().unwrap().get_signer_name(candidate_handle)?;
+        let handle_name = self
+            .signer_mapper
+            .as_ref()
+            .unwrap()
+            .get_signer_name(candidate_handle)
+            .await?;
+
         let signer_name = signer_provider.get_name().to_string();
         trace!(
             "Attempting to identify signer '{}' using identity key stored for signer '{}'",
@@ -459,6 +465,7 @@ impl SignerRouter {
             .as_ref()
             .unwrap()
             .get_signer_public_key(candidate_handle)
+            .await
         {
             Ok(res) => Ok(res),
             Err(err) => match err {
@@ -477,10 +484,14 @@ impl SignerRouter {
             .signer_mapper
             .as_ref()
             .unwrap()
-            .get_signer_private_key_internal_id(candidate_handle)?;
+            .get_signer_private_key_internal_id(candidate_handle)
+            .await?;
 
         let challenge = "Krill signer verification challenge".as_bytes();
-        let signature = match signer_provider.sign_registration_challenge(&signer_private_key_id, challenge) {
+        let signature = match signer_provider
+            .sign_registration_challenge(&signer_private_key_id, challenge)
+            .await
+        {
             Err(SignerError::TemporarilyUnavailable) => {
                 debug!("Signer '{}' could not be contacted", signer_name);
                 return Ok(IdentifyResult::Unavailable);
@@ -512,6 +523,7 @@ impl SignerRouter {
                 .as_ref()
                 .unwrap()
                 .change_signer_name(candidate_handle, &signer_name)
+                .await
             {
                 // This is unexpected and perhaps indicative of a deeper problem but log and keep going.
                 error!(
@@ -524,6 +536,7 @@ impl SignerRouter {
                 .as_ref()
                 .unwrap()
                 .change_signer_info(candidate_handle, &signer_info)
+                .await
             {
                 // This is unexpected and perhaps indicative of a deeper problem but log and keep going.
                 error!(
@@ -551,19 +564,22 @@ impl SignerRouter {
     /// Registration creates a key pair in the signer backend and stores the signer specific internal ID of the created
     /// private key and the content of the created public key. Registration also verifies that the signer is able to
     /// sign using the newly created private key such that the created signature matches the created public key.
-    fn register_new_signer(&self, signer_provider: &Arc<SignerProvider>) -> Result<RegisterResult, ErrorString> {
+    async fn register_new_signer(&self, signer_provider: &Arc<SignerProvider>) -> Result<RegisterResult, ErrorString> {
         let signer_name = signer_provider.get_name().to_string();
 
         trace!("Attempting to register signer '{}'", signer_name);
 
-        let (public_key, signer_private_key_id) = match signer_provider.create_registration_key() {
+        let (public_key, signer_private_key_id) = match signer_provider.create_registration_key().await {
             Err(SignerError::TemporarilyUnavailable) => return Ok(RegisterResult::NotReady),
             Err(err) => return Ok(RegisterResult::ReadyUnusable(err.to_string())),
             Ok(res) => res,
         };
 
         let challenge = "Krill signer verification challenge".as_bytes();
-        let signature = match signer_provider.sign_registration_challenge(&signer_private_key_id, challenge) {
+        let signature = match signer_provider
+            .sign_registration_challenge(&signer_private_key_id, challenge)
+            .await
+        {
             Err(SignerError::TemporarilyUnavailable) => return Ok(RegisterResult::NotReady),
             Err(err) => return Ok(RegisterResult::ReadyUnusable(err.to_string())),
             Ok(res) => res,
@@ -581,12 +597,12 @@ impl SignerRouter {
             .get_info()
             .unwrap_or_else(|| "No signer info".to_string());
 
-        let signer_handle = self.signer_mapper.as_ref().unwrap().add_signer(
-            &signer_name,
-            &signer_info,
-            &public_key,
-            &signer_private_key_id,
-        )?;
+        let signer_handle = self
+            .signer_mapper
+            .as_ref()
+            .unwrap()
+            .add_signer(&signer_name, &signer_info, &public_key, &signer_private_key_id)
+            .await?;
 
         signer_provider.set_handle(signer_handle.clone());
 
@@ -624,147 +640,166 @@ pub mod tests {
         }
     }
 
-    #[test]
-    pub fn verify_that_a_usable_signer_is_registered_and_can_be_used() {
-        test::test_in_memory(|storage_uri| {
-            #[allow(non_snake_case)]
-            let DEF_SIG_ALG = RpkiSignatureAlgorithm::default();
+    #[tokio::test]
+    pub async fn verify_that_a_usable_signer_is_registered_and_can_be_used() {
+        let storage_uri = test::mem_storage();
 
-            // Build a mock signer that is contactable and usable for the SignerRouter
-            let call_counts = Arc::new(MockSignerCallCounts::new());
-            let signer_mapper = Arc::new(SignerMapper::build(storage_uri).unwrap());
-            let mock_signer = MockSigner::new("mock signer", signer_mapper.clone(), call_counts.clone(), None, None);
-            let mock_signer = Arc::new(SignerProvider::Mock(SignerFlags::default(), mock_signer));
+        #[allow(non_snake_case)]
+        let DEF_SIG_ALG = RpkiSignatureAlgorithm::default();
 
-            // Create a SignerRouter that uses the mock signer with the mock signer starting in the pending signer set.
-            let router = create_signer_router(&[mock_signer.clone()], signer_mapper.clone());
+        // Build a mock signer that is contactable and usable for the SignerRouter
+        let call_counts = Arc::new(MockSignerCallCounts::new());
+        let signer_mapper = Arc::new(SignerMapper::build(&storage_uri).unwrap());
+        let mock_signer = MockSigner::new("mock signer", signer_mapper.clone(), call_counts.clone(), None, None);
+        let mock_signer = Arc::new(SignerProvider::Mock(SignerFlags::default(), mock_signer));
 
-            // No signers have been registered with the SignerMapper yet
-            assert_eq!(0, signer_mapper.get_signer_handles().unwrap().len());
+        // Create a SignerRouter that uses the mock signer with the mock signer starting in the pending signer set.
+        let router = create_signer_router(&[mock_signer.clone()], signer_mapper.clone());
 
-            // Verify that initially none of the functions in the mock signer have been called
-            assert_eq!(0, call_counts.get(FnIdx::CreateRegistrationKey));
-            assert_eq!(0, call_counts.get(FnIdx::SignRegistrationChallenge));
-            assert_eq!(0, call_counts.get(FnIdx::GetInfo));
-            assert_eq!(0, call_counts.get(FnIdx::SetHandle));
-            assert_eq!(0, call_counts.get(FnIdx::CreateKey));
-            assert_eq!(0, call_counts.get(FnIdx::Sign));
-            assert_eq!(0, call_counts.get(FnIdx::DestroyKey));
+        // No signers have been registered with the SignerMapper yet
+        assert_eq!(0, signer_mapper.get_signer_handles().await.unwrap().len());
 
-            // Try to use the SignerRouter to bind ready signers. This should cause the SignerRouter to contact
-            // the mock signer, ask it to create a registration key, verify that it can sign correctly with that key,
-            // assign a signer mapper handle to the signer, then check for random number generation support and finally
-            // actually generate the random number.
-            router.bind_ready_signers();
-            assert_eq!(1, call_counts.get(FnIdx::CreateRegistrationKey));
-            assert_eq!(1, call_counts.get(FnIdx::SignRegistrationChallenge));
-            assert_eq!(1, call_counts.get(FnIdx::GetInfo));
-            assert_eq!(1, call_counts.get(FnIdx::SetHandle));
+        // Verify that initially none of the functions in the mock signer have been called
+        assert_eq!(0, call_counts.get(FnIdx::CreateRegistrationKey));
+        assert_eq!(0, call_counts.get(FnIdx::SignRegistrationChallenge));
+        assert_eq!(0, call_counts.get(FnIdx::GetInfo));
+        assert_eq!(0, call_counts.get(FnIdx::SetHandle));
+        assert_eq!(0, call_counts.get(FnIdx::CreateKey));
+        assert_eq!(0, call_counts.get(FnIdx::Sign));
+        assert_eq!(0, call_counts.get(FnIdx::DestroyKey));
 
-            // One signer has been registered with the SignerMapper now
-            assert_eq!(1, signer_mapper.get_signer_handles().unwrap().len());
+        // Try to use the SignerRouter to bind ready signers. This should cause the SignerRouter to contact
+        // the mock signer, ask it to create a registration key, verify that it can sign correctly with that key,
+        // assign a signer mapper handle to the signer, then check for random number generation support and finally
+        // actually generate the random number.
+        router.bind_ready_signers().await;
+        assert_eq!(1, call_counts.get(FnIdx::CreateRegistrationKey));
+        assert_eq!(1, call_counts.get(FnIdx::SignRegistrationChallenge));
+        assert_eq!(1, call_counts.get(FnIdx::GetInfo));
+        assert_eq!(1, call_counts.get(FnIdx::SetHandle));
 
-            // Ask to bind the signers again. This time none of the registration steps should be performed as the signer
-            // is already registered and active.
-            router.bind_ready_signers();
+        // One signer has been registered with the SignerMapper now
+        assert_eq!(1, signer_mapper.get_signer_handles().await.unwrap().len());
 
-            // Check that we can create a new key with the mock signer via the SignerRouter and that the key gets
-            // registered with the signer mapper.
-            let key_identifier = router
-                .get_default_signer()
-                .create_key(rpki::crypto::PublicKeyFormat::Rsa)
-                .unwrap();
-            assert!(signer_mapper.get_signer_for_key(&key_identifier).is_ok());
-            assert_eq!(1, call_counts.get(FnIdx::CreateKey));
+        // Ask to bind the signers again. This time none of the registration steps should be performed as the signer
+        // is already registered and active.
+        router.bind_ready_signers().await;
 
-            // Check that we can sign with the SignerRouter using the Krill key identifier. The SignerRouter should
-            // discover from the SignerMapper that the key belongs to the mock signer and so dispatch the signing
-            // request to the mock signer.
-            let random_data = test::random_bytes();
+        // Check that we can create a new key with the mock signer via the SignerRouter and that the key gets
+        // registered with the signer mapper.
+        let key_identifier = router
+            .get_default_signer()
+            .await
+            .create_key(rpki::crypto::PublicKeyFormat::Rsa)
+            .await
+            .unwrap();
+        assert!(signer_mapper.get_signer_for_key(&key_identifier).await.is_ok());
+        assert_eq!(1, call_counts.get(FnIdx::CreateKey));
 
-            router
-                .get_default_signer()
-                .sign(&key_identifier, DEF_SIG_ALG, &random_data)
-                .unwrap();
-            assert_eq!(1, call_counts.get(FnIdx::Sign));
+        // Check that we can sign with the SignerRouter using the Krill key identifier. The SignerRouter should
+        // discover from the SignerMapper that the key belongs to the mock signer and so dispatch the signing
+        // request to the mock signer.
+        let random_data = test::random_bytes();
 
-            // Throw the SignerRouter away and create a new one. This is like restarting Krill. Keep the mock signer as
-            // otherwise we will lose its in-memory private key store. Keep the SignerMapper as the mock signer is
-            // using it, and because destroying it and recreating it would just be like forcing it to re-read it's saved
-            // state from disk (and we're not trying to test the AggregateStore here anyway!).
-            let router = create_signer_router(&[mock_signer.clone()], signer_mapper.clone());
+        router
+            .get_default_signer()
+            .await
+            .sign(&key_identifier, DEF_SIG_ALG, &random_data)
+            .await
+            .unwrap();
+        assert_eq!(1, call_counts.get(FnIdx::Sign));
 
-            // Try to use the SignerRouter to sign again. This time around the SignerMapper should find the existing
-            // signer in its records and only ask the signer to sign the registration challenge, but not ask it to
-            // create a registration key.
-            router
-                .get_default_signer()
-                .sign(&key_identifier, DEF_SIG_ALG, &random_data)
-                .unwrap();
-            assert_eq!(1, call_counts.get(FnIdx::CreateRegistrationKey));
-            assert_eq!(2, call_counts.get(FnIdx::SignRegistrationChallenge));
-            assert_eq!(2, call_counts.get(FnIdx::GetInfo));
-            assert_eq!(2, call_counts.get(FnIdx::SetHandle));
-            assert_eq!(2, call_counts.get(FnIdx::Sign));
+        // Throw the SignerRouter away and create a new one. This is like restarting Krill. Keep the mock signer as
+        // otherwise we will lose its in-memory private key store. Keep the SignerMapper as the mock signer is
+        // using it, and because destroying it and recreating it would just be like forcing it to re-read it's saved
+        // state from disk (and we're not trying to test the AggregateStore here anyway!).
+        let router = create_signer_router(&[mock_signer.clone()], signer_mapper.clone());
 
-            // Now delete the key and verify that we no longer have it.
-            router.get_default_signer().destroy_key(&key_identifier).unwrap();
-            assert_eq!(1, call_counts.get(FnIdx::DestroyKey));
+        // Try to use the SignerRouter to sign again. This time around the SignerMapper should find the existing
+        // signer in its records and only ask the signer to sign the registration challenge, but not ask it to
+        // create a registration key.
+        router
+            .get_default_signer()
+            .await
+            .sign(&key_identifier, DEF_SIG_ALG, &random_data)
+            .await
+            .unwrap();
+        assert_eq!(1, call_counts.get(FnIdx::CreateRegistrationKey));
+        assert_eq!(2, call_counts.get(FnIdx::SignRegistrationChallenge));
+        assert_eq!(2, call_counts.get(FnIdx::GetInfo));
+        assert_eq!(2, call_counts.get(FnIdx::SetHandle));
+        assert_eq!(2, call_counts.get(FnIdx::Sign));
 
-            let err = router.get_default_signer().get_key_info(&key_identifier);
-            assert!(matches!(err, Err(KeyError::Signer(SignerError::KeyNotFound))));
+        // Now delete the key and verify that we no longer have it.
+        router
+            .get_default_signer()
+            .await
+            .destroy_key(&key_identifier)
+            .await
+            .unwrap();
 
-            // The Sign call count is still 2 because the SignerRouter fails to determine which signer owns the key
-            // and fails.
-            assert_eq!(2, call_counts.get(FnIdx::Sign));
+        assert_eq!(1, call_counts.get(FnIdx::DestroyKey));
 
-            // Now ask the mock signer to forget its registration key. After this the SignerRouter should fail to
-            // verify it and require it to register anew.
-            mock_signer.wipe_all_keys();
+        let err = router.get_default_signer().await.get_key_info(&key_identifier).await;
+        assert!(matches!(err, Err(KeyError::Signer(SignerError::KeyNotFound))));
 
-            // The mock signer still works for the moment because the SignerRouter doesn't do registration again as
-            // it thinks it still has an active signer.
-            let key_identifier = router.get_default_signer().create_key(PublicKeyFormat::Rsa).unwrap();
-            router
-                .get_default_signer()
-                .sign(&key_identifier, DEF_SIG_ALG, &random_data)
-                .unwrap();
+        // The Sign call count is still 2 because the SignerRouter fails to determine which signer owns the key
+        // and fails.
+        assert_eq!(2, call_counts.get(FnIdx::Sign));
 
-            assert_eq!(1, call_counts.get(FnIdx::CreateRegistrationKey));
-            assert_eq!(2, call_counts.get(FnIdx::SignRegistrationChallenge));
-            assert_eq!(2, call_counts.get(FnIdx::CreateKey));
-            assert_eq!(3, call_counts.get(FnIdx::Sign));
+        // Now ask the mock signer to forget its registration key. After this the SignerRouter should fail to
+        // verify it and require it to register anew.
+        mock_signer.wipe_all_keys();
 
-            // Throw away the SignerRouter again, thereby forcing the mock signer to be in the pending set again
-            // instead of the ready set. Now the SignerRouter should register the mock signer again and we should end
-            // up with a second signer in the SignerMapper as the ability to identify the first one has been lost
-            // (because above we instructed the mock signer to wipe all its keys). As the SignerMapper contains an
-            // existing signer the call count to sign_registration_challenge() in the mock signer will actually
-            // increase twice because the SignerRouter will first challenge it to prove that it is the already
-            // known signer. Without the identity key however the mock signer fails this identity check and is
-            // registered again (and then sign challenged again, hence the double increment).
-            let router = create_signer_router(&[mock_signer], signer_mapper.clone());
+        // The mock signer still works for the moment because the SignerRouter doesn't do registration again as
+        // it thinks it still has an active signer.
+        let key_identifier = router
+            .get_default_signer()
+            .await
+            .create_key(PublicKeyFormat::Rsa)
+            .await
+            .unwrap();
+        router
+            .get_default_signer()
+            .await
+            .sign(&key_identifier, DEF_SIG_ALG, &random_data)
+            .await
+            .unwrap();
 
-            let err = router.get_default_signer().get_key_info(&key_identifier);
-            assert!(matches!(err, Err(KeyError::Signer(SignerError::KeyNotFound))));
+        assert_eq!(1, call_counts.get(FnIdx::CreateRegistrationKey));
+        assert_eq!(2, call_counts.get(FnIdx::SignRegistrationChallenge));
+        assert_eq!(2, call_counts.get(FnIdx::CreateKey));
+        assert_eq!(3, call_counts.get(FnIdx::Sign));
 
-            assert_eq!(2, call_counts.get(FnIdx::CreateRegistrationKey));
-            assert_eq!(4, call_counts.get(FnIdx::SignRegistrationChallenge));
-            assert_eq!(3, call_counts.get(FnIdx::GetInfo));
-            assert_eq!(3, call_counts.get(FnIdx::SetHandle));
-            assert_eq!(3, call_counts.get(FnIdx::Sign));
+        // Throw away the SignerRouter again, thereby forcing the mock signer to be in the pending set again
+        // instead of the ready set. Now the SignerRouter should register the mock signer again and we should end
+        // up with a second signer in the SignerMapper as the ability to identify the first one has been lost
+        // (because above we instructed the mock signer to wipe all its keys). As the SignerMapper contains an
+        // existing signer the call count to sign_registration_challenge() in the mock signer will actually
+        // increase twice because the SignerRouter will first challenge it to prove that it is the already
+        // known signer. Without the identity key however the mock signer fails this identity check and is
+        // registered again (and then sign challenged again, hence the double increment).
+        let router = create_signer_router(&[mock_signer], signer_mapper.clone());
 
-            // Two signers have been registered with the SignerMapper by this point, one of which is now orphaned as
-            // the keys that it knows about refer to a signer backend that is no longer able to prove that it is the
-            // owner of these keys (because its identity key was deleted in the signer backend). Thus the SignerRouter
-            // doesn't know which signer to forward requests to in order to work with the keys owned by the orphaned
-            // signer.
-            assert_eq!(2, signer_mapper.get_signer_handles().unwrap().len());
-        });
+        let err = router.get_default_signer().await.get_key_info(&key_identifier).await;
+        assert!(matches!(err, Err(KeyError::Signer(SignerError::KeyNotFound))));
+
+        assert_eq!(2, call_counts.get(FnIdx::CreateRegistrationKey));
+        assert_eq!(4, call_counts.get(FnIdx::SignRegistrationChallenge));
+        assert_eq!(3, call_counts.get(FnIdx::GetInfo));
+        assert_eq!(3, call_counts.get(FnIdx::SetHandle));
+        assert_eq!(3, call_counts.get(FnIdx::Sign));
+
+        // Two signers have been registered with the SignerMapper by this point, one of which is now orphaned as
+        // the keys that it knows about refer to a signer backend that is no longer able to prove that it is the
+        // owner of these keys (because its identity key was deleted in the signer backend). Thus the SignerRouter
+        // doesn't know which signer to forward requests to in order to work with the keys owned by the orphaned
+        // signer.
+        assert_eq!(2, signer_mapper.get_signer_handles().await.unwrap().len());
     }
 
-    #[test]
-    pub fn verify_that_unusable_signers_are_neither_registered_nor_retried() {
+    #[tokio::test]
+    pub async fn verify_that_unusable_signers_are_neither_registered_nor_retried() {
         fn perm_unusable(_: &MockSignerCallCounts) -> Result<(), SignerError> {
             Err(SignerError::PermanentlyUnusable)
         }
@@ -806,49 +841,48 @@ pub mod tests {
             ]
         }
 
-        test::test_in_memory(|storage_uri| {
-            let call_counts = Arc::new(MockSignerCallCounts::new());
-            let signer_mapper = Arc::new(SignerMapper::build(storage_uri).unwrap());
-            let broken_signers = create_broken_signers(signer_mapper.clone(), call_counts.clone());
+        let storage_uri = test::mem_storage();
+        let call_counts = Arc::new(MockSignerCallCounts::new());
+        let signer_mapper = Arc::new(SignerMapper::build(&storage_uri).unwrap());
+        let broken_signers = create_broken_signers(signer_mapper.clone(), call_counts.clone());
 
-            // Create a SignerRouter that has access to all of the broken signers
-            let router = create_signer_router(broken_signers.as_slice(), signer_mapper.clone());
+        // Create a SignerRouter that has access to all of the broken signers
+        let router = create_signer_router(broken_signers.as_slice(), signer_mapper.clone());
 
-            // No signers have been registered with the SignerMapper yet
-            assert_eq!(0, signer_mapper.get_signer_handles().unwrap().len());
+        // No signers have been registered with the SignerMapper yet
+        assert_eq!(0, signer_mapper.get_signer_handles().await.unwrap().len());
 
-            // Try to use the SignerRouter to bind the ready signers. This should cause the SignerRouter to contact
-            // all of the mock signers, asking them to create a registration key, and if that succeeds to then verify
-            // that the signer can sign correctly with that key. None of the broken signers will succeed at these steps
-            // and so the counter of registered signers will remain at zero.
-            router.bind_ready_signers();
+        // Try to use the SignerRouter to bind the ready signers. This should cause the SignerRouter to contact
+        // all of the mock signers, asking them to create a registration key, and if that succeeds to then verify
+        // that the signer can sign correctly with that key. None of the broken signers will succeed at these steps
+        // and so the counter of registered signers will remain at zero.
+        router.bind_ready_signers().await;
 
-            // The number of attempts to register a signer should have increased by the number of signers.
-            // Half of the signers should fail at the registration step, the other half at the challenge signing step.
-            // So the number of signers that we succeeded in moving out of the pending set to the active set and
-            // registering with the signer mapper should be zero.
-            assert_eq!(6, call_counts.get(FnIdx::CreateRegistrationKey));
-            assert_eq!(3, call_counts.get(FnIdx::SignRegistrationChallenge));
-            assert_eq!(0, signer_mapper.get_signer_handles().unwrap().len());
+        // The number of attempts to register a signer should have increased by the number of signers.
+        // Half of the signers should fail at the registration step, the other half at the challenge signing step.
+        // So the number of signers that we succeeded in moving out of the pending set to the active set and
+        // registering with the signer mapper should be zero.
+        assert_eq!(6, call_counts.get(FnIdx::CreateRegistrationKey));
+        assert_eq!(3, call_counts.get(FnIdx::SignRegistrationChallenge));
+        assert_eq!(0, signer_mapper.get_signer_handles().await.unwrap().len());
 
-            //
-            // Try again.
-            //
-            router.bind_ready_signers();
+        //
+        // Try again.
+        //
+        router.bind_ready_signers().await;
 
-            // The signers that were permanently unusable at registration should not be tried again.
-            assert_eq!(6 + 2, call_counts.get(FnIdx::CreateRegistrationKey));
+        // The signers that were permanently unusable at registration should not be tried again.
+        assert_eq!(6 + 2, call_counts.get(FnIdx::CreateRegistrationKey));
 
-            // The signers that were permanently unusable at challenge signing should not be tried again.
-            assert_eq!(3 + 1, call_counts.get(FnIdx::SignRegistrationChallenge));
+        // The signers that were permanently unusable at challenge signing should not be tried again.
+        assert_eq!(3 + 1, call_counts.get(FnIdx::SignRegistrationChallenge));
 
-            // And the end result should be that no signers were registered with the signer mapper.
-            assert_eq!(0, signer_mapper.get_signer_handles().unwrap().len());
-        });
+        // And the end result should be that no signers were registered with the signer mapper.
+        assert_eq!(0, signer_mapper.get_signer_handles().await.unwrap().len());
     }
 
-    #[test]
-    pub fn verify_that_temporarily_unavailable_signers_are_registered_when_available() {
+    #[tokio::test]
+    pub async fn verify_that_temporarily_unavailable_signers_are_registered_when_available() {
         fn temp_unavail(call_counts: &MockSignerCallCounts) -> Result<(), SignerError> {
             if call_counts.get(FnIdx::CreateRegistrationKey) == 1 {
                 // Fail the first time registration is attempted
@@ -859,49 +893,49 @@ pub mod tests {
             }
         }
 
-        test::test_in_memory(|storage_uri| {
-            let call_counts = Arc::new(MockSignerCallCounts::new());
-            let signer_mapper = Arc::new(SignerMapper::build(storage_uri).unwrap());
+        let storage_uri = test::mem_storage();
 
-            let temp_unavail_signer = Arc::new(SignerProvider::Mock(
-                SignerFlags::default(),
-                MockSigner::new(
-                    "mock temporararily unavailable signer",
-                    signer_mapper.clone(),
-                    call_counts.clone(),
-                    Some(temp_unavail),
-                    None,
-                ),
-            ));
+        let call_counts = Arc::new(MockSignerCallCounts::new());
+        let signer_mapper = Arc::new(SignerMapper::build(&storage_uri).unwrap());
 
-            // Create a SignerRouter that uses the mock signer with the mock signer starting in the pending signer set.
-            let router = create_signer_router(&[temp_unavail_signer], signer_mapper.clone());
+        let temp_unavail_signer = Arc::new(SignerProvider::Mock(
+            SignerFlags::default(),
+            MockSigner::new(
+                "mock temporarily unavailable signer",
+                signer_mapper.clone(),
+                call_counts.clone(),
+                Some(temp_unavail),
+                None,
+            ),
+        ));
 
-            // No signers have been registered with the SignerMapper yet
-            assert_eq!(0, signer_mapper.get_signer_handles().unwrap().len());
+        // Create a SignerRouter that uses the mock signer with the mock signer starting in the pending signer set.
+        let router = create_signer_router(&[temp_unavail_signer], signer_mapper.clone());
 
-            // Try to use the SignerRouter to bind ready signers. This should cause the SignerRouter to contact
-            // the mock signer, ask it to create a registration key, verify that it can sign correctly with that key,
-            // assign a signer mapper handle to the signer, then check for random number generation support and finally
-            // actually generate the random number. This should fail the first time due to the logic imlpemented by the
-            // temp_avail() function above.
-            router.bind_ready_signers();
+        // No signers have been registered with the SignerMapper yet
+        assert_eq!(0, signer_mapper.get_signer_handles().await.unwrap().len());
 
-            // The number of attempts to register a signer should have increased by one.
-            assert_eq!(1, call_counts.get(FnIdx::CreateRegistrationKey));
-            assert_eq!(0, call_counts.get(FnIdx::SignRegistrationChallenge));
-            assert_eq!(0, signer_mapper.get_signer_handles().unwrap().len());
+        // Try to use the SignerRouter to bind ready signers. This should cause the SignerRouter to contact
+        // the mock signer, ask it to create a registration key, verify that it can sign correctly with that key,
+        // assign a signer mapper handle to the signer, then check for random number generation support and finally
+        // actually generate the random number. This should fail the first time due to the logic implemented by the
+        // temp_avail() function above.
+        router.bind_ready_signers().await;
 
-            //
-            // Try again. We should succeed the second time due to the logic implemented by the temp_avail() function
-            // above.
-            //
-            router.bind_ready_signers();
+        // The number of attempts to register a signer should have increased by one.
+        assert_eq!(1, call_counts.get(FnIdx::CreateRegistrationKey));
+        assert_eq!(0, call_counts.get(FnIdx::SignRegistrationChallenge));
+        assert_eq!(0, signer_mapper.get_signer_handles().await.unwrap().len());
 
-            // We should be all green now
-            assert_eq!(2, call_counts.get(FnIdx::CreateRegistrationKey));
-            assert_eq!(1, call_counts.get(FnIdx::SignRegistrationChallenge));
-            assert_eq!(1, signer_mapper.get_signer_handles().unwrap().len());
-        });
+        //
+        // Try again. We should succeed the second time due to the logic implemented by the temp_avail() function
+        // above.
+        //
+        router.bind_ready_signers().await;
+
+        // We should be all green now
+        assert_eq!(2, call_counts.get(FnIdx::CreateRegistrationKey));
+        assert_eq!(1, call_counts.get(FnIdx::SignRegistrationChallenge));
+        assert_eq!(1, signer_mapper.get_signer_handles().await.unwrap().len());
     }
 }

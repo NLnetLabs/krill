@@ -95,9 +95,9 @@ impl SignerProvider {
         }
     }
 
-    pub fn create_registration_key(&self) -> Result<(PublicKey, String), SignerError> {
+    pub async fn create_registration_key(&self) -> Result<(PublicKey, String), SignerError> {
         match self {
-            SignerProvider::OpenSsl(_, signer) => signer.create_registration_key(),
+            SignerProvider::OpenSsl(_, signer) => signer.create_registration_key().await,
             #[cfg(feature = "hsm")]
             SignerProvider::Kmip(_, signer) => signer.create_registration_key(),
             #[cfg(feature = "hsm")]
@@ -107,13 +107,17 @@ impl SignerProvider {
         }
     }
 
-    pub fn sign_registration_challenge<D: AsRef<[u8]> + ?Sized>(
+    pub async fn sign_registration_challenge<D: AsRef<[u8]> + ?Sized>(
         &self,
         signer_private_key_id: &str,
         challenge: &D,
     ) -> Result<RpkiSignature, SignerError> {
         match self {
-            SignerProvider::OpenSsl(_, signer) => signer.sign_registration_challenge(signer_private_key_id, challenge),
+            SignerProvider::OpenSsl(_, signer) => {
+                signer
+                    .sign_registration_challenge(signer_private_key_id, challenge)
+                    .await
+            }
             #[cfg(feature = "hsm")]
             SignerProvider::Kmip(_, signer) => signer.sign_registration_challenge(signer_private_key_id, challenge),
             #[cfg(feature = "hsm")]
@@ -168,9 +172,9 @@ impl SignerProvider {
 
     /// Import an existing private key. Only supported for OpenSslSigner. Other
     /// signers will return an error.
-    pub fn import_key(&self, pem: &str) -> Result<KeyIdentifier, SignerError> {
+    pub async fn import_key(&self, pem: &str) -> Result<KeyIdentifier, SignerError> {
         match self {
-            SignerProvider::OpenSsl(_, signer) => signer.import_key(pem),
+            SignerProvider::OpenSsl(_, signer) => signer.import_key(pem).await,
             #[cfg(feature = "hsm")]
             SignerProvider::Kmip(_, _) => Err(SignerError::other("import key not supported for KMIP signers")),
             #[cfg(feature = "hsm")]
@@ -183,47 +187,48 @@ impl SignerProvider {
 
 // Implement the functions defined by the `Signer` trait because `SignerRouter` expects to invoke them, but as the
 // dispatching is not trait based we don't actually have to implement the `Signer` trait.
+#[async_trait::async_trait]
 impl Signer for SignerProvider {
     type KeyId = KeyIdentifier;
     type Error = SignerError;
 
-    fn create_key(&self, algorithm: PublicKeyFormat) -> Result<KeyIdentifier, SignerError> {
+    async fn create_key(&self, algorithm: PublicKeyFormat) -> Result<KeyIdentifier, SignerError> {
         match self {
-            SignerProvider::OpenSsl(_, signer) => signer.create_key(algorithm),
+            SignerProvider::OpenSsl(_, signer) => signer.create_key(algorithm).await,
             #[cfg(feature = "hsm")]
-            SignerProvider::Kmip(_, signer) => signer.create_key(algorithm),
+            SignerProvider::Kmip(_, signer) => signer.create_key(algorithm).await,
             #[cfg(feature = "hsm")]
-            SignerProvider::Pkcs11(_, signer) => signer.create_key(algorithm),
+            SignerProvider::Pkcs11(_, signer) => signer.create_key(algorithm).await,
             #[cfg(all(test, feature = "hsm"))]
-            SignerProvider::Mock(_, signer) => signer.create_key(algorithm),
+            SignerProvider::Mock(_, signer) => signer.create_key(algorithm).await,
         }
     }
 
-    fn get_key_info(&self, key: &KeyIdentifier) -> Result<PublicKey, KeyError<SignerError>> {
+    async fn get_key_info(&self, key: &KeyIdentifier) -> Result<PublicKey, KeyError<SignerError>> {
         match self {
-            SignerProvider::OpenSsl(_, signer) => signer.get_key_info(key),
+            SignerProvider::OpenSsl(_, signer) => signer.get_key_info(key).await,
             #[cfg(feature = "hsm")]
-            SignerProvider::Kmip(_, signer) => signer.get_key_info(key),
+            SignerProvider::Kmip(_, signer) => signer.get_key_info(key).await,
             #[cfg(feature = "hsm")]
-            SignerProvider::Pkcs11(_, signer) => signer.get_key_info(key),
+            SignerProvider::Pkcs11(_, signer) => signer.get_key_info(key).await,
             #[cfg(all(test, feature = "hsm"))]
-            SignerProvider::Mock(_, signer) => signer.get_key_info(key),
+            SignerProvider::Mock(_, signer) => signer.get_key_info(key).await,
         }
     }
 
-    fn destroy_key(&self, key: &KeyIdentifier) -> Result<(), KeyError<SignerError>> {
+    async fn destroy_key(&self, key: &KeyIdentifier) -> Result<(), KeyError<SignerError>> {
         match self {
-            SignerProvider::OpenSsl(_, signer) => signer.destroy_key(key),
+            SignerProvider::OpenSsl(_, signer) => signer.destroy_key(key).await,
             #[cfg(feature = "hsm")]
-            SignerProvider::Kmip(_, signer) => signer.destroy_key(key),
+            SignerProvider::Kmip(_, signer) => signer.destroy_key(key).await,
             #[cfg(feature = "hsm")]
-            SignerProvider::Pkcs11(_, signer) => signer.destroy_key(key),
+            SignerProvider::Pkcs11(_, signer) => signer.destroy_key(key).await,
             #[cfg(all(test, feature = "hsm"))]
-            SignerProvider::Mock(_, signer) => signer.destroy_key(key),
+            SignerProvider::Mock(_, signer) => signer.destroy_key(key).await,
         }
     }
 
-    fn sign<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
+    async fn sign<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized + Sync>(
         &self,
         key: &KeyIdentifier,
         algorithm: Alg,
@@ -235,17 +240,17 @@ impl Signer for SignerProvider {
         }
 
         match self {
-            SignerProvider::OpenSsl(_, signer) => signer.sign(key, algorithm, data),
+            SignerProvider::OpenSsl(_, signer) => signer.sign(key, algorithm, data).await,
             #[cfg(feature = "hsm")]
-            SignerProvider::Kmip(_, signer) => signer.sign(key, algorithm, data),
+            SignerProvider::Kmip(_, signer) => signer.sign(key, algorithm, data).await,
             #[cfg(feature = "hsm")]
-            SignerProvider::Pkcs11(_, signer) => signer.sign(key, algorithm, data),
+            SignerProvider::Pkcs11(_, signer) => signer.sign(key, algorithm, data).await,
             #[cfg(all(test, feature = "hsm"))]
-            SignerProvider::Mock(_, signer) => signer.sign(key, algorithm, data),
+            SignerProvider::Mock(_, signer) => signer.sign(key, algorithm, data).await,
         }
     }
 
-    fn sign_one_off<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
+    async fn sign_one_off<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized + Sync>(
         &self,
         algorithm: Alg,
         data: &D,
@@ -266,7 +271,7 @@ impl Signer for SignerProvider {
         }
     }
 
-    fn rand(&self, target: &mut [u8]) -> Result<(), Self::Error> {
+    async fn rand(&self, target: &mut [u8]) -> Result<(), Self::Error> {
         openssl::rand::rand_bytes(target).map_err(SignerError::OpenSslError)
     }
 }
