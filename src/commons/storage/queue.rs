@@ -193,7 +193,7 @@ impl Queue {
     pub async fn pending_tasks_remaining(&self) -> StorageResult<usize> {
         self.kv
             .execute(&Self::lock_scope(), |kv| async move {
-                kv.list_keys(&Self::pending_scope()).map(|list| list.len())
+                kv.list_keys(&Self::pending_scope()).await.map(|list| list.len())
             })
             .await
     }
@@ -202,7 +202,7 @@ impl Queue {
     pub async fn running_tasks_remaining(&self) -> StorageResult<usize> {
         self.kv
             .execute(&Self::lock_scope(), |kv| async move {
-                kv.list_keys(&Self::running_scope()).map(|list| list.len())
+                kv.list_keys(&Self::running_scope()).await.map(|list| list.len())
             })
             .await
     }
@@ -210,10 +210,9 @@ impl Queue {
     /// Returns the currently running tasks
     pub async fn running_tasks_keys(&self) -> StorageResult<Vec<Key>> {
         self.kv
-            .execute(
-                &Self::lock_scope(),
-                |kv| async move { kv.list_keys(&Self::running_scope()) },
-            )
+            .execute(&Self::lock_scope(), |kv| async move {
+                kv.list_keys(&Self::running_scope()).await
+            })
             .await
     }
 
@@ -235,14 +234,16 @@ impl Queue {
         self.kv
             .execute(&Self::lock_scope(), |kv| async move {
                 let running_key_opt = kv
-                    .list_keys(&Self::running_scope())?
+                    .list_keys(&Self::running_scope())
+                    .await?
                     .into_iter()
                     .filter_map(|k| TaskKey::try_from(&k).ok())
                     .find(|running| running.name.as_ref() == &new_task.name)
                     .map(|tk| tk.running_key());
 
                 let pending_key_opt = kv
-                    .list_keys(&Self::pending_scope())?
+                    .list_keys(&Self::pending_scope())
+                    .await?
                     .into_iter()
                     .filter_map(|k| TaskKey::try_from(&k).ok())
                     .find(|p| p.name.as_ref() == &new_task.name)
@@ -255,49 +256,49 @@ impl Queue {
                             Ok(())
                         } else {
                             // no pending or running task exists, just add the new task
-                            kv.store(&new_task_key, new_task.value.clone())
+                            kv.store(&new_task_key, new_task.value.clone()).await
                         }
                     }
                     ScheduleMode::ReplaceExisting => {
                         if let Some(pending) = pending_key_opt {
-                            kv.delete(&pending)?;
+                            kv.delete(&pending).await?;
                         }
-                        kv.store(&new_task_key, new_task.value.clone())
+                        kv.store(&new_task_key, new_task.value.clone()).await
                     }
                     ScheduleMode::ReplaceExistingSoonest => {
                         if let Some(pending) = pending_key_opt {
                             if let Ok(tk) = TaskKey::try_from(&pending) {
                                 new_task.timestamp_millis = new_task.timestamp_millis.min(tk.timestamp_millis);
                             }
-                            kv.delete(&pending)?;
+                            kv.delete(&pending).await?;
                         }
 
                         let new_task_key = Key::from(&new_task);
-                        kv.store(&new_task_key, new_task.value.clone())
+                        kv.store(&new_task_key, new_task.value.clone()).await
                     }
                     ScheduleMode::FinishOrReplaceExisting => {
                         if let Some(running) = running_key_opt {
-                            kv.delete(&running)?;
+                            kv.delete(&running).await?;
                         }
                         if let Some(pending) = pending_key_opt {
-                            kv.delete(&pending)?;
+                            kv.delete(&pending).await?;
                         }
-                        kv.store(&new_task_key, new_task.value.clone())
+                        kv.store(&new_task_key, new_task.value.clone()).await
                     }
                     ScheduleMode::FinishOrReplaceExistingSoonest => {
                         if let Some(running) = running_key_opt {
-                            kv.delete(&running)?;
+                            kv.delete(&running).await?;
                         }
 
                         if let Some(pending) = pending_key_opt {
                             if let Ok(tk) = TaskKey::try_from(&pending) {
                                 new_task.timestamp_millis = new_task.timestamp_millis.min(tk.timestamp_millis);
                             }
-                            kv.delete(&pending)?;
+                            kv.delete(&pending).await?;
                         }
 
                         let new_task_key = Key::from(&new_task);
-                        kv.store(&new_task_key, new_task.value.clone())
+                        kv.store(&new_task_key, new_task.value.clone()).await
                     }
                 }
             })
@@ -308,7 +309,7 @@ impl Queue {
     pub async fn pending_task_scheduled(&self, name: SegmentBuf) -> StorageResult<Option<u128>> {
         self.kv
             .execute(&Self::lock_scope(), |kv| async move {
-                kv.list_keys(&Self::pending_scope()).map(|keys| {
+                kv.list_keys(&Self::pending_scope()).await.map(|keys| {
                     keys.into_iter()
                         .filter_map(|k| TaskKey::try_from(&k).ok())
                         .find(|p| p.name.as_ref() == &name)
@@ -322,8 +323,8 @@ impl Queue {
     pub async fn finish_running_task(&self, running: &Key) -> StorageResult<()> {
         self.kv
             .execute(&Self::lock_scope(), |kv| async move {
-                if kv.has(running)? {
-                    kv.delete(running)
+                if kv.has(running).await? {
+                    kv.delete(running).await
                 } else {
                     Err(KeyValueError::Other(format!(
                         "Cannot finish task {}. It is not running.",
@@ -344,10 +345,9 @@ impl Queue {
         };
 
         self.kv
-            .execute(
-                &Self::lock_scope(),
-                |kv| async move { kv.move_value(running, &pending_key) },
-            )
+            .execute(&Self::lock_scope(), |kv| async move {
+                kv.move_value(running, &pending_key).await
+            })
             .await
     }
 
@@ -358,7 +358,8 @@ impl Queue {
                 let tasks_before = now();
 
                 if let Some(pending) = kv
-                    .list_keys(&Self::pending_scope())?
+                    .list_keys(&Self::pending_scope())
+                    .await?
                     .into_iter()
                     .filter_map(|k| TaskKey::try_from(&k).ok())
                     .filter(|tk| tk.timestamp_millis <= tasks_before)
@@ -366,7 +367,7 @@ impl Queue {
                 {
                     let pending_key = pending.pending_key();
 
-                    if let Some(value) = kv.get(&pending_key)? {
+                    if let Some(value) = kv.get(&pending_key).await? {
                         let mut running_task = RunningTask {
                             name: pending.name.into_owned(),
                             timestamp_millis: tasks_before,
@@ -374,7 +375,7 @@ impl Queue {
                         };
                         let mut running_key = Key::from(&running_task);
 
-                        if kv.has(&running_key)? {
+                        if kv.has(&running_key).await? {
                             // It's not pretty to sleep blocking, even if it's
                             // for 1 ms, but if we don't then get a name collision
                             // with an existing running task.
@@ -383,7 +384,7 @@ impl Queue {
                             running_key = Key::from(&running_task);
                         }
 
-                        kv.move_value(&pending_key, &running_key)?;
+                        kv.move_value(&pending_key, &running_key).await?;
 
                         Ok(Some(running_task))
                     } else {
@@ -405,27 +406,24 @@ impl Queue {
 
         self.kv
             .execute(&Self::lock_scope(), |kv| async move {
-                kv.list_keys(&Self::running_scope())?
-                    .into_iter()
-                    .filter_map(|k| {
-                        let task = TaskKey::try_from(&k).ok()?;
-                        if task.timestamp_millis <= reschedule_timeout {
-                            Some(task)
-                        } else {
-                            None
-                        }
-                    })
-                    .for_each(|tk| {
-                        let running_key = tk.running_key();
+                for tk in kv.list_keys(&Self::running_scope()).await?.into_iter().filter_map(|k| {
+                    let task = TaskKey::try_from(&k).ok()?;
+                    if task.timestamp_millis <= reschedule_timeout {
+                        Some(task)
+                    } else {
+                        None
+                    }
+                }) {
+                    let running_key = tk.running_key();
 
-                        let pending_key = TaskKey {
-                            name: Cow::Borrowed(&tk.name),
-                            timestamp_millis: now,
-                        }
-                        .pending_key();
+                    let pending_key = TaskKey {
+                        name: Cow::Borrowed(&tk.name),
+                        timestamp_millis: now,
+                    }
+                    .pending_key();
 
-                        let _ = kv.move_value(&running_key, &pending_key);
-                    });
+                    let _ = kv.move_value(&running_key, &pending_key).await;
+                }
 
                 Ok(())
             })

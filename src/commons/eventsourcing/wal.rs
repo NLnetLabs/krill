@@ -155,7 +155,7 @@ impl<T: WalSupport> WalStore<T> {
             .execute(&scope, |kv| async move {
                 let key = Self::key_for_snapshot(handle);
                 let json = serde_json::to_value(instance.as_ref())?;
-                kv.store(&key, json)?;
+                kv.store(&key, json).await?;
 
                 self.cache_update(handle, instance.clone());
 
@@ -189,7 +189,7 @@ impl<T: WalSupport> WalStore<T> {
 
             self.kv
                 .execute(&Scope::global(), |kv| async move {
-                    kv.delete_scope(&scope)?;
+                    kv.delete_scope(&scope).await?;
                     self.cache_remove(handle);
                     Ok(())
                 })
@@ -248,7 +248,7 @@ impl<T: WalSupport> WalStore<T> {
 
                         let key = Self::key_for_snapshot(handle);
 
-                        match kv.get(&key)? {
+                        match kv.get(&key).await? {
                             Some(value) => {
                                 trace!("Deserializing stored instance for '{handle}'");
                                 let latest: T = serde_json::from_value(value)?;
@@ -284,7 +284,7 @@ impl<T: WalSupport> WalStore<T> {
                         let revision = latest_inner.revision();
                         let key = Self::key_for_wal_set(handle, revision);
 
-                        if let Some(value) = kv.get(&key)? {
+                        if let Some(value) = kv.get(&key).await? {
                             let set: WalSet<T> = serde_json::from_value(value)?;
                             trace!("applying revision '{revision}' to '{handle}'");
                             latest_inner.apply(set);
@@ -329,7 +329,7 @@ impl<T: WalSupport> WalStore<T> {
 
                                     let key_for_wal_set = Self::key_for_wal_set(handle, revision);
 
-                                    if kv.has(&key_for_wal_set)? {
+                                    if kv.has(&key_for_wal_set).await? {
                                         error!("Change set for '{handle}' version '{revision}' already exists.");
                                         error!("This is a bug. Please report this issue to rpki-team@nlnetlabs.nl.");
                                         error!("Krill will exit. If this issue repeats, consider removing {}.", handle);
@@ -340,7 +340,7 @@ impl<T: WalSupport> WalStore<T> {
 
                                     latest_inner.apply(set);
 
-                                    kv.store(&key_for_wal_set, json)?;
+                                    kv.store(&key_for_wal_set, json).await?;
                                 }
                             }
                         }
@@ -355,16 +355,16 @@ impl<T: WalSupport> WalStore<T> {
                     // Save the latest version as snapshot
                     let key = Self::key_for_snapshot(handle);
                     let value = serde_json::to_value(latest.as_ref())?;
-                    kv.store(&key, value)?;
+                    kv.store(&key, value).await?;
 
                     // Delete all wal sets (changes), since we are doing
                     // this inside a transaction or locked scope we can
                     // assume that all changes were applied, and there
                     // are no other threads creating additional changes
                     // that we were not aware of.
-                    for key in kv.list_keys(&Self::scope_for_handle(handle))? {
+                    for key in kv.list_keys(&Self::scope_for_handle(handle)).await? {
                         if key.name().as_str().starts_with("wal-") {
-                            kv.delete(&key)?;
+                            kv.delete(&key).await?;
                         }
                     }
                 }

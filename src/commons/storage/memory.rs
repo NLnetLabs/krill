@@ -187,7 +187,6 @@ impl Memory {
         F: FnOnce(KeyValueStoreDispatcher) -> Ret,
         Ret: Future<Output = Result<T, KeyValueError>>,
     {
-        //     fn transaction(&self, scope: &Scope, callback: TransactionCallback) -> Result<()> {
         // Try to get a lock for 10 seconds. We may need to make this configurable.
         // Dependent on use cases it may actually not be that exceptional for locks
         // to be kept for even longer.

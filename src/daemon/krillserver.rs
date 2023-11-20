@@ -4,8 +4,6 @@ use std::{collections::HashMap, path::PathBuf, str::FromStr, sync::Arc};
 use bytes::Bytes;
 use chrono::Duration;
 
-use futures::future::try_join_all;
-
 use rpki::{
     ca::{
         idexchange,
@@ -615,20 +613,27 @@ impl KrillServer {
 
         info!("Bulk import {} CAs", structure.cas.len());
         // Set up each online TA child with local repo, do this in parallel.
-        let mut import_fns = vec![];
         let service_uri = Arc::new(self.config.service_uri());
+
+        // We need to import the CAs one by one, as later CAs may depend on
+        // earlier CAs to be created first. We can end up with deadlocks if
+        // we don't.
         for ca in structure.into_cas() {
-            import_fns.push(Self::import_ca(
+            let ca_handle = ca.handle().clone();
+
+            // Calling too many async functions could cause the stack to blow.
+            // So, pass the task on to tokio to avoid this issue.
+            let task = tokio::spawn(Self::import_ca(
                 ca,
                 self.ca_manager.clone(),
                 self.repo_manager.clone(),
                 service_uri.clone(),
                 actor.clone(),
             ));
+            task.await
+                .map_err(|e| Error::Custom(format!("Join error importing CAs. This is a bug: {}", e)))?
+                .map_err(|e| Error::Custom(format!("Could not import CA '{}': {}", ca_handle, e)))?;
         }
-        try_join_all(import_fns)
-            .await
-            .map_err(|e| Error::Custom(format!("Could not import CAs: {}", e)))?;
 
         Ok(())
     }

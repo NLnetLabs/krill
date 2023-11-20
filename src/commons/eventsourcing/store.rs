@@ -137,7 +137,7 @@ where
 
                 let init_command_key = Self::key_for_command(&handle, 0);
 
-                if kv.has(&init_command_key)? {
+                if kv.has(&init_command_key).await? {
                     // This is no good.. this aggregate already exists.
                     Ok(Err(A::Error::from(AggregateStoreError::DuplicateAggregate(handle))))
                 } else {
@@ -155,7 +155,7 @@ where
                             let processed_command = processed_command_builder.finish_with_init_event(init_event);
 
                             let json = serde_json::to_value(&processed_command)?;
-                            kv.store(&init_command_key, json)?;
+                            kv.store(&init_command_key, json).await?;
 
                             let arc = Arc::new(aggregate);
 
@@ -235,14 +235,14 @@ where
                         changed_from_cached = true;
 
                         let snapshot_key = Self::key_for_snapshot(handle);
-                        match kv.get(&snapshot_key)? {
+                        match kv.get(&snapshot_key).await? {
                             Some(value) => {
                                 let agg: A = serde_json::from_value(value)?;
                                 Ok(Arc::new(agg))
                             }
                             None => {
                                 let init_key = Self::key_for_command(handle, 0);
-                                match kv.get(&init_key)? {
+                                match kv.get(&init_key).await? {
                                     Some(value) => {
                                         let init_command: StoredCommand<A> = serde_json::from_value(value)?;
 
@@ -273,7 +273,7 @@ where
                 // to mark the aggregate as changed so that the we can update the cache
                 // later.
                 let next_command = Self::key_for_command(handle, agg.version());
-                if kv.has(&next_command)? {
+                if kv.has(&next_command).await? {
                     let aggregate = Arc::make_mut(&mut agg);
 
                     // check and apply any applicable processed commands until:
@@ -284,7 +284,7 @@ where
 
                         let key = Self::key_for_command(handle, version);
 
-                        match kv.get(&key)? {
+                        match kv.get(&key).await? {
                             None => break,
                             Some(value) => {
                                 let command: StoredCommand<A> = serde_json::from_value(value)?;
@@ -317,7 +317,7 @@ where
                     // from. So, exit here, as there is nothing sensible we can do with this error.
                     //
                     // See issue: https://github.com/NLnetLabs/krill/issues/322
-                    if kv.has(&command_key)? {
+                    if kv.has(&command_key).await? {
                         error!("Command key for '{handle}' version '{version}' already exists.");
                         error!("This is a bug. Please report this issue to rpki-team@nlnetlabs.nl.");
                         error!("Krill will exit. If this issue repeats, consider removing {}.", handle);
@@ -333,7 +333,7 @@ where
                             aggregate.apply_command(processed_command);
 
                             changed_from_cached = true;
-                            kv.store(&command_key, json)?;
+                            kv.store(&command_key, json).await?;
 
                             Err(e)
                         }
@@ -371,7 +371,7 @@ where
                                 } else {
                                     // Save the latest command.
                                     let json = serde_json::to_value(&processed_command)?;
-                                    kv.store(&command_key, json)?;
+                                    kv.store(&command_key, json).await?;
 
                                     // Now send the events to the 'post-save' listeners.
                                     if let Some(events) = processed_command.events() {
@@ -398,7 +398,7 @@ where
                 if save_snapshot {
                     let key = Self::key_for_snapshot(handle);
                     let value = serde_json::to_value(agg.as_ref())?;
-                    kv.store(&key, value)?;
+                    kv.store(&key, value).await?;
                 }
 
                 if let Err(e) = res {
@@ -546,7 +546,7 @@ where
         let scope = Self::scope_for_agg(id);
 
         self.kv
-            .execute(&Scope::global(), |kv| async move { kv.delete_scope(&scope) })
+            .execute(&Scope::global(), |kv| async move { kv.delete_scope(&scope).await })
             .await?;
 
         self.cache_remove(id).await;

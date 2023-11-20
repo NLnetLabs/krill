@@ -204,8 +204,8 @@ impl CaObjectsStore {
         let ca_key = Self::key(ca);
         self.store
             .execute(&Scope::global(), |kv| async move {
-                if kv.has(&ca_key)? {
-                    kv.delete(&ca_key)
+                if kv.has(&ca_key).await? {
+                    kv.delete(&ca_key).await
                 } else {
                     Ok(())
                 }
@@ -240,7 +240,7 @@ impl CaObjectsStore {
             .execute(&Scope::global(), |kv| async move {
                 let key = Self::key(ca);
 
-                let objects: CaObjects = if let Some(value) = kv.get(&key)? {
+                let objects: CaObjects = if let Some(value) = kv.get(&key).await? {
                     serde_json::from_value(value)?
                 } else {
                     CaObjects::new(ca.clone(), None, HashMap::new(), vec![])
@@ -250,7 +250,7 @@ impl CaObjectsStore {
                     Err(e) => Ok(Err(e)),
                     Ok(objects) => {
                         let value = serde_json::to_value(&objects)?;
-                        kv.store(&key, value)?;
+                        kv.store(&key, value).await?;
                         Ok(Ok(()))
                     }
                 }

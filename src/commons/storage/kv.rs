@@ -36,12 +36,14 @@ impl KeyValueStore {
 
     /// Returns true if this KeyValueStore (with this namespace) has any entries.
     pub async fn is_empty(&self) -> Result<bool, KeyValueError> {
-        self.execute(&Scope::global(), |kv| async move { kv.is_empty() }).await
+        self.execute(&Scope::global(), |kv| async move { kv.is_empty().await })
+            .await
     }
 
     /// Wipe the complete store. Needless to say perhaps.. use with care..
     pub async fn wipe(&self) -> Result<(), KeyValueError> {
-        self.execute(&Scope::global(), |kv| async move { kv.clear() }).await
+        self.execute(&Scope::global(), |kv| async move { kv.clear().await })
+            .await
     }
 
     /// Execute one or more `KeyValueStoreDispatcher` operations
@@ -72,18 +74,17 @@ impl KeyValueStore {
 impl KeyValueStore {
     /// Stores a key value pair, serialized as json, overwrite existing
     pub async fn store<V: Serialize>(&self, key: &Key, value: &V) -> Result<(), KeyValueError> {
-        self.execute(
-            key.scope(),
-            |kv| async move { kv.store(key, serde_json::to_value(value)?) },
-        )
+        self.execute(key.scope(), |kv| async move {
+            kv.store(key, serde_json::to_value(value)?).await
+        })
         .await
     }
 
     /// Stores a key value pair, serialized as json, fails if existing
     pub async fn store_new<V: Serialize>(&self, key: &Key, value: &V) -> Result<(), KeyValueError> {
         self.execute(key.scope(), |kv| async move {
-            match kv.get(key)? {
-                None => kv.store(key, serde_json::to_value(value)?),
+            match kv.get(key).await? {
+                None => kv.store(key, serde_json::to_value(value)?).await,
                 _ => Err(KeyValueError::UnknownKey(key.to_owned())),
             }
         })
@@ -94,7 +95,7 @@ impl KeyValueStore {
     /// returns None if it cannot be found.
     pub async fn get<V: DeserializeOwned>(&self, key: &Key) -> Result<Option<V>, KeyValueError> {
         self.execute(key.scope(), |kv| async move {
-            if let Some(value) = kv.get(key)? {
+            if let Some(value) = kv.get(key).await? {
                 trace!("got value for key: {}", key);
                 Ok(Some(serde_json::from_value(value)?))
             } else {
@@ -107,17 +108,18 @@ impl KeyValueStore {
 
     /// Returns whether a key exists
     pub async fn has(&self, key: &Key) -> Result<bool, KeyValueError> {
-        self.execute(key.scope(), |kv| async move { kv.has(key) }).await
+        self.execute(key.scope(), |kv| async move { kv.has(key).await }).await
     }
 
     /// Returns all keys for the given scope
     pub async fn list_keys(&self, scope: &Scope) -> StorageResult<Vec<Key>> {
-        self.execute(scope, |kv| async move { kv.list_keys(scope) }).await
+        self.execute(scope, |kv| async move { kv.list_keys(scope).await }).await
     }
 
     /// Delete a key-value pair
     pub async fn drop_key(&self, key: &Key) -> Result<(), KeyValueError> {
-        self.execute(key.scope(), |kv| async move { kv.delete(key) }).await
+        self.execute(key.scope(), |kv| async move { kv.delete(key).await })
+            .await
     }
 
     /// Returns all keys under a scope (scopes are exact strings, 'sub'-scopes
@@ -127,7 +129,7 @@ impl KeyValueStore {
     /// If matching is not empty then the key must contain the given `&str`.
     pub async fn keys(&self, scope: &Scope, matching: &str) -> Result<Vec<Key>, KeyValueError> {
         self.execute(scope, |kv| async move {
-            kv.list_keys(scope).map(|keys| {
+            kv.list_keys(scope).await.map(|keys| {
                 keys.into_iter()
                     .filter(|key| {
                         key.scope() == scope && (matching.is_empty() || key.name().as_str().contains(matching))
@@ -141,7 +143,7 @@ impl KeyValueStore {
     /// Returns all key value pairs under a scope.
     pub async fn key_value_pairs(&self, scope: &Scope, matching: &str) -> Result<HashMap<Key, Value>, KeyValueError> {
         self.execute(scope, |kv| async move {
-            let keys: Vec<Key> = kv.list_keys(scope).map(|keys| {
+            let keys: Vec<Key> = kv.list_keys(scope).await.map(|keys| {
                 keys.into_iter()
                     .filter(|key| {
                         key.scope() == scope && (matching.is_empty() || key.name().as_str().contains(matching))
@@ -151,7 +153,7 @@ impl KeyValueStore {
 
             let mut pairs = HashMap::new();
             for key in keys {
-                if let Some(value) = kv.get(&key)? {
+                if let Some(value) = kv.get(&key).await? {
                     pairs.insert(key, value);
                 }
             }
@@ -166,18 +168,19 @@ impl KeyValueStore {
 impl KeyValueStore {
     /// Returns whether a scope exists
     pub async fn has_scope(&self, scope: &Scope) -> Result<bool, KeyValueError> {
-        self.execute(&Scope::global(), |kv| async move { kv.has_scope(scope) })
+        self.execute(&Scope::global(), |kv| async move { kv.has_scope(scope).await })
             .await
     }
 
     /// Delete a scope
     pub async fn drop_scope(&self, scope: &Scope) -> Result<(), KeyValueError> {
-        self.execute(scope, |kv| async move { kv.delete_scope(scope) }).await
+        self.execute(scope, |kv| async move { kv.delete_scope(scope).await })
+            .await
     }
 
     /// Returns all scopes, including sub_scopes
     pub async fn scopes(&self) -> Result<Vec<Scope>, KeyValueError> {
-        self.execute(&Scope::global(), |kv| async move { kv.list_scopes() })
+        self.execute(&Scope::global(), |kv| async move { kv.list_scopes().await })
             .await
     }
 }
@@ -255,7 +258,7 @@ impl KeyValueStore {
             self.execute(&scope, |kv| async move {
                 for (key, value) in key_value_pairs.into_iter() {
                     trace!("  ---storing key {}", key);
-                    kv.store(&key, value)?;
+                    kv.store(&key, value).await?;
                 }
                 Ok(())
             })
@@ -277,6 +280,15 @@ impl fmt::Display for KeyValueStore {
 
 //------------ KeyValueStoreDispatcher ---------------------------------------
 
+/// This type is used for store operations within the context of a
+/// lock or transaction. For most simple operations this is hidden
+/// from Krill because it's called by KeyValueStore which takes care
+/// of that locking.
+///
+/// However, in case the caller needs to do multiple store operations
+/// in a callback within the context of a lock/transaction, through
+/// the KeyValueStore::execute function, they will get an instance
+/// of this type.
 #[derive(Clone, Debug)]
 pub enum KeyValueStoreDispatcher {
     Memory(Memory),
@@ -295,39 +307,41 @@ impl KeyValueStoreDispatcher {
         }
     }
 
-    fn is_empty(&self) -> StorageResult<bool> {
+    async fn is_empty(&self) -> StorageResult<bool> {
         match self {
             KeyValueStoreDispatcher::Memory(m) => m.is_empty(),
             KeyValueStoreDispatcher::Disk(d) => d.is_empty(),
         }
     }
-    pub fn has(&self, key: &Key) -> StorageResult<bool> {
+    pub async fn has(&self, key: &Key) -> StorageResult<bool> {
         match self {
             KeyValueStoreDispatcher::Memory(m) => m.has(key),
             KeyValueStoreDispatcher::Disk(d) => d.has(key),
         }
     }
-    fn has_scope(&self, scope: &Scope) -> StorageResult<bool> {
+
+    async fn has_scope(&self, scope: &Scope) -> StorageResult<bool> {
         match self {
             KeyValueStoreDispatcher::Memory(m) => m.has_scope(scope),
             KeyValueStoreDispatcher::Disk(d) => d.has_scope(scope),
         }
     }
 
-    pub fn get(&self, key: &Key) -> StorageResult<Option<Value>> {
+    pub async fn get(&self, key: &Key) -> StorageResult<Option<Value>> {
         match self {
             KeyValueStoreDispatcher::Memory(m) => m.get(key),
             KeyValueStoreDispatcher::Disk(d) => d.get(key),
         }
     }
 
-    pub fn list_keys(&self, scope: &Scope) -> StorageResult<Vec<Key>> {
+    pub async fn list_keys(&self, scope: &Scope) -> StorageResult<Vec<Key>> {
         match self {
             KeyValueStoreDispatcher::Memory(m) => m.list_keys(scope),
             KeyValueStoreDispatcher::Disk(d) => d.list_keys(scope),
         }
     }
-    fn list_scopes(&self) -> StorageResult<Vec<Scope>> {
+
+    async fn list_scopes(&self) -> StorageResult<Vec<Scope>> {
         match self {
             KeyValueStoreDispatcher::Memory(m) => m.list_scopes(),
             KeyValueStoreDispatcher::Disk(d) => d.list_scopes(),
@@ -335,7 +349,7 @@ impl KeyValueStoreDispatcher {
     }
 
     /// Store a value.
-    pub fn store(&self, key: &Key, value: Value) -> StorageResult<()> {
+    pub async fn store(&self, key: &Key, value: Value) -> StorageResult<()> {
         match self {
             KeyValueStoreDispatcher::Memory(m) => m.store(key, value),
             KeyValueStoreDispatcher::Disk(d) => d.store(key, value),
@@ -343,7 +357,7 @@ impl KeyValueStoreDispatcher {
     }
 
     /// Move a value to a new key. Fails if the original value does not exist.
-    pub fn move_value(&self, from: &Key, to: &Key) -> StorageResult<()> {
+    pub async fn move_value(&self, from: &Key, to: &Key) -> StorageResult<()> {
         match self {
             KeyValueStoreDispatcher::Memory(m) => m.move_value(from, to),
             KeyValueStoreDispatcher::Disk(d) => d.move_value(from, to),
@@ -351,7 +365,7 @@ impl KeyValueStoreDispatcher {
     }
 
     /// Delete a value for a key.
-    pub fn delete(&self, key: &Key) -> StorageResult<()> {
+    pub async fn delete(&self, key: &Key) -> StorageResult<()> {
         match self {
             KeyValueStoreDispatcher::Memory(m) => m.delete(key),
             KeyValueStoreDispatcher::Disk(d) => d.delete(key),
@@ -359,7 +373,7 @@ impl KeyValueStoreDispatcher {
     }
 
     /// Delete all values for a scope.
-    pub fn delete_scope(&self, scope: &Scope) -> StorageResult<()> {
+    pub async fn delete_scope(&self, scope: &Scope) -> StorageResult<()> {
         match self {
             KeyValueStoreDispatcher::Memory(m) => m.delete_scope(scope),
             KeyValueStoreDispatcher::Disk(d) => d.delete_scope(scope),
@@ -367,7 +381,7 @@ impl KeyValueStoreDispatcher {
     }
 
     /// Delete all values within the namespace of this store.
-    fn clear(&self) -> StorageResult<()> {
+    async fn clear(&self) -> StorageResult<()> {
         match self {
             KeyValueStoreDispatcher::Memory(m) => m.clear(),
             KeyValueStoreDispatcher::Disk(d) => d.clear(),
@@ -676,7 +690,7 @@ mod tests {
                     let scope = scope.clone();
                     async move {
                         // start with an empty kv
-                        assert!(kv.is_empty().unwrap());
+                        assert!(kv.is_empty().await.unwrap());
 
                         // add a bunch of keys, see that they are there
                         // and nothing else
@@ -684,23 +698,23 @@ mod tests {
                         keys.sort();
 
                         for key in &keys {
-                            kv.store(key, random_value(8)).unwrap();
+                            kv.store(key, random_value(8)).await.unwrap();
                         }
-                        assert!(!kv.is_empty().unwrap());
+                        assert!(!kv.is_empty().await.unwrap());
 
                         // TODO: use non-blocking sleep when we have an async closure
                         std::thread::sleep(std::time::Duration::from_millis(200));
 
-                        let mut stored_keys = kv.list_keys(&scope).unwrap();
+                        let mut stored_keys = kv.list_keys(&scope).await.unwrap();
                         stored_keys.sort();
 
                         assert_eq!(keys.len(), stored_keys.len());
                         assert_eq!(keys, stored_keys);
 
                         for key in &keys {
-                            kv.delete(key).unwrap();
+                            kv.delete(key).await.unwrap();
                         }
-                        assert!(kv.is_empty().unwrap());
+                        assert!(kv.is_empty().await.unwrap());
 
                         Ok(())
                     }
