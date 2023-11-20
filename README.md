@@ -27,6 +27,9 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 ## Unreleased Version
 
+The minimum Rust version was updated to 1.70 to ensure that Krill can be compiled
+without running into recursion limit caused by the increase in async code.
+
 ## 0.14.2 'Extra, Extra, Extra!'
 
 This release fixes an additional corner case in the migration code that affects
