@@ -125,6 +125,9 @@ impl Disk {
 }
 
 impl Disk {
+    /// Stores a value on disk. We always write the entire value into
+    /// a tempfile first, to ensure that it is written completely, before
+    /// renaming it to the actual file for the key.
     pub fn store(&self, key: &Key, value: Value) -> StorageResult<()> {
         let path = key.as_path(&self.root);
         let dir = key.scope().as_path(&self.root);
@@ -142,50 +145,49 @@ impl Disk {
             })?;
         }
 
-        if path.exists() {
-            // tempfile ensures that the temporary file is cleaned up in case it
-            // would be left behind because of some issue.
-            let tmp_file = tempfile::NamedTempFile::new_in(&self.tmp).map_err(|e| {
-                KeyValueError::IoError(KrillIoError::new(
-                    format!(
-                        "Issue writing tmp file for key: {}. Check permissions and space on disk.",
-                        key
-                    ),
-                    e,
-                ))
-            })?;
+        // We use a tempfile to prevent that we can have half-written files in
+        // case Krill is suddenly stopped, e.g. because of a reboot or server
+        // crash. Or in case the file system runs out of space during writing.
+        // See issue #1160.
+        //
+        // After the file is completely written, we rename (move) it.
+        //
+        // We use the tempfile crate, because it ensures that the temporary file
+        // is cleaned up in case we encounter an error in this function.
+        let tmp_file = tempfile::NamedTempFile::new_in(&self.tmp).map_err(|e| {
+            KeyValueError::IoError(KrillIoError::new(
+                format!(
+                    "Issue writing tmp file for key: {}. Check permissions and space on disk.",
+                    key
+                ),
+                e,
+            ))
+        })?;
 
-            fs::write(&tmp_file, format!("{:#}", value).as_bytes()).map_err(|e| {
-                KeyValueError::IoError(KrillIoError::new(
-                    format!(
-                        "Issue writing tmp file: {} for key: {}. Check permissions and space on disk.",
-                        tmp_file.as_ref().display(),
-                        key
-                    ),
-                    e,
-                ))
-            })?;
+        fs::write(&tmp_file, format!("{:#}", value).as_bytes()).map_err(|e| {
+            KeyValueError::IoError(KrillIoError::new(
+                format!(
+                    "Issue writing tmp file: {} for key: {}. Check permissions and space on disk.",
+                    tmp_file.as_ref().display(),
+                    key
+                ),
+                e,
+            ))
+        })?;
 
-            // persist ensures that the temporary file is not deleted
-            // when the instance is dropped.
-            tmp_file.persist(&path).map_err(|e| {
-                KeyValueError::IoError(KrillIoError::new(
-                    format!(
-                        "Cannot rename temp file {} to {}.",
-                        e.file.path().display(),
-                        path.display()
-                    ),
-                    e.error,
-                ))
-            })?;
-        } else {
-            fs::write(&path, format!("{:#}", value).as_bytes()).map_err(|e| {
-                KeyValueError::IoError(KrillIoError::new(
-                    format!("cannot write file at: {}", path.display()),
-                    e,
-                ))
-            })?;
-        }
+        // Persist the tempfile at the target path. On linux this will use
+        // an (atomic) move to rename the file. If an old file exists, it
+        // is replaced.
+        tmp_file.persist(&path).map_err(|e| {
+            KeyValueError::IoError(KrillIoError::new(
+                format!(
+                    "Cannot rename temp file {} to {}.",
+                    e.file.path().display(),
+                    path.display()
+                ),
+                e.error,
+            ))
+        })?;
 
         Ok(())
     }
