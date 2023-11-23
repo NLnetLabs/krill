@@ -1,0 +1,14 @@
+{
+  "actor": "testbed",
+  "details": {
+    "name": "ca-to-test-repo2",
+    "type": "add_publisher"
+  },
+  "effect": {
+    "msg": "Duplicate publisher 'ca-to-test-repo2'",
+    "result": "error"
+  },
+  "handle": "0",
+  "time": "2023-08-28T11:25:58.041748901Z",
+  "version": 73
+}

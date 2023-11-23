@@ -1,0 +1,27 @@
+{
+  "actor": "testbed",
+  "details": {
+    "name": "RPKI_TEST_HHM",
+    "type": "add_publisher"
+  },
+  "effect": {
+    "events": [
+      {
+        "name": "RPKI_TEST_HHM",
+        "publisher": {
+          "base_uri": "rsync://testbed.krill.cloud/repo/RPKI_TEST_HHM/",
+          "id_cert": {
+            "base64": "MIIDEzCCAfugAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEyhFMUI0NTQxNEVFRTRCMDkwMjAzNUM2QTkwQUQ2MjYwQzBDNkU5ODY2MB4XDTIzMDkyNjAzMDg0MVoXDTM4MDkyNjAzMTM0MVowMzExMC8GA1UEAxMoRTFCNDU0MTRFRUU0QjA5MDIwMzVDNkE5MEFENjI2MEMwQzZFOTg2NjCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAKzcmQd8aBqzfYH7z5h9JnjOW/cH3+AVQsVfaVorkhYeS5F9Dc3IlweiPF5OLJCIYd1EQOnsHZt+5+D2v9XAlmKqhKSjKLsOsev6epQvadx3UkBbVM2w8c2ZDNjJINZxI0pwpfl3G7Ra2L0ai2sG8W+ySEE5Io8H/GvGkYXtWdrgpDyFSzlDeiOfkanvtsErS3Gabox2Hw2DLba1eGN7hc3U1rZJ9bTVyKHkkKISlXf/Pz0DtG74ERKTe/YbgJSrCub+xocu8q42OC/6irmi2eVKANAWigIS8ZNfJU+juOajLz9yKUk4StaVMaT5QAX2n9cNXDXI5cYmtwtmHIdZkTECAwEAAaMyMDAwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQU4bRUFO7ksJAgNcapCtYmDAxumGYwDQYJKoZIhvcNAQELBQADggEBAEhBoSWkc1JWesuakxMorTbq3bciWy9MZeC3hOyJg3QdM6i6jdZhEDI3SBN+xKAOUkgfdueimk33z4xdZSrXDyEddDe+Ssz8voRVgkejUkYJe1R90fZYiPK0DRGPS4NXCxU4716JjQGXUzjR2WR4aQHqZQixnE1IXIo2fypE01xF7UifahZvF6S1zUytxEGc6kTLPbt8TlWxUIrR3bs8FmtHQOwDsdIe0JAT/l3BEb+Jn3v7uUnO4sPZJfDhflYoI6fzWQLjR24BBpShbEAMS/z/e2BhCmy7Nc65IJVbifYuCndYdZf7Bg8vWjOjJzBBlObRp4qX6tCu2nkjzBjzaZw=",
+            "hash": "d77c9d0e7ddee4e68469bffeb01e3e7d737aa352eff44e9e69f89ddc18961571",
+            "public_key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArNyZB3xoGrN9gfvPmH0meM5b9wff4BVCxV9pWiuSFh5LkX0NzciXB6I8Xk4skIhh3URA6ewdm37n4Pa/1cCWYqqEpKMouw6x6/p6lC9p3HdSQFtUzbDxzZkM2Mkg1nEjSnCl+XcbtFrYvRqLawbxb7JIQTkijwf8a8aRhe1Z2uCkPIVLOUN6I5+Rqe+2wStLcZpujHYfDYMttrV4Y3uFzdTWtkn1tNXIoeSQohKVd/8/PQO0bvgREpN79huAlKsK5v7Ghy7yrjY4L/qKuaLZ5UoA0BaKAhLxk18lT6O45qMvP3IpSThK1pUxpPlABfaf1w1cNcjlxia3C2Ych1mRMQIDAQAB"
+          }
+        },
+        "type": "publisher_added"
+      }
+    ],
+    "result": "success"
+  },
+  "handle": "0",
+  "time": "2023-09-27T02:36:45.702075807Z",
+  "version": 85
+}

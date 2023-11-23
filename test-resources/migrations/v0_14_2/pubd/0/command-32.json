@@ -1,0 +1,27 @@
+{
+  "actor": "testbed",
+  "details": {
+    "name": "Top-IXP",
+    "type": "add_publisher"
+  },
+  "effect": {
+    "events": [
+      {
+        "name": "Top-IXP",
+        "publisher": {
+          "base_uri": "rsync://testbed.krill.cloud/repo/Top-IXP/",
+          "id_cert": {
+            "base64": "MIIDEzCCAfugAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEyg5MjI4QzJGOUVDQUNBQUM3MEY5OTk0RjlGM0YxRDBDQjhERDVFM0QzMB4XDTIzMDUyNDE1MTE1NVoXDTM4MDUyNDE1MTY1NVowMzExMC8GA1UEAxMoOTIyOEMyRjlFQ0FDQUFDNzBGOTk5NEY5RjNGMUQwQ0I4REQ1RTNEMzCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALL+UbI+H2dLisz1g/BD/a7Y9juHmbXuxK65fFZG4pXD3OMxU9V8ADsgRJPJ7OqqPTDLnwmdAd5pfoGUKhc7W/F6DZ6crx++2KP7UbCpm40JzB50vfKkfbkmNbJWYnqoGkVDEgjzur7VToADMVswZrwoH0hlygvCjCw4Gy5uAhebeMArkS3iU2JZ3mOKOd1zoOJ1j0ue3G2C6p08ZXbvQujn94cokteWXBNyVKfMPbSex3neOXwQ7xMGh5lzJavlmyR4ZYbi+vdMxxkyVpYcQxT8SHaqV+alSQ5j1LwnBoSTCPbZWZv1rA5Mnxrq4PbtTcfMYfYSFS5zkcjgk21e00sCAwEAAaMyMDAwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUkijC+eysqscPmZT58/HQy43V49MwDQYJKoZIhvcNAQELBQADggEBABaPNPTv7tBq20NEZpJlvnYuusJAi6NF04iMz3Pjyb0x6dRlcWQikFOGUkTWdbfIvpLoK0hIFY+wNjg9+rGfbkVHTcrdaJKz5zRzJkQEcz0MIr3Tbn3jZKunWzuzHgOCoD+PljuzOGc18dvnvS9gjopdlr5rotMagsGCpqCYJjzlAtANGEMVK7yz5Pb16pKUPDE2lh6WLi8kppSmqHsCNBLzCl/IlFuszqq+8lJR0sN3I7f3f8zkvgsfQE5jcLcK6fNrnYDMDfZsqCLxszvvNryKn/ZSGoDwGsLjn9cUw52xUu8+q+R2HN47rlBNmmA3hABxUS6rdn3N58g/cuxC0XA=",
+            "hash": "cdfa9367c955b29a233262b7837fa098938210e0c5786ad329f5852837678368",
+            "public_key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsv5Rsj4fZ0uKzPWD8EP9rtj2O4eZte7Errl8VkbilcPc4zFT1XwAOyBEk8ns6qo9MMufCZ0B3ml+gZQqFztb8XoNnpyvH77Yo/tRsKmbjQnMHnS98qR9uSY1slZieqgaRUMSCPO6vtVOgAMxWzBmvCgfSGXKC8KMLDgbLm4CF5t4wCuRLeJTYlneY4o53XOg4nWPS57cbYLqnTxldu9C6Of3hyiS15ZcE3JUp8w9tJ7Hed45fBDvEwaHmXMlq+WbJHhlhuL690zHGTJWlhxDFPxIdqpX5qVJDmPUvCcGhJMI9tlZm/WsDkyfGurg9u1Nx8xh9hIVLnORyOCTbV7TSwIDAQAB"
+          }
+        },
+        "type": "publisher_added"
+      }
+    ],
+    "result": "success"
+  },
+  "handle": "0",
+  "time": "2023-05-24T15:17:12.611422001Z",
+  "version": 32
+}

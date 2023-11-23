@@ -1,0 +1,27 @@
+{
+  "actor": "testbed",
+  "details": {
+    "name": "apca1",
+    "type": "add_publisher"
+  },
+  "effect": {
+    "events": [
+      {
+        "name": "apca1",
+        "publisher": {
+          "base_uri": "rsync://testbed.krill.cloud/repo/apca1/",
+          "id_cert": {
+            "base64": "MIIDEzCCAfugAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEygyQTAzRUFGQ0NCODQwNjJENkZERjQ1OUM3OEE1RTZCMjg0ODFEQjlDMB4XDTIzMTAwMjE0NTMyN1oXDTM4MTAwMjE0NTgyN1owMzExMC8GA1UEAxMoMkEwM0VBRkNDQjg0MDYyRDZGREY0NTlDNzhBNUU2QjI4NDgxREI5QzCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAK8VwxeNopzQOIYRe84uJYdFAWnxZmnRRdzJMGqH+x2wjNfIEtDyWHGAAeizKDaFkkaxPeNLrYfwGGWOcvU/3yQymBqwUgfF6+xfx0jcSb5QWCZy1FdaUlTY6k5K7DEC6CSzzhvlEpLTr31bQVyKah71IcLSZJa1ZMnWaFKJ3wID00eQENoBx1zc+ftlo1HHiuxvEOSa6DOxzVJAKumD1g18T6vTbL7qo9y22+mflySuUOQlaT5bOF0lHxP/ZCXDDywL6rgJCeAU79QN6bcRfmgADToX74BrLRCO/h/28Or+k2iunT5KsdSE5C7+PPOhksEDPPDwZ4xKqW6Z1XQBmAECAwEAAaMyMDAwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUKgPq/MuEBi1v30WceKXmsoSB25wwDQYJKoZIhvcNAQELBQADggEBAJQ0I4RYYfaYblpYIShVr4Kp42JtYExrONI4KQNaH9opCEKCzMvCn2NjwPqF2nq8lX8v5UX16n+a6zV0Bof0mflAGFElwEIZ54TXPzCxRPb8tI4a5Lr5QWaJdABllbUckO5qu39svH7x1BavH3lsKzx11Rj9oV2T2RcbRG2qu/I4xHIIwghZmXKnVqmAht66Ey+WEBaJx4535SPUs/VhdWJZGGzfenlL9edD5wQTNfd6DVs8nCf7oxq1/rpVYunPeGJYnEfvNZiljLIuziEzOKHMcYe9yeRJPrRaAxmRHpV1Ufr22XzE3CQvVvovFMHEue+lnkbaRzmUgb5k0LUdzoE=",
+            "hash": "aeaca51efb3ced0c0c39b1f5d673729daa75f61c57ecf1a379f2026f52c809d5",
+            "public_key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArxXDF42inNA4hhF7zi4lh0UBafFmadFF3Mkwaof7HbCM18gS0PJYcYAB6LMoNoWSRrE940uth/AYZY5y9T/fJDKYGrBSB8Xr7F/HSNxJvlBYJnLUV1pSVNjqTkrsMQLoJLPOG+USktOvfVtBXIpqHvUhwtJklrVkydZoUonfAgPTR5AQ2gHHXNz5+2WjUceK7G8Q5JroM7HNUkAq6YPWDXxPq9Nsvuqj3Lbb6Z+XJK5Q5CVpPls4XSUfE/9kJcMPLAvquAkJ4BTv1A3ptxF+aAANOhfvgGstEI7+H/bw6v6TaK6dPkqx1ITkLv4886GSwQM88PBnjEqpbpnVdAGYAQIDAQAB"
+          }
+        },
+        "type": "publisher_added"
+      }
+    ],
+    "result": "success"
+  },
+  "handle": "0",
+  "time": "2023-10-02T14:59:08.479080072Z",
+  "version": 86
+}

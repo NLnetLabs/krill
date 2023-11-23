@@ -1,0 +1,14 @@
+{
+  "actor": "testbed",
+  "details": {
+    "name": "toplink",
+    "type": "remove_publisher"
+  },
+  "effect": {
+    "msg": "Unknown publisher 'toplink'",
+    "result": "error"
+  },
+  "handle": "0",
+  "time": "2023-05-23T14:20:47.633418245Z",
+  "version": 27
+}

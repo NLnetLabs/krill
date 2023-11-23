@@ -1,0 +1,14 @@
+{
+  "actor": "testbed",
+  "details": {
+    "name": "Top-IXP",
+    "type": "remove_publisher"
+  },
+  "effect": {
+    "msg": "Unknown publisher 'Top-IXP'",
+    "result": "error"
+  },
+  "handle": "0",
+  "time": "2023-05-25T13:29:43.351945160Z",
+  "version": 43
+}

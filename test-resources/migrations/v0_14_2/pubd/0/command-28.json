@@ -1,0 +1,14 @@
+{
+  "actor": "testbed",
+  "details": {
+    "name": "Top-IXP",
+    "type": "add_publisher"
+  },
+  "effect": {
+    "msg": "Duplicate publisher 'Top-IXP'",
+    "result": "error"
+  },
+  "handle": "0",
+  "time": "2023-05-24T15:14:22.841549205Z",
+  "version": 28
+}

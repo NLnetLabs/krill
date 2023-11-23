@@ -530,11 +530,11 @@ where
         Scope::from_segment(Segment::parse_lossy(agg.as_str())) // agg should always be a valid Segment
     }
 
-    fn key_for_snapshot(agg: &MyHandle) -> Key {
+    pub fn key_for_snapshot(agg: &MyHandle) -> Key {
         Key::new_scoped(Self::scope_for_agg(agg), segment!("snapshot.json"))
     }
 
-    fn key_for_command(agg: &MyHandle, version: u64) -> Key {
+    pub fn key_for_command(agg: &MyHandle, version: u64) -> Key {
         Key::new_scoped(
             Self::scope_for_agg(agg),
             Segment::parse(&format!("command-{}.json", version)).unwrap(), // cannot panic as a u64 cannot contain a Scope::SEPARATOR

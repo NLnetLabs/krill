@@ -1,0 +1,9 @@
+{
+  "last_exchange": {
+    "result": "Success",
+    "timestamp": 1700452622,
+    "user_agent": "krill/0.14.0-rc1"
+  },
+  "last_success": 1700452622,
+  "suspended": null
+}

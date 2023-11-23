@@ -1,0 +1,14 @@
+{
+  "actor": "testbed",
+  "details": {
+    "name": "LocalCA1688723480286",
+    "type": "remove_publisher"
+  },
+  "effect": {
+    "msg": "Unknown publisher 'LocalCA1688723480286'",
+    "result": "error"
+  },
+  "handle": "0",
+  "time": "2023-07-07T10:29:34.904281119Z",
+  "version": 60
+}

@@ -1,0 +1,42 @@
+{
+  "actor": "krill",
+  "details": {
+    "entitlements": [
+      {
+        "resource_class_name": "default",
+        "resources": {
+          "asn": "AS0-AS4294967295",
+          "ipv4": "0.0.0.0/0",
+          "ipv6": "::/0"
+        }
+      }
+    ],
+    "parent": "ta",
+    "type": "update_resource_entitlements"
+  },
+  "effect": {
+    "events": [
+      {
+        "parent": "ta",
+        "parent_resource_class_name": "default",
+        "pending_key": "DDAF321520EE4817D716FA047FC05FE2934204DB",
+        "resource_class_name": "0",
+        "type": "resource_class_added"
+      },
+      {
+        "ki": "DDAF321520EE4817D716FA047FC05FE2934204DB",
+        "req": {
+          "class_name": "default",
+          "csr": "MIIDpTCCAo0CAQAwMzExMC8GA1UEAxMoRERBRjMyMTUyMEVFNDgxN0Q3MTZGQTA0N0ZDMDVGRTI5MzQyMDREQjCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAOCXOQuI3aJnnISdfuiQve7LjxVYnznjFl7Egfnh+cft8tVVnkGdt4EfmfEVu3RCQZXeYF0k/vBLl3Frx7FLkti2/5bYFen4wnYMoGjurJWIoKcGcZUilyYR5ZcxtisyZyw6mmvFgVVc8/xt9FErCH54m7F1hqrVx4iXd/M8ZM43NTrfXz0DBuAslqT1nFQL/x1U+Qp06IJe9ZUrWlPqexbe650aW9QfC+kZ4Vn/u1z6xjMSbTs89PzB9ZHXkzDQReH+kUUzSJnq20jZ0R1ecNof6Tmv+WZbB6zxO62u9ao/93Lp5E9dsW3a9flpkJm8RPcPUY7uWf3M9LWzCXx0pskCAwEAAaCCASswggEnBgkqhkiG9w0BCQ4xggEYMIIBFDAPBgNVHRMBAf8EBTADAQH/MA4GA1UdDwEB/wQEAwIBBjCB8AYIKwYBBQUHAQsBAQAEgeAwgd0wNwYIKwYBBQUHMAWGK3JzeW5jOi8vdGVzdGJlZC5rcmlsbC5jbG91ZC9yZXBvL3Rlc3RiZWQvMC8wYwYIKwYBBQUHMAqGV3JzeW5jOi8vdGVzdGJlZC5rcmlsbC5jbG91ZC9yZXBvL3Rlc3RiZWQvMC9EREFGMzIxNTIwRUU0ODE3RDcxNkZBMDQ3RkMwNUZFMjkzNDIwNERCLm1mdDA9BggrBgEFBQcwDYYxaHR0cHM6Ly90ZXN0YmVkLmtyaWxsLmNsb3VkL3JyZHAvbm90aWZpY2F0aW9uLnhtbDANBgkqhkiG9w0BAQsFAAOCAQEA0Ic1atniuYc2BVNkz7I67K5TQE7pxSHEnffjOHJKu1Q6JLT8PdBhB0EdDo9GjQaDEiVKq3HsjoxX4OA/vwPLYy85hXOJyzob6NF5oBHMoOiuiDsZKI7g49CWzo7XTzUvYoMrAEj1vTrWUUMxSctziTx48gpuWpnVsPoJTfi/3MExNG0GpQVF3TSk6x82J8A37tXm6YDlKIm6DXvhzrC8Y3MYL90ceM3kpDM4IjRtXYZQvQ+JGzKDaCJCwySYB9+mAqXGh+6iqQHVr0tslN/2YZnW/ekLqSB6KD65kfetKUIrOmDDh43mbdtSwgSvH/E72ogy5c1FjF5bXvxf3NkzTQ==",
+          "limit": {}
+        },
+        "resource_class_name": "0",
+        "type": "certificate_requested"
+      }
+    ],
+    "result": "success"
+  },
+  "handle": "testbed",
+  "time": "2023-04-26T13:37:51.441546011Z",
+  "version": 3
+}

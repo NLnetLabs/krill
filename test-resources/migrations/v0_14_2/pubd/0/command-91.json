@@ -1,0 +1,14 @@
+{
+  "actor": "testbed",
+  "details": {
+    "name": "qcl_admin",
+    "type": "remove_publisher"
+  },
+  "effect": {
+    "msg": "Unknown publisher 'qcl_admin'",
+    "result": "error"
+  },
+  "handle": "0",
+  "time": "2023-10-09T09:29:06.733829721Z",
+  "version": 91
+}

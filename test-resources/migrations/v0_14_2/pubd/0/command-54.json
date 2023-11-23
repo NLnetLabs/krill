@@ -1,0 +1,14 @@
+{
+  "actor": "testbed",
+  "details": {
+    "name": "LabCA",
+    "type": "remove_publisher"
+  },
+  "effect": {
+    "msg": "Unknown publisher 'LabCA'",
+    "result": "error"
+  },
+  "handle": "0",
+  "time": "2023-07-07T09:50:53.074721593Z",
+  "version": 54
+}

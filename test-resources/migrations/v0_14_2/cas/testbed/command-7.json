@@ -1,0 +1,55 @@
+{
+  "actor": "anonymous",
+  "details": {
+    "child": "testbed_client",
+    "ki": "69C030F183A8A9CEC5C72DBA638295109BB1A80D",
+    "limit": {},
+    "resource_class_name": "0",
+    "type": "child_certify"
+  },
+  "effect": {
+    "events": [
+      {
+        "child": "testbed_client",
+        "ki": "69C030F183A8A9CEC5C72DBA638295109BB1A80D",
+        "resource_class_name": "0",
+        "type": "child_certificate_issued"
+      },
+      {
+        "resource_class_name": "0",
+        "type": "child_certificates_updated",
+        "updates": {
+          "issued": [
+            {
+              "base64": "MIIFmTCCBIGgAwIBAgIUPpt5c6uJZyhxTrHvmA5+K9a1hEEwDQYJKoZIhvcNAQELBQAwMzExMC8GA1UEAxMoRERBRjMyMTUyMEVFNDgxN0Q3MTZGQTA0N0ZDMDVGRTI5MzQyMDREQjAeFw0yMzA0MjYxNDAxMzVaFw0yNDA0MjQxNDA2MzVaMDMxMTAvBgNVBAMTKDY5QzAzMEYxODNBOEE5Q0VDNUM3MkRCQTYzODI5NTEwOUJCMUE4MEQwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCf3lEyRZ29+xdXdZb4WatOIdQR3Sqwiy3I6dmKB9/V6wbRnEykGKfNWTlp1lttXWbTAnVMC6JyWfOSI9QxwvrSG0C654TGujatKoXcU5sKnSXV6gL0Pn75ezs6sajgZI8Krym1sg0U1ztrRwFvy76adtlrupkMxTL9aJ2y0oNxuUzGfNxkzsGuusY3dzkXuoZxTORS0/l6R1JNjJTFLhkJM+go+18W1UykU93xyIDP7blEzPDRN5VAWla8SzTLWKRCTgf8eFSdmZvOF1ytOyYa8TIxW89PkVMwytNVyvT/ubRdoeNRuqO9+6ZtMEaUlGugRC2qwla/AEtVeCz3EnLFAgMBAAGjggKjMIICnzAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBRpwDDxg6ipzsXHLbpjgpUQm7GoDTAfBgNVHSMEGDAWgBTdrzIVIO5IF9cW+gR/wF/ik0IE2zAOBgNVHQ8BAf8EBAMCAQYwaAYDVR0fBGEwXzBdoFugWYZXcnN5bmM6Ly90ZXN0YmVkLmtyaWxsLmNsb3VkL3JlcG8vdGVzdGJlZC8wL0REQUYzMjE1MjBFRTQ4MTdENzE2RkEwNDdGQzA1RkUyOTM0MjA0REIuY3JsMGkGCCsGAQUFBwEBBF0wWzBZBggrBgEFBQcwAoZNcnN5bmM6Ly90ZXN0YmVkLmtyaWxsLmNsb3VkL3JlcG8vRERBRjMyMTUyMEVFNDgxN0Q3MTZGQTA0N0ZDMDVGRTI5MzQyMDREQi5jZXIwgfsGCCsGAQUFBwELBIHuMIHrMD4GCCsGAQUFBzAFhjJyc3luYzovL3Rlc3RiZWQua3JpbGwuY2xvdWQvcmVwby90ZXN0YmVkX2NsaWVudC8xLzBqBggrBgEFBQcwCoZecnN5bmM6Ly90ZXN0YmVkLmtyaWxsLmNsb3VkL3JlcG8vdGVzdGJlZF9jbGllbnQvMS82OUMwMzBGMTgzQThBOUNFQzVDNzJEQkE2MzgyOTUxMDlCQjFBODBELm1mdDA9BggrBgEFBQcwDYYxaHR0cHM6Ly90ZXN0YmVkLmtyaWxsLmNsb3VkL3JyZHAvbm90aWZpY2F0aW9uLnhtbDAYBgNVHSABAf8EDjAMMAoGCCsGAQUFBw4CMC4GCCsGAQUFBwEHAQH/BB8wHTAMBAIAATAGAwQCuTGMMA0EAgACMAcDBQMqBLkAMB8GCCsGAQUFBwEIAQH/BBAwDqAMMAoCAwMeJQIDAzl5MA0GCSqGSIb3DQEBCwUAA4IBAQCW6KsXabbn/kICqnMwaIbX4G20Se5rjQGOq+S7kRWR8aWy6I6QeIwyErsMbZQUPLYr/Tnq0G+vhMjAZkUI+S8SJJUNJVptju8F/AlIeBnti3qdVspyUbLNT0ghY7hWydjXxtcwVuTtcKdUENErFYKT7sf5KCckVntU8CB/utTYEWQZyevjhnq8i/CKIf5Ee/NntwFuZR0lIITsDJB8PsQu2r434wGTuXkM6tQgBbG1I891rOLiWnPPnaKRdgtnrzwmhcl8BHjPU6uk00WKWYokTkaWnmxIlFB6cXnJZ3xjDZ3Owy9Hm1q+p2v0F6ud4QJ4C4+c4gFyc0MbvEGIhuEH",
+              "ca_repository": "rsync://testbed.krill.cloud/repo/testbed_client/1/",
+              "hash": "a6cc6fcf037737aa087632d0f2e2937d544f9be296209b4c79e535280431e579",
+              "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAn95RMkWdvfsXV3WW+FmrTiHUEd0qsIstyOnZigff1esG0ZxMpBinzVk5adZbbV1m0wJ1TAuiclnzkiPUMcL60htAuueExro2rSqF3FObCp0l1eoC9D5++Xs7OrGo4GSPCq8ptbINFNc7a0cBb8u+mnbZa7qZDMUy/WidstKDcblMxnzcZM7BrrrGN3c5F7qGcUzkUtP5ekdSTYyUxS4ZCTPoKPtfFtVMpFPd8ciAz+25RMzw0TeVQFpWvEs0y1ikQk4H/HhUnZmbzhdcrTsmGvEyMVvPT5FTMMrTVcr0/7m0XaHjUbqjvfumbTBGlJRroEQtqsJWvwBLVXgs9xJyxQIDAQAB",
+              "limit": {},
+              "marker": null,
+              "name": "69C030F183A8A9CEC5C72DBA638295109BB1A80D.cer",
+              "resources": {
+                "asn": "AS204325, AS211321",
+                "ipv4": "185.49.140.0/22",
+                "ipv6": "2a04:b900::/29"
+              },
+              "rpki_manifest": "rsync://testbed.krill.cloud/repo/testbed_client/1/69C030F183A8A9CEC5C72DBA638295109BB1A80D.mft",
+              "rpki_notify": "https://testbed.krill.cloud/rrdp/notification.xml",
+              "serial": "357424623243931660228383001482279875630995964993",
+              "subject": "MDMxMTAvBgNVBAMTKDY5QzAzMEYxODNBOEE5Q0VDNUM3MkRCQTYzODI5NTEwOUJCMUE4MEQ=",
+              "uri": "rsync://testbed.krill.cloud/repo/testbed/0/69C030F183A8A9CEC5C72DBA638295109BB1A80D.cer",
+              "validity": {
+                "not_after": "2024-04-24T14:06:35.287380997Z",
+                "not_before": "2023-04-26T14:01:35.287380657Z"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "result": "success"
+  },
+  "handle": "testbed",
+  "time": "2023-04-26T14:06:35.287323504Z",
+  "version": 7
+}

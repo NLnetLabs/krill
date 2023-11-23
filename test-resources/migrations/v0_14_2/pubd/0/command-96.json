@@ -1,0 +1,27 @@
+{
+  "actor": "testbed",
+  "details": {
+    "name": "test",
+    "type": "add_publisher"
+  },
+  "effect": {
+    "events": [
+      {
+        "name": "test",
+        "publisher": {
+          "base_uri": "rsync://testbed.krill.cloud/repo/test/",
+          "id_cert": {
+            "base64": "MIIDEzCCAfugAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEyg0QThGOTdBRUUzOUE0Q0E1NjNFN0E5RUM1OUUyQjNBMUQyNkE4NTVDMB4XDTIzMTAxNzE1MDg0MloXDTM4MTAxNzE1MTM0MlowMzExMC8GA1UEAxMoNEE4Rjk3QUVFMzlBNENBNTYzRTdBOUVDNTlFMkIzQTFEMjZBODU1QzCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAN2b4a/bYAk3QjJSJW8VV4YNOLppWbsowoXqYWsaVFrKv4SjMalGJ32Kbf66B0Olcx7qLIbIB+tt5v/WMHHa9mZe3+eEIRevrZ/XN2LFCNNUEfX1N309blfA0HHXygVpEOviUj8Beao4AJa1jPWGp8TrXBV8Y/rWIHEkbCJ+Yv+NocOp2vjrJazwDbIhFJzhjnbYJjKaFYU8lUPsKA2XYuT6by6bWA+SxdGfyDeaGgQNz1UgDl49tX7Gt1mvHC7nL5WCcZuOwN/FmBTrFjyVCUzbxflvuZLuFhSxZol4xKJu18sHZ6tvUE5y0Yf2taaJWmO+eh5xHFqUb0D3dHj/ftUCAwEAAaMyMDAwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUSo+XruOaTKVj56nsWeKzodJqhVwwDQYJKoZIhvcNAQELBQADggEBAKVzZbCqc0i9fKPfGPbQvmSdYVPXiql+hUYWGtFgoaWKKSuwKpSsOXcG+ARlObfYeAOKrMVkP1jpoWqObhLxgnSIUF1Fteq+rCe5UoikHUeJIVEnoN16NkDWDU0yHukIqqbUFGe9/kXKvG4eW2JflfGUupWSzPhnc9vbKAav9D00hxH2YAfl1SkPzvIA5+1jh1Kij9HL0nS1rjHbxcjlYUXrCaUI3GnLQ0zZQ2CdCFSJphxlCO3YPTh+ZrNck+MxHvw2YJ2tGsA2aedbZetEBA/4k+PrAQOXZEwSeVZKQAh9R+py3AaSvpqqLoMpiS9VPhbi8LeG9KURwSwmHfRKRNk=",
+            "hash": "2b47fe1a9f67f86b3132f102efdab0f071730792077ca4b3f120d3293c226074",
+            "public_key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA3Zvhr9tgCTdCMlIlbxVXhg04umlZuyjChephaxpUWsq/hKMxqUYnfYpt/roHQ6VzHuoshsgH623m/9Ywcdr2Zl7f54QhF6+tn9c3YsUI01QR9fU3fT1uV8DQcdfKBWkQ6+JSPwF5qjgAlrWM9YanxOtcFXxj+tYgcSRsIn5i/42hw6na+OslrPANsiEUnOGOdtgmMpoVhTyVQ+woDZdi5PpvLptYD5LF0Z/IN5oaBA3PVSAOXj21fsa3Wa8cLucvlYJxm47A38WYFOsWPJUJTNvF+W+5ku4WFLFmiXjEom7Xywdnq29QTnLRh/a1polaY756HnEcWpRvQPd0eP9+1QIDAQAB"
+          }
+        },
+        "type": "publisher_added"
+      }
+    ],
+    "result": "success"
+  },
+  "handle": "0",
+  "time": "2023-10-17T15:18:55.906907715Z",
+  "version": 96
+}

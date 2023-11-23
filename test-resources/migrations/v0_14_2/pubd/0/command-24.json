@@ -1,0 +1,14 @@
+{
+  "actor": "testbed",
+  "details": {
+    "name": "dududu",
+    "type": "add_publisher"
+  },
+  "effect": {
+    "msg": "Duplicate publisher 'dududu'",
+    "result": "error"
+  },
+  "handle": "0",
+  "time": "2023-05-15T12:08:04.952440582Z",
+  "version": 24
+}

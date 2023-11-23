@@ -1,0 +1,27 @@
+{
+  "actor": "testbed",
+  "details": {
+    "name": "94017295-0594-4fe7-a797-3917a848c668-1",
+    "type": "add_publisher"
+  },
+  "effect": {
+    "events": [
+      {
+        "name": "94017295-0594-4fe7-a797-3917a848c668-1",
+        "publisher": {
+          "base_uri": "rsync://testbed.krill.cloud/repo/94017295-0594-4fe7-a797-3917a848c668-1/",
+          "id_cert": {
+            "base64": "MIIDEzCCAfugAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEyg1MTUxMTZEQjEwMTI3QzdDQ0JCOTgxM0E2QjdCMzA1NzJGNjhEMjNFMB4XDTIzMDQxNzExNTcxNloXDTM4MDQxNzEyMDIxNlowMzExMC8GA1UEAxMoNTE1MTE2REIxMDEyN0M3Q0NCQjk4MTNBNkI3QjMwNTcyRjY4RDIzRTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAJ3L9PHSYZ8HUvm6t5IDfnnjJDXMQzzO3WwwCc+dCD001ImLr1EEsPCrdN7LujceI3CT2ojiShC4NazbPYVua5yKMuvFQoaUrEMXAWsDoBTlDAoB2A6iNtv+buoe2y8y2POqo+gwVcaUWBbYioxzbuM1bKXZa8bnXJYhFmJHenJg8BGXM+3ePuCK2g4V4yiP5F5RiCNhzqOHwlpLa/1FwuS7erjAmmRJsOCxYJOodSwmXc7gT5tYLz9J4SCm2q+H6P0i4OHZdD6oPeP3CjJG0AnkbBdm550T3B7gIw1bPsFzM5gNgBBve9EJkJ4ONAcxanpXChfXuN/T9ZNZeAG9LiECAwEAAaMyMDAwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUUVEW2xASfHzLuYE6a3swVy9o0j4wDQYJKoZIhvcNAQELBQADggEBAHv8mp2gfeKqYSRRLKj1dsNbvMEJtm7blx4DMz2puMsaqqtqATuMCrq1OcW08uCCnDWEQ/ADu0gbEzrgFGjojYqCXiolp0TaV8Oiv3tOq7oW93anRxLFWB/1xcMtJyEsC0aL3YE84o6226BuXT6xqdlkAdfW0mLZswu5oZ84VA8avAMK0qLbs/13DSaQnaLOTS5dnheV3z23YUJxX3JbEIhQhfQ/VTyLQLgM2fkfbRV+xr080Q8y02pYjCKnFt18+fR41Gl2nu+O34qZ+e06fY94askFXe4b7DNkV+ZPDAtNqFChQQYxiljfscxj8UDftKsr1Bo149EmtPuMckimlLo=",
+            "hash": "be438afb86d5e1bd0fa4b979a8f2c130415680eb1169b70fa153116ae6c34a96",
+            "public_key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAncv08dJhnwdS+bq3kgN+eeMkNcxDPM7dbDAJz50IPTTUiYuvUQSw8Kt03su6Nx4jcJPaiOJKELg1rNs9hW5rnIoy68VChpSsQxcBawOgFOUMCgHYDqI22/5u6h7bLzLY86qj6DBVxpRYFtiKjHNu4zVspdlrxudcliEWYkd6cmDwEZcz7d4+4IraDhXjKI/kXlGII2HOo4fCWktr/UXC5Lt6uMCaZEmw4LFgk6h1LCZdzuBPm1gvP0nhIKbar4fo/SLg4dl0Pqg94/cKMkbQCeRsF2bnnRPcHuAjDVs+wXMzmA2AEG970QmQng40BzFqelcKF9e439P1k1l4Ab0uIQIDAQAB"
+          }
+        },
+        "type": "publisher_added"
+      }
+    ],
+    "result": "success"
+  },
+  "handle": "0",
+  "time": "2023-06-02T07:04:36.990542262Z",
+  "version": 48
+}

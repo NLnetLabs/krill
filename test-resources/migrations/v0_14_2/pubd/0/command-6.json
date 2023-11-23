@@ -1,0 +1,27 @@
+{
+  "actor": "testbed",
+  "details": {
+    "name": "94017295-0594-4fe7-a797-3917a848c668-12",
+    "type": "add_publisher"
+  },
+  "effect": {
+    "events": [
+      {
+        "name": "94017295-0594-4fe7-a797-3917a848c668-12",
+        "publisher": {
+          "base_uri": "rsync://testbed.krill.cloud/repo/94017295-0594-4fe7-a797-3917a848c668-12/",
+          "id_cert": {
+            "base64": "MIIDEzCCAfugAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEyhEQUMwNzY0MUYwQTUxRTgxQUY2RDY1MTc4MEJBQ0YxQjA3QkMxNUUyMB4XDTIzMDQyODEyMjQyM1oXDTM4MDQyODEyMjkyM1owMzExMC8GA1UEAxMoREFDMDc2NDFGMEE1MUU4MUFGNkQ2NTE3ODBCQUNGMUIwN0JDMTVFMjCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBANy5as2byDre2OqsSLceKhZuye+WHy68VT29Ygw1U+WSpMHvxayPWoJZbKfPDDnBNV6isi8+1QoAz3brH14lUJgIRGlN1QBNyHXwSmyMJ6TKdGbVWkUYnF/tGX6GF9TiJY1I+iGUJ+I8Dxt+PTSXgGy3fevqLLh4tgxUfr8qoK5niHUj2dzS5PLvmsaUy3eRqi14MOoHikNTV+m1b8CeKdyXZGiDt7Gyh3QTDkBYvPqzdJiCPJOBjq8RRHI7Mj675uzm46Xc6E3c6s7hwPUVWS05X0IDtHzn8pD4GR7DRBNOAFeKqmS2/M+cwCJY73izPnhb9r3EB4FosYbCY558K/kCAwEAAaMyMDAwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQU2sB2QfClHoGvbWUXgLrPGwe8FeIwDQYJKoZIhvcNAQELBQADggEBAM/op3V4n3kI4ElnzZchcvr2xBE+CfGNfwEFCqoDRFKi4iI2YD2oG1ImPm2DvJl2FnIQJhIarDEWMq0k+mRXbaxE/PAK3JQpsQjOyQ1bm6uCuQnkUGGs3HeeUND7+g+XwAlCPl9gclOfS13rBpLiCe4HkTox9Z72E+465H040C78A2FTk/DuxR7AwDkUzdi2p3f+wTr0wmAo1T4y/vhMgSyFs0cDh+27Vps5dkQYhsKS5umK3Yx9iKi87Uo27ffOR+dAjBOZdvmH9MZA972x3XuMEAPYoGLFYDwVD6RW81JovaC+HYBryJr8zgEqmurKFUjL6QxJO/e7zTVqsKHWiyY=",
+            "hash": "3f7c4f6ef468e75a02ce15269035effe8134979b43ce8a183d00f6a046f1d2ad",
+            "public_key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA3LlqzZvIOt7Y6qxItx4qFm7J75YfLrxVPb1iDDVT5ZKkwe/FrI9agllsp88MOcE1XqKyLz7VCgDPdusfXiVQmAhEaU3VAE3IdfBKbIwnpMp0ZtVaRRicX+0ZfoYX1OIljUj6IZQn4jwPG349NJeAbLd96+osuHi2DFR+vyqgrmeIdSPZ3NLk8u+axpTLd5GqLXgw6geKQ1NX6bVvwJ4p3JdkaIO3sbKHdBMOQFi8+rN0mII8k4GOrxFEcjsyPrvm7ObjpdzoTdzqzuHA9RVZLTlfQgO0fOfykPgZHsNEE04AV4qqZLb8z5zAIljveLM+eFv2vcQHgWixhsJjnnwr+QIDAQAB"
+          }
+        },
+        "type": "publisher_added"
+      }
+    ],
+    "result": "success"
+  },
+  "handle": "0",
+  "time": "2023-04-28T12:34:33.675830420Z",
+  "version": 6
+}

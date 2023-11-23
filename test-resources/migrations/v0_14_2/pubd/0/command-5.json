@@ -1,0 +1,27 @@
+{
+  "actor": "testbed",
+  "details": {
+    "name": "testbed1682675484992",
+    "type": "add_publisher"
+  },
+  "effect": {
+    "events": [
+      {
+        "name": "testbed1682675484992",
+        "publisher": {
+          "base_uri": "rsync://testbed.krill.cloud/repo/testbed1682675484992/",
+          "id_cert": {
+            "base64": "MIIDEzCCAfugAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEyg5NDQzRENGODcyNjE0NjNFMjFFNzEyRDk3RUQxNzM4MTY4QUUyQkM2MB4XDTIzMDQyODA5NDEyNloXDTM4MDQyODA5NDYyNlowMzExMC8GA1UEAxMoOTQ0M0RDRjg3MjYxNDYzRTIxRTcxMkQ5N0VEMTczODE2OEFFMkJDNjCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAJnpb+WTYsT3yN7prE1/s+iY8cif7u5gylzUgK9q+rrS0c0Jcs65ZNQOBPJw1yAv0FQDjg/nQUxb0VQp/RUQLDv3+YbXuLl7S9tBOHOvb1/JFvNMMokL1Zhf7aoFvasIZslo+6h7U6vRZKYSyaqcZoDOM9Amj6/6HVRyi5qwRtr5RqnnoVG6SlEY7CLNEd1k+3R0z/o1iMJd9GPfKOiO2N7ihpsKZGsjvjqGABnNofUJ9qtgBWUAeA/k+SmCJ6c+1HksFPArVIGGPsgdI49LdhU5WaUbmCqVPv7YHO/2pv97ZAS2GTMf1cvNWuwyd80s13NYUiDUvkDg2BeI9Zl3aQ0CAwEAAaMyMDAwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUlEPc+HJhRj4h5xLZftFzgWiuK8YwDQYJKoZIhvcNAQELBQADggEBABAuvp+miV0gFpbdvmMpQWFrE4ECbSBzNl2NPJYFDohccTP1NWalk2bYM8wVtD5O13T3Pr7UGcetH3PriMx4kQWo6mLtXFGFeAKZ/BwaCUdWfNiyjSgc9B25i8gzWGL4mCO0i29FaNJCtM+GGjdmpb/obVbVbU/avd54yCfxQMcakUCF06lJAbMqytJ1lndt0bM+hePxr7EsJVQ+tly9kXZIALYLMFlhdLw2WYS9mFk48Zcs170cX7DaK6/Zy9NEvjHjjStv0x9lpxK7fMnk0zRxVYAGkl+0otZD0DvC8Wi+o/4Pu8+5RqCq/JAyR+T/ZSfmsDFDwwgvWtDt/yt5UcI=",
+            "hash": "792c5b5e058af6477eaa316529bb64945f5307c227bd1a7dabc7a288051fa110",
+            "public_key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAmelv5ZNixPfI3umsTX+z6JjxyJ/u7mDKXNSAr2r6utLRzQlyzrlk1A4E8nDXIC/QVAOOD+dBTFvRVCn9FRAsO/f5hte4uXtL20E4c69vX8kW80wyiQvVmF/tqgW9qwhmyWj7qHtTq9FkphLJqpxmgM4z0CaPr/odVHKLmrBG2vlGqeehUbpKURjsIs0R3WT7dHTP+jWIwl30Y98o6I7Y3uKGmwpkayO+OoYAGc2h9Qn2q2AFZQB4D+T5KYInpz7UeSwU8CtUgYY+yB0jj0t2FTlZpRuYKpU+/tgc7/am/3tkBLYZMx/Vy81a7DJ3zSzXc1hSINS+QODYF4j1mXdpDQIDAQAB"
+          }
+        },
+        "type": "publisher_added"
+      }
+    ],
+    "result": "success"
+  },
+  "handle": "0",
+  "time": "2023-04-28T09:51:25.289103576Z",
+  "version": 5
+}

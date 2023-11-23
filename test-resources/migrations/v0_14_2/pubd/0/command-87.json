@@ -1,0 +1,19 @@
+{
+  "actor": "testbed",
+  "details": {
+    "name": "qcl_admin",
+    "type": "remove_publisher"
+  },
+  "effect": {
+    "events": [
+      {
+        "name": "qcl_admin",
+        "type": "publisher_removed"
+      }
+    ],
+    "result": "success"
+  },
+  "handle": "0",
+  "time": "2023-10-09T08:55:14.864245527Z",
+  "version": 87
+}

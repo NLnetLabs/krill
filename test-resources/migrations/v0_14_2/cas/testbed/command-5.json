@@ -1,0 +1,35 @@
+{
+  "actor": "testbed",
+  "details": {
+    "child": "testbed_client",
+    "resources": {
+      "asn": "AS204325, AS211321",
+      "ipv4": "185.49.140.0/22",
+      "ipv6": "2a04:b900::/29"
+    },
+    "ski": "688E913B6B3250E8743089157BADD09E219074DA",
+    "type": "child_add"
+  },
+  "effect": {
+    "events": [
+      {
+        "child": "testbed_client",
+        "id_cert": {
+          "base64": "MIIDEzCCAfugAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEyg2ODhFOTEzQjZCMzI1MEU4NzQzMDg5MTU3QkFERDA5RTIxOTA3NERBMB4XDTIzMDQyNjEzNTUxMFoXDTM4MDQyNjE0MDAxMFowMzExMC8GA1UEAxMoNjg4RTkxM0I2QjMyNTBFODc0MzA4OTE1N0JBREQwOUUyMTkwNzREQTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAMGds5SbYKp6Tq28Yv/up5nW7ANZkSLTx3zk+8t5M5JkVMC8No5HUUBON6GyQDI7GviYBv3KhZZAADyVEZbNIWhGfGLRAt3Djw9wkBJJyIZCuB++FJvBpHn2gRVmLY77ktz/J7SebKNDtBE+BudaftoUe8RCXedJp1U1GTDJLjJ2pctUWwB8R03yLVv3ZVNQ7GhbwtVi3Y7pQph4EFAfVecs+QjdhwgPba4dQoF9bZZK/0AtBiIGTFNtQbjzpayHNnc0hyfjn4gHjONJxm9/g5+UM2NXHAstkTC0AEpda+kh7lDVngT9UM27IMTLANuRUgK0Q70Uuj+kVn/9xsUyxI8CAwEAAaMyMDAwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUaI6RO2syUOh0MIkVe63QniGQdNowDQYJKoZIhvcNAQELBQADggEBAGYGEkzWvMMFEg4sy2ozLkVHGIXC/C4K/MCsOPq1dwlK99TQ2EwxhmRv6miNYV1huARAMmlBJMsbcYwwrQiVbi95Lcfq4agjmJCIm8RW8ch3HNRtHIji1rmyY6yC62BYfqMGbPqHf0zj14BxMbpueWA7MsuX+wOY6QOonGcnC/s47uHFEQ7tQ0XeLv5jjFBlPcv9gDO5deg7gbZaKD5JpPE/4KbErArqbiZEA9sBjl/jFY8NbPRbe44FBrELmBjYtOSgrncKJyFDscBELLsyKxgTqGqSnUlslYYS4nuYuu2nPd8wAj+2MLjSlmO0yI39xsLkdbnk/S1Nae/bbfnKsXk=",
+          "hash": "9da4e2c8f35562b2a4236d9e33a87f77281be2a57b21ef09ec1d48e30363f6d6",
+          "public_key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwZ2zlJtgqnpOrbxi/+6nmdbsA1mRItPHfOT7y3kzkmRUwLw2jkdRQE43obJAMjsa+JgG/cqFlkAAPJURls0haEZ8YtEC3cOPD3CQEknIhkK4H74Um8GkefaBFWYtjvuS3P8ntJ5so0O0ET4G51p+2hR7xEJd50mnVTUZMMkuMnaly1RbAHxHTfItW/dlU1DsaFvC1WLdjulCmHgQUB9V5yz5CN2HCA9trh1CgX1tlkr/QC0GIgZMU21BuPOlrIc2dzSHJ+OfiAeM40nGb3+Dn5QzY1ccCy2RMLQASl1r6SHuUNWeBP1QzbsgxMsA25FSArRDvRS6P6RWf/3GxTLEjwIDAQAB"
+        },
+        "resources": {
+          "asn": "AS204325, AS211321",
+          "ipv4": "185.49.140.0/22",
+          "ipv6": "2a04:b900::/29"
+        },
+        "type": "child_added"
+      }
+    ],
+    "result": "success"
+  },
+  "handle": "testbed",
+  "time": "2023-04-26T14:01:19.901937226Z",
+  "version": 5
+}

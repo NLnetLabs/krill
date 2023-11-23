@@ -1,0 +1,27 @@
+{
+  "actor": "testbed",
+  "details": {
+    "name": "Top-IXP",
+    "type": "add_publisher"
+  },
+  "effect": {
+    "events": [
+      {
+        "name": "Top-IXP",
+        "publisher": {
+          "base_uri": "rsync://testbed.krill.cloud/repo/Top-IXP/",
+          "id_cert": {
+            "base64": "MIIDEzCCAfugAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEygwM0U2QjlBODQwMkY0QUJEQTQ5NTNCQ0U4NzlCQkQ1QUY4NUUyNjZBMB4XDTIzMDUyMzEzMjc1OFoXDTM4MDUyMzEzMzI1OFowMzExMC8GA1UEAxMoMDNFNkI5QTg0MDJGNEFCREE0OTUzQkNFODc5QkJENUFGODVFMjY2QTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBANoD7nRVMRxNgLXE8o0OIDmhhs4PUor+PZ0nPdQ7yMhjCWH9wGh0SgtPHung5Zas1pNJwO2p5j4LoJsI/Kavbun7ZZD+lT9bJiotmAf3kC9iJswC9wfhdjGYxrrR5PmIcKpFGp9cVgD34Q9El+SJvhuhXeii+qmHeMDCybCCdy/FZcmTW7OzDUengco2LQ6px7+nZzlrGQcJa8shF4Z7P2J/Lec2jGArrvOiEuQ+rUvSlFw0L9lmNaePw8vqauauSYNG4Uxh+KgWFD1qCcH8ZePcsg5/oopeEIss/SvqA7FDobuUK2d4WFoF2wp2Nl81Ypv8iQzszE/DUN11hYQjuoECAwEAAaMyMDAwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUA+a5qEAvSr2klTvOh5u9WvheJmowDQYJKoZIhvcNAQELBQADggEBAGOG2Dumod9uuKq2lm8khmHLGiFgQr/7qj2IDmzAoHum96r1+Fle9IksaTNYfcTHFEFCtUBk+aRTmFGaroUSpFr29gHi8GWeJG7mlzTAH6E6g0GR5erdWjOvq6AKHQQ1bX8KfKtW3PdMveDtSXuz2fb0+wRzhSgV2yu9joc0MvOdUvs2dyP7fetx9kgBsQvjjgdQq8tKtM/mMF1eiwMALEFdjXrzM6t6KHWqcgwl7L97GGLxDPLClQGwn4mnpfheBL2NFTyu4d6p+1Iq+9DPCJtFcFo/lcSzkBOMrdSVZqtlkRha/v48cLlB9umm5VqWXKgCTQ2vmKUF7yqeRq/Yo4Q=",
+            "hash": "571e1038bd91433981287ae91650907353bbef2e57ff2dde44e308eb785da545",
+            "public_key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA2gPudFUxHE2AtcTyjQ4gOaGGzg9Siv49nSc91DvIyGMJYf3AaHRKC08e6eDllqzWk0nA7anmPgugmwj8pq9u6ftlkP6VP1smKi2YB/eQL2ImzAL3B+F2MZjGutHk+YhwqkUan1xWAPfhD0SX5Im+G6Fd6KL6qYd4wMLJsIJ3L8VlyZNbs7MNR6eByjYtDqnHv6dnOWsZBwlryyEXhns/Yn8t5zaMYCuu86IS5D6tS9KUXDQv2WY1p4/Dy+pq5q5Jg0bhTGH4qBYUPWoJwfxl49yyDn+iil4Qiyz9K+oDsUOhu5QrZ3hYWgXbCnY2XzVim/yJDOzMT8NQ3XWFhCO6gQIDAQAB"
+          }
+        },
+        "type": "publisher_added"
+      }
+    ],
+    "result": "success"
+  },
+  "handle": "0",
+  "time": "2023-05-23T14:11:05.315880188Z",
+  "version": 26
+}

@@ -1,0 +1,19 @@
+{
+  "actor": "testbed",
+  "details": {
+    "name": "CA-ASN16685-TIVIT",
+    "type": "remove_publisher"
+  },
+  "effect": {
+    "events": [
+      {
+        "name": "CA-ASN16685-TIVIT",
+        "type": "publisher_removed"
+      }
+    ],
+    "result": "success"
+  },
+  "handle": "0",
+  "time": "2023-07-24T20:19:25.362298625Z",
+  "version": 65
+}

@@ -1,0 +1,27 @@
+{
+  "actor": "testbed",
+  "details": {
+    "name": "vienintelis",
+    "type": "add_publisher"
+  },
+  "effect": {
+    "events": [
+      {
+        "name": "vienintelis",
+        "publisher": {
+          "base_uri": "rsync://testbed.krill.cloud/repo/vienintelis/",
+          "id_cert": {
+            "base64": "MIIDEzCCAfugAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEyg5OEQ4MTYzNzZCNUNFNzkyNEM1NTRFMjBEM0VFMjY5NDA1RDAwNjQzMB4XDTIzMTEwNzA4MTYzMFoXDTM4MTEwNzA4MjEzMFowMzExMC8GA1UEAxMoOThEODE2Mzc2QjVDRTc5MjRDNTU0RTIwRDNFRTI2OTQwNUQwMDY0MzCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAKwDqz07Knlb0p3/Qkzx6pa1xXvifPJ48U6Zshj1D+PKHwL27b9cLxxc04yarjFxyQltAeNyaL95+PETTtcdZpb32RnrrVhLCGSfg35W7vKja5+XTf1ws4tHipXGmWtMNpd/3s4BqlSeeVgKPJeEUBK7PsTgSCdbiWj4mlYWZnLzJrYdZUujNNJHVxLGFQWM6lgfRkaEi+fcMEGW0vivS0Yvu2GOUDcpPlvgn40JRNFPnlzdIuUK2PjIQSJknReHqaJaZqVSTr8QCDYolbb9JBTDxp18oDQvZmrL6Qq8PiUu4RZhNjqeqlo4mZYj5jg0evrK/wbbf3s4P/Su7hlH96UCAwEAAaMyMDAwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUmNgWN2tc55JMVU4g0+4mlAXQBkMwDQYJKoZIhvcNAQELBQADggEBAGySFVCNYYvEwV8Q5xiE7EOWFawDzhCcKvAUnFrbbnMoXM+IXIHGnH0pKKik7cKbECtmk58CWWosh/Q7Zex5AbJk7KRvYl9C2SuHm70AuEGBC6vnF19cwDet/f1BwrHiy062TkHg2R19oVnK5lVchR2fnm6mddmTIe1Ce5UxXaSqyY/Krnk+u+OB7o9lwvq1gb0LrU4TYsXcHKMWZG2QTwfO1v/vAGOlmugWkcg5RLovshsYG+C5/89eRMQSEaaFDqG6RjfBRnlsbMHBKc40XXRljZzU9sEPfWp1CWWOVYb+rLhj0HeMVVpDls6gNMxcQwPvGV9F6mNYU2RtwEoUi3I=",
+            "hash": "9f96eac5d36bcab0ed3e4cd8559b704a2587293ff653ad8d9afe31aac43c14df",
+            "public_key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArAOrPTsqeVvSnf9CTPHqlrXFe+J88njxTpmyGPUP48ofAvbtv1wvHFzTjJquMXHJCW0B43Jov3n48RNO1x1mlvfZGeutWEsIZJ+Dflbu8qNrn5dN/XCzi0eKlcaZa0w2l3/ezgGqVJ55WAo8l4RQErs+xOBIJ1uJaPiaVhZmcvMmth1lS6M00kdXEsYVBYzqWB9GRoSL59wwQZbS+K9LRi+7YY5QNyk+W+CfjQlE0U+eXN0i5QrY+MhBImSdF4epolpmpVJOvxAINiiVtv0kFMPGnXygNC9masvpCrw+JS7hFmE2Op6qWjiZliPmODR6+sr/Btt/ezg/9K7uGUf3pQIDAQAB"
+          }
+        },
+        "type": "publisher_added"
+      }
+    ],
+    "result": "success"
+  },
+  "handle": "0",
+  "time": "2023-11-07T08:26:18.500767474Z",
+  "version": 103
+}

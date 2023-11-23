@@ -1,0 +1,19 @@
+{
+  "actor": "testbed",
+  "details": {
+    "name": "new_ca",
+    "type": "remove_publisher"
+  },
+  "effect": {
+    "events": [
+      {
+        "name": "new_ca",
+        "type": "publisher_removed"
+      }
+    ],
+    "result": "success"
+  },
+  "handle": "0",
+  "time": "2023-10-11T08:34:50.822552650Z",
+  "version": 94
+}

@@ -1,0 +1,20 @@
+{
+  "actor": "krill",
+  "details": {
+    "krill_version": "0.14.0",
+    "type": "upgrade_to"
+  },
+  "effect": {
+    "events": [
+      {
+        "new": "0.14.0",
+        "old": "0.14.0-rc1",
+        "type": "krill_version_upgraded"
+      }
+    ],
+    "result": "success"
+  },
+  "handle": "main",
+  "time": "2023-11-02T10:56:02.778947055Z",
+  "version": 1
+}

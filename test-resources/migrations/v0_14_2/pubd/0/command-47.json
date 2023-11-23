@@ -1,0 +1,14 @@
+{
+  "actor": "testbed",
+  "details": {
+    "name": "94017295-0594-4fe7-a797-3917a848c668-1",
+    "type": "remove_publisher"
+  },
+  "effect": {
+    "msg": "Unknown publisher '94017295-0594-4fe7-a797-3917a848c668-1'",
+    "result": "error"
+  },
+  "handle": "0",
+  "time": "2023-06-02T06:47:15.021237778Z",
+  "version": 47
+}

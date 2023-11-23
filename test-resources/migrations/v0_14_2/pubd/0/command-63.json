@@ -1,0 +1,14 @@
+{
+  "actor": "testbed",
+  "details": {
+    "name": "CA-TIVIT-AS16685",
+    "type": "remove_publisher"
+  },
+  "effect": {
+    "msg": "Unknown publisher 'CA-TIVIT-AS16685'",
+    "result": "error"
+  },
+  "handle": "0",
+  "time": "2023-07-24T18:29:53.943229526Z",
+  "version": 63
+}

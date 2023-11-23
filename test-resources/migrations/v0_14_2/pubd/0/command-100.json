@@ -1,0 +1,19 @@
+{
+  "actor": "testbed",
+  "details": {
+    "name": "testbed_client",
+    "type": "remove_publisher"
+  },
+  "effect": {
+    "events": [
+      {
+        "name": "testbed_client",
+        "type": "publisher_removed"
+      }
+    ],
+    "result": "success"
+  },
+  "handle": "0",
+  "time": "2023-10-19T08:18:15.763563591Z",
+  "version": 100
+}

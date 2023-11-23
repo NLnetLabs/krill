@@ -1,0 +1,14 @@
+{
+  "actor": "testbed",
+  "details": {
+    "name": "teste_ca",
+    "type": "add_publisher"
+  },
+  "effect": {
+    "msg": "Duplicate publisher 'teste_ca'",
+    "result": "error"
+  },
+  "handle": "0",
+  "time": "2023-04-30T15:38:24.033413864Z",
+  "version": 11
+}

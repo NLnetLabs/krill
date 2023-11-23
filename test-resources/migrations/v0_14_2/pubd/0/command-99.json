@@ -1,0 +1,14 @@
+{
+  "actor": "testbed",
+  "details": {
+    "name": "testbed_clientfdd",
+    "type": "remove_publisher"
+  },
+  "effect": {
+    "msg": "Unknown publisher 'testbed_clientfdd'",
+    "result": "error"
+  },
+  "handle": "0",
+  "time": "2023-10-19T08:18:09.224515394Z",
+  "version": 99
+}

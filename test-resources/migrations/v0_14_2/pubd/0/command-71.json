@@ -1,0 +1,27 @@
+{
+  "actor": "testbed",
+  "details": {
+    "name": "sandboxCH1",
+    "type": "add_publisher"
+  },
+  "effect": {
+    "events": [
+      {
+        "name": "sandboxCH1",
+        "publisher": {
+          "base_uri": "rsync://testbed.krill.cloud/repo/sandboxCH1/",
+          "id_cert": {
+            "base64": "MIIDEzCCAfugAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEyhDMTM2NzNEODFERjREQzJGMTBEOThFNzk3RDFFREU5MkY2QUQxMjMwMB4XDTIzMDgyMDAwNDY1OVoXDTM4MDgyMDAwNTE1OVowMzExMC8GA1UEAxMoQzEzNjczRDgxREY0REMyRjEwRDk4RTc5N0QxRURFOTJGNkFEMTIzMDCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAJoh4LYLUQfyON4a1wRyWbAu3PTmj6SoVJLiIzZSDqnhiPpz4Mo1qTe6E64qXlMPTqRJTRAYbsoHp5kQYOZh9R2Rmpesv6s4tTO5fbYqZWXd038ljmwfJntjV1ldznAQUsTx8+7nyx/hBW4+/bvUEYaxD15Vq+NzeqKm93yLVIJ2Da3NOEoV2n9w3P4i8wu7c89FGi4p+8cKP9Zek1rK+1uT913dUY3dWKU8leRX9m+MkGRW6mrHLx9nCNC22RLblk4XvxXpvNGb5n9rg2rBZy43fWK2In4Ahhl5LEMb8bKFe+PPliuJw/pe/6ge/fu+03Wqlt0G35ipTYIMGwNhjD8CAwEAAaMyMDAwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUwTZz2B303C8Q2Y55fR7ekvatEjAwDQYJKoZIhvcNAQELBQADggEBAIp8p1CcBHB8R6i3xhCmKbOV/wORFs9DrNKyWdkzd8afQHerp4i4FeXh97jwK5SMYVXBNo4mOfExMqzj2ORh5xySNr6lKhQAfTih7ENxLCpBqeAnRfu8wOPoXP492Mn9d8WzuEMJBq8kPxMMyxvG9QTPyr9rqRLzrsL1yC6kndEGD7iAuYEg2hnN/0ldv1DA0s6MCsoP/eulY1qdgJxeHy4wWKd9SSyzrUC/iH27lwFKkhn68uYazCP2c6NL+jN+RXcn5nXXuqAesbAdd7i4eRYDMdKKCj1/J5MFueAx8NRchxKMYqhjXWnPwODbt6EmMc78Zw+rkecbYfFEpdnqRwI=",
+            "hash": "0036b61bde3b6ac8eaf703a97b03939336490ac7b82e84893d1762c98f3804c1",
+            "public_key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAmiHgtgtRB/I43hrXBHJZsC7c9OaPpKhUkuIjNlIOqeGI+nPgyjWpN7oTripeUw9OpElNEBhuygenmRBg5mH1HZGal6y/qzi1M7l9tiplZd3TfyWObB8me2NXWV3OcBBSxPHz7ufLH+EFbj79u9QRhrEPXlWr43N6oqb3fItUgnYNrc04ShXaf3Dc/iLzC7tzz0UaLin7xwo/1l6TWsr7W5P3Xd1Rjd1YpTyV5Ff2b4yQZFbqascvH2cI0LbZEtuWThe/Fem80Zvmf2uDasFnLjd9YrYifgCGGXksQxvxsoV748+WK4nD+l7/qB79+77TdaqW3QbfmKlNggwbA2GMPwIDAQAB"
+          }
+        },
+        "type": "publisher_added"
+      }
+    ],
+    "result": "success"
+  },
+  "handle": "0",
+  "time": "2023-08-20T00:53:24.053385492Z",
+  "version": 71
+}

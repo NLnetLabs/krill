@@ -1,0 +1,19 @@
+{
+  "actor": "testbed",
+  "details": {
+    "name": "LocalCA1688723480286",
+    "type": "remove_publisher"
+  },
+  "effect": {
+    "events": [
+      {
+        "name": "LocalCA1688723480286",
+        "type": "publisher_removed"
+      }
+    ],
+    "result": "success"
+  },
+  "handle": "0",
+  "time": "2023-07-07T10:29:26.419964992Z",
+  "version": 59
+}

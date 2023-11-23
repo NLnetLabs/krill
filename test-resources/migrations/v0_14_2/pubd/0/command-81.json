@@ -1,0 +1,14 @@
+{
+  "actor": "testbed",
+  "details": {
+    "name": "Stonham",
+    "type": "remove_publisher"
+  },
+  "effect": {
+    "msg": "Unknown publisher 'Stonham'",
+    "result": "error"
+  },
+  "handle": "0",
+  "time": "2023-09-24T14:06:49.081614178Z",
+  "version": 81
+}

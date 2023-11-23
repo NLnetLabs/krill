@@ -1,0 +1,15 @@
+{
+  "actor": "krill",
+  "details": {
+    "type": "init"
+  },
+  "effect": {
+    "init": {
+      "krill_version": "0.14.0-rc1"
+    },
+    "result": "init"
+  },
+  "handle": "main",
+  "time": "2023-10-01T19:00:14.589152712Z",
+  "version": 0
+}

@@ -1,0 +1,19 @@
+{
+  "actor": "testbed",
+  "details": {
+    "name": "94017295-0594-4fe7-a797-3917a848c668-12",
+    "type": "remove_publisher"
+  },
+  "effect": {
+    "events": [
+      {
+        "name": "94017295-0594-4fe7-a797-3917a848c668-12",
+        "type": "publisher_removed"
+      }
+    ],
+    "result": "success"
+  },
+  "handle": "0",
+  "time": "2023-04-28T12:40:15.176241647Z",
+  "version": 7
+}

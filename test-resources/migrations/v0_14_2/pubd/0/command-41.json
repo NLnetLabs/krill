@@ -1,0 +1,27 @@
+{
+  "actor": "testbed",
+  "details": {
+    "name": "Top-IXP",
+    "type": "add_publisher"
+  },
+  "effect": {
+    "events": [
+      {
+        "name": "Top-IXP",
+        "publisher": {
+          "base_uri": "rsync://testbed.krill.cloud/repo/Top-IXP/",
+          "id_cert": {
+            "base64": "MIIDEzCCAfugAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEyhFOTUzQUM5NUUyOTQ0MDIyRkJCRkM0NTkwNzYxOTYzNzIwNDkxNUIyMB4XDTIzMDUyNTEyMzU0NFoXDTM4MDUyNTEyNDA0NFowMzExMC8GA1UEAxMoRTk1M0FDOTVFMjk0NDAyMkZCQkZDNDU5MDc2MTk2MzcyMDQ5MTVCMjCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAKfEf37LreTKNdduVK0iUNWwEEtrmxDH4VNmwdwFUgFkqqjTmUBy8YemHdUYHN2HkPcyJqjzA72CwbYsGViGSVp7eKvcHfHiCZqdgGRrbt6rrbgqmf8kZdxepAsOVnl5OzoYy4FAIXTmDdK3yEQuBWo7rsnwe/AcxxbvEKp/x4KF9M0LKhB4sco0kEvHGxr86/IEmU0DUY5qq7MzdzbfVnyV2NAdmP7GqhSWgGzW7w4nBuvz32cBt8+9o3oU+KWeEDeDqu+omr3Qc7nw1BCz4FfsxqgPkt8CBJ0baAkfXh3e/PObxwxcRkqHQMJWn+5VgWS3xxBbm3tZKTye5gCVmJ0CAwEAAaMyMDAwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQU6VOsleKUQCL7v8RZB2GWNyBJFbIwDQYJKoZIhvcNAQELBQADggEBAJIl6vin6oteWFpoXx/emGvNZ5FftkQetB2BiFMFKD/GOZk7Wg7SaKRTkzOkeN2SocjzntOTOLh0F3S8Y+uU6Oy52PqQCqi7kyucnaq8KvMff4uzmHlwd3Pj1rAaX9/+mGJ5WQ7dwuKud0EtVX1gBSMZv/QOsYJ1aN+NWrvghNBJxhFSZGdlnarZq9oRWE80vIRoMY4p03y88KokuECaLPto5a3/2cf4DvuOHra2fPBiDCeX7ya7B4yY4YQkvD+7AIwgGcIqKJHmSfdgn8csd+7EHz8I8SHtNCKG9b4A6f0J3KbIgQEUPp2dRsFRPWu09SiCmF7MttPKYOD/Cqvths8=",
+            "hash": "461c71de0dc7feaeef4e7fe2c1365700a64728a2750c363d23b77596c385317a",
+            "public_key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAp8R/fsut5Mo1125UrSJQ1bAQS2ubEMfhU2bB3AVSAWSqqNOZQHLxh6Yd1Rgc3YeQ9zImqPMDvYLBtiwZWIZJWnt4q9wd8eIJmp2AZGtu3qutuCqZ/yRl3F6kCw5WeXk7OhjLgUAhdOYN0rfIRC4FajuuyfB78BzHFu8Qqn/HgoX0zQsqEHixyjSQS8cbGvzr8gSZTQNRjmqrszN3Nt9WfJXY0B2Y/saqFJaAbNbvDicG6/PfZwG3z72jehT4pZ4QN4Oq76iavdBzufDUELPgV+zGqA+S3wIEnRtoCR9eHd7885vHDFxGSodAwlaf7lWBZLfHEFube1kpPJ7mAJWYnQIDAQAB"
+          }
+        },
+        "type": "publisher_added"
+      }
+    ],
+    "result": "success"
+  },
+  "handle": "0",
+  "time": "2023-05-25T12:40:55.444758036Z",
+  "version": 41
+}

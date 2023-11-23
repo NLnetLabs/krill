@@ -1,0 +1,18 @@
+{
+  "actor": "krill",
+  "details": "Init",
+  "effect": {
+    "init": {
+      "signer_identity": {
+        "private_key_internal_id": "F15E7AB5EC6658A6E159B021FA9F29E40EE0C8D0",
+        "public_key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsAYR0yTwV95759N5HyJZTL/3S5y6Wz6TVB9LXkOknk6Qoq5RWcvI1O9zjmEXkeYqyQi0RB5JGDXo1mhWRDgRTWeJgBDWgnv7NJSXnTqlz2x9amApSPdNpGJz+8daiRe+E5IONHRn4ShW9HOzKoUClu8NaA1663/xBOIlx/Xw4MsbeSyBbH9iX6+i4+la1ipbvVN4FsE11twxTNYwtMCjlnh8Uf9CG9mjKd5LyreWmu+0ENSl1uyg3oxGfVucvD4Vp0U9ZZ6TGe6csPHDJCNptH+fkhc1o7WxNtpAamTDfb77H1kwq17ITiplZ9TcLwAXnhOZgpsFpwZcbO2NJD8d6wIDAQAB"
+      },
+      "signer_info": "OpenSSL Soft Signer [version: OpenSSL 1.1.1f  31 Mar 2020, keys dir: /var/lib/krill/data/keys]",
+      "signer_name": "Default OpenSSL signer"
+    },
+    "result": "init"
+  },
+  "handle": "3d5ec3f8-4a5a-426b-bd93-ffd1d2dae73d",
+  "time": "2023-04-26T13:37:48.193741798Z",
+  "version": 0
+}

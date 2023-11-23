@@ -15,6 +15,7 @@ use crate::{
     commons::{
         actor::Actor,
         api::{AspaDefinition, AspaDefinitionUpdates, CustomerAsn, ProviderAsn},
+        crypto::dispatch::signerinfo::SignerInfo,
         error::KrillIoError,
         eventsourcing::{
             segment, Aggregate, AggregateStore, AggregateStoreError, Key, KeyValueError, KeyValueStore, Scope, Segment,
@@ -24,11 +25,17 @@ use crate::{
         KrillResult,
     },
     constants::{
-        CASERVER_NS, CA_OBJECTS_NS, KEYS_NS, KRILL_VERSION, PUBSERVER_CONTENT_NS, PUBSERVER_NS, SIGNERS_NS, STATUS_NS,
-        TA_PROXY_SERVER_NS, TA_SIGNER_SERVER_NS,
+        CASERVER_NS, CA_OBJECTS_NS, KEYS_NS, KRILL_VERSION, PROPERTIES_NS, PUBSERVER_CONTENT_NS, PUBSERVER_NS,
+        SIGNERS_NS, STATUS_NS, TA_PROXY_SERVER_NS, TA_SIGNER_SERVER_NS,
     },
-    daemon::{config::Config, krillserver::KrillServer, properties::PropertiesManager},
-    pubd,
+    daemon::{
+        ca::CertAuth,
+        config::Config,
+        krillserver::KrillServer,
+        properties::{Properties, PropertiesManager},
+    },
+    pubd::{self, RepositoryAccess, RepositoryContent},
+    ta::{TrustAnchorProxy, TrustAnchorSigner},
     upgrades::pre_0_14_0::{OldStoredCommand, OldStoredEffect, OldStoredEvent},
 };
 
@@ -48,6 +55,7 @@ pub mod pre_0_10_0;
 pub mod pre_0_13_0;
 
 pub mod pre_0_14_0;
+pub mod pre_0_14_3;
 
 //------------ UpgradeResult -------------------------------------------------
 
@@ -769,6 +777,29 @@ pub fn prepare_upgrade_data_migrations(
                 pre_0_14_0::UpgradeAggregateStoreTrustAnchorProxy::upgrade(TA_PROXY_SERVER_NS, mode, config)?;
 
                 Ok(Some(UpgradeReport::new(aspa_configs, true, versions)))
+            } else if versions.from < KrillVersion::release(0, 14, 3) {
+                // Check all possibly affected stores for corrupted files resulting
+                // from issue #1160 and fix them if needed.
+                let mut migrated = false;
+
+                pre_0_14_3::upgrade_tasks(config)?;
+                pre_0_14_3::upgrade_status(config)?;
+
+                migrated = pre_0_14_3::upgrade_agg::<CertAuth>(CASERVER_NS, config)? || migrated;
+                // note: ca_objects is not affected by #1160, as it replaces existing objects and in that
+                //       case temp files were used.
+                migrated = pre_0_14_3::upgrade_agg::<RepositoryAccess>(PUBSERVER_NS, config)? || migrated;
+                migrated = pre_0_14_3::upgrade_wal::<RepositoryContent>(PUBSERVER_CONTENT_NS, config)? || migrated;
+                migrated = pre_0_14_3::upgrade_agg::<Properties>(PROPERTIES_NS, config)? || migrated;
+                migrated = pre_0_14_3::upgrade_agg::<SignerInfo>(SIGNERS_NS, config)? || migrated;
+                migrated = pre_0_14_3::upgrade_agg::<TrustAnchorSigner>(TA_SIGNER_SERVER_NS, config)? || migrated;
+                migrated = pre_0_14_3::upgrade_agg::<TrustAnchorProxy>(TA_PROXY_SERVER_NS, config)? || migrated;
+
+                Ok(Some(UpgradeReport::new(
+                    AspaMigrationConfigs::default(),
+                    migrated,
+                    versions,
+                )))
             } else {
                 Ok(Some(UpgradeReport::new(
                     AspaMigrationConfigs::default(),
@@ -1131,6 +1162,26 @@ mod tests {
         test_upgrade(
             "test-resources/migrations/v0_13_1/",
             &["ca_objects", "cas", "keys", "pubd", "pubd_objects", "signers", "status"],
+        );
+    }
+
+    #[test]
+    fn prepare_then_upgrade_0_14_2() {
+        test_upgrade(
+            "test-resources/migrations/v0_14_2/",
+            &[
+                "ca_objects",
+                "cas", // testbed/command-6.json was intentionally removed
+                "keys",
+                "properties",
+                "pubd",
+                "pubd_objects",
+                "signers",
+                "status",
+                "tasks",
+                "ta_proxy",
+                "ta_signer",
+            ],
         );
     }
 

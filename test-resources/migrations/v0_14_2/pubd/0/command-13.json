@@ -1,0 +1,27 @@
+{
+  "actor": "testbed",
+  "details": {
+    "name": "teste2",
+    "type": "add_publisher"
+  },
+  "effect": {
+    "events": [
+      {
+        "name": "teste2",
+        "publisher": {
+          "base_uri": "rsync://testbed.krill.cloud/repo/teste2/",
+          "id_cert": {
+            "base64": "MIIDEzCCAfugAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEygyM0FEOUUwNTVENkMxQUQzMzQ5RDU0MDQyQ0FDMzlDQTQ4NzdGMjQyMB4XDTIzMDQyOTE3MDQwNloXDTM4MDQyOTE3MDkwNlowMzExMC8GA1UEAxMoMjNBRDlFMDU1RDZDMUFEMzM0OUQ1NDA0MkNBQzM5Q0E0ODc3RjI0MjCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBANIXYniTVayLZEbHx2s1OVvxB9CTuQjzwBxMjZiGeLk8BI83kULaHNzsgb3i3y9OXYrQsW+4eYDeHtgPFZ0kVZ+rirhv3NjACFcyELmtczwDdtDFQQtnYBM9bM0KU+P0d/N+uHokqh/CeQJvn6qT/qTWxYKtL0xk4X6dY/1uGpGw/y0BMeAWInbbkZtvv/1hITakimNBAQNqJOfErQzjNjLafAGqy0Inpf8l8EnNgKi3j8mJTUVp/IqNHEiUhYWaL2H+fujnMKULhQjHQfsBcBv20Ml8xPqev9IpRhduW1kcZq2eXV/gKh/2G1x6rZDV3KDflAbdBF0IsQ8Df0u70pcCAwEAAaMyMDAwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUI62eBV1sGtM0nVQELKw5ykh38kIwDQYJKoZIhvcNAQELBQADggEBAM3O094l+AltE68EzwojXkt+xWB0epdnarY4f3B7lvn6aET8mXhcy0cKwdsOgRdEhXleSP8UBaN17RbN2DIEgVt1sUEWcXy4SnsfprbS2S57ScUC2kERVkaO1RvYeIgbYmv8FBXx/xVAQQNq7jyeu7et4t0CMkXRC1XV58sQ7wmiJkbRRfhsLef2RoViV66bFT4BoBJp5AcQOSfqbTo5anRSVqfejYl4hCxFT7r9YnYNPG7NFRdJvGvquALueqzNU+RwhkRYXJWXDUokaGpTiU5NxD0Fn3r3wI1uO3L4NmNmeFEsUULh7xDCz5p3lX55t2U0wLW8XvWtkMYg9BHZTqg=",
+            "hash": "923baa12098324e2b9ca1876d0d250af39a14b46cde3eae9fa3c08060d794600",
+            "public_key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0hdieJNVrItkRsfHazU5W/EH0JO5CPPAHEyNmIZ4uTwEjzeRQtoc3OyBveLfL05ditCxb7h5gN4e2A8VnSRVn6uKuG/c2MAIVzIQua1zPAN20MVBC2dgEz1szQpT4/R38364eiSqH8J5Am+fqpP+pNbFgq0vTGThfp1j/W4akbD/LQEx4BYidtuRm2+//WEhNqSKY0EBA2ok58StDOM2Mtp8AarLQiel/yXwSc2AqLePyYlNRWn8io0cSJSFhZovYf5+6OcwpQuFCMdB+wFwG/bQyXzE+p6/0ilGF25bWRxmrZ5dX+AqH/YbXHqtkNXcoN+UBt0EXQixDwN/S7vSlwIDAQAB"
+          }
+        },
+        "type": "publisher_added"
+      }
+    ],
+    "result": "success"
+  },
+  "handle": "0",
+  "time": "2023-04-30T15:54:03.450561828Z",
+  "version": 13
+}

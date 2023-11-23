@@ -1,0 +1,17 @@
+{
+  "actor": "krill",
+  "details": {
+    "ChangeSignerInfo": "OpenSSL Soft Signer [version: OpenSSL 1.1.1f  31 Mar 2020, keys store: local:///var/lib/krill/data//]"
+  },
+  "effect": {
+    "events": [
+      {
+        "SignerInfoChanged": "OpenSSL Soft Signer [version: OpenSSL 1.1.1f  31 Mar 2020, keys store: local:///var/lib/krill/data//]"
+      }
+    ],
+    "result": "success"
+  },
+  "handle": "3d5ec3f8-4a5a-426b-bd93-ffd1d2dae73d",
+  "time": "2023-10-01T19:00:22.098828012Z",
+  "version": 7
+}

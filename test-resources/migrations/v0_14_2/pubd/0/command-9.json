@@ -1,0 +1,27 @@
+{
+  "actor": "testbed",
+  "details": {
+    "name": "repotest",
+    "type": "add_publisher"
+  },
+  "effect": {
+    "events": [
+      {
+        "name": "repotest",
+        "publisher": {
+          "base_uri": "rsync://testbed.krill.cloud/repo/repotest/",
+          "id_cert": {
+            "base64": "MIIDEzCCAfugAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEyg1NjlGM0MxQzI0Q0JCMTBDNjMxRDhEQzMwOTUyQzhENjIzMTA5QTJBMB4XDTIzMDQzMDA3NTQzNloXDTM4MDQzMDA3NTkzNlowMzExMC8GA1UEAxMoNTY5RjNDMUMyNENCQjEwQzYzMUQ4REMzMDk1MkM4RDYyMzEwOUEyQTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAMgfho+vIatEhRWz4oE+S7DUzXrQMy95AEjMA4KUoDOPTfYWwM8v5Gimh42oyl4GM+0P8ZwEg12DVmwuHqkHzYvMU8R7WLyGAJw8RbqiwERRJfdkGMPNuL/yH1N14Gt5q0u7VIhXlLccp3Kp7syk/312Z1xpzJX+rLtDhyqs07BM+Uad3yR1dTdHOXXEPy1i2RuIPmJnQa+aRcUvt3wkJSwGd32JHG07RCppRmxmefwkahR+Y6Ye6tyJgtNfwq4KP2weazzCIaxTTVJcCVjTXwgEIIbt/fkwRDwq5LUDcyyUfAGumBZlFggGCHudCiRXaAak8gvdOQXqOCHhIgfQIo0CAwEAAaMyMDAwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUVp88HCTLsQxjHY3DCVLI1iMQmiowDQYJKoZIhvcNAQELBQADggEBAGWMsVzIXKyXYUO3/zaIyFaEs8zyG25e5G16Jq3FaUD8Am7DaNuzNDeVj5JlS7BTtsdSFFq4nYe10Q+Wn1W4V/dph/nDolAaDNuXSRy6UYqPoz/pUNp+blEmnjOyHwMLkJAPdKFPKX/Y1efscYTwKP+4y1s8UkISy9ci8RrJh4FRL3KXML2qCBnSVykipkjczED1jVQ6aoiCFympXRHjuE0d1aWsuKE7SBD7S616kOnHwPM9mGlmo3rc/YFKHEW4el5l967yfFLfKoCN7ziUKNpT8tdPyPt/WbLZvTuAR0oXSU/cIdDhMe22wNpb8esD72Yx+JEpt4UYDw2HoIVGEQU=",
+            "hash": "1001a5ae1d35295cc7eac39c6c7e6983826be3db0ed9fc5e1cf29575b13e3864",
+            "public_key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyB+Gj68hq0SFFbPigT5LsNTNetAzL3kASMwDgpSgM49N9hbAzy/kaKaHjajKXgYz7Q/xnASDXYNWbC4eqQfNi8xTxHtYvIYAnDxFuqLARFEl92QYw824v/IfU3Xga3mrS7tUiFeUtxyncqnuzKT/fXZnXGnMlf6su0OHKqzTsEz5Rp3fJHV1N0c5dcQ/LWLZG4g+YmdBr5pFxS+3fCQlLAZ3fYkcbTtEKmlGbGZ5/CRqFH5jph7q3ImC01/Crgo/bB5rPMIhrFNNUlwJWNNfCAQghu39+TBEPCrktQNzLJR8Aa6YFmUWCAYIe50KJFdoBqTyC905Beo4IeEiB9AijQIDAQAB"
+          }
+        },
+        "type": "publisher_added"
+      }
+    ],
+    "result": "success"
+  },
+  "handle": "0",
+  "time": "2023-04-30T08:01:18.533986122Z",
+  "version": 9
+}

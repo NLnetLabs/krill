@@ -1,0 +1,6 @@
+{
+  "ca_handle": "testbed",
+  "ca_version": 0,
+  "parent": "ta",
+  "type": "sync_parent"
+}

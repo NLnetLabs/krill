@@ -1,0 +1,27 @@
+{
+  "actor": "testbed",
+  "details": {
+    "name": "ca-to-test-repo21693221957596",
+    "type": "add_publisher"
+  },
+  "effect": {
+    "events": [
+      {
+        "name": "ca-to-test-repo21693221957596",
+        "publisher": {
+          "base_uri": "rsync://testbed.krill.cloud/repo/ca-to-test-repo21693221957596/",
+          "id_cert": {
+            "base64": "MIIDEzCCAfugAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEyhDQTBDNTYwODczOERCRkY0MDQ0RkExRDg2QzNBQ0YwOTE2RkI2QUIxMB4XDTIzMDgyODExMTkyMloXDTM4MDgyODExMjQyMlowMzExMC8GA1UEAxMoQ0EwQzU2MDg3MzhEQkZGNDA0NEZBMUQ4NkMzQUNGMDkxNkZCNkFCMTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBANN0P4h74VXU0S8tcUCx6YvdsQneEQx6KWfnHX3q3HzgJZEfAL9eFsEMt3gVLZDnLrYKWdMP6bOUBIf6W+c9GTMc45ddBPTCcwchFgU6ws0UByrb97uwVepih40aCoAfsPT80mnU9fEjjI14dkrYrl3OsH/bIX/9SY9293UwJw238Qoi0Ozfp3+Gjd+k/YhVnZkv+AIHgpaqJRk7aC5SMIOzBKMBl+OAXZmWsuhz1gnIc1fwBUPS7xskCRh+O0wVgjGORWonU4ZMZFTSQugWvJiiwo2aqrrAVP4NQBIQWKCHCXTxinmwAyMcfiD2bv5mSt9qi9MMDSeo4rYq+K8+ZZ0CAwEAAaMyMDAwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUygxWCHONv/QET6HYbDrPCRb7arEwDQYJKoZIhvcNAQELBQADggEBALb7jysSePfFnvl0bGZFYG0L1FM/qJ5iG6jP0g+4ZCh3qSGkFW3eOdKiHKnnNfvs9yRZi7a5+kFlJg6fp1WISrdpw+MuBpHnjGZo/ZKxW4Kdzes7GuWFxpmhTJZzfC93MK3qWpwJC8P4Ez+i+Xnzu97mTdx+BuW3Tt57JxZXjn81DxHG+L3bREUxLGPwrbKdzetauv3qsCTPBPxE6bGgRGhvVJsdebvVeruCCnYFFyruIuszVtibWyjKpq2ZdpoWK2Qe26NOP7ITJADkm0m/72eKY0YUwH6qSuZ7Cn2gGqozd8D9daO1GRkPmAjYBlhFNyXptHAt/BKEULjo+0mhF/E=",
+            "hash": "9544eee9b6051c0db32b40532729aa9c73986b496ec2b59ab0a109f6d2aa351e",
+            "public_key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA03Q/iHvhVdTRLy1xQLHpi92xCd4RDHopZ+cdfercfOAlkR8Av14WwQy3eBUtkOcutgpZ0w/ps5QEh/pb5z0ZMxzjl10E9MJzByEWBTrCzRQHKtv3u7BV6mKHjRoKgB+w9PzSadT18SOMjXh2StiuXc6wf9shf/1Jj3b3dTAnDbfxCiLQ7N+nf4aN36T9iFWdmS/4AgeClqolGTtoLlIwg7MEowGX44BdmZay6HPWCchzV/AFQ9LvGyQJGH47TBWCMY5FaidThkxkVNJC6Ba8mKLCjZqqusBU/g1AEhBYoIcJdPGKebADIxx+IPZu/mZK32qL0wwNJ6jitir4rz5lnQIDAQAB"
+          }
+        },
+        "type": "publisher_added"
+      }
+    ],
+    "result": "success"
+  },
+  "handle": "0",
+  "time": "2023-08-28T11:25:58.127247799Z",
+  "version": 74
+}

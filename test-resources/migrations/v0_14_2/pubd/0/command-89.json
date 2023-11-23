@@ -1,0 +1,27 @@
+{
+  "actor": "testbed",
+  "details": {
+    "name": "qcl_admin",
+    "type": "add_publisher"
+  },
+  "effect": {
+    "events": [
+      {
+        "name": "qcl_admin",
+        "publisher": {
+          "base_uri": "rsync://testbed.krill.cloud/repo/qcl_admin/",
+          "id_cert": {
+            "base64": "MIIDEzCCAfugAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEyg2RjE0NjlFMTkyNTEyNjQ3MjgxNjNFRUEzNTVGNDIwNTdGQzRCN0E4MB4XDTIzMDczMTA2NTM1MVoXDTM4MDczMTA2NTg1MVowMzExMC8GA1UEAxMoNkYxNDY5RTE5MjUxMjY0NzI4MTYzRUVBMzU1RjQyMDU3RkM0QjdBODCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAMFlQbjyVgrBKNXHw9HUqcvYQkyS/uzTHx/Cnka/OqZ8GMTgUSGeqMJ/b4N822H3jXRghvYdy4GoAFRP7WzGVEA4g4MzrIcTVfBis+jKC6EwaR7ztET31LYRHYmvriWDPwO2AOpnsA/vrJi82OeWoZaWnxdvMlkIJa/5KHB4XJLOG/IXqTmYjULJL2nBvhpt7sA5YpoIOe1++fhBM3JsI0MreoENtVaO7KUvjeDr8dWb8yq1oCyuZdF4nUNG+j8TXzQym8c5bPSjWWNpJssiqJEvaw+/7Es7enR9oTvgmW7sNPeBUC5CY6Bq4fjfNdQoyXHcas/bDmpdqowD+gvthd8CAwEAAaMyMDAwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUbxRp4ZJRJkcoFj7qNV9CBX/Et6gwDQYJKoZIhvcNAQELBQADggEBALwhnQjsHMcqTadPtwbeIW5vbO0s9zEECpN6jjJcPZqL2QKhmlX0xlNDV6Z1gx1ow/BEAEsjqjPAkssdjqL+y1QnXcP2ffmlpbq6hPi+Gt8wWbrnHtragL+oXStJPAXSQGya0IxNzlNs6rpwBAs1LMBUkNm2Ps4TYYsA4BVb3aV/3JxHNDRIsrTDzSK1+GZ9HKmQdfFzsq0EHdKYhxZHMSLuV+D26uzvMVkR9OHDnGsd9PucQnGKkN/T2+gqs1mh1DOmQWk8XlHd3UwMhvmSZ6MaLVc9rq53/y7g0+rBbzQ9A5m4tkwB0Uk1x3ZroXApvROj1OjIuPwZf+fh0rjwmW8=",
+            "hash": "036640de803c335fc0e3db93bb7ace723963a04b9f94c3a6fcbdeed0b51023f2",
+            "public_key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwWVBuPJWCsEo1cfD0dSpy9hCTJL+7NMfH8KeRr86pnwYxOBRIZ6own9vg3zbYfeNdGCG9h3LgagAVE/tbMZUQDiDgzOshxNV8GKz6MoLoTBpHvO0RPfUthEdia+uJYM/A7YA6mewD++smLzY55ahlpafF28yWQglr/kocHhcks4b8hepOZiNQskvacG+Gm3uwDlimgg57X75+EEzcmwjQyt6gQ21Vo7spS+N4Ovx1ZvzKrWgLK5l0XidQ0b6PxNfNDKbxzls9KNZY2kmyyKokS9rD7/sSzt6dH2hO+CZbuw094FQLkJjoGrh+N811CjJcdxqz9sOal2qjAP6C+2F3wIDAQAB"
+          }
+        },
+        "type": "publisher_added"
+      }
+    ],
+    "result": "success"
+  },
+  "handle": "0",
+  "time": "2023-10-09T08:59:18.578630734Z",
+  "version": 89
+}

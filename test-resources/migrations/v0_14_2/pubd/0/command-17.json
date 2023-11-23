@@ -1,0 +1,27 @@
+{
+  "actor": "testbed",
+  "details": {
+    "name": "tg",
+    "type": "add_publisher"
+  },
+  "effect": {
+    "events": [
+      {
+        "name": "tg",
+        "publisher": {
+          "base_uri": "rsync://testbed.krill.cloud/repo/tg/",
+          "id_cert": {
+            "base64": "MIIDEzCCAfugAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEyg2OTUyMzg0M0MxNDg0QTYwNjExRDkzQUNGOTc1NEJFNDhEMEUwRDQ4MB4XDTIzMDUwMjA4NDQxNFoXDTM4MDUwMjA4NDkxNFowMzExMC8GA1UEAxMoNjk1MjM4NDNDMTQ4NEE2MDYxMUQ5M0FDRjk3NTRCRTQ4RDBFMEQ0ODCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALbyCM0ZaevdIM2vfbYvjn6BkmNjN2s6J4aGiyuPHOaapCzUcYgshH1sVsVWTiX4Hm2czwWeV8EYuFSN/xzJv24YAXBdsXlTG1r5fwO9fPHXl8J3AfaQJEuCkDmAzRJEF5stCSf4nNzPgMUn4ppr06RnEheBn2O8EEM8JEa8Mw/YIR0RTD0PpGMkYieUE1PqiUeMZr0XTQSoi6uEeboOq5NIRyLDA7iUeGGbhgrnvwcHyuRR9YYzyPtbohqen39EqFp7wBNTF89ZvXQJPQmkQ1TILCQHBVXq0eSB1EixxUvWcU4o+7IpCeaNe0quiseg7EI7Km71Y+0y0lAquA6A+icCAwEAAaMyMDAwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUaVI4Q8FISmBhHZOs+XVL5I0ODUgwDQYJKoZIhvcNAQELBQADggEBAClbpiy8l3SMuvvD4f2rBF8kMv3x42KFlfy57N7KqOOQy0gNkVhZ0C0/DGnpW7vjN6G/sYzhLpQ6u8rtdrDc0TrfQOm97pYqbC9RQnSHdB2NRlpGbKk09xUqQHtqkz61TcoIvgSQwqbTjRP0BMFpzqfjLUISL2DcMovubkZfNKULRPIxbBJaUo3kWwenX9kPq1yXfn2RdMrCFYTIOCASs65+oO//kYrzqo+3FeLvANi3L7iS7LXAx2BIUYOgyylNg8PZPrb/IIEcJDhSVmI9p6gobVZMdwgIZmWfOqVw70QpYOKWgbwY8G3IKgy6aSQPZ7sVB1aFNhxhKUSqAXBPIys=",
+            "hash": "6a9b7d5bd70be114bf9e7c9da295986bb30c04e957a0eb5ae8182f33662601b8",
+            "public_key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtvIIzRlp690gza99ti+OfoGSY2M3azonhoaLK48c5pqkLNRxiCyEfWxWxVZOJfgebZzPBZ5XwRi4VI3/HMm/bhgBcF2xeVMbWvl/A7188deXwncB9pAkS4KQOYDNEkQXmy0JJ/ic3M+AxSfimmvTpGcSF4GfY7wQQzwkRrwzD9ghHRFMPQ+kYyRiJ5QTU+qJR4xmvRdNBKiLq4R5ug6rk0hHIsMDuJR4YZuGCue/BwfK5FH1hjPI+1uiGp6ff0SoWnvAE1MXz1m9dAk9CaRDVMgsJAcFVerR5IHUSLHFS9ZxTij7sikJ5o17Sq6Kx6DsQjsqbvVj7TLSUCq4DoD6JwIDAQAB"
+          }
+        },
+        "type": "publisher_added"
+      }
+    ],
+    "result": "success"
+  },
+  "handle": "0",
+  "time": "2023-05-02T08:50:24.043173812Z",
+  "version": 17
+}

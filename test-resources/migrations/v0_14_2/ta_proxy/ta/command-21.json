@@ -1,0 +1,15 @@
+{
+  "actor": "krill",
+  "details": "MakeSignerRequest",
+  "effect": {
+    "events": [
+      {
+        "SignerRequestMade": "65279bf6-b46a-47eb-91a5-b63c2cd331b1"
+      }
+    ],
+    "result": "success"
+  },
+  "handle": "ta",
+  "time": "2023-11-02T10:56:20.500728996Z",
+  "version": 21
+}

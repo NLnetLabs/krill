@@ -1,0 +1,27 @@
+{
+  "actor": "testbed",
+  "details": {
+    "name": "Pikkumies",
+    "type": "add_publisher"
+  },
+  "effect": {
+    "events": [
+      {
+        "name": "Pikkumies",
+        "publisher": {
+          "base_uri": "rsync://testbed.krill.cloud/repo/Pikkumies/",
+          "id_cert": {
+            "base64": "MIIDEzCCAfugAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEyg2NDM1QUM5MzA4MjUyMzhBQzc1NzcxQ0Q3QzI3RTY2QjJFQTYxQjEzMB4XDTIzMTEyMzEwMTYxM1oXDTM4MTEyMzEwMjExM1owMzExMC8GA1UEAxMoNjQzNUFDOTMwODI1MjM4QUM3NTc3MUNEN0MyN0U2NkIyRUE2MUIxMzCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALxjIWPk+xS0Xcqh5SvTRrrY/C4SP1IZuLDt7/o+fKUKPxs47vQRtplVlSOT6EZS4vwMhEZRW6Wr5q0nPmzfWsFXqo9k/2XX6efBXWvEZhut2LU0hnGaRiYv6eiHLurfu4pdmiXbRkpkRB14TKmHbHs/qwrgnR8cU4RJEn3jE12xknsggD3jdQVaPIp/i40nD/SJhDHuUSNaYGXOUKD8R6iZBKLfM9wz76WxVPIZdjpdy2s1zYKzpGgPxkIYV4xnUtKoXy01y7/kJC17+gts/pJhKdOJtx1qDqJ/3IwY3THkxxn8ComTmy9Q0H3Prw7yPgKlYk+t97RyBSZGYqwSnMECAwEAAaMyMDAwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUZDWskwglI4rHV3HNfCfmay6mGxMwDQYJKoZIhvcNAQELBQADggEBACdHmZzxZkT0RcN3iBPyLchyys61H0jB/cLtD+weaFhtqSSQSJ/gWrgc0tC3SL2Tbdd1Ubaknwvk5WTizBonzoAVVMdziSOXEh39bxSDz8PfOcojn+R0q4+5ABUMqgSd724F1xjn3Y1HA/RfA04H8d4MYhZe5I4Wcs40Dg6DMiczx3OissG67+f8tqkuw7ojkKM3YH7yegwXIDSdAwXkdXtypYETq+UNTJTVTWD1FXAHcm1omjaW8j/TDonok24M8Xz/FKFeE6eLiaMl7zv5iqnoNO6ks59ifzDax7O+gUgA6sCveNKCl6n2kKqkTr4r9gKS06yRz1nhgoan8MR/yts=",
+            "hash": "51595b3950c579a85e4427edb32093b3af905285fda5963f6f60adfe3545782a",
+            "public_key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvGMhY+T7FLRdyqHlK9NGutj8LhI/Uhm4sO3v+j58pQo/Gzju9BG2mVWVI5PoRlLi/AyERlFbpavmrSc+bN9awVeqj2T/Zdfp58Fda8RmG63YtTSGcZpGJi/p6Icu6t+7il2aJdtGSmREHXhMqYdsez+rCuCdHxxThEkSfeMTXbGSeyCAPeN1BVo8in+LjScP9ImEMe5RI1pgZc5QoPxHqJkEot8z3DPvpbFU8hl2Ol3LazXNgrOkaA/GQhhXjGdS0qhfLTXLv+QkLXv6C2z+kmEp04m3HWoOon/cjBjdMeTHGfwKiZObL1DQfc+vDvI+AqViT633tHIFJkZirBKcwQIDAQAB"
+          }
+        },
+        "type": "publisher_added"
+      }
+    ],
+    "result": "success"
+  },
+  "handle": "0",
+  "time": "2023-11-23T10:22:35.493937491Z",
+  "version": 106
+}

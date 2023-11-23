@@ -401,11 +401,11 @@ impl<T: WalSupport> WalStore<T> {
         Scope::from_segment(Segment::parse_lossy(handle.as_str()))
     }
 
-    fn key_for_snapshot(handle: &MyHandle) -> Key {
+    pub fn key_for_snapshot(handle: &MyHandle) -> Key {
         Key::new_scoped(Self::scope_for_handle(handle), segment!("snapshot.json"))
     }
 
-    fn key_for_wal_set(handle: &MyHandle, revision: u64) -> Key {
+    pub fn key_for_wal_set(handle: &MyHandle, revision: u64) -> Key {
         Key::new_scoped(
             Self::scope_for_handle(handle),
             Segment::parse(&format!("wal-{}.json", revision)).unwrap(), // cannot panic as a u64 cannot contain a Scope::SEPARATOR

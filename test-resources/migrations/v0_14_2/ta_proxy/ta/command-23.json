@@ -1,0 +1,23 @@
+{
+  "actor": "krill",
+  "details": {
+    "GiveChildResponse": [
+      "testbed",
+      "DDAF321520EE4817D716FA047FC05FE2934204DB"
+    ]
+  },
+  "effect": {
+    "events": [
+      {
+        "ChildResponseGiven": [
+          "testbed",
+          "DDAF321520EE4817D716FA047FC05FE2934204DB"
+        ]
+      }
+    ],
+    "result": "success"
+  },
+  "handle": "ta",
+  "time": "2023-11-02T10:56:22.906008787Z",
+  "version": 23
+}

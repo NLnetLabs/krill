@@ -1,0 +1,23 @@
+{
+  "actor": "krill",
+  "details": {
+    "AddKey": [
+      "7DD5C2EAB16E870E0CEB3D53F355BF1B21B4BFEB",
+      "7DD5C2EAB16E870E0CEB3D53F355BF1B21B4BFEB"
+    ]
+  },
+  "effect": {
+    "events": [
+      {
+        "KeyAdded": [
+          "7DD5C2EAB16E870E0CEB3D53F355BF1B21B4BFEB",
+          "7DD5C2EAB16E870E0CEB3D53F355BF1B21B4BFEB"
+        ]
+      }
+    ],
+    "result": "success"
+  },
+  "handle": "3d5ec3f8-4a5a-426b-bd93-ffd1d2dae73d",
+  "time": "2023-04-26T13:37:49.709330562Z",
+  "version": 3
+}

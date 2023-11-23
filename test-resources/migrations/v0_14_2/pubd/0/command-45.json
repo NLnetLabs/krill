@@ -1,0 +1,27 @@
+{
+  "actor": "testbed",
+  "details": {
+    "name": "test1",
+    "type": "add_publisher"
+  },
+  "effect": {
+    "events": [
+      {
+        "name": "test1",
+        "publisher": {
+          "base_uri": "rsync://testbed.krill.cloud/repo/test1/",
+          "id_cert": {
+            "base64": "MIIFPzCCAyegAwIBAgIUDCuJiRsvHV8xSmXmRy2RqtH1cMQwDQYJKoZIhvcNAQELBQAwLzEtMCsGA1UEAwwkMThhYzc0ODUtY2JhNi00ZDQ0LWFjMjgtNzBjN2NjODBhZjdlMB4XDTIzMDUyODIxNDczMFoXDTIzMDkyOTIxNDczMFowLzEtMCsGA1UEAwwkMThhYzc0ODUtY2JhNi00ZDQ0LWFjMjgtNzBjN2NjODBhZjdlMIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEApD2L2Ypfyv9KFuGizKP0HHVm9YsMISTxLomm49JeDf++YCBO5Lyu6DbXcBjAOlsceIH7mfrBqUJLOCcK9UM4cunhKtVUXsjsOoJDlGNKcZ0jfcNrmycMawMZhv0Cly/S4miVM/xrSoIq1H7o7Qm7yZkHDuyQaH1dSA+6Dfnm6oDoeAhCKpSeFiVQBMGYrebgHhNVyJxgW8bFTnYSTlhhdWNEuWILx1uAuARtOFi1d6LPTmvu8ttoKjM0NSz2hK5LqxXlDFTWcR0q5Cb9HKtBaKveaU5QHqEKGiwNUtcfwsVoJD7UpXXoImugRkFkk0oGWJQekpWa0iFZUfi2sfFHHSMeYLP6sPFhpF2ul9LcnVkcaFEYVbXSJs1HuFYVqexeX5TASJCrXefQI/CFsajwUwU+nHTMombrTj0bBk6a1ztlRCYime8g/ODNhzYgObymyVZqGhaNkzz76EofWKCeiy4GRcCmeYWrQO8NyZN/6TaMZEgFQUcCbnD8JB21Ri3PG9HElfdGnPIBmbChJXZdc9TVwzGtEL0BmOB6bIFE8kS8KMjfEJsXkpUcvIQzZXmFXqP+Rd29cg26OW46UZIpyEATxtdC0v8a96fI9BpTyznaiMuWtttJBmE5fZr3Evd0t2+gDX1/HsGvIVSsc1St+43mpc2hN6vWsTYTcTEI9MkCAwEAAaNTMFEwDwYDVR0TAQH/BAUwAwEB/zAfBgNVHSMEGDAWgBTwRSQ8O8brAGCKH5MMY7iobl/oDDAdBgNVHQ4EFgQU8EUkPDvG6wBgih+TDGO4qG5f6AwwDQYJKoZIhvcNAQELBQADggIBACNPxtUkDPOP8FmHm/GTwMMUaIh6WYEME2Ww6kjCiyJQ9jXjh8K9pP1hZNaYCfeVKpbp5S8X2oANpnR2/jlxwaYMt4JGqnVXTlU9WAw9uwFCCGgKIC87rwRKuLWWKLeh7lcYt9Q+rdpJq+PlEVCVlnQvhmt7ixKWGJ6/LbZBTsZ6ygcb003hacTNPdo2gUQBE41+HUzn+rotWL7GDSKhZCC2CPT7r8/QcOf/MBH/7d/0NWya9ZydCjTnnCh35aqm9i6mh+s6T5FdOPrjOupD8t9wku8Ot5gRzWu0d+8duQRMOqA19kmtfmB6yqi1+3Dzk+LWun1EfRTVzcJ0kLo29akU/y/Kmkn41UfHJwSnY3LoL3DNG+pJyvgZXYQLrRe8efA7RzBd8L8bj8u2Ynd7pZJ/1at8XjzzAAhj98PYyFQjDXik+OuO2gd8mz2f0hhicZe7TlXynhco5Kv/8no8cMvNTWYTmmNxxK48veN0vG7S2KbNxn42O6fQLG4LDC8srtf6wIhFHDshtBugbia1cdok+ATaiGdNBLC5BzdVkFVz2iuPSs7nqG7StLcmlOesCXM8n1B01InE7nr1ssvlneZgbgaqBuiibJAYS4AYLIx7cgK1e/iV5h0BMEVqdLAG3RoTAIRccyDH6y+PEOIMnWxNVFSGKlIGOUsud95SfU/m",
+            "hash": "0dfb67c336dc9b879164870491ac4b77b6db57440c2e38028371de6b78ea67e1",
+            "public_key": "MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEApD2L2Ypfyv9KFuGizKP0HHVm9YsMISTxLomm49JeDf++YCBO5Lyu6DbXcBjAOlsceIH7mfrBqUJLOCcK9UM4cunhKtVUXsjsOoJDlGNKcZ0jfcNrmycMawMZhv0Cly/S4miVM/xrSoIq1H7o7Qm7yZkHDuyQaH1dSA+6Dfnm6oDoeAhCKpSeFiVQBMGYrebgHhNVyJxgW8bFTnYSTlhhdWNEuWILx1uAuARtOFi1d6LPTmvu8ttoKjM0NSz2hK5LqxXlDFTWcR0q5Cb9HKtBaKveaU5QHqEKGiwNUtcfwsVoJD7UpXXoImugRkFkk0oGWJQekpWa0iFZUfi2sfFHHSMeYLP6sPFhpF2ul9LcnVkcaFEYVbXSJs1HuFYVqexeX5TASJCrXefQI/CFsajwUwU+nHTMombrTj0bBk6a1ztlRCYime8g/ODNhzYgObymyVZqGhaNkzz76EofWKCeiy4GRcCmeYWrQO8NyZN/6TaMZEgFQUcCbnD8JB21Ri3PG9HElfdGnPIBmbChJXZdc9TVwzGtEL0BmOB6bIFE8kS8KMjfEJsXkpUcvIQzZXmFXqP+Rd29cg26OW46UZIpyEATxtdC0v8a96fI9BpTyznaiMuWtttJBmE5fZr3Evd0t2+gDX1/HsGvIVSsc1St+43mpc2hN6vWsTYTcTEI9MkCAwEAAQ=="
+          }
+        },
+        "type": "publisher_added"
+      }
+    ],
+    "result": "success"
+  },
+  "handle": "0",
+  "time": "2023-05-29T07:11:17.836028494Z",
+  "version": 45
+}

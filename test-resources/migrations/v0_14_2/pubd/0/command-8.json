@@ -1,0 +1,27 @@
+{
+  "actor": "testbed",
+  "details": {
+    "name": "mktest",
+    "type": "add_publisher"
+  },
+  "effect": {
+    "events": [
+      {
+        "name": "mktest",
+        "publisher": {
+          "base_uri": "rsync://testbed.krill.cloud/repo/mktest/",
+          "id_cert": {
+            "base64": "MIIDEzCCAfugAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEyhDNTZDMzM1QTRBRkNGMzc0QzBBM0VGMjE5NUEyOTdFNUM3RjBCRjQwMB4XDTIzMDQzMDA3MDgxMFoXDTM4MDQzMDA3MTMxMFowMzExMC8GA1UEAxMoQzU2QzMzNUE0QUZDRjM3NEMwQTNFRjIxOTVBMjk3RTVDN0YwQkY0MDCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBANNELp/FiyNw1Szqti+kH4AfhsDAF2nKFFUUgQAzVAew9UD8/3z9rD7wsSHUuFih0ixmiNgzmUZt6QKdLxovva8c7/kynfINzEqRFF5efbphO6AIKcmNm5YAU+2Irz2h2wSYXjO00HLBVa7BW+bJ5F/WqN5qo03g/cuXzVnX9bOtVwPdydF14dO4mAcMXY5yaqTUM4IYP6nWbze85VRYPyHEGdecJoNnSDWRvW0OMWjnUVNgG6Ov8+ZKWK0EmaW6kV8eeLCg/y9gt++UhOfxkpavQDSRTwfdiY5KrbQL9Dc7Vk9d2QnCRjHuUFGIocRML7GRxEol/Dfepe10GmjyBYUCAwEAAaMyMDAwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUxWwzWkr883TAo+8hlaKX5cfwv0AwDQYJKoZIhvcNAQELBQADggEBAB8a97cZEk72BEDgfhCpSKy39NNCeJQVzdAfrpv/QDny7PYBIZo3vq7ViLh2pX3gAx31Hg7zmsrfG8/49CYyhJSBBXYR9q8nkCVyWiWe/DN98Jos9ZYiQPiracwIenk+BoHubFo/B0rnMvQgR3rw2iLDga2BuclH1eMKvEZLwAtbk0ZlT61AHWBKjDiY4hqLQFJQnBtaKY0nRCNKbEReIdD3opxKw0BoUBoSmox/0zDUqCkn1zh9VPfo4eapTW741Rz/OEEeQOY6DoYDURwS+ZCqbhyaus1i1VjQ0hagGBG9eAVOBAI0U5abNR3m0D2d7JsHNQPuWaR/jBjK90L9c5k=",
+            "hash": "b5da9c4d99676f392d6d50a62a810f40d23d5862189071c53825b403e353a9ba",
+            "public_key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA00Qun8WLI3DVLOq2L6QfgB+GwMAXacoUVRSBADNUB7D1QPz/fP2sPvCxIdS4WKHSLGaI2DOZRm3pAp0vGi+9rxzv+TKd8g3MSpEUXl59umE7oAgpyY2blgBT7YivPaHbBJheM7TQcsFVrsFb5snkX9ao3mqjTeD9y5fNWdf1s61XA93J0XXh07iYBwxdjnJqpNQzghg/qdZvN7zlVFg/IcQZ15wmg2dINZG9bQ4xaOdRU2Abo6/z5kpYrQSZpbqRXx54sKD/L2C375SE5/GSlq9ANJFPB92JjkqttAv0NztWT13ZCcJGMe5QUYihxEwvsZHESiX8N96l7XQaaPIFhQIDAQAB"
+          }
+        },
+        "type": "publisher_added"
+      }
+    ],
+    "result": "success"
+  },
+  "handle": "0",
+  "time": "2023-04-30T07:13:37.442873134Z",
+  "version": 8
+}
