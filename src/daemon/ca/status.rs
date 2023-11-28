@@ -96,7 +96,10 @@ impl StatusStore {
     /// so any missing, corrupted, or no longer supported data format - can be ignored.
     /// It will get updated with new status values as Krill is running.
     fn load_full_status(&self, ca: &CaHandle) -> KrillResult<()> {
-        let repo: RepoStatus = self.store.get(&Self::repo_status_key(ca))?.unwrap_or_default();
+        let repo: RepoStatus = match self.store.get(&Self::repo_status_key(ca)) {
+            Ok(Some(status)) => status,
+            _ => RepoStatus::default(),
+        };
 
         // We use the following mapping for keystore keys to parents/children:
         //  parents-{parent-handle}.json
@@ -121,10 +124,10 @@ impl StatusStore {
                 // the format changed in a new version, then just fall back to
                 // an empty default value. We will get a new connection status
                 // value soon enough as Krill is running.
-                let status: ParentStatus = self
-                    .store
-                    .get(&Self::parent_status_key(ca, &parent))?
-                    .unwrap_or_default();
+                let status: ParentStatus = match self.store.get(&Self::parent_status_key(ca, &parent)) {
+                    Ok(Some(status)) => status,
+                    _ => ParentStatus::default(),
+                };
 
                 parents.insert(parent, status);
             }
@@ -149,7 +152,10 @@ impl StatusStore {
                 // the format changed in a new version, then just fall back to
                 // an empty default value. We will get a new connection status
                 // value soon enough as Krill is running.
-                let status: ChildStatus = self.store.get(&Self::child_status_key(ca, &child))?.unwrap_or_default();
+                let status: ChildStatus = match self.store.get(&Self::child_status_key(ca, &child)) {
+                    Ok(Some(status)) => status,
+                    _ => ChildStatus::default(),
+                };
 
                 children.insert(child, status);
             }
