@@ -1,0 +1,19 @@
+{
+  "id": "krill-upgrade-test",
+  "version": 1,
+  "details": {
+    "type": "parent_added",
+    "parent": "testbed",
+    "contact": {
+      "type": "rfc6492",
+      "service_uri": "https://testbed.krill.cloud/rfc6492/testbed",
+      "parent_handle": "testbed",
+      "child_handle": "krill-upgrade-test",
+      "id_cert": {
+        "public_key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA6mEUKjDWRgHlqzrCR0Oqg9IEWEB75yzPyEZDVIIiDwi91DY6FQU7Ep9DwSGgIAF8OPTw77UlJhFPgkdH0jt8uaU33Q8mZ2TNU3Wtq7Eu7KEKTQ+yM0o+3bNXEpIrT/pCHAqJ0V+ak9LX2AC1PyKhlGWkgYt78kgHKzzL9ssIaUNYzpH4OCDt9QiPGiW6L1U6javJnI5a5ecGfybxeuoHOAg53bpLn1zbz6fDapr07ZdCD218SnesnGQn7apRDlISsN8eTBBsQkw9hN1NAUpZaZ6scVAhabwXcwlWpkq7xkf433MCKbEahKwzq7o/BhBdZtTl/SxRQgYL0+8rlQO4pwIDAQAB",
+        "base64": "MIIDEzCCAfugAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEyhBMUE0ODgwQjc3Q0Q1OTEyNENBNDk2MzcyMTQ5NzVGMkJBRTkyRjk1MB4XDTIzMDQyNjEzMzI1MVoXDTM4MDQyNjEzMzc1MVowMzExMC8GA1UEAxMoQTFBNDg4MEI3N0NENTkxMjRDQTQ5NjM3MjE0OTc1RjJCQUU5MkY5NTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAOphFCow1kYB5as6wkdDqoPSBFhAe+csz8hGQ1SCIg8IvdQ2OhUFOxKfQ8EhoCABfDj08O+1JSYRT4JHR9I7fLmlN90PJmdkzVN1rauxLuyhCk0PsjNKPt2zVxKSK0/6QhwKidFfmpPS19gAtT8ioZRlpIGLe/JIBys8y/bLCGlDWM6R+Dgg7fUIjxolui9VOo2ryZyOWuXnBn8m8XrqBzgIOd26S59c28+nw2qa9O2XQg9tfEp3rJxkJ+2qUQ5SErDfHkwQbEJMPYTdTQFKWWmerHFQIWm8F3MJVqZKu8ZH+N9zAimxGoSsM6u6PwYQXWbU5f0sUUIGC9PvK5UDuKcCAwEAAaMyMDAwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUoaSIC3fNWRJMpJY3IUl18rrpL5UwDQYJKoZIhvcNAQELBQADggEBAAsS0FwEIC+ZvL8Te588c4twPTG93I0vopaE4vR6gwD1YHPCftjEmZ1y9Tx/nk3jL3lgnNSSXbkHV31jcljz8f1RmgkXvOR0SGr/YFXAxuqhroJUm3j6pre/K/7BIhMwbcl/ckNL/7h/fQI5rQs2nt1sKB6CxTIhYPNTUF2JO9Gs5PBGJSyiVXm0E28SQ7nzMfUDqa+kAd/+0y0z6OJwpg3k2K9OVkx3PZxZ6wxkboNbqsSvEKaf2kAKNOpBnPw/MN98rRy5Jfi2e/fx0J1MpD2LkaoZZC23DlNwdu6jXkqWnbNLBxtRqlU2NbaAbhnYTEkOX9dIwlh+Ld+72S7wfGk=",
+        "hash": "337e6a3f6aa0aa95a5e52a321e19a384ca9fcfb7f9c84a8f0e147da29e53d7e9"
+      }
+    }
+  }
+}

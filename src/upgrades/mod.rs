@@ -1114,7 +1114,7 @@ mod tests {
     fn prepare_then_upgrade_0_10_3() {
         test_upgrade(
             "test-resources/migrations/v0_10_3/",
-            &["ca_objects", "cas", "pubd", "pubd_objects"],
+            &["ca_objects", "cas", "pubd", "pubd_objects", "signers", "status"],
         );
     }
 
@@ -1122,7 +1122,7 @@ mod tests {
     fn prepare_then_upgrade_0_11_0() {
         test_upgrade(
             "test-resources/migrations/v0_11_0/",
-            &["ca_objects", "cas", "pubd", "pubd_objects"],
+            &["ca_objects", "cas", "pubd", "pubd_objects", "signers", "status"],
         );
     }
 
@@ -1138,7 +1138,7 @@ mod tests {
     fn prepare_then_upgrade_0_12_3() {
         test_upgrade(
             "test-resources/migrations/v0_12_3/",
-            &["ca_objects", "cas", "pubd", "pubd_objects"],
+            &["ca_objects", "cas", "pubd", "pubd_objects", "signers", "status"],
         );
     }
 
@@ -1146,7 +1146,7 @@ mod tests {
     fn prepare_then_upgrade_0_13_1() {
         test_upgrade(
             "test-resources/migrations/v0_13_1/",
-            &["ca_objects", "cas", "keys", "pubd", "pubd_objects", "signers", "status"],
+            &["ca_objects", "cas", "pubd", "pubd_objects", "signers", "status"],
         );
     }
 
