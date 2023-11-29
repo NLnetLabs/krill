@@ -1,0 +1,15 @@
+{
+  "id": "krill-upgrade-test",
+  "version": 16,
+  "details": {
+    "type": "aspa_config_added",
+    "aspa_config": {
+      "customer": "AS65000",
+      "providers": [
+        "AS65001(v4)",
+        "AS65002(v6)",
+        "AS65003"
+      ]
+    }
+  }
+}
