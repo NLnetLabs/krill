@@ -1,0 +1,26 @@
+{
+  "actor": "admin-token",
+  "time": "2023-11-29T11:01:19.358422295Z",
+  "handle": "krill-upgrade-test",
+  "version": 14,
+  "sequence": 9,
+  "details": {
+    "type": "roa_definition_updates",
+    "updates": {
+      "added": [
+        {
+          "asn": 0,
+          "prefix": "192.168.0.0/22"
+        }
+      ],
+      "removed": []
+    }
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      14,
+      15
+    ]
+  }
+}

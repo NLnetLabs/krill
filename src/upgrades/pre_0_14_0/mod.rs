@@ -476,37 +476,3 @@ pub struct Pre0_14_0AspaProvidersUpdate {
     added: Vec<Pre0_14_0ProviderAs>,
     removed: Vec<Pre0_14_0ProviderAs>,
 }
-
-// //------------ AspaObjectsUpdates ------------------------------------------
-
-// #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-// pub struct Pre0_14_0AspaObjectsUpdates {
-//     #[serde(skip_serializing_if = "Vec::is_empty", default)]
-//     updated: Vec<Pre0_14_0AspaInfo>,
-
-//     #[serde(skip_serializing_if = "Vec::is_empty", default)]
-//     removed: Vec<CustomerAsn>,
-// }
-
-// //------------ Pre0_14_0AspaInfo -------------------------------------------
-
-// #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-// pub struct Pre0_14_0AspaInfo {
-//     // The customer ASN and all Provider ASNs
-//     definition: Pre0_14_0AspaDefinition,
-
-//     // The validity time for this ASPA.
-//     validity: Validity,
-
-//     // The serial number (needed for revocation)
-//     serial: Serial,
-
-//     // The URI where this object is expected to be published
-//     uri: uri::Rsync,
-
-//     // The actual ASPA object in base64 format.
-//     base64: Base64,
-
-//     // The ASPA object's hash
-//     hash: Hash,
-// }

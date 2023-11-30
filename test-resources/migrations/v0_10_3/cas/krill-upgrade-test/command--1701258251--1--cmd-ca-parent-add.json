@@ -1,0 +1,18 @@
+{
+  "actor": "admin-token",
+  "time": "2023-11-29T11:44:11.548397574Z",
+  "handle": "krill-upgrade-test",
+  "version": 1,
+  "sequence": 1,
+  "details": {
+    "type": "add_parent",
+    "parent": "testbed",
+    "contact": "rfc6492"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      1
+    ]
+  }
+}

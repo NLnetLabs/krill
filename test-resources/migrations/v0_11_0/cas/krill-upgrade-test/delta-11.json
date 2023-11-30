@@ -1,0 +1,13 @@
+{
+  "id": "krill-upgrade-test",
+  "version": 11,
+  "details": {
+    "type": "roas_updated",
+    "resource_class_name": "0",
+    "updates": {
+      "removed": [
+        "192.168.0.0/16-16 => 64496"
+      ]
+    }
+  }
+}

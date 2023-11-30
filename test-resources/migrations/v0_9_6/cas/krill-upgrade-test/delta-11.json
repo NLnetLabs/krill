@@ -1,0 +1,22 @@
+{
+  "id": "krill-upgrade-test",
+  "version": 11,
+  "details": {
+    "type": "roas_updated",
+    "resource_class_name": "0",
+    "updates": {
+      "removed": [
+        {
+          "auth": "192.168.0.0/16-16 => 64496",
+          "removed": {
+            "revocation": {
+              "serial": "15660903992870536985359429920722522749863340479",
+              "expires": "2024-11-27T11:00:14.915669136Z"
+            },
+            "hash": "967e843d3135a04383f78aeb95ad1aa742101a91dfbd9dae850275cd3f975f11"
+          }
+        }
+      ]
+    }
+  }
+}
