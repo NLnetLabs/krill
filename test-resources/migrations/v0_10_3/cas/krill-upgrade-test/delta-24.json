@@ -1,0 +1,9 @@
+{
+  "id": "krill-upgrade-test",
+  "version": 24,
+  "details": {
+    "type": "key_roll_pending_key_added",
+    "resource_class_name": "0",
+    "pending_key_id": "271C0F56F058EB31C536D61B303CD259B2B709D7"
+  }
+}

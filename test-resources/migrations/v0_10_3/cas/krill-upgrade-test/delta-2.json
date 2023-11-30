@@ -1,0 +1,17 @@
+{
+  "id": "krill-upgrade-test",
+  "version": 2,
+  "details": {
+    "type": "repo_updated",
+    "contact": {
+      "repo_info": {
+        "sia_base": "rsync://testbed.krill.cloud/repo/krill-upgrade-test/",
+        "rrdp_notification_uri": "https://testbed.krill.cloud/rrdp/notification.xml"
+      },
+      "server_info": {
+        "public_key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAt527OPZI+kdbN6mnnbP9ajRPjxTo1A0FmJiV1bEjzffkY1Z8KtFiM8n62301xyCYBbDDDzLSVH/tQUs19IXW5X40eEhmrIM5eUWOiT1PBHZQ3dC7bLNqaBFUWqV6ZNUXCqWIivqi/4SZcHmdyOcOeyWlO7zx4tMhzPCFMs7+77/B9Oqrz0D2BR8lB0E7OdmTDARUuIG/Qi/aBoIc7WixMjfbotaFplo/nH0T+IufHSqr1jh7W7M8ouT3yYtkwEcWQ7QVBUKEeNaWItbBZiNOAlkZ/bnvxaZ51XsL2ZZI4sW/p/5i3HOvialU8qrs3glVNGtRvrcNW78PWlBEUbZS5QIDAQAB",
+        "service_uri": "https://testbed.krill.cloud/rfc8181/krill-upgrade-test/"
+      }
+    }
+  }
+}

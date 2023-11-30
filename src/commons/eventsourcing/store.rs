@@ -226,7 +226,10 @@ where
                 let mut changed_from_cached = false;
 
                 let latest_result = match self.cache_get(handle) {
-                    Some(arc) => Ok(arc),
+                    Some(arc) => {
+                        trace!("found cached snapshot for {handle}");
+                        Ok(arc)
+                    }
                     None => {
                         // There was no cached aggregate, so try to get it
                         // or construct it from the store, and remember that
@@ -238,6 +241,7 @@ where
                         let snapshot_key = Self::key_for_snapshot(handle);
                         match kv.get(&snapshot_key)? {
                             Some(value) => {
+                                trace!("found snapshot for {handle}");
                                 let agg: A = serde_json::from_value(value)?;
                                 Ok(Arc::new(agg))
                             }
@@ -245,6 +249,7 @@ where
                                 let init_key = Self::key_for_command(handle, 0);
                                 match kv.get(&init_key)? {
                                     Some(value) => {
+                                        trace!("found init command for {handle}");
                                         let init_command: StoredCommand<A> = serde_json::from_value(value)?;
 
                                         match init_command.into_init() {
@@ -257,7 +262,10 @@ where
                                             ))),
                                         }
                                     }
-                                    None => Err(A::Error::from(AggregateStoreError::UnknownAggregate(handle.clone()))),
+                                    None => {
+                                        trace!("neither snapshot nor init command found for {handle}");
+                                        Err(A::Error::from(AggregateStoreError::UnknownAggregate(handle.clone())))
+                                    }
                                 }
                             }
                         }
@@ -288,6 +296,7 @@ where
                         match kv.get(&key)? {
                             None => break,
                             Some(value) => {
+                                trace!("found next command found for {handle}: {}", key);
                                 let command: StoredCommand<A> = serde_json::from_value(value)?;
                                 aggregate.apply_command(command);
                                 changed_from_cached = true;
@@ -299,6 +308,8 @@ where
                 // If a command was passed in, try to apply it, and make sure that it is
                 // preserved (i.e. with events or an error).
                 let res = if let Some(cmd) = cmd_opt {
+                    trace!("apply command {} to {}", cmd, handle);
+
                     let aggregate = Arc::make_mut(&mut agg);
 
                     let version = aggregate.version();

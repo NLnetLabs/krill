@@ -1,0 +1,12 @@
+{
+  "id": "krill-upgrade-test",
+  "version": 27,
+  "details": {
+    "type": "key_roll_activated",
+    "resource_class_name": "0",
+    "revoke_req": {
+      "class_name": "0",
+      "key": "B2B9BB678E9D1ECBAAFEC7A56634F818A9AF63EC"
+    }
+  }
+}

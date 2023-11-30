@@ -1,0 +1,19 @@
+{
+  "actor": "admin-token",
+  "time": "2023-11-29T11:46:16.976944977Z",
+  "handle": "krill-upgrade-test",
+  "version": 27,
+  "sequence": 16,
+  "details": {
+    "type": "key_roll_activate",
+    "staged_for_seconds": 0
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      27,
+      28,
+      29
+    ]
+  }
+}

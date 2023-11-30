@@ -1,0 +1,11 @@
+{
+  "id": "krill-upgrade-test",
+  "version": 3,
+  "details": {
+    "type": "resource_class_added",
+    "resource_class_name": "0",
+    "parent": "testbed",
+    "parent_resource_class_name": "0",
+    "pending_key": "B2B9BB678E9D1ECBAAFEC7A56634F818A9AF63EC"
+  }
+}

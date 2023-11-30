@@ -1,8 +1,0 @@
-{
-  "id": "testbed-client",
-  "version": 6,
-  "details": {
-    "type": "route_authorization_added",
-    "auth": "2a04:b900::/30-30 => 8587"
-  }
-}

@@ -3,7 +3,6 @@ use rpki::ca::publication::Base64;
 use rpki::repository::x509::Time;
 
 use crate::commons::api::AspaDefinition;
-use crate::commons::api::CustomerAsn;
 
 pub use self::cas_migration::*;
 
@@ -52,5 +51,16 @@ pub struct Pre0_10_0AspaObjectsUpdates {
     pub updated: Vec<Pre0_10_0AspaInfo>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    pub removed: Vec<CustomerAsn>,
+    pub removed: Vec<Pre0_10_0CustomerAsn>,
+}
+
+//------------ Pre_0_10_0CustomerAsn -------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct Pre0_10_0CustomerAsn(Pre0_14_0ProviderAs); // re-use ProviderAs for string parsing
+
+impl From<Pre0_10_0CustomerAsn> for rpki::resources::Asn {
+    fn from(pre: Pre0_10_0CustomerAsn) -> Self {
+        pre.0.provider
+    }
 }
