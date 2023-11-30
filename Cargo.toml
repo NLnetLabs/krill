@@ -57,12 +57,12 @@ regex = { version = "1.5.5", optional = true, default_features = false, features
 ] }
 reqwest = { version = "0.11", features = ["json"] }
 rpassword = { version = "^5.0", optional = true }
-# rpki = { version = "0.17.2", features = ["ca", "compat", "rrdp"] }
-rpki = { version = "0.17.3-dev", git = "https://github.com/nLnetLabs/rpki-rs", branch = "ring-0.17", features = [
-    "ca",
-    "compat",
-    "rrdp",
-] }
+rpki = { version = "0.18.0", features = ["ca", "compat", "rrdp"] }
+# rpki = { version = "0.17.3-dev", git = "https://github.com/nLnetLabs/rpki-rs", branch = "ring-0.17", features = [
+#     "ca",
+#     "compat",
+#     "rrdp",
+# ] }
 scrypt = { version = "^0.6", optional = true, default-features = false }
 serde = { version = "^1.0", features = ["derive", "rc"] }
 serde_json = "^1.0"
@@ -73,7 +73,8 @@ tokio = { version = "1", features = [
     "signal",
     "time",
 ] }
-tokio-rustls = "^0.22"
+tokio-rustls = "0.24.1"
+rustls-pemfile = "1.0.4" # needed to parse pem files for use in our HTTPS listener
 toml = "^0.5"
 unicode-normalization = { version = "^0.1", optional = true }
 url = { version = "2.3.1", features = ["serde"] }

@@ -17,6 +17,7 @@ extern crate reqwest;
 extern crate rpki;
 #[macro_use]
 extern crate serde;
+extern crate rustls_pemfile;
 extern crate serde_json;
 extern crate syslog;
 extern crate tokio;
