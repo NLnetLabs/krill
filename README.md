@@ -39,6 +39,9 @@ or the server is rebooted in the middle of writing. This issue was introduced
 in release 0.14.0, and we recommend that all users upgrade to this version
 to avoid issues.
 
+This release also includes:
+- Updated German UI translations krill-ui/#51
+
 ## 0.14.2 'Extra, Extra, Extra!'
 
 This release fixes an additional corner case in the migration code that affects
