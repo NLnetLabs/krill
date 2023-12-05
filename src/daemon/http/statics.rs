@@ -17,10 +17,10 @@ pub async fn statics(req: Request) -> RoutingResult {
 
             "/assets/favicon-f84116cb.ico" => Ok(HttpResponse::fav(FAVICON)),
 
-            "/assets/index-0659e542.js" => Ok(HttpResponse::js(JS_INDEX)),
+            "/assets/index-16c05fa1.js" => Ok(HttpResponse::js(JS_INDEX)),
 
             "/assets/en-d3d88bc8.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_ENGLISH)),
-            "/assets/de-aaa0f1e4.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_GERMAN)),
+            "/assets/de-faf2935a.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_GERMAN)),
             "/assets/es-52cbfc21.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_SPANISH)),
             "/assets/fr-ac1aafd8.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_FRENCH)),
             "/assets/gr-5a66c94a.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_GREEK)),
@@ -70,9 +70,9 @@ pub static INDEX: &[u8] = include_bytes!("../../../ui/index.html");
 
 static FAVICON: &[u8] = include_bytes!("../../../ui/assets/favicon-f84116cb.ico");
 
-static JS_INDEX: &[u8] = include_bytes!("../../../ui/assets/index-0659e542.js");
+static JS_INDEX: &[u8] = include_bytes!("../../../ui/assets/index-16c05fa1.js");
 
-static JS_TRANSLATIONS_GERMAN: &[u8] = include_bytes!("../../../ui/assets/de-aaa0f1e4.js");
+static JS_TRANSLATIONS_GERMAN: &[u8] = include_bytes!("../../../ui/assets/de-faf2935a.js");
 static JS_TRANSLATIONS_ENGLISH: &[u8] = include_bytes!("../../../ui/assets/en-d3d88bc8.js");
 static JS_TRANSLATIONS_SPANISH: &[u8] = include_bytes!("../../../ui/assets/es-52cbfc21.js");
 static JS_TRANSLATIONS_FRENCH: &[u8] = include_bytes!("../../../ui/assets/fr-ac1aafd8.js");
