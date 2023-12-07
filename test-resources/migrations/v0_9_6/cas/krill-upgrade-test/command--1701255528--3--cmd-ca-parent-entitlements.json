@@ -1,0 +1,28 @@
+{
+  "actor": "krill",
+  "time": "2023-11-29T10:58:48.549103631Z",
+  "handle": "krill-upgrade-test",
+  "version": 3,
+  "sequence": 3,
+  "details": {
+    "type": "update_resource_entitlements",
+    "parent": "testbed",
+    "entitlements": [
+      {
+        "resource_class_name": "0",
+        "resources": {
+          "asn": "AS65000-AS65005",
+          "v4": "192.168.0.0/16",
+          "v6": "2001:db8::/32"
+        }
+      }
+    ]
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      3,
+      4
+    ]
+  }
+}

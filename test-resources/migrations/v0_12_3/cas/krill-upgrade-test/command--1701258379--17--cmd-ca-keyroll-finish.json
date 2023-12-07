@@ -1,0 +1,17 @@
+{
+  "actor": "krill",
+  "time": "2023-11-29T11:46:19.789491015Z",
+  "handle": "krill-upgrade-test",
+  "version": 30,
+  "sequence": 17,
+  "details": {
+    "type": "key_roll_finish",
+    "resource_class_name": "0"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      30
+    ]
+  }
+}

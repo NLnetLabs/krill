@@ -1,0 +1,17 @@
+{
+  "actor": "admin-token",
+  "time": "2023-11-29T11:44:55.841650123Z",
+  "handle": "krill-upgrade-test",
+  "version": 2,
+  "sequence": 2,
+  "details": {
+    "type": "repo_update",
+    "service_uri": "https://testbed.krill.cloud/rfc8181/krill-upgrade-test/"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      2
+    ]
+  }
+}

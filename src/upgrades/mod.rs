@@ -238,20 +238,21 @@ impl std::error::Error for UpgradeError {}
 //------------ DataUpgradeInfo -----------------------------------------------
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct DataUpgradeInfo {
-    pub last_command: Option<u64>,
+    // version of the source command
+    pub last_migrated_command: Option<u64>,
+
+    // Version of migrated aggregate. Note certain source commands may be dropped.
+    pub migration_version: u64,
+
     pub aspa_configs: HashMap<CustomerAsn, Vec<ProviderAsn>>,
 }
 
 impl DataUpgradeInfo {
-    fn next_command(&self) -> u64 {
-        self.last_command.map(|nr| nr + 1).unwrap_or(0)
-    }
-
-    fn increment_command(&mut self) {
-        if let Some(last_command) = self.last_command {
-            self.last_command = Some(last_command + 1);
+    fn increment_last_migrated_command(&mut self) {
+        if let Some(last_command) = self.last_migrated_command {
+            self.last_migrated_command = Some(last_command + 1);
         } else {
-            self.last_command = Some(0)
+            self.last_migrated_command = Some(0)
         }
     }
 
@@ -379,11 +380,11 @@ pub trait UpgradeAggregateStorePre0_14 {
             let mut data_upgrade_info = self.data_upgrade_info(&scope)?;
 
             // Get the list of commands to prepare, starting with the last_command we got to (may be 0)
-            let old_cmd_keys = self.command_keys(&scope, data_upgrade_info.last_command.unwrap_or(0))?;
+            let old_cmd_keys = self.command_keys(&scope, data_upgrade_info.last_migrated_command.unwrap_or(0))?;
 
             // Migrate the initialisation event, if not done in a previous run. This
             // is a special event that has no command, so we need to do this separately.
-            if data_upgrade_info.last_command.is_none() {
+            if data_upgrade_info.last_migrated_command.is_none() {
                 let old_init_key = Self::event_key(scope.clone(), 0);
 
                 let old_init: OldStoredEvent<Self::OldInitEvent> = self.get(&old_init_key)?;
@@ -409,7 +410,7 @@ pub trait UpgradeAggregateStorePre0_14 {
                 let command = self.convert_init_event(old_init, handle.clone(), actor, time)?;
 
                 self.store_new_command(&scope, &command)?;
-                data_upgrade_info.increment_command();
+                data_upgrade_info.increment_last_migrated_command();
             }
 
             // Track commands migrated and time spent so we can report progress
@@ -444,10 +445,23 @@ pub trait UpgradeAggregateStorePre0_14 {
                     OldStoredEffect::Error { msg } => UnconvertedEffect::Error { msg: msg.clone() },
                 };
 
-                match self.convert_old_command(old_command, old_effect, data_upgrade_info.next_command())? {
+                // The migration version matches the version of the resulting aggregate when commands
+                // are applied. It starts with 0 for the init command, in which case the version in
+                // the data_upgrade_info is not updated.
+                //
+                // For commands we set the target version of the migrated to command to the current
+                // version of the aggregate, plus 1. If there is a an actual resulting command (with
+                // events or even an error) to be saved, then we save this command and increment the
+                // migration_version.
+                //
+                // Unfortunately, we do need this double bookkeeping of versions of source commands
+                // that are migrated vs the version of the aggregate, because some commands - such
+                // as pre 0.14.0 ASPA update commands may be dropped.
+                match self.convert_old_command(old_command, old_effect, data_upgrade_info.migration_version + 1)? {
                     CommandMigrationEffect::StoredCommand(command) => {
                         self.store_new_command(&scope, &command)?;
-                        data_upgrade_info.increment_command();
+                        // we only increment this when a command is saved
+                        data_upgrade_info.migration_version += 1;
                     }
                     CommandMigrationEffect::AspaObjectsUpdates(updates) => {
                         data_upgrade_info.update_aspa_configs(updates);
@@ -457,8 +471,10 @@ pub trait UpgradeAggregateStorePre0_14 {
                     }
                 }
 
-                // Report progress and expected time to finish on every 100 commands evaluated.
                 total_migrated += 1;
+                data_upgrade_info.increment_last_migrated_command();
+
+                // Report progress and expected time to finish on every 100 commands evaluated.
                 if total_migrated % 100 == 0 {
                     // expected time: (total_migrated / (now - started)) * total
 
@@ -571,7 +587,7 @@ pub trait UpgradeAggregateStorePre0_14 {
         // Unwrap is safe here, because if there was no last_command
         // then we would have converted the init event above, and would
         // have set this.
-        let last_command = data_upgrade_info.last_command.ok_or(UpgradeError::custom(
+        let last_command = data_upgrade_info.last_migrated_command.ok_or(UpgradeError::custom(
             "called report_remaining_work before converting init event",
         ))?;
 
@@ -1103,7 +1119,7 @@ mod tests {
     fn prepare_then_upgrade_0_10_3() {
         test_upgrade(
             "test-resources/migrations/v0_10_3/",
-            &["ca_objects", "cas", "pubd", "pubd_objects"],
+            &["ca_objects", "cas", "pubd", "pubd_objects", "signers", "status"],
         );
     }
 
@@ -1111,7 +1127,7 @@ mod tests {
     fn prepare_then_upgrade_0_11_0() {
         test_upgrade(
             "test-resources/migrations/v0_11_0/",
-            &["ca_objects", "cas", "pubd", "pubd_objects"],
+            &["ca_objects", "cas", "pubd", "pubd_objects", "signers", "status"],
         );
     }
 
@@ -1127,7 +1143,7 @@ mod tests {
     fn prepare_then_upgrade_0_12_3() {
         test_upgrade(
             "test-resources/migrations/v0_12_3/",
-            &["ca_objects", "cas", "pubd", "pubd_objects"],
+            &["ca_objects", "cas", "pubd", "pubd_objects", "signers", "status"],
         );
     }
 
@@ -1135,7 +1151,7 @@ mod tests {
     fn prepare_then_upgrade_0_13_1() {
         test_upgrade(
             "test-resources/migrations/v0_13_1/",
-            &["ca_objects", "cas", "keys", "pubd", "pubd_objects", "signers", "status"],
+            &["ca_objects", "cas", "pubd", "pubd_objects", "signers", "status"],
         );
     }
 

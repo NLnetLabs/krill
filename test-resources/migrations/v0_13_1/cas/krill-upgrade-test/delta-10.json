@@ -1,0 +1,8 @@
+{
+  "id": "krill-upgrade-test",
+  "version": 10,
+  "details": {
+    "type": "route_authorization_removed",
+    "auth": "192.168.0.0/16-16 => 64496"
+  }
+}

@@ -142,7 +142,7 @@ impl UpgradeAggregateStorePre0_14 for CasMigration {
                         match old_event {
                             Pre0_10CertAuthEvent::AspaObjectsUpdated { updates, .. } => {
                                 let ca = old_command.handle().clone();
-                                let removed = updates.removed;
+                                let removed = updates.removed.into_iter().map(rpki::resources::Asn::from).collect();
                                 let added_or_updated = updates
                                     .updated
                                     .into_iter()
@@ -187,11 +187,32 @@ impl UpgradeAggregateStorePre0_14 for CasMigration {
                     UnconvertedEffect::Success { events } => {
                         let mut full_events: Vec<CertAuthEvent> = vec![]; // We just had numbers, we need to include the full events
                         for old_event in events {
-                            full_events.push(old_event.try_into()?);
+                            match old_event {
+                                Pre0_10CertAuthEvent::AspaConfigAdded { .. }
+                                | Pre0_10CertAuthEvent::AspaConfigRemoved { .. }
+                                | Pre0_10CertAuthEvent::AspaConfigUpdated { .. }
+                                | Pre0_10CertAuthEvent::AspaObjectsUpdated { .. } => {
+                                    // we only expect AspaObjectsUpdated to be possible outside of
+                                    // Aspa related commands, e.g. because of a key rollover, but
+                                    // to be sure.. we do not migrate any of the ASPA events in
+                                    // this migration.
+                                }
+                                _ => {
+                                    full_events.push(old_event.try_into()?);
+                                }
+                            }
                         }
                         new_command_builder.finish_with_events(full_events)
                     }
                 };
+
+                // if the new command would be a no-op because no events are actually migrated,
+                // then return CommandMigrationEffect::Nothing
+                if let Some(events) = new_command.events() {
+                    if events.is_empty() {
+                        return Ok(CommandMigrationEffect::Nothing);
+                    }
+                }
 
                 Ok(CommandMigrationEffect::StoredCommand(new_command))
             }

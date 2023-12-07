@@ -1,0 +1,8 @@
+{
+  "id": "krill-upgrade-test",
+  "version": 30,
+  "details": {
+    "type": "key_roll_finished",
+    "resource_class_name": "0"
+  }
+}

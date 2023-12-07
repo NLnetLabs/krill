@@ -27,7 +27,7 @@ use std::{
 
 use futures::ready;
 use tokio::io::{AsyncRead, AsyncWrite};
-use tokio_rustls::rustls::{KeyLogFile, NoClientAuth, ServerConfig, TLSError};
+use tokio_rustls::rustls::{Certificate, KeyLogFile, ServerConfig};
 
 use hyper::server::{
     accept::Accept,
@@ -78,27 +78,25 @@ impl<T: AsyncRead + AsyncWrite + Unpin> Transport for LiftIo<T> {
 #[derive(Debug)]
 pub(crate) enum TlsConfigError {
     Io(io::Error),
-    /// An Error parsing the Certificate
-    CertParseError,
     /// An Error parsing a Pkcs8 key
     Pkcs8ParseError,
     /// An Error parsing a Rsa key
     RsaParseError,
     /// An error from an empty key
     EmptyKey,
-    /// An error from an invalid key
-    InvalidKey(TLSError),
+    // /// An error from an invalid key
+    // InvalidKey(TLSError),
+    Rustls(tokio_rustls::rustls::Error),
 }
 
 impl std::fmt::Display for TlsConfigError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             TlsConfigError::Io(err) => err.fmt(f),
-            TlsConfigError::CertParseError => write!(f, "certificate parse error"),
             TlsConfigError::Pkcs8ParseError => write!(f, "pkcs8 parse error"),
             TlsConfigError::RsaParseError => write!(f, "rsa parse error"),
             TlsConfigError::EmptyKey => write!(f, "key contains no private key"),
-            TlsConfigError::InvalidKey(err) => write!(f, "key contains an invalid key, {}", err),
+            TlsConfigError::Rustls(err) => write!(f, "rustls error: {}", err),
         }
     }
 }
@@ -146,8 +144,8 @@ impl TlsConfigBuilder {
 
     pub(crate) fn build(mut self) -> Result<ServerConfig, TlsConfigError> {
         let mut cert_rdr = BufReader::new(self.cert);
-        let cert = tokio_rustls::rustls::internal::pemfile::certs(&mut cert_rdr)
-            .map_err(|()| TlsConfigError::CertParseError)?;
+        let certs = rustls_pemfile::certs(&mut cert_rdr).map_err(TlsConfigError::Io)?;
+        let cert = certs.into_iter().map(Certificate).collect();
 
         let key = {
             // convert it to Vec<u8> to allow reading it again if key is RSA
@@ -158,14 +156,14 @@ impl TlsConfigBuilder {
                 return Err(TlsConfigError::EmptyKey);
             }
 
-            let mut pkcs8 = tokio_rustls::rustls::internal::pemfile::pkcs8_private_keys(&mut key_vec.as_slice())
-                .map_err(|()| TlsConfigError::Pkcs8ParseError)?;
+            let mut pkcs8 = rustls_pemfile::pkcs8_private_keys(&mut key_vec.as_slice())
+                .map_err(|_| TlsConfigError::Pkcs8ParseError)?;
 
             if !pkcs8.is_empty() {
                 pkcs8.remove(0)
             } else {
-                let mut rsa = tokio_rustls::rustls::internal::pemfile::rsa_private_keys(&mut key_vec.as_slice())
-                    .map_err(|()| TlsConfigError::RsaParseError)?;
+                let mut rsa = rustls_pemfile::rsa_private_keys(&mut key_vec.as_slice())
+                    .map_err(|_| TlsConfigError::RsaParseError)?;
 
                 if !rsa.is_empty() {
                     rsa.remove(0)
@@ -175,9 +173,14 @@ impl TlsConfigBuilder {
             }
         };
 
-        let mut config = ServerConfig::new(NoClientAuth::new());
-        config.set_single_cert(cert, key).map_err(TlsConfigError::InvalidKey)?;
-        config.set_protocols(&["h2".into(), "http/1.1".into()]);
+        let mut config = ServerConfig::builder()
+            .with_safe_default_cipher_suites()
+            .with_safe_default_kx_groups()
+            .with_safe_default_protocol_versions()
+            .map_err(TlsConfigError::Rustls)?
+            .with_no_client_auth()
+            .with_single_cert(cert, tokio_rustls::rustls::PrivateKey(key))
+            .map_err(TlsConfigError::Rustls)?;
 
         // See: https://wiki.wireshark.org/TLS#tls-decryption
         if std::env::var(SSLKEYLOGFILE_ENV_VAR_NAME).is_ok() {
