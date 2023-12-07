@@ -616,6 +616,7 @@ pub mod tests {
     use rpki::crypto::signer::KeyError;
     use rpki::crypto::PublicKeyFormat;
     use rpki::crypto::RpkiSignatureAlgorithm;
+    use rpki::crypto::Signer;
 
     use crate::{
         commons::crypto::{
@@ -624,7 +625,6 @@ pub mod tests {
                 CreateRegistrationKeyErrorCb, FnIdx, MockSigner, MockSignerCallCounts, SignRegistrationChallengeErrorCb,
             },
         },
-        rpki::crypto::Signer,
         test,
     };
 

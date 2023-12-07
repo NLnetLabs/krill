@@ -145,11 +145,32 @@ impl UpgradeAggregateStorePre0_14 for CasMigration {
                     UnconvertedEffect::Success { events } => {
                         let mut full_events: Vec<CertAuthEvent> = vec![]; // We just had numbers, we need to include the full events
                         for old_event in events {
-                            full_events.push(old_event.into());
+                            match old_event {
+                                Pre0_14_0CertAuthEvent::AspaConfigAdded { .. }
+                                | Pre0_14_0CertAuthEvent::AspaConfigRemoved { .. }
+                                | Pre0_14_0CertAuthEvent::AspaConfigUpdated { .. }
+                                | Pre0_14_0CertAuthEvent::AspaObjectsUpdated { .. } => {
+                                    // we only expect AspaObjectsUpdated to be possible outside of
+                                    // Aspa related commands, e.g. because of a key rollover, but
+                                    // to be sure.. we do not migrate any of the ASPA events in
+                                    // this migration.
+                                }
+                                _ => {
+                                    full_events.push(old_event.into());
+                                }
+                            }
                         }
                         new_command_builder.finish_with_events(full_events)
                     }
                 };
+
+                // if the new command would be a no-op because no events are actually migrated,
+                // then return CommandMigrationEffect::Nothing
+                if let Some(events) = new_command.events() {
+                    if events.is_empty() {
+                        return Ok(CommandMigrationEffect::Nothing);
+                    }
+                }
 
                 Ok(CommandMigrationEffect::StoredCommand(new_command))
             }

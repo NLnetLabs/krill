@@ -1,0 +1,8 @@
+{
+  "id": "krill-upgrade-test",
+  "version": 20,
+  "details": {
+    "type": "aspa_config_removed",
+    "customer": "AS65000"
+  }
+}

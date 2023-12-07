@@ -1,0 +1,13 @@
+{
+  "add_or_replace": [
+    {
+      "customer": 65000,
+      "providers": [
+        "AS65001(v4)",
+        "AS65002(v6)",
+        "AS65003"
+      ]
+    }
+  ],
+  "remove": []
+}

@@ -967,7 +967,7 @@ impl From<backoff::Error<SignerError>> for SignerError {
     fn from(err: backoff::Error<SignerError>) -> Self {
         match err {
             backoff::Error::Permanent(err) => err,
-            backoff::Error::Transient(err) => err,
+            backoff::Error::Transient { err, .. } => err,
         }
     }
 }
@@ -977,7 +977,7 @@ where
     E: From<kmip::client::Error>,
 {
     if err.is_connection_error() {
-        backoff::Error::Transient(err.into())
+        backoff::Error::transient(err.into())
     } else {
         backoff::Error::Permanent(err.into())
     }

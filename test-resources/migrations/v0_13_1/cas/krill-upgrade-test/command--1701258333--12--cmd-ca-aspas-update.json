@@ -1,0 +1,23 @@
+{
+  "actor": "admin-token",
+  "time": "2023-11-29T11:45:33.629499894Z",
+  "handle": "krill-upgrade-test",
+  "version": 20,
+  "sequence": 12,
+  "details": {
+    "type": "aspas_update",
+    "updates": {
+      "add_or_replace": [],
+      "remove": [
+        65000
+      ]
+    }
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      20,
+      21
+    ]
+  }
+}

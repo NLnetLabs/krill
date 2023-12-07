@@ -18,7 +18,7 @@ use crate::{
         eventsourcing::WithStorableDetails,
     },
     daemon::ca::DropReason,
-    upgrades::pre_0_14_0::{Pre0_14_0AspaProvidersUpdate, Pre0_14_0ProviderAs},
+    upgrades::pre_0_14_0::Pre0_14_0AspaProvidersUpdate,
 };
 
 use super::Pre0_14_0AspaDefinition;
@@ -133,7 +133,7 @@ pub enum Pre0_14_0CertAuthStorableCommand {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Pre0_14_0AspaDefinitionUpdates {
     add_or_replace: Vec<Pre0_14_0AspaDefinition>,
-    remove: Vec<Pre0_14_0ProviderAs>, // was using string notation
+    remove: Vec<rpki::resources::Asn>,
 }
 
 impl From<Pre0_14_0CertAuthStorableCommand> for CertAuthStorableCommand {

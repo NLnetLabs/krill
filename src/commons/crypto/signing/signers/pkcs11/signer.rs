@@ -1162,14 +1162,14 @@ impl From<backoff::Error<InternalConnError>> for InternalConnError {
     fn from(v: backoff::Error<InternalConnError>) -> Self {
         match v {
             backoff::Error::Permanent(err) => err,
-            backoff::Error::Transient(err) => err,
+            backoff::Error::Transient { err, .. } => err,
         }
     }
 }
 
 fn retry_on_transient_pkcs11_error(err: Pkcs11Error) -> backoff::Error<InternalConnError> {
     if is_transient_error(&err) {
-        backoff::Error::Transient(err.into())
+        backoff::Error::transient(err.into())
     } else {
         backoff::Error::Permanent(err.into())
     }
@@ -1177,7 +1177,7 @@ fn retry_on_transient_pkcs11_error(err: Pkcs11Error) -> backoff::Error<InternalC
 
 fn retry_on_transient_signer_error(err: SignerError) -> backoff::Error<InternalConnError> {
     match err {
-        SignerError::TemporarilyUnavailable => backoff::Error::Transient(err.into()),
+        SignerError::TemporarilyUnavailable => backoff::Error::transient(err.into()),
         _ => backoff::Error::Permanent(err.into()),
     }
 }

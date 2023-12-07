@@ -1,0 +1,14 @@
+{
+  "id": "krill-upgrade-test",
+  "version": 19,
+  "details": {
+    "type": "aspa_config_updated",
+    "customer": 65000,
+    "update": {
+      "added": [],
+      "removed": [
+        "AS65003"
+      ]
+    }
+  }
+}

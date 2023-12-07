@@ -1,0 +1,13 @@
+{
+  "id": "krill-upgrade-test",
+  "version": 21,
+  "details": {
+    "type": "aspa_objects_updated",
+    "resource_class_name": "0",
+    "updates": {
+      "removed": [
+        "AS65000"
+      ]
+    }
+  }
+}

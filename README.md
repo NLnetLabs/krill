@@ -25,7 +25,22 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 # Changelog
 
-## Unreleased Version
+## 0.14.3 'Temp'
+
+This release fixes a number of issues found in 0.14.0 through 0.14.2:
+
+- Use rpki-rs 0.18.0 to support builds on more platforms #1166
+- Fix aspa migration issues #1163
+- Depend on kvx 0.9.2 to ensure temp files are used properly #1160
+
+Most importantly, Krill will now use temp files for *all* data that it
+stores to avoid issues with half-written files in case the disk is full,
+or the server is rebooted in the middle of writing. This issue was introduced
+in release 0.14.0, and we recommend that all users upgrade to this version
+to avoid issues.
+
+This release also includes:
+- Updated German UI translations krill-ui/#51
 
 The minimum Rust version was updated to 1.70 to ensure that Krill can be compiled
 without running into recursion limit caused by the increase in async code.
