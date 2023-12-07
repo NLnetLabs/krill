@@ -884,7 +884,7 @@ pub fn tmp_dir() -> (PathBuf, impl FnOnce()) {
     let dir = random_sub_dir(&PathBuf::from("./work"));
 
     (dir.clone(), || {
-        fs::remove_dir_all(dir).unwrap();
+        let _ = fs::remove_dir_all(dir);
     })
 }
 
