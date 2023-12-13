@@ -31,7 +31,6 @@ clap = "^2.33"
 fern = { version = "^0.5", features = ["syslog-4"] }
 futures = "^0.3"
 futures-util = "^0.3"
-fslock = "0.2.1"
 hex = "^0.4"
 hyper = { version = "^0.14", features = ["server"] }
 intervaltree = "0.2.6"
@@ -61,7 +60,8 @@ rpki = { version = "0.18.1-dev", git = "https://github.com/nLnetLabs/rpki-rs", b
     "compat",
     "rrdp",
 ] }
-scrypt = { version = "^0.6", optional = true, default-features = false }
+rustix = { version = "0.38.28", features = ["fs"] }
+scrypt = { version = "0.6.1", optional = true, default-features = false }
 serde = { version = "^1.0", features = ["derive", "rc"] }
 serde_json = "^1.0"
 tempfile = "3.1.0"

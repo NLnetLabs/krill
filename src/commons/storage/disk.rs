@@ -2,13 +2,13 @@ use std::{
     fmt::Display,
     fs,
     fs::{File, OpenOptions},
-    ops::{Deref, DerefMut},
+    os::fd::AsFd,
     path::{Component, Path, PathBuf},
-    thread,
     time::Duration,
 };
 
 use futures_util::Future;
+use rustix::fs::{flock, FlockOperation};
 use serde_json::Value;
 
 use crate::commons::{
@@ -303,7 +303,7 @@ impl Disk {
     {
         let lock_file_dir = self.root.join(LOCK_FILE_DIR);
 
-        let _lock = FileLock::lock(scope.as_path(lock_file_dir))?;
+        let _lock = FileLock::lock(scope.as_path(lock_file_dir)).await?;
 
         let dispatcher = KeyValueStoreDispatcher::Disk(self.clone());
 
@@ -401,74 +401,61 @@ impl PathBufExt for PathBuf {
     }
 }
 
+/// This type can be used to get an exclusive lock to a file on disk.
 #[derive(Debug)]
 struct FileLock {
-    file: File,
-    lock_path: PathBuf,
+    // We keep this, so that the lock is released when this is dropped.
+    _lock_file: File,
 }
 
 impl FileLock {
-    const POLL_LOCK_INTERVAL: Duration = Duration::from_millis(10);
+    pub const POLL_LOCK_INTERVAL: Duration = Duration::from_millis(10);
 
-    pub fn lock(path: impl AsRef<Path>) -> StorageResult<Self> {
-        let path = path.as_ref();
-
+    /// Get an exclusive lock to a file on disk.
+    ///
+    /// This function relies on flock through the rustix crate to get exclusive
+    /// access to the file descriptor for the given path. If the lock cannot be
+    /// obtained immediately, then this function waits for [`Self::POLL_LOCK_INTERVAL`]
+    /// before trying again. It will keep trying until the lock is obtained this
+    /// way. Because of this waiting, the order in which locks are obtained by
+    /// different callers is not guaranteed.
+    ///
+    /// Note that for Krill the ordering of locking is normally not an issue, as
+    /// "commands" sent to CAs are typically not in conflict. It is important
+    /// however that they are executed sequentially.
+    pub async fn lock(path: PathBuf) -> StorageResult<Self> {
         let lock_path = path.join(LOCK_FILE_NAME);
-        if !path.try_exists().unwrap_or_default() {
-            fs::create_dir_all(path).map_err(|e| {
-                KeyValueError::IoError(KrillIoError::new(
-                    format!("cannot create dir for lockfile {}", lock_path.display()),
-                    e,
-                ))
-            })?;
-        }
 
-        let file = loop {
-            let file = OpenOptions::new()
-                .create_new(true)
-                .read(true)
-                .write(true)
-                .open(&lock_path);
+        let mut options = OpenOptions::new();
+        options.create(true).read(true).write(true);
 
-            match file {
-                Ok(file) => break file,
-                _ => thread::sleep(Self::POLL_LOCK_INTERVAL),
-            };
+        let lock_file = match options.open(&lock_path) {
+            Ok(file) => file,
+            Err(_) => {
+                fs::create_dir_all(path).map_err(|e| {
+                    KeyValueError::IoError(KrillIoError::new(
+                        format!("Could not create dir for lockfile: {}", lock_path.to_string_lossy()),
+                        e,
+                    ))
+                })?;
+                options.open(&lock_path).map_err(|e| {
+                    KeyValueError::IoError(KrillIoError::new(
+                        format!("Could not open lockfile: {}", lock_path.to_string_lossy()),
+                        e,
+                    ))
+                })?
+            }
         };
 
-        let lock = FileLock { file, lock_path };
+        loop {
+            if flock(lock_file.as_fd(), FlockOperation::NonBlockingLockExclusive).is_ok() {
+                break;
+            } else {
+                tokio::time::sleep(Self::POLL_LOCK_INTERVAL).await;
+            }
+        }
 
-        Ok(lock)
-    }
-
-    pub fn unlock(&self) -> StorageResult<()> {
-        fs::remove_file(&self.lock_path).map_err(|e| {
-            KeyValueError::IoError(KrillIoError::new(
-                format!("cannot remove lock file {}", self.lock_path.display()),
-                e,
-            ))
-        })?;
-        Ok(())
-    }
-}
-
-impl Deref for FileLock {
-    type Target = File;
-
-    fn deref(&self) -> &Self::Target {
-        &self.file
-    }
-}
-
-impl DerefMut for FileLock {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.file
-    }
-}
-
-impl Drop for FileLock {
-    fn drop(&mut self) {
-        self.unlock().ok();
+        Ok(FileLock { _lock_file: lock_file })
     }
 }
 
