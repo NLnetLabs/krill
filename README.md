@@ -27,9 +27,10 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 ## 0.14.4 'A Flock of Krill'
 
-This release fixes an issue found in 0.14.0 through 0.14.3:
+This release fixes the following issues:
 
-- Krill should not freeze if lockfiles were not deleted properly #1171
+- Krill should not freeze if lockfiles were not deleted properly #1171 (since Krill 0.14.0)
+- Don't warn about yanked dependencies when installing Krill via Cargo #1173
 
 ## 0.14.3 'Temp'
 
