@@ -884,20 +884,21 @@ pub fn tmp_dir() -> (PathBuf, impl FnOnce()) {
     let dir = random_sub_dir(&PathBuf::from("./work"));
 
     (dir.clone(), || {
-        fs::remove_dir_all(dir).unwrap();
+        let _ = fs::remove_dir_all(dir);
     })
 }
 
-fn random_hex_string() -> String {
+pub fn random_hex_string() -> String {
+    hex::encode(random_bytes())
+}
+
+pub fn random_bytes() -> [u8; 8] {
     let mut bytes = [0; 8];
     openssl::rand::rand_bytes(&mut bytes).unwrap();
-    hex::encode(bytes)
+    bytes
 }
 
 pub fn mem_storage() -> Url {
-    let mut bytes = [0; 8];
-    openssl::rand::rand_bytes(&mut bytes).unwrap();
-
     Url::parse(&format!("memory://{}", random_hex_string())).unwrap()
 }
 

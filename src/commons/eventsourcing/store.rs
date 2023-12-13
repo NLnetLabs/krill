@@ -1,32 +1,22 @@
-use std::{
-    collections::HashMap,
-    fmt,
-    str::FromStr,
-    sync::{Arc, Mutex, RwLock},
-};
+use std::{collections::HashMap, fmt, str::FromStr, sync::Arc};
 
-use kvx::Namespace;
+use tokio::sync::{Mutex, RwLock};
+
 use rpki::{ca::idexchange::MyHandle, repository::x509::Time};
-use serde::{de::DeserializeOwned, Serialize};
 use url::Url;
 
 use crate::commons::{
     api::{CommandHistory, CommandHistoryCriteria, CommandHistoryRecord},
     error::KrillIoError,
     eventsourcing::{
-        cmd::Command, segment, Aggregate, Key, KeyValueError, KeyValueStore, PostSaveEventListener,
-        PreSaveEventListener, Scope, Segment, SegmentExt, StoredCommand, StoredCommandBuilder,
+        cmd::Command, Aggregate, PostSaveEventListener, PreSaveEventListener, StoredCommand, StoredCommandBuilder,
     },
+    storage::{Key, KeyValueError, KeyValueStore, Namespace, Scope, SegmentBuf},
 };
 
 use super::InitCommand;
 
 pub type StoreResult<T> = Result<T, AggregateStoreError>;
-
-//------------ Storable ------------------------------------------------------
-
-pub trait Storable: Clone + Serialize + DeserializeOwned + Sized + 'static {}
-impl<T: Clone + Serialize + DeserializeOwned + Sized + 'static> Storable for T {}
 
 //------------ AggregateStore ------------------------------------------------
 
@@ -80,19 +70,20 @@ impl<A: Aggregate> AggregateStore<A> {
     }
 
     /// Warms up the cache, to be used after startup. Will fail if any aggregates fail to load.
-    pub fn warm(&self) -> StoreResult<()> {
-        for handle in self.list()? {
-            self.warm_aggregate(&handle)?;
+    pub async fn warm(&self) -> StoreResult<()> {
+        for handle in self.list().await? {
+            self.warm_aggregate(&handle).await?;
         }
         info!("Cache for CAs has been warmed.");
         Ok(())
     }
 
     /// Warm the cache for a specific aggregate.
-    pub fn warm_aggregate(&self, handle: &MyHandle) -> StoreResult<()> {
+    pub async fn warm_aggregate(&self, handle: &MyHandle) -> StoreResult<()> {
         info!("Warming the cache for: '{}'", handle);
 
         self.get_latest(handle)
+            .await
             .map_err(|e| AggregateStoreError::WarmupFailed(handle.clone(), e.to_string()))?;
 
         Ok(())
@@ -118,35 +109,35 @@ where
     /// Gets the latest version for the given aggregate. Returns
     /// an AggregateStoreError::UnknownAggregate in case the aggregate
     /// does not exist.
-    pub fn get_latest(&self, handle: &MyHandle) -> Result<Arc<A>, A::Error> {
-        self.execute_opt_command(handle, None, false)
+    pub async fn get_latest(&self, handle: &MyHandle) -> Result<Arc<A>, A::Error> {
+        self.execute_opt_command(handle, None, false).await
     }
 
     /// Updates the snapshots for all entities in this store.
-    pub fn update_snapshots(&self) -> Result<(), A::Error> {
-        for handle in self.list()? {
-            self.save_snapshot(&handle)?;
+    pub async fn update_snapshots(&self) -> Result<(), A::Error> {
+        for handle in self.list().await? {
+            self.save_snapshot(&handle).await?;
         }
 
         Ok(())
     }
 
     /// Gets the latest version for the given aggregate and updates the snapshot.
-    pub fn save_snapshot(&self, handle: &MyHandle) -> Result<Arc<A>, A::Error> {
-        self.execute_opt_command(handle, None, true)
+    pub async fn save_snapshot(&self, handle: &MyHandle) -> Result<Arc<A>, A::Error> {
+        self.execute_opt_command(handle, None, true).await
     }
 
     /// Adds a new aggregate instance based on the init event.
-    pub fn add(&self, cmd: A::InitCommand) -> Result<Arc<A>, A::Error> {
+    pub async fn add(&self, cmd: A::InitCommand) -> Result<Arc<A>, A::Error> {
         let scope = Self::scope_for_agg(cmd.handle());
 
         self.kv
-            .execute(&scope, move |kv| {
+            .execute(&scope, |kv| async move {
                 let handle = cmd.handle().clone();
 
                 let init_command_key = Self::key_for_command(&handle, 0);
 
-                if kv.has(&init_command_key)? {
+                if kv.has(&init_command_key).await? {
                     // This is no good.. this aggregate already exists.
                     Ok(Err(A::Error::from(AggregateStoreError::DuplicateAggregate(handle))))
                 } else {
@@ -158,17 +149,17 @@ where
                         cmd.store(),
                     );
 
-                    match A::process_init_command(cmd.clone()) {
+                    match A::process_init_command(cmd.clone()).await {
                         Ok(init_event) => {
                             let aggregate = A::init(handle.clone(), init_event.clone());
                             let processed_command = processed_command_builder.finish_with_init_event(init_event);
 
                             let json = serde_json::to_value(&processed_command)?;
-                            kv.store(&init_command_key, json)?;
+                            kv.store(&init_command_key, json).await?;
 
                             let arc = Arc::new(aggregate);
 
-                            self.cache_update(&handle, arc.clone());
+                            self.cache_update(&handle, arc.clone()).await;
 
                             Ok(Ok(arc))
                         }
@@ -176,6 +167,7 @@ where
                     }
                 }
             })
+            .await
             .map_err(|e| A::Error::from(AggregateStoreError::KeyStoreError(e)))?
     }
 
@@ -193,43 +185,47 @@ where
     ///   - do not save anything, return aggregate
     /// on error:
     ///   - save command and error, return error
-    pub fn command(&self, cmd: A::Command) -> Result<Arc<A>, A::Error> {
-        self.execute_opt_command(cmd.handle(), Some(&cmd), false)
+    pub async fn command(&self, cmd: A::Command) -> Result<Arc<A>, A::Error> {
+        self.execute_opt_command(cmd.handle(), Some(&cmd), false).await
     }
 
     /// Returns true if an instance exists for the id
-    pub fn has(&self, id: &MyHandle) -> Result<bool, AggregateStoreError> {
+    pub async fn has(&self, id: &MyHandle) -> Result<bool, AggregateStoreError> {
         let init_command_key = Self::key_for_command(id, 0);
         self.kv
             .has(&init_command_key)
+            .await
             .map_err(AggregateStoreError::KeyStoreError)
     }
 
     /// Lists all known ids.
-    pub fn list(&self) -> Result<Vec<MyHandle>, AggregateStoreError> {
-        self.aggregates()
+    pub async fn list(&self) -> Result<Vec<MyHandle>, AggregateStoreError> {
+        let mut res = vec![];
+
+        for scope in self.kv.scopes().await? {
+            if let Ok(handle) = MyHandle::from_str(&scope.to_string()) {
+                res.push(handle)
+            }
+        }
+
+        Ok(res)
     }
 
-    /// Get the latest aggregate and optionally apply a command to it.
-    ///
-    /// Uses `kvx::execute` to ensure that the whole operation is done inside
-    /// a transaction (postgres) or lock (disk).
-    fn execute_opt_command(
+    /// Get the latest aggregate and optionally apply a command to it, all
+    /// inside a single transaction (postgres) or lock (disk).
+    async fn execute_opt_command(
         &self,
         handle: &MyHandle,
         cmd_opt: Option<&A::Command>,
         save_snapshot: bool,
     ) -> Result<Arc<A>, A::Error> {
         self.kv
-            .execute(&Self::scope_for_agg(handle), |kv| {
+            .execute(&Self::scope_for_agg(handle), |kv| async move {
                 // Get the aggregate from the cache, or get it from the store.
                 let mut changed_from_cached = false;
 
-                let latest_result = match self.cache_get(handle) {
-                    Some(arc) => {
-                        trace!("found cached snapshot for {handle}");
-                        Ok(arc)
-                    }
+                let latest_result = match self.cache_get(handle).await {
+                    Some(arc) => Ok(arc),
                     None => {
                         // There was no cached aggregate, so try to get it
                         // or construct it from the store, and remember that
@@ -239,7 +235,7 @@ where
                         changed_from_cached = true;
 
                         let snapshot_key = Self::key_for_snapshot(handle);
-                        match kv.get(&snapshot_key)? {
+                        match kv.get(&snapshot_key).await? {
                             Some(value) => {
                                 trace!("found snapshot for {handle}");
                                 let agg: A = serde_json::from_value(value)?;
@@ -247,7 +243,7 @@ where
                             }
                             None => {
                                 let init_key = Self::key_for_command(handle, 0);
-                                match kv.get(&init_key)? {
+                                match kv.get(&init_key).await? {
                                     Some(value) => {
                                         trace!("found init command for {handle}");
                                         let init_command: StoredCommand<A> = serde_json::from_value(value)?;
@@ -282,7 +278,7 @@ where
                 // to mark the aggregate as changed so that the we can update the cache
                 // later.
                 let next_command = Self::key_for_command(handle, agg.version());
-                if kv.has(&next_command)? {
+                if kv.has(&next_command).await? {
                     let aggregate = Arc::make_mut(&mut agg);
 
                     // check and apply any applicable processed commands until:
@@ -293,7 +289,7 @@ where
 
                         let key = Self::key_for_command(handle, version);
 
-                        match kv.get(&key)? {
+                        match kv.get(&key).await? {
                             None => break,
                             Some(value) => {
                                 trace!("found next command found for {handle}: {}", key);
@@ -329,14 +325,14 @@ where
                     // from. So, exit here, as there is nothing sensible we can do with this error.
                     //
                     // See issue: https://github.com/NLnetLabs/krill/issues/322
-                    if kv.has(&command_key)? {
+                    if kv.has(&command_key).await? {
                         error!("Command key for '{handle}' version '{version}' already exists.");
                         error!("This is a bug. Please report this issue to rpki-team@nlnetlabs.nl.");
                         error!("Krill will exit. If this issue repeats, consider removing {}.", handle);
                         std::process::exit(1);
                     }
 
-                    match aggregate.process_command(cmd.clone()) {
+                    match aggregate.process_command(cmd.clone()).await {
                         Err(e) => {
                             // Store the processed command with the error.
                             let processed_command = processed_command_builder.finish_with_error(&e);
@@ -345,7 +341,7 @@ where
                             aggregate.apply_command(processed_command);
 
                             changed_from_cached = true;
-                            kv.store(&command_key, json)?;
+                            kv.store(&command_key, json).await?;
 
                             Err(e)
                         }
@@ -368,7 +364,7 @@ where
                                 let mut opt_err: Option<A::Error> = None;
                                 if let Some(events) = processed_command.events() {
                                     for pre_save_listener in &self.pre_save_listeners {
-                                        if let Err(e) = pre_save_listener.as_ref().listen(aggregate, events) {
+                                        if let Err(e) = pre_save_listener.as_ref().listen(aggregate, events).await {
                                             opt_err = Some(e);
                                             break;
                                         }
@@ -383,12 +379,12 @@ where
                                 } else {
                                     // Save the latest command.
                                     let json = serde_json::to_value(&processed_command)?;
-                                    kv.store(&command_key, json)?;
+                                    kv.store(&command_key, json).await?;
 
                                     // Now send the events to the 'post-save' listeners.
                                     if let Some(events) = processed_command.events() {
                                         for listener in &self.post_save_listeners {
-                                            listener.as_ref().listen(aggregate, events);
+                                            listener.as_ref().listen(aggregate, events).await;
                                         }
                                     }
 
@@ -404,13 +400,13 @@ where
                 };
 
                 if changed_from_cached {
-                    self.cache_update(handle, agg.clone());
+                    self.cache_update(handle, agg.clone()).await;
                 }
 
                 if save_snapshot {
                     let key = Self::key_for_snapshot(handle);
                     let value = serde_json::to_value(agg.as_ref())?;
-                    kv.store(&key, value)?;
+                    kv.store(&key, value).await?;
                 }
 
                 if let Err(e) = res {
@@ -419,6 +415,7 @@ where
                     Ok(Ok(agg))
                 }
             })
+            .await
             .map_err(|e| A::Error::from(AggregateStoreError::KeyStoreError(e)))?
     }
 }
@@ -430,7 +427,7 @@ where
     A::Error: From<AggregateStoreError>,
 {
     /// Find all commands that fit the criteria and return history
-    pub fn command_history(
+    pub async fn command_history(
         &self,
         id: &MyHandle,
         crit: CommandHistoryCriteria,
@@ -471,21 +468,21 @@ where
 
         match &self.history_cache {
             Some(mutex) => {
-                let mut cache_lock = mutex.lock().unwrap();
+                let mut cache_lock = mutex.lock().await;
                 let records = cache_lock.entry(id.clone()).or_default();
-                self.update_history_records(records, id)?;
+                self.update_history_records(records, id).await?;
                 Ok(command_history_for_records(crit, records))
             }
             None => {
                 let mut records = vec![];
-                self.update_history_records(&mut records, id)?;
+                self.update_history_records(&mut records, id).await?;
                 Ok(command_history_for_records(crit, &records))
             }
         }
     }
 
     /// Updates history records for a given aggregate
-    fn update_history_records(
+    async fn update_history_records(
         &self,
         records: &mut Vec<CommandHistoryRecord>,
         id: &MyHandle,
@@ -495,7 +492,7 @@ where
             None => 1,
         };
 
-        while let Ok(command) = self.get_command(id, version) {
+        while let Ok(command) = self.get_command(id, version).await {
             records.push(CommandHistoryRecord::from(command));
             version += 1;
         }
@@ -504,10 +501,10 @@ where
     }
 
     /// Get the command for this key, if it exists
-    pub fn get_command(&self, id: &MyHandle, version: u64) -> Result<StoredCommand<A>, AggregateStoreError> {
+    pub async fn get_command(&self, id: &MyHandle, version: u64) -> Result<StoredCommand<A>, AggregateStoreError> {
         let key = Self::key_for_command(id, version);
 
-        match self.kv.get(&key)? {
+        match self.kv.get(&key).await? {
             Some(cmd) => Ok(cmd),
             None => Err(AggregateStoreError::CommandNotFound(id.clone(), version)),
         }
@@ -518,16 +515,16 @@ impl<A: Aggregate> AggregateStore<A>
 where
     A::Error: From<AggregateStoreError>,
 {
-    fn cache_get(&self, id: &MyHandle) -> Option<Arc<A>> {
-        self.cache.read().unwrap().get(id).cloned()
+    async fn cache_get(&self, id: &MyHandle) -> Option<Arc<A>> {
+        self.cache.read().await.get(id).cloned()
     }
 
-    fn cache_remove(&self, id: &MyHandle) {
-        self.cache.write().unwrap().remove(id);
+    async fn cache_remove(&self, id: &MyHandle) {
+        self.cache.write().await.remove(id);
     }
 
-    fn cache_update(&self, id: &MyHandle, arc: Arc<A>) {
-        self.cache.write().unwrap().insert(id.clone(), arc);
+    async fn cache_update(&self, id: &MyHandle, arc: Arc<A>) {
+        self.cache.write().await.insert(id.clone(), arc);
     }
 }
 
@@ -538,40 +535,29 @@ where
     A::Error: From<AggregateStoreError>,
 {
     fn scope_for_agg(agg: &MyHandle) -> Scope {
-        Scope::from_segment(Segment::parse_lossy(agg.as_str())) // agg should always be a valid Segment
+        Scope::from_segment(SegmentBuf::parse_lossy(agg.as_str())) // agg should always be a valid Segment
     }
 
     fn key_for_snapshot(agg: &MyHandle) -> Key {
-        Key::new_scoped(Self::scope_for_agg(agg), segment!("snapshot.json"))
+        Key::new_scoped(Self::scope_for_agg(agg), SegmentBuf::parse_lossy("snapshot.json"))
     }
 
     fn key_for_command(agg: &MyHandle, version: u64) -> Key {
         Key::new_scoped(
             Self::scope_for_agg(agg),
-            Segment::parse(&format!("command-{}.json", version)).unwrap(), // cannot panic as a u64 cannot contain a Scope::SEPARATOR
+            SegmentBuf::parse_lossy(&format!("command-{}.json", version)),
         )
     }
 
-    /// Private, should be called through `list` which takes care of locking.
-    fn aggregates(&self) -> Result<Vec<MyHandle>, AggregateStoreError> {
-        let mut res = vec![];
-
-        for scope in self.kv.scopes()? {
-            if let Ok(handle) = MyHandle::from_str(&scope.to_string()) {
-                res.push(handle)
-            }
-        }
-
-        Ok(res)
-    }
-
     /// Drop an aggregate, completely. Handle with care!
-    pub fn drop_aggregate(&self, id: &MyHandle) -> Result<(), AggregateStoreError> {
+    pub async fn drop_aggregate(&self, id: &MyHandle) -> Result<(), AggregateStoreError> {
         let scope = Self::scope_for_agg(id);
 
-        self.kv.execute(&scope, |kv| kv.delete_scope(&scope))?;
+        self.kv
+            .execute(&Scope::global(), |kv| async move { kv.delete_scope(&scope).await })
+            .await?;
 
-        self.cache_remove(id);
+        self.cache_remove(id).await;
         Ok(())
     }
 }

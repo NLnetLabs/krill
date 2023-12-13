@@ -18,11 +18,6 @@ pub use self::store::*;
 mod listener;
 pub use self::listener::*;
 
-mod kv;
-pub use self::kv::{
-    namespace, segment, Key, KeyValueError, KeyValueStore, Namespace, Scope, Segment, SegmentBuf, SegmentExt,
-};
-
 //------------ Tests ---------------------------------------------------------
 
 #[cfg(test)]
@@ -43,6 +38,7 @@ mod tests {
         commons::{
             actor::Actor,
             api::{CommandHistoryCriteria, CommandSummary},
+            storage::NamespaceBuf,
         },
         constants::ACTOR_DEF_TEST,
         test::mem_storage,
@@ -277,6 +273,7 @@ mod tests {
         }
     }
 
+    #[async_trait::async_trait]
     impl Aggregate for Person {
         type InitCommand = PersonInitCommand;
         type InitEvent = PersonInitEvent;
@@ -297,7 +294,7 @@ mod tests {
             }
         }
 
-        fn process_init_command(command: Self::InitCommand) -> Result<Self::InitEvent, Self::Error> {
+        async fn process_init_command(command: Self::InitCommand) -> Result<Self::InitEvent, Self::Error> {
             Ok(PersonInitEvent {
                 name: command.into_details().name,
             })
@@ -318,7 +315,7 @@ mod tests {
             }
         }
 
-        fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Event>, Self::Error> {
+        async fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Event>, Self::Error> {
             match command.into_details() {
                 PersonCommandDetails::ChangeName(name) => {
                     let event = PersonEvent::name_changed(name);
@@ -336,29 +333,31 @@ mod tests {
         }
     }
 
-    #[test]
-    fn event_sourcing_framework() {
+    #[tokio::test]
+    async fn event_sourcing_framework() {
         let storage_uri = mem_storage();
 
         let counter = Arc::new(EventCounter::default());
 
-        let mut manager = AggregateStore::<Person>::create(&storage_uri, namespace!("person"), false).unwrap();
+        let mut manager =
+            AggregateStore::<Person>::create(&storage_uri, NamespaceBuf::parse_lossy("person").as_ref(), false)
+                .unwrap();
         manager.add_post_save_listener(counter.clone());
 
         let alice_name = "alice smith".to_string();
         let alice_handle = MyHandle::from_str("alice").unwrap();
         let alice_init_cmd = PersonInitCommand::make(&alice_handle, alice_name);
 
-        manager.add(alice_init_cmd).unwrap();
+        manager.add(alice_init_cmd).await.unwrap();
 
-        let mut alice = manager.get_latest(&alice_handle).unwrap();
+        let mut alice = manager.get_latest(&alice_handle).await.unwrap();
         assert_eq!("alice smith", alice.name());
         assert_eq!(0, alice.age());
 
         let mut age = 0;
         loop {
             let get_older = PersonCommand::go_around_sun(&alice_handle, None);
-            alice = manager.command(get_older).unwrap();
+            alice = manager.command(get_older).await.unwrap();
 
             age += 1;
             if age == 21 {
@@ -370,14 +369,15 @@ mod tests {
         assert_eq!(21, alice.age());
 
         let change_name = PersonCommand::change_name(&alice_handle, Some(22), "alice smith-doe");
-        let alice = manager.command(change_name).unwrap();
+        let alice = manager.command(change_name).await.unwrap();
         assert_eq!("alice smith-doe", alice.name());
         assert_eq!(21, alice.age());
 
         // Should read state again when restarted with same data store mapping.
-        let manager = AggregateStore::<Person>::create(&storage_uri, namespace!("person"), false).unwrap();
+        let manager =
+            AggregateStore::<Person>::create(&storage_uri, &NamespaceBuf::parse_lossy("person"), false).unwrap();
 
-        let alice = manager.get_latest(&alice_handle).unwrap();
+        let alice = manager.get_latest(&alice_handle).await.unwrap();
         assert_eq!("alice smith-doe", alice.name());
         assert_eq!(21, alice.age());
 
@@ -388,7 +388,7 @@ mod tests {
         crit.set_offset(3);
         crit.set_rows(10);
 
-        let history = manager.command_history(&alice_handle, crit).unwrap();
+        let history = manager.command_history(&alice_handle, crit).await.unwrap();
         assert_eq!(history.total(), 22);
         assert_eq!(history.offset(), 3);
         assert_eq!(history.commands().len(), 10);
@@ -397,8 +397,7 @@ mod tests {
         // Get history excluding 'around the sun' commands
         let mut crit = CommandHistoryCriteria::default();
         crit.set_excludes(&["person-around-sun"]);
-        let history = manager.command_history(&alice_handle, crit).unwrap();
+        let history = manager.command_history(&alice_handle, crit).await.unwrap();
         assert_eq!(history.total(), 1);
-        // })
     }
 }

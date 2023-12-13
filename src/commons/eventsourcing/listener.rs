@@ -8,8 +8,9 @@ use super::Aggregate;
 /// the events *before* the Aggregate is saved. Thus, they are allowed
 /// to return an error in case of issues, which will then roll back the
 /// intended change to an aggregate.
+#[async_trait::async_trait]
 pub trait PreSaveEventListener<A: Aggregate>: Send + Sync + 'static {
-    fn listen(&self, agg: &A, events: &[A::Event]) -> Result<(), A::Error>;
+    async fn listen(&self, agg: &A, events: &[A::Event]) -> Result<(), A::Error>;
 }
 
 //------------ PostSaveEventListener ------------------------------------------
@@ -17,8 +18,9 @@ pub trait PreSaveEventListener<A: Aggregate>: Send + Sync + 'static {
 /// This trait defines a listener for events which is designed to receive
 /// them *after* the updated Aggregate is saved. Because the updates already
 /// happened EventListeners of this type are not allowed to fail.
+#[async_trait::async_trait]
 pub trait PostSaveEventListener<A: Aggregate>: Send + Sync + 'static {
-    fn listen(&self, agg: &A, events: &[A::Event]);
+    async fn listen(&self, agg: &A, events: &[A::Event]);
 }
 
 //------------ EventCounter --------------------------------------------------
@@ -46,8 +48,9 @@ impl EventCounter {
     }
 }
 
+#[async_trait::async_trait]
 impl<A: Aggregate> PostSaveEventListener<A> for EventCounter {
-    fn listen(&self, _agg: &A, events: &[A::Event]) {
+    async fn listen(&self, _agg: &A, events: &[A::Event]) {
         self.counter.write().unwrap().total += events.len();
     }
 }

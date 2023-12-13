@@ -37,8 +37,8 @@ impl Rfc8183Id {
         Rfc8183Id { cert }
     }
 
-    pub fn generate(signer: &KrillSigner) -> KrillResult<Self> {
-        let cert = signer.create_self_signed_id_cert()?;
+    pub async fn generate(signer: &KrillSigner) -> KrillResult<Self> {
+        let cert = signer.create_self_signed_id_cert().await?;
         let cert = IdCertInfo::from(&cert);
         Ok(Rfc8183Id { cert })
     }
@@ -74,8 +74,8 @@ impl CertAuthInitEvent {
         CertAuthInitEvent { id }
     }
 
-    pub fn init(signer: &KrillSigner) -> KrillResult<CertAuthInitEvent> {
-        Rfc8183Id::generate(signer).map(|id| CertAuthInitEvent { id })
+    pub async fn init(signer: &KrillSigner) -> KrillResult<CertAuthInitEvent> {
+        Rfc8183Id::generate(signer).await.map(|id| CertAuthInitEvent { id })
     }
 }
 

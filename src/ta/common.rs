@@ -70,7 +70,11 @@ pub struct TrustAnchorObjects {
 
 impl TrustAnchorObjects {
     /// Creates a new TrustAnchorObjects for the signing certificate.
-    pub fn create(signing_cert: &ReceivedCert, next_update_weeks: i64, signer: &KrillSigner) -> KrillResult<Self> {
+    pub async fn create(
+        signing_cert: &ReceivedCert,
+        next_update_weeks: i64,
+        signer: &KrillSigner,
+    ) -> KrillResult<Self> {
         let revision = ObjectSetRevision::new(1, Self::this_update(), Self::next_update(next_update_weeks));
         let key_identifier = signing_cert.key_identifier();
         let base_uri = signing_cert.ca_repository().clone();
@@ -79,11 +83,12 @@ impl TrustAnchorObjects {
         let signing_key = signing_cert.key_identifier();
         let issuer = signing_cert.subject().clone();
 
-        let crl = CrlBuilder::build(signing_key, issuer, &revocations, revision, signer)?;
+        let crl = CrlBuilder::build(signing_key, issuer, &revocations, revision, signer).await?;
 
         let manifest = ManifestBuilder::new(revision)
             .with_objects(&crl, &HashMap::new())
             .build_new_mft(signing_cert, signer)
+            .await
             .map(|m| m.into())?;
 
         Ok(TrustAnchorObjects {
@@ -100,7 +105,7 @@ impl TrustAnchorObjects {
     /// Publish next revision of the published objects.
     /// - Update CRL (times and revocations)
     /// - Update Manifest (times and listed objects)
-    pub fn republish(
+    pub async fn republish(
         &mut self,
         signing_cert: &ReceivedCert,
         next_update_weeks: i64,
@@ -117,11 +122,12 @@ impl TrustAnchorObjects {
         } else {
             let issuer = signing_cert.subject().clone();
 
-            self.crl = CrlBuilder::build(signing_key, issuer, &self.revocations, self.revision, signer)?;
+            self.crl = CrlBuilder::build(signing_key, issuer, &self.revocations, self.revision, signer).await?;
 
             self.manifest = ManifestBuilder::new(self.revision)
                 .with_objects(&self.crl, &self.issued_certs_objects())
                 .build_new_mft(signing_cert, signer)
+                .await
                 .map(|m| m.into())?;
 
             Ok(())
@@ -479,7 +485,7 @@ pub struct TrustAnchorSignerRequest {
 }
 
 impl TrustAnchorSignerRequest {
-    pub fn sign(
+    pub async fn sign(
         &self,
         signing_key: KeyIdentifier,
         validity_days: i64,
@@ -490,6 +496,7 @@ impl TrustAnchorSignerRequest {
 
         signer
             .create_ta_signed_message(data, validity_days, &signing_key)
+            .await
             .map(|msg| TrustAnchorSignedRequest {
                 request: self.clone(),
                 signed: msg.into(),
@@ -594,7 +601,7 @@ pub struct TrustAnchorSignerResponse {
 }
 
 impl TrustAnchorSignerResponse {
-    pub fn sign(
+    pub async fn sign(
         &self,
         validity_days: i64,
         signing_key: KeyIdentifier,
@@ -605,6 +612,7 @@ impl TrustAnchorSignerResponse {
 
         signer
             .create_ta_signed_message(data, validity_days, &signing_key)
+            .await
             .map(|msg| TrustAnchorSignedResponse {
                 response: self.clone(),
                 signed: msg.into(),

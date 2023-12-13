@@ -221,6 +221,7 @@ impl fmt::Display for TrustAnchorSignerStorableCommand {
     }
 }
 
+#[async_trait::async_trait]
 impl eventsourcing::Aggregate for TrustAnchorSigner {
     type Command = TrustAnchorSignerCommand;
     type StorableCommandDetails = TrustAnchorSignerStorableCommand;
@@ -242,13 +243,13 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
         }
     }
 
-    fn process_init_command(command: TrustAnchorSignerInitCommand) -> Result<TrustAnchorSignerInitEvent, Error> {
+    async fn process_init_command(command: TrustAnchorSignerInitCommand) -> Result<TrustAnchorSignerInitEvent, Error> {
         let cmd = command.into_details();
         let timing = cmd.timing;
 
         let signer = cmd.signer;
 
-        let id = Rfc8183Id::generate(&signer)?.into();
+        let id = Rfc8183Id::generate(&signer).await?.into();
         let proxy_id = cmd.proxy_id;
         let ta_cert_details = Self::create_ta_cert_details(
             cmd.repo_info,
@@ -257,8 +258,10 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
             cmd.private_key_pem,
             timing.certificate_validity_years,
             &signer,
-        )?;
-        let objects = TrustAnchorObjects::create(ta_cert_details.cert(), timing.mft_next_update_weeks, &signer)?;
+        )
+        .await?;
+
+        let objects = TrustAnchorObjects::create(ta_cert_details.cert(), timing.mft_next_update_weeks, &signer).await?;
 
         Ok(TrustAnchorSignerInitEvent {
             id,
@@ -294,7 +297,7 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
         }
     }
 
-    fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Event>, Self::Error> {
+    async fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Event>, Self::Error> {
         if log_enabled!(log::Level::Trace) {
             trace!(
                 "Sending command to Trust Anchor Signer '{}', version: {}: {}",
@@ -306,7 +309,7 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
 
         match command.into_details() {
             TrustAnchorSignerCommandDetails::TrustAnchorSignerRequest(request, timing, signer) => {
-                self.process_signer_request(request, timing, &signer)
+                self.process_signer_request(request, timing, &signer).await
             }
         }
     }
@@ -327,7 +330,7 @@ impl TrustAnchorSigner {
 }
 
 impl TrustAnchorSigner {
-    fn create_ta_cert_details(
+    async fn create_ta_cert_details(
         repo_info: RepoInfo,
         tal_https: Vec<uri::Https>,
         tal_rsync: uri::Rsync,
@@ -336,16 +339,16 @@ impl TrustAnchorSigner {
         signer: &KrillSigner,
     ) -> KrillResult<TaCertDetails> {
         let key = match private_key_pem {
-            None => signer.create_key(),
-            Some(pem) => signer.import_key(&pem),
+            None => signer.create_key().await,
+            Some(pem) => signer.import_key(&pem).await,
         }?;
 
         let resources = ResourceSet::all();
 
         let cert = {
-            let serial: Serial = signer.random_serial()?;
+            let serial: Serial = signer.random_serial().await?;
 
-            let pub_key = signer.get_key_info(&key).map_err(Error::signer)?;
+            let pub_key = signer.get_key_info(&key).await.map_err(Error::signer)?;
             let name = pub_key.to_subject_name();
 
             let mut cert = TbsCert::new(
@@ -377,7 +380,7 @@ impl TrustAnchorSigner {
             cert.set_v4_resources(resources.to_ip_resources_v4());
             cert.set_v6_resources(resources.to_ip_resources_v6());
 
-            signer.sign_cert(cert, &key)?
+            signer.sign_cert(cert, &key).await?
         };
 
         let tal = TrustAnchorLocator::new(tal_https, tal_rsync.clone(), cert.subject_public_key_info());
@@ -389,7 +392,7 @@ impl TrustAnchorSigner {
     }
 
     /// Process a request.
-    fn process_signer_request(
+    async fn process_signer_request(
         &self,
         request: TrustAnchorSignedRequest,
         timing: TaTimingConfig,
@@ -432,7 +435,8 @@ impl TrustAnchorSigner {
                             signing_cert,
                             validity,
                             signer,
-                        )?;
+                        )
+                        .await?;
 
                         // Create response for certificate
                         let response = IssuanceResponse::new(
@@ -487,7 +491,9 @@ impl TrustAnchorSigner {
             child_responses.insert(child_request.child.clone(), responses);
         }
 
-        objects.republish(signing_cert, timing.mft_next_update_weeks, signer)?;
+        objects
+            .republish(signing_cert, timing.mft_next_update_weeks, signer)
+            .await?;
 
         let response = TrustAnchorSignerResponse {
             nonce: request.content().nonce.clone(),
@@ -498,7 +504,8 @@ impl TrustAnchorSigner {
             timing.signed_message_validity_days,
             self.id.public_key().key_identifier(),
             signer,
-        )?;
+        )
+        .await?;
 
         let exchange = TrustAnchorProxySignerExchange {
             time: Time::now(),

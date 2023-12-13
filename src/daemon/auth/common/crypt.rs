@@ -18,10 +18,14 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use kvx::{namespace, segment, Key, Namespace, Segment};
-
 use crate::{
-    commons::{error::Error, util::ext_serde, KrillResult},
+    commons::storage::Key,
+    commons::{
+        error::Error,
+        storage::{Namespace, Segment},
+        util::ext_serde,
+        KrillResult,
+    },
     daemon::config::Config,
 };
 
@@ -34,8 +38,8 @@ const POLY1305_TAG_BYTE_LEN: usize = POLY1305_TAG_BIT_LEN / 8;
 const CLEARTEXT_PREFIX_LEN: usize = CHACHA20_NONCE_BYTE_LEN + POLY1305_TAG_BYTE_LEN;
 const UNUSED_AAD: [u8; 0] = [0; 0];
 
-const CRYPT_STATE_NS: &Namespace = namespace!("login_sessions");
-const CRYPT_STATE_KEY: &Segment = segment!("main_key");
+const CRYPT_STATE_NS: &Namespace = unsafe { Namespace::from_str_unchecked("login_sessions") };
+const CRYPT_STATE_KEY: &Segment = unsafe { Segment::from_str_unchecked("main_key") };
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct NonceState {
@@ -133,11 +137,11 @@ pub(crate) fn decrypt(key: &[u8], payload: &[u8]) -> KrillResult<Vec<u8>> {
         .map_err(|err| Error::Custom(format!("Decryption error: {}", &err)))
 }
 
-pub(crate) fn crypt_init(config: &Config) -> KrillResult<CryptState> {
+pub(crate) async fn crypt_init(config: &Config) -> KrillResult<CryptState> {
     let store = config.key_value_store(CRYPT_STATE_NS)?;
     let key = Key::new_global(CRYPT_STATE_KEY);
 
-    if let Some(state) = store.get(&key)? {
+    if let Some(state) = store.get(&key).await? {
         Ok(state)
     } else {
         let mut key_bytes = [0; CHACHA20_KEY_BYTE_LEN];
@@ -145,7 +149,7 @@ pub(crate) fn crypt_init(config: &Config) -> KrillResult<CryptState> {
             .map_err(|err| Error::Custom(format!("Unable to generate symmetric key: {}", err)))?;
 
         let state = CryptState::from_key_bytes(key_bytes)?;
-        store.store_new(&key, &state)?;
+        store.store_new(&key, &state).await?;
 
         Ok(state)
     }

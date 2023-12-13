@@ -3,7 +3,8 @@ use rpki::{ca::idexchange::MyHandle, repository::x509::Time};
 use crate::{
     commons::{
         api::StorableRepositoryCommand,
-        eventsourcing::{segment, AggregateStore, KeyValueStore, Scope, Segment, StoredCommandBuilder},
+        eventsourcing::{AggregateStore, StoredCommandBuilder},
+        storage::{KeyValueStore, Scope, SegmentBuf},
         util::KrillVersion,
     },
     constants::PUBSERVER_NS,
@@ -23,7 +24,7 @@ pub struct PublicationServerRepositoryAccessMigration {
 }
 
 impl PublicationServerRepositoryAccessMigration {
-    pub fn upgrade(mode: UpgradeMode, config: &Config, versions: &UpgradeVersions) -> UpgradeResult<()> {
+    pub async fn upgrade(mode: UpgradeMode, config: &Config, versions: &UpgradeVersions) -> UpgradeResult<()> {
         let current_kv_store = KeyValueStore::create(&config.storage_uri, PUBSERVER_NS)?;
         let new_kv_store = KeyValueStore::create_upgrade_store(&config.storage_uri, PUBSERVER_NS)?;
         let new_agg_store =
@@ -37,11 +38,12 @@ impl PublicationServerRepositoryAccessMigration {
 
         if store_migration
             .current_kv_store
-            .has_scope(&Scope::from_segment(segment!("0")))?
+            .has_scope(&Scope::from_segment(SegmentBuf::parse_lossy("0")))
+            .await?
             && versions.from >= KrillVersion::release(0, 9, 0)
             && versions.from < KrillVersion::candidate(0, 10, 0, 1)
         {
-            store_migration.upgrade(mode).map(|_| ()) // aspa configs are irrelevant here
+            store_migration.upgrade(mode).await.map(|_| ()) // aspa configs are irrelevant here
         } else {
             Ok(())
         }

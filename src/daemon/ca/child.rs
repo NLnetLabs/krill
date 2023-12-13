@@ -224,7 +224,7 @@ impl ChildCertificates {
     }
 
     /// Re-issue everything when activating a new key
-    pub fn activate_key(
+    pub async fn activate_key(
         &self,
         signing_cert: &ReceivedCert,
         issuance_timing: &IssuanceTimingConfig,
@@ -232,12 +232,16 @@ impl ChildCertificates {
     ) -> KrillResult<ChildCertificateUpdates> {
         let mut updates = ChildCertificateUpdates::default();
         for issued in self.issued.values() {
-            updates.issue(self.re_issue(issued, None, signing_cert, issuance_timing, signer)?);
+            updates.issue(
+                self.re_issue(issued, None, signing_cert, issuance_timing, signer)
+                    .await?,
+            );
         }
         // Also re-issue suspended certificates, they may yet become unsuspended at some point
         for suspended in self.suspended.values() {
             updates.suspend(
-                self.re_issue(&suspended.convert(), None, signing_cert, issuance_timing, signer)?
+                self.re_issue(&suspended.convert(), None, signing_cert, issuance_timing, signer)
+                    .await?
                     .into_converted(),
             );
         }
@@ -249,7 +253,7 @@ impl ChildCertificates {
     /// NOTE: We need to pro-actively shrink child certificates to avoid invalidating them.
     ///       But, if we gain additional resources it is up to child to request a new certificate
     ///       with those resources.
-    pub fn shrink_overclaiming(
+    pub async fn shrink_overclaiming(
         &self,
         received_cert: &ReceivedCert,
         issuance_timing: &IssuanceTimingConfig,
@@ -266,7 +270,10 @@ impl ChildCertificates {
                     updates.remove(issued.key_identifier());
                 } else {
                     // re-issue
-                    updates.issue(self.re_issue(issued, Some(reduced_set), received_cert, issuance_timing, signer)?);
+                    updates.issue(
+                        self.re_issue(issued, Some(reduced_set), received_cert, issuance_timing, signer)
+                            .await?,
+                    );
                 }
             }
         }
@@ -290,7 +297,8 @@ impl ChildCertificates {
                             received_cert,
                             issuance_timing,
                             signer,
-                        )?
+                        )
+                        .await?
                         .into_converted(),
                     );
                 }
@@ -302,7 +310,7 @@ impl ChildCertificates {
 
     /// Re-issue an issued certificate to replace an earlier
     /// one which is about to be outdated or has changed resources.
-    fn re_issue(
+    async fn re_issue(
         &self,
         previous: &IssuedCertificate,
         updated_resources: Option<ResourceSet>,
@@ -321,7 +329,8 @@ impl ChildCertificates {
             signing_cert,
             issuance_timing.new_child_cert_validity(),
             signer,
-        )?;
+        )
+        .await?;
 
         Ok(re_issued)
     }

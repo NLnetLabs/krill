@@ -1,6 +1,5 @@
 use std::{fmt, str::FromStr};
 
-use kvx::Namespace;
 use rpki::{
     ca::{idexchange::MyHandle, publication::Base64},
     repository::{
@@ -16,10 +15,8 @@ use crate::{
     commons::{
         api::{AspaDefinition, CustomerAsn},
         crypto::dispatch::signerinfo::{SignerInfo, SignerInfoEvent, SignerInfoInitEvent},
-        eventsourcing::{
-            Aggregate, AggregateStore, KeyValueStore, Storable, StoredCommand, StoredCommandBuilder,
-            WithStorableDetails,
-        },
+        eventsourcing::{Aggregate, AggregateStore, StoredCommand, StoredCommandBuilder, WithStorableDetails},
+        storage::{KeyValueStore, Namespace, Storable},
     },
     daemon::{
         ca::{CertAuthEvent, CertAuthInitEvent},
@@ -300,10 +297,14 @@ pub struct GenericUpgradeAggregateStore<A: Aggregate> {
 }
 
 impl<A: Aggregate> GenericUpgradeAggregateStore<A> {
-    pub fn upgrade(name_space: &Namespace, mode: UpgradeMode, config: &Config) -> UpgradeResult<AspaMigrationConfigs> {
+    pub async fn upgrade(
+        name_space: &Namespace,
+        mode: UpgradeMode,
+        config: &Config,
+    ) -> UpgradeResult<AspaMigrationConfigs> {
         let current_kv_store = KeyValueStore::create(&config.storage_uri, name_space)?;
 
-        if current_kv_store.scopes()?.is_empty() {
+        if current_kv_store.scopes().await?.is_empty() {
             // nothing to do here
             Ok(AspaMigrationConfigs::default())
         } else {
@@ -318,7 +319,7 @@ impl<A: Aggregate> GenericUpgradeAggregateStore<A> {
                 new_agg_store,
             };
 
-            store_migration.upgrade(mode)
+            store_migration.upgrade(mode).await
         }
     }
 }

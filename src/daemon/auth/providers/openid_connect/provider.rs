@@ -150,8 +150,8 @@ pub struct OpenIDConnectAuthProvider {
 }
 
 impl OpenIDConnectAuthProvider {
-    pub fn new(config: Arc<Config>, session_cache: Arc<LoginSessionCache>) -> KrillResult<Self> {
-        let session_key = Self::init_session_key(&config)?;
+    pub async fn new(config: Arc<Config>, session_cache: Arc<LoginSessionCache>) -> KrillResult<Self> {
+        let session_key = Self::init_session_key(&config).await?;
 
         Ok(OpenIDConnectAuthProvider {
             config,
@@ -728,9 +728,9 @@ impl OpenIDConnectAuthProvider {
         Ok(None)
     }
 
-    fn init_session_key(config: &Config) -> KrillResult<CryptState> {
+    async fn init_session_key(config: &Config) -> KrillResult<CryptState> {
         debug!("Initializing session encryption key");
-        crypt::crypt_init(config)
+        crypt::crypt_init(config).await
     }
 
     fn oidc_conf(&self) -> KrillResult<&ConfigAuthOpenIDConnect> {

@@ -1,7 +1,9 @@
 use rpki::ca::idexchange::MyHandle;
 
-use super::{AggregateStoreError, Command, Event, InitCommand, InitEvent, Storable, StoredCommand};
-use crate::commons::eventsourcing::WithStorableDetails;
+use crate::commons::{
+    eventsourcing::{AggregateStoreError, Command, Event, InitCommand, InitEvent, StoredCommand, WithStorableDetails},
+    storage::Storable,
+};
 
 //------------ Aggregate -----------------------------------------------------
 
@@ -20,6 +22,7 @@ use crate::commons::eventsourcing::WithStorableDetails;
 /// this intent and decide whether it can be executed. If successful a number of
 /// 'events' are returned that contain state changes to the aggregate. These events
 /// still need to be applied to become persisted.
+#[async_trait::async_trait]
 pub trait Aggregate: Storable + Send + Sync + 'static {
     type InitCommand: InitCommand<StorableDetails = Self::StorableCommandDetails>;
     type InitEvent: InitEvent;
@@ -48,7 +51,7 @@ pub trait Aggregate: Storable + Send + Sync + 'static {
     /// Tries to initialise a new InitEvent for a new instance. This
     /// can fail. The InitEvent is not applied here, but returned so
     /// that we can re-build state from history.
-    fn process_init_command(command: Self::InitCommand) -> Result<Self::InitEvent, Self::Error>;
+    async fn process_init_command(command: Self::InitCommand) -> Result<Self::InitEvent, Self::Error>;
 
     /// Returns the current version of the aggregate.
     fn version(&self) -> u64;
@@ -85,5 +88,5 @@ pub trait Aggregate: Storable + Send + Sync + 'static {
     ///
     /// The events are not applied here, but need to be applied using
     /// [`apply_command`] so that we can re-build state from history.
-    fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Event>, Self::Error>;
+    async fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Event>, Self::Error>;
 }

@@ -160,6 +160,10 @@ impl ImportCa {
         ImportCa { handle, parents, roas }
     }
 
+    pub fn handle(&self) -> &CaHandle {
+        &self.handle
+    }
+
     pub fn unpack(self) -> (CaHandle, Vec<ImportParent>, Vec<RoaConfiguration>) {
         (self.handle, self.parents, self.roas)
     }
