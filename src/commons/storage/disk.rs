@@ -8,6 +8,7 @@ use std::{
 };
 
 use futures_util::Future;
+use rpki::repository::x509::Time;
 use rustix::fs::{flock, FlockOperation};
 use serde_json::Value;
 
@@ -416,18 +417,44 @@ impl FileLock {
     /// This function relies on flock through the rustix crate to get exclusive
     /// access to the file descriptor for the given path. If the lock cannot be
     /// obtained immediately, then this function waits for [`Self::POLL_LOCK_INTERVAL`]
-    /// before trying again. It will keep trying until the lock is obtained this
-    /// way. Because of this waiting, the order in which locks are obtained by
-    /// different callers is not guaranteed.
+    /// before trying again.
     ///
-    /// Note that for Krill the ordering of locking is normally not an issue, as
-    /// "commands" sent to CAs are typically not in conflict. It is important
-    /// however that they are executed sequentially.
+    /// If the lock cannot be obtained immediately, this function will keep
+    /// trying for a maximum of 10 minutes. That should be more than enough
+    /// time even under excessive load in Krill, but still if the system as
+    /// a whole would get stuck then it's best to see some kind of error.
+    ///
+    /// Note that because of the retrying, the order in which locks are
+    /// obtained by different callers is not guaranteed. For Krill this is
+    /// normally not an issue, as "commands" sent to CAs are typically not
+    /// in conflict. The scenario where this could cause issues is in
+    /// case the API used to fire a lot of commands that depend on one
+    /// another, such as as adding, updating, removing ROAs for the same
+    /// prefixes and these commands cannot be processed fast enough. In
+    /// that (unlikely) case such commands would still be picked up, but
+    /// return with an error, e.g. you cannot delete the ROA prefix that
+    /// is not there. And this is something a caller will have to deal
+    /// with anyway.
+    ///
+    /// The order of processing, say certificate sign requests sent
+    /// by child CAs is not important. Issuing a CA for one child has
+    /// no conflict with other child CAs. So, this should not cause
+    /// any issues for a CA with many, chatty, child CAs.
+    ///
+    /// On the whole it's still better to have an async waiting and
+    /// retry strategy rather than blocking the thread because that would
+    /// much more likely lead to issues with many hosted CAs.
+    ///
+    /// Note that regardless of the ordering it is important that commands
+    /// are executed sequentially.
+    #[cfg(unix)]
     pub async fn lock(path: PathBuf) -> StorageResult<Self> {
         let lock_path = path.join(LOCK_FILE_NAME);
 
         let mut options = OpenOptions::new();
         options.create(true).read(true).write(true);
+
+        let trying_to_lock_since = Time::now();
 
         let lock_file = match options.open(&lock_path) {
             Ok(file) => file,
@@ -448,9 +475,29 @@ impl FileLock {
         };
 
         loop {
+            // NOTE: This does not support windows.
+            //
+            // For windows we should perhaps re-use the code that fd-lock has for this:
+            // https://github.com/yoshuawuyts/fd-lock/blob/01d59644d23fc294276451456d64e27cf0de90f1/src/sys/windows/rw_lock.rs#L60
+            //
+            // We can't easily use fd-lock though, because it uses an RwLock with a
+            // function that takes a &mut Self to return a WriteGuard with a lifetime
+            // locked into the lock.
+            //
+            // This makes the looping and retrying hard to do, we can't have &mut RwLock
+            // in the loop. And prevents us from returning a new RwLock with a guard that
+            // has a reference to it.
+            //
+            // So. TLDR; here the rustix flock is used.
             if flock(lock_file.as_fd(), FlockOperation::NonBlockingLockExclusive).is_ok() {
                 break;
             } else {
+                if trying_to_lock_since + chrono::Duration::minutes(10) > Time::now() {
+                    return Err(KeyValueError::Other(format!(
+                        "Timeout trying to lock: {}",
+                        lock_path.to_string_lossy()
+                    )));
+                }
                 tokio::time::sleep(Self::POLL_LOCK_INTERVAL).await;
             }
         }
