@@ -128,7 +128,9 @@ where
 pub struct ImportTa {
     pub ta_aia: uri::Rsync,
     pub ta_uri: uri::Https,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ta_key_pem: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ta_mft_nr_override: Option<u64>,
 }
 
