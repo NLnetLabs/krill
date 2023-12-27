@@ -555,11 +555,15 @@ impl RepositoryContent {
         jail: uri::Rsync,
         delta: DeltaElements,
     ) -> KrillResult<Vec<RepositoryContentChange>> {
-        // Verifying the delta first.
-        let current_objects = self.objects_for_publisher(&publisher);
-        current_objects.verify_delta(&delta, &jail)?;
+        if !delta.is_empty() {
+            // Verifying the delta first.
+            let current_objects = self.objects_for_publisher(&publisher);
+            current_objects.verify_delta(&delta, &jail)?;
 
-        Ok(vec![RepositoryContentChange::RrdpDeltaStaged { publisher, delta }])
+            Ok(vec![RepositoryContentChange::RrdpDeltaStaged { publisher, delta }])
+        } else {
+            Ok(vec![])
+        }
     }
 
     /// Update the RRDP state
