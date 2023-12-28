@@ -19,21 +19,25 @@ it was convenient to create wrapper types to help access:
 /// * verifying that a publisher is allowed to publish
 /// * publish content to RRDP and rsync
 pub struct RepositoryManager {
-    config: Arc<Config>,
     access: Arc<RepositoryAccessProxy>,
     content: Arc<RepositoryContentProxy>,
+
+    // shared task queue, use to schedule RRDP updates when content is updated.
+    tasks: Arc<TaskQueue>,
+
+    config: Arc<Config>,
     signer: Arc<KrillSigner>,
 }
 ```
 
 ```rust
 /// We can only have one (1) RepositoryAccess, but it is an event-sourced
-/// type which is stored in an AggregateStore which could theoretically
-/// serve multiple RepositoryAccess instances. So, we use RepositoryAccessProxy
-/// as a wrapper around this so that callers don't need to worry about storage details.
+/// typed which is stored in an AggregateStore which could theoretically
+/// serve multiple. So, we use RepositoryAccessProxy as a wrapper around
+/// this so that callers don't need to worry about storage details.
 pub struct RepositoryAccessProxy {
     store: AggregateStore<RepositoryAccess>,
-    key: Handle,
+    key: MyHandle,
 }
 ```
 
@@ -43,9 +47,8 @@ pub struct RepositoryAccessProxy {
 /// so that callers don't need to worry about storage details.
 #[derive(Debug)]
 pub struct RepositoryContentProxy {
-    cache: RwLock<Option<Arc<RepositoryContent>>>,
-    store: RwLock<KeyValueStore>,
-    key: KeyStoreKey,
+    store: Arc<WalStore<RepositoryContent>>,
+    default_handle: MyHandle,
 }
 ```
 
@@ -186,10 +189,9 @@ pub struct PublisherStats {
 Publishing / RFC 8181
 ---------------------
 
-Now, for the main purpose of course.. we have a simple function here that will take bytes
+Now, for the main purpose of course.. we have a function here that will take bytes
 submitted by a publisher, parse it and validate it as an RFC 8181 request and return the
-appropriate signed response. If a valid delta was submitted, then the RRDP and rsync content
-will be updated immediately.
+appropriate signed response. 
 
 ```rust
 pub fn rfc8181(&self, publisher_handle: PublisherHandle, msg_bytes: Bytes) -> KrillResult<Bytes>;
@@ -201,3 +203,24 @@ from - e.g. there is I/O error - something is seriously broken in the server - t
 will return an actual *rust* Error. It's up to the caller of this function to take
 appropriate action, e.g. give the publisher an HTTP response code, but possibly even
 crash this server - if it cannot function anymore.
+
+Under the hood this function will first retrieve the publisher from `RepositoryAccess`
+to verify that the sender is known, and get their ID certificate (used for signing)
+and base_uri Rsync jail. The content of the query (list or send updates) is then
+passed on to `RepositoryContent`.
+
+The `RepositoryContent` type is not event-sourced as it turned out that keeping the
+full history of changes from all CAs (especially their manifests and CRL updates)
+resulted in keeping way too much data.
+
+Instead this relies on the Write-Ahead-Log support. This is very, very, similar
+to the event-sourcing used elsewhere, except that it does not guarantee that all
+changes are kept. The `WalStore` (Wal: Write-Ahead-Log) only keeps a snapshot and
+the latest 'change set's since that snapshot. As with the `AggregateStore` snapshots
+are only updated nightly for performance reasons. In fact, it was the 250MB+ nic.br
+repository content entity that triggered this code change.
+
+The locking, retrieval and updating are similar to `AggregateStore`, but uses separate
+types for all this for historical reasons. A future improvement could be to merge the
+types and make it a per instance type (CertAuth, RepositoryAccess, RepositoryContent etc)
+choice whether it's fully event-sourced or only recent changes are kept.
