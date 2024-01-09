@@ -16,13 +16,13 @@ it was convenient to create wrapper types to help access:
 
 ```rust
 /// RepositoryManager is responsible for:
-/// * verifying that a publisher is allowed to publish
-/// * publish content to RRDP and rsync
+/// * verifying that a publisher is allowed to publish.
+/// * publish content to RRDP and rsync.
 pub struct RepositoryManager {
     access: Arc<RepositoryAccessProxy>,
     content: Arc<RepositoryContentProxy>,
 
-    // shared task queue, use to schedule RRDP updates when content is updated.
+    // Shared task queue, use to schedule RRDP updates when content is updated.
     tasks: Arc<TaskQueue>,
 
     config: Arc<Config>,
@@ -32,9 +32,9 @@ pub struct RepositoryManager {
 
 ```rust
 /// We can only have one (1) RepositoryAccess, but it is an event-sourced
-/// typed which is stored in an AggregateStore which could theoretically
-/// serve multiple. So, we use RepositoryAccessProxy as a wrapper around
-/// this so that callers don't need to worry about storage details.
+/// type which is stored in an AggregateStore which could theoretically
+/// serve multiple RepositoryAccess instances. So, we use RepositoryAccessProxy
+/// as a wrapper around this so that callers don't need to worry about storage details.
 pub struct RepositoryAccessProxy {
     store: AggregateStore<RepositoryAccess>,
     key: MyHandle,
@@ -191,7 +191,7 @@ Publishing / RFC 8181
 
 Now, for the main purpose of course.. we have a function here that will take bytes
 submitted by a publisher, parse it and validate it as an RFC 8181 request and return the
-appropriate signed response. 
+appropriate signed response.
 
 ```rust
 pub fn rfc8181(&self, publisher_handle: PublisherHandle, msg_bytes: Bytes) -> KrillResult<Bytes>;

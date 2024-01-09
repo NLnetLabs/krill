@@ -312,8 +312,8 @@ pub trait PostSaveEventListener<A: Aggregate>: Send + Sync + 'static {
 ```
 
 In a nutshell, we use the event listeners for two things:
-- Trigger that the `CaObjects` for a CA gets an updated Manifest and CRL (pre-save)
-- Trigger that follow-up tasks are put on the `Scheduler`, based on events
+- Trigger that the `CaObjects` for a CA gets an updated Manifest and CRL (pre-save).
+- Trigger that follow-up tasks are put on the `Scheduler`, based on events.
 
 As discussed in issue: https://github.com/NLnetLabs/krill/issues/1182
 it would be best to remove the `PreSaveEventListener` trait and do everything
@@ -361,7 +361,7 @@ where
     /// Send a command to the latest aggregate referenced by the handle in the command.
     ///
     /// This will:
-    /// - Wait for a LOCK for the latest aggregate for this command.
+    /// - Wait for a lock for the latest aggregate for this command.
     /// - Call the A::process_command function
     /// on success:
     ///   - call pre-save listeners with events
@@ -399,7 +399,7 @@ pub struct AggregateStore<A: Aggregate> {
 
 - Applying changes
 
-ALL CHANGES to Aggregates, like `CertAuth` are done through the `command` function.
+ALL changes to Aggregates, like `CertAuth` are done through the `command` function.
 This function waits for a lock (using flock mentioned earlier) to ensure that
 all changes to the Aggregate are applied sequentially.
 
@@ -411,9 +411,9 @@ values (for the version of the `Aggregate`) which are then applied. Note that
 this would mean, in a possible cluster set up that guarantees locking, that even
 if a cluster node is behind the other, it will simply find the missing updates.
 
-Once the lates `Aggregate` has been retrieved, the `Command` is sent to it. Note
-that this `Command` is not a `StoredCommand`. This contains the intent for a change,
-while the second contains the result of such a change. The `Aggregate` is responsible
+Once the latest `Aggregate` has been retrieved, the `Command` is sent to it. Note
+that this `Command` is not a `StoredCommand`. `Command` contains the intent for a change,
+while `StoredCommand` contains the result of such a change. The `Aggregate` is responsible
 for verifying the command and it can return with: an error, no effect, or a vec
 of change events.
 
@@ -450,8 +450,8 @@ avoid code duplication (thus increasing the loci for bugs).
 
 Note that we do not update the full snapshot on every change because this
 could create a performance issue in cases where aggregates are big (e.g. a
-CA with many children or objects) and serialization takes long. Instead, updating
-the snapshots is done daily through a different code path from the `Scheduler`.
+CA with many children or objects) and serialization takes a long time. Instead,
+updating the snapshots is done daily through a different code path from the `Scheduler`.
 See `Task::UpdateSnapshots`. This code, again, actually uses the same underlying
-function as above to retrieve the snapshot, this timing setting the `save_snapshot`
+function as above to retrieve the snapshot, this time setting the `save_snapshot`
 parameter to true to ensure that the snapshot is saved.

@@ -182,7 +182,7 @@ where
     /// Send a command to the latest aggregate referenced by the handle in the command.
     ///
     /// This will:
-    /// - Wait for a LOCK for the latest aggregate for this command.
+    /// - Wait for a lock for the latest aggregate for this command.
     /// - Call the A::process_command function
     /// on success:
     ///   - call pre-save listeners with events

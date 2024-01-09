@@ -35,7 +35,7 @@ Combined we then get this structure:
 
 ```rust
 pub struct CaManager {
-    // Used to manage CAs
+    // Used to manage CAs.
     ca_store: AggregateStore<CertAuth>,
 
     // Used to manage objects for CAs. Also shared with the ca_store as well
@@ -57,10 +57,10 @@ pub struct CaManager {
     // TA signer CLI.
     ta_signer_store: Option<AggregateStore<TrustAnchorSigner>>,
 
-    // shared task queue:
-    // - listens for events in the ca_store
-    // - processed by the Scheduler
-    // - can be used here to schedule tasks through the api
+    // Shared task queue:
+    // - listens for events in the ca_store.
+    // - processed by the Scheduler.
+    // - can be used here to schedule tasks through the api.
     tasks: Arc<TaskQueue>,
 
     config: Arc<Config>,
@@ -90,7 +90,7 @@ Worth noting here is that the event listening is used here. For example, if a
 
 But, see issue https://github.com/NLnetLabs/krill/issues/1182. It would be
 better to remove the pre-save listener trait altogether and let a new CRL
-and manifest be generated post-save. This can be done as idem-potent
+and manifest be generated post-save. This can be done as idempotent
 `Task::RepublishIfNeeded` by changing the `CaObjects` implementation to
 simply query the CA for the full set of current objects and then letting
 it decide to republish, not only because it's time, but also because content
