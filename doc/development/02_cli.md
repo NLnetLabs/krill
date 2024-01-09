@@ -3,6 +3,9 @@ Krill Command Line Client Setup
 
 There is a CLI binary included in Krill: `krillc`
 
+User documentation is here:
+https://krill.docs.nlnetlabs.nl/en/stable/cli.html
+
 The CLI can be used to manage Certification Authorities, as well as the Publication Server (if used).
 And it offers some functionality to users that the UI does not offer.
 

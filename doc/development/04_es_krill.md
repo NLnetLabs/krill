@@ -18,35 +18,31 @@ KeyValueStore and JSON
 ----------------------
 
 Before we delve in to the Krill eventsourcing code, we should talk a bit about storage.
-Krill stores all values in a `KeyValueStore`, which is currently implemented as an
-enum using a disk based back-end as the only current implementation. The idea is that
-this will be extended in future with other implementations, perhaps [sled](https://docs.rs/sled/0.34.6/sled/),
-[tikv](https://github.com/tikv/tikv) or some redis based store.
+Krill stores all values in a `KeyValueStore`.
 
-It may be good to use an enum, because if we have all possible implementations in our
-own code then we don't need generics - which have a way of trickling up and causing long
-compilation times.
+This is implemented in the `kvx` library:
+https://github.com/nlnetlabs/kvx
 
-In any case, the `KeyValueStore` (`src/commons/eventsourcing/kv.rs`) expects that we present
-a `KeyStoreKey` and save or retrieve values. The key supports 'scopes' which can be useful
-for categorizing values according to their 'aggregate'. Scopes can also use `/` characters
-to present sub-scopes, or sub-dirs in the the disk based implementation:
+There is a PR to port the `kvx` implementation back into the core Krill code (Krill is
+the only user after all), and in the process make it support async. To support this,
+the code was updated to rely on an enum rather than a trait for `KeyValueStore`. This
+PR can be found here:
+https://github.com/NLnetLabs/krill/pull/1152
 
-```rust
-#[derive(Clone, Debug)]
-pub struct KeyStoreKey {
-    scope: Option<String>,
-    name: String,
-}
-```
+Currently, only disk and memory (for testing) implementations are supported. Database
+options may be added in future, but note that that will require async support. The `kvx`
+library claims to support postgresql but it can't be used in Krill because while the
+library is sync, it uses a runtime under the hood for the database connection and this
+conflicts with Krill because it already uses hyper and tokio.
 
-We use serde json (de-)serialization for all types that need to be stored. The following
-trait is used as a convenient shorthand:
+Opt-in locking on disk relies on `fd-lock` in `kvx` and plain `rustix` in the PR (only
+supports UNIX). This locking is used by Krill to ensure that updates to CAs, the Publication
+Server Access (which Publishers have access) and Publication Server Content are always
+applied sequentially.
 
-```rust
-pub trait Storable: Clone + Serialize + DeserializeOwned + Sized + 'static {}
-impl<T: Clone + Serialize + DeserializeOwned + Sized + 'static> Storable for T {}
-```
+In principle, since the locking leverages `flock` which is supposedly NFS safe, this
+should mean that as of 0.14.4 it is safe to run multiple active Krill instances using
+the same shared NFS data directory. But.. this needs proper testing!
 
 Aggregate
 ---------
@@ -294,7 +290,7 @@ Event Listeners
 The Krill eventsourcing stack defines two different `EventListener` traits which are called
 by the `AggregateStore` (see below) when an Aggregate is successfully updated. The first is
 called before updates are saved, and it can fail, the second is called after all changes have
-been applied, and cannot fail:
+been applied, and cannot fail.
 
 ```rust
 /// This trait defines a listener for events which is designed to receive
@@ -315,6 +311,17 @@ pub trait PostSaveEventListener<A: Aggregate>: Send + Sync + 'static {
 }
 ```
 
+In a nutshell, we use the event listeners for two things:
+- Trigger that the `CaObjects` for a CA gets an updated Manifest and CRL (pre-save).
+- Trigger that follow-up tasks are put on the `Scheduler`, based on events.
+
+As discussed in issue: https://github.com/NLnetLabs/krill/issues/1182
+it would be best to remove the `PreSaveEventListener` trait and do everything
+through (idempotent) triggered tasks on the queue in the `Scheduler`. Note
+that Krill will add any missing tasks on this queue at startup, so this means
+that even if an aggregate, like a CA, is saved and then the follow-up task
+scheduling fails because of an outage, then the task will simply be re-added
+when Krill restarts.
 
 AggregateStore
 --------------
@@ -354,7 +361,7 @@ where
     /// Send a command to the latest aggregate referenced by the handle in the command.
     ///
     /// This will:
-    /// - Retrieve the latest aggregate for this command.
+    /// - Wait for a lock for the latest aggregate for this command.
     /// - Call the A::process_command function
     /// on success:
     ///   - call pre-save listeners with events
@@ -384,68 +391,67 @@ explain its inner workings:
 pub struct AggregateStore<A: Aggregate> {
     kv: KeyValueStore,
     cache: RwLock<HashMap<Handle, Arc<A>>>,
+    history_cache: Option<Mutex<HashMap<MyHandle, Vec<CommandHistoryRecord>>>>,
     pre_save_listeners: Vec<Arc<dyn PreSaveEventListener<A>>>,
     post_save_listeners: Vec<Arc<dyn PostSaveEventListener<A>>>,
-    outer_lock: RwLock<()>,
 }
 ```
 
-- Locking transactions
+- Applying changes
 
-First of all, note the presence of `outer_lock`. This is used a transactional
-lock, across ALL aggregates. The `AggregateStore` will hold a write lock during
-any updates, i.e. when an `Aggregate` is added, or when a command is sent to it.
-And it will use a read lock for other operations.
+ALL changes to Aggregates, like `CertAuth` are done through the `command` function.
+This function waits for a lock (using flock mentioned earlier) to ensure that
+all changes to the Aggregate are applied sequentially.
 
-This is not the most efficient way of doing things, and it should be revised
-in future - especially when non-disk-based `KeyValueStore` options come into
-play.
+First the `Aggregate` is retrieved from the in memory cache if present. If there
+is no cached instance then latest snapshot is retrieved from storage instead. If
+there is also no snapshot, then the INIT command (i.e. with version 0) is retrieved
+and applied instead. Then the key value store is queried for follow-up `StoredCommand`
+values (for the version of the `Aggregate`) which are then applied. Note that
+this would mean, in a possible cluster set up that guarantees locking, that even
+if a cluster node is behind the other, it will simply find the missing updates.
 
-Locking across all `Aggregate` instances on updates could be optimized already.
-We could have separate locks for each instead, but we would need to manage these
-locks when new instances are added or removed, and it does not really matter
-in real terms of performance today. So, it is just a simple implementation for now.
-
-Another thing worth mentioning here is that we keep a key value pair for each
-`Aggregate` that describes its current version information. The structure is as
-follows:
-
-```rust
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct StoredValueInfo {
-    pub snapshot_version: u64,
-    pub last_event: u64,
-    pub last_command: u64,
-    pub last_update: Time,
-}
-```
+Once the latest `Aggregate` has been retrieved, the `Command` is sent to it. Note
+that this `Command` is not a `StoredCommand`. `Command` contains the intent for a change,
+while `StoredCommand` contains the result of such a change. The `Aggregate` is responsible
+for verifying the command and it can return with: an error, no effect, or a vec
+of change events.
 
 If a command has no effect, i.e. there is no error and no change, then it is
-simply forgotten. But, if a command resulted in changes, or an error, then
-it is saved. In case of an error we simply save the command and a description
-of the error. In case of success we save the command and all events. Whenever
-a command is saved the `last_command` field is updated. If the command was
-successful then the `last_event` and `last_update` values are also updated.
+simply forgotten.
 
-- Storing / Retrieving
+If a command has an effect then a `StoredCommand` is created that contains a
+storable representation of the command (e.g. certain values in a command, like
+an `Arc<Signer>`, or `Arc<Config>` are not included) and either the error or
+a Vec of Events. This `StoredCommand` gets a unique key name based on the
+version of the `Aggregate` that it affects.
 
-The `AggregateStore` uses a `KeyValueStore` to save/retrieve key value pairs.
-Commands and events are saved and retrieved this way. The `AggregateStore`
-uses a strategy for key naming - which is probably too detailed for this
-documentation. Values are saved/retrieved using JSON (`serde_json`). In
-addition to commands and events we also save a current, and backup snapshot
-for each `Aggregate`, and the `self.cache` is updated.
+If there should be an existing key-value pair for this `StoredCommand`, then
+this indicates that the locking mechanism failed somehow. This should not happen,
+but if it did, then the command is NOT saved. Instead Krill exits with an error
+message.
 
-When an `AggregateStore` needs to get an `Aggregate` it will first retrieve
-the latest `StoredValueInfo` from the `KeyValueStore`. Then it will try to
-get the `Aggregate` from its `self.cache`.
+But if all is well (as expected), then the command with events is applied
+to the aggregate. Note that this just updates its version in case of a command
+that resulted in an error. The in-memory cached aggregate is updated to
+help performance when retrieving it later. Then the command is saved.
 
-If the `AggregateStore` cannot find an entry in the cache then it will try
-to rebuilt the `Aggregate` by retrieving and deserializing the current
-snapshot, and if that fails the backup snapshot, and if that also fails by
-instantiating it using the initialization event (delta-0.xml). 
+- Retrieving
 
-In either case (cache or no cache) it will now verify whether the version of
-the `Aggregate` matches the `latest_event` found in the `StoredValueInfo`.
-If the number is lower, then it will retrieve all missing events from the
-`KeyValueStore` and apply them.
+When retrieving an `Aggregate` for read access Krill actually follows
+the same code path that is used for applying a `Command`, except that in
+this case the underlying function that takes care of locking and retrieving
+the latest Aggregate is called with `None` instead of `Some(command)`, so
+it simply returns without trying to apply any changes. This ensures however,
+that the same locking rules are observed in both cases and allows us to
+avoid code duplication (thus increasing the loci for bugs).
+
+- Snapshots
+
+Note that we do not update the full snapshot on every change because this
+could create a performance issue in cases where aggregates are big (e.g. a
+CA with many children or objects) and serialization takes a long time. Instead,
+updating the snapshots is done daily through a different code path from the `Scheduler`.
+See `Task::UpdateSnapshots`. This code, again, actually uses the same underlying
+function as above to retrieve the snapshot, this time setting the `save_snapshot`
+parameter to true to ensure that the snapshot is saved.
