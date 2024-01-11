@@ -106,6 +106,7 @@ mod tests {
                     tal_https: tal_https.clone(),
                     tal_rsync: tal_rsync.clone(),
                     private_key_pem: Some(import_key_pem.to_string()),
+                    ta_mft_nr_override: Some(42),
                     timing,
                     signer: signer.clone(),
                 },
@@ -119,9 +120,9 @@ mod tests {
             proxy = ta_proxy_store.command(add_signer_cmd).unwrap();
 
             // The initial signer starts off with a TA certificate
-            // and a CRL and manifest with revision number 1.
+            // and a CRL and manifest with revision number 42, as specified in the init.
             let ta_objects = proxy.get_trust_anchor_objects().unwrap();
-            assert_eq!(ta_objects.revision().number(), 1);
+            assert_eq!(ta_objects.revision().number(), 42);
 
             let ta_cert_details = proxy.get_ta_details().unwrap();
             assert_eq!(ta_cert_details.tal().uris(), &tal_https);
@@ -139,6 +140,7 @@ mod tests {
                 &signer_handle,
                 signed_request,
                 timing,
+                Some(55), // override the next manifest number again
                 signer,
                 &actor,
             );
@@ -153,9 +155,9 @@ mod tests {
                 .unwrap();
 
             // The TA should have published again, the revision used for manifest and crl will
-            // have been updated.
+            // have been updated to the overridden number.
             let ta_objects = proxy.get_trust_anchor_objects().unwrap();
-            assert_eq!(ta_objects.revision().number(), 2);
+            assert_eq!(ta_objects.revision().number(), 55);
 
             // We still need to test some higher order functions:
             // - add child

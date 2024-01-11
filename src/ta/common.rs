@@ -70,8 +70,17 @@ pub struct TrustAnchorObjects {
 
 impl TrustAnchorObjects {
     /// Creates a new TrustAnchorObjects for the signing certificate.
-    pub fn create(signing_cert: &ReceivedCert, next_update_weeks: i64, signer: &KrillSigner) -> KrillResult<Self> {
-        let revision = ObjectSetRevision::new(1, Self::this_update(), Self::next_update(next_update_weeks));
+    pub fn create(
+        signing_cert: &ReceivedCert,
+        initial_number: u64,
+        next_update_weeks: i64,
+        signer: &KrillSigner,
+    ) -> KrillResult<Self> {
+        let revision = ObjectSetRevision::new(
+            initial_number,
+            Self::this_update(),
+            Self::next_update(next_update_weeks),
+        );
         let key_identifier = signing_cert.key_identifier();
         let base_uri = signing_cert.ca_repository().clone();
         let revocations = Revocations::default();
@@ -104,9 +113,11 @@ impl TrustAnchorObjects {
         &mut self,
         signing_cert: &ReceivedCert,
         next_update_weeks: i64,
+        mft_number_override: Option<u64>,
         signer: &KrillSigner,
     ) -> KrillResult<()> {
-        self.revision.next(Self::next_update(next_update_weeks));
+        self.revision
+            .next(Self::next_update(next_update_weeks), mft_number_override);
 
         let signing_key = signing_cert.key_identifier();
 

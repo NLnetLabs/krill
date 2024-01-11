@@ -73,6 +73,7 @@ pub struct TrustAnchorSignerInitCommandDetails {
     pub tal_https: Vec<uri::Https>,
     pub tal_rsync: uri::Rsync,
     pub private_key_pem: Option<String>,
+    pub ta_mft_nr_override: Option<u64>,
     pub timing: TaTimingConfig,
     pub signer: Arc<KrillSigner>,
 }
@@ -137,7 +138,12 @@ impl fmt::Display for TrustAnchorSignerEvent {
 // Commands
 #[derive(Clone, Debug)]
 pub enum TrustAnchorSignerCommandDetails {
-    TrustAnchorSignerRequest(TrustAnchorSignedRequest, TaTimingConfig, Arc<KrillSigner>),
+    TrustAnchorSignerRequest {
+        signed_request: TrustAnchorSignedRequest,
+        ta_timing_config: TaTimingConfig,
+        ta_mft_number_override: Option<u64>,
+        signer: Arc<KrillSigner>,
+    },
 }
 
 impl eventsourcing::CommandDetails for TrustAnchorSignerCommandDetails {
@@ -158,15 +164,21 @@ impl fmt::Display for TrustAnchorSignerCommandDetails {
 impl TrustAnchorSignerCommand {
     pub fn make_process_request_command(
         id: &TrustAnchorHandle,
-        request: TrustAnchorSignedRequest,
-        timing: TaTimingConfig,
+        signed_request: TrustAnchorSignedRequest,
+        ta_timing_config: TaTimingConfig,
+        ta_mft_number_override: Option<u64>,
         signer: Arc<KrillSigner>,
         actor: &Actor,
     ) -> TrustAnchorSignerCommand {
         TrustAnchorSignerCommand::new(
             id,
             None,
-            TrustAnchorSignerCommandDetails::TrustAnchorSignerRequest(request, timing, signer),
+            TrustAnchorSignerCommandDetails::TrustAnchorSignerRequest {
+                signed_request,
+                ta_timing_config,
+                ta_mft_number_override,
+                signer,
+            },
             actor,
         )
     }
@@ -182,8 +194,8 @@ pub enum TrustAnchorSignerStorableCommand {
 impl From<&TrustAnchorSignerCommandDetails> for TrustAnchorSignerStorableCommand {
     fn from(details: &TrustAnchorSignerCommandDetails) -> Self {
         match details {
-            TrustAnchorSignerCommandDetails::TrustAnchorSignerRequest(request, _, _) => {
-                TrustAnchorSignerStorableCommand::TrustAnchorSignerRequest(request.clone())
+            TrustAnchorSignerCommandDetails::TrustAnchorSignerRequest { signed_request, .. } => {
+                TrustAnchorSignerStorableCommand::TrustAnchorSignerRequest(signed_request.clone())
             }
         }
     }
@@ -258,7 +270,12 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
             timing.certificate_validity_years,
             &signer,
         )?;
-        let objects = TrustAnchorObjects::create(ta_cert_details.cert(), timing.mft_next_update_weeks, &signer)?;
+        let objects = TrustAnchorObjects::create(
+            ta_cert_details.cert(),
+            cmd.ta_mft_nr_override.unwrap_or(1),
+            timing.mft_next_update_weeks,
+            &signer,
+        )?;
 
         Ok(TrustAnchorSignerInitEvent {
             id,
@@ -305,9 +322,12 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
         }
 
         match command.into_details() {
-            TrustAnchorSignerCommandDetails::TrustAnchorSignerRequest(request, timing, signer) => {
-                self.process_signer_request(request, timing, &signer)
-            }
+            TrustAnchorSignerCommandDetails::TrustAnchorSignerRequest {
+                signed_request,
+                ta_timing_config,
+                ta_mft_number_override,
+                signer,
+            } => self.process_signer_request(signed_request, ta_timing_config, ta_mft_number_override, &signer),
         }
     }
 }
@@ -391,13 +411,14 @@ impl TrustAnchorSigner {
     /// Process a request.
     fn process_signer_request(
         &self,
-        request: TrustAnchorSignedRequest,
-        timing: TaTimingConfig,
+        signed_request: TrustAnchorSignedRequest,
+        ta_timing_config: TaTimingConfig,
+        ta_mft_number_override: Option<u64>,
         signer: &KrillSigner,
     ) -> KrillResult<Vec<TrustAnchorSignerEvent>> {
         // Let's first make sure this request is valid
         // and the 'content' is not tampered with.
-        request.validate(&self.proxy_id)?;
+        signed_request.validate(&self.proxy_id)?;
 
         let mut objects = self.objects.clone();
 
@@ -406,7 +427,7 @@ impl TrustAnchorSigner {
         let signing_cert = self.ta_cert_details.cert();
         let ta_rcn = ta_resource_class_name();
 
-        for child_request in &request.content().child_requests {
+        for child_request in &signed_request.content().child_requests {
             let mut responses = HashMap::new();
 
             for (key_id, provisioning_request) in child_request.requests.clone() {
@@ -421,7 +442,8 @@ impl TrustAnchorSigner {
                             )));
                         }
 
-                        let validity = SignSupport::sign_validity_weeks(timing.issued_certificate_validity_weeks);
+                        let validity =
+                            SignSupport::sign_validity_weeks(ta_timing_config.issued_certificate_validity_weeks);
                         let issue_resources = limit.apply_to(&child_request.resources)?;
 
                         // Create issued certificate
@@ -487,22 +509,27 @@ impl TrustAnchorSigner {
             child_responses.insert(child_request.child.clone(), responses);
         }
 
-        objects.republish(signing_cert, timing.mft_next_update_weeks, signer)?;
+        objects.republish(
+            signing_cert,
+            ta_timing_config.mft_next_update_weeks,
+            ta_mft_number_override,
+            signer,
+        )?;
 
         let response = TrustAnchorSignerResponse {
-            nonce: request.content().nonce.clone(),
+            nonce: signed_request.content().nonce.clone(),
             objects,
             child_responses,
         }
         .sign(
-            timing.signed_message_validity_days,
+            ta_timing_config.signed_message_validity_days,
             self.id.public_key().key_identifier(),
             signer,
         )?;
 
         let exchange = TrustAnchorProxySignerExchange {
             time: Time::now(),
-            request,
+            request: signed_request,
             response,
         };
 

@@ -1016,7 +1016,7 @@ impl KeyObjectSet {
             self.revision.next_update.to_rfc3339()
         );
 
-        self.revision.next(timing.publish_next());
+        self.revision.next(timing.publish_next(), None);
 
         self.revocations.remove_expired();
         let signing_key = self.signing_cert.key_identifier();
@@ -1101,8 +1101,12 @@ impl ObjectSetRevision {
         }
     }
 
-    pub fn next(&mut self, next_update: Time) {
-        self.number += 1;
+    pub fn next(&mut self, next_update: Time, mft_number_override: Option<u64>) {
+        if let Some(forced_next) = mft_number_override {
+            self.number = forced_next;
+        } else {
+            self.number += 1;
+        }
         self.this_update = Time::five_minutes_ago();
         self.next_update = next_update;
     }

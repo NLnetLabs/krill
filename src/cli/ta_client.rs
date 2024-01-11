@@ -148,7 +148,10 @@ pub struct SignerCommand {
 pub enum SignerCommandDetails {
     Init(SignerInitInfo),
     ShowInfo,
-    ProcessRequest(TrustAnchorSignedRequest),
+    ProcessRequest {
+        signed_request: TrustAnchorSignedRequest,
+        ta_mft_number_override: Option<u64>,
+    },
     ShowLastResponse,
     ShowExchanges,
 }
@@ -160,6 +163,7 @@ pub struct SignerInitInfo {
     tal_https: Vec<uri::Https>,
     tal_rsync: uri::Rsync,
     private_key_pem: Option<String>,
+    ta_mft_nr_override: Option<u64>,
 }
 
 impl TrustAnchorClientCommand {
@@ -405,6 +409,13 @@ impl TrustAnchorClientCommand {
                     .value_name("path")
                     .help("[OPTIONAL] Import an existing private key in PEM format")
                     .required(false),
+            )
+            .arg(
+                Arg::with_name("initial_manifest_number")
+                    .long("initial_manifest_number")
+                    .value_name("number")
+                    .help("[OPTIONAL] Override the initial manifest number (defaults to 1)")
+                    .required(false),
             );
 
         app.subcommand(sub)
@@ -422,15 +433,22 @@ impl TrustAnchorClientCommand {
         sub = Self::add_config_arg(sub);
         sub = Self::add_format_arg(sub);
 
-        sub = sub.arg(
-            Arg::with_name("request")
-                .long("request")
-                .short("r")
-                .value_name("file")
-                .help("Path to TA Proxy request file (JSON)")
-                .required(true),
-        );
-
+        sub = sub
+            .arg(
+                Arg::with_name("request")
+                    .long("request")
+                    .short("r")
+                    .value_name("file")
+                    .help("Path to TA Proxy request file (JSON)")
+                    .required(true),
+            )
+            .arg(
+                Arg::with_name("ta_mft_number_override")
+                    .long("ta_mft_number_override")
+                    .value_name("number")
+                    .help("[OPTIONAL] Override the next manifest number (defaults to last + 1)")
+                    .required(false),
+            );
         app.subcommand(sub)
     }
 
@@ -727,6 +745,13 @@ impl TrustAnchorClientCommand {
                 .map_err(|_| TaClientError::Other(format!("Invalid rsync uri: {}", rsync_str)))?
         };
 
+        let ta_mft_nr_override = if let Some(number) = matches.value_of("initial_manifest_number") {
+            let nr = u64::from_str(number).map_err(|_| TaClientError::other("Invalid manifest number, must be >1"))?;
+            Some(nr)
+        } else {
+            None
+        };
+
         let private_key_pem = if let Some(path) = matches.value_of("private_key_pem") {
             let bytes = Self::read_file_arg(path)?;
             let pem = std::str::from_utf8(&bytes)
@@ -741,6 +766,7 @@ impl TrustAnchorClientCommand {
             repo_info,
             tal_https,
             tal_rsync,
+            ta_mft_nr_override,
             private_key_pem,
         };
         let details = SignerCommandDetails::Init(info);
@@ -766,12 +792,23 @@ impl TrustAnchorClientCommand {
     fn parse_matches_signer_process(matches: &ArgMatches) -> Result<Self, TaClientError> {
         let config = Self::parse_config(matches)?;
         let format = Self::parse_format(matches)?;
-        let request = Self::read_json(matches.value_of("request").unwrap())?;
+        let signed_request = Self::read_json(matches.value_of("request").unwrap())?;
+
+        let ta_mft_number_override = if let Some(nr_str) = matches.value_of("ta_mft_number_override") {
+            let nr = u64::from_str(nr_str)
+                .map_err(|_| TaClientError::other("Invalid number for ta_mft_number_override, must be >1"))?;
+            Some(nr)
+        } else {
+            None
+        };
 
         Ok(TrustAnchorClientCommand::Signer(SignerCommand {
             config,
             format,
-            details: SignerCommandDetails::ProcessRequest(request),
+            details: SignerCommandDetails::ProcessRequest {
+                signed_request,
+                ta_mft_number_override,
+            },
         }))
     }
 
@@ -877,7 +914,10 @@ impl TrustAnchorClient {
                 match signer_command.details {
                     SignerCommandDetails::Init(info) => signer_manager.init(info),
                     SignerCommandDetails::ShowInfo => signer_manager.show(),
-                    SignerCommandDetails::ProcessRequest(request) => signer_manager.process(request),
+                    SignerCommandDetails::ProcessRequest {
+                        signed_request,
+                        ta_mft_number_override,
+                    } => signer_manager.process(signed_request, ta_mft_number_override),
                     SignerCommandDetails::ShowLastResponse => signer_manager.show_last_response(),
                     SignerCommandDetails::ShowExchanges => signer_manager.show_exchanges(),
                 }
@@ -1032,6 +1072,7 @@ impl TrustAnchorSignerManager {
                     tal_https: info.tal_https,
                     tal_rsync: info.tal_rsync,
                     private_key_pem: info.private_key_pem,
+                    ta_mft_nr_override: info.ta_mft_nr_override,
                     timing: self.config.timing_config,
                     signer: self.signer.clone(),
                 },
@@ -1050,11 +1091,16 @@ impl TrustAnchorSignerManager {
         Ok(TrustAnchorClientApiResponse::TrustAnchorProxySignerInfo(info))
     }
 
-    fn process(&self, request: TrustAnchorSignedRequest) -> Result<TrustAnchorClientApiResponse, TaClientError> {
+    fn process(
+        &self,
+        signed_request: TrustAnchorSignedRequest,
+        ta_mft_number_override: Option<u64>,
+    ) -> Result<TrustAnchorClientApiResponse, TaClientError> {
         let cmd = TrustAnchorSignerCommand::make_process_request_command(
             &self.ta_handle,
-            request,
+            signed_request,
             self.config.timing_config,
+            ta_mft_number_override,
             self.signer.clone(),
             &self.actor,
         );
