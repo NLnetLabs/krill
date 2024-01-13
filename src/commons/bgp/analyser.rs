@@ -44,14 +44,17 @@ impl BgpAnalyser {
 
     pub async fn update(&self) -> Result<bool, BgpAnalyserError> {
         if let Some(loader) = &self.dump_loader {
-            let mut seen = self.seen.write().await;
-            if let Some(last_time) = seen.last_checked() {
-                if (last_time + Duration::minutes(BGP_RIS_REFRESH_MINUTES)) > Time::now() {
-                    trace!("Will not check BGP Ris Dumps until the refresh interval has passed");
-                    return Ok(false); // no need to update yet
+            {
+                let seen = self.seen.read().await;
+                if let Some(last_time) = seen.last_checked() {
+                    if (last_time + Duration::minutes(BGP_RIS_REFRESH_MINUTES)) > Time::now() {
+                        trace!("Will not check BGP Ris Dumps until the refresh interval has passed");
+                        return Ok(false); // no need to update yet
+                    }
                 }
             }
             let announcements = loader.download_updates().await?;
+            let mut seen = self.seen.write().await;
             if seen.equivalent(&announcements) {
                 debug!("BGP Ris Dumps unchanged");
                 seen.update_checked();
