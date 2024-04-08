@@ -25,6 +25,8 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 # Changelog
 
+## Unreleased next version
+
 ## 0.14.4 'A Flock of Krill'
 
 This release fixes the following issues:
