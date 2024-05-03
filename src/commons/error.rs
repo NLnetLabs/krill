@@ -155,7 +155,7 @@ impl From<Error> for ApiAuthError {
 
 /// Wraps an error so horrible to contemplate that it should result in
 /// a server crash, as it would have lost its reason to live.
-/// 
+///
 /// Note that we do not provide any From<Error> for this in an attempt
 /// to ensure that this is only ever used explicitly and when it is
 /// appropriate.
@@ -484,7 +484,7 @@ impl fmt::Display for Error {
             Error::AspaCustomerAsProvider(_ca, asn) => write!(f, "ASPA for customer AS '{}' cannot have that AS as provider", asn),
             Error::AspaProvidersDuplicates(_ca, asn) => write!(f, "ASPA for customer AS '{}' cannot have duplicate providers", asn),
             Error::AspaCustomerUnknown(_ca, asn) => write!(f, "No current ASPA exists for customer AS '{}'", asn),
-            
+
             //-----------------------------------------------------------------
             // BGPSec
             //-----------------------------------------------------------------

@@ -37,8 +37,8 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            ApiRepositoryContact, AspaDefinitionUpdates, BgpStats, CommandHistoryCriteria, ParentCaReq, PublisherList,
-            RepositoryContact, RoaConfigurationUpdates, RtaName, Token,
+            ApiRepositoryContact, AspaDefinitionUpdates, BgpStats, ChildInfo, CommandHistoryCriteria, ParentCaReq,
+            PublisherList, RepositoryContact, RoaConfigurationUpdates, RtaName, Token,
         },
         bgp::BgpAnalysisAdvice,
         error::Error,
@@ -1460,6 +1460,29 @@ async fn api_ca_child_import(req: Request, ca: CaHandle) -> RoutingResult {
     })
 }
 
+async fn api_ca_my_children(req: Request, ca: CaHandle) -> RoutingResult {
+    aa!(
+        req,
+        Permission::CA_READ,
+        Handle::from(&ca),
+        render_json_res(
+            async move {
+                let mut statuses = req.state().ca_status(&ca).await?.children().clone();
+                let children = req.state().ca_children_show(&ca).await?;
+                let children = children
+                    .into_iter()
+                    .map(|(ch, child)| ChildInfo {
+                        status: statuses.remove(&ch),
+                        child,
+                    })
+                    .collect::<Vec<_>>();
+                Ok(children)
+            }
+            .await
+        )
+    )
+}
+
 async fn api_ca_stats_child_connections(req: Request, ca: CaHandle) -> RoutingResult {
     aa!(
         req,
@@ -1674,6 +1697,7 @@ async fn api_ca_children(req: Request, path: &mut RequestPath, ca: CaHandle) -> 
         },
         None => match *req.method() {
             Method::POST => api_ca_add_child(req, ca).await,
+            Method::GET => api_ca_my_children(req, ca).await,
             _ => render_unknown_method(),
         },
     }

@@ -1447,6 +1447,16 @@ impl From<ChildStatus> for Option<ChildExchange> {
     }
 }
 
+//------------ ChildInfo -------------------------------------------------
+
+#[derive(serde::Serialize)]
+pub struct ChildInfo {
+    #[serde(flatten)]
+    pub child: ChildCaInfo,
+    #[serde(flatten)]
+    pub status: Option<ChildStatus>,
+}
+
 //------------ ChildExchange -------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

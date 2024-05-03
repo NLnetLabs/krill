@@ -487,6 +487,11 @@ impl KrillServer {
         self.ca_manager.ca_show_child(ca, child).await
     }
 
+    /// Show details for all children under the CA.
+    pub async fn ca_children_show(&self, ca: &CaHandle) -> KrillResult<HashMap<ChildHandle, ChildCaInfo>> {
+        self.ca_manager.ca_show_children(ca).await
+    }
+
     /// Export a child under the CA.
     pub async fn api_ca_child_export(&self, ca: &CaHandle, child: &ChildHandle) -> KrillResult<ExportChild> {
         self.ca_manager.ca_child_export(ca, child).await

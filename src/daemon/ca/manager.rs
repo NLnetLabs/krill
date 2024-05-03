@@ -652,6 +652,15 @@ impl CaManager {
         ca.get_child(child).map(|details| details.clone().into())
     }
 
+    pub async fn ca_show_children(&self, ca: &CaHandle) -> KrillResult<HashMap<ChildHandle, ChildCaInfo>> {
+        trace!("Finding details for all CAs under parent: {}", ca);
+        let ca = self.get_ca(ca).await?;
+        Ok(ca
+            .children()
+            .filter_map(|ch| ca.get_child(ch).ok().map(|child| (ch.clone(), child.clone().into())))
+            .collect())
+    }
+
     /// Export a child. Fails if:
     /// - the child does not exist
     /// - the child has no received certificate
