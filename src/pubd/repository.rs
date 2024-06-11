@@ -555,11 +555,18 @@ impl RepositoryContent {
         jail: uri::Rsync,
         delta: DeltaElements,
     ) -> KrillResult<Vec<RepositoryContentChange>> {
-        // Verifying the delta first.
-        let current_objects = self.objects_for_publisher(&publisher);
-        current_objects.verify_delta(&delta, &jail)?;
+        if !delta.is_empty() {
+            // Verifying the delta first.
+            let current_objects = self.objects_for_publisher(&publisher);
+            current_objects.verify_delta(&delta, &jail)?;
 
-        Ok(vec![RepositoryContentChange::RrdpDeltaStaged { publisher, delta }])
+            Ok(vec![
+                RepositoryContentChange::RrdpDeltaStaged { publisher, delta }
+            ])
+        }
+        else {
+            Ok(vec![])
+        }
     }
 
     /// Update the RRDP state
@@ -1073,20 +1080,34 @@ impl RrdpServer {
     }
 
     /// Checks whether an RRDP update is needed
-    fn update_rrdp_needed(&self, rrdp_updates_config: RrdpUpdatesConfig) -> RrdpUpdateNeeded {
-        if self.staged_elements.is_empty() {
-            debug!("No RRDP update is needed, there are no staged changes");
-            RrdpUpdateNeeded::No
-        } else {
-            let interval = Duration::seconds(rrdp_updates_config.rrdp_delta_interval_min_seconds.into());
+    fn update_rrdp_needed(
+        &self, rrdp_updates_config: RrdpUpdatesConfig
+    ) -> RrdpUpdateNeeded {
+        // Check if there are any staged elements entries with staged
+        // elements. A simple .is_empty() on the map won't do because there
+        // could be (only) entries for publishers containing an empty set of
+        // staged elements.
+        if self.staged_elements.values().any(|el| !el.0.is_empty()) {
+            // There is staged content. Check if it should be published now,
+            // or later.
+            let interval = Duration::seconds(
+                rrdp_updates_config.rrdp_delta_interval_min_seconds.into()
+            );
             let next_update_time = self.last_update + interval;
             if next_update_time > Time::now() {
-                debug!("RRDP update is delayed to: {}", next_update_time.to_rfc3339());
+                debug!("RRDP update is delayed to: {}",
+                    next_update_time.to_rfc3339()
+                );
                 RrdpUpdateNeeded::Later(next_update_time)
-            } else {
+            }
+            else {
                 debug!("RRDP update is needed");
                 RrdpUpdateNeeded::Yes
             }
+        }
+        else {
+            debug!("No RRDP update is needed, there are no staged changes");
+            RrdpUpdateNeeded::No
         }
     }
 
