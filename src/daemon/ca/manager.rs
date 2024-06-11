@@ -332,6 +332,7 @@ impl CaManager {
                 tal_https,
                 tal_rsync,
                 private_key_pem,
+                ta_mft_nr_override: None,
                 timing: self.config.ta_timing,
                 signer: self.signer.clone(),
             };
@@ -1243,7 +1244,7 @@ impl CaManager {
         }
     }
 
-    /// Synchronise the Trust Anchor Proxy with the Signer - it the Signer is local.
+    /// Synchronise the Trust Anchor Proxy with the Signer - if the Signer is local.
     pub async fn sync_ta_proxy_signer_if_possible(&self) -> KrillResult<()> {
         let ta_handle = ta_handle();
 
@@ -1262,6 +1263,7 @@ impl CaManager {
                     &ta_handle,
                     signed_request,
                     self.config.ta_timing,
+                    None, // do not override next manifest number
                     self.signer.clone(),
                     &self.system_actor,
                 );
