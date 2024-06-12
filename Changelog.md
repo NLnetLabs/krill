@@ -16,12 +16,15 @@ Bug fixes
 
 * Prevent empty RRDP delta lists to be produced. ([#1181])
 * Correctly encode empty revocation lists in CRLs. (via [rpki-rs#295])
+* Allow read access to the RIS dump while downloading a new dump.
+  ([#1179])
 
 Other changes
 
 * The minimum supported Rust version is now 1.70.0. ([#1198])
 
 [#1178]: https://github.com/NLnetLabs/krill/pull/1178
+[#1179]: https://github.com/NLnetLabs/krill/pull/1179
 [#1181]: https://github.com/NLnetLabs/krill/pull/1181
 [#1198]: https://github.com/NLnetLabs/krill/pull/1198
 [rpki-rs#295]: https://github.com/NLnetLabs/rpki-rs/pull/295
