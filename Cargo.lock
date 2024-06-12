@@ -1139,7 +1139,7 @@ name = "krill"
 version = "0.14.5-dev"
 dependencies = [
  "backoff",
- "base64 0.13.1",
+ "base64 0.22.1",
  "basic-cookies",
  "bytes",
  "chrono",

@@ -8,6 +8,8 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::{fmt, str};
 
+use base64::engine::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
 use bytes::Bytes;
 use chrono::{Duration, TimeZone, Utc};
 use rpki::ca::publication::{PublishDelta, PublishDeltaElement};
@@ -1062,8 +1064,13 @@ pub struct ParentStatusIssuingCert {
 
 impl From<&SigningCert> for ParentStatusIssuingCert {
     fn from(signing: &SigningCert) -> Self {
-        let cert = base64::encode(signing.cert().to_captured().as_slice());
-        let cert_pem = format!("-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n", cert);
+        let cert = BASE64_ENGINE.encode(
+            signing.cert().to_captured().as_slice()
+        );
+        let cert_pem = format!(
+            "-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n",
+            cert
+        );
 
         ParentStatusIssuingCert {
             uri: signing.url().clone(),
@@ -1080,8 +1087,13 @@ pub struct ParentStatusCert {
 
 impl From<&IssuedCert> for ParentStatusCert {
     fn from(issued: &IssuedCert) -> Self {
-        let cert = base64::encode(issued.cert().to_captured().as_slice());
-        let cert_pem = format!("-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n", cert);
+        let cert = BASE64_ENGINE.encode(
+            issued.cert().to_captured().as_slice()
+        );
+        let cert_pem = format!(
+            "-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n",
+            cert
+        );
         ParentStatusCert {
             uri: issued.uri().clone(),
             cert_pem,
