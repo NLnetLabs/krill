@@ -15,6 +15,7 @@ New
 Bug fixes
 
 * Prevent empty RRDP delta lists to be produced. ([#1181])
+* Correctly encode empty revocation lists in CRLs. (via [rpki-rs#295])
 
 Other changes
 
@@ -23,6 +24,7 @@ Other changes
 [#1178]: https://github.com/NLnetLabs/krill/pull/1178
 [#1181]: https://github.com/NLnetLabs/krill/pull/1181
 [#1198]: https://github.com/NLnetLabs/krill/pull/1198
+[rpki-rs#295]: https://github.com/NLnetLabs/rpki-rs/pull/295
 
 
 ## Previous releases
