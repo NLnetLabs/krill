@@ -2127,8 +2127,7 @@ dependencies = [
 [[package]]
 name = "rpki"
 version = "0.18.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7102b9a305889ef344e7b010dd256a53055ea1d436a7414277db053000f250ad"
+source = "git+https://github.com/nLnetLabs/rpki-rs#bdf9a3287badd1ab3929d962d6b88c851e6eaaa2"
 dependencies = [
  "base64 0.22.1",
  "bcder",
