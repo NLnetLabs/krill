@@ -602,7 +602,10 @@ impl KrillClient {
 
             let user_id = details.id().nfkc().collect::<String>();
             let password = password.trim().nfkc().collect::<String>();
-            let params = scrypt::Params::new(PW_HASH_LOG_N, PW_HASH_R, PW_HASH_P).unwrap();
+            let params = scrypt::Params::new(
+                PW_HASH_LOG_N, PW_HASH_R, PW_HASH_P,
+                scrypt::Params::RECOMMENDED_LEN,
+            ).unwrap();
 
             // hash twice with two different salts
             // hash first with a salt the client browser knows how to construct based on the users id and a site

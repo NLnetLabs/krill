@@ -145,7 +145,10 @@ impl ConfigFileAuthProvider {
 
             // hash twice with two different salts
             // legacy hashing strategy to be compatible with lagosta
-            let params = scrypt::Params::new(PW_HASH_LOG_N, PW_HASH_R, PW_HASH_P).unwrap();
+            let params = scrypt::Params::new(
+                PW_HASH_LOG_N, PW_HASH_R, PW_HASH_P,
+                scrypt::Params::RECOMMENDED_LEN,
+            ).unwrap();
             let weak_salt = format!("krill-lagosta-{username}");
             let weak_salt = weak_salt.nfkc().collect::<String>();
 
