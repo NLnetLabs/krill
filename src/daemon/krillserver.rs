@@ -4,7 +4,7 @@ use std::{collections::HashMap, path::PathBuf, str::FromStr, sync::Arc};
 use bytes::Bytes;
 use chrono::Duration;
 
-use futures::future::try_join_all;
+use futures_util::future::try_join_all;
 
 use rpki::{
     ca::{
