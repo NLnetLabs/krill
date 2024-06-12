@@ -118,20 +118,24 @@ pub struct Config {
 
 impl Config {
     pub fn parse(file_path: &str) -> Result<Self, ConfigError> {
-        let mut v = Vec::new();
+        let mut v = String::new();
 
         let mut file = File::open(file_path)
             .map_err(|e| ConfigError::Other(format!("Could not read config file '{}': {}", file_path, e)))?;
 
-        file.read_to_end(&mut v)
+        file.read_to_string(&mut v)
             .map_err(|e| ConfigError::Other(format!("Could not read config file '{}': {}", file_path, e)))?;
 
-        Self::parse_slice(v.as_slice())
+        Self::parse_str(&v)
     }
 
-    fn parse_slice(slice: &[u8]) -> Result<Self, ConfigError> {
+    fn parse_str(s: &str) -> Result<Self, ConfigError> {
         let mut config: Config =
-            toml::from_slice(slice).map_err(|e| ConfigError::Other(format!("Error parsing config file: {}", e)))?;
+            toml::from_str(s).map_err(|e| {
+                ConfigError::Other(
+                    format!("Error parsing config file: {}", e)
+                )
+            })?;
 
         config.resolve_signers();
         // ignore init errors
@@ -315,7 +319,7 @@ mod tests {
     fn initialise_default_signers() {
         test::test_in_memory(|_storage_uri| {
             let config_string = include_str!("../../test-resources/ta/ta.conf");
-            let config = Config::parse_slice(config_string.as_bytes()).unwrap();
+            let config = Config::parse_str(config_string).unwrap();
             config.signer().unwrap();
         })
     }
