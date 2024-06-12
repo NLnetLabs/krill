@@ -592,7 +592,9 @@ impl KrillClient {
         let (password_hash, salt) = {
             use scrypt::scrypt;
 
-            let password = rpassword::read_password_from_tty(Some("Enter the password to hash: ")).unwrap();
+            let password = rpassword::prompt_password(
+                "Enter the password to hash: "
+            ).unwrap();
 
             // The scrypt-js NPM documentation (https://www.npmjs.com/package/scrypt-js) says:
             //   "TL;DR - either only allow ASCII characters in passwords, or use
