@@ -1501,12 +1501,11 @@ impl Config {
                     .map(ToString::to_string)
             })
             .unwrap_or_else(|| String::from("krill"));
-        let pid = unsafe { libc::getpid() };
         let formatter = syslog::Formatter3164 {
             facility,
             hostname: None,
             process,
-            pid,
+            pid: std::process::id(),
         };
         let logger = syslog::unix(formatter.clone())
             .or_else(|_| syslog::tcp(formatter.clone(), ("127.0.0.1", 601)))

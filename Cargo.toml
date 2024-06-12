@@ -29,7 +29,7 @@ chrono          = { version = "0.4", features = ["serde"] }
 clap            = "^2.33"
 cryptoki        = { version = "^0.3", optional = true }
 cryptoki-sys    = { version = "=0.1.4", optional = true } # pin cryptoki-sys because of compilation issues on various systems
-fern            = { version = "0.6.2", features = ["syslog-4"] }
+fern            = { version = "0.6.2", features = ["syslog-6"] }
 futures-util    = "^0.3"
 fslock          = "0.2.1"
 hex             = "0.4"
@@ -61,7 +61,7 @@ toml            = "0.8.14"
 unicode-normalization = { version = "^0.1", optional = true }
 url             = { version = "2.3.1", features = ["serde"] }
 urlparse        = { version = "^0.7", optional = true }
-uuid            = { version = "1.1", features = ["v4"] } # keep this in sync with rpki-rs
+uuid            = { version = "1.1", features = ["v4"] }
 
 # Disable compiler optimizations for the pkcs11 crate because otherwise with a release build the
 # `pReserved = ptr::null_mut()` assignment done by `CK_C_INITIALIZE_ARGS::default()` appears to be optimized out. This
@@ -71,8 +71,7 @@ uuid            = { version = "1.1", features = ["v4"] } # keep this in sync wit
 # opt-level = 0
 
 [target.'cfg(unix)'.dependencies]
-libc   = "^0.2"
-syslog = "^4.0"
+syslog = "^6.1.1"
 
 [features]
 default = ["multi-user", "hsm"]
