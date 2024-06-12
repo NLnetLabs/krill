@@ -26,6 +26,7 @@ include:
   - image: "centos:7"
     extra_build_args: "--features static-openssl"
     rpm_systemd_service_unit_file: pkg/common/krill-ubuntu-xenial.krill.service
+    rpm_extra_build_packages: "perl-core"
 
   # CentOS 8 became EOL and is in theory still usable as a build container as there is still a Docker image
   # available, and package installation can be done by switching the yum config in the container to use packages
