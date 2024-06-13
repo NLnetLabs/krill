@@ -5,9 +5,6 @@ use crate::{
     daemon::http::{HttpResponse, Request, RoutingResult},
 };
 
-use base64::engine::Engine as _;
-use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
-
 #[cfg(feature = "multi-user")]
 use {
     crate::daemon::{auth::LoggedInUser, http::server::render_error_redirect},
@@ -30,6 +27,9 @@ fn build_auth_redirect_location(user: LoggedInUser) -> Result<String, Error> {
     fn b64_encode_attributes_with_mapped_error(
         a: &HashMap<String, String>
     ) -> Result<String, Error> {
+        use base64::engine::Engine as _;
+        use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
+
         Ok(BASE64_ENGINE.encode(
             serde_json::to_string(a).map_err(|err| {
                 Error::custom(err.to_string())
