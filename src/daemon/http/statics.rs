@@ -1,3 +1,4 @@
+use http_body_util::{Either, Empty};
 use hyper::{Method, StatusCode};
 
 use crate::daemon::http::RoutingResult;
@@ -10,7 +11,7 @@ pub async fn statics(req: Request) -> RoutingResult {
                 hyper::Response::builder()
                     .status(StatusCode::FOUND)
                     .header("location", "/ui")
-                    .body(hyper::Body::empty())
+                    .body(Either::Left(Empty::new()))
                     .unwrap(),
             )),
             "/ui" => Ok(HttpResponse::html(INDEX)),

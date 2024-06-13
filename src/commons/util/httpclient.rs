@@ -61,7 +61,9 @@ fn report_delete(uri: &str, content_type: Option<&str>, token: Option<&Token>) {
 }
 
 /// Gets the Bearer token from the request header, if present.
-pub fn get_bearer_token(request: &hyper::Request<hyper::Body>) -> Option<Token> {
+pub fn get_bearer_token(
+    request: &hyper::Request<hyper::body::Incoming>
+) -> Option<Token> {
     request
         .headers()
         .get(hyper::header::AUTHORIZATION)

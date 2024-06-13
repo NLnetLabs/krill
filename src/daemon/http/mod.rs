@@ -1,9 +1,14 @@
-use std::{convert::TryInto, io, str::from_utf8, str::FromStr};
+use std::{io, str::from_utf8, str::FromStr};
+use std::convert::TryInto;
 
-use bytes::{Buf, BufMut, Bytes};
+use bytes::Bytes;
 use serde::{de::DeserializeOwned, Serialize};
 
-use hyper::{body::HttpBody, header::USER_AGENT, http::uri::PathAndQuery, Body, HeaderMap, Method, StatusCode};
+use http_body_util::{BodyExt, Either, Empty, Full, Limited};
+use hyper::{HeaderMap, Method, StatusCode};
+use hyper::body::Body;
+use hyper::header::USER_AGENT;
+use hyper::http::uri::PathAndQuery;
 
 use rpki::ca::{provisioning, publication};
 
@@ -68,6 +73,13 @@ impl AsRef<str> for ContentType {
     }
 }
 
+//------------ HyperRequest and HyperResponse --------------------------------
+
+pub type HyperRequest = hyper::Request<hyper::body::Incoming>;
+pub type HyperResponseBody = Either<Empty<Bytes>, Full<Bytes>>;
+pub type HyperResponse = hyper::Response<HyperResponseBody>;
+
+
 //----------- Response -------------------------------------------------------
 
 struct Response {
@@ -102,7 +114,13 @@ impl Response {
             builder = builder.header("WWW-Authenticate", "Bearer");
         }
 
-        let response = builder.body(self.body.into()).unwrap();
+        let body = if self.body.is_empty() {
+            Either::Left(Empty::new())
+        }
+        else {
+            Either::Right(Full::new(self.body.into()))
+        };
+        let response = builder.body(body).unwrap();
 
         let mut r = HttpResponse::new(response);
         if let Some(cause) = self.cause {
@@ -131,14 +149,14 @@ impl io::Write for Response {
 //------------ HttpResponse ---------------------------------------------------
 
 pub struct HttpResponse {
-    response: hyper::Response<Body>,
+    response: HyperResponse,
     cause: Option<Error>,
     loggable: bool,
     benign: bool,
 }
 
 impl HttpResponse {
-    pub fn new(response: hyper::Response<Body>) -> Self {
+    pub fn new(response: HyperResponse) -> Self {
         HttpResponse {
             response,
             cause: None,
@@ -147,7 +165,7 @@ impl HttpResponse {
         }
     }
 
-    pub fn response(self) -> hyper::Response<Body> {
+    pub fn into_response(self) -> HyperResponse {
         self.response
     }
 
@@ -188,7 +206,7 @@ impl HttpResponse {
         self.response.status()
     }
 
-    pub fn body(&self) -> &Body {
+    pub fn body(&self) -> &HyperResponseBody {
         self.response.body()
     }
 
@@ -224,7 +242,7 @@ impl HttpResponse {
                 .status(StatusCode::OK)
                 .header("Content-Type", ContentType::Text.as_ref())
                 .header("Cache-Control", "no-cache")
-                .body(body.into())
+                .body(Either::Right(Full::new(body.into())))
                 .unwrap(),
         )
     }
@@ -307,7 +325,7 @@ impl HttpResponse {
             hyper::Response::builder()
                 .status(StatusCode::FOUND)
                 .header("Location", location)
-                .body(hyper::Body::empty())
+                .body(Either::Left(Empty::new()))
                 .unwrap(),
         )
     }
@@ -325,17 +343,18 @@ impl HttpResponse {
     }
 }
 
+
 //------------ Request -------------------------------------------------------
 
 pub struct Request {
-    request: hyper::Request<hyper::Body>,
+    request: HyperRequest,
     path: RequestPath,
     state: State,
     actor: Actor,
 }
 
 impl Request {
-    pub async fn new(request: hyper::Request<hyper::Body>, state: State) -> Self {
+    pub async fn new(request: HyperRequest, state: State) -> Self {
         let path = RequestPath::from_request(&request);
         let actor = state.actor_from_request(&request).await;
 
@@ -433,67 +452,24 @@ impl Request {
         self.read_bytes(limit).await
     }
 
-    /// See hyper::body::to_bytes
-    ///
-    /// Here we want to limit the bytes consumed to a maximum. So, the
-    /// code below is adapted from the method in the hyper crate.
     pub async fn read_bytes(self, limit: u64) -> Result<Bytes, Error> {
-        let body = self.request.into_body();
+        // We’re going to cheat a bit. If we know the body is too big from
+        // the Content-Length header, we return Error::PostTooBig. But if
+        // we don’t -- which means there are multiple chunks or somesuch --
+        // we just use http_body_utils::Limited and return PostCannotRead
+        // on any error.
 
-        futures_util::pin_mut!(body);
-
-        if body.size_hint().lower() > limit {
+        if self.request.body().size_hint().lower() > limit
+        {
             return Err(Error::PostTooBig);
         }
 
-        let mut size_processed = 0;
-
-        fn assert_body_size(size_processed: u64, body_lower_hint: u64, post_limit: u64) -> Result<(), Error> {
-            if size_processed + body_lower_hint > post_limit {
-                Err(Error::PostTooBig)
-            } else {
-                Ok(())
-            }
-        }
-
-        assert_body_size(size_processed, body.size_hint().lower(), limit)?;
-
-        // If there's only 1 chunk, we can just return Buf::to_bytes()
-        let first = if let Some(buf) = body.data().await {
-            let buf = buf.map_err(|_| Error::PostCannotRead)?;
-            let size: u64 = buf.len().try_into().map_err(|_| Error::PostTooBig)?;
-            size_processed += size;
-            buf
-        } else {
-            return Ok(Bytes::new());
-        };
-
-        assert_body_size(size_processed, body.size_hint().lower(), limit)?;
-        let second = if let Some(buf) = body.data().await {
-            let buf = buf.map_err(|_| Error::PostCannotRead)?;
-            let size: u64 = buf.len().try_into().map_err(|_| Error::PostTooBig)?;
-            size_processed += size;
-            buf
-        } else {
-            return Ok(first);
-        };
-
-        assert_body_size(size_processed, body.size_hint().lower(), limit)?;
-        // With more than 1 buf, we gotta flatten into a Vec first.
-        let cap = first.remaining() + second.remaining() + body.size_hint().lower() as usize;
-        let mut vec = Vec::with_capacity(cap);
-        vec.put(first);
-        vec.put(second);
-
-        while let Some(buf) = body.data().await {
-            let buf = buf.map_err(|_| Error::PostCannotRead)?;
-            let size: u64 = buf.len().try_into().map_err(|_| Error::PostTooBig)?;
-            size_processed += size;
-            assert_body_size(size_processed, body.size_hint().lower(), limit)?;
-            vec.put(buf);
-        }
-
-        Ok(vec.into())
+        Ok(
+            Limited::new(
+                self.request.into_body(),
+                limit.try_into().unwrap_or(usize::MAX),
+            ).collect().await.map_err(|_| Error::PostCannotRead)?.to_bytes()
+        )
     }
 
     pub async fn get_login_url(&self) -> KrillResult<HttpResponse> {

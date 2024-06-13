@@ -1,322 +1,380 @@
-//! Support TLS for hyper.
-//!
-//! This taken from the Warp project, and slightly adapted to fit our local needs.
-//! For the original implementation, see here:
-//! https://github.com/seanmonstar/warp/blob/master/src/tls.rs
-//!
-//! There is also an issue about adding server TLS support to hyper-tls:
-//! https://github.com/hyperium/hyper-tls/issues/25
-//!
-//! I tried to get this work, following the gist of how it's done in Warp,
-//! but hyper-tls uses native_tls rather than rust_tls, and this turned out
-//! to be somewhat complicated.
-//!
-//! For Krill it should be fine to use rust_tls though, so therefore this
-//! implementation was used in the end.
+//! Utitilies for dealing with TLS.
 
-use std::{
-    fs::File,
-    future::Future,
-    io::{self, BufReader, Read},
-    net::SocketAddr,
-    path::{Path, PathBuf},
-    pin::Pin,
-    sync::Arc,
-    task::{Context, Poll},
-};
+use std::{error, fmt, io};
+use std::fs::File;
+use std::path::{Path, PathBuf};
+use std::pin::Pin;
+use std::sync::Arc;
+use std::task::{Context, Poll};
+use futures_util::{pin_mut, ready, TryFuture};
+use futures_util::future::Either;
+use pin_project_lite::pin_project;
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use tokio::net::TcpStream;
+use tokio_rustls::{Accept, TlsAcceptor};
+use tokio_rustls::rustls::KeyLogFile;
+use tokio_rustls::rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use tokio_rustls::server::TlsStream;
 
-use futures_util::ready;
-use tokio::io::{AsyncRead, AsyncWrite};
-use tokio_rustls::rustls::{Certificate, KeyLogFile, ServerConfig};
+pub use tokio_rustls::rustls::ServerConfig;
 
-use hyper::server::{
-    accept::Accept,
-    conn::{AddrIncoming, AddrStream},
-};
+//------------ Constants ----------------------------------------------------
 
 const SSLKEYLOGFILE_ENV_VAR_NAME: &str = "SSLKEYLOGFILE";
 
-pub trait Transport: AsyncRead + AsyncWrite {
-    fn remote_addr(&self) -> Option<SocketAddr>;
+
+//------------ create_server_config -----------------------------------------
+
+/// Creates the TLS server config.
+pub fn create_server_config(
+    key_path: &Path, cert_path: &Path
+) -> Result<ServerConfig, TlsConfigError> {
+    let mut config = ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(
+            read_certs(cert_path)?, read_key(key_path)?
+        ).map_err(|err| TlsConfigError::other(ErrorKind::Tls, err))?;
+
+    if std::env::var(SSLKEYLOGFILE_ENV_VAR_NAME).is_ok() {
+        config.key_log = Arc::new(KeyLogFile::new());
+    }
+
+    Ok(config)
 }
 
-impl Transport for AddrStream {
-    fn remote_addr(&self) -> Option<SocketAddr> {
-        Some(self.remote_addr())
+/// Reads the certificates from the given PEM file.
+fn read_certs(
+    path: &Path
+) -> Result<Vec<CertificateDer<'static>>,TlsConfigError> {
+    rustls_pemfile::certs(
+        &mut io::BufReader::new(
+            File::open(path).map_err(|err| {
+                TlsConfigError::new(ErrorKind::Cert(path.into()), err)
+            })?
+        )
+    ).collect::<Result<_, _>>().map_err(|err| {
+        TlsConfigError::new(ErrorKind::Cert(path.into()), err)
+    })
+}
+
+/// Reads the first private key from the given PEM file.
+///
+/// The key may be a PKCS#1 RSA private key, a PKCS#8 private key, or a
+/// SEC1 encoded EC private key. All other PEM items are ignored.
+///
+/// Errors out if opening or reading the file fails or if there isn’t exactly
+/// one private key in the file.
+fn read_key(
+    path: &Path
+) -> Result<PrivateKeyDer<'static>, TlsConfigError> {
+    use rustls_pemfile::Item::*;
+
+    let mut key_file = io::BufReader::new(
+        File::open(path).map_err(|err| {
+            TlsConfigError::new(ErrorKind::Key(path.into()), err)
+        })?
+    );
+
+    let mut key = None;
+
+    while let Some(item) =
+        rustls_pemfile::read_one(&mut key_file).transpose()
+    {
+        let item = item.map_err(|err| {
+            TlsConfigError::new(ErrorKind::Key(path.into()), err)
+        })?;
+
+        let bits = match item {
+            Pkcs1Key(bits) => bits.into(),
+            Pkcs8Key(bits) => bits.into(),
+            Sec1Key(bits) => bits.into(),
+            _ => continue,
+        };
+        if key.is_some() {
+            return Err(TlsConfigError::other(
+                ErrorKind::Key(path.into()), "file contains multiple keys"
+            ));
+        }
+        key = Some(bits)
+    }
+
+    key.ok_or_else(|| {
+        TlsConfigError::other(
+            ErrorKind::Key(path.into()),
+            "file does not contain any usable keys"
+        )
+    })
+}
+
+
+//------------ TlsTcpStream --------------------------------------------------
+
+pin_project! {
+    /// A TLS stream that behaves like a regular TCP stream.
+    ///
+    /// Specifically, `AsyncRead` and `AsyncWrite` will return `Poll::NotReady`
+    /// until the TLS accept machinery has concluded.
+    #[project = TlsTcpStreamProj]
+    enum TlsTcpStream {
+        /// The TLS handshake is going on.
+        Accept { #[pin] fut: Accept<TcpStream> },
+
+        /// We have a working TLS stream.
+        Stream { #[pin] fut: TlsStream<TcpStream> },
+
+        /// TLS handshake has failed.
+        ///
+        /// Because hyper still wants to do a clean flush and shutdown, we
+        /// need to still work in this state. For read and write, we just
+        /// keep returning the clean shutdown indiciation of zero length
+        /// operations.
+        Empty,
     }
 }
 
-pub(crate) struct LiftIo<T>(pub(crate) T);
+impl TlsTcpStream {
+    fn new(sock: TcpStream, tls: &TlsAcceptor) -> Self {
+        Self::Accept { fut: tls.accept(sock) }
+    }
 
-impl<T: AsyncRead + Unpin> AsyncRead for LiftIo<T> {
-    fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut tokio::io::ReadBuf<'_>) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.get_mut().0).poll_read(cx, buf)
+    fn poll_accept(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<Pin<&mut Self>, io::Error>> {
+        match self.as_mut().project() {
+            TlsTcpStreamProj::Accept { fut } => {
+                match ready!(fut.try_poll(cx)) {
+                    Ok(fut) => {
+                        self.set(Self::Stream { fut });
+                        Poll::Ready(Ok(self))
+                    }
+                    Err(err) => {
+                        self.set(Self::Empty);
+                        Poll::Ready(Err(err))
+                    }
+                }
+            }
+            _ => Poll::Ready(Ok(self)),
+        }
     }
 }
 
-impl<T: AsyncWrite + Unpin> AsyncWrite for LiftIo<T> {
-    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
-        Pin::new(&mut self.get_mut().0).poll_write(cx, buf)
-    }
-
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
-        Pin::new(&mut self.get_mut().0).poll_flush(cx)
-    }
-
-    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
-        Pin::new(&mut self.get_mut().0).poll_shutdown(cx)
+impl AsyncRead for TlsTcpStream {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>
+    ) -> Poll<Result<(), io::Error>> {
+        let mut this = match ready!(self.poll_accept(cx)) {
+            Ok(this) => this,
+            Err(err) => return Poll::Ready(Err(err))
+        };
+        match this.as_mut().project() {
+            TlsTcpStreamProj::Stream { fut } => {
+                fut.poll_read(cx, buf)
+            }
+            TlsTcpStreamProj::Empty => { Poll::Ready(Ok(())) }
+            _ => unreachable!()
+        }
     }
 }
 
-impl<T: AsyncRead + AsyncWrite + Unpin> Transport for LiftIo<T> {
-    fn remote_addr(&self) -> Option<SocketAddr> {
-        None
+impl AsyncWrite for TlsTcpStream {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8]
+    ) -> Poll<Result<usize, io::Error>> {
+        let mut this = match ready!(self.poll_accept(cx)) {
+            Ok(this) => this,
+            Err(err) => return Poll::Ready(Err(err))
+        };
+        match this.as_mut().project() {
+            TlsTcpStreamProj::Stream { fut } => {
+                fut.poll_write(cx, buf)
+            }
+            TlsTcpStreamProj::Empty => { Poll::Ready(Ok(0)) }
+            _ => unreachable!()
+        }
+    }
+
+    fn poll_flush(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>
+    ) -> Poll<Result<(), io::Error>> {
+        let mut this = match ready!(self.poll_accept(cx)) {
+            Ok(this) => this,
+            Err(err) => return Poll::Ready(Err(err))
+        };
+        match this.as_mut().project() {
+            TlsTcpStreamProj::Stream { fut } => {
+                fut.poll_flush(cx)
+            }
+            TlsTcpStreamProj::Empty => { Poll::Ready(Ok(())) }
+            _ => unreachable!()
+        }
+    }
+
+    fn poll_shutdown(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>
+    ) -> Poll<Result<(), io::Error>> {
+        let mut this = match ready!(self.poll_accept(cx)) {
+            Ok(this) => this,
+            Err(err) => return Poll::Ready(Err(err))
+        };
+        match this.as_mut().project() {
+            TlsTcpStreamProj::Stream { fut } => {
+                fut.poll_shutdown(cx)
+            }
+            TlsTcpStreamProj::Empty => { Poll::Ready(Ok(())) }
+            _ => unreachable!()
+        }
     }
 }
+
+
+//------------ MaybeTlsTcpStream ---------------------------------------------
+
+/// A TCP stream that may or may not use TLS.
+pub struct MaybeTlsTcpStream {
+    sock: Either<TcpStream, TlsTcpStream>,
+}
+
+impl MaybeTlsTcpStream {
+    /// Creates a new stream.
+    ///
+    /// If `tls` is some, the stream will be a TLS stream, otherwise it
+    /// will be a plain TCP stream.
+    pub fn new(sock: TcpStream, tls: Option<&TlsAcceptor>) -> Self {
+        MaybeTlsTcpStream {
+            sock: match tls {
+                Some(tls) => Either::Right(TlsTcpStream::new(sock, tls)),
+                None => Either::Left(sock)
+            }
+        }
+    }
+}
+
+impl AsyncRead for MaybeTlsTcpStream {
+    fn poll_read(
+        mut self: Pin<&mut Self>, cx: &mut Context, buf: &mut ReadBuf
+    ) -> Poll<Result<(), io::Error>> {
+        match self.sock {
+            Either::Left(ref mut sock) => {
+                pin_mut!(sock);
+                sock.poll_read(cx, buf)
+            }
+            Either::Right(ref mut sock) => {
+                pin_mut!(sock);
+                sock.poll_read(cx, buf)
+            }
+        }
+    }
+}
+
+
+impl AsyncWrite for MaybeTlsTcpStream {
+    fn poll_write(
+        mut self: Pin<&mut Self>, cx: &mut Context, buf: &[u8]
+    ) -> Poll<Result<usize, io::Error>> {
+        match self.sock {
+            Either::Left(ref mut sock) => {
+                pin_mut!(sock);
+                sock.poll_write(cx, buf)
+            }
+            Either::Right(ref mut sock) => {
+                pin_mut!(sock);
+                sock.poll_write(cx, buf)
+            }
+        }
+    }
+
+    fn poll_flush(
+        mut self: Pin<&mut Self>, cx: &mut Context
+    ) -> Poll<Result<(), io::Error>> {
+        match self.sock {
+            Either::Left(ref mut sock) => {
+                pin_mut!(sock);
+                sock.poll_flush(cx)
+            }
+            Either::Right(ref mut sock) => {
+                pin_mut!(sock);
+                sock.poll_flush(cx)
+            }
+        }
+    }
+
+    fn poll_shutdown(
+        mut self: Pin<&mut Self>, cx: &mut Context
+    ) -> Poll<Result<(), io::Error>> {
+        match self.sock {
+            Either::Left(ref mut sock) => {
+                pin_mut!(sock);
+                sock.poll_shutdown(cx)
+            }
+            Either::Right(ref mut sock) => {
+                pin_mut!(sock);
+                sock.poll_shutdown(cx)
+            }
+        }
+    }
+}
+
+
+//------------ TlsConfigError -----------------------------------------------
 
 /// Represents errors that can occur building the TlsConfig
 #[derive(Debug)]
-pub(crate) enum TlsConfigError {
-    Io(io::Error),
-    /// An Error parsing a Pkcs8 key
-    Pkcs8ParseError,
-    /// An Error parsing a Rsa key
-    RsaParseError,
-    /// An error from an empty key
-    EmptyKey,
-    // /// An error from an invalid key
-    // InvalidKey(TLSError),
-    Rustls(tokio_rustls::rustls::Error),
+pub struct TlsConfigError {
+    kind: ErrorKind,
+    err: io::Error,
 }
 
-impl std::fmt::Display for TlsConfigError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            TlsConfigError::Io(err) => err.fmt(f),
-            TlsConfigError::Pkcs8ParseError => write!(f, "pkcs8 parse error"),
-            TlsConfigError::RsaParseError => write!(f, "rsa parse error"),
-            TlsConfigError::EmptyKey => write!(f, "key contains no private key"),
-            TlsConfigError::Rustls(err) => write!(f, "rustls error: {}", err),
+#[derive(Clone, Debug)]
+enum ErrorKind {
+    Key(PathBuf),
+    Cert(PathBuf),
+    Tls,
+}
+
+impl TlsConfigError {
+    fn new(kind: ErrorKind, err: io::Error) -> Self {
+        Self { kind, err }
+    }
+
+    fn other(
+        kind: ErrorKind,
+        err: impl Into<Box<dyn error::Error + Send + Sync>>
+    ) -> Self {
+        Self {
+            kind,
+            err: io::Error::new(io::ErrorKind::Other, err)
         }
     }
 }
 
-impl std::error::Error for TlsConfigError {}
-
-/// Builder to set the configuration for the Tls server.
-pub(crate) struct TlsConfigBuilder {
-    cert: Box<dyn Read + Send + Sync>,
-    key: Box<dyn Read + Send + Sync>,
-}
-
-impl std::fmt::Debug for TlsConfigBuilder {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-        f.debug_struct("TlsConfigBuilder").finish()
-    }
-}
-
-impl TlsConfigBuilder {
-    /// Create a new TlsConfigBuilder
-    pub(crate) fn new() -> TlsConfigBuilder {
-        TlsConfigBuilder {
-            key: Box::new(io::empty()),
-            cert: Box::new(io::empty()),
-        }
-    }
-
-    /// sets the Tls key via File Path, returns `TlsConfigError::IoError` if the file cannot be open
-    pub(crate) fn key_path(mut self, path: impl AsRef<Path>) -> Self {
-        self.key = Box::new(LazyFile {
-            path: path.as_ref().into(),
-            file: None,
-        });
-        self
-    }
-
-    /// Specify the file path for the TLS certificate to use.
-    pub(crate) fn cert_path(mut self, path: impl AsRef<Path>) -> Self {
-        self.cert = Box::new(LazyFile {
-            path: path.as_ref().into(),
-            file: None,
-        });
-        self
-    }
-
-    pub(crate) fn build(mut self) -> Result<ServerConfig, TlsConfigError> {
-        let mut cert_rdr = BufReader::new(self.cert);
-        let certs = rustls_pemfile::certs(&mut cert_rdr).map_err(TlsConfigError::Io)?;
-        let cert = certs.into_iter().map(Certificate).collect();
-
-        let key = {
-            // convert it to Vec<u8> to allow reading it again if key is RSA
-            let mut key_vec = Vec::new();
-            self.key.read_to_end(&mut key_vec).map_err(TlsConfigError::Io)?;
-
-            if key_vec.is_empty() {
-                return Err(TlsConfigError::EmptyKey);
+impl fmt::Display for TlsConfigError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.kind {
+            ErrorKind::Key(ref path) => {
+                write!(
+                    f, "Error in TLS key file {}: {}",
+                    path.display(), self.err
+                )
             }
-
-            let mut pkcs8 = rustls_pemfile::pkcs8_private_keys(&mut key_vec.as_slice())
-                .map_err(|_| TlsConfigError::Pkcs8ParseError)?;
-
-            if !pkcs8.is_empty() {
-                pkcs8.remove(0)
-            } else {
-                let mut rsa = rustls_pemfile::rsa_private_keys(&mut key_vec.as_slice())
-                    .map_err(|_| TlsConfigError::RsaParseError)?;
-
-                if !rsa.is_empty() {
-                    rsa.remove(0)
-                } else {
-                    return Err(TlsConfigError::EmptyKey);
-                }
+            ErrorKind::Cert(ref path) => {
+                write!(
+                    f, "Error in TLS certificate file {}: {}",
+                    path.display(), self.err
+                )
             }
-        };
-
-        let mut config = ServerConfig::builder()
-            .with_safe_default_cipher_suites()
-            .with_safe_default_kx_groups()
-            .with_safe_default_protocol_versions()
-            .map_err(TlsConfigError::Rustls)?
-            .with_no_client_auth()
-            .with_single_cert(cert, tokio_rustls::rustls::PrivateKey(key))
-            .map_err(TlsConfigError::Rustls)?;
-
-        // See: https://wiki.wireshark.org/TLS#tls-decryption
-        if std::env::var(SSLKEYLOGFILE_ENV_VAR_NAME).is_ok() {
-            config.key_log = Arc::new(KeyLogFile::new());
-        }
-
-        Ok(config)
-    }
-}
-
-struct LazyFile {
-    path: PathBuf,
-    file: Option<File>,
-}
-
-impl LazyFile {
-    fn lazy_read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        if self.file.is_none() {
-            self.file = Some(File::open(&self.path)?);
-        }
-
-        self.file.as_mut().unwrap().read(buf)
-    }
-}
-
-impl Read for LazyFile {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.lazy_read(buf).map_err(|err| {
-            let kind = err.kind();
-            io::Error::new(kind, format!("error reading file ({:?}): {}", self.path.display(), err))
-        })
-    }
-}
-
-impl Transport for TlsStream {
-    fn remote_addr(&self) -> Option<SocketAddr> {
-        match self.state {
-            State::Handshaking(_) => None,
-            State::Streaming(ref stream) => Some(stream.get_ref().0.remote_addr()),
+            ErrorKind::Tls => {
+                write!(f, "Error in TLS configuration: {}", self.err)
+            }
         }
     }
 }
 
-enum State {
-    Handshaking(tokio_rustls::Accept<AddrStream>),
-    Streaming(tokio_rustls::server::TlsStream<AddrStream>),
-}
+impl error::Error for TlsConfigError { }
 
-// tokio_rustls::server::TlsStream doesn't expose constructor methods,
-// so we have to TlsAcceptor::accept and handshake to have access to it
-// TlsStream implements AsyncRead/AsyncWrite handshaking tokio_rustls::Accept first
-pub(crate) struct TlsStream {
-    state: State,
-}
-
-impl TlsStream {
-    fn new(stream: AddrStream, config: Arc<ServerConfig>) -> TlsStream {
-        let accept = tokio_rustls::TlsAcceptor::from(config).accept(stream);
-        TlsStream {
-            state: State::Handshaking(accept),
-        }
-    }
-}
-
-impl AsyncRead for TlsStream {
-    fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut tokio::io::ReadBuf<'_>) -> Poll<io::Result<()>> {
-        let pin = self.get_mut();
-        match pin.state {
-            State::Handshaking(ref mut accept) => match ready!(Pin::new(accept).poll(cx)) {
-                Ok(mut stream) => {
-                    let result = Pin::new(&mut stream).poll_read(cx, buf);
-                    pin.state = State::Streaming(stream);
-                    result
-                }
-                Err(err) => Poll::Ready(Err(err)),
-            },
-            State::Streaming(ref mut stream) => Pin::new(stream).poll_read(cx, buf),
-        }
-    }
-}
-
-impl AsyncWrite for TlsStream {
-    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
-        let pin = self.get_mut();
-        match pin.state {
-            State::Handshaking(ref mut accept) => match ready!(Pin::new(accept).poll(cx)) {
-                Ok(mut stream) => {
-                    let result = Pin::new(&mut stream).poll_write(cx, buf);
-                    pin.state = State::Streaming(stream);
-                    result
-                }
-                Err(err) => Poll::Ready(Err(err)),
-            },
-            State::Streaming(ref mut stream) => Pin::new(stream).poll_write(cx, buf),
-        }
-    }
-
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        match self.state {
-            State::Handshaking(_) => Poll::Ready(Ok(())),
-            State::Streaming(ref mut stream) => Pin::new(stream).poll_flush(cx),
-        }
-    }
-
-    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        match self.state {
-            State::Handshaking(_) => Poll::Ready(Ok(())),
-            State::Streaming(ref mut stream) => Pin::new(stream).poll_shutdown(cx),
-        }
-    }
-}
-
-pub(crate) struct TlsAcceptor {
-    config: Arc<ServerConfig>,
-    incoming: AddrIncoming,
-}
-
-impl TlsAcceptor {
-    pub(crate) fn new(config: ServerConfig, incoming: AddrIncoming) -> TlsAcceptor {
-        TlsAcceptor {
-            config: Arc::new(config),
-            incoming,
-        }
-    }
-}
-
-impl Accept for TlsAcceptor {
-    type Conn = TlsStream;
-    type Error = io::Error;
-
-    fn poll_accept(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Result<Self::Conn, Self::Error>>> {
-        let pin = self.get_mut();
-        match ready!(Pin::new(&mut pin.incoming).poll_accept(cx)) {
-            Some(Ok(sock)) => Poll::Ready(Some(Ok(TlsStream::new(sock, pin.config.clone())))),
-            Some(Err(e)) => Poll::Ready(Some(Err(e))),
-            None => Poll::Ready(None),
-        }
-    }
-}
