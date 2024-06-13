@@ -1415,7 +1415,7 @@ mod tests {
             slot = -1234
         "#;
         let err = toml::from_str::<Pkcs11SignerConfig>(config_str).unwrap_err();
-        assert!(err.contains("not a valid PKCS#11 slot ID"))
+        assert!(err.to_string().contains("not a valid PKCS#11 slot ID"))
     }
 
     #[test]
