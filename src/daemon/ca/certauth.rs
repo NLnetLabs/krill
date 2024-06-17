@@ -905,6 +905,15 @@ impl CertAuth {
     fn child_revoke_key(&self, child_handle: ChildHandle, request: RevocationRequest) -> KrillResult<Vec<CaEvt>> {
         let (rcn, key) = request.unpack();
 
+        if !self.resources.contains_key(&rcn) {
+            // This request is for a resource class we don't have. We should
+            // not get such requests but telling this to a child may confuse
+            // them more, so just return with an empty vec of events - there
+            // is no work to do - and ensure that the child just gets a
+            // confirmation where this is called.
+            return Ok(vec![])
+        }
+
         let child = self.get_child(&child_handle)?;
 
         if !child.is_issued(&key) {
