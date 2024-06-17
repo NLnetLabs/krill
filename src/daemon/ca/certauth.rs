@@ -1083,7 +1083,7 @@ impl CertAuth {
     ) -> KrillResult<Vec<CertAuthEvent>> {
         let (child_rcn, key) = request.unpack();
 
-        if !self.resources.contains_key(&rcn) {
+        if !self.resources.contains_key(&child_rcn) {
             // This request is for a resource class we don't have. We should
             // not get such requests but telling this to a child may confuse
             // them more, so just return with an empty vec of events - there
