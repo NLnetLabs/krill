@@ -18,6 +18,8 @@ Bug fixes
 * Correctly encode empty revocation lists in CRLs. (via [rpki-rs#295])
 * Allow read access to the RIS dump while downloading a new dump.
   ([#1179])
+* Don’t apply “child revoke key” command if the resource class does not
+  exist. ([#1208])
 
 Other changes
 
@@ -27,6 +29,7 @@ Other changes
 [#1179]: https://github.com/NLnetLabs/krill/pull/1179
 [#1181]: https://github.com/NLnetLabs/krill/pull/1181
 [#1198]: https://github.com/NLnetLabs/krill/pull/1198
+[#1208]: https://github.com/NLnetLabs/krill/pull/1208
 [rpki-rs#295]: https://github.com/NLnetLabs/rpki-rs/pull/295
 
 
