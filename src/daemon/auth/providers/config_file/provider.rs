@@ -13,9 +13,9 @@ use crate::{
         auth::providers::config_file::config::ConfigUserDetails,
         auth::{Auth, LoggedInUser},
         config::Config,
-        http::HttpResponse,
     },
 };
+use crate::daemon::http::{HttpResponse, HyperRequest};
 
 const UI_LOGIN_ROUTE_PATH: &str = "/login?withId=true";
 
@@ -82,7 +82,7 @@ impl ConfigFileAuthProvider {
     }
 
     /// Parse HTTP Basic Authorization header
-    fn get_auth(&self, request: &hyper::Request<hyper::Body>) -> Option<Auth> {
+    fn get_auth(&self, request: &HyperRequest) -> Option<Auth> {
         let header = request.headers().get(hyper::http::header::AUTHORIZATION)?;
         let auth = header.to_str().ok()?.strip_prefix("Basic ")?;
         let auth = base64::decode(auth).ok()?;
@@ -97,7 +97,9 @@ impl ConfigFileAuthProvider {
 }
 
 impl ConfigFileAuthProvider {
-    pub fn authenticate(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<Option<ActorDef>> {
+    pub fn authenticate(
+        &self, request: &HyperRequest
+    ) -> KrillResult<Option<ActorDef>> {
         if log_enabled!(log::Level::Trace) {
             trace!("Attempting to authenticate the request..");
         }
@@ -127,7 +129,7 @@ impl ConfigFileAuthProvider {
         Ok(HttpResponse::text_no_cache(UI_LOGIN_ROUTE_PATH.into()))
     }
 
-    pub fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
+    pub fn login(&self, request: &HyperRequest) -> KrillResult<LoggedInUser> {
         if let Some(Auth::UsernameAndPassword { username, password }) = self.get_auth(request) {
             use scrypt::scrypt;
 
@@ -188,7 +190,9 @@ impl ConfigFileAuthProvider {
         }
     }
 
-    pub fn logout(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<HttpResponse> {
+    pub fn logout(
+        &self, request: &HyperRequest
+    ) -> KrillResult<HttpResponse> {
         match httpclient::get_bearer_token(request) {
             Some(token) => {
                 self.session_cache.remove(&token);

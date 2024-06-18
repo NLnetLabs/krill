@@ -3,8 +3,9 @@ use std::sync::Arc;
 use crate::{
     commons::{actor::ActorDef, api::Token, error::Error, util::httpclient, KrillResult},
     constants::ACTOR_DEF_ADMIN_TOKEN,
-    daemon::{auth::LoggedInUser, config::Config, http::HttpResponse},
+    daemon::{auth::LoggedInUser, config::Config},
 };
+use crate::daemon::http::{HyperRequest, HttpResponse};
 
 // This is NOT an actual relative path to redirect to. Instead it is the path
 // string of an entry in the Vue router routes table to "route" to (in the
@@ -26,7 +27,9 @@ impl AdminTokenAuthProvider {
 }
 
 impl AdminTokenAuthProvider {
-    pub fn authenticate(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<Option<ActorDef>> {
+    pub fn authenticate(
+        &self, request: &HyperRequest
+    ) -> KrillResult<Option<ActorDef>> {
         if log_enabled!(log::Level::Trace) {
             trace!("Attempting to authenticate the request..");
         }
@@ -49,7 +52,7 @@ impl AdminTokenAuthProvider {
         Ok(HttpResponse::text_no_cache(LAGOSTA_LOGIN_ROUTE_PATH.into()))
     }
 
-    pub fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
+    pub fn login(&self, request: &HyperRequest) -> KrillResult<LoggedInUser> {
         match self.authenticate(request)? {
             Some(actor_def) => Ok(LoggedInUser {
                 token: self.required_token.clone(),
@@ -60,7 +63,9 @@ impl AdminTokenAuthProvider {
         }
     }
 
-    pub fn logout(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<HttpResponse> {
+    pub fn logout(
+        &self, request: &HyperRequest
+    ) -> KrillResult<HttpResponse> {
         if let Ok(Some(actor)) = self.authenticate(request) {
             info!("User logged out: {}", actor.name.as_str());
         }

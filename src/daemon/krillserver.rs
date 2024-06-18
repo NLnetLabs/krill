@@ -42,7 +42,7 @@ use crate::{
             RtaPrepareRequest,
         },
         config::{AuthType, Config},
-        http::HttpResponse,
+        http::{HttpResponse, HyperRequest},
         mq::{now, Task, TaskQueue},
         scheduler::Scheduler,
     },
@@ -281,7 +281,7 @@ impl KrillServer {
         &self.system_actor
     }
 
-    pub async fn actor_from_request(&self, request: &hyper::Request<hyper::Body>) -> Actor {
+    pub async fn actor_from_request(&self, request: &HyperRequest) -> Actor {
         self.authorizer.actor_from_request(request).await
     }
 
@@ -293,11 +293,15 @@ impl KrillServer {
         self.authorizer.get_login_url().await
     }
 
-    pub async fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
+    pub async fn login(
+        &self, request: &HyperRequest
+    ) -> KrillResult<LoggedInUser> {
         self.authorizer.login(request).await
     }
 
-    pub async fn logout(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<HttpResponse> {
+    pub async fn logout(
+        &self, request: &HyperRequest
+    ) -> KrillResult<HttpResponse> {
         self.authorizer.logout(request).await
     }
 
