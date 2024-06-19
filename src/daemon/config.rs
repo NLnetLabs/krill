@@ -302,11 +302,17 @@ impl ConfigDefaults {
         #[cfg(all(feature = "hsm-tests-pkcs11", not(feature = "hsm-tests-kmip")))]
         {
             use crate::commons::crypto::{
-                Pkcs11ConfigurablePrivateKeyAttributes, Pkcs11ConfigurablePublicKeyAttributes, SlotIdOrLabel,
+                Pkcs11ConfigurablePrivateKeyAttributes,
+                Pkcs11ConfigurablePublicKeyAttributes,
+                Pkcs11ConfigurableSecrets,
+                SlotIdOrLabel,
             };
+
             let signer_config = Pkcs11SignerConfig {
                 lib_path: "/usr/lib/softhsm/libsofthsm2.so".to_string(),
-                user_pin: Some("1234".to_string()),
+                secrets: Pkcs11ConfigurableSecrets {
+                    user_pin: Some("1234".to_string().into())
+                },
                 slot: SlotIdOrLabel::Label("My token 1".to_string()),
                 login: true,
                 retry_seconds: Pkcs11SignerConfig::default_retry_seconds(),
