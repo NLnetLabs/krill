@@ -1757,7 +1757,7 @@ impl<'de> Deserialize<'de> for AuthType {
 //   type = "KMIP"
 //   ...
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct SignerConfig {
     /// A friendly name for the signer. Used to identify the signer with the `default_signer` and `one_off_signer`
     /// settings.
@@ -1768,7 +1768,7 @@ pub struct SignerConfig {
     pub signer_type: SignerType,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(tag = "type")]
 pub enum SignerType {
     #[serde(alias = "OpenSSL")]
