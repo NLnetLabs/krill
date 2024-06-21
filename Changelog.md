@@ -33,6 +33,73 @@ Other changes
 [rpki-rs#295]: https://github.com/NLnetLabs/rpki-rs/pull/295
 
 
+## 0.14.4 'A Flock of Krill'
+
+This release fixes the following issues:
+
+- Krill should not freeze if lockfiles were not deleted properly #1171 (since Krill 0.14.0)
+- Don't warn about yanked dependencies when installing Krill via Cargo #1173
+
+## 0.14.3 'Temp'
+
+This release fixes a number of issues found in 0.14.0 through 0.14.2:
+
+- Use rpki-rs 0.18.0 to support builds on more platforms #1166
+- Fix aspa migration issues #1163
+- Depend on kvx 0.9.2 to ensure temp files are used properly #1160
+
+Most importantly, Krill will now use temp files for *all* data that it
+stores to avoid issues with half-written files in case the disk is full,
+or the server is rebooted in the middle of writing. This issue was introduced
+in release 0.14.0, and we recommend that all users upgrade to this version
+to avoid issues.
+
+This release also includes:
+- Updated German UI translations krill-ui/#51
+
+## 0.14.2 'Extra, Extra, Extra!'
+
+This release fixes an additional corner case in the migration code that affects
+certain installations that archived 'surplus' commands (issue: #1147). There is
+no need to upgrade to this version if you already upgraded to 0.14.0 or 0.14.1.
+
+## 0.14.1 'Extra, Extra!'
+
+This release fixes a bug in the migration code that affects certain installations
+that archived 'surplus' data (issue: #1147). There is no need to upgrade to
+this version if you already upgraded to 0.14.0.
+
+## 0.14.0 'ASPA'
+
+This release adds support for the updated ASPA v1 profile (issue #1080).
+Any existing ASPA objects will be re-issued automatically.
+
+In addition, the following small features and fixes were done:
+- Show delete ROA button when no BGP preview is available #1139
+- Add traditional and simplified Chinese translations #1075
+- Let the testbed automatically renew the TA manifest and CRL #1095 (see below)
+- Show the delete icon for AS0 ROA when there is another existing announcement #1109
+
+The main effort in this release was spent on less user-visible
+improvements in the way that Krill stores its data. This will
+help to improve robustness today, and it paves the way for introducing
+support for Krill clustering using a database back-end in a future release.
+
+For now, these issues have been done:
+- Improve transactionality of changes (e.g. #1076-1078, #1085, #1108, #1090)
+- Remove no longer needed 'always_recover_data' function #1086 
+- Improve upgrade failed error: tell users to downgrade #1042
+- Crash Krill if the task scheduler encounters a fatal error. #1132
+
+You can find the full list of issues here:
+https://github.com/NLnetLabs/krill/projects/25
+
+Finally, regarding issue #1095. If you were running 0.13.1 as a testbed, you
+may have symlinked the "signer" directory to "ta_signer" to support a manual
+workaround for re-signing the trust anchor CRL and manifest. If you did, you
+may need to delete any surplus files and directories under "data/ta_signer"
+other than the directory called "ta".
+
 ## 0.13.1 'Scrollbars!'
 
 The Krill UI includes a CA selection dropdown in case you have multiple CAs.
