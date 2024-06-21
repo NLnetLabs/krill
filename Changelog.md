@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased next version
+
+Bug fixes
+
+Other changes
+
+
 ## 0.13.2-rc1
 
 Released 2024-06-21.
