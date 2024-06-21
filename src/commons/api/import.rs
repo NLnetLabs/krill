@@ -37,10 +37,9 @@ pub struct Structure {
 }
 
 impl Structure {
-    pub fn new(
+    pub fn for_testbed(
         ta_aia: uri::Rsync,
         ta_uri: uri::Https,
-        ta_key_pem: Option<String>,
         publication_server_uris: PublicationServerUris,
         cas: Vec<ImportCa>,
     ) -> Self {
@@ -48,7 +47,8 @@ impl Structure {
             ta: Some(ImportTa {
                 ta_aia,
                 ta_uri,
-                ta_key_pem,
+                ta_key_pem: None,
+                ta_mft_nr_override: None,
             }),
             publication_server: Some(publication_server_uris),
             cas,
@@ -128,12 +128,15 @@ where
 pub struct ImportTa {
     pub ta_aia: uri::Rsync,
     pub ta_uri: uri::Https,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ta_key_pem: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ta_mft_nr_override: Option<u64>,
 }
 
 impl ImportTa {
-    pub fn unpack(self) -> (uri::Rsync, Vec<uri::Https>, Option<String>) {
-        (self.ta_aia, vec![self.ta_uri], self.ta_key_pem)
+    pub fn unpack(self) -> (uri::Rsync, Vec<uri::Https>, Option<String>, Option<u64>) {
+        (self.ta_aia, vec![self.ta_uri], self.ta_key_pem, self.ta_mft_nr_override)
     }
 }
 

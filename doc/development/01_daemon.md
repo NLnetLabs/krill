@@ -23,9 +23,11 @@ configuration, and concurrency are handled.
 Binaries
 --------
 
-The project includes two binaries:
-* `krill` is used to start a Krill daemon
-* `krillc` is the CLI which uses the daemon's API
+The project includes the following binaries:
+* `krill` is used to start a Krill daemon.
+* `krillc` is the CLI which uses the daemon's API.
+* `krillta` is used for the (offline) TA Signer, and access the TA Proxy through the API.
+* `krillup` can be used to test data migrations in isolation.
 
 HTTPS Server
 ------------
@@ -37,15 +39,17 @@ function in `src/daemon/http/server.rs`. This function performs the following st
 * Verifies that the configured data directory is usable.
 * Calls 'pre-start' upgrades before state is built. (e.g. migrate data structures).
 * Instantiates a `KrillServer`, which will guard all state.
+* Calls 'post_start_upgrade' to trigger any upgrade related runtime actions (may be none).
+* Gets the shared `Scheduler` from `KrillServer` and runs so it can pick up tasks.
 * Creates a self-signed TLS certificate, unless one was prepared earlier.
 * Builds a `hyper` server which then connects to the configured port and handles connections.
-* This server keeps running until the Krill binary is terminated.
+* This server keeps running until the `KrillServer` or `Scheduler` is terminated.
 
 Note that the `hyper` server itself is stateless. For this it relies on an `Arc<KrillServer>` which can
 be cloned cheaply whenever a request is processed. So, we use hyper for the following:
-* Get authentication/authorization information from the request (header/cookies dependent on config)
+* Get authentication/authorization information from the request (header/cookies dependent on config).
 * Serve static content for the Krill UI.
-* Map requests to API code in `KrillServer` and serve responses
+* Map requests to API code in `KrillServer` and serve responses.
 
 > Note that for higher level testing we bypass the Krill binaries, and call the function to start the
 > HTTPS server directly, with appropriate configuration settings. Have a look at `tests/functional.rs`

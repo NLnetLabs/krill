@@ -43,26 +43,35 @@ impl BgpAnalyser {
     }
 
     pub async fn update(&self) -> Result<bool, BgpAnalyserError> {
-        if let Some(loader) = &self.dump_loader {
-            let mut seen = self.seen.write().await;
-            if let Some(last_time) = seen.last_checked() {
-                if (last_time + Duration::minutes(BGP_RIS_REFRESH_MINUTES)) > Time::now() {
-                    trace!("Will not check BGP Ris Dumps until the refresh interval has passed");
-                    return Ok(false); // no need to update yet
-                }
+        let loader = match self.dump_loader.as_ref() {
+            Some(loader) => loader,
+            None => return Ok(false)
+        };
+        if let Some(last_time) = self.seen.read().await.last_checked() {
+            if (last_time + Duration::minutes(BGP_RIS_REFRESH_MINUTES))
+                > Time::now()
+            {
+                trace!(
+                    "Will not check BGP RIS dumps until the \
+                    refresh interval has passed"
+                );
+                return Ok(false); // no need to update yet
             }
-            let announcements = loader.download_updates().await?;
-            if seen.equivalent(&announcements) {
-                debug!("BGP Ris Dumps unchanged");
-                seen.update_checked();
-                Ok(false)
-            } else {
-                info!("Updated announcements ({}) based on BGP Ris Dumps", announcements.len());
-                seen.update(announcements);
-                Ok(true)
-            }
-        } else {
+        }
+        let announcements = loader.download_updates().await?;
+        let mut seen = self.seen.write().await;
+        if seen.equivalent(&announcements) {
+            debug!("BGP Ris Dumps unchanged");
+            seen.update_checked();
             Ok(false)
+        }
+        else {
+            info!(
+                "Updated announcements ({}) based on BGP Ris Dumps",
+                announcements.len()
+            );
+            seen.update(announcements);
+            Ok(true)
         }
     }
 
@@ -349,10 +358,11 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn download_ris_dumps() {
-        let bgp_ris_dump_v4_uri = "http://www.ris.ripe.net/dumps/riswhoisdump.IPv4.gz";
-        let bgp_ris_dump_v6_uri = "http://www.ris.ripe.net/dumps/riswhoisdump.IPv6.gz";
-
-        let analyser = BgpAnalyser::new(true, bgp_ris_dump_v4_uri, bgp_ris_dump_v6_uri);
+        let analyser = BgpAnalyser::new(
+            true,
+            "http://www.ris.ripe.net/dumps/riswhoisdump.IPv4.gz",
+            "http://www.ris.ripe.net/dumps/riswhoisdump.IPv6.gz",
+        );
 
         assert!(analyser.seen.read().await.is_empty());
         assert!(analyser.seen.read().await.last_checked().is_none());
