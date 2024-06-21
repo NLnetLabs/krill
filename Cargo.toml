@@ -50,8 +50,7 @@ rand            = "^0.8"
 regex           = { version = "1.5.5", optional = true, default_features = false, features = [ "std" ] }
 reqwest         = { version = "0.11", features = ["json"] }
 rpassword       = { version = "^5.0", optional = true }
-#rpki            = { version = "0.18.0", features = ["ca", "compat", "rrdp"] }
-rpki            = { git = "https://github.com/nLnetLabs/rpki-rs", features = [ "ca", "compat", "rrdp" ] }
+rpki            = { version = "0.18.4", features = ["ca", "compat", "rrdp"] }
 rustls-pemfile  = "1.0.4"
 scrypt          = { version = "^0.6", optional = true, default-features = false }
 serde           = { version = "^1.0", features = ["derive", "rc"] }
