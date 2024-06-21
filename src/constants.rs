@@ -1,7 +1,5 @@
-use kvx::Namespace;
-
 use crate::{
-    commons::{actor::ActorDef, eventsourcing::namespace},
+    commons::{actor::ActorDef, storage::Namespace},
     daemon::auth::common::NoResourceType,
 };
 
@@ -45,17 +43,17 @@ pub fn test_announcements_enabled() -> bool {
 
 // until const fn's are more versatile for str's, we need to use lazy_static to be able to expand the segment macro at
 // compile time, while running the expanded code, which actually makes it a Segment, at runtime
-pub const TASK_QUEUE_NS: &Namespace = namespace!("tasks");
-pub const CASERVER_NS: &Namespace = namespace!("cas");
-pub const CA_OBJECTS_NS: &Namespace = namespace!("ca_objects");
-pub const KEYS_NS: &Namespace = namespace!("keys");
-pub const PUBSERVER_CONTENT_NS: &Namespace = namespace!("pubd_objects");
-pub const PUBSERVER_NS: &Namespace = namespace!("pubd");
-pub const PROPERTIES_NS: &Namespace = namespace!("properties");
-pub const SIGNERS_NS: &Namespace = namespace!("signers");
-pub const STATUS_NS: &Namespace = namespace!("status");
-pub const TA_PROXY_SERVER_NS: &Namespace = namespace!("ta_proxy");
-pub const TA_SIGNER_SERVER_NS: &Namespace = namespace!("ta_signer");
+pub const TASK_QUEUE_NS: &Namespace = unsafe { Namespace::from_str_unchecked("tasks") };
+pub const CASERVER_NS: &Namespace = unsafe { Namespace::from_str_unchecked("cas") };
+pub const CA_OBJECTS_NS: &Namespace = unsafe { Namespace::from_str_unchecked("ca_objects") };
+pub const KEYS_NS: &Namespace = unsafe { Namespace::from_str_unchecked("keys") };
+pub const PUBSERVER_CONTENT_NS: &Namespace = unsafe { Namespace::from_str_unchecked("pubd_objects") };
+pub const PUBSERVER_NS: &Namespace = unsafe { Namespace::from_str_unchecked("pubd") };
+pub const PROPERTIES_NS: &Namespace = unsafe { Namespace::from_str_unchecked("properties") };
+pub const SIGNERS_NS: &Namespace = unsafe { Namespace::from_str_unchecked("signers") };
+pub const STATUS_NS: &Namespace = unsafe { Namespace::from_str_unchecked("status") };
+pub const TA_PROXY_SERVER_NS: &Namespace = unsafe { Namespace::from_str_unchecked("ta_proxy") };
+pub const TA_SIGNER_SERVER_NS: &Namespace = unsafe { Namespace::from_str_unchecked("ta_signer") };
 
 pub const PROPERTIES_DFLT_NAME: &str = "main";
 

@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use bytes::Bytes;
 use rpki::{
@@ -34,7 +34,7 @@ use crate::{
                 signerprovider::{SignerFlags, SignerProvider},
                 signerrouter::SignerRouter,
             },
-            CryptoResult, OpenSslSigner, SignSupport,
+            CryptoResult, OpenSslSigner, SignSupport, SignerHandle,
         },
         error::Error,
         KrillResult,
@@ -44,13 +44,7 @@ use crate::{
 };
 
 #[cfg(feature = "hsm")]
-use std::collections::HashMap;
-
-#[cfg(feature = "hsm")]
-use crate::commons::crypto::{
-    signers::{kmip::KmipSigner, pkcs11::Pkcs11Signer},
-    SignerHandle,
-};
+use crate::commons::crypto::signers::{kmip::KmipSigner, pkcs11::Pkcs11Signer};
 
 /// High level signing interface between Krill and the [SignerRouter].
 ///
@@ -186,153 +180,273 @@ impl KrillSigner {
         Ok(KrillSigner { router })
     }
 
-    #[cfg(feature = "hsm")]
     pub fn get_mapper(&self) -> Option<Arc<SignerMapper>> {
         self.router.get_mapper()
     }
 
-    #[cfg(feature = "hsm")]
-    pub fn get_active_signers(&self) -> HashMap<SignerHandle, Arc<SignerProvider>> {
-        self.router.get_active_signers()
+    pub async fn get_active_signers(&self) -> HashMap<SignerHandle, Arc<SignerProvider>> {
+        self.router.get_active_signers().await
     }
 
-    pub fn create_key(&self) -> CryptoResult<KeyIdentifier> {
+    pub async fn create_key(&self) -> CryptoResult<KeyIdentifier> {
         self.router
+            .get_default_signer()
+            .await
             .create_key(PublicKeyFormat::Rsa)
+            .await
             .map_err(crypto::Error::signer)
     }
 
-    pub fn import_key(&self, pem: &str) -> CryptoResult<KeyIdentifier> {
-        self.router.import_key(pem).map_err(crypto::Error::signer)
+    pub async fn import_key(&self, pem: &str) -> CryptoResult<KeyIdentifier> {
+        self.router.import_key(pem).await.map_err(crypto::Error::signer)
     }
 
     /// Creates a new self-signed (TA) IdCert
-    pub fn create_self_signed_id_cert(&self) -> CryptoResult<IdCert> {
-        let key = self.create_key()?;
+    pub async fn create_self_signed_id_cert(&self) -> CryptoResult<IdCert> {
+        let signer = self.router.get_default_signer().await;
+
+        let key = signer
+            .create_key(PublicKeyFormat::Rsa)
+            .await
+            .map_err(crypto::Error::signer)?;
+
         let validity = Validity::new(
             Time::five_minutes_ago(),
             Time::years_from_now(ID_CERTIFICATE_VALIDITY_YEARS),
         );
 
-        IdCert::new_ta(validity, &key, &self.router).map_err(crypto::Error::signer)
-    }
-
-    pub fn destroy_key(&self, key_id: &KeyIdentifier) -> CryptoResult<()> {
-        self.router.destroy_key(key_id).map_err(crypto::Error::key_error)
-    }
-
-    pub fn get_key_info(&self, key_id: &KeyIdentifier) -> CryptoResult<PublicKey> {
-        self.router.get_key_info(key_id).map_err(crypto::Error::key_error)
-    }
-
-    pub fn random_serial(&self) -> CryptoResult<Serial> {
-        Serial::random(&self.router).map_err(crypto::Error::signer)
-    }
-
-    pub fn sign<D: AsRef<[u8]> + ?Sized>(&self, key_id: &KeyIdentifier, data: &D) -> CryptoResult<RpkiSignature> {
-        self.router
-            .sign(key_id, RpkiSignatureAlgorithm::default(), data)
-            .map_err(crypto::Error::signing)
-    }
-
-    pub fn sign_one_off<D: AsRef<[u8]> + ?Sized>(&self, data: &D) -> CryptoResult<(RpkiSignature, PublicKey)> {
-        self.router
-            .sign_one_off(RpkiSignatureAlgorithm::default(), data)
+        IdCert::new_ta(validity, &key, signer.as_ref())
+            .await
             .map_err(crypto::Error::signer)
     }
 
-    pub fn sign_csr(&self, base_repo: &RepoInfo, name_space: &str, key: &KeyIdentifier) -> CryptoResult<RpkiCaCsr> {
-        let signing_key_id = self.router.get_key_info(key).map_err(crypto::Error::key_error)?;
+    pub async fn destroy_key(&self, key_id: &KeyIdentifier) -> CryptoResult<()> {
+        let signer = self
+            .router
+            .get_signer_for_key(key_id)
+            .await
+            .map_err(crypto::Error::key_error)?;
+
+        signer.destroy_key(key_id).await.map_err(crypto::Error::key_error)
+    }
+
+    pub async fn get_key_info(&self, key_id: &KeyIdentifier) -> CryptoResult<PublicKey> {
+        let signer = self
+            .router
+            .get_signer_for_key(key_id)
+            .await
+            .map_err(crypto::Error::key_error)?;
+
+        signer.get_key_info(key_id).await.map_err(crypto::Error::key_error)
+    }
+
+    pub async fn random_serial(&self) -> CryptoResult<Serial> {
+        Serial::random(self.router.get_default_signer().await.as_ref())
+            .await
+            .map_err(crypto::Error::signer)
+    }
+
+    pub async fn sign<D: AsRef<[u8]> + ?Sized + Sync>(
+        &self,
+        key_id: &KeyIdentifier,
+        data: &D,
+    ) -> CryptoResult<RpkiSignature> {
+        let signer = self
+            .router
+            .get_signer_for_key(key_id)
+            .await
+            .map_err(crypto::Error::key_error)?;
+
+        signer
+            .sign(key_id, RpkiSignatureAlgorithm::default(), data)
+            .await
+            .map_err(crypto::Error::signing)
+    }
+
+    pub async fn sign_one_off<D: AsRef<[u8]> + ?Sized + Sync>(
+        &self,
+        data: &D,
+    ) -> CryptoResult<(RpkiSignature, PublicKey)> {
+        let signer = self.router.get_one_off_signer().await;
+
+        signer
+            .sign_one_off(RpkiSignatureAlgorithm::default(), data)
+            .await
+            .map_err(crypto::Error::signer)
+    }
+
+    pub async fn sign_csr(
+        &self,
+        base_repo: &RepoInfo,
+        name_space: &str,
+        key_id: &KeyIdentifier,
+    ) -> CryptoResult<RpkiCaCsr> {
+        let signer = self
+            .router
+            .get_signer_for_key(key_id)
+            .await
+            .map_err(crypto::Error::key_error)?;
+
+        let signing_key_id = signer.get_key_info(key_id).await.map_err(crypto::Error::key_error)?;
         let mft_file_name = ObjectName::mft_for_key(&signing_key_id.key_identifier());
 
         // The rpki-rs library returns a signed and encoded CSR for a CA certificate.
         let signed_and_encoded_csr = Csr::construct_rpki_ca(
-            &self.router,
-            key,
+            signer.as_ref(),
+            key_id,
             &base_repo.ca_repository(name_space),
             &base_repo.resolve(name_space, mft_file_name.as_ref()),
             base_repo.rpki_notify(),
         )
+        .await
         .map_err(crypto::Error::signing)?;
 
         // Decode the encoded CSR again to get a typed RpkiCaCsr
         RpkiCaCsr::decode(signed_and_encoded_csr.as_slice()).map_err(crypto::Error::signing)
     }
 
-    pub fn sign_cert(&self, tbs: TbsCert, key_id: &KeyIdentifier) -> CryptoResult<Cert> {
-        tbs.into_cert(&self.router, key_id).map_err(crypto::Error::signing)
+    pub async fn sign_cert(&self, tbs: TbsCert, key_id: &KeyIdentifier) -> CryptoResult<Cert> {
+        let signer = self
+            .router
+            .get_signer_for_key(key_id)
+            .await
+            .map_err(crypto::Error::key_error)?;
+
+        tbs.into_cert(signer.as_ref(), key_id)
+            .await
+            .map_err(crypto::Error::signing)
     }
 
-    pub fn sign_crl(&self, tbs: TbsCertList<Vec<CrlEntry>>, key_id: &KeyIdentifier) -> CryptoResult<Crl> {
-        tbs.into_crl(&self.router, key_id).map_err(crypto::Error::signing)
+    pub async fn sign_crl(&self, tbs: TbsCertList<Vec<CrlEntry>>, key_id: &KeyIdentifier) -> CryptoResult<Crl> {
+        let signer = self
+            .router
+            .get_signer_for_key(key_id)
+            .await
+            .map_err(crypto::Error::key_error)?;
+
+        tbs.into_crl(signer.as_ref(), key_id)
+            .await
+            .map_err(crypto::Error::signing)
     }
 
-    pub fn sign_manifest(
+    pub async fn sign_manifest(
         &self,
         content: ManifestContent,
         builder: SignedObjectBuilder,
         key_id: &KeyIdentifier,
     ) -> CryptoResult<Manifest> {
+        let signer = self
+            .router
+            .get_signer_for_key(key_id)
+            .await
+            .map_err(crypto::Error::key_error)?;
+
         content
-            .into_manifest(builder, &self.router, key_id)
+            .into_manifest(builder, signer.as_ref(), key_id)
+            .await
             .map_err(crypto::Error::signing)
     }
 
-    pub fn sign_roa(
+    pub async fn sign_roa(
         &self,
         roa_builder: RoaBuilder,
         object_builder: SignedObjectBuilder,
         key_id: &KeyIdentifier,
     ) -> CryptoResult<Roa> {
+        let signer = self
+            .router
+            .get_signer_for_key(key_id)
+            .await
+            .map_err(crypto::Error::key_error)?;
+
         roa_builder
-            .finalize(object_builder, &self.router, key_id)
+            .finalize(object_builder, signer.as_ref(), key_id)
+            .await
             .map_err(crypto::Error::signing)
     }
 
-    pub fn sign_aspa(
+    pub async fn sign_aspa(
         &self,
         aspa_builder: AspaBuilder,
         object_builder: SignedObjectBuilder,
         key_id: &KeyIdentifier,
     ) -> CryptoResult<Aspa> {
+        let signer = self
+            .router
+            .get_signer_for_key(key_id)
+            .await
+            .map_err(crypto::Error::key_error)?;
+
         aspa_builder
-            .finalize(object_builder, &self.router, key_id)
+            .finalize(object_builder, signer.as_ref(), key_id)
+            .await
             .map_err(crypto::Error::signing)
     }
 
-    pub fn sign_rta(&self, rta_builder: &mut rta::RtaBuilder, ee: Cert) -> CryptoResult<()> {
-        let key = ee.subject_key_identifier();
+    pub async fn sign_rta(&self, rta_builder: &mut rta::RtaBuilder, ee: Cert) -> CryptoResult<()> {
+        let key_id = ee.subject_key_identifier();
+        let signer = self
+            .router
+            .get_signer_for_key(&key_id)
+            .await
+            .map_err(crypto::Error::key_error)?;
+
         rta_builder.push_cert(ee);
         rta_builder
-            .sign(&self.router, &key, None, None)
+            .sign(signer.as_ref(), &key_id, None, None)
+            .await
             .map_err(crypto::Error::signing)
     }
 
-    pub fn create_rfc6492_cms(
+    pub async fn create_rfc6492_cms(
         &self,
         message: provisioning::Message,
         signing_key: &KeyIdentifier,
     ) -> CryptoResult<provisioning::ProvisioningCms> {
-        provisioning::ProvisioningCms::create(message, signing_key, &self.router).map_err(crypto::Error::signing)
+        let signer = self
+            .router
+            .get_signer_for_key(signing_key)
+            .await
+            .map_err(crypto::Error::key_error)?;
+
+        provisioning::ProvisioningCms::create(message, signing_key, signer.as_ref())
+            .await
+            .map_err(crypto::Error::signing)
     }
 
-    pub fn create_rfc8181_cms(
+    pub async fn create_rfc8181_cms(
         &self,
         message: publication::Message,
         signing_key: &KeyIdentifier,
     ) -> CryptoResult<publication::PublicationCms> {
-        publication::PublicationCms::create(message, signing_key, &self.router).map_err(crypto::Error::signing)
+        let signer = self
+            .router
+            .get_signer_for_key(signing_key)
+            .await
+            .map_err(crypto::Error::key_error)?;
+
+        publication::PublicationCms::create(message, signing_key, signer.as_ref())
+            .await
+            .map_err(crypto::Error::signing)
     }
 
-    pub fn create_ta_signed_message(
+    pub async fn create_ta_signed_message(
         &self,
         data: Bytes,
         validity_days: i64,
         signing_key: &KeyIdentifier,
     ) -> CryptoResult<SignedMessage> {
+        let signer = self
+            .router
+            .get_signer_for_key(signing_key)
+            .await
+            .map_err(crypto::Error::key_error)?;
+
         let validity = SignSupport::sign_validity_days(validity_days);
 
-        SignedMessage::create(data, validity, signing_key, &self.router).map_err(crypto::Error::signing)
+        SignedMessage::create(data, validity, signing_key, signer.as_ref())
+            .await
+            .map_err(crypto::Error::signing)
     }
 }
 

@@ -49,7 +49,7 @@ impl BgpSecCertificates {
     ///
     /// Note that we pass in ALL BGPSec definitions, including definitions that may only
     /// be eligible under another owning RC.
-    pub fn update(
+    pub async fn update(
         &self,
         definitions: &BgpSecDefinitions,
         certified_key: &CertifiedKey,
@@ -68,7 +68,9 @@ impl BgpSecCertificates {
             .filter(|(k, _)| !self.0.contains_key(k) && resources.contains_asn(k.asn()))
         {
             // resource held here, but BGPSec certificate was not yet issued.
-            let cert = self.make_bgpsec_cert(key.asn(), csr.key().clone(), certified_key, issuance_timing, signer)?;
+            let cert = self
+                .make_bgpsec_cert(key.asn(), csr.key().clone(), certified_key, issuance_timing, signer)
+                .await?;
             updates.add_updated(cert);
         }
 
@@ -92,7 +94,7 @@ impl BgpSecCertificates {
     /// should be specified. Or, to re-issue all existing certificates during a key rollover
     /// activation of a new certified_key - in which case the renew_threshold is expected to
     /// be None, and the certified_key is expected to have changed.
-    pub fn renew(
+    pub async fn renew(
         &self,
         certified_key: &CertifiedKey,
         renew_threshold: Option<Time>,
@@ -108,14 +110,16 @@ impl BgpSecCertificates {
         }) {
             let asn = cert.asn();
             let public_key = cert.public_key().clone();
-            let cert = self.make_bgpsec_cert(asn, public_key, certified_key, issuance_timing, signer)?;
+            let cert = self
+                .make_bgpsec_cert(asn, public_key, certified_key, issuance_timing, signer)
+                .await?;
             updates.add_updated(cert);
         }
 
         Ok(updates)
     }
 
-    fn make_bgpsec_cert(
+    async fn make_bgpsec_cert(
         &self,
         asn: Asn,
         public_key: PublicKey,
@@ -123,7 +127,7 @@ impl BgpSecCertificates {
         issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<BgpSecCertInfo> {
-        let serial_number = signer.random_serial()?;
+        let serial_number = signer.random_serial().await?;
 
         let incoming_cert = certified_key.incoming_cert();
         let issuer = incoming_cert.subject().clone();
@@ -156,7 +160,7 @@ impl BgpSecCertificates {
 
         let signing_key = certified_key.key_id();
 
-        let cert = signer.sign_cert(router_cert, signing_key)?;
+        let cert = signer.sign_cert(router_cert, signing_key).await?;
 
         Ok(BgpSecCertInfo::new(asn, cert))
     }

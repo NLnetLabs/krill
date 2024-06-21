@@ -33,12 +33,12 @@ pub fn cert_file_path(tls_keys_dir: &Path) -> PathBuf {
 
 /// Creates a new private key and certificate file if either is found to be
 /// missing in the base_path directory.
-pub fn create_key_cert_if_needed(tls_keys_dir: &Path) -> Result<(), Error> {
+pub async fn create_key_cert_if_needed(tls_keys_dir: &Path) -> Result<(), Error> {
     let key_file_path = key_file_path(tls_keys_dir);
     let cert_file_path = cert_file_path(tls_keys_dir);
 
     if !key_file_path.exists() || !cert_file_path.exists() {
-        create_key_and_cert(tls_keys_dir)
+        create_key_and_cert(tls_keys_dir).await
     } else {
         Ok(())
     }
@@ -47,10 +47,10 @@ pub fn create_key_cert_if_needed(tls_keys_dir: &Path) -> Result<(), Error> {
 /// Creates a new private key and certificate to be used when serving HTTPS.
 /// Only call this in case there is no current key and certificate file
 /// present, or have your files ruthlessly overwritten!
-fn create_key_and_cert(tls_keys_dir: &Path) -> Result<(), Error> {
+async fn create_key_and_cert(tls_keys_dir: &Path) -> Result<(), Error> {
     let mut signer = HttpsSigner::build()?;
     signer.save_private_key(tls_keys_dir)?;
-    signer.save_certificate(tls_keys_dir)?;
+    signer.save_certificate(tls_keys_dir).await?;
 
     Ok(())
 }
@@ -63,23 +63,24 @@ struct HttpsSigner {
     private: PKey<Private>,
 }
 
+#[async_trait::async_trait]
 impl rpki::crypto::Signer for HttpsSigner {
     type KeyId = KeyIdentifier;
     type Error = Error;
 
-    fn create_key(&self, _algorithm: rpki::crypto::PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
+    async fn create_key(&self, _algorithm: rpki::crypto::PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
         unimplemented!("not needed in this context")
     }
 
-    fn get_key_info(&self, _key: &Self::KeyId) -> Result<PublicKey, rpki::crypto::signer::KeyError<Self::Error>> {
+    async fn get_key_info(&self, _key: &Self::KeyId) -> Result<PublicKey, rpki::crypto::signer::KeyError<Self::Error>> {
         self.public_key_info().map_err(rpki::crypto::signer::KeyError::Signer)
     }
 
-    fn destroy_key(&self, _key: &Self::KeyId) -> Result<(), rpki::crypto::signer::KeyError<Self::Error>> {
+    async fn destroy_key(&self, _key: &Self::KeyId) -> Result<(), rpki::crypto::signer::KeyError<Self::Error>> {
         unimplemented!("not needed in this context")
     }
 
-    fn sign<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
+    async fn sign<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized + Sync>(
         &self,
         _key: &Self::KeyId,
         algorithm: Alg,
@@ -88,7 +89,7 @@ impl rpki::crypto::Signer for HttpsSigner {
         self.sign(algorithm, data).map_err(rpki::crypto::SigningError::Signer)
     }
 
-    fn sign_one_off<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
+    async fn sign_one_off<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized + Sync>(
         &self,
         _algorithm: Alg,
         _data: &D,
@@ -96,7 +97,7 @@ impl rpki::crypto::Signer for HttpsSigner {
         unimplemented!("not needed in this context")
     }
 
-    fn rand(&self, _target: &mut [u8]) -> Result<(), Self::Error> {
+    async fn rand(&self, _target: &mut [u8]) -> Result<(), Self::Error> {
         unimplemented!("not needed in this context")
     }
 }
@@ -147,11 +148,14 @@ impl HttpsSigner {
     }
 
     /// Saves a self-signed certificate so that hyper can use it.
-    fn save_certificate(&mut self, tls_keys_dir: &Path) -> Result<(), Error> {
+    async fn save_certificate(&mut self, tls_keys_dir: &Path) -> Result<(), Error> {
         let validity = Validity::new(Time::five_minutes_ago(), Time::years_from_now(100));
         let pub_key = self.public_key_info()?;
 
-        let id_cert = IdCert::new_ta(validity, &pub_key.key_identifier(), self).map_err(Error::signer)?;
+        let id_cert = IdCert::new_ta(validity, &pub_key.key_identifier(), self)
+            .await
+            .map_err(Error::signer)?;
+
         let id_cert_pem = IdCertInfo::from(&id_cert);
 
         let path = cert_file_path(tls_keys_dir);
@@ -223,10 +227,10 @@ mod tests {
 
     use crate::test;
 
-    #[test]
-    fn should_create_key_and_cert() {
-        test::test_under_tmp(|tls_keys_dir| {
-            create_key_cert_if_needed(&tls_keys_dir).unwrap();
-        });
+    #[tokio::test]
+    async fn should_create_key_and_cert() {
+        let (tls_keys_dir, cleanup) = test::tmp_dir();
+        create_key_cert_if_needed(&tls_keys_dir).await.unwrap();
+        cleanup()
     }
 }

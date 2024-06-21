@@ -175,6 +175,7 @@ pub struct Properties {
     krill_version: KrillVersion,
 }
 
+#[async_trait::async_trait]
 impl Aggregate for Properties {
     type Command = PropertiesCommand;
     type StorableCommandDetails = StorablePropertiesCommand;
@@ -193,7 +194,7 @@ impl Aggregate for Properties {
         }
     }
 
-    fn process_init_command(command: PropertiesInitCommand) -> Result<Self::InitEvent, Self::Error> {
+    async fn process_init_command(command: PropertiesInitCommand) -> Result<Self::InitEvent, Self::Error> {
         Ok(PropertiesInitEvent {
             krill_version: command.into_details().krill_version,
         })
@@ -213,7 +214,7 @@ impl Aggregate for Properties {
         }
     }
 
-    fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Event>, Self::Error> {
+    async fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Event>, Self::Error> {
         if log_enabled!(log::Level::Trace) {
             trace!(
                 "Sending command to Properties '{}', version: {}: {}",
@@ -266,38 +267,38 @@ impl PropertiesManager {
             .map_err(Error::AggregateStoreError)
     }
 
-    pub fn is_initialized(&self) -> bool {
-        self.store.has(&self.main_key).unwrap_or_default()
+    pub async fn is_initialized(&self) -> bool {
+        self.store.has(&self.main_key).await.unwrap_or_default()
     }
 
-    pub fn init(&self, krill_version: KrillVersion) -> KrillResult<Arc<Properties>> {
+    pub async fn init(&self, krill_version: KrillVersion) -> KrillResult<Arc<Properties>> {
         let cmd = PropertiesInitCommand::new(
             &self.main_key,
             PropertiesInitCommandDetails { krill_version },
             &self.system_actor,
         );
-        self.store.add(cmd)
+        self.store.add(cmd).await
     }
 
     /// Returns the current KrillVersion used for the data store
-    pub fn current_krill_version(&self) -> KrillResult<KrillVersion> {
-        self.properties().map(|p| p.krill_version.clone())
+    pub async fn current_krill_version(&self) -> KrillResult<KrillVersion> {
+        self.properties().await.map(|p| p.krill_version.clone())
     }
 
     /// Upgrade the KrillVersion
-    pub fn upgrade_krill_version(&self, krill_version: KrillVersion) -> KrillResult<()> {
+    pub async fn upgrade_krill_version(&self, krill_version: KrillVersion) -> KrillResult<()> {
         let cmd = PropertiesCommand::new(
             &self.main_key,
             None,
             PropertiesCommandDetails::UpgradeTo { krill_version },
             &self.system_actor,
         );
-        self.store.command(cmd)?;
+        self.store.command(cmd).await?;
         Ok(())
     }
 
-    fn properties(&self) -> KrillResult<Arc<Properties>> {
-        self.store.get_latest(&self.main_key)
+    async fn properties(&self) -> KrillResult<Arc<Properties>> {
+        self.store.get_latest(&self.main_key).await
     }
 }
 
@@ -309,28 +310,30 @@ mod tests {
 
     use crate::test;
 
-    #[test]
-    fn init_properties() {
-        test::test_in_memory(|storage_uri| {
-            let properties_mgr = PropertiesManager::create(storage_uri, false).unwrap();
+    #[tokio::test]
+    async fn init_properties() {
+        let storage_uri = test::mem_storage();
+        let properties_mgr = PropertiesManager::create(&storage_uri, false).unwrap();
 
-            // Should not be initialised on first use.
-            assert!(!properties_mgr.is_initialized());
+        // Should not be initialised on first use.
+        assert!(!properties_mgr.is_initialized().await);
 
-            // We can initialise the properties to a given krill release.
-            let init_version = KrillVersion::release(0, 13, 0);
-            properties_mgr.init(init_version.clone()).unwrap();
-            assert_eq!(init_version, properties_mgr.current_krill_version().unwrap());
+        // We can initialise the properties to a given krill release.
+        let init_version = KrillVersion::release(0, 13, 0);
+        properties_mgr.init(init_version.clone()).await.unwrap();
+        assert_eq!(init_version, properties_mgr.current_krill_version().await.unwrap());
 
-            // Then we can upgrade the release
-            let updated_version = KrillVersion::release(0, 14, 0);
-            properties_mgr.upgrade_krill_version(updated_version.clone()).unwrap();
-            assert_eq!(updated_version, properties_mgr.current_krill_version().unwrap());
+        // Then we can upgrade the release
+        let updated_version = KrillVersion::release(0, 14, 0);
+        properties_mgr
+            .upgrade_krill_version(updated_version.clone())
+            .await
+            .unwrap();
+        assert_eq!(updated_version, properties_mgr.current_krill_version().await.unwrap());
 
-            // We cannot downgrade
-            let downgrade_version = KrillVersion::release(0, 13, 99);
-            assert!(downgrade_version < properties_mgr.current_krill_version().unwrap());
-            assert!(properties_mgr.upgrade_krill_version(downgrade_version).is_err());
-        })
+        // We cannot downgrade
+        let downgrade_version = KrillVersion::release(0, 13, 99);
+        assert!(downgrade_version < properties_mgr.current_krill_version().await.unwrap());
+        assert!(properties_mgr.upgrade_krill_version(downgrade_version).await.is_err());
     }
 }

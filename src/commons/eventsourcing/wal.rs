@@ -5,12 +5,11 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use kvx::Namespace;
 use rpki::ca::idexchange::MyHandle;
 use serde::Serialize;
 use url::Url;
 
-use crate::commons::eventsourcing::{segment, Key, KeyValueError, KeyValueStore, Scope, Segment, SegmentExt, Storable};
+use crate::commons::storage::{Key, KeyValueError, KeyValueStore, Namespace, Scope, Segment, SegmentBuf, Storable};
 
 //------------ WalSupport ----------------------------------------------------
 
@@ -135,10 +134,11 @@ impl<T: WalSupport> WalStore<T> {
     }
 
     /// Warms up the store: caches all instances.
-    pub fn warm(&self) -> WalStoreResult<()> {
-        for handle in self.list()? {
+    pub async fn warm(&self) -> WalStoreResult<()> {
+        for handle in self.list().await? {
             let latest = self
                 .get_latest(&handle)
+                .await
                 .map_err(|e| WalStoreError::WarmupFailed(handle.clone(), e.to_string()))?;
 
             self.cache.write().unwrap().insert(handle, latest);
@@ -147,27 +147,28 @@ impl<T: WalSupport> WalStore<T> {
     }
 
     /// Add a new entity for the given handle. Fails if the handle is in use.
-    pub fn add(&self, handle: &MyHandle, instance: T) -> WalStoreResult<()> {
+    pub async fn add(&self, handle: &MyHandle, instance: T) -> WalStoreResult<()> {
         let scope = Self::scope_for_handle(handle);
         let instance = Arc::new(instance);
 
         self.kv
-            .execute(&scope, |kv| {
+            .execute(&scope, |kv| async move {
                 let key = Self::key_for_snapshot(handle);
                 let json = serde_json::to_value(instance.as_ref())?;
-                kv.store(&key, json)?;
+                kv.store(&key, json).await?;
 
                 self.cache_update(handle, instance.clone());
 
                 Ok(())
             })
+            .await
             .map_err(WalStoreError::KeyStoreError)
     }
 
     /// Checks whether there is an instance for the given handle.
-    pub fn has(&self, handle: &MyHandle) -> WalStoreResult<bool> {
+    pub async fn has(&self, handle: &MyHandle) -> WalStoreResult<bool> {
         let scope = Self::scope_for_handle(handle);
-        self.kv.has_scope(&scope).map_err(WalStoreError::KeyStoreError)
+        self.kv.has_scope(&scope).await.map_err(WalStoreError::KeyStoreError)
     }
 
     /// Get the latest revision for the given handle.
@@ -175,32 +176,33 @@ impl<T: WalSupport> WalStore<T> {
     /// This will use the cache if it's available and otherwise get a snapshot
     /// from the keystore. Then it will check whether there are any further
     /// changes.
-    pub fn get_latest(&self, handle: &MyHandle) -> Result<Arc<T>, T::Error> {
-        self.execute_opt_command(handle, None, false)
+    pub async fn get_latest(&self, handle: &MyHandle) -> Result<Arc<T>, T::Error> {
+        self.execute_opt_command(handle, None, false).await
     }
 
     /// Remove an instance from this store. Irrevocable.
-    pub fn remove(&self, handle: &MyHandle) -> WalStoreResult<()> {
-        if !self.has(handle)? {
+    pub async fn remove(&self, handle: &MyHandle) -> WalStoreResult<()> {
+        if !self.has(handle).await? {
             Err(WalStoreError::Unknown(handle.clone()))
         } else {
             let scope = Self::scope_for_handle(handle);
 
             self.kv
-                .execute(&scope, |kv| {
-                    kv.delete_scope(&scope)?;
+                .execute(&Scope::global(), |kv| async move {
+                    kv.delete_scope(&scope).await?;
                     self.cache_remove(handle);
                     Ok(())
                 })
+                .await
                 .map_err(WalStoreError::KeyStoreError)
         }
     }
 
     /// Returns a list of all instances managed in this store.
-    pub fn list(&self) -> WalStoreResult<Vec<MyHandle>> {
+    pub async fn list(&self) -> WalStoreResult<Vec<MyHandle>> {
         let mut res = vec![];
 
-        for scope in self.kv.scopes()? {
+        for scope in self.kv.scopes().await? {
             if let Ok(handle) = MyHandle::from_str(&scope.to_string()) {
                 res.push(handle)
             }
@@ -216,19 +218,19 @@ impl<T: WalSupport> WalStore<T> {
     ///     - apply the wal set locally
     ///     - save the wal set
     ///     - if saved properly update the cache
-    pub fn send_command(&self, command: T::Command) -> Result<Arc<T>, T::Error> {
+    pub async fn send_command(&self, command: T::Command) -> Result<Arc<T>, T::Error> {
         let handle = command.handle().clone();
-        self.execute_opt_command(&handle, Some(command), false)
+        self.execute_opt_command(&handle, Some(command), false).await
     }
 
-    fn execute_opt_command(
+    async fn execute_opt_command(
         &self,
         handle: &MyHandle,
         cmd_opt: Option<T::Command>,
         save_snapshot: bool,
     ) -> Result<Arc<T>, T::Error> {
         self.kv
-            .execute(&Self::scope_for_handle(handle), |kv| {
+            .execute(&Self::scope_for_handle(handle), |kv| async move {
                 // Track whether anything has changed compared to the cached
                 // instance (if any) so that we will know whether the cache
                 // should be updated.
@@ -246,7 +248,7 @@ impl<T: WalSupport> WalStore<T> {
 
                         let key = Self::key_for_snapshot(handle);
 
-                        match kv.get(&key)? {
+                        match kv.get(&key).await? {
                             Some(value) => {
                                 trace!("Deserializing stored instance for '{handle}'");
                                 let latest: T = serde_json::from_value(value)?;
@@ -282,7 +284,7 @@ impl<T: WalSupport> WalStore<T> {
                         let revision = latest_inner.revision();
                         let key = Self::key_for_wal_set(handle, revision);
 
-                        if let Some(value) = kv.get(&key)? {
+                        if let Some(value) = kv.get(&key).await? {
                             let set: WalSet<T> = serde_json::from_value(value)?;
                             trace!("applying revision '{revision}' to '{handle}'");
                             latest_inner.apply(set);
@@ -327,7 +329,7 @@ impl<T: WalSupport> WalStore<T> {
 
                                     let key_for_wal_set = Self::key_for_wal_set(handle, revision);
 
-                                    if kv.has(&key_for_wal_set)? {
+                                    if kv.has(&key_for_wal_set).await? {
                                         error!("Change set for '{handle}' version '{revision}' already exists.");
                                         error!("This is a bug. Please report this issue to rpki-team@nlnetlabs.nl.");
                                         error!("Krill will exit. If this issue repeats, consider removing {}.", handle);
@@ -338,7 +340,7 @@ impl<T: WalSupport> WalStore<T> {
 
                                     latest_inner.apply(set);
 
-                                    kv.store(&key_for_wal_set, json)?;
+                                    kv.store(&key_for_wal_set, json).await?;
                                 }
                             }
                         }
@@ -353,35 +355,36 @@ impl<T: WalSupport> WalStore<T> {
                     // Save the latest version as snapshot
                     let key = Self::key_for_snapshot(handle);
                     let value = serde_json::to_value(latest.as_ref())?;
-                    kv.store(&key, value)?;
+                    kv.store(&key, value).await?;
 
                     // Delete all wal sets (changes), since we are doing
                     // this inside a transaction or locked scope we can
                     // assume that all changes were applied, and there
                     // are no other threads creating additional changes
                     // that we were not aware of.
-                    for key in kv.list_keys(&Self::scope_for_handle(handle))? {
+                    for key in kv.list_keys(&Self::scope_for_handle(handle)).await? {
                         if key.name().as_str().starts_with("wal-") {
-                            kv.delete(&key)?;
+                            kv.delete(&key).await?;
                         }
                     }
                 }
 
                 Ok(Ok(latest))
             })
+            .await
             .map_err(|e| T::Error::from(WalStoreError::KeyStoreError(e)))?
     }
 
-    pub fn update_snapshots(&self) -> Result<(), T::Error> {
-        for handle in self.list()? {
-            self.update_snapshot(&handle)?;
+    pub async fn update_snapshots(&self) -> Result<(), T::Error> {
+        for handle in self.list().await? {
+            self.update_snapshot(&handle).await?;
         }
         Ok(())
     }
 
     /// Update snapshot and archive or delete old wal sets
-    pub fn update_snapshot(&self, handle: &MyHandle) -> Result<Arc<T>, T::Error> {
-        self.execute_opt_command(handle, None, true)
+    pub async fn update_snapshot(&self, handle: &MyHandle) -> Result<Arc<T>, T::Error> {
+        self.execute_opt_command(handle, None, true).await
     }
 
     fn cache_get(&self, id: &MyHandle) -> Option<Arc<T>> {
@@ -398,11 +401,11 @@ impl<T: WalSupport> WalStore<T> {
 
     fn scope_for_handle(handle: &MyHandle) -> Scope {
         // handle should always be a valid Segment
-        Scope::from_segment(Segment::parse_lossy(handle.as_str()))
+        Scope::from_segment(SegmentBuf::parse_lossy(handle.as_str()))
     }
 
     fn key_for_snapshot(handle: &MyHandle) -> Key {
-        Key::new_scoped(Self::scope_for_handle(handle), segment!("snapshot.json"))
+        Key::new_scoped(Self::scope_for_handle(handle), SegmentBuf::parse_lossy("snapshot.json"))
     }
 
     fn key_for_wal_set(handle: &MyHandle, revision: u64) -> Key {

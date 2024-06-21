@@ -2192,29 +2192,28 @@ mod test {
         assert_eq!(base_uri(), signed_objects_uri)
     }
 
-    #[test]
-    fn mft_uri() {
-        test::test_in_memory(|storage_uri| {
-            let signer = OpenSslSigner::build(storage_uri, "dummy", None).unwrap();
-            let key_id = signer.create_key(PublicKeyFormat::Rsa).unwrap();
-            let pub_key = signer.get_key_info(&key_id).unwrap();
+    #[tokio::test]
+    async fn mft_uri() {
+        let storage_uri = test::mem_storage();
+        let signer = OpenSslSigner::build(&storage_uri, "dummy", None).unwrap();
+        let key_id = signer.create_key(PublicKeyFormat::Rsa).await.unwrap();
+        let pub_key = signer.get_key_info(&key_id).await.unwrap();
 
-            let mft_uri = info().resolve("", ObjectName::mft_for_key(&pub_key.key_identifier()).as_ref());
+        let mft_uri = info().resolve("", ObjectName::mft_for_key(&pub_key.key_identifier()).as_ref());
 
-            let mft_path = mft_uri.relative_to(&base_uri()).unwrap();
+        let mft_path = mft_uri.relative_to(&base_uri()).unwrap();
 
-            assert_eq!(44, mft_path.len());
+        assert_eq!(44, mft_path.len());
 
-            // the file name should be the hexencoded pub key info
-            // not repeating that here, but checking that the name
-            // part is validly hex encoded.
-            let name = &mft_path[..40];
-            hex::decode(name).unwrap();
+        // the file name should be the hexencoded pub key info
+        // not repeating that here, but checking that the name
+        // part is validly hex encoded.
+        let name = &mft_path[..40];
+        hex::decode(name).unwrap();
 
-            // and the extension is '.mft'
-            let ext = &mft_path[40..];
-            assert_eq!(ext, ".mft");
-        });
+        // and the extension is '.mft'
+        let ext = &mft_path[40..];
+        assert_eq!(ext, ".mft");
     }
 
     #[test]

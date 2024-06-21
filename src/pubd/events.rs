@@ -39,13 +39,14 @@ impl RepositoryAccessInitEvent {
 }
 
 impl RepositoryAccessInitEvent {
-    pub fn init(
+    pub async fn init(
         rsync_jail: uri::Rsync,
         rrdp_base_uri: uri::Https,
         signer: &KrillSigner,
     ) -> KrillResult<RepositoryAccessInitEvent> {
         signer
             .create_self_signed_id_cert()
+            .await
             .map_err(Error::signer)
             .map(|id| RepositoryAccessInitEvent {
                 id_cert: id.into(),

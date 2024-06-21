@@ -21,6 +21,7 @@ exclude = [
 ]
 
 [dependencies]
+async-trait     = "0.1.74"
 backoff         = { version = "0.4.0", optional = true }
 base64          = "^0.13"
 basic-cookies   = { version = "^0.1", optional = true }
@@ -39,6 +40,7 @@ intervaltree    = "0.2.6"
 jmespatch       = { version = "^0.3", features = ["sync"], optional = true }
 kmip            = { version = "0.4.2", package = "kmip-protocol", features = [ "tls-with-openssl" ], optional = true }
 kvx             = { version = "0.9.3", features = ["macros"] }
+lazy_static     = "1.4.0"
 libflate        = "^1"
 log             = "^0.4"
 once_cell       = { version = "^1.7.2", optional = true }
@@ -51,11 +53,13 @@ regex           = { version = "1.5.5", optional = true, default_features = false
 reqwest         = { version = "0.11", features = ["json"] }
 rpassword       = { version = "^5.0", optional = true }
 #rpki            = { version = "0.18.0", features = ["ca", "compat", "rrdp"] }
-rpki            = { git = "https://github.com/nLnetLabs/rpki-rs", features = [ "ca", "compat", "rrdp" ] }
+rpki            = { git = "https://github.com/nLnetLabs/rpki-rs", branch = "async-signer-trait", features = [ "ca", "compat", "rrdp" ] }
+rustix          = { version = "0.38.28", features = ["fs"] }
 rustls-pemfile  = "1.0.4"
 scrypt          = { version = "^0.6", optional = true, default-features = false }
 serde           = { version = "^1.0", features = ["derive", "rc"] }
 serde_json      = "^1.0"
+tempfile        = "3.1.0"
 tokio           = { version = "1", features = [ "macros", "rt", "rt-multi-thread", "signal", "time" ] }
 tokio-rustls    = "0.24.1"
 toml            = "^0.5"
