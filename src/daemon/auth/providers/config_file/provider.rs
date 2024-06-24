@@ -1,5 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
+use base64::engine::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
 use unicode_normalization::UnicodeNormalization;
 
 use crate::{
@@ -13,9 +15,9 @@ use crate::{
         auth::providers::config_file::config::ConfigUserDetails,
         auth::{Auth, LoggedInUser},
         config::Config,
-        http::HttpResponse,
     },
 };
+use crate::daemon::http::{HttpResponse, HyperRequest};
 
 const UI_LOGIN_ROUTE_PATH: &str = "/login?withId=true";
 
@@ -82,10 +84,10 @@ impl ConfigFileAuthProvider {
     }
 
     /// Parse HTTP Basic Authorization header
-    fn get_auth(&self, request: &hyper::Request<hyper::Body>) -> Option<Auth> {
+    fn get_auth(&self, request: &HyperRequest) -> Option<Auth> {
         let header = request.headers().get(hyper::http::header::AUTHORIZATION)?;
         let auth = header.to_str().ok()?.strip_prefix("Basic ")?;
-        let auth = base64::decode(auth).ok()?;
+        let auth = BASE64_ENGINE.decode(auth).ok()?;
         let auth = String::from_utf8(auth).ok()?;
         let (username, password) = auth.split_once(':')?;
 
@@ -97,7 +99,9 @@ impl ConfigFileAuthProvider {
 }
 
 impl ConfigFileAuthProvider {
-    pub fn authenticate(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<Option<ActorDef>> {
+    pub fn authenticate(
+        &self, request: &HyperRequest
+    ) -> KrillResult<Option<ActorDef>> {
         if log_enabled!(log::Level::Trace) {
             trace!("Attempting to authenticate the request..");
         }
@@ -127,7 +131,7 @@ impl ConfigFileAuthProvider {
         Ok(HttpResponse::text_no_cache(UI_LOGIN_ROUTE_PATH.into()))
     }
 
-    pub fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
+    pub fn login(&self, request: &HyperRequest) -> KrillResult<LoggedInUser> {
         if let Some(Auth::UsernameAndPassword { username, password }) = self.get_auth(request) {
             use scrypt::scrypt;
 
@@ -143,7 +147,10 @@ impl ConfigFileAuthProvider {
 
             // hash twice with two different salts
             // legacy hashing strategy to be compatible with lagosta
-            let params = scrypt::Params::new(PW_HASH_LOG_N, PW_HASH_R, PW_HASH_P).unwrap();
+            let params = scrypt::Params::new(
+                PW_HASH_LOG_N, PW_HASH_R, PW_HASH_P,
+                scrypt::Params::RECOMMENDED_LEN,
+            ).unwrap();
             let weak_salt = format!("krill-lagosta-{username}");
             let weak_salt = weak_salt.nfkc().collect::<String>();
 
@@ -188,7 +195,9 @@ impl ConfigFileAuthProvider {
         }
     }
 
-    pub fn logout(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<HttpResponse> {
+    pub fn logout(
+        &self, request: &HyperRequest
+    ) -> KrillResult<HttpResponse> {
         match httpclient::get_bearer_token(request) {
             Some(token) => {
                 self.session_cache.remove(&token);

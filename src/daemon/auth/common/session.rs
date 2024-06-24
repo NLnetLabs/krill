@@ -4,6 +4,9 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+use base64::engine::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
+
 use crate::{
     commons::{api::Token, error::Error, KrillResult},
     daemon::auth::common::crypt::{self, CryptState, NonceState},
@@ -194,7 +197,7 @@ impl LoginSessionCache {
         let unencrypted_bytes = session_json_str.as_bytes();
 
         let encrypted_bytes = (self.encrypt_fn)(&crypt_state.key, unencrypted_bytes, &crypt_state.nonce)?;
-        let token = Token::from(base64::encode(encrypted_bytes));
+        let token = Token::from(BASE64_ENGINE.encode(encrypted_bytes));
 
         self.cache_session(&token, &session);
         Ok(token)
@@ -208,7 +211,9 @@ impl LoginSessionCache {
             trace!("Session cache miss, deserializing...");
         }
 
-        let bytes = base64::decode(token.as_ref().as_bytes()).map_err(|err| {
+        let bytes = BASE64_ENGINE.decode(
+            token.as_ref().as_bytes()
+        ).map_err(|err| {
             debug!("Invalid bearer token: cannot decode: {}", err);
             Error::ApiInvalidCredentials("Invalid bearer token".to_string())
         })?;

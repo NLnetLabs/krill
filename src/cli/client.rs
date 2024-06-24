@@ -580,7 +580,7 @@ impl KrillClient {
             config.push_str(hsm_add_on);
         }
 
-        let mut c: Config = toml::from_slice(config.as_ref()).map_err(Error::init)?;
+        let mut c: Config = toml::from_str(&config).map_err(Error::init)?;
         c.process().map_err(Error::init)?;
 
         Ok(ApiResponse::GenericBody(config))
@@ -592,7 +592,9 @@ impl KrillClient {
         let (password_hash, salt) = {
             use scrypt::scrypt;
 
-            let password = rpassword::read_password_from_tty(Some("Enter the password to hash: ")).unwrap();
+            let password = rpassword::prompt_password(
+                "Enter the password to hash: "
+            ).unwrap();
 
             // The scrypt-js NPM documentation (https://www.npmjs.com/package/scrypt-js) says:
             //   "TL;DR - either only allow ASCII characters in passwords, or use
@@ -602,7 +604,10 @@ impl KrillClient {
 
             let user_id = details.id().nfkc().collect::<String>();
             let password = password.trim().nfkc().collect::<String>();
-            let params = scrypt::Params::new(PW_HASH_LOG_N, PW_HASH_R, PW_HASH_P).unwrap();
+            let params = scrypt::Params::new(
+                PW_HASH_LOG_N, PW_HASH_R, PW_HASH_P,
+                scrypt::Params::RECOMMENDED_LEN,
+            ).unwrap();
 
             // hash twice with two different salts
             // hash first with a salt the client browser knows how to construct based on the users id and a site

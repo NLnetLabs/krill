@@ -31,6 +31,8 @@ use std::{
 
 use tokio::sync::{RwLock, RwLockReadGuard};
 
+use base64::engine::Engine as _;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD as URL_BASE64_ENGINE;
 use basic_cookies::Cookie;
 use hyper::header::{HeaderValue, SET_COOKIE};
 use jmespatch as jmespath;
@@ -78,12 +80,10 @@ use crate::{
             Auth, LoggedInUser,
         },
         config::Config,
-        http::{
-            auth::{url_encode, AUTH_CALLBACK_ENDPOINT},
-            HttpResponse,
-        },
+        http::auth::{url_encode, AUTH_CALLBACK_ENDPOINT},
     },
 };
+use crate::daemon::http::{HttpResponse, HyperRequest};
 
 // On modern browsers (Chrome >= 51, Edge >= 16, Firefox >= 60 & Safari >= 12) the "__Host" prefix is a defence-in-depth
 // measure that causes the browser to further restrict access to the cookie, permitting access only if the cookie was
@@ -742,7 +742,9 @@ impl OpenIDConnectAuthProvider {
         }
     }
 
-    fn extract_cookie(&self, request: &hyper::Request<hyper::Body>, cookie_name: &str) -> Option<String> {
+    fn extract_cookie(
+        &self, request: &HyperRequest, cookie_name: &str
+    ) -> Option<String> {
         for cookie_hdr_val in request.headers().get_all(hyper::http::header::COOKIE) {
             if let Ok(cookie_hdr_val_str) = cookie_hdr_val.to_str() {
                 // Use a helper crate to parse the cookie string as it's
@@ -794,7 +796,7 @@ impl OpenIDConnectAuthProvider {
         Error::ApiLoginError(msg)
     }
 
-    fn get_auth(&self, request: &hyper::Request<hyper::Body>) -> Option<Auth> {
+    fn get_auth(&self, request: &HyperRequest) -> Option<Auth> {
         if let Some(query) = urlparse(request.uri().to_string()).get_parsed_query() {
             if let Some(code) = query.get_first_from_str("code") {
                 trace!("OpenID Connect: Processing potential RFC-6749 section 4.1.2 redirected Authorization Response");
@@ -852,7 +854,7 @@ impl OpenIDConnectAuthProvider {
 
     fn verify_csrf_token(&self, state: String, csrf_token_hash: String) -> KrillResult<()> {
         let request_csrf_hash = sha256(state.as_bytes());
-        match base64::decode_config(csrf_token_hash, base64::URL_SAFE_NO_PAD) {
+        match URL_BASE64_ENGINE.decode(&csrf_token_hash) {
             Ok(cookie_csrf_hash) if request_csrf_hash == cookie_csrf_hash => Ok(()),
             Ok(cookie_csrf_hash) => Err(Self::internal_error(
                 "OpenID Connect: CSRF token mismatch",
@@ -1103,7 +1105,9 @@ impl OpenIDConnectAuthProvider {
     /// an error to report back to the user (one of the ApiAuth* Error types).
     /// Make sure to not leak any OIDC implementation details into the Error result!
     /// This function is also responsible for all logging around refreshing the token / extending the session.
-    pub async fn authenticate(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<Option<ActorDef>> {
+    pub async fn authenticate(
+        &self, request: &HyperRequest
+    ) -> KrillResult<Option<ActorDef>> {
         trace!("Attempting to authenticate the request..");
 
         self.initialize_connection_if_needed().await.map_err(|err| {
@@ -1312,12 +1316,12 @@ impl OpenIDConnectAuthProvider {
         // in reversed positions.
         let csrf_token = CsrfToken::new_random();
         let csrf_token_hash = sha256(csrf_token.secret().as_bytes());
-        let csrf_token_hash_b64_str = base64::encode_config(csrf_token_hash, base64::URL_SAFE_NO_PAD);
+        let csrf_token_hash_b64_str = URL_BASE64_ENGINE.encode(csrf_token_hash);
 
         let mut request = conn.client.authorize_url(
             AuthenticationFlow::<CoreResponseType>::AuthorizationCode,
             || csrf_token,
-            || Nonce::new(base64::encode_config(nonce_hash, base64::URL_SAFE_NO_PAD)),
+            || Nonce::new(URL_BASE64_ENGINE.encode(nonce_hash)),
         );
 
         // This unwrap is safe as we check in new() that the OpenID Connect
@@ -1370,7 +1374,7 @@ impl OpenIDConnectAuthProvider {
         debug!("OpenID Connect: Login URL will be {:?}", &authorize_url);
 
         let res_body = authorize_url.as_str().as_bytes().to_vec();
-        let mut res = HttpResponse::text_no_cache(res_body).response();
+        let mut res = HttpResponse::text_no_cache(res_body).into_response();
 
         // Create a cookie with the following attributes to attempt to protect them as much as possible:
         //   Secure       - Cookie is only sent to the server when a request is made with the https: scheme
@@ -1418,7 +1422,9 @@ impl OpenIDConnectAuthProvider {
         Ok(HttpResponse::new(res))
     }
 
-    pub async fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
+    pub async fn login(
+        &self, request: &HyperRequest
+    ) -> KrillResult<LoggedInUser> {
         self.initialize_connection_if_needed().await.map_err(|err| {
             OpenIDConnectAuthProvider::internal_error(
                 "OpenID Connect: Cannot login user: Failed to connect to provider",
@@ -1502,7 +1508,9 @@ impl OpenIDConnectAuthProvider {
                 // claim is actually the hash of the original nonce, as per
                 // the advice in the OpenID Core 1.0 spec. See:
                 // https://openid.net/specs/openid-connect-core-1_0.html#NonceNotes
-                let nonce_hash = Nonce::new(base64::encode_config(sha256(nonce.as_bytes()), base64::URL_SAFE_NO_PAD));
+                let nonce_hash = Nonce::new(
+                    URL_BASE64_ENGINE.encode(sha256(nonce.as_bytes()))
+                );
 
                 let id_token_claims = self.get_token_id_claims(&token_response, nonce_hash).await?;
 
@@ -1618,7 +1626,9 @@ impl OpenIDConnectAuthProvider {
     /// logout page is not possible, instead from the end-user's perspective they are returned to the Lagosta web UI
     /// index page (which currently immediately redirects the user to the 3rd party OpenID Connect provider login page)
     /// but before that Krill contacts the provider on the logged-in users behalf to revoke their token at the provider.
-    pub async fn logout(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<HttpResponse> {
+    pub async fn logout(
+        &self, request: &HyperRequest
+    ) -> KrillResult<HttpResponse> {
         // verify the bearer token indeed represents a logged-in Krill OpenID Connect provider session
         let token = httpclient::get_bearer_token(request).ok_or_else(|| {
             warn!("Unexpectedly received a logout request without a session token.");
