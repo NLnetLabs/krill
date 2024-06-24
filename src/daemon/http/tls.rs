@@ -35,6 +35,7 @@ pub fn create_server_config(
             read_certs(cert_path)?, read_key(key_path)?
         ).map_err(|err| TlsConfigError::other(ErrorKind::Tls, err))?;
 
+    // See: https://wiki.wireshark.org/TLS#tls-decryption
     if std::env::var(SSLKEYLOGFILE_ENV_VAR_NAME).is_ok() {
         config.key_log = Arc::new(KeyLogFile::new());
     }
@@ -57,13 +58,13 @@ fn read_certs(
     })
 }
 
-/// Reads the first private key from the given PEM file.
+/// Reads a private key from the given PEM file.
 ///
 /// The key may be a PKCS#1 RSA private key, a PKCS#8 private key, or a
 /// SEC1 encoded EC private key. All other PEM items are ignored.
 ///
 /// Errors out if opening or reading the file fails or if there isn’t exactly
-/// one private key in the file.
+/// one recognized private key in the file.
 fn read_key(
     path: &Path
 ) -> Result<PrivateKeyDer<'static>, TlsConfigError> {
@@ -126,7 +127,7 @@ pin_project! {
         ///
         /// Because hyper still wants to do a clean flush and shutdown, we
         /// need to still work in this state. For read and write, we just
-        /// keep returning the clean shutdown indiciation of zero length
+        /// keep returning the clean shutdown indication of zero length
         /// operations.
         Empty,
     }
@@ -244,7 +245,7 @@ pub struct MaybeTlsTcpStream {
 impl MaybeTlsTcpStream {
     /// Creates a new stream.
     ///
-    /// If `tls` is some, the stream will be a TLS stream, otherwise it
+    /// If `tls` is `Some(_)`, the stream will be a TLS stream, otherwise it
     /// will be a plain TCP stream.
     pub fn new(sock: TcpStream, tls: Option<&TlsAcceptor>) -> Self {
         MaybeTlsTcpStream {
