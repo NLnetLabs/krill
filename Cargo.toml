@@ -27,7 +27,7 @@ basic-cookies   = { version = "0.1", optional = true }
 bytes           = "1"
 chrono          = { version = "0.4", features = ["serde"] }
 clap            = "2.33"
-cryptoki        = { version = "^0.3", optional = true }
+cryptoki        = { version = "0.7", optional = true }
 fern            = { version = "0.6.2", features = ["syslog-6"] }
 futures-util    = "0.3"
 fslock          = "0.2.1"
@@ -61,7 +61,7 @@ serde_json      = "1.0"
 tokio           = { version = "1", features = [ "macros", "rt", "rt-multi-thread", "signal", "time" ] }
 tokio-rustls    = { version = "0.26", default-features = false, features = [ "ring", "logging", "tls12" ] }
 toml            = "0.8.14"
-unicode-normalization = { version = "^0.1", optional = true }
+unicode-normalization = { version = "0.1", optional = true }
 url             = { version = "2.3.1", features = ["serde"] }
 urlparse        = { version = "0.7", optional = true }
 uuid            = { version = "1.1", features = ["v4"] }
