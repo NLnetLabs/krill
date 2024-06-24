@@ -32,7 +32,7 @@ use std::{
 use tokio::sync::{RwLock, RwLockReadGuard};
 
 use base64::engine::Engine as _;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD as BASE64_ENGINE;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD as URL_BASE64_ENGINE;
 use basic_cookies::Cookie;
 use hyper::header::{HeaderValue, SET_COOKIE};
 use jmespatch as jmespath;
@@ -854,7 +854,7 @@ impl OpenIDConnectAuthProvider {
 
     fn verify_csrf_token(&self, state: String, csrf_token_hash: String) -> KrillResult<()> {
         let request_csrf_hash = sha256(state.as_bytes());
-        match BASE64_ENGINE.decode(&csrf_token_hash) {
+        match URL_BASE64_ENGINE.decode(&csrf_token_hash) {
             Ok(cookie_csrf_hash) if request_csrf_hash == cookie_csrf_hash => Ok(()),
             Ok(cookie_csrf_hash) => Err(Self::internal_error(
                 "OpenID Connect: CSRF token mismatch",
@@ -1314,12 +1314,12 @@ impl OpenIDConnectAuthProvider {
         // in reversed positions.
         let csrf_token = CsrfToken::new_random();
         let csrf_token_hash = sha256(csrf_token.secret().as_bytes());
-        let csrf_token_hash_b64_str = BASE64_ENGINE.encode(csrf_token_hash);
+        let csrf_token_hash_b64_str = URL_BASE64_ENGINE.encode(csrf_token_hash);
 
         let mut request = conn.client.authorize_url(
             AuthenticationFlow::<CoreResponseType>::AuthorizationCode,
             || csrf_token,
-            || Nonce::new(BASE64_ENGINE.encode(nonce_hash)),
+            || Nonce::new(URL_BASE64_ENGINE.encode(nonce_hash)),
         );
 
         // This unwrap is safe as we check in new() that the OpenID Connect
@@ -1505,7 +1505,7 @@ impl OpenIDConnectAuthProvider {
                 // the advice in the OpenID Core 1.0 spec. See:
                 // https://openid.net/specs/openid-connect-core-1_0.html#NonceNotes
                 let nonce_hash = Nonce::new(
-                    BASE64_ENGINE.encode(sha256(nonce.as_bytes()))
+                    URL_BASE64_ENGINE.encode(sha256(nonce.as_bytes()))
                 );
 
                 let id_token_claims = self.get_token_id_claims(&token_response, nonce_hash).await?;
