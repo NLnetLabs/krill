@@ -1068,8 +1068,9 @@ impl From<&SigningCert> for ParentStatusIssuingCert {
             signing.cert().to_captured().as_slice()
         );
         let cert_pem = format!(
-            "-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n",
-            cert
+            "-----BEGIN CERTIFICATE-----\n\
+            {cert}\n\
+            -----END CERTIFICATE-----\n",
         );
 
         ParentStatusIssuingCert {
@@ -1091,8 +1092,9 @@ impl From<&IssuedCert> for ParentStatusCert {
             issued.cert().to_captured().as_slice()
         );
         let cert_pem = format!(
-            "-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n",
-            cert
+            "-----BEGIN CERTIFICATE-----\n\
+            {cert}\n\
+            -----END CERTIFICATE-----\n",
         );
         ParentStatusCert {
             uri: issued.uri().clone(),

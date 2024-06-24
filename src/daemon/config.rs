@@ -1894,7 +1894,7 @@ mod tests {
         for config_level in &["error", "warn"] {
             // build a logger for that config
             let log = void_logger_from_krill_config(
-                &format!(r#"log_level = "{}""#, config_level)
+                &format!(r#"log_level = "{config_level}""#)
             );
 
             // for all log levels
@@ -1928,7 +1928,7 @@ mod tests {
         for config_level in &["info", "debug", "trace"] {
             // build a logger for that config
             let log = void_logger_from_krill_config(
-                &format!(r#"log_level = "{}""#, config_level)
+                &format!(r#"log_level = "{config_level}""#)
             );
 
             // for each level of interest that messages could be logged at
@@ -1975,7 +1975,7 @@ mod tests {
             for config_level in &["debug", "trace"] {
                 // build a logger for that config
                 let log = void_logger_from_krill_config(
-                    &format!(r#"log_level = "{}""#, config_level)
+                    &format!(r#"log_level = "{config_level}""#)
                 );
 
                 // for each level of interest that messages could be logged at
