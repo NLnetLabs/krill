@@ -5,6 +5,8 @@ use std::{
 };
 
 use bytes::Bytes;
+use base64::engine::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
 use log::LevelFilter;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use syslog::Facility;
@@ -18,7 +20,7 @@ where
     D: Deserializer<'de>,
 {
     let some = String::deserialize(d)?;
-    let dec = base64::decode(some).map_err(de::Error::custom)?;
+    let dec = BASE64_ENGINE.decode(some).map_err(de::Error::custom)?;
     Ok(Bytes::from(dec))
 }
 
@@ -26,7 +28,7 @@ pub fn ser_bytes<S>(b: &Bytes, s: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
-    base64::encode(b).serialize(s)
+    BASE64_ENGINE.encode(b).serialize(s)
 }
 
 //------------ AsBlocks ------------------------------------------------------

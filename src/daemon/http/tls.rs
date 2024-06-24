@@ -25,7 +25,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use futures::ready;
+use futures_util::ready;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_rustls::rustls::{Certificate, KeyLogFile, ServerConfig};
 

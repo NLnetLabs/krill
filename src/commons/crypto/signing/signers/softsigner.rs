@@ -5,6 +5,8 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+use base64::engine::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
 use bytes::Bytes;
 use openssl::{
     hash::MessageDigest,
@@ -259,7 +261,7 @@ impl Serialize for OpenSslKeyPair {
     {
         let bytes: Vec<u8> = self.pkey.as_ref().private_key_to_der().map_err(ser::Error::custom)?;
 
-        base64::encode(bytes).serialize(s)
+        BASE64_ENGINE.encode(bytes).serialize(s)
     }
 }
 
@@ -300,11 +302,15 @@ impl OpenSslKeyPair {
     }
 
     fn from_base64(base64: &str) -> Result<OpenSslKeyPair, SignerError> {
-        let bytes = base64::decode(base64).map_err(|_| SignerError::other("Cannot parse private key base64"))?;
+        let bytes = BASE64_ENGINE.decode(base64).map_err(|_| {
+            SignerError::other("Cannot parse private key base64")
+        })?;
 
         PKey::private_key_from_der(&bytes)
             .map(|pkey| OpenSslKeyPair { pkey })
-            .map_err(|e| SignerError::Other(format!("Invalid private key: {}", e)))
+            .map_err(|e| {
+                SignerError::Other(format!("Invalid private key: {}", e))
+            })
     }
 }
 
