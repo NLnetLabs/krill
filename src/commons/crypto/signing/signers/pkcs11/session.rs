@@ -3,8 +3,9 @@ use std::sync::{Arc, Mutex};
 use cryptoki::error::Error as Pkcs11Error;
 use cryptoki::mechanism::Mechanism;
 use cryptoki::object::{Attribute, AttributeType, ObjectHandle};
-use cryptoki::session::{SessionFlags, UserType};
-use cryptoki::{session::Session, slot::Slot};
+use cryptoki::session::{Session, UserType};
+use cryptoki::slot::Slot;
+use cryptoki::types::AuthPin;
 
 use crate::commons::crypto::signers::pkcs11::context::ThreadSafePkcs11Context;
 
@@ -17,10 +18,6 @@ pub(super) struct Pkcs11Session {
 
 impl Pkcs11Session {
     pub fn new(context: ThreadSafePkcs11Context, slot: Slot) -> Result<Pkcs11Session, Pkcs11Error> {
-        // Section 11.6 "Session management functions" under "C_OpenSession" says:
-        //    "For legacy reasons, the CKF_SERIAL_SESSION bit must always be set; if a call to C_OpenSession does not
-        //     have this bit set, the call should return unsuccessfully with the error code
-        //     CKR_PARALLEL_NOT_SUPPORTED."
         //
         // Note that we don't track whether or not the session logs in so that we can later logout because the spec
         // we invoke C_CloseSession on drop and the spec for C_CloseSession says:
@@ -30,10 +27,7 @@ impl Pkcs11Session {
         //
         // In the spirit of not doing anything we don't have to do, we can keep the code simpler by not calling
         // C_Logout because we don't have to.
-        let mut flags = SessionFlags::new();
-        flags.set_serial_session(true);
-        flags.set_rw_session(true);
-        let session_handle = context.read().unwrap().open_session(slot, flags)?;
+        let session_handle = context.read().unwrap().open_rw_session(slot)?;
         Ok(Pkcs11Session {
             context,
             session_handle: Arc::new(Mutex::new(session_handle)),
@@ -67,7 +61,9 @@ impl Pkcs11Session {
             .get_attributes(self.session_handle.clone(), pub_handle, pub_template)
     }
 
-    pub fn login(&self, user_type: UserType, user_pin: Option<&str>) -> Result<(), Pkcs11Error> {
+    pub fn login(
+        &self, user_type: UserType, user_pin: Option<&AuthPin>
+    ) -> Result<(), Pkcs11Error> {
         self.context
             .read()
             .unwrap()

@@ -349,24 +349,25 @@ dependencies = [
 
 [[package]]
 name = "cryptoki"
-version = "0.3.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "503aa2bd88796da9bc6baf2c47696da40f135721b3d6680c7c6cee0b7d1f7a59"
+checksum = "60d645cc2c5faf466571c0c752d39d8fbc2746773b2f043ac8f9cd73bec55db9"
 dependencies = [
+ "bitflags 1.3.2",
  "cryptoki-sys",
- "derivative",
  "libloading",
  "log",
+ "paste",
+ "secrecy",
 ]
 
 [[package]]
 name = "cryptoki-sys"
-version = "0.1.4"
+version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e4895bb04269df9a14f2692c6499dc2769e9a93caa33ef37c4df134f76956d2"
+checksum = "750380200f47d4ff677be725b6e0d78b590e1d0343573dcd4b62147f25dc6efa"
 dependencies = [
  "libloading",
- "target-lexicon",
 ]
 
 [[package]]
@@ -417,17 +418,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b42b6fa04a440b495c8b04d0e71b707c585f83cb9cb28cf8cd0d976c315e31b4"
 dependencies = [
  "powerfmt",
-]
-
-[[package]]
-name = "derivative"
-version = "2.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fcc3dd5e9e9c0b295d6e1e4d811fb6f157d5ffd784b8d202fc62eac8035a770b"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 1.0.109",
 ]
 
 [[package]]
@@ -1108,7 +1098,6 @@ dependencies = [
  "chrono",
  "clap",
  "cryptoki",
- "cryptoki-sys",
  "fern",
  "fslock",
  "futures-util",
@@ -1135,6 +1124,7 @@ dependencies = [
  "rpki",
  "rustls-pemfile",
  "scrypt",
+ "secrecy",
  "serde",
  "serde_json",
  "syslog",
@@ -1642,6 +1632,12 @@ dependencies = [
  "smallvec",
  "windows-targets 0.52.5",
 ]
+
+[[package]]
+name = "paste"
+version = "1.0.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "pbkdf2"
@@ -2260,6 +2256,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "secrecy"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9bd1c54ea06cfd2f6b63219704de0b9b4f72dcc2b8fdef820be6cd799780e91e"
+dependencies = [
+ "serde",
+ "zeroize",
+]
+
+[[package]]
 name = "security-framework"
 version = "2.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2585,12 +2591,6 @@ dependencies = [
  "core-foundation-sys",
  "libc",
 ]
-
-[[package]]
-name = "target-lexicon"
-version = "0.12.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1fc403891a21bcfb7c37834ba66a547a8f402146eba7265b5a6d88059c9ff2f"
 
 [[package]]
 name = "tempfile"

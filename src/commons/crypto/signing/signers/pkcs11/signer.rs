@@ -16,6 +16,7 @@ use cryptoki::{
     object::{Attribute, AttributeType, ObjectClass, ObjectHandle},
     session::UserType,
     slot::{Slot, SlotInfo, TokenInfo},
+    types::AuthPin,
 };
 
 use rpki::{
@@ -25,6 +26,7 @@ use rpki::{
         SignatureAlgorithm, SigningError,
     },
 };
+use secrecy::ExposeSecret;
 
 use crate::commons::crypto::{
     dispatch::signerinfo::SignerMapper,
@@ -46,7 +48,8 @@ use serde::{de::Visitor, Deserialize};
 pub struct Pkcs11SignerConfig {
     pub lib_path: String,
 
-    pub user_pin: Option<String>,
+    #[serde(flatten)]
+    pub secrets: Pkcs11ConfigurableSecrets,
 
     #[serde(deserialize_with = "slot_id_or_label")]
     pub slot: SlotIdOrLabel,
@@ -70,7 +73,21 @@ pub struct Pkcs11SignerConfig {
     pub private_key_attributes: Pkcs11ConfigurablePrivateKeyAttributes,
 }
 
-impl Eq for Pkcs11SignerConfig {}
+#[derive(Clone, Debug, Deserialize)]
+pub struct Pkcs11ConfigurableSecrets {
+    pub user_pin: Option<AuthPin>,
+}
+
+impl PartialEq for Pkcs11ConfigurableSecrets {
+    fn eq(&self, other: &Self) -> bool {
+        self.user_pin.as_ref().map(|s| s.expose_secret()).eq(
+            &other.user_pin.as_ref().map(|s| s.expose_secret())
+        )
+    }
+}
+
+impl Eq for Pkcs11ConfigurableSecrets { }
+
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct Pkcs11ConfigurablePublicKeyAttributes {
@@ -236,7 +253,7 @@ struct ConnectionSettings {
     //    the user enters a PIN on a PINpad on the token itself, or on the slot device. Or the user might not even use a
     //    PIN—authentication could be achieved by some fingerprint-reading device, for example. To log into a token with
     //    a protected authentication path, the pPin parameter to C_Login should be NULL_PTR."
-    user_pin: Option<String>,
+    user_pin: Option<AuthPin>,
 
     login_mode: LoginMode,
 
@@ -253,7 +270,7 @@ impl TryFrom<&Pkcs11SignerConfig> for ConnectionSettings {
     fn try_from(conf: &Pkcs11SignerConfig) -> Result<Self, Self::Error> {
         let lib_path = conf.lib_path.clone();
         let slot = conf.slot.clone();
-        let user_pin = conf.user_pin.clone();
+        let user_pin = conf.secrets.user_pin.clone();
         let login_mode = match conf.login {
             true => LoginMode::LoginRequired,
             false => LoginMode::LoginNotRequired,
@@ -361,7 +378,7 @@ impl Pkcs11Signer {
         match self.build_key_internal(PublicKeyFormat::Rsa) {
             Ok((public_key, _, _, internal_key_id)) => Ok((public_key, internal_key_id)),
 
-            Err(err @ InternalConnError::Pkcs11Error(Pkcs11Error::Pkcs11(RvError::TemplateInconsistent))) => {
+            Err(err @ InternalConnError::Pkcs11Error(Pkcs11Error::Pkcs11(RvError::TemplateInconsistent, _))) => {
                 // https://github.com/NLnetLabs/krill/issues/1019
                 let err_msg = format!(
                     "{} [Note: This error can occur if the signer does not support authenticated \
@@ -452,7 +469,7 @@ impl Pkcs11Signer {
     ) -> Result<UsableServerState, ProbeError<SignerError>> {
         fn slot_label_eq(ctx: &RwLockReadGuard<Pkcs11Context>, slot: Slot, slot_label: &str) -> bool {
             match ctx.get_token_info(slot) {
-                Ok(info) => String::from_utf8_lossy(&info.label).trim_end() == slot_label,
+                Ok(info) => info.label().trim_end() == slot_label,
                 Err(err) => {
                     warn!(
                         "Failed to obtain token info for PKCS#11 slot id '{}': {}",
@@ -490,7 +507,7 @@ impl Pkcs11Signer {
             ctx: ThreadSafePkcs11Context,
             name: &str,
             lib_name: &String,
-        ) -> Result<(Info, Slot, SlotInfo, TokenInfo, Option<String>), ProbeError<SignerError>> {
+        ) -> Result<(Info, Slot, SlotInfo, TokenInfo, Option<AuthPin>), ProbeError<SignerError>> {
             let readable_ctx = ctx.read().unwrap();
 
             let cryptoki_info = readable_ctx.get_info().map_err(|err| {
@@ -591,7 +608,7 @@ impl Pkcs11Signer {
         fn login(
             session: Pkcs11Session,
             login_mode: LoginMode,
-            user_pin: Option<String>,
+            user_pin: Option<AuthPin>,
             name: &str,
             lib_name: &String,
             slot: Slot,
@@ -602,7 +619,7 @@ impl Pkcs11Signer {
                     Ok(None)
                 }
                 LoginMode::LoginRequired => {
-                    session.login(UserType::User, user_pin.as_deref()).map_err(|err| {
+                    session.login(UserType::User, user_pin.as_ref()).map_err(|err| {
                         error!(
                             "[{}] Unable to login to PKCS#11 session for library '{}' slot {}: {}",
                             name, lib_name, slot, err
@@ -1182,14 +1199,17 @@ fn is_transient_error(err: &Pkcs11Error) -> bool {
         | Pkcs11Error::LibraryLoading(_)
         | Pkcs11Error::TryFromInt(_)
         | Pkcs11Error::TryFromSlice(_)
+        | Pkcs11Error::ParseInt(_)
+        | Pkcs11Error::Utf8(_)
         | Pkcs11Error::NulError(_)
         | Pkcs11Error::InvalidValue
-        | Pkcs11Error::PinNotSet => {
+        | Pkcs11Error::PinNotSet
+        | Pkcs11Error::AlreadyInitialized => {
             // The Rust `pkcs11` crate had a serious problem such as the loaded library not exporting a required
             // function or that it was asked to initialize an already initialized library.
             false
         }
-        Pkcs11Error::Pkcs11(err) => {
+        Pkcs11Error::Pkcs11(err, _) => {
             // Error codes were taken from the `types` module of the Rust `pkcs11` crate.
             // See section 11.1 of the PKCS#11 v2.20 specification for an explanation of each value.
             // Return true only for errors which might succeed very soon after they failed. Errors which are solvable

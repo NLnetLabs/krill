@@ -12,5 +12,7 @@ pub type CryptoResult<T> = std::result::Result<T, self::error::Error>;
 
 #[cfg(feature = "hsm")]
 pub use self::signers::pkcs11::signer::{
-    Pkcs11ConfigurablePrivateKeyAttributes, Pkcs11ConfigurablePublicKeyAttributes,
+    Pkcs11ConfigurablePrivateKeyAttributes,
+    Pkcs11ConfigurablePublicKeyAttributes,
+    Pkcs11ConfigurableSecrets
 };

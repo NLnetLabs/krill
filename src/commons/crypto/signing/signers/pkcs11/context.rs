@@ -25,8 +25,9 @@ use cryptoki::{
     context::{CInitializeArgs, Info, Pkcs11},
     mechanism::Mechanism,
     object::{Attribute, AttributeType, ObjectHandle},
-    session::{Session, SessionFlags, UserType},
+    session::{Session, UserType},
     slot::{Slot, SlotInfo, TokenInfo},
+    types::AuthPin,
 };
 use once_cell::sync::OnceCell;
 
@@ -228,8 +229,8 @@ impl Pkcs11Context {
         self.logged_cryptoki_call("GetTokenInfo", |cryptoki| cryptoki.get_token_info(slot))
     }
 
-    pub fn open_session(&self, slot: Slot, flags: SessionFlags) -> Result<Session, Pkcs11Error> {
-        self.logged_cryptoki_call("OpenSession", |cryptoki| cryptoki.open_session_no_callback(slot, flags))
+    pub fn open_rw_session(&self, slot: Slot) -> Result<Session, Pkcs11Error> {
+        self.logged_cryptoki_call("OpenSession", |cryptoki| cryptoki.open_rw_session(slot))
     }
 
     pub fn generate_key_pair(
@@ -262,7 +263,7 @@ impl Pkcs11Context {
         &self,
         session: Arc<Mutex<Session>>,
         user_type: UserType,
-        pin: Option<&str>,
+        pin: Option<&AuthPin>,
     ) -> Result<(), Pkcs11Error> {
         self.logged_cryptoki_call("Login", |_| session.lock().unwrap().login(user_type, pin))
     }
