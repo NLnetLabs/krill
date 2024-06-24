@@ -15,7 +15,7 @@ use crate::{
     daemon::{
         auth::{common::permissions::Permission, policy::AuthPolicy, providers::AdminTokenAuthProvider},
         config::Config,
-        http::HttpResponse,
+        http::{HttpResponse, HyperRequest},
     },
 };
 
@@ -69,7 +69,9 @@ impl From<OpenIDConnectAuthProvider> for AuthProvider {
 }
 
 impl AuthProvider {
-    pub async fn authenticate(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<Option<ActorDef>> {
+    pub async fn authenticate(
+        &self, request: &HyperRequest
+    ) -> KrillResult<Option<ActorDef>> {
         match &self {
             AuthProvider::Token(provider) => provider.authenticate(request),
             #[cfg(feature = "multi-user")]
@@ -89,7 +91,9 @@ impl AuthProvider {
         }
     }
 
-    pub async fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
+    pub async fn login(
+        &self, request: &HyperRequest
+    ) -> KrillResult<LoggedInUser> {
         match &self {
             AuthProvider::Token(provider) => provider.login(request),
             #[cfg(feature = "multi-user")]
@@ -99,7 +103,9 @@ impl AuthProvider {
         }
     }
 
-    pub async fn logout(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<HttpResponse> {
+    pub async fn logout(
+        &self, request: &HyperRequest
+    ) -> KrillResult<HttpResponse> {
         match &self {
             AuthProvider::Token(provider) => provider.logout(request),
             #[cfg(feature = "multi-user")]
@@ -163,7 +169,7 @@ impl Authorizer {
         })
     }
 
-    pub async fn actor_from_request(&self, request: &hyper::Request<hyper::Body>) -> Actor {
+    pub async fn actor_from_request(&self, request: &HyperRequest) -> Actor {
         trace!("Determining actor for request {:?}", &request);
 
         // Try the legacy provider first, if any
@@ -210,7 +216,9 @@ impl Authorizer {
 
     /// Submit credentials directly to the configured provider to establish a
     /// login session, if supported by the configured provider.
-    pub async fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
+    pub async fn login(
+        &self, request: &HyperRequest
+    ) -> KrillResult<LoggedInUser> {
         let user = self.primary_provider.login(request).await?;
 
         // The user has passed authentication, but may still not be
@@ -250,7 +258,9 @@ impl Authorizer {
 
     /// Return the URL at which an end-user should be directed to logout with
     /// the configured provider.
-    pub async fn logout(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<HttpResponse> {
+    pub async fn logout(
+        &self, request: &HyperRequest
+    ) -> KrillResult<HttpResponse> {
         self.primary_provider.logout(request).await
     }
 }

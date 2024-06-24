@@ -1,40 +1,32 @@
 //! Hyper based HTTP server for Krill.
 //!
-use std::{
-    collections::HashMap,
-    convert::{Infallible, TryInto},
-    env,
-    fs::File,
-    io::Read,
-    net::SocketAddr,
-    path::{Path, PathBuf},
-    process,
-    str::FromStr,
-    sync::Arc,
-};
+use std::{env, process};
+use std::collections::HashMap;
+use std::convert::TryInto;
+use std::fs::File;
+use std::io::Read;
+use std::net::SocketAddr;
+use std::path::{Path, PathBuf};
+use std::str::FromStr;
+use std::sync::Arc;
 
 use base64::engine::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
 use bytes::Bytes;
+use hyper::Method;
+use hyper::header::HeaderName;
+use hyper::http::HeaderValue;
+use hyper::service::service_fn;
+use hyper_util::rt::{TokioExecutor, TokioIo};
+use rpki::ca::idexchange;
+use rpki::ca::idexchange::{
+    CaHandle, ChildHandle, ParentHandle, PublisherHandle
+};
+use rpki::repository::resources::Asn;
 use serde::Serialize;
-
-use hyper::{
-    header::HeaderName,
-    http::HeaderValue,
-    server::conn::AddrIncoming,
-    service::{make_service_fn, service_fn},
-    Method,
-};
-
+use tokio::net::TcpListener;
 use tokio::select;
-
-use rpki::{
-    ca::{
-        idexchange,
-        idexchange::{CaHandle, ChildHandle, ParentHandle, PublisherHandle},
-    },
-    repository::resources::Asn,
-};
+use tokio_rustls::TlsAcceptor;
 
 use crate::{
     commons::{
@@ -57,7 +49,8 @@ use crate::{
         ca::CaStatus,
         config::Config,
         http::{
-            auth::auth, statics::statics, testbed::testbed, tls, tls_keys, HttpResponse, Request, RequestPath,
+            auth::auth, statics::statics, testbed::testbed, tls, tls_keys,
+            HttpResponse, HyperRequest, HyperResponse, Request, RequestPath,
             RoutingResult,
         },
         krillserver::KrillServer,
@@ -193,55 +186,60 @@ pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
     Err(Error::custom("stopping krill process"))
 }
 
-async fn single_http_listener(krill_server: Arc<KrillServer>, socket_addr: SocketAddr, config: Arc<Config>) {
-    // See if we can bind to the configured address and port first.
-    let incoming = match AddrIncoming::bind(&socket_addr) {
-        Err(e) => {
-            error!("Could not bind to address and port: {}, Error: {}", &socket_addr, e);
+/// Runs an HTTP listener on a single socket.
+async fn single_http_listener(
+    krill_server: Arc<KrillServer>,
+    addr: SocketAddr,
+    config: Arc<Config>
+) {
+    let listener = match TcpListener::bind(addr).await {
+        Ok(listener) => listener,
+        Err(err) => {
+            error!("Could not bind to {}: {}", addr, err);
             return;
         }
-        Ok(incoming) => incoming,
     };
 
-    if config.https_mode().is_disable_https() {
-        // Make a service function.
-        let service = make_service_fn(|_| {
-            let krill_server = krill_server.clone();
-            async move {
-                Ok::<_, Infallible>(service_fn(move |req: hyper::Request<hyper::Body>| {
-                    let krill_server = krill_server.clone();
-                    map_requests(req, krill_server)
-                }))
+    let tls = if config.https_mode().is_disable_https() {
+        None
+    }
+    else {
+        match tls::create_server_config(
+            &tls_keys::key_file_path(config.tls_keys_dir()),
+            &tls_keys::cert_file_path(config.tls_keys_dir()),
+        ) {
+            Ok(config) => Some(TlsAcceptor::from(Arc::new(config))),
+            Err(err) => {
+                error!("{}", err);
+                return;
             }
-        });
-        if let Err(e) = hyper::Server::builder(incoming).serve(service).await {
-            error!("Fatal server error: {}", e)
         }
-    } else {
-        // Set up a TLS acceptor to use.
-        let server_config_builder = tls::TlsConfigBuilder::new()
-            .cert_path(tls_keys::cert_file_path(config.tls_keys_dir()))
-            .key_path(tls_keys::key_file_path(config.tls_keys_dir()));
+    };
 
-        let server_config = server_config_builder.build().unwrap();
-        let acceptor = tls::TlsAcceptor::new(server_config, incoming);
-
-        // Make a service function. We have to do this again because of hyper types..
-        // It won't like a service made for a Server that is not of the type of the
-        // TlsAcceptor we are about to set up.
-        let service = make_service_fn(|_| {
-            let krill_server = krill_server.clone();
-            async move {
-                Ok::<_, Infallible>(service_fn(move |req: hyper::Request<hyper::Body>| {
-                    let krill_server = krill_server.clone();
-                    map_requests(req, krill_server)
-                }))
+    loop {
+        let stream = match listener.accept().await {
+            Ok((stream, _addr)) => {
+                tls::MaybeTlsTcpStream::new(stream, tls.as_ref())
             }
+            Err(err) => {
+                error!("Fatal error in HTTP server {}: {}", addr, err);
+                return;
+            }
+        };
+        let server = krill_server.clone();
+        tokio::task::spawn(async move {
+            let _ = hyper_util::server::conn::auto::Builder::new(
+                TokioExecutor::new()
+            ).serve_connection(
+                TokioIo::new(stream),
+                service_fn(move |req| {
+                    let server = server.clone();
+                    async move {
+                        map_requests(req, server).await
+                    }
+                })
+            ).await;
         });
-
-        if let Err(e) = hyper::Server::builder(acceptor).serve(service).await {
-            error!("Fatal server error: {}", e)
-        }
     }
 }
 
@@ -251,7 +249,7 @@ struct RequestLogger {
 }
 
 impl RequestLogger {
-    fn begin(req: &hyper::Request<hyper::Body>) -> Self {
+    fn begin(req: &HyperRequest) -> Self {
         let req_method = req.method().clone();
         let req_path = RequestPath::from_request(req).full().to_string();
 
@@ -292,7 +290,9 @@ impl RequestLogger {
     }
 }
 
-async fn map_requests(req: hyper::Request<hyper::Body>, state: State) -> Result<hyper::Response<hyper::Body>, Error> {
+async fn map_requests(
+    req: HyperRequest, state: State
+) -> Result<HyperResponse, Error> {
     let logger = RequestLogger::begin(&req);
 
     let req = Request::new(req, state).await;
@@ -353,7 +353,7 @@ async fn map_requests(req: hyper::Request<hyper::Body>, state: State) -> Result<
     // Log the request and the response.
     logger.end(res.as_ref());
 
-    res.map(|res| res.response())
+    res.map(|res| res.into_response())
 }
 
 //------------ Support Functions ---------------------------------------------
@@ -992,7 +992,7 @@ fn add_authorization_headers_to_response(org_response: HttpResponse, token: Toke
         .any(|(n, v)| n.is_err() | v.is_err());
 
     if okay {
-        let (parts, body) = org_response.response().into_parts();
+        let (parts, body) = org_response.into_response().into_parts();
         let mut augmented_response = hyper::Response::from_parts(parts, body);
         let headers = augmented_response.headers_mut();
         for (name, value) in new_header_names.into_iter().zip(new_header_values.into_iter()) {

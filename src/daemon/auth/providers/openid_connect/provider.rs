@@ -80,12 +80,10 @@ use crate::{
             Auth, LoggedInUser,
         },
         config::Config,
-        http::{
-            auth::{url_encode, AUTH_CALLBACK_ENDPOINT},
-            HttpResponse,
-        },
+        http::auth::{url_encode, AUTH_CALLBACK_ENDPOINT},
     },
 };
+use crate::daemon::http::{HttpResponse, HyperRequest};
 
 // On modern browsers (Chrome >= 51, Edge >= 16, Firefox >= 60 & Safari >= 12) the "__Host" prefix is a defence-in-depth
 // measure that causes the browser to further restrict access to the cookie, permitting access only if the cookie was
@@ -744,7 +742,9 @@ impl OpenIDConnectAuthProvider {
         }
     }
 
-    fn extract_cookie(&self, request: &hyper::Request<hyper::Body>, cookie_name: &str) -> Option<String> {
+    fn extract_cookie(
+        &self, request: &HyperRequest, cookie_name: &str
+    ) -> Option<String> {
         for cookie_hdr_val in request.headers().get_all(hyper::http::header::COOKIE) {
             if let Ok(cookie_hdr_val_str) = cookie_hdr_val.to_str() {
                 // Use a helper crate to parse the cookie string as it's
@@ -796,7 +796,7 @@ impl OpenIDConnectAuthProvider {
         Error::ApiLoginError(msg)
     }
 
-    fn get_auth(&self, request: &hyper::Request<hyper::Body>) -> Option<Auth> {
+    fn get_auth(&self, request: &HyperRequest) -> Option<Auth> {
         if let Some(query) = urlparse(request.uri().to_string()).get_parsed_query() {
             if let Some(code) = query.get_first_from_str("code") {
                 trace!("OpenID Connect: Processing potential RFC-6749 section 4.1.2 redirected Authorization Response");
@@ -1105,7 +1105,9 @@ impl OpenIDConnectAuthProvider {
     /// an error to report back to the user (one of the ApiAuth* Error types).
     /// Make sure to not leak any OIDC implementation details into the Error result!
     /// This function is also responsible for all logging around refreshing the token / extending the session.
-    pub async fn authenticate(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<Option<ActorDef>> {
+    pub async fn authenticate(
+        &self, request: &HyperRequest
+    ) -> KrillResult<Option<ActorDef>> {
         trace!("Attempting to authenticate the request..");
 
         self.initialize_connection_if_needed().await.map_err(|err| {
@@ -1372,7 +1374,7 @@ impl OpenIDConnectAuthProvider {
         debug!("OpenID Connect: Login URL will be {:?}", &authorize_url);
 
         let res_body = authorize_url.as_str().as_bytes().to_vec();
-        let mut res = HttpResponse::text_no_cache(res_body).response();
+        let mut res = HttpResponse::text_no_cache(res_body).into_response();
 
         // Create a cookie with the following attributes to attempt to protect them as much as possible:
         //   Secure       - Cookie is only sent to the server when a request is made with the https: scheme
@@ -1420,7 +1422,9 @@ impl OpenIDConnectAuthProvider {
         Ok(HttpResponse::new(res))
     }
 
-    pub async fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
+    pub async fn login(
+        &self, request: &HyperRequest
+    ) -> KrillResult<LoggedInUser> {
         self.initialize_connection_if_needed().await.map_err(|err| {
             OpenIDConnectAuthProvider::internal_error(
                 "OpenID Connect: Cannot login user: Failed to connect to provider",
@@ -1622,7 +1626,9 @@ impl OpenIDConnectAuthProvider {
     /// logout page is not possible, instead from the end-user's perspective they are returned to the Lagosta web UI
     /// index page (which currently immediately redirects the user to the 3rd party OpenID Connect provider login page)
     /// but before that Krill contacts the provider on the logged-in users behalf to revoke their token at the provider.
-    pub async fn logout(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<HttpResponse> {
+    pub async fn logout(
+        &self, request: &HyperRequest
+    ) -> KrillResult<HttpResponse> {
         // verify the bearer token indeed represents a logged-in Krill OpenID Connect provider session
         let token = httpclient::get_bearer_token(request).ok_or_else(|| {
             warn!("Unexpectedly received a logout request without a session token.");
