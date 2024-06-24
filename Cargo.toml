@@ -26,11 +26,11 @@ base64          = "0.22.1"
 basic-cookies   = { version = "0.1", optional = true }
 bytes           = "1"
 chrono          = { version = "0.4", features = ["serde"] }
-clap            = "^2.33"
+clap            = "2.33"
 cryptoki        = { version = "^0.3", optional = true }
 cryptoki-sys    = { version = "=0.1.4", optional = true } # pin cryptoki-sys because of compilation issues on various systems
 fern            = { version = "0.6.2", features = ["syslog-6"] }
-futures-util    = "^0.3"
+futures-util    = "0.3"
 fslock          = "0.2.1"
 hex             = "0.4"
 hyper           = { version = "^0.14", features = ["server"] }
@@ -60,7 +60,7 @@ tokio-rustls    = "0.24.1"
 toml            = "0.8.14"
 unicode-normalization = { version = "^0.1", optional = true }
 url             = { version = "2.3.1", features = ["serde"] }
-urlparse        = { version = "^0.7", optional = true }
+urlparse        = { version = "0.7", optional = true }
 uuid            = { version = "1.1", features = ["v4"] }
 
 # Disable compiler optimizations for the pkcs11 crate because otherwise with a release build the
@@ -71,7 +71,7 @@ uuid            = { version = "1.1", features = ["v4"] }
 # opt-level = 0
 
 [target.'cfg(unix)'.dependencies]
-syslog = "^6.1.1"
+syslog = "6.1.1"
 
 [features]
 default = ["multi-user", "hsm"]
@@ -99,7 +99,7 @@ hsm-tests-pkcs11 = ["hsm"]
 
 [dev-dependencies]
 regex    = "1.5.5"
-urlparse = "^0.7"
+urlparse = "0.7"
 
 # Make sure that Krill crashes on panics, rather than losing threads and
 # limping on in a bad state.
