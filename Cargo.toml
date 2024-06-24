@@ -28,7 +28,6 @@ bytes           = "1"
 chrono          = { version = "^0.4", features = ["serde"] }
 clap            = "^2.33"
 cryptoki        = { version = "0.7", optional = true}
-#cryptoki-sys    = { version = "=0.1.4", optional = true } # pin cryptoki-sys because of compilation issues on various systems
 fern            = { version = "^0.5", features = ["syslog-4"] }
 futures         = "^0.3"
 futures-util    = "^0.3"
