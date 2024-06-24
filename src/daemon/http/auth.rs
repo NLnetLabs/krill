@@ -24,9 +24,16 @@ pub fn url_encode<S: AsRef<str>>(s: S) -> Result<String, Error> {
 fn build_auth_redirect_location(user: LoggedInUser) -> Result<String, Error> {
     use std::collections::HashMap;
 
-    fn b64_encode_attributes_with_mapped_error(a: &HashMap<String, String>) -> Result<String, Error> {
-        Ok(base64::encode(
-            serde_json::to_string(a).map_err(|err| Error::custom(err.to_string()))?,
+    fn b64_encode_attributes_with_mapped_error(
+        a: &HashMap<String, String>
+    ) -> Result<String, Error> {
+        use base64::engine::Engine as _;
+        use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
+
+        Ok(BASE64_ENGINE.encode(
+            serde_json::to_string(a).map_err(|err| {
+                Error::custom(err.to_string())
+            })?,
         ))
     }
 

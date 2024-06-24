@@ -1433,7 +1433,7 @@ impl Config {
     }
 
     pub fn read_config(file: &str) -> Result<Self, ConfigError> {
-        let mut v = Vec::new();
+        let mut v = String::new();
         let mut f = File::open(file).map_err(|e| {
             KrillIoError::new(
                 format!(
@@ -1443,10 +1443,10 @@ impl Config {
                 e,
             )
         })?;
-        f.read_to_end(&mut v)
+        f.read_to_string(&mut v)
             .map_err(|e| KrillIoError::new(format!("Could not read config file '{}'", file), e))?;
 
-        toml::from_slice(v.as_slice())
+        toml::from_str(&v)
             .map_err(|e| ConfigError::Other(format!("Error parsing config file: {}, error: {}", file, e)))
     }
 
@@ -1501,12 +1501,11 @@ impl Config {
                     .map(ToString::to_string)
             })
             .unwrap_or_else(|| String::from("krill"));
-        let pid = unsafe { libc::getpid() };
         let formatter = syslog::Formatter3164 {
             facility,
             hostname: None,
             process,
-            pid,
+            pid: std::process::id(),
         };
         let logger = syslog::unix(formatter.clone())
             .or_else(|_| syslog::tcp(formatter.clone(), ("127.0.0.1", 601)))
@@ -1853,8 +1852,8 @@ mod tests {
     fn should_set_correct_log_levels() {
         use log::Level as LL;
 
-        fn void_logger_from_krill_config(config_bytes: &[u8]) -> Box<dyn log::Log> {
-            let c: Config = toml::from_slice(config_bytes).unwrap();
+        fn void_logger_from_krill_config(config: &str) -> Box<dyn log::Log> {
+            let c: Config = toml::from_str(config).unwrap();
             let void_output = fern::Output::writer(Box::new(io::sink()), "");
             let (_, void_logger) = c.fern_logger().chain(void_output).into_log();
             void_logger
@@ -1894,7 +1893,9 @@ mod tests {
         // for each important Krill config log level
         for config_level in &["error", "warn"] {
             // build a logger for that config
-            let log = void_logger_from_krill_config(format!(r#"log_level = "{}""#, config_level).as_bytes());
+            let log = void_logger_from_krill_config(
+                &format!(r#"log_level = "{config_level}""#)
+            );
 
             // for all log levels
             for log_msg_level in &[LL::Error, LL::Warn, LL::Info, LL::Debug, LL::Trace] {
@@ -1926,7 +1927,9 @@ mod tests {
         // for each Krill config log level we want to test
         for config_level in &["info", "debug", "trace"] {
             // build a logger for that config
-            let log = void_logger_from_krill_config(format!(r#"log_level = "{}""#, config_level).as_bytes());
+            let log = void_logger_from_krill_config(
+                &format!(r#"log_level = "{config_level}""#)
+            );
 
             // for each level of interest that messages could be logged at
             for log_msg_level in &[LL::Info, LL::Debug, LL::Trace] {
@@ -1971,7 +1974,9 @@ mod tests {
             // for each Krill config log level we want to test
             for config_level in &["debug", "trace"] {
                 // build a logger for that config
-                let log = void_logger_from_krill_config(format!(r#"log_level = "{}""#, config_level).as_bytes());
+                let log = void_logger_from_krill_config(
+                    &format!(r#"log_level = "{config_level}""#)
+                );
 
                 // for each level of interest that messages could be logged at
                 for log_msg_level in &[LL::Debug, LL::Trace] {

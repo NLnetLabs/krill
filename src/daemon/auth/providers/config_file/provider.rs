@@ -1,5 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
+use base64::engine::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
 use unicode_normalization::UnicodeNormalization;
 
 use crate::{
@@ -85,7 +87,7 @@ impl ConfigFileAuthProvider {
     fn get_auth(&self, request: &HyperRequest) -> Option<Auth> {
         let header = request.headers().get(hyper::http::header::AUTHORIZATION)?;
         let auth = header.to_str().ok()?.strip_prefix("Basic ")?;
-        let auth = base64::decode(auth).ok()?;
+        let auth = BASE64_ENGINE.decode(auth).ok()?;
         let auth = String::from_utf8(auth).ok()?;
         let (username, password) = auth.split_once(':')?;
 
@@ -145,7 +147,10 @@ impl ConfigFileAuthProvider {
 
             // hash twice with two different salts
             // legacy hashing strategy to be compatible with lagosta
-            let params = scrypt::Params::new(PW_HASH_LOG_N, PW_HASH_R, PW_HASH_P).unwrap();
+            let params = scrypt::Params::new(
+                PW_HASH_LOG_N, PW_HASH_R, PW_HASH_P,
+                scrypt::Params::RECOMMENDED_LEN,
+            ).unwrap();
             let weak_salt = format!("krill-lagosta-{username}");
             let weak_salt = weak_salt.nfkc().collect::<String>();
 

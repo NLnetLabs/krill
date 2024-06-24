@@ -10,6 +10,8 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
 
+use base64::engine::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
 use bytes::Bytes;
 use hyper::Method;
 use hyper::header::HeaderName;
@@ -367,7 +369,7 @@ pub fn render_error_redirect(err: Error) -> RoutingResult {
             err
         ))
     })?;
-    let b64 = base64::encode(json);
+    let b64 = BASE64_ENGINE.encode(json);
     let location = format!("/ui/login?error={}", b64);
     Ok(HttpResponse::found(&location))
 }
