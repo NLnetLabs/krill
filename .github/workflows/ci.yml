@@ -58,7 +58,7 @@ jobs:
       uses: hecrj/setup-rust-action@v1
       with:
         rust-version: ${{ matrix.rust }}
-    - if: matrix.rust == 'stable' && matrix.args == "--features all"
+    - if: matrix.rust == 'stable' && matrix.args == '--features all'
       run: cargo clippy -- -D warnings
     - run: cargo build --verbose ${{ matrix.args }} --locked
     - run: cargo test --verbose ${{ matrix.args }} -- --test-threads=1 2>&1
