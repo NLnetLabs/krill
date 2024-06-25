@@ -854,7 +854,7 @@ impl OpenIDConnectAuthProvider {
 
     fn verify_csrf_token(&self, state: String, csrf_token_hash: String) -> KrillResult<()> {
         let request_csrf_hash = sha256(state.as_bytes());
-        match URL_BASE64_ENGINE.decode(&csrf_token_hash) {
+        match URL_BASE64_ENGINE.decode(csrf_token_hash) {
             Ok(cookie_csrf_hash) if request_csrf_hash == cookie_csrf_hash => Ok(()),
             Ok(cookie_csrf_hash) => Err(Self::internal_error(
                 "OpenID Connect: CSRF token mismatch",
