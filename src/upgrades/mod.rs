@@ -2,7 +2,9 @@
 //! - Updating the format of commands or events
 //! - Export / Import data
 
-use std::{collections::HashMap, convert::TryInto, fmt, str::FromStr};
+use std::fmt;
+use std::collections::HashMap;
+use std::str::FromStr;
 
 use serde::{de::DeserializeOwned, Deserialize};
 

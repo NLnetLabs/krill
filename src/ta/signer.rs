@@ -6,7 +6,7 @@
 //! The proxy makes sign requests for the signer to sign.
 use super::*;
 
-use std::{collections::HashMap, convert::TryFrom, fmt, sync::Arc};
+use std::{collections::HashMap, fmt, sync::Arc};
 
 use chrono::SecondsFormat;
 use rpki::{

@@ -2,7 +2,6 @@
 //! withdraw elements, as well as the notification, snapshot and delta file
 //! definitions.
 use std::{
-    convert::{TryFrom, TryInto},
     fmt, io,
     ops::{Add, AddAssign, Deref},
     path::PathBuf,

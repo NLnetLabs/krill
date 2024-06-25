@@ -1,6 +1,6 @@
 //! Trust Anchor Client for managing the TA Proxy *and* Signer
 
-use std::{convert::TryInto, env, path::PathBuf, str::FromStr, sync::Arc};
+use std::{env, path::PathBuf, str::FromStr, sync::Arc};
 
 use bytes::Bytes;
 use clap::{App, Arg, ArgMatches, SubCommand};

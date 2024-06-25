@@ -2,7 +2,6 @@
 //! can have access without needing to depend on the full krill_ca module.
 
 use std::collections::HashMap;
-use std::convert::TryFrom;
 use std::ops::{self};
 use std::str::FromStr;
 use std::sync::Arc;
@@ -2180,7 +2179,6 @@ impl fmt::Display for RtaPrepResponse {
 #[cfg(test)]
 mod test {
     use bytes::Bytes;
-    use std::convert::TryFrom;
 
     use rpki::crypto::PublicKeyFormat;
 

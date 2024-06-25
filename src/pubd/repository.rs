@@ -1,7 +1,6 @@
 use std::{
     borrow::Cow,
     collections::{HashMap, VecDeque},
-    convert::TryFrom,
     fmt, fs,
     path::{Path, PathBuf},
     str::FromStr,

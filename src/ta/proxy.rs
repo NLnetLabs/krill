@@ -5,7 +5,7 @@
 /// is handled by the Trust Anchor Signer instead.
 use super::*;
 
-use std::{collections::HashMap, convert::TryFrom, fmt, sync::Arc};
+use std::{collections::HashMap, fmt, sync::Arc};
 
 use chrono::Duration;
 use rpki::{
