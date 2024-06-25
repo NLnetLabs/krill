@@ -78,8 +78,15 @@ impl AspaMigrationConfigs {
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
+}
 
-    pub fn into_iter(self) -> impl Iterator<Item = (CaHandle, Vec<AspaDefinition>)> {
+impl IntoIterator for AspaMigrationConfigs {
+    type Item = (CaHandle, Vec<AspaDefinition>);
+    type IntoIter = std::collections::hash_map::IntoIter<
+        CaHandle, Vec<AspaDefinition>
+    >;
+
+    fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
     }
 }
@@ -613,10 +620,7 @@ pub trait UpgradeAggregateStorePre0_14 {
     fn data_upgrade_info(&self, scope: &Scope) -> UpgradeResult<DataUpgradeInfo> {
         self.preparation_key_value_store()
             .get(&Self::data_upgrade_info_key(scope.clone()))
-            .map(|opt| match opt {
-                None => DataUpgradeInfo::default(),
-                Some(info) => info,
-            })
+            .map(|opt| opt.unwrap_or_default())
             .map_err(UpgradeError::KeyStoreError)
     }
 

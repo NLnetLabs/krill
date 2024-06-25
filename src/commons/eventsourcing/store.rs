@@ -184,13 +184,16 @@ where
     /// This will:
     /// - Wait for a lock for the latest aggregate for this command.
     /// - Call the A::process_command function
+    ///
     /// on success:
     ///   - call pre-save listeners with events
     ///   - save command and events
     ///   - call post-save listeners with events
     ///   - return aggregate
+    ///
     /// on no-op (empty event list):
     ///   - do not save anything, return aggregate
+    ///
     /// on error:
     ///   - save command and error, return error
     pub fn command(&self, cmd: A::Command) -> Result<Arc<A>, A::Error> {

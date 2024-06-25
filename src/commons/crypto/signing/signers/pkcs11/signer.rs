@@ -521,7 +521,7 @@ impl Pkcs11Signer {
 
             let slot = match &conn_settings.slot {
                 SlotIdOrLabel::Id(id) => {
-                    match readable_ctx
+                    readable_ctx
                         .get_slot_list(false)
                         .map_err(|err| {
                             error!(
@@ -532,18 +532,15 @@ impl Pkcs11Signer {
                         })?
                         .into_iter()
                         .find(|&slot| slot.id() == *id)
-                    {
-                        Some(slot) => slot,
-                        None => {
-                            let err_msg = format!(
+                        .ok_or_else(|| {
+                            error!(
                                 "[{}] No PKCS#11 slot found for library '{}' with id {}",
                                 name, lib_name, id
                             );
-
-                            error!("{}", err_msg);
-                            return Err(ProbeError::CallbackFailed(SignerError::TemporarilyUnavailable));
-                        }
-                    }
+                            ProbeError::CallbackFailed(
+                                SignerError::TemporarilyUnavailable
+                            )
+                        })?
                 }
                 SlotIdOrLabel::Label(label) => {
                     // No slot id provided, look it up by its label instead

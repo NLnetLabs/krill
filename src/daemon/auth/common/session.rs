@@ -69,7 +69,7 @@ impl ClientSession {
     }
 
     pub fn get_secret(&self, key: &str) -> Option<&String> {
-        self.secrets.get(&key.to_string())
+        self.secrets.get(key)
     }
 }
 

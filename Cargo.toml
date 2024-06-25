@@ -42,13 +42,13 @@ kvx             = { version = "0.9.3", features = ["macros"] }
 libflate        = "2.1.0"
 log             = "0.4"
 once_cell       = { version = "1.7.2", optional = true }
-openidconnect   = { version = "2.0.0", optional = true, default_features = false }
+openidconnect   = { version = "2.0.0", optional = true, default-features = false }
 openssl         = { version = "0.10", features = ["v110"] }
-oso             = { version = "0.12", optional = true, default_features = false }
+oso             = { version = "0.12", optional = true, default-features = false }
 pin-project-lite = "0.2.4"
 r2d2            = { version = "0.8.9", optional = true }
 rand            = "0.8"
-regex           = { version = "1.5.5", optional = true, default_features = false, features = [ "std" ] }
+regex           = { version = "1.5.5", optional = true, default-features = false, features = [ "std" ] }
 reqwest         = { version = "0.12.5", features = ["json"] }
 rpassword       = { version = "7.3.1", optional = true }
 rpki            = { version = "0.18.4", features = ["ca", "compat", "rrdp"] }

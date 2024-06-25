@@ -1145,7 +1145,7 @@ impl ParentStatus {
     pub fn set_entitlements(&mut self, uri: ServiceUri, entitlements: &ResourceClassListResponse) {
         self.set_last_updated(uri);
 
-        self.classes = entitlements.classes().clone();
+        self.classes.clone_from(entitlements.classes());
 
         let mut all_resources = ResourceSet::default();
         for class in &self.classes {

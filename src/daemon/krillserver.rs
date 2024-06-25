@@ -852,7 +852,7 @@ impl KrillServer {
     /// Returns the parent contact for a CA and parent, or NONE if either the CA or the parent cannot be found.
     pub async fn ca_my_parent_contact(&self, ca: &CaHandle, parent: &ParentHandle) -> KrillResult<ParentCaContact> {
         let ca = self.ca_manager.get_ca(ca).await?;
-        ca.parent(parent).map(|p| p.clone())
+        ca.parent(parent).cloned()
     }
 
     /// Returns the history for a CA.
