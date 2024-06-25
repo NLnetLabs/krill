@@ -13,14 +13,19 @@ use crate::{
     },
     constants::{ACTOR_DEF_ANON, NO_RESOURCE},
     daemon::{
-        auth::{common::permissions::Permission, policy::AuthPolicy, providers::AdminTokenAuthProvider},
+        auth::{
+            common::permissions::Permission, policy::AuthPolicy,
+            providers::AdminTokenAuthProvider,
+        },
         config::Config,
         http::{HttpResponse, HyperRequest},
     },
 };
 
 #[cfg(feature = "multi-user")]
-use crate::daemon::auth::providers::{ConfigFileAuthProvider, OpenIDConnectAuthProvider};
+use crate::daemon::auth::providers::{
+    ConfigFileAuthProvider, OpenIDConnectAuthProvider,
+};
 
 //------------ Authorizer ----------------------------------------------------
 
@@ -35,8 +40,8 @@ use crate::daemon::auth::providers::{ConfigFileAuthProvider, OpenIDConnectAuthPr
 ///
 ///  * authentication - who are you and is it really you?
 ///  * authorization  - do you have the right to do the thing you want to do?
-///  * discovery      - as an interactive client where should I send my users to
-///                     login and logout?
+///  * discovery      - as an interactive client where should I send my users
+///    to login and logout?
 ///  * introspection  - who is the currently "logged in" user?
 pub enum AuthProvider {
     Token(AdminTokenAuthProvider),
@@ -70,14 +75,19 @@ impl From<OpenIDConnectAuthProvider> for AuthProvider {
 
 impl AuthProvider {
     pub async fn authenticate(
-        &self, request: &HyperRequest
+        &self,
+        request: &HyperRequest,
     ) -> KrillResult<Option<ActorDef>> {
         match &self {
             AuthProvider::Token(provider) => provider.authenticate(request),
             #[cfg(feature = "multi-user")]
-            AuthProvider::ConfigFile(provider) => provider.authenticate(request),
+            AuthProvider::ConfigFile(provider) => {
+                provider.authenticate(request)
+            }
             #[cfg(feature = "multi-user")]
-            AuthProvider::OpenIdConnect(provider) => provider.authenticate(request).await,
+            AuthProvider::OpenIdConnect(provider) => {
+                provider.authenticate(request).await
+            }
         }
     }
 
@@ -87,31 +97,39 @@ impl AuthProvider {
             #[cfg(feature = "multi-user")]
             AuthProvider::ConfigFile(provider) => provider.get_login_url(),
             #[cfg(feature = "multi-user")]
-            AuthProvider::OpenIdConnect(provider) => provider.get_login_url().await,
+            AuthProvider::OpenIdConnect(provider) => {
+                provider.get_login_url().await
+            }
         }
     }
 
     pub async fn login(
-        &self, request: &HyperRequest
+        &self,
+        request: &HyperRequest,
     ) -> KrillResult<LoggedInUser> {
         match &self {
             AuthProvider::Token(provider) => provider.login(request),
             #[cfg(feature = "multi-user")]
             AuthProvider::ConfigFile(provider) => provider.login(request),
             #[cfg(feature = "multi-user")]
-            AuthProvider::OpenIdConnect(provider) => provider.login(request).await,
+            AuthProvider::OpenIdConnect(provider) => {
+                provider.login(request).await
+            }
         }
     }
 
     pub async fn logout(
-        &self, request: &HyperRequest
+        &self,
+        request: &HyperRequest,
     ) -> KrillResult<HttpResponse> {
         match &self {
             AuthProvider::Token(provider) => provider.logout(request),
             #[cfg(feature = "multi-user")]
             AuthProvider::ConfigFile(provider) => provider.logout(request),
             #[cfg(feature = "multi-user")]
-            AuthProvider::OpenIdConnect(provider) => provider.logout(request).await,
+            AuthProvider::OpenIdConnect(provider) => {
+                provider.logout(request).await
+            }
         }
     }
 }
@@ -128,20 +146,24 @@ pub struct Authorizer {
 impl Authorizer {
     /// Creates an instance of the Authorizer.
     ///
-    /// The given [AuthProvider] will be used to verify API access requests, to
-    /// handle direct login attempts (if supported) and to determine the URLs to
-    /// pass on to clients (e.g. Lagosta) that want to know where to direct
-    /// end-users to login and logout.
+    /// The given [AuthProvider] will be used to verify API access requests,
+    /// to handle direct login attempts (if supported) and to determine
+    /// the URLs to pass on to clients (e.g. Lagosta) that want to know
+    /// where to direct end-users to login and logout.
     ///
     /// # Legacy support for krillc
     ///
-    /// As krillc only supports [AdminTokenAuthProvider] based authentication, if
-    /// `P` an instance of some other provider, an instance of
+    /// As krillc only supports [AdminTokenAuthProvider] based authentication,
+    /// if `P` an instance of some other provider, an instance of
     /// [AdminTokenAuthProvider] will also be created. This will be used as a
     /// fallback when Lagosta is configured to use some other [AuthProvider].
-    pub fn new(config: Arc<Config>, primary_provider: AuthProvider) -> KrillResult<Self> {
+    pub fn new(
+        config: Arc<Config>,
+        primary_provider: AuthProvider,
+    ) -> KrillResult<Self> {
         let value_any = &primary_provider as &dyn Any;
-        let is_admin_token_provider = value_any.downcast_ref::<AdminTokenAuthProvider>().is_some();
+        let is_admin_token_provider =
+            value_any.downcast_ref::<AdminTokenAuthProvider>().is_some();
 
         let legacy_provider = if is_admin_token_provider {
             // the configured provider is the admin token provider so no
@@ -150,9 +172,9 @@ impl Authorizer {
         } else {
             // the configured provider is not the admin token provider so we
             // also need an instance of the admin token provider in order to
-            // provider backward compatibility for krillc and other API clients
-            // that only understand the original, legacy, admin token based
-            // authentication.
+            // provider backward compatibility for krillc and other API
+            // clients that only understand the original, legacy,
+            // admin token based authentication.
             Some(AdminTokenAuthProvider::new(config.clone()))
         };
 
@@ -178,7 +200,8 @@ impl Authorizer {
             None => Ok(None),
         };
 
-        // Try the real provider if we did not already successfully authenticate
+        // Try the real provider if we did not already successfully
+        // authenticate
         authenticate_res = match authenticate_res {
             Ok(Some(res)) => Ok(Some(res)),
             _ => self.primary_provider.authenticate(request).await,
@@ -194,7 +217,8 @@ impl Authorizer {
 
             // error during authentication
             Err(err) => {
-                // receives a commons::error::Error, but we need an ApiAuthError
+                // receives a commons::error::Error, but we need an
+                // ApiAuthError
                 self.actor_from_def(ACTOR_DEF_ANON.with_auth_error(err))
             }
         };
@@ -208,8 +232,8 @@ impl Authorizer {
         Actor::new(def, self.policy.clone())
     }
 
-    /// Return the URL at which an end-user should be directed to login with the
-    /// configured provider.
+    /// Return the URL at which an end-user should be directed to login with
+    /// the configured provider.
     pub async fn get_login_url(&self) -> KrillResult<HttpResponse> {
         self.primary_provider.get_login_url().await
     }
@@ -217,14 +241,16 @@ impl Authorizer {
     /// Submit credentials directly to the configured provider to establish a
     /// login session, if supported by the configured provider.
     pub async fn login(
-        &self, request: &HyperRequest
+        &self,
+        request: &HyperRequest,
     ) -> KrillResult<LoggedInUser> {
         let user = self.primary_provider.login(request).await?;
 
         // The user has passed authentication, but may still not be
         // authorized to login as that requires a check against the policy
         // which cannot be done by the AuthProvider. Check that now.
-        let actor_def = ActorDef::user(user.id.clone(), user.attributes.clone(), None);
+        let actor_def =
+            ActorDef::user(user.id.clone(), user.attributes.clone(), None);
         let actor = self.actor_from_def(actor_def);
         if !actor.is_allowed(Permission::LOGIN, NO_RESOURCE)? {
             let reason = format!("Login denied for user '{}': User is not permitted to 'LOGIN'", user.id);
@@ -259,7 +285,8 @@ impl Authorizer {
     /// Return the URL at which an end-user should be directed to logout with
     /// the configured provider.
     pub async fn logout(
-        &self, request: &HyperRequest
+        &self,
+        request: &HyperRequest,
     ) -> KrillResult<HttpResponse> {
         self.primary_provider.logout(request).await
     }
@@ -291,7 +318,12 @@ impl Auth {
     pub fn bearer(token: Token) -> Self {
         Auth::Bearer(token)
     }
-    pub fn authorization_code(code: Token, state: String, nonce: String, csrf_token_hash: String) -> Self {
+    pub fn authorization_code(
+        code: Token,
+        state: String,
+        nonce: String,
+        csrf_token_hash: String,
+    ) -> Self {
         Auth::AuthorizationCode {
             code,
             state,
@@ -300,7 +332,10 @@ impl Auth {
         }
     }
 
-    pub fn username_and_password_hash(username: String, password: String) -> Self {
+    pub fn username_and_password_hash(
+        username: String,
+        password: String,
+    ) -> Self {
         Auth::UsernameAndPassword { username, password }
     }
 }

@@ -21,7 +21,9 @@ pub fn make_roa_tree(roas: &[RoaPayload]) -> RoaTree {
 
 pub type ValidatedAnnouncementTree = TypedPrefixTree<ValidatedAnnouncement>;
 
-pub fn make_validated_announcement_tree(validated: &[ValidatedAnnouncement]) -> ValidatedAnnouncementTree {
+pub fn make_validated_announcement_tree(
+    validated: &[ValidatedAnnouncement],
+) -> ValidatedAnnouncementTree {
     make_tree(validated)
 }
 
@@ -73,7 +75,8 @@ impl Announcement {
             for roa in covering {
                 if roa.asn() == self.asn {
                     if roa.prefix().matching_or_less_specific(&self.prefix)
-                        && roa.effective_max_length() >= self.prefix.addr_len()
+                        && roa.effective_max_length()
+                            >= self.prefix.addr_len()
                     {
                         return ValidatedAnnouncement {
                             announcement: *self,
@@ -91,7 +94,8 @@ impl Announcement {
                 invalidating.push(*roa);
             }
 
-            // NOTE: Valid announcements already returned, we only have invalids left
+            // NOTE: Valid announcements already returned, we only have
+            // invalids left
 
             let validity = if same_asn_found {
                 AnnouncementValidity::InvalidLength
@@ -115,9 +119,13 @@ impl FromStr for Announcement {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let as_roa = RoaPayload::from_str(s).map_err(|e| format!("Can't parse: {}, Error: {}", s, e))?;
+        let as_roa = RoaPayload::from_str(s)
+            .map_err(|e| format!("Can't parse: {}, Error: {}", s, e))?;
         if as_roa.max_length().is_some() {
-            Err(format!("Cannot parse announcement (max length not allowed): {}", s))
+            Err(format!(
+                "Cannot parse announcement (max length not allowed): {}",
+                s
+            ))
         } else {
             Ok(as_roa.into())
         }
@@ -193,7 +201,8 @@ impl Announcements {
     }
 
     pub fn equivalent(&self, announcements: &[Announcement]) -> bool {
-        let current_set: HashSet<&Announcement> = self.seen.all().into_iter().collect();
+        let current_set: HashSet<&Announcement> =
+            self.seen.all().into_iter().collect();
         let new_set: HashSet<&Announcement> = announcements.iter().collect();
         current_set == new_set
     }
@@ -202,7 +211,10 @@ impl Announcements {
         self.seen.all()
     }
 
-    pub fn contained_by(&self, range: impl Into<IpRange>) -> Vec<&Announcement> {
+    pub fn contained_by(
+        &self,
+        range: impl Into<IpRange>,
+    ) -> Vec<&Announcement> {
         self.seen.matching_or_more_specific(range)
     }
 
@@ -252,8 +264,20 @@ impl ValidatedAnnouncement {
         self.announcement
     }
 
-    pub fn unpack(self) -> (Announcement, AnnouncementValidity, Option<RoaPayload>, Vec<RoaPayload>) {
-        (self.announcement, self.validity, self.authorizing, self.disallowing)
+    pub fn unpack(
+        self,
+    ) -> (
+        Announcement,
+        AnnouncementValidity,
+        Option<RoaPayload>,
+        Vec<RoaPayload>,
+    ) {
+        (
+            self.announcement,
+            self.validity,
+            self.authorizing,
+            self.disallowing,
+        )
     }
 }
 
@@ -263,7 +287,8 @@ impl AsRef<TypedPrefix> for ValidatedAnnouncement {
     }
 }
 
-//------------ AnnouncementValidity -------------------------------------------
+//------------ AnnouncementValidity
+//------------ -------------------------------------------
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub enum AnnouncementValidity {
@@ -284,7 +309,8 @@ mod tests {
     #[test]
     fn find_contained() {
         let ann_v4 = Announcement::from_str("1.0.0.0/24 => 13335").unwrap();
-        let ann_v6 = Announcement::from_str("2001:4:112::/48 => 112").unwrap();
+        let ann_v6 =
+            Announcement::from_str("2001:4:112::/48 => 112").unwrap();
 
         let mut announcements = Announcements::default();
         announcements.update(vec![ann_v4, ann_v6]);
@@ -316,7 +342,11 @@ mod tests {
         roas_builder.add(roa_irrelevant);
         let roas = roas_builder.build();
 
-        fn assert_state(ann: &Announcement, roas: &RoaTree, expected: AnnouncementValidity) {
+        fn assert_state(
+            ann: &Announcement,
+            roas: &RoaTree,
+            expected: AnnouncementValidity,
+        ) {
             assert_eq!(ann.validate(roas).validity, expected);
         }
 

@@ -4,7 +4,10 @@ use std::{borrow::BorrowMut, collections::HashMap, str::FromStr, sync::Arc};
 
 use chrono::Duration;
 use rpki::{
-    ca::{idexchange::CaHandle, provisioning::ResourceClassName, publication::Base64},
+    ca::{
+        idexchange::CaHandle, provisioning::ResourceClassName,
+        publication::Base64,
+    },
     crypto::{DigestAlgorithm, KeyIdentifier},
     repository::{
         crl::{Crl, TbsCertList},
@@ -20,22 +23,31 @@ use url::Url;
 use crate::{
     commons::{
         api::{
-            rrdp::PublishElement, CertInfo, IssuedCertificate, ObjectName, ReceivedCert, RepositoryContact, Revocation,
-            Revocations,
+            rrdp::PublishElement, CertInfo, IssuedCertificate, ObjectName,
+            ReceivedCert, RepositoryContact, Revocation, Revocations,
         },
         crypto::KrillSigner,
         error::Error,
-        eventsourcing::{Key, KeyValueStore, PreSaveEventListener, Scope, Segment, SegmentExt},
+        eventsourcing::{
+            Key, KeyValueStore, PreSaveEventListener, Scope, Segment,
+            SegmentExt,
+        },
         KrillResult,
     },
     constants::CA_OBJECTS_NS,
     daemon::{
-        ca::{CertAuth, CertAuthEvent, CertifiedKey, ChildCertificateUpdates, RoaUpdates},
+        ca::{
+            CertAuth, CertAuthEvent, CertifiedKey, ChildCertificateUpdates,
+            RoaUpdates,
+        },
         config::IssuanceTimingConfig,
     },
 };
 
-use super::{AspaInfo, AspaObjectsUpdates, BgpSecCertInfo, BgpSecCertificateUpdates, RoaInfo};
+use super::{
+    AspaInfo, AspaObjectsUpdates, BgpSecCertInfo, BgpSecCertificateUpdates,
+    RoaInfo,
+};
 
 //------------ CaObjectsStore ----------------------------------------------
 
@@ -47,9 +59,10 @@ use super::{AspaInfo, AspaObjectsUpdates, BgpSecCertInfo, BgpSecCertificateUpdat
 /// something that does not intrinsically modify the CA itself.
 ///
 /// In earlier generations of Krill the simple republish operation to generate
-/// new Manifests and CRLs was done through the event sourcing framework. However,
-/// this led to excessive use of disk space, makes the history more difficult to
-/// inspect, and causes issues with regards to replaying CA state from scratch.
+/// new Manifests and CRLs was done through the event sourcing framework.
+/// However, this led to excessive use of disk space, makes the history more
+/// difficult to inspect, and causes issues with regards to replaying CA state
+/// from scratch.
 #[derive(Clone, Debug)]
 pub struct CaObjectsStore {
     store: Arc<KeyValueStore>,
@@ -76,7 +89,11 @@ impl CaObjectsStore {
 
 /// # Process new objects as they are being produced
 impl PreSaveEventListener<CertAuth> for CaObjectsStore {
-    fn listen(&self, ca: &CertAuth, events: &[CertAuthEvent]) -> KrillResult<()> {
+    fn listen(
+        &self,
+        ca: &CertAuth,
+        events: &[CertAuthEvent],
+    ) -> KrillResult<()> {
         // Note that the `CertAuth` which is passed in has already been
         // updated with the state changes contained in the event.
 
@@ -106,7 +123,10 @@ impl PreSaveEventListener<CertAuth> for CaObjectsStore {
                         resource_class_name,
                         updates,
                     } => {
-                        objects.update_bgpsec_certs(resource_class_name, updates)?;
+                        objects.update_bgpsec_certs(
+                            resource_class_name,
+                            updates,
+                        )?;
                         force_reissue = true;
                     }
                     super::CertAuthEvent::ChildCertificatesUpdated {
@@ -120,21 +140,34 @@ impl PreSaveEventListener<CertAuth> for CaObjectsStore {
                         resource_class_name,
                         current_key,
                     } => {
-                        objects.add_class(resource_class_name, current_key, timing, signer)?;
+                        objects.add_class(
+                            resource_class_name,
+                            current_key,
+                            timing,
+                            signer,
+                        )?;
                     }
                     super::CertAuthEvent::KeyPendingToNew {
                         resource_class_name,
                         new_key,
                     } => {
-                        objects.keyroll_stage(resource_class_name, new_key, timing, signer)?;
+                        objects.keyroll_stage(
+                            resource_class_name,
+                            new_key,
+                            timing,
+                            signer,
+                        )?;
                     }
                     super::CertAuthEvent::KeyRollActivated {
-                        resource_class_name, ..
+                        resource_class_name,
+                        ..
                     } => {
                         objects.keyroll_activate(resource_class_name)?;
                         force_reissue = true;
                     }
-                    super::CertAuthEvent::KeyRollFinished { resource_class_name } => {
+                    super::CertAuthEvent::KeyRollFinished {
+                        resource_class_name,
+                    } => {
                         objects.keyroll_finish(resource_class_name)?;
                     }
                     super::CertAuthEvent::CertificateReceived {
@@ -142,14 +175,21 @@ impl PreSaveEventListener<CertAuth> for CaObjectsStore {
                         rcvd_cert,
                         ..
                     } => {
-                        objects.update_received_cert(resource_class_name, rcvd_cert)?;
-                        // this in itself constitutes no need to force re-issuance
-                        // if the new certificate triggered that the set of objects changed,
-                        // e.g. because a ROA became overclaiming, then we would see another
-                        // event for that which *will* result in forcing re-issuance.
+                        objects.update_received_cert(
+                            resource_class_name,
+                            rcvd_cert,
+                        )?;
+                        // this in itself constitutes no need to force
+                        // re-issuance if the new
+                        // certificate triggered that the set of objects
+                        // changed, e.g. because a ROA
+                        // became overclaiming, then we would see another
+                        // event for that which *will* result in forcing
+                        // re-issuance.
                     }
                     super::CertAuthEvent::ResourceClassRemoved {
-                        resource_class_name, ..
+                        resource_class_name,
+                        ..
                     } => {
                         objects.remove_class(resource_class_name);
                         force_reissue = true;
@@ -178,7 +218,8 @@ impl CaObjectsStore {
             .keys(&Scope::global(), ".json")?
             .iter()
             .flat_map(|k| {
-                // Only add entries for which the first part can be parsed as a handle
+                // Only add entries for which the first part can be parsed as
+                // a handle
                 let mut res = None;
                 if let Some(name) = k.name().as_str().strip_suffix(".json") {
                     if let Ok(handle) = CaHandle::from_str(name) {
@@ -204,23 +245,29 @@ impl CaObjectsStore {
             .map_err(Error::KeyValueError)
     }
 
-    /// Get objects for this CA, create a new empty CaObjects if there is none.
+    /// Get objects for this CA, create a new empty CaObjects if there is
+    /// none.
     pub fn ca_objects(&self, ca: &CaHandle) -> KrillResult<CaObjects> {
         let key = Self::key(ca);
 
         match self.store.get(&key).map_err(Error::KeyValueError)? {
             None => {
-                let objects = CaObjects::new(ca.clone(), None, HashMap::new(), vec![]);
+                let objects =
+                    CaObjects::new(ca.clone(), None, HashMap::new(), vec![]);
                 Ok(objects)
             }
             Some(objects) => Ok(objects),
         }
     }
 
-    /// Perform an action (closure) on a mutable instance of the CaObjects for a
-    /// CA. If the CA did not have any CaObjects yet, one will be created. The
-    /// closure is executed within a write lock.
-    pub fn with_ca_objects<F>(&self, ca: &CaHandle, mut op: F) -> KrillResult<()>
+    /// Perform an action (closure) on a mutable instance of the CaObjects for
+    /// a CA. If the CA did not have any CaObjects yet, one will be
+    /// created. The closure is executed within a write lock.
+    pub fn with_ca_objects<F>(
+        &self,
+        ca: &CaHandle,
+        mut op: F,
+    ) -> KrillResult<()>
     where
         F: FnMut(&mut CaObjects) -> KrillResult<()>,
     {
@@ -228,7 +275,9 @@ impl CaObjectsStore {
             .execute(&Scope::global(), |kv| {
                 let key = Self::key(ca);
 
-                let mut objects: CaObjects = if let Some(value) = kv.get(&key)? {
+                let mut objects: CaObjects = if let Some(value) =
+                    kv.get(&key)?
+                {
                     serde_json::from_value(value)?
                 } else {
                     CaObjects::new(ca.clone(), None, HashMap::new(), vec![])
@@ -246,12 +295,21 @@ impl CaObjectsStore {
             .map_err(Error::KeyValueError)?
     }
 
-    // Re-issue MFT and CRL for all CAs *if needed*, returns all CAs which were updated.
-    pub fn reissue_if_needed(&self, force: bool, ca_handle: &CaHandle) -> KrillResult<bool> {
+    // Re-issue MFT and CRL for all CAs *if needed*, returns all CAs which
+    // were updated.
+    pub fn reissue_if_needed(
+        &self,
+        force: bool,
+        ca_handle: &CaHandle,
+    ) -> KrillResult<bool> {
         debug!("Re-issue for CA {} using force: {}", ca_handle, force);
         let mut re_issued = false;
         self.with_ca_objects(ca_handle, |objects| {
-            re_issued = objects.re_issue(force, &self.issuance_timing, &self.signer)?;
+            re_issued = objects.re_issue(
+                force,
+                &self.issuance_timing,
+                &self.signer,
+            )?;
             Ok(())
         })?;
         Ok(re_issued)
@@ -319,16 +377,20 @@ impl CaObjects {
 
     #[allow(clippy::mutable_key_type)]
     /// Returns all PublishedElements mapped to each RepositoryContact.
-    /// There could be more than one repository - although usually there isn't.
-    pub fn repo_elements_map(&self) -> HashMap<RepositoryContact, Vec<PublishElement>> {
+    /// There could be more than one repository - although usually there
+    /// isn't.
+    pub fn repo_elements_map(
+        &self,
+    ) -> HashMap<RepositoryContact, Vec<PublishElement>> {
         let mut res = HashMap::new();
 
         if let Some(repo) = &self.repo {
             res.insert(repo.clone(), vec![]);
 
             for resource_class_objects in self.classes.values() {
-                // Note the map 'res' will get entries for other (old) repositories
-                // if there are any keys with such repositories.
+                // Note the map 'res' will get entries for other (old)
+                // repositories if there are any keys with
+                // such repositories.
                 resource_class_objects.add_elements(&mut res, repo);
             }
         }
@@ -336,11 +398,13 @@ impl CaObjects {
         res
     }
 
-    /// Returns all PublishElements in all repositories (if there is more than one).
+    /// Returns all PublishElements in all repositories (if there is more than
+    /// one).
     pub fn all_publish_elements(&self) -> Vec<PublishElement> {
         let mut all_elements = vec![];
 
-        // slightly inefficient since we drop the RepositoryContact keys again, but this leverages existing code.
+        // slightly inefficient since we drop the RepositoryContact keys
+        // again, but this leverages existing code.
         for elements in self.repo_elements_map().values_mut() {
             all_elements.append(elements);
         }
@@ -353,10 +417,14 @@ impl CaObjects {
     }
 
     pub fn deprecated_repo_remove(&mut self, to_remove: &RepositoryContact) {
-        self.deprecated_repos.retain(|current| current.contact() != to_remove);
+        self.deprecated_repos
+            .retain(|current| current.contact() != to_remove);
     }
 
-    pub fn deprecated_repo_inc_clean_attempts(&mut self, contact: &RepositoryContact) {
+    pub fn deprecated_repo_inc_clean_attempts(
+        &mut self,
+        contact: &RepositoryContact,
+    ) {
         for current in self.deprecated_repos.iter_mut() {
             if current.contact() == contact {
                 current.inc_clean_attempts()
@@ -364,7 +432,8 @@ impl CaObjects {
         }
     }
 
-    /// Add a new resource class, this returns an error in case the class already exists.
+    /// Add a new resource class, this returns an error in case the class
+    /// already exists.
     fn add_class(
         &mut self,
         class_name: &ResourceClassName,
@@ -375,14 +444,20 @@ impl CaObjects {
         if self.classes.contains_key(class_name) {
             Err(Error::publishing("Duplicate resource class"))
         } else {
-            self.classes
-                .insert(class_name.clone(), ResourceClassObjects::create(key, timing, signer)?);
+            self.classes.insert(
+                class_name.clone(),
+                ResourceClassObjects::create(key, timing, signer)?,
+            );
             Ok(())
         }
     }
 
     fn remove_class(&mut self, class_name: &ResourceClassName) {
-        let old_repo_opt = self.classes.get(class_name).and_then(|rco| rco.old_repo()).cloned();
+        let old_repo_opt = self
+            .classes
+            .get(class_name)
+            .and_then(|rco| rco.old_repo())
+            .cloned();
 
         self.classes.remove(class_name);
 
@@ -391,14 +466,17 @@ impl CaObjects {
         }
     }
 
-    fn get_class_mut(&mut self, rcn: &ResourceClassName) -> KrillResult<&mut ResourceClassObjects> {
+    fn get_class_mut(
+        &mut self,
+        rcn: &ResourceClassName,
+    ) -> KrillResult<&mut ResourceClassObjects> {
         self.classes
             .get_mut(rcn)
             .ok_or_else(|| Error::publishing("Missing resource class"))
     }
 
-    // Add a staging key to the set, this will fail in case the class is missing, or in case
-    // the class is not in state 'current'.
+    // Add a staging key to the set, this will fail in case the class is
+    // missing, or in case the class is not in state 'current'.
     fn keyroll_stage(
         &mut self,
         rcn: &ResourceClassName,
@@ -411,7 +489,10 @@ impl CaObjects {
 
     // Activates the keyset by retiring the current set, and promoting
     // the staging set to current.
-    fn keyroll_activate(&mut self, rcn: &ResourceClassName) -> KrillResult<()> {
+    fn keyroll_activate(
+        &mut self,
+        rcn: &ResourceClassName,
+    ) -> KrillResult<()> {
         self.get_class_mut(rcn)?.keyroll_activate()
     }
 
@@ -419,8 +500,9 @@ impl CaObjects {
     fn keyroll_finish(&mut self, rcn: &ResourceClassName) -> KrillResult<()> {
         let resource_class_objects = self.get_class_mut(rcn)?;
 
-        // finish the key roll for this resource class objects. This will remove the old
-        // key, and return an old_repo if there was one.
+        // finish the key roll for this resource class objects. This will
+        // remove the old key, and return an old_repo if there was
+        // one.
         if let Some(old_repo) = resource_class_objects.keyroll_finish()? {
             self.deprecate_repo_if_no_longer_used(old_repo);
         }
@@ -429,37 +511,66 @@ impl CaObjects {
     }
 
     // Update the ROAs in the current set
-    fn update_roas(&mut self, rcn: &ResourceClassName, roa_updates: &RoaUpdates) -> KrillResult<()> {
-        self.get_class_mut(rcn).map(|rco| rco.update_roas(roa_updates))
+    fn update_roas(
+        &mut self,
+        rcn: &ResourceClassName,
+        roa_updates: &RoaUpdates,
+    ) -> KrillResult<()> {
+        self.get_class_mut(rcn)
+            .map(|rco| rco.update_roas(roa_updates))
     }
 
     // Update the ASPAs in the current set
-    fn update_aspas(&mut self, rcn: &ResourceClassName, updates: &AspaObjectsUpdates) -> KrillResult<()> {
+    fn update_aspas(
+        &mut self,
+        rcn: &ResourceClassName,
+        updates: &AspaObjectsUpdates,
+    ) -> KrillResult<()> {
         self.get_class_mut(rcn).map(|rco| rco.update_aspas(updates))
     }
 
     // Update the BGPSec certificates in the current set
-    fn update_bgpsec_certs(&mut self, rcn: &ResourceClassName, updates: &BgpSecCertificateUpdates) -> KrillResult<()> {
-        self.get_class_mut(rcn).map(|rco| rco.update_bgpsec_certs(updates))
+    fn update_bgpsec_certs(
+        &mut self,
+        rcn: &ResourceClassName,
+        updates: &BgpSecCertificateUpdates,
+    ) -> KrillResult<()> {
+        self.get_class_mut(rcn)
+            .map(|rco| rco.update_bgpsec_certs(updates))
     }
 
     // Update the issued certificates in the current set
-    fn update_certs(&mut self, rcn: &ResourceClassName, cert_updates: &ChildCertificateUpdates) -> KrillResult<()> {
-        self.get_class_mut(rcn).map(|rco| rco.update_certs(cert_updates))
+    fn update_certs(
+        &mut self,
+        rcn: &ResourceClassName,
+        cert_updates: &ChildCertificateUpdates,
+    ) -> KrillResult<()> {
+        self.get_class_mut(rcn)
+            .map(|rco| rco.update_certs(cert_updates))
     }
 
     // Update the received certificate.
-    fn update_received_cert(&mut self, rcn: &ResourceClassName, cert: &ReceivedCert) -> KrillResult<()> {
+    fn update_received_cert(
+        &mut self,
+        rcn: &ResourceClassName,
+        cert: &ReceivedCert,
+    ) -> KrillResult<()> {
         self.get_class_mut(rcn)?.update_received_cert(cert)
     }
 
     /// Reissue the MFT and CRL
     ///
-    /// If force is true, then re-issuance will always be done. I.e. this is to be used
-    /// in case any of the content changed. Otherwise re-issuance will only happen if it's
-    /// close to the next update time, or the AIA has changed.. the latter may happen if
-    /// the parent migrated repositories.
-    fn re_issue(&mut self, force: bool, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<bool> {
+    /// If force is true, then re-issuance will always be done. I.e. this is
+    /// to be used in case any of the content changed. Otherwise
+    /// re-issuance will only happen if it's close to the next update
+    /// time, or the AIA has changed.. the latter may happen if the parent
+    /// migrated repositories.
+    fn re_issue(
+        &mut self,
+        force: bool,
+        timing: &IssuanceTimingConfig,
+        signer: &KrillSigner,
+    ) -> KrillResult<bool> {
         let hours = timing.publish_hours_before_next();
         let mut required = false;
 
@@ -475,9 +586,9 @@ impl CaObjects {
 
     // Update the repository.
     //
-    // If the repository is being migrated, i.e. there already is a current repository,
-    // then make sure that the current repository is preserved as the old repository for
-    // existing keys.
+    // If the repository is being migrated, i.e. there already is a current
+    // repository, then make sure that the current repository is preserved
+    // as the old repository for existing keys.
     fn update_repo(&mut self, repo: &RepositoryContact) {
         if let Some(old) = &self.repo {
             for resource_class_objects in self.classes.values_mut() {
@@ -492,9 +603,13 @@ impl CaObjects {
     }
 
     // Marks a repository as deprecated unless it's (still) in use by any key
-    fn deprecate_repo_if_no_longer_used(&mut self, old_repo: RepositoryContact) {
+    fn deprecate_repo_if_no_longer_used(
+        &mut self,
+        old_repo: RepositoryContact,
+    ) {
         if !self.has_old_repo(&old_repo) {
-            self.deprecated_repos.push(DeprecatedRepository::new(old_repo, 0));
+            self.deprecated_repos
+                .push(DeprecatedRepository::new(old_repo, 0));
         }
     }
 }
@@ -510,12 +625,19 @@ impl ResourceClassObjects {
     }
 
     #[allow(clippy::mutable_key_type)]
-    /// Adds all the elements for this resource class to the map which is passed on. It will use
-    /// the default repository, or an optional old repository if any of the keys had one as part
-    /// of a repository migration.
-    fn add_elements(&self, map: &mut HashMap<RepositoryContact, Vec<PublishElement>>, dflt_repo: &RepositoryContact) {
+    /// Adds all the elements for this resource class to the map which is
+    /// passed on. It will use the default repository, or an optional old
+    /// repository if any of the keys had one as part of a repository
+    /// migration.
+    fn add_elements(
+        &self,
+        map: &mut HashMap<RepositoryContact, Vec<PublishElement>>,
+        dflt_repo: &RepositoryContact,
+    ) {
         match &self.keys {
-            ResourceClassKeyState::Current(state) => state.current_set.add_elements(map, dflt_repo),
+            ResourceClassKeyState::Current(state) => {
+                state.current_set.add_elements(map, dflt_repo)
+            }
             ResourceClassKeyState::Staging(state) => {
                 state.current_set.add_elements(map, dflt_repo);
                 state.staging_set.add_elements(map, dflt_repo);
@@ -527,11 +649,17 @@ impl ResourceClassObjects {
         }
     }
 
-    fn create(key: &CertifiedKey, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<Self> {
+    fn create(
+        key: &CertifiedKey,
+        timing: &IssuanceTimingConfig,
+        signer: &KrillSigner,
+    ) -> KrillResult<Self> {
         let current_set = KeyObjectSet::create(key, timing, signer)?;
 
         Ok(ResourceClassObjects {
-            keys: ResourceClassKeyState::Current(CurrentKeyState { current_set }),
+            keys: ResourceClassKeyState::Current(CurrentKeyState {
+                current_set,
+            }),
         })
     }
 
@@ -542,8 +670,14 @@ impl ResourceClassObjects {
         signer: &KrillSigner,
     ) -> KrillResult<()> {
         let current_set = match &self.keys {
-            ResourceClassKeyState::Current(state) => state.current_set.clone(),
-            _ => return Err(Error::publishing("published resource class in the wrong key state")),
+            ResourceClassKeyState::Current(state) => {
+                state.current_set.clone()
+            }
+            _ => {
+                return Err(Error::publishing(
+                    "published resource class in the wrong key state",
+                ))
+            }
         };
 
         let staging_set = KeyObjectSet::create(key, timing, signer)?;
@@ -562,9 +696,16 @@ impl ResourceClassObjects {
                 let old_set = state.current_set.retire()?;
                 let current_set = state.staging_set.clone();
 
-                ResourceClassKeyState::Old(OldKeyState { current_set, old_set })
+                ResourceClassKeyState::Old(OldKeyState {
+                    current_set,
+                    old_set,
+                })
             }
-            _ => return Err(Error::publishing("published resource class in the wrong key state")),
+            _ => {
+                return Err(Error::publishing(
+                    "published resource class in the wrong key state",
+                ))
+            }
         };
 
         Ok(())
@@ -577,61 +718,100 @@ impl ResourceClassObjects {
                 self.keys = ResourceClassKeyState::current(current_set);
                 Ok(old.old_set.old_repo)
             }
-            _ => Err(Error::publishing("published resource class in the wrong key state")),
+            _ => Err(Error::publishing(
+                "published resource class in the wrong key state",
+            )),
         }
     }
 
-    fn update_received_cert(&mut self, updated_cert: &ReceivedCert) -> KrillResult<()> {
+    fn update_received_cert(
+        &mut self,
+        updated_cert: &ReceivedCert,
+    ) -> KrillResult<()> {
         self.keys.update_received_cert(updated_cert)
     }
 
     fn update_roas(&mut self, roa_updates: &RoaUpdates) {
         match self.keys.borrow_mut() {
-            ResourceClassKeyState::Current(state) => state.current_set.update_roas(roa_updates),
-            ResourceClassKeyState::Staging(state) => state.current_set.update_roas(roa_updates),
-            ResourceClassKeyState::Old(state) => state.current_set.update_roas(roa_updates),
+            ResourceClassKeyState::Current(state) => {
+                state.current_set.update_roas(roa_updates)
+            }
+            ResourceClassKeyState::Staging(state) => {
+                state.current_set.update_roas(roa_updates)
+            }
+            ResourceClassKeyState::Old(state) => {
+                state.current_set.update_roas(roa_updates)
+            }
         }
     }
 
     fn update_aspas(&mut self, updates: &AspaObjectsUpdates) {
         match self.keys.borrow_mut() {
-            ResourceClassKeyState::Current(state) => state.current_set.update_aspas(updates),
-            ResourceClassKeyState::Staging(state) => state.current_set.update_aspas(updates),
-            ResourceClassKeyState::Old(state) => state.current_set.update_aspas(updates),
+            ResourceClassKeyState::Current(state) => {
+                state.current_set.update_aspas(updates)
+            }
+            ResourceClassKeyState::Staging(state) => {
+                state.current_set.update_aspas(updates)
+            }
+            ResourceClassKeyState::Old(state) => {
+                state.current_set.update_aspas(updates)
+            }
         }
     }
 
     fn update_bgpsec_certs(&mut self, updates: &BgpSecCertificateUpdates) {
         match self.keys.borrow_mut() {
-            ResourceClassKeyState::Current(state) => state.current_set.update_bgpsec_certs(updates),
-            ResourceClassKeyState::Staging(state) => state.current_set.update_bgpsec_certs(updates),
-            ResourceClassKeyState::Old(state) => state.current_set.update_bgpsec_certs(updates),
+            ResourceClassKeyState::Current(state) => {
+                state.current_set.update_bgpsec_certs(updates)
+            }
+            ResourceClassKeyState::Staging(state) => {
+                state.current_set.update_bgpsec_certs(updates)
+            }
+            ResourceClassKeyState::Old(state) => {
+                state.current_set.update_bgpsec_certs(updates)
+            }
         }
     }
 
     fn update_certs(&mut self, cert_updates: &ChildCertificateUpdates) {
         match self.keys.borrow_mut() {
-            ResourceClassKeyState::Current(state) => state.current_set.update_certs(cert_updates),
-            ResourceClassKeyState::Staging(state) => state.current_set.update_certs(cert_updates),
-            ResourceClassKeyState::Old(state) => state.current_set.update_certs(cert_updates),
+            ResourceClassKeyState::Current(state) => {
+                state.current_set.update_certs(cert_updates)
+            }
+            ResourceClassKeyState::Staging(state) => {
+                state.current_set.update_certs(cert_updates)
+            }
+            ResourceClassKeyState::Old(state) => {
+                state.current_set.update_certs(cert_updates)
+            }
         }
     }
 
     fn requires_re_issuance(&self, hours: i64) -> bool {
         match &self.keys {
-            ResourceClassKeyState::Current(state) => state.current_set.requires_reissuance(hours),
+            ResourceClassKeyState::Current(state) => {
+                state.current_set.requires_reissuance(hours)
+            }
             ResourceClassKeyState::Old(state) => {
-                state.old_set.requires_reissuance(hours) || state.current_set.requires_reissuance(hours)
+                state.old_set.requires_reissuance(hours)
+                    || state.current_set.requires_reissuance(hours)
             }
             ResourceClassKeyState::Staging(state) => {
-                state.staging_set.requires_reissuance(hours) || state.current_set.requires_reissuance(hours)
+                state.staging_set.requires_reissuance(hours)
+                    || state.current_set.requires_reissuance(hours)
             }
         }
     }
 
-    fn reissue(&mut self, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<()> {
+    fn reissue(
+        &mut self,
+        timing: &IssuanceTimingConfig,
+        signer: &KrillSigner,
+    ) -> KrillResult<()> {
         match self.keys.borrow_mut() {
-            ResourceClassKeyState::Current(state) => state.current_set.reissue(timing, signer),
+            ResourceClassKeyState::Current(state) => {
+                state.current_set.reissue(timing, signer)
+            }
             ResourceClassKeyState::Staging(state) => {
                 state.staging_set.reissue(timing, signer)?;
                 state.current_set.reissue(timing, signer)
@@ -645,7 +825,9 @@ impl ResourceClassObjects {
 
     fn set_old_repo(&mut self, repo: &RepositoryContact) {
         match self.keys.borrow_mut() {
-            ResourceClassKeyState::Current(state) => state.current_set.set_old_repo(repo),
+            ResourceClassKeyState::Current(state) => {
+                state.current_set.set_old_repo(repo)
+            }
             ResourceClassKeyState::Staging(state) => {
                 state.staging_set.set_old_repo(repo);
                 state.current_set.set_old_repo(repo);
@@ -659,26 +841,37 @@ impl ResourceClassObjects {
 
     fn has_old_repo(&self, repo: &RepositoryContact) -> bool {
         match &self.keys {
-            ResourceClassKeyState::Current(state) => state.current_set.old_repo() == Some(repo),
+            ResourceClassKeyState::Current(state) => {
+                state.current_set.old_repo() == Some(repo)
+            }
             ResourceClassKeyState::Staging(state) => {
-                state.staging_set.old_repo() == Some(repo) || state.current_set.old_repo() == Some(repo)
+                state.staging_set.old_repo() == Some(repo)
+                    || state.current_set.old_repo() == Some(repo)
             }
             ResourceClassKeyState::Old(state) => {
-                state.old_set.old_repo() == Some(repo) || state.current_set.old_repo() == Some(repo)
+                state.old_set.old_repo() == Some(repo)
+                    || state.current_set.old_repo() == Some(repo)
             }
         }
     }
 
     fn old_repo(&self) -> Option<&RepositoryContact> {
-        // Note: we can only have 1 old repo, because new repositories can only be introduced
-        // when there is no key roll in progress. So, it's not possible to introduce a second
-        // repo until the previous old_repo is rolled out completely.
+        // Note: we can only have 1 old repo, because new repositories can
+        // only be introduced when there is no key roll in progress.
+        // So, it's not possible to introduce a second repo until the
+        // previous old_repo is rolled out completely.
         match &self.keys {
-            ResourceClassKeyState::Current(state) => state.current_set.old_repo(),
-            ResourceClassKeyState::Staging(state) => {
-                state.staging_set.old_repo().or_else(|| state.current_set.old_repo())
+            ResourceClassKeyState::Current(state) => {
+                state.current_set.old_repo()
             }
-            ResourceClassKeyState::Old(state) => state.old_set.old_repo().or_else(|| state.current_set.old_repo()),
+            ResourceClassKeyState::Staging(state) => state
+                .staging_set
+                .old_repo()
+                .or_else(|| state.current_set.old_repo()),
+            ResourceClassKeyState::Old(state) => state
+                .old_set
+                .old_repo()
+                .or_else(|| state.current_set.old_repo()),
         }
     }
 }
@@ -696,7 +889,10 @@ impl ResourceClassKeyState {
         ResourceClassKeyState::Current(CurrentKeyState { current_set })
     }
 
-    pub fn staging(staging_set: KeyObjectSet, current_set: KeyObjectSet) -> Self {
+    pub fn staging(
+        staging_set: KeyObjectSet,
+        current_set: KeyObjectSet,
+    ) -> Self {
         ResourceClassKeyState::Staging(StagingKeyState {
             staging_set,
             current_set,
@@ -704,12 +900,20 @@ impl ResourceClassKeyState {
     }
 
     pub fn old(current_set: KeyObjectSet, old_set: KeyObjectSet) -> Self {
-        ResourceClassKeyState::Old(OldKeyState { current_set, old_set })
+        ResourceClassKeyState::Old(OldKeyState {
+            current_set,
+            old_set,
+        })
     }
 
-    fn update_received_cert(&mut self, cert: &ReceivedCert) -> KrillResult<()> {
+    fn update_received_cert(
+        &mut self,
+        cert: &ReceivedCert,
+    ) -> KrillResult<()> {
         match self {
-            ResourceClassKeyState::Current(state) => state.current_set.update_signing_cert(cert),
+            ResourceClassKeyState::Current(state) => {
+                state.current_set.update_signing_cert(cert)
+            }
             ResourceClassKeyState::Staging(state) => {
                 if state.staging_set.update_signing_cert(cert).is_ok() {
                     Ok(())
@@ -762,7 +966,10 @@ pub struct OldKeyState {
 
 impl OldKeyState {
     pub fn new(current_set: KeyObjectSet, old_set: KeyObjectSet) -> Self {
-        OldKeyState { current_set, old_set }
+        OldKeyState {
+            current_set,
+            old_set,
+        }
     }
 }
 
@@ -860,7 +1067,11 @@ impl KeyObjectSet {
         }
     }
 
-    fn create(key: &CertifiedKey, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<Self> {
+    fn create(
+        key: &CertifiedKey,
+        timing: &IssuanceTimingConfig,
+        signer: &KrillSigner,
+    ) -> KrillResult<Self> {
         let signing_cert = key.incoming_cert().clone();
 
         let signing_key = signing_cert.key_identifier();
@@ -868,7 +1079,13 @@ impl KeyObjectSet {
         let revocations = Revocations::default();
         let revision = ObjectSetRevision::create(timing.publish_next());
 
-        let crl = CrlBuilder::build(signing_key, issuer, &revocations, revision, signer)?;
+        let crl = CrlBuilder::build(
+            signing_key,
+            issuer,
+            &revocations,
+            revision,
+            signer,
+        )?;
         let published_objects = HashMap::new();
 
         let manifest = ManifestBuilder::new(revision)
@@ -887,11 +1104,15 @@ impl KeyObjectSet {
         })
     }
 
-    /// Adds all the elements for this set to the map which is passed on. It will use
-    /// the default repository unless this key had an old repository set - as part of
-    /// repository migration.
+    /// Adds all the elements for this set to the map which is passed on. It
+    /// will use the default repository unless this key had an old
+    /// repository set - as part of repository migration.
     #[allow(clippy::mutable_key_type)]
-    fn add_elements(&self, map: &mut HashMap<RepositoryContact, Vec<PublishElement>>, dflt_repo: &RepositoryContact) {
+    fn add_elements(
+        &self,
+        map: &mut HashMap<RepositoryContact, Vec<PublishElement>>,
+        dflt_repo: &RepositoryContact,
+    ) {
         let repo = self.old_repo.as_ref().unwrap_or(dflt_repo);
 
         let crl_uri = self.signing_cert.crl_uri();
@@ -919,7 +1140,10 @@ impl KeyObjectSet {
     }
 
     // Returns an error in case the KeyIdentifiers don't match.
-    fn update_signing_cert(&mut self, cert: &ReceivedCert) -> KrillResult<()> {
+    fn update_signing_cert(
+        &mut self,
+        cert: &ReceivedCert,
+    ) -> KrillResult<()> {
         if self.signing_cert.key_identifier() == cert.key_identifier() {
             self.signing_cert = cert.clone();
             Ok(())
@@ -933,8 +1157,11 @@ impl KeyObjectSet {
 
     fn update_roas(&mut self, roa_updates: &RoaUpdates) {
         for (name, roa_info) in roa_updates.added_roas() {
-            let published_object = PublishedObject::for_roa(name.clone(), &roa_info);
-            if let Some(old) = self.published_objects.insert(name, published_object) {
+            let published_object =
+                PublishedObject::for_roa(name.clone(), &roa_info);
+            if let Some(old) =
+                self.published_objects.insert(name, published_object)
+            {
                 self.revocations.add(old.revoke());
             }
         }
@@ -948,8 +1175,11 @@ impl KeyObjectSet {
     fn update_aspas(&mut self, updates: &AspaObjectsUpdates) {
         for aspa_info in updates.updated() {
             let name = ObjectName::aspa(aspa_info.customer());
-            let published_object = PublishedObject::for_aspa(name.clone(), aspa_info);
-            if let Some(old) = self.published_objects.insert(name, published_object) {
+            let published_object =
+                PublishedObject::for_aspa(name.clone(), aspa_info);
+            if let Some(old) =
+                self.published_objects.insert(name, published_object)
+            {
                 self.revocations.add(old.revoke());
             }
         }
@@ -963,8 +1193,12 @@ impl KeyObjectSet {
 
     fn update_bgpsec_certs(&mut self, updates: &BgpSecCertificateUpdates) {
         for bgpsec_cert_info in updates.updated() {
-            let published_object = PublishedObject::for_bgpsec_cert_info(bgpsec_cert_info);
-            if let Some(old) = self.published_objects.insert(bgpsec_cert_info.name(), published_object) {
+            let published_object =
+                PublishedObject::for_bgpsec_cert_info(bgpsec_cert_info);
+            if let Some(old) = self
+                .published_objects
+                .insert(bgpsec_cert_info.name(), published_object)
+            {
                 self.revocations.add(old.revoke());
             }
         }
@@ -987,7 +1221,10 @@ impl KeyObjectSet {
 
         for issued in cert_updates.issued() {
             let published_object = PublishedObject::for_cert_info(issued);
-            if let Some(old) = self.published_objects.insert(issued.name().clone(), published_object) {
+            if let Some(old) = self
+                .published_objects
+                .insert(issued.name().clone(), published_object)
+            {
                 self.revocations.add(old.revoke());
             }
         }
@@ -995,20 +1232,28 @@ impl KeyObjectSet {
         for cert in cert_updates.unsuspended() {
             self.revocations.remove(&cert.revocation());
             let published_object = PublishedObject::for_cert_info(cert);
-            if let Some(old) = self.published_objects.insert(cert.name().clone(), published_object) {
+            if let Some(old) = self
+                .published_objects
+                .insert(cert.name().clone(), published_object)
+            {
                 // this should not happen, but just to be safe.
                 self.revocations.add(old.revoke());
             }
         }
 
         for suspended in cert_updates.suspended() {
-            if let Some(old) = self.published_objects.remove(suspended.name()) {
+            if let Some(old) = self.published_objects.remove(suspended.name())
+            {
                 self.revocations.add(old.revoke());
             }
         }
     }
 
-    fn reissue(&mut self, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<()> {
+    fn reissue(
+        &mut self,
+        timing: &IssuanceTimingConfig,
+        signer: &KrillSigner,
+    ) -> KrillResult<()> {
         debug!(
             "Will re-issue for key: {}. Current revision: {} and next update: {}",
             self.signing_cert.key_identifier(),
@@ -1022,7 +1267,13 @@ impl KeyObjectSet {
         let signing_key = self.signing_cert.key_identifier();
         let issuer = self.signing_cert.subject().clone();
 
-        self.crl = CrlBuilder::build(signing_key, issuer, &self.revocations, self.revision, signer)?;
+        self.crl = CrlBuilder::build(
+            signing_key,
+            issuer,
+            &self.revocations,
+            self.revision,
+            signer,
+        )?;
 
         self.manifest = ManifestBuilder::new(self.revision)
             .with_objects(&self.crl, &self.published_objects)
@@ -1032,7 +1283,8 @@ impl KeyObjectSet {
         Ok(())
     }
 
-    /// Turns this into a retired KeyObjectSet, revoking and retiring all signed objects.
+    /// Turns this into a retired KeyObjectSet, revoking and retiring all
+    /// signed objects.
     fn retire(&self) -> KrillResult<KeyObjectSet> {
         let mut revocations = self.revocations.clone();
         for object in self.published_objects.values() {
@@ -1101,7 +1353,11 @@ impl ObjectSetRevision {
         }
     }
 
-    pub fn next(&mut self, next_update: Time, mft_number_override: Option<u64>) {
+    pub fn next(
+        &mut self,
+        next_update: Time,
+        mft_number_override: Option<u64>,
+    ) {
         if let Some(forced_next) = mft_number_override {
             self.number = forced_next;
         } else {
@@ -1132,7 +1388,12 @@ pub struct PublishedItem<T> {
 }
 
 impl<T> PublishedItem<T> {
-    pub fn new(name: ObjectName, base64: Base64, serial: Serial, expires: Time) -> Self {
+    pub fn new(
+        name: ObjectName,
+        base64: Base64,
+        serial: Serial,
+        expires: Time,
+    ) -> Self {
         let hash = base64.to_hash();
 
         PublishedItem {
@@ -1196,7 +1457,12 @@ pub type PublishedObject = PublishedItem<PublishedItemOther>;
 
 impl PublishedObject {
     pub fn for_roa(name: ObjectName, roa_info: &RoaInfo) -> Self {
-        PublishedObject::new(name, roa_info.base64().clone(), roa_info.serial(), roa_info.expires())
+        PublishedObject::new(
+            name,
+            roa_info.base64().clone(),
+            roa_info.serial(),
+            roa_info.expires(),
+        )
     }
 
     pub fn for_aspa(name: ObjectName, aspa_info: &AspaInfo) -> Self {
@@ -1218,7 +1484,12 @@ impl PublishedObject {
     }
 
     pub fn for_bgpsec_cert_info(cert: &BgpSecCertInfo) -> Self {
-        PublishedObject::new(cert.name(), cert.base64().clone(), cert.serial(), cert.expires())
+        PublishedObject::new(
+            cert.name(),
+            cert.base64().clone(),
+            cert.serial(),
+            cert.expires(),
+        )
     }
 }
 
@@ -1283,7 +1554,11 @@ impl ManifestBuilder {
         self
     }
 
-    pub fn build_new_mft(self, signing_cert: &ReceivedCert, signer: &KrillSigner) -> KrillResult<Manifest> {
+    pub fn build_new_mft(
+        self,
+        signing_cert: &ReceivedCert,
+        signer: &KrillSigner,
+    ) -> KrillResult<Manifest> {
         let mft_uri = signing_cert.mft_uri();
         let crl_uri = signing_cert.crl_uri();
 
@@ -1291,7 +1566,8 @@ impl ManifestBuilder {
         let aki = signing_cert.key_identifier();
         let serial_number = Serial::from(self.revision.number);
 
-        let entries = self.entries.iter().map(|(k, v)| FileAndHash::new(k, v));
+        let entries =
+            self.entries.iter().map(|(k, v)| FileAndHash::new(k, v));
 
         let manifest: Manifest = {
             let mft_content = ManifestContent::new(
@@ -1303,7 +1579,10 @@ impl ManifestBuilder {
             );
             let mut object_builder = SignedObjectBuilder::new(
                 signer.random_serial()?,
-                Validity::new(self.revision.this_update, self.revision.next_update),
+                Validity::new(
+                    self.revision.this_update,
+                    self.revision.next_update,
+                ),
                 crl_uri,
                 aia.clone(),
                 mft_uri,

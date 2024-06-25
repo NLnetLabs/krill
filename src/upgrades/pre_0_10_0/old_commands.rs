@@ -1,7 +1,9 @@
 use rpki::{
     ca::{
         idexchange::{ChildHandle, ParentHandle, ServiceUri},
-        provisioning::{RequestResourceLimit, ResourceClassName, RevocationRequest},
+        provisioning::{
+            RequestResourceLimit, ResourceClassName, RevocationRequest,
+        },
     },
     crypto::KeyIdentifier,
     repository::resources::ResourceSet,
@@ -10,12 +12,15 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            CertAuthStorableCommand, RoaConfigurationUpdates, RtaName, StorableParentContact, StorableRcEntitlement,
+            CertAuthStorableCommand, RoaConfigurationUpdates, RtaName,
+            StorableParentContact, StorableRcEntitlement,
         },
         eventsourcing::WithStorableDetails,
     },
     daemon::ca::DropReason,
-    upgrades::pre_0_14_0::{Pre0_14_0AspaProvidersUpdate, Pre0_14_0ProviderAs},
+    upgrades::pre_0_14_0::{
+        Pre0_14_0AspaProvidersUpdate, Pre0_14_0ProviderAs,
+    },
 };
 
 use super::Pre0_10_0AspaDefinition;

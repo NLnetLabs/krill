@@ -26,20 +26,25 @@ use crate::{
         actor::Actor,
         api::{
             rrdp::{
-                CurrentObjects, DeltaData, DeltaElements, PublishElement, RrdpFileRandom, RrdpSession, SnapshotData,
-                UpdateElement, WithdrawElement,
+                CurrentObjects, DeltaData, DeltaElements, PublishElement,
+                RrdpFileRandom, RrdpSession, SnapshotData, UpdateElement,
+                WithdrawElement,
             },
             IdCertInfo,
         },
         api::{PublicationServerUris, StorableRepositoryCommand},
         crypto::KrillSigner,
         error::{Error, KrillIoError},
-        eventsourcing::{Aggregate, AggregateStore, WalChange, WalCommand, WalSet, WalStore, WalSupport},
+        eventsourcing::{
+            Aggregate, AggregateStore, WalChange, WalCommand, WalSet,
+            WalStore, WalSupport,
+        },
         util::file,
         KrillResult,
     },
     constants::{
-        PUBSERVER_CONTENT_NS, PUBSERVER_DFLT, PUBSERVER_NS, REPOSITORY_RRDP_ARCHIVE_DIR, REPOSITORY_RRDP_DIR,
+        PUBSERVER_CONTENT_NS, PUBSERVER_DFLT, PUBSERVER_NS,
+        REPOSITORY_RRDP_ARCHIVE_DIR, REPOSITORY_RRDP_DIR,
         REPOSITORY_RSYNC_DIR, RRDP_FIRST_SERIAL,
     },
     daemon::{
@@ -47,13 +52,16 @@ use crate::{
         config::{Config, RrdpUpdatesConfig},
     },
     pubd::{
-        publishers::Publisher, RepositoryAccessCommand, RepositoryAccessCommandDetails, RepositoryAccessEvent,
+        publishers::Publisher, RepositoryAccessCommand,
+        RepositoryAccessCommandDetails, RepositoryAccessEvent,
         RepositoryAccessInitEvent,
     },
     ta::TA_NAME,
 };
 
-use super::commands::{RepositoryAccessInitCommand, RepositoryAccessInitCommandDetails};
+use super::commands::{
+    RepositoryAccessInitCommand, RepositoryAccessInitCommandDetails,
+};
 
 //------------ RepositoryContentProxy ----------------------------------------
 
@@ -68,16 +76,26 @@ pub struct RepositoryContentProxy {
 
 impl RepositoryContentProxy {
     pub fn create(config: &Config) -> KrillResult<Self> {
-        let store = Arc::new(WalStore::create(&config.storage_uri, PUBSERVER_CONTENT_NS)?);
+        let store = Arc::new(WalStore::create(
+            &config.storage_uri,
+            PUBSERVER_CONTENT_NS,
+        )?);
         store.warm()?;
 
         let default_handle = MyHandle::new("0".into());
 
-        Ok(RepositoryContentProxy { store, default_handle })
+        Ok(RepositoryContentProxy {
+            store,
+            default_handle,
+        })
     }
 
     /// Initialize
-    pub fn init(&self, repo_dir: &Path, uris: PublicationServerUris) -> KrillResult<()> {
+    pub fn init(
+        &self,
+        repo_dir: &Path,
+        uris: PublicationServerUris,
+    ) -> KrillResult<()> {
         if self.store.has(&self.default_handle)? {
             Err(Error::RepositoryServerAlreadyInitialized)
         } else {
@@ -87,7 +105,8 @@ impl RepositoryContentProxy {
 
                 let session = RrdpSession::default();
 
-                let rrdp = RrdpServer::create(rrdp_base_uri, repo_dir, session);
+                let rrdp =
+                    RrdpServer::create(rrdp_base_uri, repo_dir, session);
                 let rsync = RsyncdStore::new(rsync_jail, repo_dir);
 
                 RepositoryContent::new(rrdp, rsync)
@@ -105,7 +124,8 @@ impl RepositoryContentProxy {
     }
 
     // Clear all content, so it can be re-initialized.
-    // Only to be called after all publishers have been removed from the RepoAccess as well.
+    // Only to be called after all publishers have been removed from the
+    // RepoAccess as well.
     pub fn clear(&self) -> KrillResult<()> {
         let content = self.get_default_content()?;
         content.clear();
@@ -126,15 +146,27 @@ impl RepositoryContentProxy {
     /// to the RepositoryAccess was successful (and *that* will fail if
     /// the publisher is a duplicate). This method can only fail if
     /// there is an issue with the underlying key value store.
-    pub fn add_publisher(&self, publisher: PublisherHandle) -> KrillResult<()> {
-        let command = RepositoryContentCommand::add_publisher(self.default_handle.clone(), publisher);
+    pub fn add_publisher(
+        &self,
+        publisher: PublisherHandle,
+    ) -> KrillResult<()> {
+        let command = RepositoryContentCommand::add_publisher(
+            self.default_handle.clone(),
+            publisher,
+        );
         self.store.send_command(command)?;
         Ok(())
     }
 
     /// Removes a publisher and its content.
-    pub fn remove_publisher(&self, publisher: PublisherHandle) -> KrillResult<()> {
-        let command = RepositoryContentCommand::remove_publisher(self.default_handle.clone(), publisher);
+    pub fn remove_publisher(
+        &self,
+        publisher: PublisherHandle,
+    ) -> KrillResult<()> {
+        let command = RepositoryContentCommand::remove_publisher(
+            self.default_handle.clone(),
+            publisher,
+        );
         self.store.send_command(command)?;
 
         Ok(())
@@ -142,62 +174,104 @@ impl RepositoryContentProxy {
 
     /// Publish an update for a publisher.
     ///
-    /// Assumes that the RFC 8181 CMS has been verified, but will check that all objects
-    /// are within the publisher's uri space (jail).
-    pub fn publish(&self, publisher: PublisherHandle, delta: PublishDelta, jail: &uri::Rsync) -> KrillResult<()> {
+    /// Assumes that the RFC 8181 CMS has been verified, but will check that
+    /// all objects are within the publisher's uri space (jail).
+    pub fn publish(
+        &self,
+        publisher: PublisherHandle,
+        delta: PublishDelta,
+        jail: &uri::Rsync,
+    ) -> KrillResult<()> {
         debug!("Publish delta for {}", publisher);
         let delta = DeltaElements::from(delta);
 
-        let command = RepositoryContentCommand::publish(self.default_handle.clone(), publisher, jail.clone(), delta);
+        let command = RepositoryContentCommand::publish(
+            self.default_handle.clone(),
+            publisher,
+            jail.clone(),
+            delta,
+        );
         self.store.send_command(command)?;
 
         Ok(())
     }
 
     /// Checks whether an RRDP update is needed
-    pub fn rrdp_update_needed(&self, rrdp_updates_config: RrdpUpdatesConfig) -> KrillResult<RrdpUpdateNeeded> {
-        self.get_default_content()
-            .map(|content| content.rrdp.update_rrdp_needed(rrdp_updates_config))
+    pub fn rrdp_update_needed(
+        &self,
+        rrdp_updates_config: RrdpUpdatesConfig,
+    ) -> KrillResult<RrdpUpdateNeeded> {
+        self.get_default_content().map(|content| {
+            content.rrdp.update_rrdp_needed(rrdp_updates_config)
+        })
     }
 
     /// Delete matching files from the repository and publishers
-    pub fn delete_matching_files(&self, uri: uri::Rsync) -> KrillResult<Arc<RepositoryContent>> {
-        let command = RepositoryContentCommand::delete_matching_files(self.default_handle.clone(), uri);
+    pub fn delete_matching_files(
+        &self,
+        uri: uri::Rsync,
+    ) -> KrillResult<Arc<RepositoryContent>> {
+        let command = RepositoryContentCommand::delete_matching_files(
+            self.default_handle.clone(),
+            uri,
+        );
         self.store.send_command(command)
     }
 
-    /// Update RRDP and return the RepositoryContent so it can be used for writing.
-    pub fn update_rrdp(&self, rrdp_updates_config: RrdpUpdatesConfig) -> KrillResult<Arc<RepositoryContent>> {
-        let command = RepositoryContentCommand::create_rrdp_delta(self.default_handle.clone(), rrdp_updates_config);
+    /// Update RRDP and return the RepositoryContent so it can be used for
+    /// writing.
+    pub fn update_rrdp(
+        &self,
+        rrdp_updates_config: RrdpUpdatesConfig,
+    ) -> KrillResult<Arc<RepositoryContent>> {
+        let command = RepositoryContentCommand::create_rrdp_delta(
+            self.default_handle.clone(),
+            rrdp_updates_config,
+        );
         self.store.send_command(command)
     }
 
     /// Write all current files to disk
-    pub fn write_repository(&self, rrdp_updates_config: RrdpUpdatesConfig) -> KrillResult<()> {
+    pub fn write_repository(
+        &self,
+        rrdp_updates_config: RrdpUpdatesConfig,
+    ) -> KrillResult<()> {
         let content = self.get_default_content()?;
         content.write_repository(rrdp_updates_config)
     }
 
     /// Reset the RRDP session if it is initialized. Otherwise do nothing.
-    pub fn session_reset(&self, rrdp_updates_config: RrdpUpdatesConfig) -> KrillResult<()> {
+    pub fn session_reset(
+        &self,
+        rrdp_updates_config: RrdpUpdatesConfig,
+    ) -> KrillResult<()> {
         if self.store.has(&self.default_handle)? {
-            let command = RepositoryContentCommand::session_reset(self.default_handle.clone());
+            let command = RepositoryContentCommand::session_reset(
+                self.default_handle.clone(),
+            );
             let content = self.store.send_command(command)?;
 
             content.write_repository(rrdp_updates_config)
         } else {
-            // repository server was not initialized on this Krill instance. Nothing to reset.
+            // repository server was not initialized on this Krill instance.
+            // Nothing to reset.
             Ok(())
         }
     }
 
     /// Create a list reply containing all current objects for a publisher
-    pub fn list_reply(&self, publisher: &PublisherHandle) -> KrillResult<ListReply> {
+    pub fn list_reply(
+        &self,
+        publisher: &PublisherHandle,
+    ) -> KrillResult<ListReply> {
         self.get_default_content()?.list_reply(publisher)
     }
 
     // Get all current objects for a publisher
-    pub fn current_objects(&self, name: &PublisherHandle) -> KrillResult<CurrentObjects> {
+    pub fn current_objects(
+        &self,
+        name: &PublisherHandle,
+    ) -> KrillResult<CurrentObjects> {
         self.get_default_content()
             .map(|content| content.objects_for_publisher(name).into_owned())
     }
@@ -239,11 +313,17 @@ impl RepositoryContentCommand {
         RepositoryContentCommand::ResetSession { handle }
     }
 
-    pub fn add_publisher(handle: MyHandle, publisher: PublisherHandle) -> Self {
+    pub fn add_publisher(
+        handle: MyHandle,
+        publisher: PublisherHandle,
+    ) -> Self {
         RepositoryContentCommand::AddPublisher { handle, publisher }
     }
 
-    pub fn remove_publisher(handle: MyHandle, publisher: PublisherHandle) -> Self {
+    pub fn remove_publisher(
+        handle: MyHandle,
+        publisher: PublisherHandle,
+    ) -> Self {
         RepositoryContentCommand::RemovePublisher { handle, publisher }
     }
 
@@ -251,7 +331,12 @@ impl RepositoryContentCommand {
         RepositoryContentCommand::DeleteMatchingFiles { handle, uri }
     }
 
-    pub fn publish(handle: MyHandle, publisher: PublisherHandle, jail: uri::Rsync, delta: DeltaElements) -> Self {
+    pub fn publish(
+        handle: MyHandle,
+        publisher: PublisherHandle,
+        jail: uri::Rsync,
+        delta: DeltaElements,
+    ) -> Self {
         RepositoryContentCommand::Publish {
             handle,
             publisher,
@@ -260,7 +345,10 @@ impl RepositoryContentCommand {
         }
     }
 
-    pub fn create_rrdp_delta(handle: MyHandle, rrdp_updates_config: RrdpUpdatesConfig) -> Self {
+    pub fn create_rrdp_delta(
+        handle: MyHandle,
+        rrdp_updates_config: RrdpUpdatesConfig,
+    ) -> Self {
         RepositoryContentCommand::CreateRrdpDelta {
             handle,
             rrdp_updates_config,
@@ -275,8 +363,12 @@ impl WalCommand for RepositoryContentCommand {
             | RepositoryContentCommand::AddPublisher { handle, .. }
             | RepositoryContentCommand::RemovePublisher { handle, .. }
             | RepositoryContentCommand::Publish { handle, .. }
-            | RepositoryContentCommand::DeleteMatchingFiles { handle, .. }
-            | RepositoryContentCommand::CreateRrdpDelta { handle, .. } => handle,
+            | RepositoryContentCommand::DeleteMatchingFiles {
+                handle, ..
+            }
+            | RepositoryContentCommand::CreateRrdpDelta { handle, .. } => {
+                handle
+            }
         }
     }
 }
@@ -291,16 +383,42 @@ impl fmt::Display for RepositoryContentCommand {
                 write!(f, "create next RRDP delta for repository {}", handle)
             }
             RepositoryContentCommand::AddPublisher { handle, publisher } => {
-                write!(f, "add publisher '{}' to repository {}", publisher, handle)
+                write!(
+                    f,
+                    "add publisher '{}' to repository {}",
+                    publisher, handle
+                )
             }
-            RepositoryContentCommand::RemovePublisher { handle, publisher, .. } => {
-                write!(f, "remove publisher '{}' from repository {}", publisher, handle)
+            RepositoryContentCommand::RemovePublisher {
+                handle,
+                publisher,
+                ..
+            } => {
+                write!(
+                    f,
+                    "remove publisher '{}' from repository {}",
+                    publisher, handle
+                )
             }
-            RepositoryContentCommand::DeleteMatchingFiles { handle, uri, .. } => {
-                write!(f, "remove content matching '{}' from repository {}", uri, handle)
+            RepositoryContentCommand::DeleteMatchingFiles {
+                handle,
+                uri,
+                ..
+            } => {
+                write!(
+                    f,
+                    "remove content matching '{}' from repository {}",
+                    uri, handle
+                )
             }
-            RepositoryContentCommand::Publish { handle, publisher, .. } => {
-                write!(f, "publish for publisher '{}' under repository {}", publisher, handle)
+            RepositoryContentCommand::Publish {
+                handle, publisher, ..
+            } => {
+                write!(
+                    f,
+                    "publish for publisher '{}' under repository {}",
+                    publisher, handle
+                )
             }
         }
     }
@@ -346,11 +464,21 @@ pub struct RrdpUpdated {
 impl fmt::Display for RepositoryContentChange {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            RepositoryContentChange::SessionReset { reset } => write!(f, "RRDP session reset to: {}", reset.session),
-            RepositoryContentChange::RrdpDeltaStaged { .. } => write!(f, "RRDP changes staged"),
-            RepositoryContentChange::RrdpUpdated { .. } => write!(f, "RRDP updated"),
-            RepositoryContentChange::PublisherAdded { publisher } => write!(f, "added publisher: {}", publisher),
-            RepositoryContentChange::PublisherRemoved { publisher } => write!(f, "removed publisher: {}", publisher),
+            RepositoryContentChange::SessionReset { reset } => {
+                write!(f, "RRDP session reset to: {}", reset.session)
+            }
+            RepositoryContentChange::RrdpDeltaStaged { .. } => {
+                write!(f, "RRDP changes staged")
+            }
+            RepositoryContentChange::RrdpUpdated { .. } => {
+                write!(f, "RRDP updated")
+            }
+            RepositoryContentChange::PublisherAdded { publisher } => {
+                write!(f, "added publisher: {}", publisher)
+            }
+            RepositoryContentChange::PublisherRemoved { publisher } => {
+                write!(f, "removed publisher: {}", publisher)
+            }
         }
     }
 }
@@ -380,7 +508,12 @@ impl RepositoryContent {
         }
     }
 
-    pub fn init(rrdp_base_uri: uri::Https, rsync_jail: uri::Rsync, session: RrdpSession, repo_base_dir: &Path) -> Self {
+    pub fn init(
+        rrdp_base_uri: uri::Https,
+        rsync_jail: uri::Rsync,
+        session: RrdpSession,
+        repo_base_dir: &Path,
+    ) -> Self {
         RepositoryContent {
             revision: 0,
             rrdp: RrdpServer::create(rrdp_base_uri, repo_base_dir, session),
@@ -402,12 +535,19 @@ impl WalSupport for RepositoryContent {
     fn apply(&mut self, set: WalSet<Self>) {
         for change in set.into_changes() {
             match change {
-                RepositoryContentChange::SessionReset { reset } => self.rrdp.apply_session_reset(reset),
-                RepositoryContentChange::RrdpUpdated { update } => self.rrdp.apply_rrdp_updated(update),
-                RepositoryContentChange::RrdpDeltaStaged { publisher, delta } => {
-                    self.rrdp.apply_rrdp_staged(publisher, delta)
+                RepositoryContentChange::SessionReset { reset } => {
+                    self.rrdp.apply_session_reset(reset)
                 }
-                RepositoryContentChange::PublisherAdded { publisher } => self.rrdp.apply_publisher_added(publisher),
+                RepositoryContentChange::RrdpUpdated { update } => {
+                    self.rrdp.apply_rrdp_updated(update)
+                }
+                RepositoryContentChange::RrdpDeltaStaged {
+                    publisher,
+                    delta,
+                } => self.rrdp.apply_rrdp_staged(publisher, delta),
+                RepositoryContentChange::PublisherAdded { publisher } => {
+                    self.rrdp.apply_publisher_added(publisher)
+                }
                 RepositoryContentChange::PublisherRemoved { publisher } => {
                     self.rrdp.apply_publisher_removed(&publisher)
                 }
@@ -416,17 +556,32 @@ impl WalSupport for RepositoryContent {
         self.revision += 1;
     }
 
-    fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Change>, Self::Error> {
+    fn process_command(
+        &self,
+        command: Self::Command,
+    ) -> Result<Vec<Self::Change>, Self::Error> {
         match command {
-            RepositoryContentCommand::ResetSession { .. } => self.reset_session(),
+            RepositoryContentCommand::ResetSession { .. } => {
+                self.reset_session()
+            }
             RepositoryContentCommand::CreateRrdpDelta {
-                rrdp_updates_config, ..
+                rrdp_updates_config,
+                ..
             } => self.create_rrdp_delta(rrdp_updates_config),
-            RepositoryContentCommand::AddPublisher { publisher, .. } => self.add_publisher(publisher),
-            RepositoryContentCommand::RemovePublisher { publisher, .. } => self.remove_publisher(publisher),
-            RepositoryContentCommand::DeleteMatchingFiles { uri, .. } => self.delete_files(uri),
+            RepositoryContentCommand::AddPublisher { publisher, .. } => {
+                self.add_publisher(publisher)
+            }
+            RepositoryContentCommand::RemovePublisher {
+                publisher, ..
+            } => self.remove_publisher(publisher),
+            RepositoryContentCommand::DeleteMatchingFiles { uri, .. } => {
+                self.delete_files(uri)
+            }
             RepositoryContentCommand::Publish {
-                publisher, jail, delta, ..
+                publisher,
+                jail,
+                delta,
+                ..
             } => self.publish(publisher, jail, delta),
         }
     }
@@ -442,9 +597,11 @@ impl RepositoryContent {
 
     // List all known publishers based on current objects and staged deltas
     fn publishers(&self) -> Vec<PublisherHandle> {
-        let publisher_current_objects = self.rrdp.snapshot.publishers_current_objects();
+        let publisher_current_objects =
+            self.rrdp.snapshot.publishers_current_objects();
 
-        let mut publishers: Vec<_> = publisher_current_objects.keys().cloned().collect();
+        let mut publishers: Vec<_> =
+            publisher_current_objects.keys().cloned().collect();
 
         for staged_publisher in self.rrdp.staged_elements.keys() {
             if !publisher_current_objects.contains_key(staged_publisher) {
@@ -455,7 +612,10 @@ impl RepositoryContent {
         publishers
     }
 
-    fn objects_for_publisher(&self, publisher: &PublisherHandle) -> Cow<CurrentObjects> {
+    fn objects_for_publisher(
+        &self,
+        publisher: &PublisherHandle,
+    ) -> Cow<CurrentObjects> {
         let current = self.rrdp.snapshot.current_objects_for(publisher);
         let staged = self.rrdp.staged_elements.get(publisher).cloned();
 
@@ -476,7 +636,10 @@ impl RepositoryContent {
     }
 
     /// Gets a list reply containing all objects for this publisher.
-    pub fn list_reply(&self, publisher: &PublisherHandle) -> KrillResult<ListReply> {
+    pub fn list_reply(
+        &self,
+        publisher: &PublisherHandle,
+    ) -> KrillResult<ListReply> {
         self.objects_for_publisher(publisher).to_list_reply()
     }
 
@@ -487,12 +650,18 @@ impl RepositoryContent {
         Ok(vec![RepositoryContentChange::SessionReset { reset }])
     }
 
-    pub fn write_repository(&self, config: RrdpUpdatesConfig) -> KrillResult<()> {
+    pub fn write_repository(
+        &self,
+        config: RrdpUpdatesConfig,
+    ) -> KrillResult<()> {
         self.rrdp.write(config)?;
         self.rsync.write(self.rrdp.serial, self.rrdp.snapshot())
     }
 
-    fn add_publisher(&self, publisher: PublisherHandle) -> KrillResult<Vec<RepositoryContentChange>> {
+    fn add_publisher(
+        &self,
+        publisher: PublisherHandle,
+    ) -> KrillResult<Vec<RepositoryContentChange>> {
         Ok(vec![RepositoryContentChange::PublisherAdded { publisher }])
     }
 
@@ -500,26 +669,35 @@ impl RepositoryContent {
     /// ok if there is no content to remove - it is idempotent in that
     /// sense. However, if there are I/O errors removing the content then
     /// this function will fail.
-    fn remove_publisher(&self, publisher: PublisherHandle) -> KrillResult<Vec<RepositoryContentChange>> {
+    fn remove_publisher(
+        &self,
+        publisher: PublisherHandle,
+    ) -> KrillResult<Vec<RepositoryContentChange>> {
         let mut res = vec![];
         // withdraw objects if any
         let objects = self.objects_for_publisher(&publisher);
         if !objects.is_empty() {
             let withdraws = objects.to_withdraw_elements()?;
             let delta = DeltaElements::new(vec![], vec![], withdraws);
-            res.push(RepositoryContentChange::RrdpDeltaStaged { publisher, delta });
+            res.push(RepositoryContentChange::RrdpDeltaStaged {
+                publisher,
+                delta,
+            });
         }
 
         Ok(res)
     }
 
-    /// Purges content matching the given URI. Recursive if it ends with a '/'.
-    /// Removes the content from existing publishers if found, and removes it
-    /// from the (global) repository content. Can be used to fix broken state
-    /// resulting from issue #981. Can also be used to remove specific content,
-    /// although there is nothing stopping the publisher from publishing that
-    /// content again.
-    fn delete_files(&self, del_uri: uri::Rsync) -> KrillResult<Vec<RepositoryContentChange>> {
+    /// Purges content matching the given URI. Recursive if it ends with a
+    /// '/'. Removes the content from existing publishers if found, and
+    /// removes it from the (global) repository content. Can be used to
+    /// fix broken state resulting from issue #981. Can also be used to
+    /// remove specific content, although there is nothing stopping the
+    /// publisher from publishing that content again.
+    fn delete_files(
+        &self,
+        del_uri: uri::Rsync,
+    ) -> KrillResult<Vec<RepositoryContentChange>> {
         let mut res = vec![];
 
         info!("Deleting files matching '{}'", del_uri);
@@ -528,7 +706,8 @@ impl RepositoryContent {
             let current_objects = self.objects_for_publisher(&publisher);
 
             // withdraw objects if any
-            let withdraws = current_objects.make_matching_withdraws(&del_uri)?;
+            let withdraws =
+                current_objects.make_matching_withdraws(&del_uri)?;
 
             if !withdraws.is_empty() {
                 info!(
@@ -559,18 +738,22 @@ impl RepositoryContent {
             let current_objects = self.objects_for_publisher(&publisher);
             current_objects.verify_delta(&delta, &jail)?;
 
-            Ok(vec![
-                RepositoryContentChange::RrdpDeltaStaged { publisher, delta }
-            ])
-        }
-        else {
+            Ok(vec![RepositoryContentChange::RrdpDeltaStaged {
+                publisher,
+                delta,
+            }])
+        } else {
             Ok(vec![])
         }
     }
 
     /// Update the RRDP state
-    fn create_rrdp_delta(&self, rrdp_config: RrdpUpdatesConfig) -> KrillResult<Vec<RepositoryContentChange>> {
-        if self.rrdp.update_rrdp_needed(rrdp_config) == RrdpUpdateNeeded::Yes {
+    fn create_rrdp_delta(
+        &self,
+        rrdp_config: RrdpUpdatesConfig,
+    ) -> KrillResult<Vec<RepositoryContentChange>> {
+        if self.rrdp.update_rrdp_needed(rrdp_config) == RrdpUpdateNeeded::Yes
+        {
             let update = self.rrdp.update_rrdp(rrdp_config)?;
             Ok(vec![RepositoryContentChange::RrdpUpdated { update }])
         } else {
@@ -591,11 +774,14 @@ impl RepositoryContent {
     }
 
     /// Returns the stats for all current publishers
-    pub fn publisher_stats(&self) -> HashMap<PublisherHandle, PublisherStats> {
+    pub fn publisher_stats(
+        &self,
+    ) -> HashMap<PublisherHandle, PublisherStats> {
         self.publishers()
             .into_iter()
             .map(|publisher| {
-                let stats = self.objects_for_publisher(&publisher).as_ref().into();
+                let stats =
+                    self.objects_for_publisher(&publisher).as_ref().into();
                 (publisher, stats)
             })
             .collect()
@@ -619,12 +805,15 @@ impl RepositoryContent {
 pub struct RsyncdStore {
     base_uri: uri::Rsync,
     rsync_dir: PathBuf,
-    #[serde(skip_serializing, skip_deserializing, default = "RsyncdStore::new_lock")]
+    #[serde(
+        skip_serializing,
+        skip_deserializing,
+        default = "RsyncdStore::new_lock"
+    )]
     lock: Arc<RwLock<()>>,
 }
 
 /// # Construct
-///
 impl RsyncdStore {
     pub fn new_lock() -> Arc<RwLock<()>> {
         Arc::new(RwLock::new(()))
@@ -643,16 +832,18 @@ impl RsyncdStore {
 }
 
 /// # Publishing
-///
 impl RsyncdStore {
     /// Write all the files to disk for rsync to a tmp-dir, then switch
     /// things over in an effort to minimize the chance of people getting
     /// inconsistent syncs..
-    pub fn write(&self, serial: u64, snapshot: &SnapshotData) -> KrillResult<()> {
-        let _lock = self
-            .lock
-            .write()
-            .map_err(|_| Error::custom("Could not get write lock for rsync repo"))?;
+    pub fn write(
+        &self,
+        serial: u64,
+        snapshot: &SnapshotData,
+    ) -> KrillResult<()> {
+        let _lock = self.lock.write().map_err(|_| {
+            Error::custom("Could not get write lock for rsync repo")
+        })?;
 
         let mut new_dir = self.rsync_dir.clone();
         new_dir.push(&format!("tmp-{}", serial));
@@ -668,12 +859,14 @@ impl RsyncdStore {
 
         for current in snapshot.publishers_current_objects().values() {
             for (uri_key, base64) in current.iter() {
-                // Note that this check should not be needed here, as the content
-                // already verified before it was accepted into the snapshot.
+                // Note that this check should not be needed here, as the
+                // content already verified before it was
+                // accepted into the snapshot.
                 let uri = uri::Rsync::try_from(uri_key)?;
-                let rel = uri
-                    .relative_to(&self.base_uri)
-                    .ok_or_else(|| Error::publishing_outside_jail(&uri, &self.base_uri))?;
+                let rel =
+                    uri.relative_to(&self.base_uri).ok_or_else(|| {
+                        Error::publishing_outside_jail(&uri, &self.base_uri)
+                    })?;
 
                 let mut path = new_dir.clone();
                 path.push(rel);
@@ -773,7 +966,8 @@ pub struct RrdpServer {
 pub struct StagedElements(HashMap<uri::Rsync, DeltaElement>);
 
 impl StagedElements {
-    /// Merge a new DeltaElements into this existing (unpublished) StagedElements.
+    /// Merge a new DeltaElements into this existing (unpublished)
+    /// StagedElements.
     ///
     /// It is assumed that both sets make sense with regards to the current
     /// files as published in the RRDP snapshot. I.e. *this* StagedElements
@@ -782,9 +976,10 @@ impl StagedElements {
     /// The new StagedElements is assumed to be verified against the current
     /// snapshot after *this* existing StagedElements has been applied.
     ///
-    /// We keep a single StagedElements per CA, for simplicity. The StagedElements
-    /// contains all changes that the CA published at the Publication Server,
-    /// which are not *yet* published in the public RPKI repository.
+    /// We keep a single StagedElements per CA, for simplicity. The
+    /// StagedElements contains all changes that the CA published at the
+    /// Publication Server, which are not *yet* published in the public
+    /// RPKI repository.
     ///
     /// CAs may wish to publish further changes, even before the staged
     /// changes become visible in the public RPKI repository. When merging
@@ -836,11 +1031,13 @@ impl StagedElements {
                     staged_update.with_updated_content(base64);
                 }
                 Some(DeltaElement::Withdraw(staged_withdraw)) => {
-                    // A new publish that follows a withdraw for the same URI should be
-                    // an Update of the original file.
+                    // A new publish that follows a withdraw for the same URI
+                    // should be an Update of the original
+                    // file.
                     let hash = staged_withdraw.hash();
                     let (_, base64) = pbl.unpack();
-                    let update = UpdateElement::new(uri.clone(), hash, base64);
+                    let update =
+                        UpdateElement::new(uri.clone(), hash, base64);
                     self.0.insert(uri, DeltaElement::Update(update));
                 }
                 None => {
@@ -855,21 +1052,23 @@ impl StagedElements {
             let uri = upd.uri().clone();
             match self.0.get_mut(&uri) {
                 Some(DeltaElement::Publish(staged_publish)) => {
-                    // An update that follows a *staged* publish, should be merged
-                    // into a fresh new publish with the updated content.
+                    // An update that follows a *staged* publish, should be
+                    // merged into a fresh new publish
+                    // with the updated content.
                     //
-                    // To the outside world (RRDP delta in particular) this will
-                    // look like a single publish.
+                    // To the outside world (RRDP delta in particular) this
+                    // will look like a single publish.
                     staged_publish.with_updated_content(upd.into_base64());
                 }
                 Some(DeltaElement::Update(staged_update)) => {
-                    // An update that follows a *staged* update, should be merged
-                    // into an update with the updated content, but it should keep
-                    // the hash (i.e. object it replaces) from the existing staged
-                    // update.
+                    // An update that follows a *staged* update, should be
+                    // merged into an update with the
+                    // updated content, but it should keep
+                    // the hash (i.e. object it replaces) from the existing
+                    // staged update.
                     //
-                    // To the outside world (RRDP delta in particular) this will
-                    // look like a single update.
+                    // To the outside world (RRDP delta in particular) this
+                    // will look like a single update.
                     staged_update.with_updated_content(upd.into_base64());
                 }
                 Some(DeltaElement::Withdraw(staged_withdraw)) => {
@@ -895,26 +1094,31 @@ impl StagedElements {
             let uri = wdr.uri().clone();
             match self.0.get(&uri) {
                 Some(DeltaElement::Publish(_)) => {
-                    // We had a staged fresh publish for this object. So when combining
-                    // we should just remove the staged entry completely. I.e. it won't
+                    // We had a staged fresh publish for this object. So when
+                    // combining we should just remove the
+                    // staged entry completely. I.e. it won't
                     // have been visible to the outside world.
                     self.0.remove(&uri);
                 }
                 Some(DeltaElement::Update(staged_update)) => {
-                    // We had a staged update for a file we now wish to remove. But,
-                    // the staged updated files was never visible in public RRDP. Therefore,
-                    // we should update the hash of the withdraw to the original hash.
+                    // We had a staged update for a file we now wish to
+                    // remove. But, the staged updated
+                    // files was never visible in public RRDP. Therefore,
+                    // we should update the hash of the withdraw to the
+                    // original hash.
                     wdr.updates_staged(staged_update);
                     self.0.insert(uri, DeltaElement::Withdraw(wdr));
                 }
                 Some(DeltaElement::Withdraw(staged_wdr)) => {
-                    // This should never happen. But leave the original withdraw in place because
+                    // This should never happen. But leave the original
+                    // withdraw in place because
                     // that already matches the current file in public RRDP.
                     error!("{} We received a withdraw for an object that was already withdrawn.\nExisting withdraw: {} {}\nReceived withdraw: {} {}\n", general_merge_message, staged_wdr.hash(), staged_wdr.uri(), wdr.hash(), wdr.uri())
                 }
                 None => {
-                    // No staged changes for this element, so we can just add the withdraw
-                    // as-is. It should match the current file in public RRDP.
+                    // No staged changes for this element, so we can just add
+                    // the withdraw as-is. It should match
+                    // the current file in public RRDP.
                     self.0.insert(uri, DeltaElement::Withdraw(wdr));
                 }
             }
@@ -977,7 +1181,11 @@ impl RrdpServer {
         }
     }
 
-    pub fn create(rrdp_base_uri: uri::Https, repo_dir: &Path, session: RrdpSession) -> Self {
+    pub fn create(
+        rrdp_base_uri: uri::Https,
+        repo_dir: &Path,
+        session: RrdpSession,
+    ) -> Self {
         let mut rrdp_base_dir = repo_dir.to_path_buf();
         rrdp_base_dir.push(REPOSITORY_RRDP_DIR);
 
@@ -1047,8 +1255,13 @@ impl RrdpServer {
     }
 
     /// Applies staged DeltaElements
-    fn apply_rrdp_staged(&mut self, publisher: PublisherHandle, elements: DeltaElements) {
-        let staged_elements = self.staged_elements.entry(publisher).or_default();
+    fn apply_rrdp_staged(
+        &mut self,
+        publisher: PublisherHandle,
+        elements: DeltaElements,
+    ) {
+        let staged_elements =
+            self.staged_elements.entry(publisher).or_default();
         staged_elements.merge_new_elements(elements);
     }
 
@@ -1069,7 +1282,12 @@ impl RrdpServer {
             rrdp_delta_elements += delta;
         }
 
-        let delta = DeltaData::new(self.serial, update.time, update.random, rrdp_delta_elements);
+        let delta = DeltaData::new(
+            self.serial,
+            update.time,
+            update.random,
+            rrdp_delta_elements,
+        );
 
         self.deltas.truncate(update.deltas_truncate);
         self.deltas.push_front(delta);
@@ -1080,7 +1298,8 @@ impl RrdpServer {
 
     /// Checks whether an RRDP update is needed
     fn update_rrdp_needed(
-        &self, rrdp_updates_config: RrdpUpdatesConfig
+        &self,
+        rrdp_updates_config: RrdpUpdatesConfig,
     ) -> RrdpUpdateNeeded {
         // Check if there are any staged elements entries with staged
         // elements. A simple .is_empty() on the map won't do because there
@@ -1090,32 +1309,35 @@ impl RrdpServer {
             // There is staged content. Check if it should be published now,
             // or later.
             let interval = Duration::seconds(
-                rrdp_updates_config.rrdp_delta_interval_min_seconds.into()
+                rrdp_updates_config.rrdp_delta_interval_min_seconds.into(),
             );
             let next_update_time = self.last_update + interval;
             if next_update_time > Time::now() {
-                debug!("RRDP update is delayed to: {}",
+                debug!(
+                    "RRDP update is delayed to: {}",
                     next_update_time.to_rfc3339()
                 );
                 RrdpUpdateNeeded::Later(next_update_time)
-            }
-            else {
+            } else {
                 debug!("RRDP update is needed");
                 RrdpUpdateNeeded::Yes
             }
-        }
-        else {
+        } else {
             debug!("No RRDP update is needed, there are no staged changes");
             RrdpUpdateNeeded::No
         }
     }
 
     /// Updates the RRDP server with the staged delta elements.
-    fn update_rrdp(&self, rrdp_updates_config: RrdpUpdatesConfig) -> KrillResult<RrdpUpdated> {
+    fn update_rrdp(
+        &self,
+        rrdp_updates_config: RrdpUpdatesConfig,
+    ) -> KrillResult<RrdpUpdated> {
         let time = Time::now();
         let random = RrdpFileRandom::default();
 
-        let deltas_truncate = self.find_deltas_truncate_age(rrdp_updates_config);
+        let deltas_truncate =
+            self.find_deltas_truncate_age(rrdp_updates_config);
 
         Ok(RrdpUpdated {
             time,
@@ -1148,14 +1370,18 @@ impl RrdpServer {
         self.deltas.truncate(keep);
     }
 
-    /// Get the position to truncate excessive deltas, before applying the next delta:
+    /// Get the position to truncate excessive deltas, before applying the
+    /// next delta:
     ///  - always keep 'rrdp_delta_files_min_nr' files
     ///  - always keep 'rrdp_delta_files_min_seconds' files
     ///  - beyond this:
     ///     - never keep more than 'rrdp_delta_files_max_nr'
     ///     - never keep older than 'rrdp_delta_files_max_seconds'
     ///     - keep the others
-    fn find_deltas_truncate_age(&self, rrdp_updates_config: RrdpUpdatesConfig) -> usize {
+    fn find_deltas_truncate_age(
+        &self,
+        rrdp_updates_config: RrdpUpdatesConfig,
+    ) -> usize {
         // We will keep the new delta - not yet added to this.
         let mut keep = 0;
 
@@ -1170,10 +1396,13 @@ impl RrdpServer {
                 //    we need < min_nr because we will add the new delta later
                 // always keep 'rrdp_delta_files_min_seconds' file
                 keep += 1
-            } else if keep == max_nr - 1 || delta.older_than_seconds(max_secs.into()) {
+            } else if keep == max_nr - 1
+                || delta.older_than_seconds(max_secs.into())
+            {
                 // never keep more than 'rrdp_delta_files_max_nr'
-                //    we need max_nr -1 because we will add the new new delta later
-                // never keep older than 'rrdp_delta_files_max_seconds'
+                //    we need max_nr -1 because we will add the new new delta
+                // later never keep older than
+                // 'rrdp_delta_files_max_seconds'
                 break;
             } else {
                 // keep the remainder
@@ -1186,21 +1415,29 @@ impl RrdpServer {
 
     /// Write the (missing) RRDP files to disk, and remove the ones
     /// no longer referenced in the notification file.
-    fn write(&self, rrdp_updates_config: RrdpUpdatesConfig) -> Result<(), Error> {
+    fn write(
+        &self,
+        rrdp_updates_config: RrdpUpdatesConfig,
+    ) -> Result<(), Error> {
         // Get the current notification file from disk, if it exists, so
         // we can determine which (new) snapshot and delta files to write,
         // and which old snapshot and delta files may be removed.
         debug!("Write updated RRDP state to disk - if there are any updates that is.");
 
         // Get the current notification file - as long as it's present and can
-        // be parsed. If it cannot be parsed we just ignore it. I.e. we will generate
-        // all current files in that case.
-        let old_notification_opt: Option<NotificationFile> = file::read(&self.notification_path())
-            .ok()
-            .and_then(|bytes| rpki::rrdp::NotificationFile::parse(bytes.as_ref()).ok());
+        // be parsed. If it cannot be parsed we just ignore it. I.e. we will
+        // generate all current files in that case.
+        let old_notification_opt: Option<NotificationFile> =
+            file::read(&self.notification_path())
+                .ok()
+                .and_then(|bytes| {
+                    rpki::rrdp::NotificationFile::parse(bytes.as_ref()).ok()
+                });
 
         if let Some(old_notification) = old_notification_opt.as_ref() {
-            if old_notification.serial() == self.serial && old_notification.session_id() == self.session.into() {
+            if old_notification.serial() == self.serial
+                && old_notification.session_id() == self.session.into()
+            {
                 debug!("Existing notification file matches current session and serial. Nothing to write.");
                 return Ok(());
             }
@@ -1215,65 +1452,84 @@ impl RrdpServer {
         self.cleanup_old_rrdp_files(rrdp_updates_config)
     }
 
-    fn write_delta_files(&self, old_notification_opt: Option<NotificationFile>) -> KrillResult<Vec<DeltaInfo>> {
-        // Find existing deltas in current file, if present and still applicable:
+    fn write_delta_files(
+        &self,
+        old_notification_opt: Option<NotificationFile>,
+    ) -> KrillResult<Vec<DeltaInfo>> {
+        // Find existing deltas in current file, if present and still
+        // applicable:
         // - there is a notification that can be parsed
         // - session did not change
-        // - deltas have an overlap with current deltas (otherwise just regenerate new deltas)
+        // - deltas have an overlap with current deltas (otherwise just
+        //   regenerate new deltas)
         //
-        // We will assume that files for deltas still exist on disk and were not changed, so we will not regenerate them.
+        // We will assume that files for deltas still exist on disk and were
+        // not changed, so we will not regenerate them.
         //
-        // NOTE: if both session and serial remain unchanged we just return with Ok(()). There is no work.
-        let mut deltas_from_old_notification: Vec<rpki::rrdp::DeltaInfo> = match old_notification_opt {
-            None => {
-                debug!("No old notification file found");
-                vec![]
-            }
-            Some(mut old_notification) => {
-                if old_notification.session_id() == self.session.into() {
-                    // Sort the deltas from lowest serial up, and make sure that there are no gaps.
-                    if old_notification.sort_and_verify_deltas(None) {
-                        debug!("Found existing notification file for current session with deltas.");
-                        old_notification.deltas().to_vec()
-                    } else {
-                        debug!("Found existing notification file with incomplete deltas, will regenerate files.");
-                        vec![]
-                    }
-                } else {
-                    debug!("Existing notification file was for different session, will regenerate all files.");
+        // NOTE: if both session and serial remain unchanged we just return
+        // with Ok(()). There is no work.
+        let mut deltas_from_old_notification: Vec<rpki::rrdp::DeltaInfo> =
+            match old_notification_opt {
+                None => {
+                    debug!("No old notification file found");
                     vec![]
                 }
-            }
-        };
+                Some(mut old_notification) => {
+                    if old_notification.session_id() == self.session.into() {
+                        // Sort the deltas from lowest serial up, and make
+                        // sure that there are no gaps.
+                        if old_notification.sort_and_verify_deltas(None) {
+                            debug!("Found existing notification file for current session with deltas.");
+                            old_notification.deltas().to_vec()
+                        } else {
+                            debug!("Found existing notification file with incomplete deltas, will regenerate files.");
+                            vec![]
+                        }
+                    } else {
+                        debug!("Existing notification file was for different session, will regenerate all files.");
+                        vec![]
+                    }
+                }
+            };
 
-        // Go over the deltas we found and discard any delta with a serial that we no longer kept.
-        // The deltas in the RrdpServer are sorted from highest to lowest serial (to make it easier to truncate).
+        // Go over the deltas we found and discard any delta with a serial
+        // that we no longer kept. The deltas in the RrdpServer are
+        // sorted from highest to lowest serial (to make it easier to
+        // truncate).
         if let Some(last) = self.deltas.back() {
             // Only keep deltas are still kept.
-            deltas_from_old_notification.retain(|delta| delta.serial() >= last.serial());
+            deltas_from_old_notification
+                .retain(|delta| delta.serial() >= last.serial());
         } else if !deltas_from_old_notification.is_empty() {
-            // We would expect the existing deltas to be empty as well in this case. But in any case,
-            // wiping them will ensure we generate a new sane NotificationFile
+            // We would expect the existing deltas to be empty as well in this
+            // case. But in any case, wiping them will ensure we
+            // generate a new sane NotificationFile
             deltas_from_old_notification = vec![];
         }
 
-        // Write new delta files and add their DeltaInfo to the list to include in the new notification file.
-        // I.e. skip deltas that are still included in the curated list we got from the old notification.
+        // Write new delta files and add their DeltaInfo to the list to
+        // include in the new notification file. I.e. skip deltas that
+        // are still included in the curated list we got from the old
+        // notification.
         let last_written_serial = deltas_from_old_notification.last();
         let mut deltas = vec![];
         for delta in &self.deltas {
             if let Some(last) = last_written_serial {
                 if delta.serial() <= last.serial() {
-                    // Already included. We can skip this and assume that it was written to disk before.
+                    // Already included. We can skip this and assume that it
+                    // was written to disk before.
                     // And no one went in and messed with it..
                     debug!("Skip writing delta for serial {}. File should exist.", delta.serial());
                     continue;
                 }
             }
-            // New delta, write it and add its distinctiveness to deltas (DeltaInfo vec) to include
-            // in the notification file that we will write.
-            let path = delta.path(self.session, delta.serial(), &self.rrdp_base_dir);
-            let uri = delta.uri(self.session, delta.serial(), &self.rrdp_base_uri);
+            // New delta, write it and add its distinctiveness to deltas
+            // (DeltaInfo vec) to include in the notification file
+            // that we will write.
+            let path =
+                delta.path(self.session, delta.serial(), &self.rrdp_base_dir);
+            let uri =
+                delta.uri(self.session, delta.serial(), &self.rrdp_base_uri);
             let xml_bytes = delta.xml(self.session, delta.serial());
             let hash = Hash::from_data(xml_bytes.as_slice());
 
@@ -1283,8 +1539,9 @@ impl RrdpServer {
             deltas.push(DeltaInfo::new(delta.serial(), uri, hash));
         }
 
-        // Reverse the order of the (old) deltas so that it also goes high to low, and
-        // we can get the new complete list to include in the notification file.
+        // Reverse the order of the (old) deltas so that it also goes high to
+        // low, and we can get the new complete list to include in the
+        // notification file.
         deltas_from_old_notification.reverse();
         deltas.append(&mut deltas_from_old_notification);
 
@@ -1292,8 +1549,16 @@ impl RrdpServer {
     }
 
     fn write_snapshot_file(&self) -> KrillResult<SnapshotInfo> {
-        let path = self.snapshot().path(self.session, self.serial, &self.rrdp_base_dir);
-        let uri = self.snapshot().uri(self.session, self.serial, &self.rrdp_base_uri);
+        let path = self.snapshot().path(
+            self.session,
+            self.serial,
+            &self.rrdp_base_dir,
+        );
+        let uri = self.snapshot().uri(
+            self.session,
+            self.serial,
+            &self.rrdp_base_uri,
+        );
         let xml_bytes = self.snapshot().xml(self.session, self.serial);
         let hash = Hash::from_data(&xml_bytes);
 
@@ -1303,39 +1568,56 @@ impl RrdpServer {
         Ok(SnapshotInfo::new(uri, hash))
     }
 
-    fn write_notification_file(&self, snapshot: SnapshotInfo, deltas: Vec<DeltaInfo>) -> KrillResult<()> {
+    fn write_notification_file(
+        &self,
+        snapshot: SnapshotInfo,
+        deltas: Vec<DeltaInfo>,
+    ) -> KrillResult<()> {
         // Write new notification file to new file first.
         // Prevent that half-overwritten files are served.
-        let notification = NotificationFile::new(self.session.into(), self.serial, snapshot, deltas);
+        let notification = NotificationFile::new(
+            self.session.into(),
+            self.serial,
+            snapshot,
+            deltas,
+        );
         let notification_path_new = self.notification_path_new();
-        let mut notification_file_new = file::create_file_with_path(&notification_path_new)?;
-        notification.write_xml(&mut notification_file_new).map_err(|e| {
-            KrillIoError::new(
-                format!(
-                    "could not write new notification file to {}",
-                    notification_path_new.to_string_lossy()
-                ),
-                e,
-            )
-        })?;
+        let mut notification_file_new =
+            file::create_file_with_path(&notification_path_new)?;
+        notification
+            .write_xml(&mut notification_file_new)
+            .map_err(|e| {
+                KrillIoError::new(
+                    format!(
+                        "could not write new notification file to {}",
+                        notification_path_new.to_string_lossy()
+                    ),
+                    e,
+                )
+            })?;
 
         // Rename the new file so it becomes current.
         let notification_path = self.notification_path();
-        fs::rename(&notification_path_new, &notification_path).map_err(|e| {
-            KrillIoError::new(
-                format!(
+        fs::rename(&notification_path_new, &notification_path).map_err(
+            |e| {
+                KrillIoError::new(
+                    format!(
                     "Could not rename notification file from '{}' to '{}'",
                     notification_path_new.to_string_lossy(),
                     notification_path.to_string_lossy()
                 ),
-                e,
-            )
-        })?;
+                    e,
+                )
+            },
+        )?;
 
         Ok(())
     }
 
-    fn cleanup_old_rrdp_files(&self, rrdp_updates_config: RrdpUpdatesConfig) -> KrillResult<()> {
+    fn cleanup_old_rrdp_files(
+        &self,
+        rrdp_updates_config: RrdpUpdatesConfig,
+    ) -> KrillResult<()> {
         // - old session dirs
         for entry in fs::read_dir(&self.rrdp_base_dir).map_err(|e| {
             KrillIoError::new(
@@ -1355,7 +1637,8 @@ impl RrdpServer {
                     e,
                 )
             })?;
-            if self.session.to_string() == entry.file_name().to_string_lossy() {
+            if self.session.to_string() == entry.file_name().to_string_lossy()
+            {
                 continue;
             } else {
                 let path = entry.path();
@@ -1368,11 +1651,13 @@ impl RrdpServer {
         // clean up under the current session
         let session_dir = self.rrdp_base_dir.join(self.session.to_string());
 
-        // Get the delta range to keep. We use 0 as a special value, because it
-        // is never used for deltas: i.e. no delta dirs will match if our delta
-        // list is empty.
-        let lowest_delta = self.deltas.back().map(|delta| delta.serial()).unwrap_or(0);
-        let highest_delta = self.deltas.front().map(|delta| delta.serial()).unwrap_or(0);
+        // Get the delta range to keep. We use 0 as a special value, because
+        // it is never used for deltas: i.e. no delta dirs will match
+        // if our delta list is empty.
+        let lowest_delta =
+            self.deltas.back().map(|delta| delta.serial()).unwrap_or(0);
+        let highest_delta =
+            self.deltas.front().map(|delta| delta.serial()).unwrap_or(0);
 
         for entry in fs::read_dir(&session_dir).map_err(|e| {
             KrillIoError::new(
@@ -1398,20 +1683,27 @@ impl RrdpServer {
             // - not a number
             // - a number that is higher than the current serial
             // - a number that is lower than the last delta (if set)
-            if let Ok(serial) = u64::from_str(entry.file_name().to_string_lossy().as_ref()) {
+            if let Ok(serial) =
+                u64::from_str(entry.file_name().to_string_lossy().as_ref())
+            {
                 // Skip the current serial
                 if serial == self.serial {
                     continue;
                 // Clean up old serial dirs once deltas are out of scope
                 } else if serial < lowest_delta || serial > highest_delta {
                     if rrdp_updates_config.rrdp_files_archive {
-                        // If archiving is enabled, then move these directories under the archive base
+                        // If archiving is enabled, then move these
+                        // directories under the archive base
 
                         let mut dest = self.rrdp_archive_dir.clone();
                         dest.push(self.session.to_string());
                         dest.push(format!("{}", serial));
 
-                        info!("Archiving RRDP serial '{}' to '{}", serial, dest.to_string_lossy());
+                        info!(
+                            "Archiving RRDP serial '{}' to '{}",
+                            serial,
+                            dest.to_string_lossy()
+                        );
                         let _ = fs::create_dir_all(&dest);
                         let _ = fs::rename(path, dest);
                     } else if path.is_dir() {
@@ -1419,15 +1711,23 @@ impl RrdpServer {
                     } else {
                         let _best_effort_rm = fs::remove_file(path);
                     }
-                // We still need this old serial dir for the delta, but may not need the snapshot
-                // in it unless archiving is enabled.. in that case leave them and move them when
-                // the complete serial dir goes out of scope above.
+                // We still need this old serial dir for the delta, but may
+                // not need the snapshot in it unless
+                // archiving is enabled.. in that case leave them and move
+                // them when the complete serial dir goes out
+                // of scope above.
                 } else if !rrdp_updates_config.rrdp_files_archive {
-                    // If the there is a snapshot file do a best effort removal. It shares the same
-                    // random dir as the delta that we still need to keep for this serial, so we just
-                    // remove the file and leave its parent directory in place.
-                    if let Ok(Some(snapshot_file_to_remove)) = Self::session_dir_snapshot(&session_dir, serial) {
-                        if let Err(e) = fs::remove_file(&snapshot_file_to_remove) {
+                    // If the there is a snapshot file do a best effort
+                    // removal. It shares the same
+                    // random dir as the delta that we still need to keep for
+                    // this serial, so we just remove the
+                    // file and leave its parent directory in place.
+                    if let Ok(Some(snapshot_file_to_remove)) =
+                        Self::session_dir_snapshot(&session_dir, serial)
+                    {
+                        if let Err(e) =
+                            fs::remove_file(&snapshot_file_to_remove)
+                        {
                             warn!(
                                 "Could not delete snapshot file '{}'. Error was: {}",
                                 snapshot_file_to_remove.to_string_lossy(),
@@ -1436,10 +1736,12 @@ impl RrdpServer {
                         }
                     }
                 } else {
-                    // archiving was enabled, keep the old snapshot file until the directory is archived
+                    // archiving was enabled, keep the old snapshot file until
+                    // the directory is archived
                 }
             } else {
-                // clean up dirs or files under the base dir which are not sessions
+                // clean up dirs or files under the base dir which are not
+                // sessions
                 warn!(
                     "Found unexpected file or dir in RRDP repository - will try to remove: {}",
                     path.to_string_lossy()
@@ -1457,7 +1759,6 @@ impl RrdpServer {
 }
 
 /// rrdp paths and uris
-///
 impl RrdpServer {
     pub fn notification_uri(&self) -> uri::Https {
         self.rrdp_base_uri.join(b"notification.xml").unwrap()
@@ -1475,13 +1776,20 @@ impl RrdpServer {
         path
     }
 
-    pub fn session_dir_snapshot(session_path: &Path, serial: u64) -> KrillResult<Option<PathBuf>> {
+    pub fn session_dir_snapshot(
+        session_path: &Path,
+        serial: u64,
+    ) -> KrillResult<Option<PathBuf>> {
         Self::find_in_serial_dir(session_path, serial, "snapshot.xml")
     }
 
-    /// Expects files (like delta.xml or snapshot.xml) under dir structure like:
-    /// <session_path>/<serial>/<some random>/<filename>
-    pub fn find_in_serial_dir(session_path: &Path, serial: u64, filename: &str) -> KrillResult<Option<PathBuf>> {
+    /// Expects files (like delta.xml or snapshot.xml) under dir structure
+    /// like: <session_path>/<serial>/<some random>/<filename>
+    pub fn find_in_serial_dir(
+        session_path: &Path,
+        serial: u64,
+        filename: &str,
+    ) -> KrillResult<Option<PathBuf>> {
         let serial_dir = session_path.join(serial.to_string());
         if let Ok(randoms) = fs::read_dir(&serial_dir) {
             for entry in randoms {
@@ -1527,21 +1835,27 @@ pub struct RepositoryAccessProxy {
 
 impl RepositoryAccessProxy {
     pub fn create(config: &Config) -> KrillResult<Self> {
-        let store =
-            AggregateStore::<RepositoryAccess>::create(&config.storage_uri, PUBSERVER_NS, config.use_history_cache)?;
+        let store = AggregateStore::<RepositoryAccess>::create(
+            &config.storage_uri,
+            PUBSERVER_NS,
+            config.use_history_cache,
+        )?;
         let key = MyHandle::from_str(PUBSERVER_DFLT).unwrap();
 
         if store.has(&key)? {
             if let Err(e) = store.warm() {
                 // Start to 'warm' the cache. This serves two purposes:
-                // 1. this ensures that the `RepositoryAccess` struct is available in memory
+                // 1. this ensures that the `RepositoryAccess` struct is
+                //    available in memory
                 // 2. this ensures that there are no apparent data issues
                 //
-                // If there are issues, then we need to bail out. Krill 0.14.0+ uses single
-                // files for all change sets, and files are first completely written to disk,
+                // If there are issues, then we need to bail out. Krill
+                // 0.14.0+ uses single files for all change
+                // sets, and files are first completely written to disk,
                 // and only then renamed.
                 //
-                // In other words, if we fail to warm the cache then this points at:
+                // In other words, if we fail to warm the cache then this
+                // points at:
                 // - data corruption
                 // - user started
                 error!(
@@ -1555,10 +1869,16 @@ impl RepositoryAccessProxy {
     }
 
     pub fn initialized(&self) -> KrillResult<bool> {
-        self.store.has(&self.key).map_err(Error::AggregateStoreError)
+        self.store
+            .has(&self.key)
+            .map_err(Error::AggregateStoreError)
     }
 
-    pub fn init(&self, uris: PublicationServerUris, signer: Arc<KrillSigner>) -> KrillResult<()> {
+    pub fn init(
+        &self,
+        uris: PublicationServerUris,
+        signer: Arc<KrillSigner>,
+    ) -> KrillResult<()> {
         if self.initialized()? {
             Err(Error::RepositoryServerAlreadyInitialized)
         } else {
@@ -1568,7 +1888,11 @@ impl RepositoryAccessProxy {
 
             let cmd = RepositoryAccessInitCommand::new(
                 &self.key,
-                RepositoryAccessInitCommandDetails::new(rrdp_base_uri, rsync_jail, signer),
+                RepositoryAccessInitCommandDetails::new(
+                    rrdp_base_uri,
+                    rsync_jail,
+                    signer,
+                ),
                 &actor,
             );
 
@@ -1593,9 +1917,9 @@ impl RepositoryAccessProxy {
         if !self.initialized()? {
             Err(Error::RepositoryServerNotInitialized)
         } else {
-            self.store
-                .get_latest(&self.key)
-                .map_err(|e| Error::custom(format!("Publication Server data issue: {}", e)))
+            self.store.get_latest(&self.key).map_err(|e| {
+                Error::custom(format!("Publication Server data issue: {}", e))
+            })
         }
     }
 
@@ -1603,32 +1927,54 @@ impl RepositoryAccessProxy {
         Ok(self.read()?.publishers())
     }
 
-    pub fn get_publisher(&self, name: &PublisherHandle) -> KrillResult<Publisher> {
+    pub fn get_publisher(
+        &self,
+        name: &PublisherHandle,
+    ) -> KrillResult<Publisher> {
         self.read()?.get_publisher(name).cloned()
     }
 
-    pub fn add_publisher(&self, req: idexchange::PublisherRequest, actor: &Actor) -> KrillResult<()> {
+    pub fn add_publisher(
+        &self,
+        req: idexchange::PublisherRequest,
+        actor: &Actor,
+    ) -> KrillResult<()> {
         let name = req.publisher_handle().clone();
         let id_cert = req.validate().map_err(Error::rfc8183)?;
         let base_uri = self.read()?.base_uri_for(&name)?;
 
-        let cmd = RepositoryAccessCommandDetails::add_publisher(&self.key, id_cert.into(), name, base_uri, actor);
+        let cmd = RepositoryAccessCommandDetails::add_publisher(
+            &self.key,
+            id_cert.into(),
+            name,
+            base_uri,
+            actor,
+        );
         self.store.command(cmd)?;
         Ok(())
     }
 
-    pub fn remove_publisher(&self, name: PublisherHandle, actor: &Actor) -> KrillResult<()> {
+    pub fn remove_publisher(
+        &self,
+        name: PublisherHandle,
+        actor: &Actor,
+    ) -> KrillResult<()> {
         if !self.initialized()? {
             Err(Error::RepositoryServerNotInitialized)
         } else {
-            let cmd = RepositoryAccessCommandDetails::remove_publisher(&self.key, name, actor);
+            let cmd = RepositoryAccessCommandDetails::remove_publisher(
+                &self.key, name, actor,
+            );
             self.store.command(cmd)?;
             Ok(())
         }
     }
 
     /// Returns the repository URI information for a publisher.
-    pub fn repo_info_for(&self, name: &PublisherHandle) -> KrillResult<RepoInfo> {
+    pub fn repo_info_for(
+        &self,
+        name: &PublisherHandle,
+    ) -> KrillResult<RepoInfo> {
         self.read()?.repo_info_for(name)
     }
 
@@ -1641,7 +1987,8 @@ impl RepositoryAccessProxy {
         self.read()?.repository_response(rfc8181_uri, publisher)
     }
 
-    /// Parse submitted bytes by a Publisher as an RFC8181 ProtocolCms object, and validates it.
+    /// Parse submitted bytes by a Publisher as an RFC8181 ProtocolCms object,
+    /// and validates it.
     pub fn decode_and_validate(
         &self,
         publisher: &PublisherHandle,
@@ -1649,7 +1996,8 @@ impl RepositoryAccessProxy {
     ) -> KrillResult<publication::PublicationCms> {
         let publisher = self.get_publisher(publisher)?;
         let msg = PublicationCms::decode(bytes).map_err(Error::Rfc8181)?;
-        msg.validate(publisher.id_cert().public_key()).map_err(Error::Rfc8181)?;
+        msg.validate(publisher.id_cert().public_key())
+            .map_err(Error::Rfc8181)?;
         Ok(msg)
     }
 
@@ -1660,14 +2008,17 @@ impl RepositoryAccessProxy {
         signer: &KrillSigner,
     ) -> KrillResult<publication::PublicationCms> {
         let key_id = self.read()?.key_id();
-        signer.create_rfc8181_cms(message, &key_id).map_err(Error::signer)
+        signer
+            .create_rfc8181_cms(message, &key_id)
+            .map_err(Error::signer)
     }
 }
 
 //------------ RepositoryAccess --------------------------------------------
 
-/// An RFC8181 Repository server, capable of handling Publishers (both embedded, and
-/// remote RFC8181), and publishing to RRDP and disk, and signing responses.
+/// An RFC8181 Repository server, capable of handling Publishers (both
+/// embedded, and remote RFC8181), and publishing to RRDP and disk, and
+/// signing responses.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RepositoryAccess {
     // Event sourcing support
@@ -1688,7 +2039,6 @@ impl RepositoryAccess {
 }
 
 /// # Event Sourcing support
-///
 impl Aggregate for RepositoryAccess {
     type Command = RepositoryAccessCommand;
     type StorableCommandDetails = StorableRepositoryCommand;
@@ -1711,13 +2061,19 @@ impl Aggregate for RepositoryAccess {
         }
     }
 
-    fn process_init_command(command: Self::InitCommand) -> Result<Self::InitEvent, Self::Error> {
+    fn process_init_command(
+        command: Self::InitCommand,
+    ) -> Result<Self::InitEvent, Self::Error> {
         let details = command.into_details();
         let (rrdp_base_uri, rsync_jail, signer) = details.unpack();
 
         let id_cert_info = Rfc8183Id::generate(&signer)?.into();
 
-        Ok(RepositoryAccessInitEvent::new(id_cert_info, rrdp_base_uri, rsync_jail))
+        Ok(RepositoryAccessInitEvent::new(
+            id_cert_info,
+            rrdp_base_uri,
+            rsync_jail,
+        ))
     }
 
     fn version(&self) -> u64 {
@@ -1739,7 +2095,10 @@ impl Aggregate for RepositoryAccess {
         }
     }
 
-    fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Event>, Self::Error> {
+    fn process_command(
+        &self,
+        command: Self::Command,
+    ) -> Result<Vec<Self::Event>, Self::Error> {
         info!(
             "Sending command to publisher '{}', version: {}: {}",
             self.handle, self.version, command
@@ -1751,13 +2110,14 @@ impl Aggregate for RepositoryAccess {
                 name,
                 base_uri,
             } => self.add_publisher(id_cert, name, base_uri),
-            RepositoryAccessCommandDetails::RemovePublisher { name } => self.remove_publisher(name),
+            RepositoryAccessCommandDetails::RemovePublisher { name } => {
+                self.remove_publisher(name)
+            }
         }
     }
 }
 
 /// # Manage publishers
-///
 impl RepositoryAccess {
     /// Adds a publisher with access to the repository
     fn add_publisher(
@@ -1771,16 +2131,23 @@ impl RepositoryAccess {
         } else {
             let publisher = Publisher::new(id_cert, base_uri);
 
-            Ok(vec![RepositoryAccessEvent::publisher_added(name, publisher)])
+            Ok(vec![RepositoryAccessEvent::publisher_added(
+                name, publisher,
+            )])
         }
     }
 
     /// Removes a publisher and all its content
-    fn remove_publisher(&self, publisher_handle: PublisherHandle) -> Result<Vec<RepositoryAccessEvent>, Error> {
+    fn remove_publisher(
+        &self,
+        publisher_handle: PublisherHandle,
+    ) -> Result<Vec<RepositoryAccessEvent>, Error> {
         if !self.has_publisher(&publisher_handle) {
             Err(Error::PublisherUnknown(publisher_handle))
         } else {
-            Ok(vec![RepositoryAccessEvent::publisher_removed(publisher_handle)])
+            Ok(vec![RepositoryAccessEvent::publisher_removed(
+                publisher_handle,
+            )])
         }
     }
 
@@ -1788,19 +2155,30 @@ impl RepositoryAccess {
         self.rrdp_base.join(b"notification.xml").unwrap()
     }
 
-    fn base_uri_for(&self, name: &PublisherHandle) -> KrillResult<uri::Rsync> {
+    fn base_uri_for(
+        &self,
+        name: &PublisherHandle,
+    ) -> KrillResult<uri::Rsync> {
         if name.as_str() == TA_NAME {
             // Let the TA publish directly under the rsync base dir. This
             // will be helpful for RPs that still insist on rsync.
             Ok(self.rsync_base.clone())
         } else {
             uri::Rsync::from_str(&format!("{}{}/", self.rsync_base, name))
-                .map_err(|_| Error::Custom(format!("Cannot derive base uri for {}", name)))
+                .map_err(|_| {
+                    Error::Custom(format!(
+                        "Cannot derive base uri for {}",
+                        name
+                    ))
+                })
         }
     }
 
     /// Returns the repository URI information for a publisher.
-    pub fn repo_info_for(&self, name: &PublisherHandle) -> KrillResult<RepoInfo> {
+    pub fn repo_info_for(
+        &self,
+        name: &PublisherHandle,
+    ) -> KrillResult<RepoInfo> {
         let rsync_base = self.base_uri_for(name)?;
         Ok(RepoInfo::new(rsync_base, Some(self.notification_uri())))
     }
@@ -1824,7 +2202,10 @@ impl RepositoryAccess {
         ))
     }
 
-    pub fn get_publisher(&self, publisher_handle: &PublisherHandle) -> Result<&Publisher, Error> {
+    pub fn get_publisher(
+        &self,
+        publisher_handle: &PublisherHandle,
+    ) -> Result<&Publisher, Error> {
         self.publishers
             .get(publisher_handle)
             .ok_or_else(|| Error::PublisherUnknown(publisher_handle.clone()))
@@ -1864,23 +2245,36 @@ impl RepoStats {
         self.last_update = Some(last_update);
     }
 
-    pub fn session_reset(&mut self, session: RrdpSession, serial: u64, last_update: Time) {
+    pub fn session_reset(
+        &mut self,
+        session: RrdpSession,
+        serial: u64,
+        last_update: Time,
+    ) {
         self.session = session;
         self.serial = serial;
         self.last_update = Some(last_update)
     }
 
     pub fn new_publisher(&mut self, publisher: &PublisherHandle) {
-        self.publishers.insert(publisher.clone(), PublisherStats::default());
+        self.publishers
+            .insert(publisher.clone(), PublisherStats::default());
     }
 
-    pub fn remove_publisher(&mut self, publisher: &PublisherHandle, serial: u64, last_update: Time) {
+    pub fn remove_publisher(
+        &mut self,
+        publisher: &PublisherHandle,
+        serial: u64,
+        last_update: Time,
+    ) {
         self.publishers.remove(publisher);
         self.serial = serial;
         self.last_update = Some(last_update);
     }
 
-    pub fn get_publishers(&self) -> &HashMap<PublisherHandle, PublisherStats> {
+    pub fn get_publishers(
+        &self,
+    ) -> &HashMap<PublisherHandle, PublisherStats> {
         &self.publishers
     }
 
@@ -1888,7 +2282,9 @@ impl RepoStats {
         let mut res = vec![];
         for (publisher, stats) in self.publishers.iter() {
             if let Some(update_time) = stats.last_update() {
-                if Time::now().timestamp() - update_time.timestamp() >= seconds {
+                if Time::now().timestamp() - update_time.timestamp()
+                    >= seconds
+                {
                     res.push(publisher.clone())
                 }
             } else {
@@ -1991,11 +2387,14 @@ impl From<&CurrentObjects> for PublisherStats {
     fn from(objects: &CurrentObjects) -> Self {
         let mut manifests = vec![];
         for (uri_key, base64) in objects.iter() {
-            // Add all manifests - as long as they are syntactically correct - do not
-            // crash on incorrect objects.
+            // Add all manifests - as long as they are syntactically correct -
+            // do not crash on incorrect objects.
             if uri_key.ends_with("mft") {
-                if let Ok(mft) = Manifest::decode(base64.to_bytes().as_ref(), false) {
-                    if let Ok(stats) = PublisherManifestStats::try_from(&mft) {
+                if let Ok(mft) =
+                    Manifest::decode(base64.to_bytes().as_ref(), false)
+                {
+                    if let Ok(stats) = PublisherManifestStats::try_from(&mft)
+                    {
                         manifests.push(stats)
                     }
                 }

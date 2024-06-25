@@ -1,16 +1,20 @@
-//! All actions performed by Krill are authorized by and attributed to an Actor.
+//! All actions performed by Krill are authorized by and attributed to an
+//! Actor.
 //!
 //! An Actor either represents Krill itself or an external client of Krill.
-//! Actors can only be created by the [Authorizer](crate::daemon::auth::Authorizer).
+//! Actors can only be created by the
+//! [Authorizer](crate::daemon::auth::Authorizer).
 //!
 //! An [ActorDef] defines an Actor that can be created later.
 //!
 //! ActorDefs allows special internal actors to be described once as Rust
-//! constants and turned into actual Actors at the point where they are needed.
+//! constants and turned into actual Actors at the point where they are
+//! needed.
 //!
-//! ActorDefs also allow [AuthProvider](crate::daemon::auth::authorizer::AuthProvider)s
-//! to define the Actor that should be created without needing any knowledge of
-//! the Authorizer.
+//! ActorDefs also allow
+//! [AuthProvider](crate::daemon::auth::authorizer::AuthProvider)s
+//! to define the Actor that should be created without needing any knowledge
+//! of the Authorizer.
 
 #[cfg(feature = "multi-user")]
 use oso::ToPolar;
@@ -94,7 +98,11 @@ impl ActorDef {
         }
     }
 
-    pub fn user(name: String, attributes: HashMap<String, String>, new_auth: Option<Auth>) -> ActorDef {
+    pub fn user(
+        name: String,
+        attributes: HashMap<String, String>,
+        new_auth: Option<Auth>,
+    ) -> ActorDef {
         ActorDef {
             name: ActorName::AsString(name),
             is_user: true,
@@ -127,13 +135,17 @@ pub struct Actor {
 
 impl PartialEq for Actor {
     fn eq(&self, other: &Self) -> bool {
-        self.name == other.name && self.is_user == other.is_user && self.attributes == other.attributes
+        self.name == other.name
+            && self.is_user == other.is_user
+            && self.attributes == other.attributes
     }
 }
 
 impl PartialEq<ActorDef> for Actor {
     fn eq(&self, other: &ActorDef) -> bool {
-        self.name == other.name && self.is_user == other.is_user && self.attributes == other.attributes
+        self.name == other.name
+            && self.is_user == other.is_user
+            && self.attributes == other.attributes
     }
 }
 
@@ -169,7 +181,10 @@ impl Actor {
     }
 
     /// Only for use in testing
-    pub fn test_from_details(name: String, attrs: HashMap<String, String>) -> Actor {
+    pub fn test_from_details(
+        name: String,
+        attrs: HashMap<String, String>,
+    ) -> Actor {
         Actor {
             name: ActorName::AsString(name),
             attributes: Attributes::UserDefined(attrs),
@@ -210,7 +225,9 @@ impl Actor {
     pub fn attribute(&self, attr_name: String) -> Option<String> {
         match &self.attributes {
             Attributes::UserDefined(map) => map.get(&attr_name).cloned(),
-            Attributes::RoleOnly(role) if &attr_name == "role" => Some(role.to_string()),
+            Attributes::RoleOnly(role) if &attr_name == "role" => {
+                Some(role.to_string())
+            }
             Attributes::RoleOnly(_) => None,
             Attributes::None => None,
         }
@@ -222,14 +239,19 @@ impl Actor {
 
     #[cfg(not(feature = "multi-user"))]
     pub fn is_allowed<A, R>(&self, _: A, _: R) -> KrillResult<bool> {
-        // When not in multi-user mode we only have two states: authenticated or not authenticated (aka anonymous).
-        // Only authenticated (i.e. not anonymous) actors are permitted to perform restricted actions, i.e. those for
-        // which this fn is invoked.
+        // When not in multi-user mode we only have two states: authenticated
+        // or not authenticated (aka anonymous). Only authenticated
+        // (i.e. not anonymous) actors are permitted to perform restricted
+        // actions, i.e. those for which this fn is invoked.
         Ok(!self.is_anonymous())
     }
 
     #[cfg(feature = "multi-user")]
-    pub fn is_allowed<A, R>(&self, action: A, resource: R) -> KrillResult<bool>
+    pub fn is_allowed<A, R>(
+        &self,
+        action: A,
+        resource: R,
+    ) -> KrillResult<bool>
     where
         A: ToPolar + Display + Debug + Clone,
         R: ToPolar + Display + Debug + Clone,
@@ -255,7 +277,11 @@ impl Actor {
         }
 
         match &self.policy {
-            Some(policy) => match policy.is_allowed(self.clone(), action.clone(), resource.clone()) {
+            Some(policy) => match policy.is_allowed(
+                self.clone(),
+                action.clone(),
+                resource.clone(),
+            ) {
                 Ok(allowed) => {
                     if log_enabled!(log::Level::Trace) {
                         trace!(
@@ -280,9 +306,10 @@ impl Actor {
                 }
             },
             None => {
-                // Auth policy is required, can only be omitted for use by test
-                // rules inside an Oso policy. We should never get here, but we
-                // don't want to crash Krill by calling unreachable!().
+                // Auth policy is required, can only be omitted for use by
+                // test rules inside an Oso policy. We should
+                // never get here, but we don't want to crash
+                // Krill by calling unreachable!().
                 error!(
                     "Unable to check access: actor={}, action={}, resource={}: {}",
                     self.name(),

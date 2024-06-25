@@ -12,7 +12,8 @@ pub trait PreSaveEventListener<A: Aggregate>: Send + Sync + 'static {
     fn listen(&self, agg: &A, events: &[A::Event]) -> Result<(), A::Error>;
 }
 
-//------------ PostSaveEventListener ------------------------------------------
+//------------ PostSaveEventListener
+//------------ ------------------------------------------
 
 /// This trait defines a listener for events which is designed to receive
 /// them *after* the updated Aggregate is saved. Because the updates already

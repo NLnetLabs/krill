@@ -13,12 +13,15 @@ use openssl::{
 use rpki::{
     crypto::signer::KeyError,
     crypto::{
-        signer::SigningAlgorithm, KeyIdentifier, PublicKey, PublicKeyFormat, RpkiSignature, RpkiSignatureAlgorithm,
-        Signature, SignatureAlgorithm, SigningError,
+        signer::SigningAlgorithm, KeyIdentifier, PublicKey, PublicKeyFormat,
+        RpkiSignature, RpkiSignatureAlgorithm, Signature, SignatureAlgorithm,
+        SigningError,
     },
 };
 
-use crate::commons::crypto::{dispatch::signerinfo::SignerMapper, SignerError, SignerHandle};
+use crate::commons::crypto::{
+    dispatch::signerinfo::SignerMapper, SignerError, SignerHandle,
+};
 
 pub enum FnIdx {
     CreateRegistrationKey,
@@ -63,8 +66,10 @@ impl Default for MockSignerCallCounts {
     }
 }
 
-pub type CreateRegistrationKeyErrorCb = fn(&MockSignerCallCounts) -> Result<(), SignerError>;
-pub type SignRegistrationChallengeErrorCb = fn(&MockSignerCallCounts) -> Result<(), SignerError>;
+pub type CreateRegistrationKeyErrorCb =
+    fn(&MockSignerCallCounts) -> Result<(), SignerError>;
+pub type SignRegistrationChallengeErrorCb =
+    fn(&MockSignerCallCounts) -> Result<(), SignerError>;
 
 pub struct MockSigner {
     name: String,
@@ -74,7 +79,8 @@ pub struct MockSigner {
     mapper: Arc<SignerMapper>,
     keys: RwLock<HashMap<String, PKey<Private>>>,
     create_registration_key_error_cb: Option<CreateRegistrationKeyErrorCb>,
-    sign_registration_challenge_error_cb: Option<SignRegistrationChallengeErrorCb>,
+    sign_registration_challenge_error_cb:
+        Option<SignRegistrationChallengeErrorCb>,
 }
 
 impl std::fmt::Debug for MockSigner {
@@ -89,8 +95,12 @@ impl MockSigner {
         name: &str,
         signer_mapper: Arc<SignerMapper>,
         fn_call_counts: Arc<MockSignerCallCounts>,
-        create_registration_key_error_cb: Option<CreateRegistrationKeyErrorCb>,
-        sign_registration_challenge_error_cb: Option<SignRegistrationChallengeErrorCb>,
+        create_registration_key_error_cb: Option<
+            CreateRegistrationKeyErrorCb,
+        >,
+        sign_registration_challenge_error_cb: Option<
+            SignRegistrationChallengeErrorCb,
+        >,
     ) -> Self {
         Self {
             name: name.to_string(),
@@ -112,7 +122,10 @@ impl MockSigner {
         self.info = Some(info.to_string());
     }
 
-    fn build_key(&self) -> Result<(PublicKey, PKey<Private>, KeyIdentifier, String), SignerError> {
+    fn build_key(
+        &self,
+    ) -> Result<(PublicKey, PKey<Private>, KeyIdentifier, String), SignerError>
+    {
         // generate a key pair
         let rsa = Rsa::generate(2048)?;
         let pkey = PKey::from_rsa(rsa)?;
@@ -121,7 +134,10 @@ impl MockSigner {
 
         // remember this private key by its "internal id"
         let internal_id = key_identifier.to_string();
-        self.keys.write().unwrap().insert(internal_id.clone(), pkey.clone());
+        self.keys
+            .write()
+            .unwrap()
+            .insert(internal_id.clone(), pkey.clone());
 
         // return the key details to the caller
         Ok((public_key, pkey, key_identifier, internal_id))
@@ -137,19 +153,27 @@ impl MockSigner {
         if !matches!(signing_algorithm, SigningAlgorithm::RsaSha256) {
             Err(SignerError::UnsupportedSigningAlg(signing_algorithm))
         } else {
-            let mut signer = ::openssl::sign::Signer::new(MessageDigest::sha256(), pkey)?;
+            let mut signer =
+                ::openssl::sign::Signer::new(MessageDigest::sha256(), pkey)?;
             signer.update(challenge.as_ref())?;
-            let signature = Signature::new(alg, Bytes::from(signer.sign_to_vec()?));
+            let signature =
+                Signature::new(alg, Bytes::from(signer.sign_to_vec()?));
             Ok(signature)
         }
     }
 
-    fn public_key_from_pkey(pkey: &PKey<Private>) -> Result<PublicKey, SignerError> {
-        let bytes = Bytes::from(pkey.rsa().unwrap().public_key_to_der().unwrap());
+    fn public_key_from_pkey(
+        pkey: &PKey<Private>,
+    ) -> Result<PublicKey, SignerError> {
+        let bytes =
+            Bytes::from(pkey.rsa().unwrap().public_key_to_der().unwrap());
         PublicKey::decode(bytes).map_err(|_| SignerError::DecodeError)
     }
 
-    fn internal_id_from_key_identifier(&self, key_identifier: &KeyIdentifier) -> Result<String, SignerError> {
+    fn internal_id_from_key_identifier(
+        &self,
+        key_identifier: &KeyIdentifier,
+    ) -> Result<String, SignerError> {
         let lock = self.handle.read().unwrap();
         let signer_handle = lock.as_ref().unwrap();
         self.mapper
@@ -166,7 +190,9 @@ impl MockSigner {
 
 // interface expected by SignerProvider
 impl MockSigner {
-    pub fn create_registration_key(&self) -> Result<(PublicKey, String), SignerError> {
+    pub fn create_registration_key(
+        &self,
+    ) -> Result<(PublicKey, String), SignerError> {
         self.inc_fn_call_count(FnIdx::CreateRegistrationKey);
         if let Some(err_cb) = &self.create_registration_key_error_cb {
             (err_cb)(&self.fn_call_counts)?;
@@ -184,10 +210,16 @@ impl MockSigner {
         if let Some(err_cb) = &self.sign_registration_challenge_error_cb {
             (err_cb)(&self.fn_call_counts)?;
         }
-        let pkey = self.load_key(signer_private_key_id).ok_or(SignerError::KeyNotFound)?;
+        let pkey = self
+            .load_key(signer_private_key_id)
+            .ok_or(SignerError::KeyNotFound)?;
 
         // sign the given data using the loaded private key
-        let signature = Self::sign_with_key(RpkiSignatureAlgorithm::default(), &pkey, challenge)?;
+        let signature = Self::sign_with_key(
+            RpkiSignatureAlgorithm::default(),
+            &pkey,
+            challenge,
+        )?;
 
         // return the generated signature to the caller
         Ok(signature)
@@ -195,8 +227,8 @@ impl MockSigner {
 
     pub fn set_handle(&self, handle: SignerHandle) {
         self.inc_fn_call_count(FnIdx::SetHandle);
-        // remember the handle that has been generated for us so that we can use it when registering keys with the
-        // signer mapper
+        // remember the handle that has been generated for us so that we can
+        // use it when registering keys with the signer mapper
         self.handle.write().unwrap().replace(handle);
     }
 
@@ -211,14 +243,19 @@ impl MockSigner {
     }
 }
 
-// Implement the functions defined by the `Signer` trait because `SignerProvider` expects to invoke them, but as the
-// dispatching is not trait based we don't actually have to implement the `Signer` trait.
+// Implement the functions defined by the `Signer` trait because
+// `SignerProvider` expects to invoke them, but as the dispatching is not
+// trait based we don't actually have to implement the `Signer` trait.
 impl MockSigner {
-    pub fn create_key(&self, _algorithm: PublicKeyFormat) -> Result<KeyIdentifier, SignerError> {
+    pub fn create_key(
+        &self,
+        _algorithm: PublicKeyFormat,
+    ) -> Result<KeyIdentifier, SignerError> {
         self.inc_fn_call_count(FnIdx::CreateKey);
         let (_, _, key_identifier, internal_id) = self.build_key().unwrap();
 
-        // tell the signer mapper we own this key identifier which maps to our "internal id"
+        // tell the signer mapper we own this key identifier which maps to our
+        // "internal id"
         let lock = self.handle.read().unwrap();
         let signer_handle = lock.as_ref().unwrap();
         self.mapper
@@ -228,24 +265,36 @@ impl MockSigner {
         Ok(key_identifier)
     }
 
-    pub fn get_key_info(&self, key_identifier: &KeyIdentifier) -> Result<PublicKey, KeyError<SignerError>> {
+    pub fn get_key_info(
+        &self,
+        key_identifier: &KeyIdentifier,
+    ) -> Result<PublicKey, KeyError<SignerError>> {
         self.inc_fn_call_count(FnIdx::GetKeyInfo);
-        let internal_id = self.internal_id_from_key_identifier(key_identifier).unwrap();
-        let pkey = self.load_key(&internal_id).ok_or(KeyError::KeyNotFound)?;
+        let internal_id = self
+            .internal_id_from_key_identifier(key_identifier)
+            .unwrap();
+        let pkey =
+            self.load_key(&internal_id).ok_or(KeyError::KeyNotFound)?;
         let public_key = Self::public_key_from_pkey(&pkey).unwrap();
         Ok(public_key)
     }
 
-    pub fn destroy_key(&self, key_id: &KeyIdentifier) -> Result<(), KeyError<SignerError>> {
+    pub fn destroy_key(
+        &self,
+        key_id: &KeyIdentifier,
+    ) -> Result<(), KeyError<SignerError>> {
         self.inc_fn_call_count(FnIdx::DestroyKey);
-        let internal_id = self.internal_id_from_key_identifier(key_id).unwrap();
+        let internal_id =
+            self.internal_id_from_key_identifier(key_id).unwrap();
         let _ = self.keys.write().unwrap().remove(&internal_id);
 
         // remove the key from the signer mapper as well
         if let Some(signer_handle) = self.handle.read().unwrap().as_ref() {
             self.mapper
                 .remove_key(signer_handle, key_id)
-                .map_err(|err| KeyError::Signer(SignerError::Other(err.to_string())))?;
+                .map_err(|err| {
+                    KeyError::Signer(SignerError::Other(err.to_string()))
+                })?;
         }
 
         Ok(())
@@ -258,9 +307,13 @@ impl MockSigner {
         data: &D,
     ) -> Result<Signature<Alg>, SigningError<SignerError>> {
         self.inc_fn_call_count(FnIdx::Sign);
-        let internal_id = self.internal_id_from_key_identifier(key_identifier)?;
-        let pkey = self.load_key(&internal_id).ok_or(SignerError::KeyNotFound)?;
-        Self::sign_with_key(algorithm, &pkey, data).map_err(SigningError::Signer)
+        let internal_id =
+            self.internal_id_from_key_identifier(key_identifier)?;
+        let pkey = self
+            .load_key(&internal_id)
+            .ok_or(SignerError::KeyNotFound)?;
+        Self::sign_with_key(algorithm, &pkey, data)
+            .map_err(SigningError::Signer)
     }
 
     pub fn sign_one_off<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
@@ -276,8 +329,8 @@ impl MockSigner {
     }
 
     pub fn wipe_all_keys(&self) {
-        // wipe out all our keys, including the identity key used by the SignerRouter to verify that we are an
-        // already known signer.
+        // wipe out all our keys, including the identity key used by the
+        // SignerRouter to verify that we are an already known signer.
         self.keys.write().unwrap().clear();
     }
 }

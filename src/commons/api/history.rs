@@ -4,8 +4,12 @@ use chrono::{DateTime, SecondsFormat};
 
 use rpki::{
     ca::{
-        idexchange::{ChildHandle, MyHandle, ParentHandle, PublisherHandle, ServiceUri},
-        provisioning::{RequestResourceLimit, ResourceClassName, RevocationRequest},
+        idexchange::{
+            ChildHandle, MyHandle, ParentHandle, PublisherHandle, ServiceUri,
+        },
+        provisioning::{
+            RequestResourceLimit, ResourceClassName, RevocationRequest,
+        },
     },
     crypto::KeyIdentifier,
     repository::{resources::ResourceSet, x509::Time},
@@ -15,15 +19,20 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            ArgKey, ArgVal, AspaProvidersUpdate, CustomerAsn, Message, RoaConfigurationUpdates, RtaName,
-            StorableParentContact,
+            ArgKey, ArgVal, AspaProvidersUpdate, CustomerAsn, Message,
+            RoaConfigurationUpdates, RtaName, StorableParentContact,
         },
-        eventsourcing::{Event, InitEvent, StoredCommand, StoredEffect, WithStorableDetails},
+        eventsourcing::{
+            Event, InitEvent, StoredCommand, StoredEffect,
+            WithStorableDetails,
+        },
     },
     daemon::ca::{CertAuth, DropReason},
 };
 
-use super::{AspaDefinitionUpdates, ResourceClassNameMapping, ResourceSetSummary};
+use super::{
+    AspaDefinitionUpdates, ResourceClassNameMapping, ResourceSetSummary,
+};
 
 //------------ CommandHistory ------------------------------------------------
 
@@ -35,7 +44,11 @@ pub struct CommandHistory {
 }
 
 impl CommandHistory {
-    pub fn new(offset: usize, total: usize, commands: Vec<CommandHistoryRecord>) -> Self {
+    pub fn new(
+        offset: usize,
+        total: usize,
+        commands: Vec<CommandHistoryRecord>,
+    ) -> Self {
         CommandHistory {
             offset,
             total,
@@ -64,7 +77,9 @@ impl fmt::Display for CommandHistory {
             let success_string = match &command.effect {
                 CommandHistoryResult::Init() => "INIT".to_string(),
                 CommandHistoryResult::Ok() => "OK".to_string(),
-                CommandHistoryResult::Error(msg) => format!("ERROR -> {}", msg),
+                CommandHistoryResult::Error(msg) => {
+                    format!("ERROR -> {}", msg)
+                }
             };
             writeln!(
                 f,
@@ -110,10 +125,14 @@ pub enum CommandHistoryResult {
     Error(String),
 }
 
-impl<E: Event, I: InitEvent> From<StoredEffect<E, I>> for CommandHistoryResult {
+impl<E: Event, I: InitEvent> From<StoredEffect<E, I>>
+    for CommandHistoryResult
+{
     fn from(effect: StoredEffect<E, I>) -> Self {
         match effect {
-            StoredEffect::Error { msg, .. } => CommandHistoryResult::Error(msg),
+            StoredEffect::Error { msg, .. } => {
+                CommandHistoryResult::Error(msg)
+            }
             StoredEffect::Success { .. } => CommandHistoryResult::Ok(),
             StoredEffect::Init { .. } => CommandHistoryResult::Init(),
         }
@@ -123,9 +142,9 @@ impl<E: Event, I: InitEvent> From<StoredEffect<E, I>> for CommandHistoryResult {
 impl CommandHistoryRecord {
     pub fn time(&self) -> Time {
         let seconds = self.timestamp / 1000;
-        DateTime::from_timestamp(
-            seconds, 0
-        ).expect("timestamp out-of-range").into()
+        DateTime::from_timestamp(seconds, 0)
+            .expect("timestamp out-of-range")
+            .into()
     }
 }
 
@@ -190,7 +209,10 @@ impl CommandSummary {
         self.with_arg("id_cert_hash", hash)
     }
 
-    pub fn with_parent_contact(self, contact: &StorableParentContact) -> Self {
+    pub fn with_parent_contact(
+        self,
+        contact: &StorableParentContact,
+    ) -> Self {
         self.with_arg("parent_contact", contact)
     }
 
@@ -238,11 +260,13 @@ pub struct CommandHistoryCriteria {
 
 impl CommandHistoryCriteria {
     pub fn set_excludes(&mut self, labels: &[&str]) {
-        self.label_excludes = Some(labels.iter().map(|s| (*s).to_string()).collect());
+        self.label_excludes =
+            Some(labels.iter().map(|s| (*s).to_string()).collect());
     }
 
     pub fn set_includes(&mut self, labels: &[&str]) {
-        self.label_includes = Some(labels.iter().map(|s| (*s).to_string()).collect());
+        self.label_includes =
+            Some(labels.iter().map(|s| (*s).to_string()).collect());
     }
 
     pub fn set_after(&mut self, timestamp: i64) {
@@ -334,12 +358,18 @@ pub type CaCommandDetails = StoredCommand<CertAuth>;
 
 impl fmt::Display for CaCommandDetails {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "Time:   {}", self.time().to_rfc3339_opts(SecondsFormat::Secs, true))?;
+        writeln!(
+            f,
+            "Time:   {}",
+            self.time().to_rfc3339_opts(SecondsFormat::Secs, true)
+        )?;
         writeln!(f, "Actor:  {}", self.actor())?;
         writeln!(f, "Action: {}", self.details().summary().msg)?;
 
         match self.effect() {
-            StoredEffect::Error { msg, .. } => writeln!(f, "Error:  {}", msg)?,
+            StoredEffect::Error { msg, .. } => {
+                writeln!(f, "Error:  {}", msg)?
+            }
             StoredEffect::Success { events } => {
                 writeln!(f, "Changes:")?;
                 for evt in events {
@@ -822,12 +852,16 @@ pub enum StorableRepositoryCommand {
 impl WithStorableDetails for StorableRepositoryCommand {
     fn summary(&self) -> CommandSummary {
         match self {
-            StorableRepositoryCommand::Init => CommandSummary::new("pubd-init", self),
+            StorableRepositoryCommand::Init => {
+                CommandSummary::new("pubd-init", self)
+            }
             StorableRepositoryCommand::AddPublisher { name } => {
-                CommandSummary::new("pubd-publisher-add", self).with_publisher(name)
+                CommandSummary::new("pubd-publisher-add", self)
+                    .with_publisher(name)
             }
             StorableRepositoryCommand::RemovePublisher { name } => {
-                CommandSummary::new("pubd-publisher-remove", self).with_publisher(name)
+                CommandSummary::new("pubd-publisher-remove", self)
+                    .with_publisher(name)
             }
         }
     }
@@ -846,7 +880,9 @@ impl fmt::Display for StorableRepositoryCommand {
             StorableRepositoryCommand::AddPublisher { name } => {
                 write!(f, "Added publisher '{}'", name)
             }
-            StorableRepositoryCommand::RemovePublisher { name } => write!(f, "Removed publisher '{}'", name),
+            StorableRepositoryCommand::RemovePublisher { name } => {
+                write!(f, "Removed publisher '{}'", name)
+            }
         }
     }
 }

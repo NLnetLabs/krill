@@ -8,9 +8,11 @@ use crate::{
     constants::{test_mode_enabled, OPENID_CONNECT_HTTP_CLIENT_TIMEOUT_SECS},
 };
 
-// Wrap the httpclient produced above with optional logging of requests to and responses from the OpenID Connect
-// provider.
-pub async fn logging_http_client(req: openidconnect::HttpRequest) -> Result<openidconnect::HttpResponse, Error> {
+// Wrap the httpclient produced above with optional logging of requests to and
+// responses from the OpenID Connect provider.
+pub async fn logging_http_client(
+    req: openidconnect::HttpRequest,
+) -> Result<openidconnect::HttpResponse, Error> {
     if log_enabled!(log::Level::Trace) {
         // Don't {:?} log the openidconnect::HTTPRequest req object
         // because that renders the body as an unreadable integer byte
@@ -82,13 +84,21 @@ fn convert_openid_request(
     let request_uri = request.url.to_string();
 
     let request_method = reqwest::Method::from_str(request.method.as_str())
-        .map_err(|_| httpclient::Error::request_build(&request_uri, format!("invalid method: {}", request.method)))?;
+        .map_err(|_| {
+        httpclient::Error::request_build(
+            &request_uri,
+            format!("invalid method: {}", request.method),
+        )
+    })?;
 
-    let mut request_builder = client.request(request_method, &request_uri).body(request.body);
+    let mut request_builder = client
+        .request(request_method, &request_uri)
+        .body(request.body);
 
     // map openid connect headers to the request builder
     for (name, value) in &request.headers {
-        request_builder = request_builder.header(name.as_str(), value.as_bytes());
+        request_builder =
+            request_builder.header(name.as_str(), value.as_bytes());
     }
 
     request_builder
@@ -102,17 +112,37 @@ async fn convert_to_openid_response(
 ) -> Result<openidconnect::HttpResponse, httpclient::Error> {
     let response_code = response.status().as_u16();
 
-    let response_status = openidconnect::http::StatusCode::from_u16(response_code)
-        .map_err(|_| httpclient::Error::response(uri, format!("invalid status code: {}", response_code)))?;
+    let response_status = openidconnect::http::StatusCode::from_u16(
+        response_code,
+    )
+    .map_err(|_| {
+        httpclient::Error::response(
+            uri,
+            format!("invalid status code: {}", response_code),
+        )
+    })?;
 
     let response_headers = {
         let mut headers = openidconnect::http::HeaderMap::new();
         for (name, value) in response.headers() {
-            let name = openidconnect::http::header::HeaderName::from_str(name.as_str())
-                .map_err(|_| httpclient::Error::response(uri, format!("invalid header name: {}", name.as_str())))?;
+            let name = openidconnect::http::header::HeaderName::from_str(
+                name.as_str(),
+            )
+            .map_err(|_| {
+                httpclient::Error::response(
+                    uri,
+                    format!("invalid header name: {}", name.as_str()),
+                )
+            })?;
 
-            let value = openidconnect::http::header::HeaderValue::from_bytes(value.as_bytes()).map_err(|_| {
-                httpclient::Error::response(uri, format!("invalid value for header: {}", name.as_str()))
+            let value = openidconnect::http::header::HeaderValue::from_bytes(
+                value.as_bytes(),
+            )
+            .map_err(|_| {
+                httpclient::Error::response(
+                    uri,
+                    format!("invalid value for header: {}", name.as_str()),
+                )
             })?;
 
             headers.append(name, value);
@@ -121,10 +151,12 @@ async fn convert_to_openid_response(
         headers
     };
 
-    let response_body = response
-        .bytes()
-        .await
-        .map_err(|e| httpclient::Error::response(uri, format!("could not get response body: {}", e)))?;
+    let response_body = response.bytes().await.map_err(|e| {
+        httpclient::Error::response(
+            uri,
+            format!("could not get response body: {}", e),
+        )
+    })?;
 
     Ok(openidconnect::HttpResponse {
         status_code: response_status,

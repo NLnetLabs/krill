@@ -17,7 +17,8 @@ async fn test_suspension() {
     //  testbed enabled
     //  ca_refresh disabled (we will trigger individual CA refreshes manually)
     //  suspend enabled
-    let cleanup = start_krill_with_default_test_config(true, false, true, false).await;
+    let cleanup =
+        start_krill_with_default_test_config(true, false, true, false).await;
 
     let testbed = ca_handle("testbed");
     let ca = ca_handle("CA");
@@ -28,8 +29,16 @@ async fn test_suspension() {
         let child_handle = child.convert();
 
         let mut expected_files = expected_mft_and_crl(ca, &rcn_0).await;
-        expected_files.push(expected_issued_cer(&child.convert(), &rcn_0).await);
-        assert!(will_publish_embedded("CA should have mft, crl and cert for child", ca, &expected_files).await);
+        expected_files
+            .push(expected_issued_cer(&child.convert(), &rcn_0).await);
+        assert!(
+            will_publish_embedded(
+                "CA should have mft, crl and cert for child",
+                ca,
+                &expected_files
+            )
+            .await
+        );
 
         let ca_info = ca_details(ca).await;
         assert!(ca_info.children().contains(&child_handle));
@@ -41,7 +50,14 @@ async fn test_suspension() {
         let child_handle = child.convert();
 
         let expected_files = expected_mft_and_crl(ca, &rcn_0).await;
-        assert!(will_publish_embedded("CA should have mft, crl only", ca, &expected_files).await);
+        assert!(
+            will_publish_embedded(
+                "CA should have mft, crl only",
+                ca,
+                &expected_files
+            )
+            .await
+        );
 
         let ca_info = ca_details(ca).await;
         assert!(ca_info.children().contains(&child_handle));
@@ -59,7 +75,8 @@ async fn test_suspension() {
         set_up_ca_under_parent_with_resources(&ca, &testbed, &ca_res).await;
     }
 
-    // Verify that testbed published the certificate for CA, and that its state is 'active'
+    // Verify that testbed published the certificate for CA, and that its
+    // state is 'active'
     {
         expect_not_suspended(&testbed, &ca).await;
     }
@@ -85,7 +102,8 @@ async fn test_suspension() {
         expect_not_suspended(&testbed, &ca).await;
     }
 
-    // CAs can also be suspended explicitly, regardless of their last known connection
+    // CAs can also be suspended explicitly, regardless of their last known
+    // connection
     {
         ca_suspend_child(&testbed, &ca).await;
         expect_suspended(&testbed, &ca).await;

@@ -16,16 +16,25 @@ use crate::{
     cli::report::Report,
     commons::{
         actor::Actor,
-        api::{AddChildRequest, ApiRepositoryContact, CertAuthInfo, IdCertInfo, RepositoryContact, Token},
+        api::{
+            AddChildRequest, ApiRepositoryContact, CertAuthInfo, IdCertInfo,
+            RepositoryContact, Token,
+        },
         crypto::KrillSigner,
         error::Error as KrillError,
-        eventsourcing::{namespace, AggregateStore, AggregateStoreError, Namespace},
+        eventsourcing::{
+            namespace, AggregateStore, AggregateStoreError, Namespace,
+        },
         util::{file, httpclient},
     },
-    constants::{KRILL_CLI_API_ENV, KRILL_CLI_FORMAT_ENV, KRILL_TA_CLIENT_APP, KRILL_VERSION},
+    constants::{
+        KRILL_CLI_API_ENV, KRILL_CLI_FORMAT_ENV, KRILL_TA_CLIENT_APP,
+        KRILL_VERSION,
+    },
     ta::{
-        self, Config, TrustAnchorHandle, TrustAnchorProxySignerExchanges, TrustAnchorSignedRequest,
-        TrustAnchorSignedResponse, TrustAnchorSigner, TrustAnchorSignerCommand, TrustAnchorSignerInfo,
+        self, Config, TrustAnchorHandle, TrustAnchorProxySignerExchanges,
+        TrustAnchorSignedRequest, TrustAnchorSignedResponse,
+        TrustAnchorSigner, TrustAnchorSignerCommand, TrustAnchorSignerInfo,
         TrustAnchorSignerInitCommand, TrustAnchorSignerInitCommandDetails,
     },
 };
@@ -35,10 +44,12 @@ use super::{
     report::{self, ReportFormat},
 };
 
-//------------------------ Client Constants -------------------------------------
+//------------------------ Client Constants
+//------------------------ -------------------------------------
 const CONFIG_PATH: &str = "/etc/krillta.conf";
 
-//------------------------ Client Error -----------------------------------------
+//------------------------ Client Error
+//------------------------ -----------------------------------------
 
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
@@ -61,12 +72,22 @@ impl TaClientError {
 impl std::fmt::Display for TaClientError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            TaClientError::DataDirMissing => write!(f, "Cannot find data dir"),
-            TaClientError::UnrecognizedMatch => write!(f, "Unrecognised argument. Use 'help'"),
-            TaClientError::HttpClientError(e) => write!(f, "HTTP client error: {}", e),
+            TaClientError::DataDirMissing => {
+                write!(f, "Cannot find data dir")
+            }
+            TaClientError::UnrecognizedMatch => {
+                write!(f, "Unrecognised argument. Use 'help'")
+            }
+            TaClientError::HttpClientError(e) => {
+                write!(f, "HTTP client error: {}", e)
+            }
             TaClientError::KrillError(e) => write!(f, "{}", e),
-            TaClientError::StorageError(e) => write!(f, "Issue with persistence layer: {}", e),
-            TaClientError::ConfigError(e) => write!(f, "Issue with configuration file: {}", e),
+            TaClientError::StorageError(e) => {
+                write!(f, "Issue with persistence layer: {}", e)
+            }
+            TaClientError::ConfigError(e) => {
+                write!(f, "Issue with configuration file: {}", e)
+            }
             TaClientError::Other(msg) => write!(f, "{}", msg),
         }
     }
@@ -96,7 +117,8 @@ impl From<AggregateStoreError> for TaClientError {
     }
 }
 
-//------------------------ Client Commands --------------------------------------
+//------------------------ Client Commands
+//------------------------ --------------------------------------
 
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
@@ -109,7 +131,9 @@ impl TrustAnchorClientCommand {
     pub fn report_format(&self) -> report::ReportFormat {
         match self {
             TrustAnchorClientCommand::Signer(command) => command.format,
-            TrustAnchorClientCommand::Proxy(command) => command.general.format,
+            TrustAnchorClientCommand::Proxy(command) => {
+                command.general.format
+            }
         }
     }
 }
@@ -174,7 +198,6 @@ impl TrustAnchorClientCommand {
 }
 
 /// # Create matches for command line parsing
-///
 impl TrustAnchorClientCommand {
     fn make_matches<'a>() -> ArgMatches<'a> {
         let mut app = App::new(KRILL_TA_CLIENT_APP).version(KRILL_VERSION);
@@ -188,7 +211,8 @@ impl TrustAnchorClientCommand {
     //-- Sub Commands Proxy
 
     fn make_proxy_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("proxy").about("Manage the Trust Anchor Proxy");
+        let mut sub = SubCommand::with_name("proxy")
+            .about("Manage the Trust Anchor Proxy");
 
         sub = Self::make_proxy_init_sc(sub);
         sub = Self::make_proxy_id_sc(sub);
@@ -200,19 +224,22 @@ impl TrustAnchorClientCommand {
     }
 
     fn make_proxy_init_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("init").about("Initialise the proxy");
+        let mut sub =
+            SubCommand::with_name("init").about("Initialise the proxy");
         sub = GeneralArgs::add_args(sub);
         app.subcommand(sub)
     }
 
     fn make_proxy_id_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("id").about("Get the proxy ID certificate details");
+        let mut sub = SubCommand::with_name("id")
+            .about("Get the proxy ID certificate details");
         sub = GeneralArgs::add_args(sub);
         app.subcommand(sub)
     }
 
     fn make_proxy_repo_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("repo").about("Manage the repository for proxy");
+        let mut sub = SubCommand::with_name("repo")
+            .about("Manage the repository for proxy");
         sub = Self::make_proxy_repo_request_sc(sub);
         sub = Self::make_proxy_repo_contact_sc(sub);
         sub = Self::make_proxy_repo_configure_sc(sub);
@@ -220,19 +247,22 @@ impl TrustAnchorClientCommand {
     }
 
     fn make_proxy_repo_request_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("request").about("Get RFC 8183 publisher request");
+        let mut sub = SubCommand::with_name("request")
+            .about("Get RFC 8183 publisher request");
         sub = GeneralArgs::add_args(sub);
         app.subcommand(sub)
     }
 
     fn make_proxy_repo_contact_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("contact").about("Show the configured repository for the proxy");
+        let mut sub = SubCommand::with_name("contact")
+            .about("Show the configured repository for the proxy");
         sub = GeneralArgs::add_args(sub);
         app.subcommand(sub)
     }
 
     fn make_proxy_repo_configure_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("configure").about("Configure (add) the repository for the proxy");
+        let mut sub = SubCommand::with_name("configure")
+            .about("Configure (add) the repository for the proxy");
         sub = GeneralArgs::add_args(sub);
 
         sub = sub.arg(
@@ -248,7 +278,8 @@ impl TrustAnchorClientCommand {
     }
 
     fn make_proxy_signer_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("signer").about("Manage interactions with the associated signer");
+        let mut sub = SubCommand::with_name("signer")
+            .about("Manage interactions with the associated signer");
         sub = Self::make_proxy_signer_init_sc(sub);
         sub = Self::make_proxy_signer_make_request_sc(sub);
         sub = Self::make_proxy_signer_show_request_sc(sub);
@@ -257,7 +288,8 @@ impl TrustAnchorClientCommand {
     }
 
     fn make_proxy_signer_init_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("init").about("Initialise signer association");
+        let mut sub = SubCommand::with_name("init")
+            .about("Initialise signer association");
 
         sub = GeneralArgs::add_args(sub);
         sub = sub.arg(
@@ -272,21 +304,28 @@ impl TrustAnchorClientCommand {
         app.subcommand(sub)
     }
 
-    fn make_proxy_signer_make_request_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("make-request")
-            .about("Make a NEW request for the signer (fails if a request exists).");
+    fn make_proxy_signer_make_request_sc<'a, 'b>(
+        app: App<'a, 'b>,
+    ) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("make-request").about(
+            "Make a NEW request for the signer (fails if a request exists).",
+        );
         sub = GeneralArgs::add_args(sub);
         app.subcommand(sub)
     }
 
-    fn make_proxy_signer_show_request_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+    fn make_proxy_signer_show_request_sc<'a, 'b>(
+        app: App<'a, 'b>,
+    ) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("show-request")
             .about("Show the existing request for the signer (fails if there is no request).");
         sub = GeneralArgs::add_args(sub);
         app.subcommand(sub)
     }
 
-    fn make_proxy_signer_process_response_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+    fn make_proxy_signer_process_response_sc<'a, 'b>(
+        app: App<'a, 'b>,
+    ) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("process-response")
             .about("Process a response from the signer. Fails it did not match the open request.");
 
@@ -303,7 +342,8 @@ impl TrustAnchorClientCommand {
     }
 
     fn make_proxy_children_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("children").about("Manage children under the TA proxy");
+        let mut sub = SubCommand::with_name("children")
+            .about("Manage children under the TA proxy");
         sub = Self::make_proxy_children_add_sc(sub);
         sub = Self::make_proxy_children_response_sc(sub);
         app.subcommand(sub)
@@ -347,8 +387,11 @@ impl TrustAnchorClientCommand {
         app.subcommand(sub)
     }
 
-    fn make_proxy_children_response_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("response").about("Get parent response for child.");
+    fn make_proxy_children_response_sc<'a, 'b>(
+        app: App<'a, 'b>,
+    ) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("response")
+            .about("Get parent response for child.");
         sub = GeneralArgs::add_args(sub);
         sub = Self::add_child_arg(sub);
         app.subcommand(sub)
@@ -357,7 +400,8 @@ impl TrustAnchorClientCommand {
     //-- Sub Commands Signer
 
     fn make_signer_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("signer").about("Manage the Trust Anchor Signer");
+        let mut sub = SubCommand::with_name("signer")
+            .about("Manage the Trust Anchor Signer");
 
         sub = Self::make_signer_init_sc(sub);
         sub = Self::make_signer_show_sc(sub);
@@ -369,7 +413,8 @@ impl TrustAnchorClientCommand {
     }
 
     fn make_signer_init_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("init").about("Initialise the signer");
+        let mut sub =
+            SubCommand::with_name("init").about("Initialise the signer");
 
         sub = Self::add_config_arg(sub)
             .arg(
@@ -422,14 +467,16 @@ impl TrustAnchorClientCommand {
     }
 
     fn make_signer_show_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("show").about("Show the signer info");
+        let mut sub =
+            SubCommand::with_name("show").about("Show the signer info");
         sub = Self::add_config_arg(sub);
         sub = Self::add_format_arg(sub);
         app.subcommand(sub)
     }
 
     fn make_signer_process_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("process").about("Process a proxy request");
+        let mut sub =
+            SubCommand::with_name("process").about("Process a proxy request");
         sub = Self::add_config_arg(sub);
         sub = Self::add_format_arg(sub);
 
@@ -453,7 +500,8 @@ impl TrustAnchorClientCommand {
     }
 
     fn make_signer_last_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("last").about("Show last response");
+        let mut sub =
+            SubCommand::with_name("last").about("Show last response");
         sub = Self::add_config_arg(sub);
         sub = Self::add_format_arg(sub);
         app.subcommand(sub)
@@ -503,7 +551,6 @@ impl TrustAnchorClientCommand {
 }
 
 /// # Parse command line matches
-///
 impl TrustAnchorClientCommand {
     fn parse_matches(matches: ArgMatches) -> Result<Self, TaClientError> {
         if let Some(m) = matches.subcommand_matches("proxy") {
@@ -516,7 +563,9 @@ impl TrustAnchorClientCommand {
     }
 
     //-- Parse Proxy
-    fn parse_matches_proxy(matches: &ArgMatches) -> Result<Self, TaClientError> {
+    fn parse_matches_proxy(
+        matches: &ArgMatches,
+    ) -> Result<Self, TaClientError> {
         if let Some(m) = matches.subcommand_matches("id") {
             Self::parse_matches_proxy_id(m)
         } else if let Some(m) = matches.subcommand_matches("init") {
@@ -532,21 +581,35 @@ impl TrustAnchorClientCommand {
         }
     }
 
-    fn parse_matches_proxy_init(matches: &ArgMatches) -> Result<Self, TaClientError> {
-        let general = GeneralArgs::from_matches(matches).map_err(|e| TaClientError::Other(e.to_string()))?;
+    fn parse_matches_proxy_init(
+        matches: &ArgMatches,
+    ) -> Result<Self, TaClientError> {
+        let general = GeneralArgs::from_matches(matches)
+            .map_err(|e| TaClientError::Other(e.to_string()))?;
         let details = ProxyCommandDetails::Init;
 
-        Ok(TrustAnchorClientCommand::Proxy(ProxyCommand { general, details }))
+        Ok(TrustAnchorClientCommand::Proxy(ProxyCommand {
+            general,
+            details,
+        }))
     }
 
-    fn parse_matches_proxy_id(matches: &ArgMatches) -> Result<Self, TaClientError> {
-        let general = GeneralArgs::from_matches(matches).map_err(|e| TaClientError::Other(e.to_string()))?;
+    fn parse_matches_proxy_id(
+        matches: &ArgMatches,
+    ) -> Result<Self, TaClientError> {
+        let general = GeneralArgs::from_matches(matches)
+            .map_err(|e| TaClientError::Other(e.to_string()))?;
         let details = ProxyCommandDetails::Id;
 
-        Ok(TrustAnchorClientCommand::Proxy(ProxyCommand { general, details }))
+        Ok(TrustAnchorClientCommand::Proxy(ProxyCommand {
+            general,
+            details,
+        }))
     }
 
-    fn parse_matches_proxy_repo(matches: &ArgMatches) -> Result<Self, TaClientError> {
+    fn parse_matches_proxy_repo(
+        matches: &ArgMatches,
+    ) -> Result<Self, TaClientError> {
         if let Some(m) = matches.subcommand_matches("request") {
             Self::parse_matches_proxy_repo_request(m)
         } else if let Some(m) = matches.subcommand_matches("contact") {
@@ -558,49 +621,80 @@ impl TrustAnchorClientCommand {
         }
     }
 
-    fn parse_matches_proxy_repo_request(matches: &ArgMatches) -> Result<Self, TaClientError> {
-        let general = GeneralArgs::from_matches(matches).map_err(|e| TaClientError::Other(e.to_string()))?;
+    fn parse_matches_proxy_repo_request(
+        matches: &ArgMatches,
+    ) -> Result<Self, TaClientError> {
+        let general = GeneralArgs::from_matches(matches)
+            .map_err(|e| TaClientError::Other(e.to_string()))?;
         let details = ProxyCommandDetails::RepoRequest;
 
-        Ok(TrustAnchorClientCommand::Proxy(ProxyCommand { general, details }))
+        Ok(TrustAnchorClientCommand::Proxy(ProxyCommand {
+            general,
+            details,
+        }))
     }
 
-    fn parse_matches_proxy_repo_contact(matches: &ArgMatches) -> Result<Self, TaClientError> {
-        let general = GeneralArgs::from_matches(matches).map_err(|e| TaClientError::Other(e.to_string()))?;
+    fn parse_matches_proxy_repo_contact(
+        matches: &ArgMatches,
+    ) -> Result<Self, TaClientError> {
+        let general = GeneralArgs::from_matches(matches)
+            .map_err(|e| TaClientError::Other(e.to_string()))?;
         let details = ProxyCommandDetails::RepoContact;
 
-        Ok(TrustAnchorClientCommand::Proxy(ProxyCommand { general, details }))
+        Ok(TrustAnchorClientCommand::Proxy(ProxyCommand {
+            general,
+            details,
+        }))
     }
 
-    fn parse_matches_proxy_repo_configure(matches: &ArgMatches) -> Result<Self, TaClientError> {
-        let general = GeneralArgs::from_matches(matches).map_err(|e| TaClientError::Other(e.to_string()))?;
+    fn parse_matches_proxy_repo_configure(
+        matches: &ArgMatches,
+    ) -> Result<Self, TaClientError> {
+        let general = GeneralArgs::from_matches(matches)
+            .map_err(|e| TaClientError::Other(e.to_string()))?;
 
         let path = matches.value_of("response").unwrap();
         let bytes = Self::read_file_arg(path)?;
         let response = idexchange::RepositoryResponse::parse(bytes.as_ref())
-            .map_err(|e| TaClientError::Other(format!("Cannot parse repository response: {}", e)))?;
+            .map_err(|e| {
+                TaClientError::Other(format!(
+                    "Cannot parse repository response: {}",
+                    e
+                ))
+            })?;
 
-        let details = ProxyCommandDetails::RepoConfigure(ApiRepositoryContact::new(response));
+        let details = ProxyCommandDetails::RepoConfigure(
+            ApiRepositoryContact::new(response),
+        );
 
-        Ok(TrustAnchorClientCommand::Proxy(ProxyCommand { general, details }))
+        Ok(TrustAnchorClientCommand::Proxy(ProxyCommand {
+            general,
+            details,
+        }))
     }
 
-    fn parse_matches_proxy_signer(matches: &ArgMatches) -> Result<Self, TaClientError> {
+    fn parse_matches_proxy_signer(
+        matches: &ArgMatches,
+    ) -> Result<Self, TaClientError> {
         if let Some(m) = matches.subcommand_matches("init") {
             Self::parse_matches_proxy_signer_init(m)
         } else if let Some(m) = matches.subcommand_matches("make-request") {
             Self::parse_matches_proxy_signer_make_request(m)
         } else if let Some(m) = matches.subcommand_matches("show-request") {
             Self::parse_matches_proxy_signer_show_request(m)
-        } else if let Some(m) = matches.subcommand_matches("process-response") {
+        } else if let Some(m) = matches.subcommand_matches("process-response")
+        {
             Self::parse_matches_proxy_signer_process_response(m)
         } else {
             Err(TaClientError::UnrecognizedMatch)
         }
     }
 
-    fn parse_matches_proxy_signer_init(matches: &ArgMatches) -> Result<Self, TaClientError> {
-        let general = GeneralArgs::from_matches(matches).map_err(|e| TaClientError::Other(e.to_string()))?;
+    fn parse_matches_proxy_signer_init(
+        matches: &ArgMatches,
+    ) -> Result<Self, TaClientError> {
+        let general = GeneralArgs::from_matches(matches)
+            .map_err(|e| TaClientError::Other(e.to_string()))?;
 
         let info = Self::read_json(matches.value_of("info").unwrap())?;
 
@@ -610,8 +704,11 @@ impl TrustAnchorClientCommand {
         }))
     }
 
-    fn parse_matches_proxy_signer_make_request(matches: &ArgMatches) -> Result<Self, TaClientError> {
-        let general = GeneralArgs::from_matches(matches).map_err(|e| TaClientError::Other(e.to_string()))?;
+    fn parse_matches_proxy_signer_make_request(
+        matches: &ArgMatches,
+    ) -> Result<Self, TaClientError> {
+        let general = GeneralArgs::from_matches(matches)
+            .map_err(|e| TaClientError::Other(e.to_string()))?;
 
         Ok(TrustAnchorClientCommand::Proxy(ProxyCommand {
             general,
@@ -619,8 +716,11 @@ impl TrustAnchorClientCommand {
         }))
     }
 
-    fn parse_matches_proxy_signer_show_request(matches: &ArgMatches) -> Result<Self, TaClientError> {
-        let general = GeneralArgs::from_matches(matches).map_err(|e| TaClientError::Other(e.to_string()))?;
+    fn parse_matches_proxy_signer_show_request(
+        matches: &ArgMatches,
+    ) -> Result<Self, TaClientError> {
+        let general = GeneralArgs::from_matches(matches)
+            .map_err(|e| TaClientError::Other(e.to_string()))?;
 
         Ok(TrustAnchorClientCommand::Proxy(ProxyCommand {
             general,
@@ -628,9 +728,13 @@ impl TrustAnchorClientCommand {
         }))
     }
 
-    fn parse_matches_proxy_signer_process_response(matches: &ArgMatches) -> Result<Self, TaClientError> {
-        let general = GeneralArgs::from_matches(matches).map_err(|e| TaClientError::Other(e.to_string()))?;
-        let response = Self::read_json(matches.value_of("response").unwrap())?;
+    fn parse_matches_proxy_signer_process_response(
+        matches: &ArgMatches,
+    ) -> Result<Self, TaClientError> {
+        let general = GeneralArgs::from_matches(matches)
+            .map_err(|e| TaClientError::Other(e.to_string()))?;
+        let response =
+            Self::read_json(matches.value_of("response").unwrap())?;
 
         Ok(TrustAnchorClientCommand::Proxy(ProxyCommand {
             general,
@@ -638,7 +742,9 @@ impl TrustAnchorClientCommand {
         }))
     }
 
-    fn parse_matches_proxy_children(matches: &ArgMatches) -> Result<Self, TaClientError> {
+    fn parse_matches_proxy_children(
+        matches: &ArgMatches,
+    ) -> Result<Self, TaClientError> {
         if let Some(m) = matches.subcommand_matches("add") {
             Self::parse_matches_proxy_children_add(m)
         } else if let Some(m) = matches.subcommand_matches("response") {
@@ -648,16 +754,21 @@ impl TrustAnchorClientCommand {
         }
     }
 
-    fn parse_matches_proxy_children_add(matches: &ArgMatches) -> Result<Self, TaClientError> {
-        let general = GeneralArgs::from_matches(matches).map_err(|e| TaClientError::Other(e.to_string()))?;
+    fn parse_matches_proxy_children_add(
+        matches: &ArgMatches,
+    ) -> Result<Self, TaClientError> {
+        let general = GeneralArgs::from_matches(matches)
+            .map_err(|e| TaClientError::Other(e.to_string()))?;
 
-        let info: CertAuthInfo = Self::read_json(matches.value_of("info").unwrap())?;
+        let info: CertAuthInfo =
+            Self::read_json(matches.value_of("info").unwrap())?;
         let resources: ResourceSet = {
             let asn = matches.value_of("asn").unwrap_or("AS0-AS4294967295");
             let ipv4 = matches.value_of("ipv4").unwrap_or("0.0.0.0/0");
             let ipv6 = matches.value_of("ipv6").unwrap_or("::/0");
-            ResourceSet::from_strs(asn, ipv4, ipv6)
-                .map_err(|e| TaClientError::Other(format!("Cannot parse resources: {}", e)))?
+            ResourceSet::from_strs(asn, ipv4, ipv6).map_err(|e| {
+                TaClientError::Other(format!("Cannot parse resources: {}", e))
+            })?
         };
 
         Ok(TrustAnchorClientCommand::Proxy(ProxyCommand {
@@ -670,8 +781,11 @@ impl TrustAnchorClientCommand {
         }))
     }
 
-    fn parse_matches_proxy_children_response(matches: &ArgMatches) -> Result<Self, TaClientError> {
-        let general = GeneralArgs::from_matches(matches).map_err(|e| TaClientError::Other(e.to_string()))?;
+    fn parse_matches_proxy_children_response(
+        matches: &ArgMatches,
+    ) -> Result<Self, TaClientError> {
+        let general = GeneralArgs::from_matches(matches)
+            .map_err(|e| TaClientError::Other(e.to_string()))?;
         let child = Self::parse_child_arg(matches)?;
 
         Ok(TrustAnchorClientCommand::Proxy(ProxyCommand {
@@ -680,26 +794,43 @@ impl TrustAnchorClientCommand {
         }))
     }
 
-    fn parse_child_arg(matches: &ArgMatches) -> Result<ChildHandle, TaClientError> {
+    fn parse_child_arg(
+        matches: &ArgMatches,
+    ) -> Result<ChildHandle, TaClientError> {
         let child_str = matches.value_of("child").unwrap();
-        ChildHandle::from_str(child_str).map_err(|e| TaClientError::Other(format!("Invalid child name: {}", e)))
+        ChildHandle::from_str(child_str).map_err(|e| {
+            TaClientError::Other(format!("Invalid child name: {}", e))
+        })
     }
 
     fn read_file_arg(path_str: &str) -> Result<Bytes, TaClientError> {
         let path = PathBuf::from(path_str);
-        file::read(&path).map_err(|e| TaClientError::Other(format!("Can't read: {}. Error: {}", path_str, e)))
+        file::read(&path).map_err(|e| {
+            TaClientError::Other(format!(
+                "Can't read: {}. Error: {}",
+                path_str, e
+            ))
+        })
     }
 
     // Read json from a path argument
-    fn read_json<T: DeserializeOwned>(path: &str) -> Result<T, TaClientError> {
+    fn read_json<T: DeserializeOwned>(
+        path: &str,
+    ) -> Result<T, TaClientError> {
         let bytes = Self::read_file_arg(path)?;
 
-        serde_json::from_slice(&bytes)
-            .map_err(|e| TaClientError::Other(format!("Cannot deserialize file {}: {}", path, e)))
+        serde_json::from_slice(&bytes).map_err(|e| {
+            TaClientError::Other(format!(
+                "Cannot deserialize file {}: {}",
+                path, e
+            ))
+        })
     }
 
     //-- Parse Signer
-    fn parse_matches_signer(matches: &ArgMatches) -> Result<Self, TaClientError> {
+    fn parse_matches_signer(
+        matches: &ArgMatches,
+    ) -> Result<Self, TaClientError> {
         if let Some(m) = matches.subcommand_matches("init") {
             Self::parse_matches_signer_init(m)
         } else if let Some(m) = matches.subcommand_matches("show") {
@@ -715,15 +846,19 @@ impl TrustAnchorClientCommand {
         }
     }
 
-    fn parse_matches_signer_init(matches: &ArgMatches) -> Result<Self, TaClientError> {
+    fn parse_matches_signer_init(
+        matches: &ArgMatches,
+    ) -> Result<Self, TaClientError> {
         let config = Self::parse_config(matches)?;
         let format = ReportFormat::None;
 
-        let proxy_id = Self::read_json(matches.value_of("proxy_id").unwrap())?;
+        let proxy_id =
+            Self::read_json(matches.value_of("proxy_id").unwrap())?;
 
         let repo_info = {
-            let repo_contact: RepositoryContact =
-                Self::read_json(matches.value_of("proxy_repository_contact").unwrap())?;
+            let repo_contact: RepositoryContact = Self::read_json(
+                matches.value_of("proxy_repository_contact").unwrap(),
+            )?;
             repo_contact.into()
         };
 
@@ -731,31 +866,44 @@ impl TrustAnchorClientCommand {
             let uri_strs = matches.values_of("tal_https").unwrap();
             let mut uris = vec![];
             for uri_str in uri_strs {
-                uris.push(
-                    uri::Https::from_str(uri_str)
-                        .map_err(|_| TaClientError::Other(format!("Invalid HTTPS URI: {}", uri_str)))?,
-                );
+                uris.push(uri::Https::from_str(uri_str).map_err(|_| {
+                    TaClientError::Other(format!(
+                        "Invalid HTTPS URI: {}",
+                        uri_str
+                    ))
+                })?);
             }
             uris
         };
 
         let tal_rsync = {
             let rsync_str = matches.value_of("tal_rsync").unwrap();
-            uri::Rsync::from_str(rsync_str)
-                .map_err(|_| TaClientError::Other(format!("Invalid rsync uri: {}", rsync_str)))?
+            uri::Rsync::from_str(rsync_str).map_err(|_| {
+                TaClientError::Other(format!(
+                    "Invalid rsync uri: {}",
+                    rsync_str
+                ))
+            })?
         };
 
-        let ta_mft_nr_override = if let Some(number) = matches.value_of("initial_manifest_number") {
-            let nr = u64::from_str(number).map_err(|_| TaClientError::other("Invalid manifest number, must be >1"))?;
+        let ta_mft_nr_override = if let Some(number) =
+            matches.value_of("initial_manifest_number")
+        {
+            let nr = u64::from_str(number).map_err(|_| {
+                TaClientError::other("Invalid manifest number, must be >1")
+            })?;
             Some(nr)
         } else {
             None
         };
 
-        let private_key_pem = if let Some(path) = matches.value_of("private_key_pem") {
+        let private_key_pem = if let Some(path) =
+            matches.value_of("private_key_pem")
+        {
             let bytes = Self::read_file_arg(path)?;
-            let pem = std::str::from_utf8(&bytes)
-                .map_err(|_| TaClientError::other("invalid UTF8 in private_key_pem file"))?;
+            let pem = std::str::from_utf8(&bytes).map_err(|_| {
+                TaClientError::other("invalid UTF8 in private_key_pem file")
+            })?;
             Some(pem.to_string())
         } else {
             None
@@ -778,7 +926,9 @@ impl TrustAnchorClientCommand {
         }))
     }
 
-    fn parse_matches_signer_show(matches: &ArgMatches) -> Result<Self, TaClientError> {
+    fn parse_matches_signer_show(
+        matches: &ArgMatches,
+    ) -> Result<Self, TaClientError> {
         let config = Self::parse_config(matches)?;
         let format = Self::parse_format(matches)?;
 
@@ -789,14 +939,22 @@ impl TrustAnchorClientCommand {
         }))
     }
 
-    fn parse_matches_signer_process(matches: &ArgMatches) -> Result<Self, TaClientError> {
+    fn parse_matches_signer_process(
+        matches: &ArgMatches,
+    ) -> Result<Self, TaClientError> {
         let config = Self::parse_config(matches)?;
         let format = Self::parse_format(matches)?;
-        let signed_request = Self::read_json(matches.value_of("request").unwrap())?;
+        let signed_request =
+            Self::read_json(matches.value_of("request").unwrap())?;
 
-        let ta_mft_number_override = if let Some(nr_str) = matches.value_of("ta_mft_number_override") {
-            let nr = u64::from_str(nr_str)
-                .map_err(|_| TaClientError::other("Invalid number for ta_mft_number_override, must be >1"))?;
+        let ta_mft_number_override = if let Some(nr_str) =
+            matches.value_of("ta_mft_number_override")
+        {
+            let nr = u64::from_str(nr_str).map_err(|_| {
+                TaClientError::other(
+                    "Invalid number for ta_mft_number_override, must be >1",
+                )
+            })?;
             Some(nr)
         } else {
             None
@@ -812,7 +970,9 @@ impl TrustAnchorClientCommand {
         }))
     }
 
-    fn parse_matches_signer_last_response(matches: &ArgMatches) -> Result<Self, TaClientError> {
+    fn parse_matches_signer_last_response(
+        matches: &ArgMatches,
+    ) -> Result<Self, TaClientError> {
         let config = Self::parse_config(matches)?;
         let format = Self::parse_format(matches)?;
 
@@ -823,7 +983,9 @@ impl TrustAnchorClientCommand {
         }))
     }
 
-    fn parse_matches_signer_exchanges(matches: &ArgMatches) -> Result<Self, TaClientError> {
+    fn parse_matches_signer_exchanges(
+        matches: &ArgMatches,
+    ) -> Result<Self, TaClientError> {
         let config = Self::parse_config(matches)?;
         let format = Self::parse_format(matches)?;
         let details = SignerCommandDetails::ShowExchanges;
@@ -840,7 +1002,9 @@ impl TrustAnchorClientCommand {
         Config::parse(config_path).map_err(TaClientError::ConfigError)
     }
 
-    fn parse_format(matches: &ArgMatches) -> Result<ReportFormat, TaClientError> {
+    fn parse_format(
+        matches: &ArgMatches,
+    ) -> Result<ReportFormat, TaClientError> {
         let mut format = match env::var(KRILL_CLI_FORMAT_ENV) {
             Ok(fmt_str) => Some(ReportFormat::from_str(&fmt_str)?),
             Err(_) => None,
@@ -854,72 +1018,119 @@ impl TrustAnchorClientCommand {
     }
 }
 
-//------------------------ TrustAnchorClient ------------------------------------
+//------------------------ TrustAnchorClient
+//------------------------ ------------------------------------
 
 pub struct TrustAnchorClient;
 
 impl TrustAnchorClient {
-    pub async fn process(command: TrustAnchorClientCommand) -> Result<TrustAnchorClientApiResponse, TaClientError> {
+    pub async fn process(
+        command: TrustAnchorClientCommand,
+    ) -> Result<TrustAnchorClientApiResponse, TaClientError> {
         match command {
             TrustAnchorClientCommand::Proxy(proxy_command) => {
                 let client = ProxyClient::create(proxy_command.general);
 
                 match proxy_command.details {
-                    ProxyCommandDetails::Init => client.post_empty("api/v1/ta/proxy/init").await,
+                    ProxyCommandDetails::Init => {
+                        client.post_empty("api/v1/ta/proxy/init").await
+                    }
                     ProxyCommandDetails::Id => {
-                        let id_cert = client.get_json("api/v1/ta/proxy/id").await?;
+                        let id_cert =
+                            client.get_json("api/v1/ta/proxy/id").await?;
                         Ok(TrustAnchorClientApiResponse::IdCert(id_cert))
                     }
                     ProxyCommandDetails::RepoRequest => {
-                        let publisher_request = client.get_json("api/v1/ta/proxy/repo/request.json").await?;
-                        Ok(TrustAnchorClientApiResponse::PublisherRequest(publisher_request))
+                        let publisher_request = client
+                            .get_json("api/v1/ta/proxy/repo/request.json")
+                            .await?;
+                        Ok(TrustAnchorClientApiResponse::PublisherRequest(
+                            publisher_request,
+                        ))
                     }
                     ProxyCommandDetails::RepoContact => {
-                        let contact = client.get_json("api/v1/ta/proxy/repo").await?;
-                        Ok(TrustAnchorClientApiResponse::RepositoryContact(contact))
+                        let contact =
+                            client.get_json("api/v1/ta/proxy/repo").await?;
+                        Ok(TrustAnchorClientApiResponse::RepositoryContact(
+                            contact,
+                        ))
                     }
                     ProxyCommandDetails::RepoConfigure(repo_response) => {
-                        client.post_json("api/v1/ta/proxy/repo", repo_response).await
+                        client
+                            .post_json("api/v1/ta/proxy/repo", repo_response)
+                            .await
                     }
-                    ProxyCommandDetails::SignerAdd(info) => client.post_json("api/v1/ta/proxy/signer/add", info).await,
+                    ProxyCommandDetails::SignerAdd(info) => {
+                        client
+                            .post_json("api/v1/ta/proxy/signer/add", info)
+                            .await
+                    }
                     ProxyCommandDetails::SignerMakeRequest => {
                         let request = client
-                            .post_empty_with_response("api/v1/ta/proxy/signer/request")
+                            .post_empty_with_response(
+                                "api/v1/ta/proxy/signer/request",
+                            )
                             .await?;
-                        Ok(TrustAnchorClientApiResponse::SignerRequest(request))
+                        Ok(TrustAnchorClientApiResponse::SignerRequest(
+                            request,
+                        ))
                     }
                     ProxyCommandDetails::SignerShowRequest => {
-                        let request = client.get_json("api/v1/ta/proxy/signer/request").await?;
-                        Ok(TrustAnchorClientApiResponse::SignerRequest(request))
+                        let request = client
+                            .get_json("api/v1/ta/proxy/signer/request")
+                            .await?;
+                        Ok(TrustAnchorClientApiResponse::SignerRequest(
+                            request,
+                        ))
                     }
                     ProxyCommandDetails::SignerProcessResponse(response) => {
-                        client.post_json("api/v1/ta/proxy/signer/response", response).await
+                        client
+                            .post_json(
+                                "api/v1/ta/proxy/signer/response",
+                                response,
+                            )
+                            .await
                     }
                     ProxyCommandDetails::ChildAdd(child) => {
                         let response = client
-                            .post_json_with_response("api/v1/ta/proxy/children", child)
+                            .post_json_with_response(
+                                "api/v1/ta/proxy/children",
+                                child,
+                            )
                             .await?;
-                        Ok(TrustAnchorClientApiResponse::ParentResponse(response))
+                        Ok(TrustAnchorClientApiResponse::ParentResponse(
+                            response,
+                        ))
                     }
                     ProxyCommandDetails::ChildResponse(child) => {
                         let uri_path = format!("api/v1/ta/proxy/children/{}/parent_response.json", child);
                         let response = client.get_json(&uri_path).await?;
-                        Ok(TrustAnchorClientApiResponse::ParentResponse(response))
+                        Ok(TrustAnchorClientApiResponse::ParentResponse(
+                            response,
+                        ))
                     }
                 }
             }
             TrustAnchorClientCommand::Signer(signer_command) => {
-                let signer_manager = TrustAnchorSignerManager::create(signer_command.config)?;
+                let signer_manager =
+                    TrustAnchorSignerManager::create(signer_command.config)?;
 
                 match signer_command.details {
-                    SignerCommandDetails::Init(info) => signer_manager.init(info),
+                    SignerCommandDetails::Init(info) => {
+                        signer_manager.init(info)
+                    }
                     SignerCommandDetails::ShowInfo => signer_manager.show(),
                     SignerCommandDetails::ProcessRequest {
                         signed_request,
                         ta_mft_number_override,
-                    } => signer_manager.process(signed_request, ta_mft_number_override),
-                    SignerCommandDetails::ShowLastResponse => signer_manager.show_last_response(),
-                    SignerCommandDetails::ShowExchanges => signer_manager.show_exchanges(),
+                    } => signer_manager
+                        .process(signed_request, ta_mft_number_override),
+                    SignerCommandDetails::ShowLastResponse => {
+                        signer_manager.show_last_response()
+                    }
+                    SignerCommandDetails::ShowExchanges => {
+                        signer_manager.show_exchanges()
+                    }
                 }
             }
         }
@@ -940,26 +1151,46 @@ pub enum TrustAnchorClientApiResponse {
 }
 
 impl TrustAnchorClientApiResponse {
-    pub fn report(&self, fmt: report::ReportFormat) -> Result<Option<String>, report::ReportError> {
+    pub fn report(
+        &self,
+        fmt: report::ReportFormat,
+    ) -> Result<Option<String>, report::ReportError> {
         if fmt == report::ReportFormat::None {
             Ok(None)
         } else {
             match self {
-                TrustAnchorClientApiResponse::IdCert(id_cert) => id_cert.report(fmt).map(Some),
-                TrustAnchorClientApiResponse::PublisherRequest(pr) => pr.report(fmt).map(Some),
-                TrustAnchorClientApiResponse::RepositoryContact(contact) => contact.report(fmt).map(Some),
-                TrustAnchorClientApiResponse::TrustAnchorProxySignerInfo(info) => info.report(fmt).map(Some),
-                TrustAnchorClientApiResponse::ParentResponse(response) => response.report(fmt).map(Some),
-                TrustAnchorClientApiResponse::SignerRequest(request) => request.report(fmt).map(Some),
-                TrustAnchorClientApiResponse::SignerResponse(response) => response.report(fmt).map(Some),
-                TrustAnchorClientApiResponse::ProxySignerExchanges(exchanges) => exchanges.report(fmt).map(Some),
+                TrustAnchorClientApiResponse::IdCert(id_cert) => {
+                    id_cert.report(fmt).map(Some)
+                }
+                TrustAnchorClientApiResponse::PublisherRequest(pr) => {
+                    pr.report(fmt).map(Some)
+                }
+                TrustAnchorClientApiResponse::RepositoryContact(contact) => {
+                    contact.report(fmt).map(Some)
+                }
+                TrustAnchorClientApiResponse::TrustAnchorProxySignerInfo(
+                    info,
+                ) => info.report(fmt).map(Some),
+                TrustAnchorClientApiResponse::ParentResponse(response) => {
+                    response.report(fmt).map(Some)
+                }
+                TrustAnchorClientApiResponse::SignerRequest(request) => {
+                    request.report(fmt).map(Some)
+                }
+                TrustAnchorClientApiResponse::SignerResponse(response) => {
+                    response.report(fmt).map(Some)
+                }
+                TrustAnchorClientApiResponse::ProxySignerExchanges(
+                    exchanges,
+                ) => exchanges.report(fmt).map(Some),
                 TrustAnchorClientApiResponse::Empty => Ok(None),
             }
         }
     }
 }
 
-//------------------------ ProxyClient ------------------------------------------
+//------------------------ ProxyClient
+//------------------------ ------------------------------------------
 
 pub struct ProxyClient {
     server: ServiceUri,
@@ -982,7 +1213,10 @@ impl ProxyClient {
         client
     }
 
-    async fn post_empty(&self, path: &str) -> Result<TrustAnchorClientApiResponse, TaClientError> {
+    async fn post_empty(
+        &self,
+        path: &str,
+    ) -> Result<TrustAnchorClientApiResponse, TaClientError> {
         let uri = self.resolve_uri(path);
         httpclient::post_empty(&uri, Some(&self.token))
             .await
@@ -990,7 +1224,10 @@ impl ProxyClient {
             .map_err(TaClientError::HttpClientError)
     }
 
-    async fn post_empty_with_response<T: DeserializeOwned>(&self, path: &str) -> Result<T, TaClientError> {
+    async fn post_empty_with_response<T: DeserializeOwned>(
+        &self,
+        path: &str,
+    ) -> Result<T, TaClientError> {
         let uri = self.resolve_uri(path);
         httpclient::post_empty_with_response(&uri, Some(&self.token))
             .await
@@ -1020,7 +1257,10 @@ impl ProxyClient {
             .map_err(TaClientError::HttpClientError)
     }
 
-    async fn get_json<T: DeserializeOwned>(&self, path: &str) -> Result<T, TaClientError> {
+    async fn get_json<T: DeserializeOwned>(
+        &self,
+        path: &str,
+    ) -> Result<T, TaClientError> {
         let uri = self.resolve_uri(path);
         httpclient::get_json(&uri, Some(&self.token))
             .await
@@ -1032,7 +1272,8 @@ impl ProxyClient {
     }
 }
 
-//------------------------ TrustAnchorSignerManager -----------------------------
+//------------------------ TrustAnchorSignerManager
+//------------------------ -----------------------------
 
 struct TrustAnchorSignerManager {
     store: AggregateStore<TrustAnchorSigner>,
@@ -1044,8 +1285,12 @@ struct TrustAnchorSignerManager {
 
 impl TrustAnchorSignerManager {
     fn create(config: Config) -> Result<Self, TaClientError> {
-        let store = AggregateStore::create(&config.storage_uri, namespace!("signer"), config.use_history_cache)
-            .map_err(KrillError::AggregateStoreError)?;
+        let store = AggregateStore::create(
+            &config.storage_uri,
+            namespace!("signer"),
+            config.use_history_cache,
+        )
+        .map_err(KrillError::AggregateStoreError)?;
         let ta_handle = TrustAnchorHandle::new("ta".into());
         let config = Arc::new(config);
         let signer = config.signer()?;
@@ -1060,9 +1305,14 @@ impl TrustAnchorSignerManager {
         })
     }
 
-    fn init(&self, info: SignerInitInfo) -> Result<TrustAnchorClientApiResponse, TaClientError> {
+    fn init(
+        &self,
+        info: SignerInitInfo,
+    ) -> Result<TrustAnchorClientApiResponse, TaClientError> {
         if self.store.has(&self.ta_handle)? {
-            Err(TaClientError::other("Trust Anchor Signer was already initialised."))
+            Err(TaClientError::other(
+                "Trust Anchor Signer was already initialised.",
+            ))
         } else {
             let cmd = TrustAnchorSignerInitCommand::new(
                 &self.ta_handle,
@@ -1088,7 +1338,9 @@ impl TrustAnchorSignerManager {
     fn show(&self) -> Result<TrustAnchorClientApiResponse, TaClientError> {
         let ta_signer = self.get_signer()?;
         let info = ta_signer.get_signer_info();
-        Ok(TrustAnchorClientApiResponse::TrustAnchorProxySignerInfo(info))
+        Ok(TrustAnchorClientApiResponse::TrustAnchorProxySignerInfo(
+            info,
+        ))
     }
 
     fn process(
@@ -1109,14 +1361,22 @@ impl TrustAnchorSignerManager {
         self.show_last_response()
     }
 
-    fn show_last_response(&self) -> Result<TrustAnchorClientApiResponse, TaClientError> {
+    fn show_last_response(
+        &self,
+    ) -> Result<TrustAnchorClientApiResponse, TaClientError> {
         self.get_signer()?
             .get_latest_exchange()
-            .map(|exchange| TrustAnchorClientApiResponse::SignerResponse(exchange.response.clone()))
+            .map(|exchange| {
+                TrustAnchorClientApiResponse::SignerResponse(
+                    exchange.response.clone(),
+                )
+            })
             .ok_or_else(|| TaClientError::other("No response found."))
     }
 
-    fn show_exchanges(&self) -> Result<TrustAnchorClientApiResponse, TaClientError> {
+    fn show_exchanges(
+        &self,
+    ) -> Result<TrustAnchorClientApiResponse, TaClientError> {
         let signer = self.get_signer()?;
         // In this context it's okay to clone the exchanges.
         // If we are afraid that this would become too expensive, then we will
@@ -1124,10 +1384,13 @@ impl TrustAnchorSignerManager {
         // use. We can't have references and lifetimes because the signer will
         // be gone..
         //
-        // But, again, in this context this should never be huge with exchanges
-        // happening every couple of months. So, it should all be fine.
+        // But, again, in this context this should never be huge with
+        // exchanges happening every couple of months. So, it should
+        // all be fine.
         let exchanges = signer.get_exchanges().clone();
-        Ok(TrustAnchorClientApiResponse::ProxySignerExchanges(exchanges))
+        Ok(TrustAnchorClientApiResponse::ProxySignerExchanges(
+            exchanges,
+        ))
     }
 
     fn get_signer(&self) -> Result<Arc<TrustAnchorSigner>, TaClientError> {
@@ -1136,7 +1399,9 @@ impl TrustAnchorSignerManager {
                 .get_latest(&self.ta_handle)
                 .map_err(TaClientError::KrillError)
         } else {
-            Err(TaClientError::other("Trust Anchor Signer is not initialised."))
+            Err(TaClientError::other(
+                "Trust Anchor Signer is not initialised.",
+            ))
         }
     }
 }

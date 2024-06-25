@@ -3,21 +3,31 @@ use std::fmt;
 use rpki::{
     ca::{
         idexchange::{ChildHandle, ParentHandle},
-        provisioning::{IssuanceRequest, ParentResourceClassName, ResourceClassName, RevocationRequest},
+        provisioning::{
+            IssuanceRequest, ParentResourceClassName, ResourceClassName,
+            RevocationRequest,
+        },
     },
     crypto::KeyIdentifier,
     repository::resources::ResourceSet,
 };
 
 use crate::{
-    commons::api::{BgpSecAsnKey, CustomerAsn, IdCertInfo, ParentCaContact, ReceivedCert, RepositoryContact, RtaName},
+    commons::api::{
+        BgpSecAsnKey, CustomerAsn, IdCertInfo, ParentCaContact, ReceivedCert,
+        RepositoryContact, RtaName,
+    },
     daemon::ca::{
-        BgpSecCertificateUpdates, CertAuthEvent, CertifiedKey, ChildCertificateUpdates, PreparedRta, Rfc8183Id,
+        BgpSecCertificateUpdates, CertAuthEvent, CertifiedKey,
+        ChildCertificateUpdates, PreparedRta, Rfc8183Id,
         RoaPayloadJsonMapKey, RoaUpdates, SignedRta, StoredBgpSecCsr,
     },
 };
 
-use super::{Pre0_14_0AspaDefinition, Pre0_14_0AspaObjectsUpdates, Pre0_14_0AspaProvidersUpdate};
+use super::{
+    Pre0_14_0AspaDefinition, Pre0_14_0AspaObjectsUpdates,
+    Pre0_14_0AspaProvidersUpdate,
+};
 
 //------------ Pre0_14_0CertAuthEvent ---------------------------------------
 
@@ -119,45 +129,55 @@ pub enum Pre0_14_0CertAuthEvent {
 
     // Key life cycle
     KeyRollPendingKeyAdded {
-        // A pending key is added to an existing resource class in order to initiate
-        // a key roll. Note that there will be a separate 'CertificateRequested' event for
-        // this key.
+        // A pending key is added to an existing resource class in order to
+        // initiate a key roll. Note that there will be a separate
+        // 'CertificateRequested' event for this key.
         resource_class_name: ResourceClassName,
         pending_key_id: KeyIdentifier,
     },
     KeyPendingToNew {
-        // A pending key is marked as 'new' when it has received its (first) certificate.
-        // This means that the key is staged and a mft and crl will be published. According
-        // to RFC 6489 this key should be staged for 24 hours before it is promoted to
-        // become the active key. However, in practice this time can be shortened.
+        // A pending key is marked as 'new' when it has received its (first)
+        // certificate. This means that the key is staged and a mft
+        // and crl will be published. According to RFC 6489 this key
+        // should be staged for 24 hours before it is promoted to
+        // become the active key. However, in practice this time can be
+        // shortened.
         resource_class_name: ResourceClassName,
-        new_key: CertifiedKey, // pending key which received a certificate becomes 'new', i.e. it is staged.
+        new_key: CertifiedKey, /* pending key which received a certificate
+                                * becomes 'new', i.e. it is staged. */
     },
     KeyPendingToActive {
-        // When a new resource class is created it will have a single pending key only which
-        // is promoted to become the active (current) key for the resource class immediately
-        // after receiving its first certificate. Technically this is not a roll, but a simple
+        // When a new resource class is created it will have a single pending
+        // key only which is promoted to become the active (current)
+        // key for the resource class immediately after receiving its
+        // first certificate. Technically this is not a roll, but a simple
         // first activation.
         resource_class_name: ResourceClassName,
-        current_key: CertifiedKey, // there was no current key, pending becomes active without staging when cert is received.
+        current_key: CertifiedKey, /* there was no current key, pending
+                                    * becomes active without staging when
+                                    * cert is received. */
     },
     KeyRollActivated {
-        // When a 'new' key is activated (becomes current), the previous current key will be
-        // marked as old and we will request its revocation. Note that any current ROAs and/or
-        // issued certificates will also be re-issued under the new 'current' key. These changes
-        // are tracked in separate `RoasUpdated` and `ChildCertificatesUpdated` events.
+        // When a 'new' key is activated (becomes current), the previous
+        // current key will be marked as old and we will request its
+        // revocation. Note that any current ROAs and/or
+        // issued certificates will also be re-issued under the new 'current'
+        // key. These changes are tracked in separate `RoasUpdated`
+        // and `ChildCertificatesUpdated` events.
         resource_class_name: ResourceClassName,
         revoke_req: RevocationRequest,
     },
     KeyRollFinished {
-        // The key roll is finished when the parent confirms that the old key is revoked.
-        // We can remove it and stop publishing its mft and crl.
+        // The key roll is finished when the parent confirms that the old key
+        // is revoked. We can remove it and stop publishing its mft
+        // and crl.
         resource_class_name: ResourceClassName,
     },
     UnexpectedKeyFound {
-        // This event is generated in case our parent reports keys to us that we do not
-        // believe we have. This should not happen in practice, but this is tracked so that
-        // we can recover from this situation. We can request revocation for all these keys
+        // This event is generated in case our parent reports keys to us that
+        // we do not believe we have. This should not happen in
+        // practice, but this is tracked so that we can recover from
+        // this situation. We can request revocation for all these keys
         // and create new keys in the RC as needed.
         resource_class_name: ResourceClassName,
         revoke_req: RevocationRequest,
@@ -165,10 +185,12 @@ pub enum Pre0_14_0CertAuthEvent {
 
     // Route Authorizations
     RouteAuthorizationAdded {
-        // Tracks a single authorization (VRP) which is added. Note that (1) a command to
-        // update ROAs can contain multiple changes in which case multiple events will
-        // result, and (2) we do not have a 'modify' event. Modifications of e.g. the
-        // max length are expressed as a 'removed' and 'added' event in a single transaction.
+        // Tracks a single authorization (VRP) which is added. Note that (1)
+        // a command to update ROAs can contain multiple changes in
+        // which case multiple events will result, and (2) we do not
+        // have a 'modify' event. Modifications of e.g. the
+        // max length are expressed as a 'removed' and 'added' event in a
+        // single transaction.
         auth: RoaPayloadJsonMapKey,
     },
     RouteAuthorizationComment {
@@ -176,7 +198,8 @@ pub enum Pre0_14_0CertAuthEvent {
         comment: Option<String>,
     },
     RouteAuthorizationRemoved {
-        // Tracks a single authorization (VRP) which is removed. See remark for RouteAuthorizationAdded.
+        // Tracks a single authorization (VRP) which is removed. See remark
+        // for RouteAuthorizationAdded.
         auth: RoaPayloadJsonMapKey,
     },
     RoasUpdated {
@@ -215,16 +238,18 @@ pub enum Pre0_14_0CertAuthEvent {
         key: BgpSecAsnKey,
     },
     BgpSecCertificatesUpdated {
-        // Tracks the actual BGPSec certificates (re-)issued in a resource class
+        // Tracks the actual BGPSec certificates (re-)issued in a resource
+        // class
         resource_class_name: ResourceClassName,
         updates: BgpSecCertificateUpdates,
     },
 
     // Publishing
     RepoUpdated {
-        // Adds the repository contact for this CA so that publication can commence,
-        // and certificates can be requested from parents. Note: the CA can only start
-        // requesting certificates when it knows which URIs it can use.
+        // Adds the repository contact for this CA so that publication can
+        // commence, and certificates can be requested from parents.
+        // Note: the CA can only start requesting certificates when
+        // it knows which URIs it can use.
         contact: RepositoryContact,
     },
 
@@ -238,8 +263,8 @@ pub enum Pre0_14_0CertAuthEvent {
         rta: SignedRta,
     },
     RtaPrepared {
-        // Adds a 'prepared' RTA. I.e. the context of keys which need to be included
-        // in a multi-signed RTA.
+        // Adds a 'prepared' RTA. I.e. the context of keys which need to be
+        // included in a multi-signed RTA.
         name: RtaName,
         prepared: PreparedRta,
     },

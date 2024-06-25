@@ -1,10 +1,13 @@
 //! Perform functional tests on a Krill instance, using the API
-//!
-use rpki::{ca::provisioning::ResourceClassName, repository::resources::ResourceSet};
+use rpki::{
+    ca::provisioning::ResourceClassName, repository::resources::ResourceSet,
+};
 use std::str::FromStr;
 
 use krill::{
-    commons::api::{ObjectName, ParentCaReq, RoaConfigurationUpdates, RoaPayload},
+    commons::api::{
+        ObjectName, ParentCaReq, RoaConfigurationUpdates, RoaPayload,
+    },
     test::*,
 };
 
@@ -14,13 +17,15 @@ async fn remote_parent_and_repo() {
 
     info("test running a CA under a remote parent and repo");
 
-    let cleanup_krill_storage = start_krill_testbed_with_rrdp_interval(5).await;
+    let cleanup_krill_storage =
+        start_krill_testbed_with_rrdp_interval(5).await;
     let cleanup_second_krill_storage = start_second_krill().await;
 
     let testbed = ca_handle("testbed");
     let ca1 = ca_handle("CA1");
     let ca1_res = ipv4_resources("10.0.0.0/16");
-    let ca1_route_definition = RoaPayload::from_str("10.0.0.0/16-16 => 65000").unwrap();
+    let ca1_route_definition =
+        RoaPayload::from_str("10.0.0.0/16-16 => 65000").unwrap();
     let rcn_0 = ResourceClassName::from(0);
 
     // Verify that the TA and testbed are ready
@@ -35,7 +40,13 @@ async fn remote_parent_and_repo() {
     {
         let req = request_krill2(&ca1).await;
         let parent = {
-            let response = add_child_rfc6492(testbed.convert(), ca1.convert(), req, ca1_res.clone()).await;
+            let response = add_child_rfc6492(
+                testbed.convert(),
+                ca1.convert(),
+                req,
+                ca1_res.clone(),
+            )
+            .await;
             ParentCaReq::new(testbed.convert(), response)
         };
         add_parent_to_ca_krill2(&ca1, parent).await;
@@ -65,10 +76,19 @@ async fn remote_parent_and_repo() {
 
     // Verify that CA1 publishes
     {
-        let mut expected_files = expected_mft_and_crl_krill2(&ca1, &rcn_0).await;
-        expected_files.push(ObjectName::from(&ca1_route_definition).to_string());
+        let mut expected_files =
+            expected_mft_and_crl_krill2(&ca1, &rcn_0).await;
+        expected_files
+            .push(ObjectName::from(&ca1_route_definition).to_string());
 
-        assert!(will_publish_embedded("CA1 should publish manifest, crl and roa", &ca1, &expected_files).await);
+        assert!(
+            will_publish_embedded(
+                "CA1 should publish manifest, crl and roa",
+                &ca1,
+                &expected_files
+            )
+            .await
+        );
     }
 
     cleanup_krill_storage();

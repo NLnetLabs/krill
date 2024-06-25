@@ -39,7 +39,10 @@ use crate::{
 };
 
 #[cfg(feature = "multi-user")]
-use crate::daemon::auth::providers::{config_file::config::ConfigAuthUsers, openid_connect::ConfigAuthOpenIDConnect};
+use crate::daemon::auth::providers::{
+    config_file::config::ConfigAuthUsers,
+    openid_connect::ConfigAuthOpenIDConnect,
+};
 
 #[cfg(feature = "hsm")]
 use crate::commons::crypto::{KmipSignerConfig, Pkcs11SignerConfig};
@@ -77,7 +80,10 @@ impl ConfigDefaults {
             Ok(level) => match LevelFilter::from_str(&level) {
                 Ok(level) => level,
                 Err(_) => {
-                    eprintln!("Unrecognized value for log level in env var {}", KRILL_ENV_LOG_LEVEL);
+                    eprintln!(
+                        "Unrecognized value for log level in env var {}",
+                        KRILL_ENV_LOG_LEVEL
+                    );
                     ::std::process::exit(1);
                 }
             },
@@ -153,7 +159,8 @@ impl ConfigDefaults {
     }
 
     fn post_limit_rfc8181() -> u64 {
-        32 * 1024 * 1024 // 32MB (roughly 8000 issued certificates, so a key roll for nicbr and 100% uptake should be okay)
+        32 * 1024 * 1024 // 32MB (roughly 8000 issued certificates, so a key
+                         // roll for nicbr and 100% uptake should be okay)
     }
 
     fn rfc8181_log_dir() -> Option<PathBuf> {
@@ -247,7 +254,9 @@ impl ConfigDefaults {
     }
 
     pub fn openssl_signer_only() -> Vec<SignerConfig> {
-        let signer_config = OpenSslSignerConfig { keys_storage_uri: None };
+        let signer_config = OpenSslSignerConfig {
+            keys_storage_uri: None,
+        };
         vec![SignerConfig::new(
             DEFAULT_SIGNER_NAME.to_string(),
             SignerType::OpenSsl(signer_config),
@@ -255,7 +264,10 @@ impl ConfigDefaults {
     }
 
     pub fn signers() -> Vec<SignerConfig> {
-        #[cfg(not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11")))]
+        #[cfg(not(any(
+            feature = "hsm-tests-kmip",
+            feature = "hsm-tests-pkcs11"
+        )))]
         {
             Self::openssl_signer_only()
         }
@@ -263,13 +275,16 @@ impl ConfigDefaults {
         #[cfg(all(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11"))]
         {
             // If we have both enables then just go with openssl.
-            // This is because we are using rust features here to drive testing
-            // which is not ideal.. should be changes when we remove the feature
-            // flags for this.
+            // This is because we are using rust features here to drive
+            // testing which is not ideal.. should be changes when
+            // we remove the feature flags for this.
             Self::openssl_signer_only()
         }
 
-        #[cfg(all(feature = "hsm-tests-kmip", not(feature = "hsm-tests-pkcs11")))]
+        #[cfg(all(
+            feature = "hsm-tests-kmip",
+            not(feature = "hsm-tests-pkcs11")
+        ))]
         {
             let signer_config = KmipSignerConfig {
                 host: "127.0.0.1".to_string(),
@@ -278,20 +293,40 @@ impl ConfigDefaults {
                 password: None,
                 insecure: true,
                 force: true,
-                client_cert_path: Some(PathBuf::from_str("test-resources/pykmip/server.crt").unwrap()),
-                client_cert_private_key_path: Some(PathBuf::from_str("test-resources/pykmip/server.key").unwrap()),
-                server_cert_path: Some(PathBuf::from_str("test-resources/pykmip/server.crt").unwrap()),
-                server_ca_cert_path: Some(PathBuf::from_str("test-resources/pykmip/ca.crt").unwrap()),
+                client_cert_path: Some(
+                    PathBuf::from_str("test-resources/pykmip/server.crt")
+                        .unwrap(),
+                ),
+                client_cert_private_key_path: Some(
+                    PathBuf::from_str("test-resources/pykmip/server.key")
+                        .unwrap(),
+                ),
+                server_cert_path: Some(
+                    PathBuf::from_str("test-resources/pykmip/server.crt")
+                        .unwrap(),
+                ),
+                server_ca_cert_path: Some(
+                    PathBuf::from_str("test-resources/pykmip/ca.crt")
+                        .unwrap(),
+                ),
                 retry_seconds: KmipSignerConfig::default_retry_seconds(),
-                backoff_multiplier: KmipSignerConfig::default_backoff_multiplier(),
-                max_retry_seconds: KmipSignerConfig::default_max_retry_seconds(),
-                connect_timeout_seconds: KmipSignerConfig::default_connect_timeout_seconds(),
-                read_timeout_seconds: KmipSignerConfig::default_read_timeout_seconds(),
-                write_timeout_seconds: KmipSignerConfig::default_write_timeout_seconds(),
-                max_lifetime_seconds: KmipSignerConfig::default_max_lifetime_seconds(),
-                max_idle_seconds: KmipSignerConfig::default_max_idle_seconds(),
+                backoff_multiplier:
+                    KmipSignerConfig::default_backoff_multiplier(),
+                max_retry_seconds:
+                    KmipSignerConfig::default_max_retry_seconds(),
+                connect_timeout_seconds:
+                    KmipSignerConfig::default_connect_timeout_seconds(),
+                read_timeout_seconds:
+                    KmipSignerConfig::default_read_timeout_seconds(),
+                write_timeout_seconds:
+                    KmipSignerConfig::default_write_timeout_seconds(),
+                max_lifetime_seconds:
+                    KmipSignerConfig::default_max_lifetime_seconds(),
+                max_idle_seconds: KmipSignerConfig::default_max_idle_seconds(
+                ),
                 max_connections: KmipSignerConfig::default_max_connections(),
-                max_response_bytes: KmipSignerConfig::default_max_response_bytes(),
+                max_response_bytes:
+                    KmipSignerConfig::default_max_response_bytes(),
             };
             return vec![SignerConfig::new(
                 DEFAULT_SIGNER_NAME.to_string(),
@@ -299,27 +334,33 @@ impl ConfigDefaults {
             )];
         }
 
-        #[cfg(all(feature = "hsm-tests-pkcs11", not(feature = "hsm-tests-kmip")))]
+        #[cfg(all(
+            feature = "hsm-tests-pkcs11",
+            not(feature = "hsm-tests-kmip")
+        ))]
         {
             use crate::commons::crypto::{
                 Pkcs11ConfigurablePrivateKeyAttributes,
                 Pkcs11ConfigurablePublicKeyAttributes,
-                Pkcs11ConfigurableSecrets,
-                SlotIdOrLabel,
+                Pkcs11ConfigurableSecrets, SlotIdOrLabel,
             };
 
             let signer_config = Pkcs11SignerConfig {
                 lib_path: "/usr/lib/softhsm/libsofthsm2.so".to_string(),
                 secrets: Pkcs11ConfigurableSecrets {
-                    user_pin: Some("1234".to_string().into())
+                    user_pin: Some("1234".to_string().into()),
                 },
                 slot: SlotIdOrLabel::Label("My token 1".to_string()),
                 login: true,
                 retry_seconds: Pkcs11SignerConfig::default_retry_seconds(),
-                backoff_multiplier: Pkcs11SignerConfig::default_backoff_multiplier(),
-                max_retry_seconds: Pkcs11SignerConfig::default_max_retry_seconds(),
-                public_key_attributes: Pkcs11ConfigurablePublicKeyAttributes::default(),
-                private_key_attributes: Pkcs11ConfigurablePrivateKeyAttributes::default(),
+                backoff_multiplier:
+                    Pkcs11SignerConfig::default_backoff_multiplier(),
+                max_retry_seconds:
+                    Pkcs11SignerConfig::default_max_retry_seconds(),
+                public_key_attributes:
+                    Pkcs11ConfigurablePublicKeyAttributes::default(),
+                private_key_attributes:
+                    Pkcs11ConfigurablePrivateKeyAttributes::default(),
             };
             vec![SignerConfig::new(
                 DEFAULT_SIGNER_NAME.to_string(),
@@ -348,7 +389,9 @@ pub enum SignerReference {
     Index(usize),
 }
 
-pub fn deserialize_signer_ref<'de, D>(deserializer: D) -> Result<SignerReference, D::Error>
+pub fn deserialize_signer_ref<'de, D>(
+    deserializer: D,
+) -> Result<SignerReference, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -409,33 +452,44 @@ impl<'a, T> From<OneOrMany<'a, T>> for Vec<T> {
         match one_or_many {
             OneOrMany::One(t) => vec![t],
             OneOrMany::Many(vec_of_t) => vec_of_t,
-            OneOrMany::_LifeTimeMarker(_) => unreachable!("variant is never created"),
+            OneOrMany::_LifeTimeMarker(_) => {
+                unreachable!("variant is never created")
+            }
         }
     }
 }
 
-fn deserialize_config_ips<'de, D>(deserializer: D) -> Result<Vec<IpAddr>, D::Error>
+fn deserialize_config_ips<'de, D>(
+    deserializer: D,
+) -> Result<Vec<IpAddr>, D::Error>
 where
     D: Deserializer<'de>,
 {
     OneOrMany::<IpAddr>::deserialize(deserializer).map(|oom| oom.into())
 }
 
-pub fn deserialize_storage_uri<'de, D>(deserializer: D) -> Result<Url, D::Error>
+pub fn deserialize_storage_uri<'de, D>(
+    deserializer: D,
+) -> Result<Url, D::Error>
 where
     D: Deserializer<'de>,
 {
     let url = String::deserialize(deserializer)?;
     match Url::parse(&url) {
         Ok(url) => Ok(url),
-        Err(_) => Url::parse(&format!("local://{url}/")).map_err(de::Error::custom),
+        Err(_) => {
+            Url::parse(&format!("local://{url}/")).map_err(de::Error::custom)
+        }
     }
 }
 
 /// Global configuration for the Krill Server.
 #[derive(Clone, Debug, Deserialize)]
 pub struct Config {
-    #[serde(default = "ConfigDefaults::ip", deserialize_with = "deserialize_config_ips")]
+    #[serde(
+        default = "ConfigDefaults::ip",
+        deserialize_with = "deserialize_config_ips"
+    )]
     ip: Vec<IpAddr>,
 
     #[serde(default = "ConfigDefaults::port")]
@@ -526,7 +580,10 @@ pub struct Config {
     #[serde(default = "ConfigDefaults::signers")]
     pub signers: Vec<SignerConfig>,
 
-    #[serde(default = "ConfigDefaults::ca_refresh_seconds", alias = "ca_refresh")]
+    #[serde(
+        default = "ConfigDefaults::ca_refresh_seconds",
+        alias = "ca_refresh"
+    )]
     ca_refresh_seconds: u32,
 
     #[serde(default = "ConfigDefaults::ca_refresh_jitter_seconds")]
@@ -597,9 +654,13 @@ pub struct IssuanceTimingConfig {
     timing_publish_next_jitter_hours: u32,
     #[serde(default = "ConfigDefaults::timing_publish_hours_before_next")]
     timing_publish_hours_before_next: u32,
-    #[serde(default = "ConfigDefaults::timing_child_certificate_valid_weeks")]
+    #[serde(
+        default = "ConfigDefaults::timing_child_certificate_valid_weeks"
+    )]
     timing_child_certificate_valid_weeks: u32,
-    #[serde(default = "ConfigDefaults::timing_child_certificate_reissue_weeks_before")]
+    #[serde(
+        default = "ConfigDefaults::timing_child_certificate_reissue_weeks_before"
+    )]
     timing_child_certificate_reissue_weeks_before: u32,
     #[serde(default = "ConfigDefaults::timing_roa_valid_weeks")]
     timing_roa_valid_weeks: u32,
@@ -620,8 +681,9 @@ impl IssuanceTimingConfig {
 
     /// Returns the next update time based on configuration:
     ///
-    /// now + timing_publish_next_hours + random(0..timing_publish_next_jitter_hours)
-    /// defaults: now + 24 hours + 0 to 4 hours
+    /// now + timing_publish_next_hours +
+    /// random(0..timing_publish_next_jitter_hours) defaults: now + 24
+    /// hours + 0 to 4 hours
     pub fn publish_next(&self) -> Time {
         let regular_mins = self.timing_publish_next_hours as i64 * 60;
         let random_mins = if self.timing_publish_next_jitter_hours == 0 {
@@ -644,19 +706,28 @@ impl IssuanceTimingConfig {
 
     /// Validity period for newly issued child certificates
     pub fn new_child_cert_validity(&self) -> Validity {
-        SignSupport::sign_validity_weeks(self.timing_child_certificate_valid_weeks.into())
+        SignSupport::sign_validity_weeks(
+            self.timing_child_certificate_valid_weeks.into(),
+        )
     }
 
     /// Not after time for newly issued child certificates
     pub fn new_child_cert_not_after(&self) -> Time {
-        Time::now() + Duration::weeks(self.timing_child_certificate_valid_weeks.into())
+        Time::now()
+            + Duration::weeks(
+                self.timing_child_certificate_valid_weeks.into(),
+            )
     }
 
     /// Threshold time for issuing new child certificates
     ///
-    /// i.e. certificates with a not after time *before* this moment should be re-issued.
+    /// i.e. certificates with a not after time *before* this moment should be
+    /// re-issued.
     pub fn new_child_cert_issuance_threshold(&self) -> Time {
-        Time::now() + Duration::weeks(self.timing_child_certificate_reissue_weeks_before.into())
+        Time::now()
+            + Duration::weeks(
+                self.timing_child_certificate_reissue_weeks_before.into(),
+            )
     }
 
     //-- ROAs
@@ -668,9 +739,11 @@ impl IssuanceTimingConfig {
 
     /// Threshold time for issuing new ROA objects
     ///
-    /// i.e. ROA objects with a not after time *before* this moment should be re-issued.
+    /// i.e. ROA objects with a not after time *before* this moment should be
+    /// re-issued.
     pub fn new_roa_issuance_threshold(&self) -> Time {
-        Time::now() + Duration::weeks(self.timing_roa_reissue_weeks_before.into())
+        Time::now()
+            + Duration::weeks(self.timing_roa_reissue_weeks_before.into())
     }
 
     //-- ASPA
@@ -682,23 +755,29 @@ impl IssuanceTimingConfig {
 
     /// Threshold time for issuing new ASPA objects
     ///
-    /// i.e. ASPA objects with a not after time *before* this moment should be re-issued.
+    /// i.e. ASPA objects with a not after time *before* this moment should be
+    /// re-issued.
     pub fn new_aspa_issuance_threshold(&self) -> Time {
-        Time::now() + Duration::weeks(self.timing_aspa_reissue_weeks_before.into())
+        Time::now()
+            + Duration::weeks(self.timing_aspa_reissue_weeks_before.into())
     }
 
     //-- BGPSec
 
     /// Validity period for new BGPSec router certificates
     pub fn new_bgpsec_validity(&self) -> Validity {
-        SignSupport::sign_validity_weeks(self.timing_bgpsec_valid_weeks.into())
+        SignSupport::sign_validity_weeks(
+            self.timing_bgpsec_valid_weeks.into(),
+        )
     }
 
     /// Threshold time for issuing new BGPSec router certificates
     ///
-    /// i.e. certs with a not after time *before* this moment should be re-issued.
+    /// i.e. certs with a not after time *before* this moment should be
+    /// re-issued.
     pub fn new_bgpsec_issuance_threshold(&self) -> Time {
-        Time::now() + Duration::weeks(self.timing_bgpsec_reissue_weeks_before.into())
+        Time::now()
+            + Duration::weeks(self.timing_bgpsec_reissue_weeks_before.into())
     }
 }
 
@@ -706,13 +785,19 @@ impl IssuanceTimingConfig {
 pub struct RrdpUpdatesConfig {
     #[serde(default = "RrdpUpdatesConfig::dflt_rrdp_delta_files_min_nr")]
     pub rrdp_delta_files_min_nr: usize,
-    #[serde(default = "RrdpUpdatesConfig::dflt_rrdp_delta_files_min_seconds")]
+    #[serde(
+        default = "RrdpUpdatesConfig::dflt_rrdp_delta_files_min_seconds"
+    )]
     pub rrdp_delta_files_min_seconds: u32,
     #[serde(default = "RrdpUpdatesConfig::dflt_rrdp_delta_files_max_nr")]
     pub rrdp_delta_files_max_nr: usize,
-    #[serde(default = "RrdpUpdatesConfig::dflt_rrdp_delta_files_max_seconds")]
+    #[serde(
+        default = "RrdpUpdatesConfig::dflt_rrdp_delta_files_max_seconds"
+    )]
     pub rrdp_delta_files_max_seconds: u32,
-    #[serde(default = "RrdpUpdatesConfig::dflt_rrdp_delta_min_interval_seconds")]
+    #[serde(
+        default = "RrdpUpdatesConfig::dflt_rrdp_delta_min_interval_seconds"
+    )]
     pub rrdp_delta_interval_min_seconds: u32,
     #[serde(default = "RrdpUpdatesConfig::dflt_rrdp_files_archive")]
     pub rrdp_files_archive: bool,
@@ -783,7 +868,12 @@ pub struct TestBed {
 }
 
 impl TestBed {
-    pub fn new(ta_aia: uri::Rsync, ta_uri: uri::Https, rrdp_base_uri: uri::Https, rsync_jail: uri::Rsync) -> Self {
+    pub fn new(
+        ta_aia: uri::Rsync,
+        ta_uri: uri::Https,
+        rrdp_base_uri: uri::Https,
+        rsync_jail: uri::Rsync,
+    ) -> Self {
         TestBed {
             ta_aia,
             ta_uri,
@@ -801,7 +891,10 @@ impl TestBed {
     }
 
     pub fn publication_server_uris(&self) -> PublicationServerUris {
-        PublicationServerUris::new(self.rrdp_base_uri.clone(), self.rsync_jail.clone())
+        PublicationServerUris::new(
+            self.rrdp_base_uri.clone(),
+            self.rsync_jail.clone(),
+        )
     }
 }
 
@@ -816,11 +909,16 @@ impl Config {
     /// General purpose KV store, can be used to track server settings
     /// etc not specific to any Aggregate or WalSupport type
     pub fn general_key_value_store(&self) -> KrillResult<KeyValueStore> {
-        KeyValueStore::create(&self.storage_uri, PROPERTIES_NS).map_err(Error::KeyValueError)
+        KeyValueStore::create(&self.storage_uri, PROPERTIES_NS)
+            .map_err(Error::KeyValueError)
     }
 
-    pub fn key_value_store(&self, name_space: &Namespace) -> KrillResult<KeyValueStore> {
-        KeyValueStore::create(&self.storage_uri, name_space).map_err(Error::KeyValueError)
+    pub fn key_value_store(
+        &self,
+        name_space: &Namespace,
+    ) -> KrillResult<KeyValueStore> {
+        KeyValueStore::create(&self.storage_uri, name_space)
+            .map_err(Error::KeyValueError)
     }
 
     /// Returns the data directory if disk was used for storage.
@@ -841,11 +939,13 @@ impl Config {
     }
 
     pub fn tls_keys_dir(&self) -> &PathBuf {
-        self.tls_keys_dir.as_ref().unwrap() // should not panic, as it is always set
+        self.tls_keys_dir.as_ref().unwrap() // should not panic, as it is
+                                            // always set
     }
 
     pub fn repo_dir(&self) -> &PathBuf {
-        self.repo_dir.as_ref().unwrap() // should not panic, as it is always set
+        self.repo_dir.as_ref().unwrap() // should not panic, as it is always
+                                        // set
     }
 
     fn ips(&self) -> &Vec<IpAddr> {
@@ -853,7 +953,10 @@ impl Config {
     }
 
     pub fn socket_addresses(&self) -> Vec<SocketAddr> {
-        self.ips().iter().map(|ip| SocketAddr::new(*ip, self.port)).collect()
+        self.ips()
+            .iter()
+            .map(|ip| SocketAddr::new(*ip, self.port))
+            .collect()
     }
 
     pub fn https_mode(&self) -> HttpsMode {
@@ -876,9 +979,18 @@ impl Config {
         match &self.service_uri {
             None => {
                 if self.ip == ConfigDefaults::ip() {
-                    uri::Https::from_string(format!("https://localhost:{}/", self.port)).unwrap()
+                    uri::Https::from_string(format!(
+                        "https://localhost:{}/",
+                        self.port
+                    ))
+                    .unwrap()
                 } else {
-                    uri::Https::from_string(format!("https://{}:{}/", self.ips()[0], self.port)).unwrap()
+                    uri::Https::from_string(format!(
+                        "https://{}:{}/",
+                        self.ips()[0],
+                        self.port
+                    ))
+                    .unwrap()
                 }
             }
             Some(uri) => uri.clone(),
@@ -886,11 +998,17 @@ impl Config {
     }
 
     pub fn rfc8181_uri(&self, publisher: &PublisherHandle) -> uri::Https {
-        uri::Https::from_string(format!("{}rfc8181/{}/", self.service_uri(), publisher)).unwrap()
+        uri::Https::from_string(format!(
+            "{}rfc8181/{}/",
+            self.service_uri(),
+            publisher
+        ))
+        .unwrap()
     }
 
     pub fn pid_file(&self) -> &PathBuf {
-        self.pid_file.as_ref().unwrap() // should not panic, as it is always set
+        self.pid_file.as_ref().unwrap() // should not panic, as it is always
+                                        // set
     }
 
     /// Returns whether TA support is explicitly enabled in the config, or
@@ -907,7 +1025,9 @@ impl Config {
     pub fn suspend_child_after_inactive_seconds(&self) -> Option<i64> {
         match self.suspend_child_after_inactive_seconds {
             Some(seconds) => Some(seconds.into()),
-            None => self.suspend_child_after_inactive_hours.map(|hours| hours as i64 * 3600),
+            None => self
+                .suspend_child_after_inactive_hours
+                .map(|hours| hours as i64 * 3600),
         }
     }
 
@@ -922,16 +1042,26 @@ impl Config {
     /// Get the priority for the next CA refresh based on the configured
     /// ca_refresh_seconds (1 day), and jitter (12 hours)
     pub fn ca_refresh_next(&self) -> Priority {
-        Self::ca_refresh_next_from(self.ca_refresh_seconds, self.ca_refresh_jitter_seconds)
+        Self::ca_refresh_next_from(
+            self.ca_refresh_seconds,
+            self.ca_refresh_jitter_seconds,
+        )
     }
 
     pub fn ca_refresh_start_up(&self, use_jitter: bool) -> Priority {
-        let jitter_seconds = if use_jitter { self.ca_refresh_jitter_seconds } else { 0 };
+        let jitter_seconds = if use_jitter {
+            self.ca_refresh_jitter_seconds
+        } else {
+            0
+        };
 
         Self::ca_refresh_next_from(0, jitter_seconds)
     }
 
-    fn ca_refresh_next_from(regular_seconds: u32, jitter_seconds: u32) -> Priority {
+    fn ca_refresh_next_from(
+        regular_seconds: u32,
+        jitter_seconds: u32,
+    ) -> Priority {
         let random_seconds = if jitter_seconds == 0 {
             0
         } else {
@@ -995,9 +1125,11 @@ impl Config {
 
         let default_signer = SignerReference::default();
         let one_off_signer = SignerReference::default();
-        let signer_probe_retry_seconds = ConfigDefaults::signer_probe_retry_seconds();
+        let signer_probe_retry_seconds =
+            ConfigDefaults::signer_probe_retry_seconds();
 
-        // Multiple signers are only needed and can only be configured when the "hsm" feature is enabled.
+        // Multiple signers are only needed and can only be configured when
+        // the "hsm" feature is enabled.
         #[cfg(not(feature = "hsm"))]
         let second_signer = false;
 
@@ -1010,12 +1142,14 @@ impl Config {
         };
 
         let ca_refresh_seconds = if enable_ca_refresh { 1 } else { 86400 };
-        let ca_refresh_jitter_seconds = if enable_ca_refresh { 0 } else { 86400 }; // no jitter in testing
+        let ca_refresh_jitter_seconds =
+            if enable_ca_refresh { 0 } else { 86400 }; // no jitter in testing
         let ca_refresh_parents_batch_size = 10;
         let post_limit_api = ConfigDefaults::post_limit_api();
         let post_limit_rfc8181 = ConfigDefaults::post_limit_rfc8181();
         let post_limit_rfc6492 = ConfigDefaults::post_limit_rfc6492();
-        let post_protocol_msg_timeout_seconds = ConfigDefaults::post_protocol_msg_timeout_seconds();
+        let post_protocol_msg_timeout_seconds =
+            ConfigDefaults::post_protocol_msg_timeout_seconds();
 
         let bgp_risdumps_enabled = false;
         let bgp_risdumps_v4_uri = ConfigDefaults::bgp_risdumps_v4_uri();
@@ -1024,18 +1158,27 @@ impl Config {
         let roa_aggregate_threshold = 3;
         let roa_deaggregate_threshold = 2;
 
-        let timing_publish_next_hours = ConfigDefaults::timing_publish_next_hours();
-        let timing_publish_next_jitter_hours = ConfigDefaults::timing_publish_next_jitter_hours();
-        let timing_publish_hours_before_next = ConfigDefaults::timing_publish_hours_before_next();
-        let timing_child_certificate_valid_weeks = ConfigDefaults::timing_child_certificate_valid_weeks();
+        let timing_publish_next_hours =
+            ConfigDefaults::timing_publish_next_hours();
+        let timing_publish_next_jitter_hours =
+            ConfigDefaults::timing_publish_next_jitter_hours();
+        let timing_publish_hours_before_next =
+            ConfigDefaults::timing_publish_hours_before_next();
+        let timing_child_certificate_valid_weeks =
+            ConfigDefaults::timing_child_certificate_valid_weeks();
         let timing_child_certificate_reissue_weeks_before =
             ConfigDefaults::timing_child_certificate_reissue_weeks_before();
         let timing_roa_valid_weeks = ConfigDefaults::timing_roa_valid_weeks();
-        let timing_roa_reissue_weeks_before = ConfigDefaults::timing_roa_reissue_weeks_before();
-        let timing_aspa_valid_weeks = ConfigDefaults::timing_aspa_valid_weeks();
-        let timing_aspa_reissue_weeks_before = ConfigDefaults::timing_aspa_reissue_weeks_before();
-        let timing_bgpsec_valid_weeks = ConfigDefaults::timing_bgpsec_valid_weeks();
-        let timing_bgpsec_reissue_weeks_before = ConfigDefaults::timing_bgpsec_reissue_weeks_before();
+        let timing_roa_reissue_weeks_before =
+            ConfigDefaults::timing_roa_reissue_weeks_before();
+        let timing_aspa_valid_weeks =
+            ConfigDefaults::timing_aspa_valid_weeks();
+        let timing_aspa_reissue_weeks_before =
+            ConfigDefaults::timing_aspa_reissue_weeks_before();
+        let timing_bgpsec_valid_weeks =
+            ConfigDefaults::timing_bgpsec_valid_weeks();
+        let timing_bgpsec_reissue_weeks_before =
+            ConfigDefaults::timing_bgpsec_reissue_weeks_before();
 
         let issuance_timing = IssuanceTimingConfig {
             timing_publish_next_hours,
@@ -1078,7 +1221,8 @@ impl Config {
             None
         };
 
-        let suspend_child_after_inactive_seconds = if enable_suspend { Some(3) } else { None };
+        let suspend_child_after_inactive_seconds =
+            if enable_suspend { Some(3) } else { None };
 
         Config {
             ip,
@@ -1088,8 +1232,9 @@ impl Config {
             use_history_cache: false,
             tls_keys_dir: data_dir.map(|d| d.join(HTTPS_SUB_DIR)),
             repo_dir: data_dir.map(|d| d.join(REPOSITORY_DIR)),
-            ta_support_enabled: false, // but, enabled by testbed where applicable
-            ta_signer_enabled: false,  // same as above
+            ta_support_enabled: false, /* but, enabled by testbed where
+                                        * applicable */
+            ta_signer_enabled: false, // same as above
             pid_file: data_dir.map(|d| d.join("krill.pid")),
             service_uri: None,
             log_level,
@@ -1157,13 +1302,23 @@ impl Config {
 
     #[cfg(test)]
     pub fn pubd_test(storage_uri: &Url, data_dir: Option<&Path>) -> Self {
-        let mut config = Self::test_config(storage_uri, data_dir, false, false, false, false);
+        let mut config = Self::test_config(
+            storage_uri,
+            data_dir,
+            false,
+            false,
+            false,
+            false,
+        );
         config.port = 3001;
         config
     }
 
     /// Creates the config (at startup).
-    pub fn create(config_file: &str, upgrade_only: bool) -> Result<Self, ConfigError> {
+    pub fn create(
+        config_file: &str,
+        upgrade_only: bool,
+    ) -> Result<Self, ConfigError> {
         let mut config = Self::read_config(config_file)?;
 
         if upgrade_only {
@@ -1173,15 +1328,24 @@ impl Config {
         config.init_logging()?;
 
         if upgrade_only {
-            info!("Prepare upgrade using configuration file: {}", config_file);
+            info!(
+                "Prepare upgrade using configuration file: {}",
+                config_file
+            );
             info!("Processing data from: {}", config.storage_uri);
         } else {
-            info!("{} uses configuration file: {}", KRILL_SERVER_APP, config_file);
+            info!(
+                "{} uses configuration file: {}",
+                KRILL_SERVER_APP, config_file
+            );
         }
 
-        config
-            .process()
-            .map_err(|e| ConfigError::Other(format!("Error parsing config file: {}, error: {}", config_file, e)))?;
+        config.process().map_err(|e| {
+            ConfigError::Other(format!(
+                "Error parsing config file: {}, error: {}",
+                config_file, e
+            ))
+        })?;
 
         Ok(config)
     }
@@ -1252,34 +1416,47 @@ impl Config {
             self.default_signer = SignerReference::new(&self.signers[0].name);
         }
 
-        let default_signer_idx = self.find_signer_reference(&self.default_signer).unwrap();
+        let default_signer_idx =
+            self.find_signer_reference(&self.default_signer).unwrap();
         self.default_signer = SignerReference::Index(default_signer_idx);
 
         let openssl_signer_idx = self.find_openssl_signer();
-        let one_off_signer_idx = self.find_signer_reference(&self.one_off_signer);
+        let one_off_signer_idx =
+            self.find_signer_reference(&self.one_off_signer);
 
         // Use the specified one-off signer, if set, else:
         //   - Use an existing OpenSSL signer config,
         //   - Or create a new OpenSSL signer config.
-        let one_off_signer_idx = match (one_off_signer_idx, openssl_signer_idx) {
-            (Some(one_off_signer_idx), _) => one_off_signer_idx,
-            (None, Some(openssl_signer_idx)) => openssl_signer_idx,
-            (None, None) => self.add_openssl_signer(OPENSSL_ONE_OFF_SIGNER_NAME),
-        };
+        let one_off_signer_idx =
+            match (one_off_signer_idx, openssl_signer_idx) {
+                (Some(one_off_signer_idx), _) => one_off_signer_idx,
+                (None, Some(openssl_signer_idx)) => openssl_signer_idx,
+                (None, None) => {
+                    self.add_openssl_signer(OPENSSL_ONE_OFF_SIGNER_NAME)
+                }
+            };
 
         self.one_off_signer = SignerReference::Index(one_off_signer_idx);
     }
 
     fn add_openssl_signer(&mut self, name: &str) -> usize {
-        let signer_config = SignerConfig::new(name.to_string(), SignerType::OpenSsl(OpenSslSignerConfig::default()));
+        let signer_config = SignerConfig::new(
+            name.to_string(),
+            SignerType::OpenSsl(OpenSslSignerConfig::default()),
+        );
         self.signers.push(signer_config);
         self.signers.len() - 1
     }
 
-    fn find_signer_reference(&self, signer_ref: &SignerReference) -> Option<usize> {
+    fn find_signer_reference(
+        &self,
+        signer_ref: &SignerReference,
+    ) -> Option<usize> {
         match signer_ref {
             SignerReference::Name(None) => None,
-            SignerReference::Name(Some(name)) => self.signers.iter().position(|s| &s.name == name),
+            SignerReference::Name(Some(name)) => {
+                self.signers.iter().position(|s| &s.name == name)
+            }
             SignerReference::Index(idx) => Some(*idx),
         }
     }
@@ -1301,7 +1478,9 @@ impl Config {
 
         if let Some(service_uri) = &self.service_uri {
             if !service_uri.as_str().ends_with('/') {
-                return Err(ConfigError::other("service URI must end with '/'"));
+                return Err(ConfigError::other(
+                    "service URI must end with '/'",
+                ));
             } else if service_uri.as_str().matches('/').count() != 3 {
                 return Err(ConfigError::other(
                     "Service URI MUST specify a host name only, e.g. https://rpki.example.com:3000/",
@@ -1310,10 +1489,13 @@ impl Config {
         }
 
         if self.issuance_timing.timing_publish_next_hours < 2 {
-            return Err(ConfigError::other("timing_publish_next_hours must be at least 2"));
+            return Err(ConfigError::other(
+                "timing_publish_next_hours must be at least 2",
+            ));
         }
 
-        if self.issuance_timing.timing_publish_next_jitter_hours > (self.issuance_timing.timing_publish_next_hours / 2)
+        if self.issuance_timing.timing_publish_next_jitter_hours
+            > (self.issuance_timing.timing_publish_next_hours / 2)
         {
             return Err(ConfigError::other(
                 "timing_publish_next_jitter_hours must be at most timing_publish_next_hours divided by 2",
@@ -1326,7 +1508,9 @@ impl Config {
             ));
         }
 
-        if self.issuance_timing.timing_publish_hours_before_next >= self.issuance_timing.timing_publish_next_hours {
+        if self.issuance_timing.timing_publish_hours_before_next
+            >= self.issuance_timing.timing_publish_next_hours
+        {
             return Err(ConfigError::other(
                 "timing_publish_hours_before_next must be smaller than timing_publish_hours",
             ));
@@ -1338,27 +1522,39 @@ impl Config {
             ));
         }
 
-        if self.issuance_timing.timing_child_certificate_reissue_weeks_before < 1 {
+        if self
+            .issuance_timing
+            .timing_child_certificate_reissue_weeks_before
+            < 1
+        {
             return Err(ConfigError::other(
                 "timing_child_certificate_reissue_weeks_before must be at least 1",
             ));
         }
 
-        if self.issuance_timing.timing_child_certificate_reissue_weeks_before
+        if self
+            .issuance_timing
+            .timing_child_certificate_reissue_weeks_before
             >= self.issuance_timing.timing_child_certificate_valid_weeks
         {
             return Err(ConfigError::other("timing_child_certificate_reissue_weeks_before must be smaller than timing_child_certificate_valid_weeks"));
         }
 
         if self.issuance_timing.timing_roa_valid_weeks < 2 {
-            return Err(ConfigError::other("timing_roa_valid_weeks must be at least 2"));
+            return Err(ConfigError::other(
+                "timing_roa_valid_weeks must be at least 2",
+            ));
         }
 
         if self.issuance_timing.timing_roa_reissue_weeks_before < 1 {
-            return Err(ConfigError::other("timing_roa_reissue_weeks_before must be at least 1"));
+            return Err(ConfigError::other(
+                "timing_roa_reissue_weeks_before must be at least 1",
+            ));
         }
 
-        if self.issuance_timing.timing_roa_reissue_weeks_before >= self.issuance_timing.timing_roa_valid_weeks {
+        if self.issuance_timing.timing_roa_reissue_weeks_before
+            >= self.issuance_timing.timing_roa_valid_weeks
+        {
             return Err(ConfigError::other(
                 "timing_roa_reissue_weeks_before must be smaller than timing_roa_valid_week",
             ));
@@ -1375,21 +1571,30 @@ impl Config {
 
         if let Some(benchmark) = &self.benchmark {
             if self.testbed.is_none() {
-                return Err(ConfigError::other("[benchmark] section requires [testbed] config"));
+                return Err(ConfigError::other(
+                    "[benchmark] section requires [testbed] config",
+                ));
             }
             if benchmark.cas > 65535 {
-                return Err(ConfigError::other("[benchmark] allows only up to 65536 CAs"));
+                return Err(ConfigError::other(
+                    "[benchmark] allows only up to 65536 CAs",
+                ));
             }
             if benchmark.ca_roas > 100 {
-                return Err(ConfigError::other("[benchmark] allows only up to 100 ROAs per CA"));
+                return Err(ConfigError::other(
+                    "[benchmark] allows only up to 100 ROAs per CA",
+                ));
             }
         }
 
         if self.signers.is_empty() {
-            // Since Config.signers defaults via Serde to ConfigDefaults::signers() which creates a vector with a
-            // single signer, this can only happen if we were invoked on a config object created or modified by test
-            // code.
-            return Err(ConfigError::Other("No signers configured".to_string()));
+            // Since Config.signers defaults via Serde to
+            // ConfigDefaults::signers() which creates a vector with a
+            // single signer, this can only happen if we were invoked on a
+            // config object created or modified by test code.
+            return Err(ConfigError::Other(
+                "No signers configured".to_string(),
+            ));
         }
 
         #[cfg(not(feature = "hsm"))]
@@ -1399,10 +1604,14 @@ impl Config {
             }
 
             if self.default_signer.is_named() {
-                return Err(ConfigError::other(&mk_err_msg("default_signer")));
+                return Err(ConfigError::other(&mk_err_msg(
+                    "default_signer",
+                )));
             }
             if self.one_off_signer.is_named() {
-                return Err(ConfigError::other(&mk_err_msg("one_off_signer")));
+                return Err(ConfigError::other(&mk_err_msg(
+                    "one_off_signer",
+                )));
             }
             if self.signers != ConfigDefaults::signers() {
                 return Err(ConfigError::other(&mk_err_msg("[[signers]]")));
@@ -1411,7 +1620,10 @@ impl Config {
 
         for n in &self.signers {
             if self.signers.iter().filter(|m| m.name == n.name).count() > 1 {
-                return Err(ConfigError::other(&format!("Signer name '{}' is not unique", n.name)));
+                return Err(ConfigError::other(&format!(
+                    "Signer name '{}' is not unique",
+                    n.name
+                )));
             }
         }
 
@@ -1421,14 +1633,18 @@ impl Config {
             ));
         }
 
-        if self.default_signer.is_named() && self.find_signer_reference(&self.default_signer).is_none() {
+        if self.default_signer.is_named()
+            && self.find_signer_reference(&self.default_signer).is_none()
+        {
             return Err(ConfigError::other(&format!(
                 "'{}' cannot be used as the 'default_signer' as no signer with that name is defined",
                 self.default_signer.name()
             )));
         }
 
-        if self.one_off_signer.is_named() && self.find_signer_reference(&self.one_off_signer).is_none() {
+        if self.one_off_signer.is_named()
+            && self.find_signer_reference(&self.one_off_signer).is_none()
+        {
             return Err(ConfigError::other(&format!(
                 "'{}' cannot be used as the 'one_off_signer' as no signer with that name is defined",
                 self.one_off_signer.name()
@@ -1449,11 +1665,19 @@ impl Config {
                 e,
             )
         })?;
-        f.read_to_string(&mut v)
-            .map_err(|e| KrillIoError::new(format!("Could not read config file '{}'", file), e))?;
+        f.read_to_string(&mut v).map_err(|e| {
+            KrillIoError::new(
+                format!("Could not read config file '{}'", file),
+                e,
+            )
+        })?;
 
-        toml::from_str(&v)
-            .map_err(|e| ConfigError::Other(format!("Error parsing config file: {}, error: {}", file, e)))
+        toml::from_str(&v).map_err(|e| {
+            ConfigError::Other(format!(
+                "Error parsing config file: {}, error: {}",
+                file, e
+            ))
+        })
     }
 
     pub fn init_logging(&self) -> Result<(), ConfigError> {
@@ -1462,7 +1686,9 @@ impl Config {
             LogType::Stderr => self.stderr_logger(),
             LogType::Syslog => {
                 let facility = Facility::from_str(&self.syslog_facility)
-                    .map_err(|_| ConfigError::other("Invalid syslog_facility"))?;
+                    .map_err(|_| {
+                        ConfigError::other("Invalid syslog_facility")
+                    })?;
                 self.syslog_logger(facility)
             }
         }
@@ -1470,10 +1696,12 @@ impl Config {
 
     /// Creates a stderr logger.
     fn stderr_logger(&self) -> Result<(), ConfigError> {
-        self.fern_logger()
-            .chain(io::stderr())
-            .apply()
-            .map_err(|e| ConfigError::Other(format!("Failed to init stderr logging: {}", e)))
+        self.fern_logger().chain(io::stderr()).apply().map_err(|e| {
+            ConfigError::Other(format!(
+                "Failed to init stderr logging: {}",
+                e
+            ))
+        })
     }
 
     /// Creates a file logger using the file provided by `path`.
@@ -1485,20 +1713,26 @@ impl Config {
         let file = match fern::log_file(path) {
             Ok(file) => file,
             Err(err) => {
-                let error_string = format!("Failed to open log file '{}': {}", path.display(), err);
+                let error_string = format!(
+                    "Failed to open log file '{}': {}",
+                    path.display(),
+                    err
+                );
                 error!("{}", error_string.as_str());
                 return Err(ConfigError::Other(error_string));
             }
         };
-        self.fern_logger()
-            .chain(file)
-            .apply()
-            .map_err(|e| ConfigError::Other(format!("Failed to init file logging: {}", e)))
+        self.fern_logger().chain(file).apply().map_err(|e| {
+            ConfigError::Other(format!("Failed to init file logging: {}", e))
+        })
     }
 
     /// Creates a syslog logger and configures correctly.
     #[cfg(unix)]
-    fn syslog_logger(&self, facility: syslog::Facility) -> Result<(), ConfigError> {
+    fn syslog_logger(
+        &self,
+        facility: syslog::Facility,
+    ) -> Result<(), ConfigError> {
         let process = env::current_exe()
             .ok()
             .and_then(|path| {
@@ -1515,13 +1749,18 @@ impl Config {
         };
         let logger = syslog::unix(formatter.clone())
             .or_else(|_| syslog::tcp(formatter.clone(), ("127.0.0.1", 601)))
-            .or_else(|_| syslog::udp(formatter, ("127.0.0.1", 0), ("127.0.0.1", 514)));
+            .or_else(|_| {
+                syslog::udp(formatter, ("127.0.0.1", 0), ("127.0.0.1", 514))
+            });
         match logger {
-            Ok(logger) => self
-                .fern_logger()
-                .chain(logger)
-                .apply()
-                .map_err(|e| ConfigError::Other(format!("Failed to init syslog: {}", e))),
+            Ok(logger) => {
+                self.fern_logger().chain(logger).apply().map_err(|e| {
+                    ConfigError::Other(format!(
+                        "Failed to init syslog: {}",
+                        e
+                    ))
+                })
+            }
             Err(err) => {
                 let msg = format!("Cannot connect to syslog: {}", err);
                 Err(ConfigError::Other(msg))
@@ -1543,7 +1782,8 @@ impl Config {
             self.log_level.min(LevelFilter::Info)
         };
 
-        let show_target = self.log_level == LevelFilter::Trace || self.log_level == LevelFilter::Debug;
+        let show_target = self.log_level == LevelFilter::Trace
+            || self.log_level == LevelFilter::Debug;
         fern::Dispatch::new()
             .format(move |out, message, record| {
                 if show_target {
@@ -1721,7 +1961,10 @@ impl<'de> Deserialize<'de> for AuthType {
             "openid-connect" => Ok(AuthType::OpenIDConnect),
             _ => {
                 #[cfg(not(feature = "multi-user"))]
-                let msg = format!("expected \"admin-token\", found: \"{}\"", string);
+                let msg = format!(
+                    "expected \"admin-token\", found: \"{}\"",
+                    string
+                );
                 #[cfg(feature = "multi-user")]
                 let msg = format!(
                     "expected \"config-file\", \"admin-token\", or \"openid-connect\", found: \"{}\"",
@@ -1764,8 +2007,8 @@ impl<'de> Deserialize<'de> for AuthType {
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct SignerConfig {
-    /// A friendly name for the signer. Used to identify the signer with the `default_signer` and `one_off_signer`
-    /// settings.
+    /// A friendly name for the signer. Used to identify the signer with the
+    /// `default_signer` and `one_off_signer` settings.
     pub name: String,
 
     /// Signer specific configuration settings.
@@ -1817,11 +2060,17 @@ mod tests {
 
     use super::*;
 
-    fn assert_err_msg(res: Result<Config, ConfigError>, expected_err_msg: &str) {
+    fn assert_err_msg(
+        res: Result<Config, ConfigError>,
+        expected_err_msg: &str,
+    ) {
         if let Err(ConfigError::Other(msg)) = res {
             assert_eq!(msg, expected_err_msg);
         } else {
-            panic!("Expected error '{}' but got: {:?}", expected_err_msg, res);
+            panic!(
+                "Expected error '{}' but got: {:?}",
+                expected_err_msg, res
+            );
         }
     }
 
@@ -1832,7 +2081,8 @@ mod tests {
         env::set_var(KRILL_ENV_ADMIN_TOKEN, "secret");
 
         let c = Config::read_config("./defaults/krill.conf").unwrap();
-        let expected_socket_addresses: Vec<SocketAddr> = vec![([127, 0, 0, 1], 3000).into()];
+        let expected_socket_addresses: Vec<SocketAddr> =
+            vec![([127, 0, 0, 1], 3000).into()];
         assert_eq!(c.socket_addresses(), expected_socket_addresses);
         assert!(c.testbed().is_none());
     }
@@ -1846,12 +2096,24 @@ mod tests {
         let c = Config::read_config("./defaults/krill-testbed.conf").unwrap();
 
         let testbed = c.testbed().unwrap();
-        assert_eq!(testbed.ta_aia(), &test::rsync("rsync://testbed.example.com/ta/ta.cer"));
-        assert_eq!(testbed.ta_uri(), &test::https("https://testbed.example.com/ta/ta.cer"));
+        assert_eq!(
+            testbed.ta_aia(),
+            &test::rsync("rsync://testbed.example.com/ta/ta.cer")
+        );
+        assert_eq!(
+            testbed.ta_uri(),
+            &test::https("https://testbed.example.com/ta/ta.cer")
+        );
 
         let uris = testbed.publication_server_uris();
-        assert_eq!(uris.rrdp_base_uri(), &test::https("https://testbed.example.com/rrdp/"));
-        assert_eq!(uris.rsync_jail(), &test::rsync("rsync://testbed.example.com/repo/"));
+        assert_eq!(
+            uris.rrdp_base_uri(),
+            &test::https("https://testbed.example.com/rrdp/")
+        );
+        assert_eq!(
+            uris.rsync_jail(),
+            &test::rsync("rsync://testbed.example.com/repo/")
+        );
     }
 
     #[test]
@@ -1861,7 +2123,8 @@ mod tests {
         fn void_logger_from_krill_config(config: &str) -> Box<dyn log::Log> {
             let c: Config = toml::from_str(config).unwrap();
             let void_output = fern::Output::writer(Box::new(io::sink()), "");
-            let (_, void_logger) = c.fern_logger().chain(void_output).into_log();
+            let (_, void_logger) =
+                c.fern_logger().chain(void_output).into_log();
             void_logger
         }
 
@@ -1869,28 +2132,39 @@ mod tests {
             log::Metadata::builder().target(target).level(level).build()
         }
 
-        fn should_logging_be_enabled_at_this_krill_config_log_level(log_level: &LL, config_level: &str) -> bool {
-            let log_level_from_krill_config_level = LL::from_str(config_level).unwrap();
+        fn should_logging_be_enabled_at_this_krill_config_log_level(
+            log_level: &LL,
+            config_level: &str,
+        ) -> bool {
+            let log_level_from_krill_config_level =
+                LL::from_str(config_level).unwrap();
             log_level <= &log_level_from_krill_config_level
         }
 
-        // Krill requires an auth token to be defined, give it one in the environment
+        // Krill requires an auth token to be defined, give it one in the
+        // environment
         env::set_var(KRILL_ENV_ADMIN_TOKEN, "secret");
 
-        // Define sets of log targets aka components of Krill that we want to test log settings for, based on the
-        // rules & exceptions that the actual code under test is supposed to configure the logger with
+        // Define sets of log targets aka components of Krill that we want to
+        // test log settings for, based on the rules & exceptions that
+        // the actual code under test is supposed to configure the logger with
         let krill_components = vec!["krill"];
-        let krill_framework_components = vec!["krill::commons::eventsourcing", "krill::commons::util::file"];
+        let krill_framework_components = vec![
+            "krill::commons::eventsourcing",
+            "krill::commons::util::file",
+        ];
         let other_key_components = vec!["hyper", "reqwest", "oso"];
 
-        let krill_key_components = vec![krill_components, krill_framework_components.clone()]
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>();
-        let all_key_components = vec![krill_key_components.clone(), other_key_components]
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>();
+        let krill_key_components =
+            vec![krill_components, krill_framework_components.clone()]
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>();
+        let all_key_components =
+            vec![krill_key_components.clone(), other_key_components]
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>();
 
         //
         // Test that important log levels are enabled for all key components
@@ -1899,15 +2173,20 @@ mod tests {
         // for each important Krill config log level
         for config_level in &["error", "warn"] {
             // build a logger for that config
-            let log = void_logger_from_krill_config(
-                &format!(r#"log_level = "{config_level}""#)
-            );
+            let log = void_logger_from_krill_config(&format!(
+                r#"log_level = "{config_level}""#
+            ));
 
             // for all log levels
-            for log_msg_level in &[LL::Error, LL::Warn, LL::Info, LL::Debug, LL::Trace] {
+            for log_msg_level in
+                &[LL::Error, LL::Warn, LL::Info, LL::Debug, LL::Trace]
+            {
                 // determine if logging should be enabled or not
                 let should_be_enabled =
-                    should_logging_be_enabled_at_this_krill_config_log_level(log_msg_level, config_level);
+                    should_logging_be_enabled_at_this_krill_config_log_level(
+                        log_msg_level,
+                        config_level,
+                    );
 
                 // for each Krill component we want to pretend to log as
                 for component in &all_key_components {
@@ -1927,27 +2206,33 @@ mod tests {
         }
 
         //
-        // Test that info level and below are only enabled for Krill at the right log levels
+        // Test that info level and below are only enabled for Krill at the
+        // right log levels
         //
 
         // for each Krill config log level we want to test
         for config_level in &["info", "debug", "trace"] {
             // build a logger for that config
-            let log = void_logger_from_krill_config(
-                &format!(r#"log_level = "{config_level}""#)
-            );
+            let log = void_logger_from_krill_config(&format!(
+                r#"log_level = "{config_level}""#
+            ));
 
             // for each level of interest that messages could be logged at
             for log_msg_level in &[LL::Info, LL::Debug, LL::Trace] {
                 // determine if logging should be enabled or not
                 let should_be_enabled =
-                    should_logging_be_enabled_at_this_krill_config_log_level(log_msg_level, config_level);
+                    should_logging_be_enabled_at_this_krill_config_log_level(
+                        log_msg_level,
+                        config_level,
+                    );
 
                 // for each Krill component we want to pretend to log as
                 for component in &krill_key_components {
                     // framework components shouldn't log at Trace level
                     let should_be_enabled = should_be_enabled
-                        && (*log_msg_level < LL::Trace || !krill_framework_components.contains(component));
+                        && (*log_msg_level < LL::Trace
+                            || !krill_framework_components
+                                .contains(component));
 
                     // verify that logging is enabled or not as expected
                     assert_eq!(
@@ -1965,8 +2250,8 @@ mod tests {
         }
 
         //
-        // Test that Oso logging at levels below Info is only enabled if the Oso POLAR_LOG=1
-        // environment variable is set
+        // Test that Oso logging at levels below Info is only enabled if the
+        // Oso POLAR_LOG=1 environment variable is set
         //
         let component = "oso";
         for set_polar_log_env_var in &[true, false] {
@@ -1980,9 +2265,9 @@ mod tests {
             // for each Krill config log level we want to test
             for config_level in &["debug", "trace"] {
                 // build a logger for that config
-                let log = void_logger_from_krill_config(
-                    &format!(r#"log_level = "{config_level}""#)
-                );
+                let log = void_logger_from_krill_config(&format!(
+                    r#"log_level = "{config_level}""#
+                ));
 
                 // for each level of interest that messages could be logged at
                 for log_msg_level in &[LL::Debug, LL::Trace] {
@@ -1994,21 +2279,35 @@ mod tests {
                     // verify that logging is enabled or not as expected
                     assert_eq!(
                         should_be_enabled,
-                        log.enabled(&for_target_at_level(component, *log_msg_level)),
-                        // output an easy to understand test failure description
+                        log.enabled(&for_target_at_level(
+                            component,
+                            *log_msg_level
+                        )),
+                        // output an easy to understand test failure
+                        // description
                         r#"Logging at level {} with log_level={} should be {} for component {} and env var POLAR_LOG is {}"#,
                         log_msg_level,
                         config_level,
-                        if should_be_enabled { "enabled" } else { "disabled" },
+                        if should_be_enabled {
+                            "enabled"
+                        } else {
+                            "disabled"
+                        },
                         component,
-                        if *set_polar_log_env_var { "set" } else { "not set" }
+                        if *set_polar_log_env_var {
+                            "set"
+                        } else {
+                            "not set"
+                        }
                     );
                 }
             }
         }
     }
 
-    fn parse_and_process_config_str(config_str: &str) -> Result<Config, ConfigError> {
+    fn parse_and_process_config_str(
+        config_str: &str,
+    ) -> Result<Config, ConfigError> {
         let mut c: Config = toml::from_str(config_str).unwrap();
         c.process()?;
         Ok(c)
@@ -2043,8 +2342,12 @@ mod tests {
 
     #[cfg(not(feature = "hsm"))]
     #[test]
-    fn should_fail_when_config_defines_signers_but_hsm_support_is_not_enabled() {
-        fn assert_unexpected_setting_err(res: Result<Config, ConfigError>, setting_name: &str) {
+    fn should_fail_when_config_defines_signers_but_hsm_support_is_not_enabled(
+    ) {
+        fn assert_unexpected_setting_err(
+            res: Result<Config, ConfigError>,
+            setting_name: &str,
+        ) {
             let expected_err_msg = format!("This build of Krill lacks support for the '{}' config file setting. Please use a version of Krill that has the 'hsm' feature enabled.", setting_name);
             assert_err_msg(res, &expected_err_msg);
         }
@@ -2148,11 +2451,17 @@ mod tests {
 
         let c = parse_and_process_config_str(config_str).unwrap();
 
-        #[cfg(not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11")))]
+        #[cfg(not(any(
+            feature = "hsm-tests-kmip",
+            feature = "hsm-tests-pkcs11"
+        )))]
         {
             assert_eq!(c.signers.len(), 1);
             assert_eq!(c.signers[0].name, "Default OpenSSL signer");
-            assert!(matches!(c.signers[0].signer_type, SignerType::OpenSsl(_)));
+            assert!(matches!(
+                c.signers[0].signer_type,
+                SignerType::OpenSsl(_)
+            ));
         }
 
         #[cfg(feature = "hsm-tests-kmip")]
@@ -2161,16 +2470,28 @@ mod tests {
             assert_eq!(c.signers[0].name, "(test mode) Default KMIP signer");
             assert!(matches!(c.signers[0].signer_type, SignerType::Kmip(_)));
             assert_eq!(c.signers[1].name, "OpenSSL one-off signer");
-            assert!(matches!(c.signers[1].signer_type, SignerType::OpenSsl(_)));
+            assert!(matches!(
+                c.signers[1].signer_type,
+                SignerType::OpenSsl(_)
+            ));
         }
 
         #[cfg(feature = "hsm-tests-pkcs11")]
         {
             assert_eq!(c.signers.len(), 2);
-            assert_eq!(c.signers[0].name, "(test mode) Default PKCS#11 signer");
-            assert!(matches!(c.signers[0].signer_type, SignerType::Pkcs11(_)));
+            assert_eq!(
+                c.signers[0].name,
+                "(test mode) Default PKCS#11 signer"
+            );
+            assert!(matches!(
+                c.signers[0].signer_type,
+                SignerType::Pkcs11(_)
+            ));
             assert_eq!(c.signers[1].name, "OpenSSL one-off signer");
-            assert!(matches!(c.signers[1].signer_type, SignerType::OpenSsl(_)));
+            assert!(matches!(
+                c.signers[1].signer_type,
+                SignerType::OpenSsl(_)
+            ));
         }
     }
 
@@ -2197,7 +2518,14 @@ mod tests {
     fn data_dir_for_storage() {
         fn test_uri(uri: &str, expected_path: &str) {
             let storage_uri = Url::parse(uri).unwrap();
-            let config = Config::test_config(&storage_uri, None, false, false, false, false);
+            let config = Config::test_config(
+                &storage_uri,
+                None,
+                false,
+                false,
+                false,
+                false,
+            );
 
             let expected_path = PathBuf::from(expected_path);
             assert_eq!(config.data_dir().unwrap(), expected_path);

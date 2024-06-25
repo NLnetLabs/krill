@@ -41,7 +41,8 @@ pub trait InitCommand: Clone + fmt::Display + Send + Sync {
     /// which should not be persisted.
     type StorableDetails: WithStorableDetails;
 
-    /// Identifies the aggregate, useful when storing and retrieving the event.
+    /// Identifies the aggregate, useful when storing and retrieving the
+    /// event.
     fn handle(&self) -> &MyHandle;
 
     /// The actor who sent the command. There is no default so as to avoid
@@ -104,7 +105,9 @@ impl<I: InitCommandDetails> fmt::Display for SentInitCommand<I> {
 
 /// Implement this for an enum with CommandDetails, so you you can reuse the
 /// id and version boilerplate from ['SentCommand'].
-pub trait InitCommandDetails: Clone + fmt::Display + Send + Sync + 'static {
+pub trait InitCommandDetails:
+    Clone + fmt::Display + Send + Sync + 'static
+{
     type StorableDetails: WithStorableDetails;
 
     fn store(&self) -> Self::StorableDetails;
@@ -123,7 +126,8 @@ pub trait Command: Clone + fmt::Display + Send + Sync {
     /// which should not be persisted.
     type StorableDetails: WithStorableDetails;
 
-    /// Identifies the aggregate, useful when storing and retrieving the event.
+    /// Identifies the aggregate, useful when storing and retrieving the
+    /// event.
     fn handle(&self) -> &MyHandle;
 
     /// The version of the aggregate that this command updates. If this
@@ -173,7 +177,12 @@ impl<C: CommandDetails> Command for SentCommand<C> {
 }
 
 impl<C: CommandDetails> SentCommand<C> {
-    pub fn new(id: &MyHandle, version: Option<u64>, details: C, actor: &Actor) -> Self {
+    pub fn new(
+        id: &MyHandle,
+        version: Option<u64>,
+        details: C,
+        actor: &Actor,
+    ) -> Self {
         let actor_name = if actor.is_user() {
             format!("user:{}", actor.name())
         } else {
@@ -212,7 +221,9 @@ impl<C: CommandDetails> fmt::Display for SentCommand<C> {
 
 /// Implement this for an enum with CommandDetails, so you you can reuse the
 /// id and version boilerplate from ['SentCommand'].
-pub trait CommandDetails: Clone + fmt::Display + Send + Sync + 'static {
+pub trait CommandDetails:
+    Clone + fmt::Display + Send + Sync + 'static
+{
     type Event: Event;
     type StorableDetails: WithStorableDetails;
 
@@ -227,7 +238,8 @@ pub struct StoredCommandBuilder<A: Aggregate> {
     actor: String,
     time: Time,
     handle: MyHandle,
-    version: u64, // version of aggregate this was applied to (successful or not)
+    version: u64, /* version of aggregate this was applied to (successful
+                   * or not) */
     details: A::StorableCommandDetails,
 }
 
@@ -236,7 +248,8 @@ impl<A: Aggregate> StoredCommandBuilder<A> {
         actor: String,
         time: Time,
         handle: MyHandle,
-        version: u64, // version of aggregate this was applied to (successful or not)
+        version: u64, /* version of aggregate this was applied to
+                       * (successful or not) */
         details: A::StorableCommandDetails,
     ) -> Self {
         StoredCommandBuilder {
@@ -248,20 +261,39 @@ impl<A: Aggregate> StoredCommandBuilder<A> {
         }
     }
 
-    pub fn finish_with_init_event(self, init_event: A::InitEvent) -> StoredCommand<A> {
+    pub fn finish_with_init_event(
+        self,
+        init_event: A::InitEvent,
+    ) -> StoredCommand<A> {
         self.with_effect(StoredEffect::init(init_event))
     }
 
-    pub fn finish_with_events(self, events: Vec<A::Event>) -> StoredCommand<A> {
+    pub fn finish_with_events(
+        self,
+        events: Vec<A::Event>,
+    ) -> StoredCommand<A> {
         self.with_effect(StoredEffect::success(events))
     }
 
-    pub fn finish_with_error(self, error: impl fmt::Display) -> StoredCommand<A> {
+    pub fn finish_with_error(
+        self,
+        error: impl fmt::Display,
+    ) -> StoredCommand<A> {
         self.with_effect(StoredEffect::error(error))
     }
 
-    fn with_effect(self, effect: StoredEffect<A::Event, A::InitEvent>) -> StoredCommand<A> {
-        StoredCommand::new(self.actor, self.time, self.handle, self.version, self.details, effect)
+    fn with_effect(
+        self,
+        effect: StoredEffect<A::Event, A::InitEvent>,
+    ) -> StoredCommand<A> {
+        StoredCommand::new(
+            self.actor,
+            self.time,
+            self.handle,
+            self.version,
+            self.details,
+            effect,
+        )
     }
 }
 
@@ -276,7 +308,8 @@ pub struct StoredCommand<A: Aggregate> {
     actor: String,
     time: Time,
     handle: MyHandle,
-    version: u64, // version of aggregate this was applied to (successful or not)
+    version: u64, /* version of aggregate this was applied to (successful
+                   * or not) */
     #[serde(deserialize_with = "A::StorableCommandDetails::deserialize")]
     details: A::StorableCommandDetails,
     effect: StoredEffect<A::Event, A::InitEvent>,
@@ -363,7 +396,11 @@ impl<A: Aggregate> From<StoredCommand<A>> for CommandHistoryRecord {
 //------------ StoredEffect --------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case", tag = "result", bound(deserialize = "E: Event"))]
+#[serde(
+    rename_all = "snake_case",
+    tag = "result",
+    bound(deserialize = "E: Event")
+)]
 pub enum StoredEffect<E: Event, I: InitEvent> {
     Error { msg: String },
     Success { events: Vec<E> },

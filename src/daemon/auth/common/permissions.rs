@@ -1,8 +1,10 @@
 // Based on https://github.com/rust-lang/rfcs/issues/284#issuecomment-277871931
-// Use a macro to build the Permission enum so that we can iterate over the enum variants when adding them as Polar
-// constants in struct AuthPolicy. This ensures that we don't accidentally miss one. We can also implement the Display
-// trait that we need Actor::is_allowed() and the FromStr trait and avoid labour intensive and error prone duplication
-// of the enum variants that would be needed when implementing the traits manually.
+// Use a macro to build the Permission enum so that we can iterate over the
+// enum variants when adding them as Polar constants in struct AuthPolicy.
+// This ensures that we don't accidentally miss one. We can also implement the
+// Display trait that we need Actor::is_allowed() and the FromStr trait and
+// avoid labour intensive and error prone duplication of the enum variants
+// that would be needed when implementing the traits manually.
 macro_rules! iterable_enum {
     ($name:ident { $($variant:ident),* })   => (
         #[allow(non_camel_case_types)]

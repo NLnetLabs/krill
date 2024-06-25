@@ -5,7 +5,9 @@ use bytes::Bytes;
 use rpki::{
     ca::{provisioning::ResourceClassName, publication::Base64},
     crypto::{DigestAlgorithm, KeyIdentifier},
-    repository::{resources::ResourceSet, rta, sigobj::MessageDigest, x509::Validity},
+    repository::{
+        resources::ResourceSet, rta, sigobj::MessageDigest, x509::Validity,
+    },
 };
 
 use crate::commons::{
@@ -35,18 +37,31 @@ impl Rtas {
         self.map.contains_key(name)
     }
 
-    pub fn signed_rta(&self, name: &str) -> KrillResult<ResourceTaggedAttestation> {
-        let state = self.map.get(name).ok_or_else(|| Error::custom("Unknown RTA"))?;
+    pub fn signed_rta(
+        &self,
+        name: &str,
+    ) -> KrillResult<ResourceTaggedAttestation> {
+        let state = self
+            .map
+            .get(name)
+            .ok_or_else(|| Error::custom("Unknown RTA"))?;
         match state {
             RtaState::Signed(signed) => Ok(signed.rta.clone()),
-            RtaState::Prepared(_) => Err(Error::custom("RTA is not signed yet")),
+            RtaState::Prepared(_) => {
+                Err(Error::custom("RTA is not signed yet"))
+            }
         }
     }
 
     pub fn prepared_rta(&self, name: &str) -> KrillResult<&PreparedRta> {
-        let state = self.map.get(name).ok_or_else(|| Error::custom("Unknown RTA"))?;
+        let state = self
+            .map
+            .get(name)
+            .ok_or_else(|| Error::custom("Unknown RTA"))?;
         match state {
-            RtaState::Signed(_) => Err(Error::custom("RTA was already signed")),
+            RtaState::Signed(_) => {
+                Err(Error::custom("RTA was already signed"))
+            }
             RtaState::Prepared(prepped) => Ok(prepped),
         }
     }
@@ -78,7 +93,11 @@ pub struct PreparedRta {
 }
 
 impl PreparedRta {
-    pub fn new(resources: ResourceSet, validity: Validity, keys: HashMap<ResourceClassName, KeyIdentifier>) -> Self {
+    pub fn new(
+        resources: ResourceSet,
+        validity: Validity,
+        keys: HashMap<ResourceClassName, KeyIdentifier>,
+    ) -> Self {
         PreparedRta {
             resources,
             validity,
@@ -140,7 +159,10 @@ pub struct RtaPrepareRequest {
 
 impl RtaPrepareRequest {
     pub fn new(resources: ResourceSet, validity: Validity) -> Self {
-        RtaPrepareRequest { resources, validity }
+        RtaPrepareRequest {
+            resources,
+            validity,
+        }
     }
 
     pub fn unpack(self) -> (ResourceSet, Validity) {
@@ -155,12 +177,20 @@ pub struct RtaContentRequest {
     resources: ResourceSet,
     validity: Validity,
     subject_keys: Vec<KeyIdentifier>,
-    #[serde(deserialize_with = "ext_serde::de_bytes", serialize_with = "ext_serde::ser_bytes")]
+    #[serde(
+        deserialize_with = "ext_serde::de_bytes",
+        serialize_with = "ext_serde::ser_bytes"
+    )]
     content: Bytes,
 }
 
 impl RtaContentRequest {
-    pub fn new(resources: ResourceSet, validity: Validity, subject_keys: Vec<KeyIdentifier>, content: Bytes) -> Self {
+    pub fn new(
+        resources: ResourceSet,
+        validity: Validity,
+        subject_keys: Vec<KeyIdentifier>,
+        content: Bytes,
+    ) -> Self {
         RtaContentRequest {
             resources,
             validity,
@@ -169,8 +199,15 @@ impl RtaContentRequest {
         }
     }
 
-    pub fn unpack(self) -> (ResourceSet, Validity, Vec<KeyIdentifier>, Bytes) {
-        (self.resources, self.validity, self.subject_keys, self.content)
+    pub fn unpack(
+        self,
+    ) -> (ResourceSet, Validity, Vec<KeyIdentifier>, Bytes) {
+        (
+            self.resources,
+            self.validity,
+            self.subject_keys,
+            self.content,
+        )
     }
 }
 
@@ -189,7 +226,11 @@ impl fmt::Display for RtaContentRequest {
             write!(f, "{} ", key)?;
         }
         writeln!(f)?;
-        writeln!(f, "content (base64): {}", Base64::from_content(self.content.as_ref()))?;
+        writeln!(
+            f,
+            "content (base64): {}",
+            Base64::from_content(self.content.as_ref())
+        )?;
 
         Ok(())
     }
@@ -202,7 +243,10 @@ impl fmt::Display for RtaContentRequest {
 /// See: https://tools.ietf.org/id/draft-michaelson-rpki-rta-01.html
 #[derive(Clone, Debug, Deserialize, Eq, Serialize, PartialEq)]
 pub struct ResourceTaggedAttestation {
-    #[serde(deserialize_with = "ext_serde::de_bytes", serialize_with = "ext_serde::ser_bytes")]
+    #[serde(
+        deserialize_with = "ext_serde::de_bytes",
+        serialize_with = "ext_serde::ser_bytes"
+    )]
     bytes: Bytes,
 }
 
@@ -218,8 +262,8 @@ impl ResourceTaggedAttestation {
     }
 
     pub fn to_builder(&self) -> KrillResult<rta::RtaBuilder> {
-        let rta =
-            rta::Rta::decode(self.bytes.as_ref(), true).map_err(|_| Error::custom("Cannot decode existing RTA"))?;
+        let rta = rta::Rta::decode(self.bytes.as_ref(), true)
+            .map_err(|_| Error::custom("Cannot decode existing RTA"))?;
         Ok(rta::RtaBuilder::from_rta(rta))
     }
 
@@ -230,7 +274,8 @@ impl ResourceTaggedAttestation {
     ) -> KrillResult<rta::RtaBuilder> {
         let algo = DigestAlgorithm::default();
         let digest = algo.digest(content.as_ref());
-        let mut attestation_builder = rta::AttestationBuilder::new(algo, MessageDigest::from(digest));
+        let mut attestation_builder =
+            rta::AttestationBuilder::new(algo, MessageDigest::from(digest));
 
         for key in keys.into_iter() {
             attestation_builder.push_key(key);

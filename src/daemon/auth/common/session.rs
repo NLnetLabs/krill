@@ -4,8 +4,8 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use base64::engine::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
+use base64::engine::Engine as _;
 
 use crate::{
     commons::{api::Token, error::Error, KrillResult},
@@ -40,7 +40,9 @@ impl ClientSession {
 
                     let status = if cur_age_secs > max_age_secs {
                         SessionStatus::Expired
-                    } else if cur_age_secs > (max_age_secs.checked_div(2).unwrap()) {
+                    } else if cur_age_secs
+                        > (max_age_secs.checked_div(2).unwrap())
+                    {
                         SessionStatus::NeedsRefresh
                     } else {
                         SessionStatus::Active
@@ -82,10 +84,10 @@ pub type EncryptFn = fn(&[u8], &[u8], &NonceState) -> KrillResult<Vec<u8>>;
 pub type DecryptFn = fn(&[u8], &[u8]) -> KrillResult<Vec<u8>>;
 
 /// A short term cache to reduce the impact of session token decryption and
-/// deserialization (e.g. for multiple requests in a short space of time by the
-/// Lagosta UI client) while keeping potentially sensitive data in-memory for as
-/// short as possible. This cache is NOT responsible for enforcing token
-/// expiration, that is handled separately by the AuthProvider.
+/// deserialization (e.g. for multiple requests in a short space of time by
+/// the Lagosta UI client) while keeping potentially sensitive data in-memory
+/// for as short as possible. This cache is NOT responsible for enforcing
+/// token expiration, that is handled separately by the AuthProvider.
 pub struct LoginSessionCache {
     cache: RwLock<HashMap<Token, CachedSession>>,
     encrypt_fn: EncryptFn,
@@ -139,7 +141,12 @@ impl LoginSessionCache {
     fn time_now_secs_since_epoch() -> KrillResult<u64> {
         Ok(SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map_err(|err| Error::Custom(format!("Unable to determine the current time: {}", err)))?
+            .map_err(|err| {
+                Error::Custom(format!(
+                    "Unable to determine the current time: {}",
+                    err
+                ))
+            })?
             .as_secs())
     }
 
@@ -158,19 +165,26 @@ impl LoginSessionCache {
 
     fn cache_session(&self, token: &Token, session: &ClientSession) {
         match self.cache.write() {
-            Ok(mut writeable_cache) => match Self::time_now_secs_since_epoch() {
-                Ok(now) => {
-                    writeable_cache.insert(
-                        token.clone(),
-                        CachedSession {
-                            evict_after: now + self.ttl_secs,
-                            session: session.clone(),
-                        },
-                    );
+            Ok(mut writeable_cache) => {
+                match Self::time_now_secs_since_epoch() {
+                    Ok(now) => {
+                        writeable_cache.insert(
+                            token.clone(),
+                            CachedSession {
+                                evict_after: now + self.ttl_secs,
+                                session: session.clone(),
+                            },
+                        );
+                    }
+                    Err(err) => warn!(
+                        "Unable to cache decrypted session token: {}",
+                        err
+                    ),
                 }
-                Err(err) => warn!("Unable to cache decrypted session token: {}", err),
-            },
-            Err(err) => warn!("Unable to cache decrypted session token: {}", err),
+            }
+            Err(err) => {
+                warn!("Unable to cache decrypted session token: {}", err)
+            }
         }
     }
 
@@ -192,18 +206,32 @@ impl LoginSessionCache {
 
         debug!("Creating token for session: {:?}", &session);
 
-        let session_json_str = serde_json::to_string(&session)
-            .map_err(|err| Error::Custom(format!("Error while serializing session data: {}", err)))?;
+        let session_json_str =
+            serde_json::to_string(&session).map_err(|err| {
+                Error::Custom(format!(
+                    "Error while serializing session data: {}",
+                    err
+                ))
+            })?;
         let unencrypted_bytes = session_json_str.as_bytes();
 
-        let encrypted_bytes = (self.encrypt_fn)(&crypt_state.key, unencrypted_bytes, &crypt_state.nonce)?;
+        let encrypted_bytes = (self.encrypt_fn)(
+            &crypt_state.key,
+            unencrypted_bytes,
+            &crypt_state.nonce,
+        )?;
         let token = Token::from(BASE64_ENGINE.encode(encrypted_bytes));
 
         self.cache_session(&token, &session);
         Ok(token)
     }
 
-    pub fn decode(&self, token: Token, key: &CryptState, add_to_cache: bool) -> KrillResult<ClientSession> {
+    pub fn decode(
+        &self,
+        token: Token,
+        key: &CryptState,
+        add_to_cache: bool,
+    ) -> KrillResult<ClientSession> {
         if let Some(session) = self.lookup_session(&token) {
             trace!("Session cache hit for session id {}", &session.id);
             return Ok(session);
@@ -211,21 +239,33 @@ impl LoginSessionCache {
             trace!("Session cache miss, deserializing...");
         }
 
-        let bytes = BASE64_ENGINE.decode(
-            token.as_ref().as_bytes()
-        ).map_err(|err| {
-            debug!("Invalid bearer token: cannot decode: {}", err);
-            Error::ApiInvalidCredentials("Invalid bearer token".to_string())
-        })?;
+        let bytes = BASE64_ENGINE.decode(token.as_ref().as_bytes()).map_err(
+            |err| {
+                debug!("Invalid bearer token: cannot decode: {}", err);
+                Error::ApiInvalidCredentials(
+                    "Invalid bearer token".to_string(),
+                )
+            },
+        )?;
 
         let unencrypted_bytes = (self.decrypt_fn)(&key.key, &bytes)?;
 
-        let session = serde_json::from_slice::<ClientSession>(&unencrypted_bytes).map_err(|err| {
-            debug!("Invalid bearer token: cannot deserialize: {}", err);
-            Error::ApiInvalidCredentials("Invalid bearer token".to_string())
-        })?;
+        let session =
+            serde_json::from_slice::<ClientSession>(&unencrypted_bytes)
+                .map_err(|err| {
+                    debug!(
+                        "Invalid bearer token: cannot deserialize: {}",
+                        err
+                    );
+                    Error::ApiInvalidCredentials(
+                        "Invalid bearer token".to_string(),
+                    )
+                })?;
 
-        trace!("Session cache miss, deserialized session id {}", &session.id);
+        trace!(
+            "Session cache miss, deserialized session id {}",
+            &session.id
+        );
 
         if add_to_cache {
             self.cache_session(&token, &session);
@@ -254,10 +294,9 @@ impl LoginSessionCache {
     }
 
     pub fn sweep(&self) -> KrillResult<()> {
-        let mut cache = self
-            .cache
-            .write()
-            .map_err(|err| Error::Custom(format!("Unable to purge session cache: {}", err)))?;
+        let mut cache = self.cache.write().map_err(|err| {
+            Error::Custom(format!("Unable to purge session cache: {}", err))
+        })?;
 
         let size_before = cache.len();
 
@@ -312,8 +351,9 @@ mod tests {
         assert_eq!(item1.expires_in, None);
         assert_eq!(item1.secrets, HashMap::new());
 
-        // Wait until after the cached item should have expired but as the cache
-        // has not yet been swept the item should still be in the cache
+        // Wait until after the cached item should have expired but as the
+        // cache has not yet been swept the item should still be in
+        // the cache
         std::thread::sleep(Duration::from_secs(2));
         assert_eq!(cache.size(), 1);
 
@@ -336,16 +376,23 @@ mod tests {
         cache.sweep().unwrap();
         assert_eq!(cache.size(), 1);
 
-        // Wait until after the remaining cached item should have expired but as
-        // the cache has not yet been swept the item should still be present.
+        // Wait until after the remaining cached item should have expired but
+        // as the cache has not yet been swept the item should still
+        // be present.
         std::thread::sleep(Duration::from_secs(2));
         assert_eq!(cache.size(), 1);
 
         let item2 = cache.decode(item2_token, &key, true).unwrap();
         assert_eq!(item2.id, "other id");
-        assert_eq!(item2.attributes, one_attr_map("some attr key", "some attr val"));
+        assert_eq!(
+            item2.attributes,
+            one_attr_map("some attr key", "some attr val")
+        );
         assert_eq!(item2.expires_in, Some(Duration::from_secs(10)));
-        assert_eq!(item2.secrets, one_attr_map("some secret key", "some secret val"));
+        assert_eq!(
+            item2.secrets,
+            one_attr_map("some secret key", "some secret val")
+        );
 
         // Sweep the cache and confirm that cache is now empty.
         cache.sweep().unwrap();

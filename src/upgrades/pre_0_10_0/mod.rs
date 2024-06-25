@@ -17,7 +17,8 @@ pub use self::old_events::*;
 
 use super::pre_0_14_0::Pre0_14_0ProviderAs;
 
-//------------ Pre0_14_0AspaDefinition ----------------------------------------
+//------------ Pre0_14_0AspaDefinition
+//------------ ----------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Pre0_10_0AspaDefinition {
@@ -34,7 +35,8 @@ impl From<Pre0_10_0AspaDefinition> for AspaDefinition {
     }
 }
 
-//------------ Pre_0_10_0AspaInfo ---------------------------------------------
+//------------ Pre_0_10_0AspaInfo
+//------------ ---------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Pre0_10_0AspaInfo {
@@ -43,7 +45,8 @@ pub struct Pre0_10_0AspaInfo {
     pub since: Time,  // Creation time
 }
 
-//------------ Pre_0_10_0AspaObjectsUpdates -----------------------------------
+//------------ Pre_0_10_0AspaObjectsUpdates
+//------------ -----------------------------------
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Pre0_10_0AspaObjectsUpdates {
@@ -54,7 +57,8 @@ pub struct Pre0_10_0AspaObjectsUpdates {
     pub removed: Vec<Pre0_10_0CustomerAsn>,
 }
 
-//------------ Pre_0_10_0CustomerAsn -------------------------------------------
+//------------ Pre_0_10_0CustomerAsn
+//------------ -------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Pre0_10_0CustomerAsn(Pre0_14_0ProviderAs); // re-use ProviderAs for string parsing

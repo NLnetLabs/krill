@@ -37,7 +37,10 @@ impl KrillVersion {
 
     /// Make a notation friendly to namespaces for upgrades.
     pub fn hyphen_notated(&self) -> String {
-        format!("{}-{}-{}{}", self.major, self.minor, self.patch, self.release_type)
+        format!(
+            "{}-{}-{}{}",
+            self.major, self.minor, self.patch, self.release_type
+        )
     }
 
     pub fn v0_5_0_or_before() -> Self {
@@ -53,7 +56,12 @@ impl KrillVersion {
         }
     }
 
-    pub fn candidate(major: u64, minor: u64, patch: u64, number: u64) -> Self {
+    pub fn candidate(
+        major: u64,
+        minor: u64,
+        patch: u64,
+        number: u64,
+    ) -> Self {
         KrillVersion {
             major,
             minor,
@@ -86,22 +94,35 @@ impl FromStr for KrillVersion {
 
         let parts: Vec<&str> = s.split('.').collect();
         if parts.len() == 3 {
-            let major = u64::from_str(parts[0]).map_err(|_| KrillVersionParseError::for_str(s))?;
+            let major = u64::from_str(parts[0])
+                .map_err(|_| KrillVersionParseError::for_str(s))?;
 
-            let minor = u64::from_str(parts[1]).map_err(|_| KrillVersionParseError::for_str(s))?;
+            let minor = u64::from_str(parts[1])
+                .map_err(|_| KrillVersionParseError::for_str(s))?;
 
             let mut patch_parts = parts[2].split('-');
 
-            let patch = u64::from_str(patch_parts.next().unwrap()).map_err(|_| KrillVersionParseError::for_str(s))?;
+            let patch = u64::from_str(patch_parts.next().unwrap())
+                .map_err(|_| KrillVersionParseError::for_str(s))?;
 
             match patch_parts.next() {
                 None => Ok(KrillVersion::release(major, minor, patch)),
                 Some(addition) => {
                     if addition.len() > 2 && addition.starts_with("rc") {
-                        let number = u64::from_str(&addition[2..]).map_err(|_| KrillVersionParseError::for_str(s))?;
-                        Ok(KrillVersion::candidate(major, minor, patch, number))
+                        let number =
+                            u64::from_str(&addition[2..]).map_err(|_| {
+                                KrillVersionParseError::for_str(s)
+                            })?;
+                        Ok(KrillVersion::candidate(
+                            major, minor, patch, number,
+                        ))
                     } else {
-                        Ok(KrillVersion::dev(major, minor, patch, addition.to_string()))
+                        Ok(KrillVersion::dev(
+                            major,
+                            minor,
+                            patch,
+                            addition.to_string(),
+                        ))
                     }
                 }
             }
@@ -125,7 +146,11 @@ impl FromStr for KrillVersion {
 
 impl fmt::Display for KrillVersion {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}.{}.{}{}", self.major, self.minor, self.patch, self.release_type)
+        write!(
+            f,
+            "{}.{}.{}{}",
+            self.major, self.minor, self.patch, self.release_type
+        )
     }
 }
 
@@ -148,7 +173,8 @@ impl Ord for KrillVersion {
     fn cmp(&self, other: &Self) -> Ordering {
         let mut res = self.major.cmp(&other.major);
 
-        // use res.is_eq() when the minimum rust requirement will be 1.53 or higher
+        // use res.is_eq() when the minimum rust requirement will be 1.53 or
+        // higher
         if res == Ordering::Equal {
             res = self.minor.cmp(&other.minor);
         }
@@ -181,7 +207,9 @@ impl Serialize for KrillVersion {
 }
 
 impl<'de> Deserialize<'de> for KrillVersion {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<KrillVersion, D::Error>
+    fn deserialize<D>(
+        deserializer: D,
+    ) -> std::result::Result<KrillVersion, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -206,7 +234,9 @@ impl Ord for KrillVersionReleaseType {
             },
             KrillVersionReleaseType::Candidate(nr) => match other {
                 KrillVersionReleaseType::Release => Ordering::Less,
-                KrillVersionReleaseType::Candidate(nr_other) => nr.cmp(nr_other),
+                KrillVersionReleaseType::Candidate(nr_other) => {
+                    nr.cmp(nr_other)
+                }
                 &KrillVersionReleaseType::Dev(_) => Ordering::Greater,
             },
             KrillVersionReleaseType::Dev(_) => match other {
@@ -240,9 +270,13 @@ pub fn sha256(object: &[u8]) -> Bytes {
 }
 
 // TODO: check that an IP address is_global() when that stabilizes: https://github.com/rust-lang/rust/issues/27709
-/// Assumes that non-ip hostnames are global (they may of course resolve to something that isn't but hey we tried to help)
+/// Assumes that non-ip hostnames are global (they may of course resolve to
+/// something that isn't but hey we tried to help)
 fn seems_global_uri(auth: &str) -> bool {
-    if auth.to_lowercase() == "localhost" || auth.starts_with('[') || IpAddr::from_str(auth).is_ok() {
+    if auth.to_lowercase() == "localhost"
+        || auth.starts_with('[')
+        || IpAddr::from_str(auth).is_ok()
+    {
         false
     } else if let Some(i) = auth.rfind(':') {
         let auth = &auth[0..i];
@@ -324,7 +358,8 @@ mod tests {
         KrillVersion::from_str("0.9.1-rc1").unwrap();
         KrillVersion::from_str("0.9.1-bis").unwrap();
 
-        // We do not support short, or random notations including but not limited to:
+        // We do not support short, or random notations including but not
+        // limited to:
         assert!(KrillVersion::from_str("v0.9.1").is_err());
         assert!(KrillVersion::from_str("0.9-bis").is_err());
         assert!(KrillVersion::from_str("some garbage").is_err());

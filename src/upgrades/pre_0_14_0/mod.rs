@@ -15,10 +15,12 @@ use rpki::{
 use crate::{
     commons::{
         api::{AspaDefinition, CustomerAsn},
-        crypto::dispatch::signerinfo::{SignerInfo, SignerInfoEvent, SignerInfoInitEvent},
+        crypto::dispatch::signerinfo::{
+            SignerInfo, SignerInfoEvent, SignerInfoInitEvent,
+        },
         eventsourcing::{
-            Aggregate, AggregateStore, KeyValueStore, Storable, StoredCommand, StoredCommandBuilder,
-            WithStorableDetails,
+            Aggregate, AggregateStore, KeyValueStore, Storable,
+            StoredCommand, StoredCommandBuilder, WithStorableDetails,
         },
     },
     daemon::{
@@ -26,16 +28,19 @@ use crate::{
         config::Config,
         properties::Properties,
     },
-    pubd::{RepositoryAccess, RepositoryAccessEvent, RepositoryAccessInitEvent},
+    pubd::{
+        RepositoryAccess, RepositoryAccessEvent, RepositoryAccessInitEvent,
+    },
     ta::{
-        TrustAnchorProxy, TrustAnchorProxyEvent, TrustAnchorProxyInitEvent, TrustAnchorSigner, TrustAnchorSignerEvent,
+        TrustAnchorProxy, TrustAnchorProxyEvent, TrustAnchorProxyInitEvent,
+        TrustAnchorSigner, TrustAnchorSignerEvent,
         TrustAnchorSignerInitEvent,
     },
 };
 
 use super::{
-    AspaMigrationConfigs, CommandMigrationEffect, UnconvertedEffect, UpgradeAggregateStorePre0_14, UpgradeMode,
-    UpgradeResult,
+    AspaMigrationConfigs, CommandMigrationEffect, UnconvertedEffect,
+    UpgradeAggregateStorePre0_14, UpgradeMode, UpgradeResult,
 };
 
 // Stuff in modules
@@ -48,7 +53,8 @@ pub use self::old_events::*;
 mod cas_migration;
 pub use self::cas_migration::*;
 
-//------------ Pre0_14_0AspaDefinition ----------------------------------------
+//------------ Pre0_14_0AspaDefinition
+//------------ ----------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Pre0_14_0AspaDefinition {
@@ -58,11 +64,15 @@ pub struct Pre0_14_0AspaDefinition {
 
 impl From<Pre0_14_0AspaDefinition> for AspaDefinition {
     fn from(old: Pre0_14_0AspaDefinition) -> Self {
-        AspaDefinition::new(old.customer, old.providers.into_iter().map(|o| o.provider).collect())
+        AspaDefinition::new(
+            old.customer,
+            old.providers.into_iter().map(|o| o.provider).collect(),
+        )
     }
 }
 
-//------------ Pre_0_14_0AspaInfo ---------------------------------------------
+//------------ Pre_0_14_0AspaInfo
+//------------ ---------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Pre0_14_0AspaInfo {
@@ -74,7 +84,8 @@ pub struct Pre0_14_0AspaInfo {
     hash: Hash,
 }
 
-//------------ Pre_0_14_0AspaObjectsUpdates -----------------------------------
+//------------ Pre_0_14_0AspaObjectsUpdates
+//------------ -----------------------------------
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Pre0_14_0AspaObjectsUpdates {
@@ -93,34 +104,44 @@ pub type OldSignerInfoEvent = OldStoredEvent<SignerInfoEvent>;
 pub type OldCertAuthInitEvent = OldStoredEvent<CertAuthInitEvent>;
 pub type OldCertAuthEvent = OldStoredEvent<CertAuthEvent>;
 
-pub type OldTrustAnchorProxyInitEvent = OldStoredEvent<TrustAnchorProxyInitEvent>;
+pub type OldTrustAnchorProxyInitEvent =
+    OldStoredEvent<TrustAnchorProxyInitEvent>;
 pub type OldTrustAnchorProxyEvent = OldStoredEvent<TrustAnchorProxyEvent>;
 
-pub type OldTrustAnchorSignerInitEvent = OldStoredEvent<TrustAnchorSignerInitEvent>;
+pub type OldTrustAnchorSignerInitEvent =
+    OldStoredEvent<TrustAnchorSignerInitEvent>;
 pub type OldTrustAnchorSignerEvent = OldStoredEvent<TrustAnchorSignerEvent>;
 
-pub type OldRepositoryAccessInitEvent = OldStoredEvent<RepositoryAccessInitEvent>;
+pub type OldRepositoryAccessInitEvent =
+    OldStoredEvent<RepositoryAccessInitEvent>;
 pub type OldRepositoryAccessEvent = OldStoredEvent<RepositoryAccessEvent>;
 
-pub trait OldEvent: fmt::Display + Eq + PartialEq + Storable + 'static {
-    /// Identifies the aggregate, useful when storing and retrieving the event.
+pub trait OldEvent:
+    fmt::Display + Eq + PartialEq + Storable + 'static
+{
+    /// Identifies the aggregate, useful when storing and retrieving the
+    /// event.
     fn handle(&self) -> &MyHandle;
 
-    /// The version of the aggregate that this event updates. An aggregate that
-    /// is currently at version x, will get version x + 1, when the event for
-    /// version x is applied.
+    /// The version of the aggregate that this event updates. An aggregate
+    /// that is currently at version x, will get version x + 1, when the
+    /// event for version x is applied.
     fn version(&self) -> u64;
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct OldStoredEvent<E: fmt::Display + Eq + PartialEq + Storable + 'static> {
+pub struct OldStoredEvent<
+    E: fmt::Display + Eq + PartialEq + Storable + 'static,
+> {
     id: MyHandle,
     version: u64,
     #[serde(deserialize_with = "E::deserialize")]
     details: E,
 }
 
-impl<E: fmt::Display + Eq + PartialEq + Storable + 'static> OldStoredEvent<E> {
+impl<E: fmt::Display + Eq + PartialEq + Storable + 'static>
+    OldStoredEvent<E>
+{
     pub fn new(id: &MyHandle, version: u64, event: E) -> Self {
         OldStoredEvent {
             id: id.clone(),
@@ -143,7 +164,9 @@ impl<E: fmt::Display + Eq + PartialEq + Storable + 'static> OldStoredEvent<E> {
     }
 }
 
-impl<E: fmt::Display + Eq + PartialEq + Storable + 'static> OldEvent for OldStoredEvent<E> {
+impl<E: fmt::Display + Eq + PartialEq + Storable + 'static> OldEvent
+    for OldStoredEvent<E>
+{
     fn handle(&self) -> &MyHandle {
         &self.id
     }
@@ -153,9 +176,15 @@ impl<E: fmt::Display + Eq + PartialEq + Storable + 'static> OldEvent for OldStor
     }
 }
 
-impl<E: fmt::Display + Eq + PartialEq + Storable + 'static> fmt::Display for OldStoredEvent<E> {
+impl<E: fmt::Display + Eq + PartialEq + Storable + 'static> fmt::Display
+    for OldStoredEvent<E>
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "id: {} version: {} details: {}", self.id, self.version, self.details)
+        write!(
+            f,
+            "id: {} version: {} details: {}",
+            self.id, self.version, self.details
+        )
     }
 }
 
@@ -169,8 +198,10 @@ pub struct OldStoredCommand<S: WithStorableDetails> {
     actor: String,
     time: Time,
     handle: MyHandle,
-    version: u64,  // version of aggregate this was applied to (successful or not)
-    sequence: u64, // command sequence (i.e. also incremented for failed commands)
+    version: u64, /* version of aggregate this was applied to (successful
+                   * or not) */
+    sequence: u64, /* command sequence (i.e. also incremented for failed
+                    * commands) */
     #[serde(deserialize_with = "S::deserialize")]
     details: S,
     effect: OldStoredEffect,
@@ -233,7 +264,11 @@ pub type Label = String;
 
 impl fmt::Display for OldCommandKey {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "command--{}--{}--{}", self.timestamp_secs, self.sequence, self.label)
+        write!(
+            f,
+            "command--{}--{}--{}",
+            self.timestamp_secs, self.sequence, self.label
+        )
     }
 }
 
@@ -245,8 +280,10 @@ impl FromStr for OldCommandKey {
         if parts.len() != 4 || parts[0] != "command" {
             Err(CommandKeyError(s.to_string()))
         } else {
-            let timestamp_secs = i64::from_str(parts[1]).map_err(|_| CommandKeyError(s.to_string()))?;
-            let sequence = u64::from_str(parts[2]).map_err(|_| CommandKeyError(s.to_string()))?;
+            let timestamp_secs = i64::from_str(parts[1])
+                .map_err(|_| CommandKeyError(s.to_string()))?;
+            let sequence = u64::from_str(parts[2])
+                .map_err(|_| CommandKeyError(s.to_string()))?;
             // strip .json if present on the label part
             let label = {
                 let end = parts[3].to_string();
@@ -280,11 +317,16 @@ impl fmt::Display for CommandKeyError {
 
 //------------ UpgradeAggrateStore impls from generic ------------------------
 
-pub type UpgradeAggregateStoreProperties = GenericUpgradeAggregateStore<Properties>;
-pub type UpgradeAggregateStoreSignerInfo = GenericUpgradeAggregateStore<SignerInfo>;
-pub type UpgradeAggregateStoreTrustAnchorSigner = GenericUpgradeAggregateStore<TrustAnchorSigner>;
-pub type UpgradeAggregateStoreTrustAnchorProxy = GenericUpgradeAggregateStore<TrustAnchorProxy>;
-pub type UpgradeAggregateStoreRepositoryAccess = GenericUpgradeAggregateStore<RepositoryAccess>;
+pub type UpgradeAggregateStoreProperties =
+    GenericUpgradeAggregateStore<Properties>;
+pub type UpgradeAggregateStoreSignerInfo =
+    GenericUpgradeAggregateStore<SignerInfo>;
+pub type UpgradeAggregateStoreTrustAnchorSigner =
+    GenericUpgradeAggregateStore<TrustAnchorSigner>;
+pub type UpgradeAggregateStoreTrustAnchorProxy =
+    GenericUpgradeAggregateStore<TrustAnchorProxy>;
+pub type UpgradeAggregateStoreRepositoryAccess =
+    GenericUpgradeAggregateStore<RepositoryAccess>;
 
 //------------ GenericUpgradeAggrateStore ------------------------------------
 
@@ -300,16 +342,27 @@ pub struct GenericUpgradeAggregateStore<A: Aggregate> {
 }
 
 impl<A: Aggregate> GenericUpgradeAggregateStore<A> {
-    pub fn upgrade(name_space: &Namespace, mode: UpgradeMode, config: &Config) -> UpgradeResult<AspaMigrationConfigs> {
-        let current_kv_store = KeyValueStore::create(&config.storage_uri, name_space)?;
+    pub fn upgrade(
+        name_space: &Namespace,
+        mode: UpgradeMode,
+        config: &Config,
+    ) -> UpgradeResult<AspaMigrationConfigs> {
+        let current_kv_store =
+            KeyValueStore::create(&config.storage_uri, name_space)?;
 
         if current_kv_store.scopes()?.is_empty() {
             // nothing to do here
             Ok(AspaMigrationConfigs::default())
         } else {
-            let new_kv_store = KeyValueStore::create_upgrade_store(&config.storage_uri, name_space)?;
-            let new_agg_store =
-                AggregateStore::<A>::create_upgrade_store(&config.storage_uri, name_space, config.use_history_cache)?;
+            let new_kv_store = KeyValueStore::create_upgrade_store(
+                &config.storage_uri,
+                name_space,
+            )?;
+            let new_agg_store = AggregateStore::<A>::create_upgrade_store(
+                &config.storage_uri,
+                name_space,
+                config.use_history_cache,
+            )?;
 
             let store_migration = GenericUpgradeAggregateStore {
                 store_name: name_space.to_string(),
@@ -323,7 +376,9 @@ impl<A: Aggregate> GenericUpgradeAggregateStore<A> {
     }
 }
 
-impl<A: Aggregate> UpgradeAggregateStorePre0_14 for GenericUpgradeAggregateStore<A> {
+impl<A: Aggregate> UpgradeAggregateStorePre0_14
+    for GenericUpgradeAggregateStore<A>
+{
     type Aggregate = A;
 
     type OldInitEvent = A::InitEvent;
@@ -342,7 +397,9 @@ impl<A: Aggregate> UpgradeAggregateStorePre0_14 for GenericUpgradeAggregateStore
         &self.new_kv_store
     }
 
-    fn preparation_aggregate_store(&self) -> &AggregateStore<Self::Aggregate> {
+    fn preparation_aggregate_store(
+        &self,
+    ) -> &AggregateStore<Self::Aggregate> {
         &self.new_agg_store
     }
 
@@ -354,7 +411,8 @@ impl<A: Aggregate> UpgradeAggregateStorePre0_14 for GenericUpgradeAggregateStore
         time: Time,
     ) -> UpgradeResult<StoredCommand<Self::Aggregate>> {
         let details = A::StorableCommandDetails::make_init();
-        let builder = StoredCommandBuilder::<A>::new(actor, time, handle, 0, details);
+        let builder =
+            StoredCommandBuilder::<A>::new(actor, time, handle, 0, details);
 
         Ok(builder.finish_with_init_event(old_init))
     }
@@ -374,8 +432,12 @@ impl<A: Aggregate> UpgradeAggregateStorePre0_14 for GenericUpgradeAggregateStore
         );
 
         let new_command = match old_effect {
-            UnconvertedEffect::Error { msg } => new_command_builder.finish_with_error(msg),
-            UnconvertedEffect::Success { events } => new_command_builder.finish_with_events(events),
+            UnconvertedEffect::Error { msg } => {
+                new_command_builder.finish_with_error(msg)
+            }
+            UnconvertedEffect::Success { events } => {
+                new_command_builder.finish_with_events(events)
+            }
         };
 
         Ok(CommandMigrationEffect::StoredCommand(new_command))
@@ -457,13 +519,18 @@ impl fmt::Display for Pre0_14_0ProviderAs {
 //--- Deserialize and Serialize
 
 impl serde::Serialize for Pre0_14_0ProviderAs {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
         self.to_string().serialize(serializer)
     }
 }
 
 impl<'de> serde::Deserialize<'de> for Pre0_14_0ProviderAs {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Self, D::Error> {
         use serde::de;
 
         let string = String::deserialize(deserializer)?;

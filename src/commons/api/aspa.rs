@@ -21,8 +21,14 @@ pub struct AspaDefinitionUpdates {
 }
 
 impl AspaDefinitionUpdates {
-    pub fn new(add_or_replace: Vec<AspaDefinition>, remove: Vec<CustomerAsn>) -> Self {
-        AspaDefinitionUpdates { add_or_replace, remove }
+    pub fn new(
+        add_or_replace: Vec<AspaDefinition>,
+        remove: Vec<CustomerAsn>,
+    ) -> Self {
+        AspaDefinitionUpdates {
+            add_or_replace,
+            remove,
+        }
     }
     pub fn unpack(self) -> (Vec<AspaDefinition>, Vec<CustomerAsn>) {
         (self.add_or_replace, self.remove)
@@ -78,7 +84,10 @@ pub struct AspaDefinition {
 
 impl AspaDefinition {
     pub fn new(customer: CustomerAsn, providers: Vec<ProviderAsn>) -> Self {
-        AspaDefinition { customer, providers }
+        AspaDefinition {
+            customer,
+            providers,
+        }
     }
 
     pub fn unpack(self) -> (CustomerAsn, Vec<ProviderAsn>) {
@@ -157,9 +166,14 @@ impl FromStr for AspaDefinition {
         let mut parts = s.split("=>");
 
         let customer = {
-            let customer_str = parts.next().ok_or(AspaDefinitionFormatError::CustomerAsMissing)?;
-            CustomerAsn::from_str(customer_str.trim())
-                .map_err(|_| AspaDefinitionFormatError::CustomerAsInvalid(customer_str.trim().to_string()))?
+            let customer_str = parts
+                .next()
+                .ok_or(AspaDefinitionFormatError::CustomerAsMissing)?;
+            CustomerAsn::from_str(customer_str.trim()).map_err(|_| {
+                AspaDefinitionFormatError::CustomerAsInvalid(
+                    customer_str.trim().to_string(),
+                )
+            })?
         };
 
         let mut providers = {
@@ -169,8 +183,14 @@ impl FromStr for AspaDefinition {
             if providers_str.trim() != "<none>" {
                 let provider_parts = providers_str.split(',');
                 for provider_part in provider_parts {
-                    let provider = ProviderAsn::from_str(provider_part.trim())
-                        .map_err(|_| AspaDefinitionFormatError::ProviderAsInvalid(provider_part.trim().to_string()))?;
+                    let provider = ProviderAsn::from_str(
+                        provider_part.trim(),
+                    )
+                    .map_err(|_| {
+                        AspaDefinitionFormatError::ProviderAsInvalid(
+                            provider_part.trim().to_string(),
+                        )
+                    })?;
                     providers.push(provider);
                 }
             }
@@ -182,11 +202,16 @@ impl FromStr for AspaDefinition {
         if parts.next().is_some() {
             Err(AspaDefinitionFormatError::ExtraParts)
         } else {
-            // Ensure that the providers are sorted,  and there are no duplicates
+            // Ensure that the providers are sorted,  and there are no
+            // duplicates
             providers.sort();
 
             match providers.windows(2).find(|pair| pair[0] == pair[1]) {
-                Some(dup) => Err(AspaDefinitionFormatError::ProviderAsDuplicate(dup[0], dup[1])),
+                Some(dup) => {
+                    Err(AspaDefinitionFormatError::ProviderAsDuplicate(
+                        dup[0], dup[1],
+                    ))
+                }
                 None => Ok(AspaDefinition::new(customer, providers)),
             }
         }
@@ -208,13 +233,25 @@ impl fmt::Display for AspaDefinitionFormatError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "ASPA configuration format invalid: ")?;
         match self {
-            AspaDefinitionFormatError::CustomerAsMissing => write!(f, "customer AS missing"),
-            AspaDefinitionFormatError::CustomerAsInvalid(s) => write!(f, "cannot parse customer AS: {}", s),
-            AspaDefinitionFormatError::ProviderAsInvalid(s) => write!(f, "cannot parse provider AS: {}", s),
-            AspaDefinitionFormatError::ProviderAsDuplicate(l, r) => {
-                write!(f, "duplicate AS in provider list. Found {} and {}", l, r)
+            AspaDefinitionFormatError::CustomerAsMissing => {
+                write!(f, "customer AS missing")
             }
-            AspaDefinitionFormatError::ExtraParts => write!(f, "found more than one '=>'"),
+            AspaDefinitionFormatError::CustomerAsInvalid(s) => {
+                write!(f, "cannot parse customer AS: {}", s)
+            }
+            AspaDefinitionFormatError::ProviderAsInvalid(s) => {
+                write!(f, "cannot parse provider AS: {}", s)
+            }
+            AspaDefinitionFormatError::ProviderAsDuplicate(l, r) => {
+                write!(
+                    f,
+                    "duplicate AS in provider list. Found {} and {}",
+                    l, r
+                )
+            }
+            AspaDefinitionFormatError::ExtraParts => {
+                write!(f, "found more than one '=>'")
+            }
         }
     }
 }
@@ -304,7 +341,11 @@ mod tests {
     fn aspa_configuration_to_from_str() {
         let config = AspaDefinition::new(
             customer("AS65000"),
-            vec![provider("AS65001"), provider("AS65002"), provider("AS65003")],
+            vec![
+                provider("AS65001"),
+                provider("AS65002"),
+                provider("AS65003"),
+            ],
         );
         let config_str = "AS65000 => AS65001, AS65002, AS65003";
 

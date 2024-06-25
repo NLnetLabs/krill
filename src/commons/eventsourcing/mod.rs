@@ -20,7 +20,8 @@ pub use self::listener::*;
 
 mod kv;
 pub use self::kv::{
-    namespace, segment, Key, KeyValueError, KeyValueStore, Namespace, Scope, Segment, SegmentBuf, SegmentExt,
+    namespace, segment, Key, KeyValueError, KeyValueStore, Namespace, Scope,
+    Segment, SegmentBuf, SegmentExt,
 };
 
 //------------ Tests ---------------------------------------------------------
@@ -31,7 +32,6 @@ mod tests {
     //! Example implementation using the eventsourcing module.
     //!
     //! Goal is two-fold: document using a simple domain, and test the module.
-    //!
 
     use std::{fmt, str::FromStr, sync::Arc};
 
@@ -50,10 +50,11 @@ mod tests {
 
     use super::*;
 
-    //------------ PersonInitEvent -----------------------------------------------
+    //------------ PersonInitEvent
+    //------------ -----------------------------------------------
 
-    /// Every aggregate defines their own initialization event. This is the first
-    /// event stored for an instance.
+    /// Every aggregate defines their own initialization event. This is the
+    /// first event stored for an instance.
     #[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
     struct PersonInitEvent {
         pub name: String,
@@ -67,13 +68,18 @@ mod tests {
         }
     }
 
-    //------------ InitPersonCommand ---------------------------------------------
+    //------------ InitPersonCommand
+    //------------ ---------------------------------------------
     type PersonInitCommand = SentInitCommand<PersonInitCommandDetails>;
 
     impl PersonInitCommand {
         fn make(id: &MyHandle, name: String) -> Self {
             let actor = Actor::actor_from_def(ACTOR_DEF_TEST);
-            PersonInitCommand::new(id, PersonInitCommandDetails { name }, &actor)
+            PersonInitCommand::new(
+                id,
+                PersonInitCommandDetails { name },
+                &actor,
+            )
         }
     }
 
@@ -96,12 +102,13 @@ mod tests {
         }
     }
 
-    //------------ InitPersonEvent -----------------------------------------------
+    //------------ InitPersonEvent
+    //------------ -----------------------------------------------
 
-    /// Every aggregate defines their own set of events - i.e. state changes. The
-    /// state of an aggregate can only change when events are applied. And events
-    /// cannot have side effects. If they did, then replaying events would become
-    /// problematic.
+    /// Every aggregate defines their own set of events - i.e. state changes.
+    /// The state of an aggregate can only change when events are applied.
+    /// And events cannot have side effects. If they did, then replaying
+    /// events would become problematic.
     #[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
     enum PersonEvent {
         NameChanged(String),
@@ -123,27 +130,31 @@ mod tests {
     impl fmt::Display for PersonEvent {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             match self {
-                PersonEvent::NameChanged(new_name) => write!(f, "changed name to '{}'", new_name),
+                PersonEvent::NameChanged(new_name) => {
+                    write!(f, "changed name to '{}'", new_name)
+                }
                 PersonEvent::HadBirthday => write!(f, "went around the sun."),
             }
         }
     }
 
-    //------------ PersonCommand -------------------------------------------------
+    //------------ PersonCommand
+    //------------ -------------------------------------------------
 
     /// In order to change an aggregate a command is sent to it. The aggregate
-    /// will then validate the command and if there are no issues, it will return
-    /// a list (vec) of events that may be applied. This process in itself does
-    /// not change any state, the state of the aggregate is only changed when
-    /// those events are applied.
+    /// will then validate the command and if there are no issues, it will
+    /// return a list (vec) of events that may be applied. This process in
+    /// itself does not change any state, the state of the aggregate is
+    /// only changed when those events are applied.
     ///
-    /// Commands are not recorded. Only the resulting events are. For this reason
-    /// commands may have side-effects: e.g. write something to disk, send an
-    /// email, etc.
+    /// Commands are not recorded. Only the resulting events are. For this
+    /// reason commands may have side-effects: e.g. write something to
+    /// disk, send an email, etc.
     ///
-    /// Here we define a type wrapping around the generic SentCommand, so we only
-    /// need to provide an enum with specific command details. We also have an
-    /// implementation for this type alias providing some convenience methods.
+    /// Here we define a type wrapping around the generic SentCommand, so we
+    /// only need to provide an enum with specific command details. We
+    /// also have an implementation for this type alias providing some
+    /// convenience methods.
     type PersonCommand = SentCommand<PersonCommandDetails>;
 
     #[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
@@ -155,8 +166,12 @@ mod tests {
     impl fmt::Display for PersonCommandDetails {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             match self {
-                PersonCommandDetails::ChangeName(name) => write!(f, "Change name to {}", name),
-                PersonCommandDetails::GoAroundTheSun => write!(f, "Go around the sun"),
+                PersonCommandDetails::ChangeName(name) => {
+                    write!(f, "Change name to {}", name)
+                }
+                PersonCommandDetails::GoAroundTheSun => {
+                    write!(f, "Go around the sun")
+                }
             }
         }
     }
@@ -167,8 +182,12 @@ mod tests {
 
         fn store(&self) -> Self::StorableDetails {
             match self {
-                PersonCommandDetails::ChangeName(name) => PersonStorableCommand::ChangeName(name.clone()),
-                PersonCommandDetails::GoAroundTheSun => PersonStorableCommand::GoAroundTheSun,
+                PersonCommandDetails::ChangeName(name) => {
+                    PersonStorableCommand::ChangeName(name.clone())
+                }
+                PersonCommandDetails::GoAroundTheSun => {
+                    PersonStorableCommand::GoAroundTheSun
+                }
             }
         }
     }
@@ -176,17 +195,27 @@ mod tests {
     impl PersonCommand {
         pub fn go_around_sun(id: &MyHandle, version: Option<u64>) -> Self {
             let actor = Actor::actor_from_def(ACTOR_DEF_TEST);
-            Self::new(id, version, PersonCommandDetails::GoAroundTheSun, &actor)
+            Self::new(
+                id,
+                version,
+                PersonCommandDetails::GoAroundTheSun,
+                &actor,
+            )
         }
 
-        pub fn change_name(id: &MyHandle, version: Option<u64>, s: &str) -> Self {
+        pub fn change_name(
+            id: &MyHandle,
+            version: Option<u64>,
+            s: &str,
+        ) -> Self {
             let details = PersonCommandDetails::ChangeName(s.to_string());
             let actor = Actor::actor_from_def(ACTOR_DEF_TEST);
             Self::new(id, version, details, &actor)
         }
     }
 
-    //------------ PersonStorableCommand -----------------------------------------
+    //------------ PersonStorableCommand
+    //------------ -----------------------------------------
 
     #[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
     enum PersonStorableCommand {
@@ -199,8 +228,12 @@ mod tests {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             match self {
                 PersonStorableCommand::Init => write!(f, "Initialise person"),
-                PersonStorableCommand::ChangeName(name) => write!(f, "Change name to {}", name),
-                PersonStorableCommand::GoAroundTheSun => write!(f, "Go around the sun"),
+                PersonStorableCommand::ChangeName(name) => {
+                    write!(f, "Change name to {}", name)
+                }
+                PersonStorableCommand::GoAroundTheSun => {
+                    write!(f, "Go around the sun")
+                }
             }
         }
     }
@@ -208,11 +241,16 @@ mod tests {
     impl WithStorableDetails for PersonStorableCommand {
         fn summary(&self) -> CommandSummary {
             match self {
-                PersonStorableCommand::Init => CommandSummary::new("person-init", self),
-                PersonStorableCommand::ChangeName(name) => {
-                    CommandSummary::new("person-change-name", self).with_arg("name", name)
+                PersonStorableCommand::Init => {
+                    CommandSummary::new("person-init", self)
                 }
-                PersonStorableCommand::GoAroundTheSun => CommandSummary::new("person-around-sun", self),
+                PersonStorableCommand::ChangeName(name) => {
+                    CommandSummary::new("person-change-name", self)
+                        .with_arg("name", name)
+                }
+                PersonStorableCommand::GoAroundTheSun => {
+                    CommandSummary::new("person-around-sun", self)
+                }
             }
         }
 
@@ -221,10 +259,11 @@ mod tests {
         }
     }
 
-    //------------ PersonError ---------------------------------------------------
+    //------------ PersonError
+    //------------ ---------------------------------------------------
 
-    /// Errors specific to the Person aggregate, should only ever be returned when
-    /// applying a command that does not validate.
+    /// Errors specific to the Person aggregate, should only ever be returned
+    /// when applying a command that does not validate.
     #[derive(Clone, Debug)]
     enum PersonError {
         TooOld,
@@ -234,7 +273,9 @@ mod tests {
     impl fmt::Display for PersonError {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             match self {
-                PersonError::TooOld => write!(f, "No person can live longer than 255 years"),
+                PersonError::TooOld => {
+                    write!(f, "No person can live longer than 255 years")
+                }
                 PersonError::Custom(s) => s.fmt(f),
             }
         }
@@ -251,7 +292,6 @@ mod tests {
     //------------ Person ------------------------------------------------------
 
     /// Defines a person object. Persons have a name and an age.
-    ///
     #[derive(Clone, Deserialize, Serialize)]
     struct Person {
         /// The id is needed when generating events.
@@ -297,7 +337,9 @@ mod tests {
             }
         }
 
-        fn process_init_command(command: Self::InitCommand) -> Result<Self::InitEvent, Self::Error> {
+        fn process_init_command(
+            command: Self::InitCommand,
+        ) -> Result<Self::InitEvent, Self::Error> {
             Ok(PersonInitEvent {
                 name: command.into_details().name,
             })
@@ -318,7 +360,10 @@ mod tests {
             }
         }
 
-        fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Event>, Self::Error> {
+        fn process_command(
+            &self,
+            command: Self::Command,
+        ) -> Result<Vec<Self::Event>, Self::Error> {
             match command.into_details() {
                 PersonCommandDetails::ChangeName(name) => {
                     let event = PersonEvent::name_changed(name);
@@ -342,12 +387,18 @@ mod tests {
 
         let counter = Arc::new(EventCounter::default());
 
-        let mut manager = AggregateStore::<Person>::create(&storage_uri, namespace!("person"), false).unwrap();
+        let mut manager = AggregateStore::<Person>::create(
+            &storage_uri,
+            namespace!("person"),
+            false,
+        )
+        .unwrap();
         manager.add_post_save_listener(counter.clone());
 
         let alice_name = "alice smith".to_string();
         let alice_handle = MyHandle::from_str("alice").unwrap();
-        let alice_init_cmd = PersonInitCommand::make(&alice_handle, alice_name);
+        let alice_init_cmd =
+            PersonInitCommand::make(&alice_handle, alice_name);
 
         manager.add(alice_init_cmd).unwrap();
 
@@ -369,13 +420,23 @@ mod tests {
         assert_eq!("alice smith", alice.name());
         assert_eq!(21, alice.age());
 
-        let change_name = PersonCommand::change_name(&alice_handle, Some(22), "alice smith-doe");
+        let change_name = PersonCommand::change_name(
+            &alice_handle,
+            Some(22),
+            "alice smith-doe",
+        );
         let alice = manager.command(change_name).unwrap();
         assert_eq!("alice smith-doe", alice.name());
         assert_eq!(21, alice.age());
 
-        // Should read state again when restarted with same data store mapping.
-        let manager = AggregateStore::<Person>::create(&storage_uri, namespace!("person"), false).unwrap();
+        // Should read state again when restarted with same data store
+        // mapping.
+        let manager = AggregateStore::<Person>::create(
+            &storage_uri,
+            namespace!("person"),
+            false,
+        )
+        .unwrap();
 
         let alice = manager.get_latest(&alice_handle).unwrap();
         assert_eq!("alice smith-doe", alice.name());

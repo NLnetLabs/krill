@@ -1,29 +1,61 @@
 //! Perform functional tests on a Krill instance, using the API
-//!
 use bytes::Bytes;
 use krill::{commons::api::RtaList, test::*};
 use rpki::repository::resources::ResourceSet;
 
 #[tokio::test]
 async fn functional_rtas() {
-    let cleanup = start_krill_with_default_test_config(true, false, false, false).await;
+    let cleanup =
+        start_krill_with_default_test_config(true, false, false, false).await;
 
-    info("##################################################################");
-    info("#                                                                #");
-    info("# Test Resource Tagged Attestation (RTA) support. (experimental) #");
-    info("#                                                                #");
-    info("# Uses the following lay-out:                                    #");
-    info("#                                                                #");
-    info("#                  TA                                            #");
-    info("#                   |                                            #");
-    info("#                testbed                                         #");
-    info("#                 /   |                                          #");
-    info("#               CA1   CA2                                        #");
-    info("#                                                                #");
-    info("# * We will then have a simple RTA under CA1                     #");
-    info("# * And a multi-sign RTA under CA1 and CA2                       #");
-    info("#                                                                #");
-    info("##################################################################");
+    info(
+        "##################################################################",
+    );
+    info(
+        "#                                                                #",
+    );
+    info(
+        "# Test Resource Tagged Attestation (RTA) support. (experimental) #",
+    );
+    info(
+        "#                                                                #",
+    );
+    info(
+        "# Uses the following lay-out:                                    #",
+    );
+    info(
+        "#                                                                #",
+    );
+    info(
+        "#                  TA                                            #",
+    );
+    info(
+        "#                   |                                            #",
+    );
+    info(
+        "#                testbed                                         #",
+    );
+    info(
+        "#                 /   |                                          #",
+    );
+    info(
+        "#               CA1   CA2                                        #",
+    );
+    info(
+        "#                                                                #",
+    );
+    info(
+        "# * We will then have a simple RTA under CA1                     #",
+    );
+    info(
+        "# * And a multi-sign RTA under CA1 and CA2                       #",
+    );
+    info(
+        "#                                                                #",
+    );
+    info(
+        "##################################################################",
+    );
     info("");
 
     let testbed = ca_handle("testbed");
@@ -34,13 +66,27 @@ async fn functional_rtas() {
     let ca2 = ca_handle("CA2");
     let ca2_res = resources("", "10.1.0.0/16", "");
 
-    info("##################################################################");
-    info("#                                                                #");
-    info("# Wait for the *testbed* CA to get its certificate, this means   #");
-    info("# that all CAs which are set up as part of krill_start under the #");
-    info("# testbed config have been set up.                               #");
-    info("#                                                                #");
-    info("##################################################################");
+    info(
+        "##################################################################",
+    );
+    info(
+        "#                                                                #",
+    );
+    info(
+        "# Wait for the *testbed* CA to get its certificate, this means   #",
+    );
+    info(
+        "# that all CAs which are set up as part of krill_start under the #",
+    );
+    info(
+        "# testbed config have been set up.                               #",
+    );
+    info(
+        "#                                                                #",
+    );
+    info(
+        "##################################################################",
+    );
     info("");
     assert!(ca_contains_resources(&testbed, &ResourceSet::all()).await);
 
@@ -106,7 +152,12 @@ async fn functional_rtas() {
         let multi_rta_name = "multi_rta".to_string();
 
         // CA1 prepares, so that CA2 can include its key on the RTA it signs
-        let ca1_prep = rta_multi_prep(ca1.clone(), multi_rta_name.clone(), multi_resources.clone()).await;
+        let ca1_prep = rta_multi_prep(
+            ca1.clone(),
+            multi_rta_name.clone(),
+            multi_resources.clone(),
+        )
+        .await;
 
         // CA2 signs and includes CA1's key
         rta_sign_sign(
@@ -120,7 +171,8 @@ async fn functional_rtas() {
 
         // CA1 co-signs the RTA containing CA1's signature (only)
         let multi_rta_ca2 = rta_show(ca2, multi_rta_name.clone()).await;
-        rta_multi_cosign(ca1.clone(), multi_rta_name.clone(), multi_rta_ca2).await;
+        rta_multi_cosign(ca1.clone(), multi_rta_name.clone(), multi_rta_ca2)
+            .await;
 
         let _multi_signed = rta_show(ca1.clone(), multi_rta_name).await;
     }

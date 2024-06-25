@@ -30,17 +30,22 @@ use crate::{
     cli::report::{ReportError, ReportFormat},
     commons::{
         api::{
-            self, import::ImportChild, AddChildRequest, AspaDefinition, AspaDefinitionFormatError, AspaProvidersUpdate,
-            AuthorizationFmtError, BgpSecAsnKey, BgpSecDefinition, CertAuthInit, CustomerAsn, ParentCaReq, ProviderAsn,
-            PublicationServerUris, RepoFileDeleteCriteria, RoaConfiguration, RoaConfigurationUpdates, RoaPayload,
-            RtaName, Token, UpdateChildRequest,
+            self, import::ImportChild, AddChildRequest, AspaDefinition,
+            AspaDefinitionFormatError, AspaProvidersUpdate,
+            AuthorizationFmtError, BgpSecAsnKey, BgpSecDefinition,
+            CertAuthInit, CustomerAsn, ParentCaReq, ProviderAsn,
+            PublicationServerUris, RepoFileDeleteCriteria, RoaConfiguration,
+            RoaConfigurationUpdates, RoaPayload, RtaName, Token,
+            UpdateChildRequest,
         },
         crypto::SignSupport,
         error::KrillIoError,
         util::file,
     },
     constants::*,
-    daemon::ca::{ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest},
+    daemon::ca::{
+        ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest,
+    },
 };
 
 #[derive(Debug)]
@@ -88,7 +93,9 @@ impl GeneralArgs {
     pub fn from_matches(matches: &ArgMatches) -> Result<Self, Error> {
         let server = {
             let mut server = match env::var(KRILL_CLI_SERVER_ENV) {
-                Ok(server_str) => Some(idexchange::ServiceUri::from_str(&server_str)?),
+                Ok(server_str) => {
+                    Some(idexchange::ServiceUri::from_str(&server_str)?)
+                }
                 Err(_) => None,
             };
 
@@ -96,17 +103,28 @@ impl GeneralArgs {
                 server = Some(idexchange::ServiceUri::from_str(server_str)?);
             }
 
-            server.unwrap_or_else(|| idexchange::ServiceUri::from_str(KRILL_CLI_SERVER_DFLT).unwrap())
+            server.unwrap_or_else(|| {
+                idexchange::ServiceUri::from_str(KRILL_CLI_SERVER_DFLT)
+                    .unwrap()
+            })
         };
 
         let token = {
-            let mut token = env::var(KRILL_CLI_TOKEN_ENV).ok().map(Token::from);
+            let mut token =
+                env::var(KRILL_CLI_TOKEN_ENV).ok().map(Token::from);
 
-            if let Some(token_str) = matches.value_of(KRILL_CLI_ADMIN_TOKEN_ARG) {
+            if let Some(token_str) =
+                matches.value_of(KRILL_CLI_ADMIN_TOKEN_ARG)
+            {
                 token = Some(Token::from(token_str));
             }
 
-            token.ok_or_else(|| Error::missing_arg_with_env(KRILL_CLI_ADMIN_TOKEN_ARG, KRILL_CLI_TOKEN_ENV))?
+            token.ok_or_else(|| {
+                Error::missing_arg_with_env(
+                    KRILL_CLI_ADMIN_TOKEN_ARG,
+                    KRILL_CLI_TOKEN_ENV,
+                )
+            })?
         };
 
         let format = {
@@ -122,7 +140,8 @@ impl GeneralArgs {
             format.unwrap_or(ReportFormat::Text)
         };
 
-        let api = env::var(KRILL_CLI_API_ENV).is_ok() || matches.is_present(KRILL_CLI_API_ARG);
+        let api = env::var(KRILL_CLI_API_ENV).is_ok()
+            || matches.is_present(KRILL_CLI_API_ARG);
 
         Ok(GeneralArgs {
             server,
@@ -136,7 +155,8 @@ impl GeneralArgs {
 impl Default for GeneralArgs {
     fn default() -> Self {
         GeneralArgs {
-            server: idexchange::ServiceUri::from_str(KRILL_CLI_SERVER_DFLT).unwrap(),
+            server: idexchange::ServiceUri::from_str(KRILL_CLI_SERVER_DFLT)
+                .unwrap(),
             token: Token::from(""),
             format: ReportFormat::Text,
             api: false,
@@ -170,7 +190,12 @@ impl Options {
     }
 
     /// Creates a new Options explicitly (useful for testing)
-    pub fn new(server: idexchange::ServiceUri, token: &str, format: ReportFormat, command: Command) -> Self {
+    pub fn new(
+        server: idexchange::ServiceUri,
+        token: &str,
+        format: ReportFormat,
+        command: Command,
+    ) -> Self {
         Options {
             server,
             token: Token::from(token),
@@ -240,8 +265,9 @@ impl Options {
     }
 
     fn make_config_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut config_sub =
-            SubCommand::with_name("config").about("Creates a configuration file for Krill and prints it to STDOUT");
+        let mut config_sub = SubCommand::with_name("config").about(
+            "Creates a configuration file for Krill and prints it to STDOUT",
+        );
 
         fn add_data_dir_arg<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
             app.arg(
@@ -283,13 +309,16 @@ impl Options {
                     .short("a")
                     .long("attribute")
                     .value_name("attr")
-                    .help("Specify key=value pair attributes to give the user")
+                    .help(
+                        "Specify key=value pair attributes to give the user",
+                    )
                     .required(false)
                     .multiple(true),
             )
         }
 
-        let mut simple = SubCommand::with_name("simple").about("Use a 3rd party repository for publishing");
+        let mut simple = SubCommand::with_name("simple")
+            .about("Use a 3rd party repository for publishing");
 
         simple = GeneralArgs::add_args(simple);
         simple = add_data_dir_arg(simple);
@@ -299,8 +328,9 @@ impl Options {
 
         #[cfg(feature = "multi-user")]
         {
-            let mut with_user =
-                SubCommand::with_name("user").about("Generate a user authentication configuration file fragment");
+            let mut with_user = SubCommand::with_name("user").about(
+                "Generate a user authentication configuration file fragment",
+            );
 
             with_user = GeneralArgs::add_args(with_user);
             with_user = add_id_arg(with_user);
@@ -321,7 +351,8 @@ impl Options {
     }
 
     fn make_cas_show_ca_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("show").about("Show details of a CA");
+        let mut sub =
+            SubCommand::with_name("show").about("Show details of a CA");
 
         sub = GeneralArgs::add_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -329,8 +360,11 @@ impl Options {
         app.subcommand(sub)
     }
 
-    fn make_cas_show_history_details_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("details").about("Show details for a command in the history of a CA");
+    fn make_cas_show_history_details_sc<'a, 'b>(
+        app: App<'a, 'b>,
+    ) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("details")
+            .about("Show details for a command in the history of a CA");
 
         sub = GeneralArgs::add_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -346,8 +380,11 @@ impl Options {
         app.subcommand(sub)
     }
 
-    fn make_cas_show_history_list_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("commands").about("Show the commands sent to a CA");
+    fn make_cas_show_history_list_sc<'a, 'b>(
+        app: App<'a, 'b>,
+    ) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("commands")
+            .about("Show the commands sent to a CA");
 
         sub = GeneralArgs::add_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -388,7 +425,8 @@ impl Options {
     }
 
     fn make_cas_show_history_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("history").about("Show the history of a CA");
+        let mut sub = SubCommand::with_name("history")
+            .about("Show the history of a CA");
 
         sub = Self::make_cas_show_history_list_sc(sub);
         sub = Self::make_cas_show_history_details_sc(sub);
@@ -416,7 +454,8 @@ impl Options {
     }
 
     fn make_cas_children_add_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("add").about("Add a child to a CA");
+        let mut sub =
+            SubCommand::with_name("add").about("Add a child to a CA");
 
         sub = GeneralArgs::add_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -435,7 +474,8 @@ impl Options {
     }
 
     fn make_cas_children_update_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("update").about("Update an existing child of a CA");
+        let mut sub = SubCommand::with_name("update")
+            .about("Update an existing child of a CA");
 
         sub = GeneralArgs::add_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -452,8 +492,11 @@ impl Options {
         app.subcommand(sub)
     }
 
-    fn make_cas_children_response_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("response").about("Show the RFC 8183 Parent Response XML");
+    fn make_cas_children_response_sc<'a, 'b>(
+        app: App<'a, 'b>,
+    ) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("response")
+            .about("Show the RFC 8183 Parent Response XML");
 
         sub = GeneralArgs::add_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -463,7 +506,8 @@ impl Options {
     }
 
     fn make_cas_children_info_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("info").about("Show info for a child (id and resources)");
+        let mut sub = SubCommand::with_name("info")
+            .about("Show info for a child (id and resources)");
 
         sub = GeneralArgs::add_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -473,7 +517,8 @@ impl Options {
     }
 
     fn make_cas_children_remove_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("remove").about("Remove an existing child from a CA");
+        let mut sub = SubCommand::with_name("remove")
+            .about("Remove an existing child from a CA");
 
         sub = GeneralArgs::add_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -482,8 +527,11 @@ impl Options {
         app.subcommand(sub)
     }
 
-    fn make_cas_children_connections_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("connections").about("Show connections stats for children of a CA");
+    fn make_cas_children_connections_sc<'a, 'b>(
+        app: App<'a, 'b>,
+    ) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("connections")
+            .about("Show connections stats for children of a CA");
 
         sub = GeneralArgs::add_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -492,7 +540,8 @@ impl Options {
     }
 
     fn make_cas_children_suspend_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("suspend").about("Suspend a child CA: hide certificate(s) issued to child");
+        let mut sub = SubCommand::with_name("suspend")
+            .about("Suspend a child CA: hide certificate(s) issued to child");
 
         sub = GeneralArgs::add_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -501,9 +550,12 @@ impl Options {
         app.subcommand(sub)
     }
 
-    fn make_cas_children_unsuspend_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub =
-            SubCommand::with_name("unsuspend").about("Suspend a child CA: republish certificate(s) issued to child");
+    fn make_cas_children_unsuspend_sc<'a, 'b>(
+        app: App<'a, 'b>,
+    ) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("unsuspend").about(
+            "Suspend a child CA: republish certificate(s) issued to child",
+        );
 
         sub = GeneralArgs::add_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -513,7 +565,8 @@ impl Options {
     }
 
     fn make_cas_children_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("children").about("Manage children for a CA");
+        let mut sub = SubCommand::with_name("children")
+            .about("Manage children for a CA");
 
         sub = Self::make_cas_children_add_sc(sub);
         sub = Self::make_cas_children_update_sc(sub);
@@ -528,7 +581,8 @@ impl Options {
     }
 
     fn make_cas_parents_request_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("request").about("Show RFC 8183 Child Request XML");
+        let mut sub = SubCommand::with_name("request")
+            .about("Show RFC 8183 Child Request XML");
 
         sub = GeneralArgs::add_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -537,7 +591,8 @@ impl Options {
     }
 
     fn make_cas_parents_add_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("add").about("Add a parent to, or update a parent of a CA");
+        let mut sub = SubCommand::with_name("add")
+            .about("Add a parent to, or update a parent of a CA");
 
         sub = GeneralArgs::add_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -555,7 +610,8 @@ impl Options {
     }
 
     fn make_cas_parents_statuses_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("statuses").about("Show overview of all parent statuses of a CA");
+        let mut sub = SubCommand::with_name("statuses")
+            .about("Show overview of all parent statuses of a CA");
 
         sub = GeneralArgs::add_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -564,7 +620,8 @@ impl Options {
     }
 
     fn make_cas_parents_contact_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("contact").about("Show contact information for a parent of a CA");
+        let mut sub = SubCommand::with_name("contact")
+            .about("Show contact information for a parent of a CA");
 
         sub = GeneralArgs::add_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -574,7 +631,8 @@ impl Options {
     }
 
     fn make_cas_parents_remove_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("remove").about("Remove an existing parent from a CA");
+        let mut sub = SubCommand::with_name("remove")
+            .about("Remove an existing parent from a CA");
 
         sub = GeneralArgs::add_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -584,7 +642,8 @@ impl Options {
     }
 
     fn make_cas_parents_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("parents").about("Manage parents for a CA");
+        let mut sub =
+            SubCommand::with_name("parents").about("Manage parents for a CA");
 
         sub = Self::make_cas_parents_request_sc(sub);
         sub = Self::make_cas_parents_add_sc(sub);
@@ -596,7 +655,8 @@ impl Options {
     }
 
     fn make_cas_keyroll_init_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("init").about("Initialize roll for all keys held by a CA");
+        let mut sub = SubCommand::with_name("init")
+            .about("Initialize roll for all keys held by a CA");
 
         sub = GeneralArgs::add_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -605,7 +665,8 @@ impl Options {
     }
 
     fn make_cas_keyroll_activate_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("activate").about("Finish roll for all keys held by a CA");
+        let mut sub = SubCommand::with_name("activate")
+            .about("Finish roll for all keys held by a CA");
 
         sub = GeneralArgs::add_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -614,7 +675,8 @@ impl Options {
     }
 
     fn make_cas_keyroll_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("keyroll").about("Perform a manual key rollover for a CA");
+        let mut sub = SubCommand::with_name("keyroll")
+            .about("Perform a manual key rollover for a CA");
 
         sub = Self::make_cas_keyroll_init_sc(sub);
         sub = Self::make_cas_keyroll_activate_sc(sub);
@@ -623,7 +685,8 @@ impl Options {
     }
 
     fn make_cas_routes_list_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("list").about("Show current authorizations");
+        let mut sub = SubCommand::with_name("list")
+            .about("Show current authorizations");
 
         sub = GeneralArgs::add_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -632,7 +695,8 @@ impl Options {
     }
 
     fn make_cas_routes_update_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("update").about("Update authorizations");
+        let mut sub =
+            SubCommand::with_name("update").about("Update authorizations");
 
         sub = GeneralArgs::add_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -656,7 +720,9 @@ impl Options {
         sub = sub.arg(
             Arg::with_name("add")
                 .long("add")
-                .help("One or more ROAs to add, e.g.: 192.168.0.0/16 => 64496")
+                .help(
+                    "One or more ROAs to add, e.g.: 192.168.0.0/16 => 64496",
+                )
                 .value_name("<roa definition>")
                 .multiple(true)
                 .required(false),
@@ -689,15 +755,19 @@ impl Options {
     }
 
     fn make_cas_routes_bgp_full_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("analyze").about("Show full report of ROAs vs known BGP announcements");
+        let mut sub = SubCommand::with_name("analyze")
+            .about("Show full report of ROAs vs known BGP announcements");
 
         sub = GeneralArgs::add_args(sub);
         sub = Self::add_my_ca_arg(sub);
         app.subcommand(sub)
     }
 
-    fn make_cas_routes_bgp_suggestions_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("suggest").about("Show ROA suggestions based on known BGP announcements");
+    fn make_cas_routes_bgp_suggestions_sc<'a, 'b>(
+        app: App<'a, 'b>,
+    ) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("suggest")
+            .about("Show ROA suggestions based on known BGP announcements");
 
         sub = GeneralArgs::add_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -724,8 +794,9 @@ impl Options {
     }
 
     fn make_cas_routes_bgp_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub =
-            SubCommand::with_name("bgp").about("Show current authorizations in relation to known announcements");
+        let mut sub = SubCommand::with_name("bgp").about(
+            "Show current authorizations in relation to known announcements",
+        );
 
         sub = Self::make_cas_routes_bgp_full_sc(sub);
         sub = Self::make_cas_routes_bgp_suggestions_sc(sub);
@@ -734,7 +805,8 @@ impl Options {
     }
 
     fn make_cas_routes_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("roas").about("Manage ROAs for a CA");
+        let mut sub =
+            SubCommand::with_name("roas").about("Manage ROAs for a CA");
 
         sub = Self::make_cas_routes_list_sc(sub);
         sub = Self::make_cas_routes_update_sc(sub);
@@ -744,7 +816,8 @@ impl Options {
     }
 
     fn make_cas_bgpsec_list_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("list").about("Show current BGPSec configurations");
+        let mut sub = SubCommand::with_name("list")
+            .about("Show current BGPSec configurations");
 
         sub = GeneralArgs::add_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -753,7 +826,8 @@ impl Options {
     }
 
     fn make_cas_bgpsec_add_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("add").about("Add BGPSec configurations");
+        let mut sub =
+            SubCommand::with_name("add").about("Add BGPSec configurations");
 
         sub = GeneralArgs::add_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -779,7 +853,8 @@ impl Options {
     }
 
     fn make_cas_bgpsec_remove_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("remove").about("Remove a BGPSec definition");
+        let mut sub = SubCommand::with_name("remove")
+            .about("Remove a BGPSec definition");
 
         sub = GeneralArgs::add_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -805,7 +880,8 @@ impl Options {
     }
 
     fn make_cas_bgpsec_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("bgpsec").about("Manage BGPSec certificates");
+        let mut sub = SubCommand::with_name("bgpsec")
+            .about("Manage BGPSec certificates");
 
         sub = Self::make_cas_bgpsec_list_sc(sub);
         sub = Self::make_cas_bgpsec_add_sc(sub);
@@ -815,7 +891,8 @@ impl Options {
     }
 
     fn make_cas_aspas_add_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("add").about("Add or replace an ASPA configuration");
+        let mut sub = SubCommand::with_name("add")
+            .about("Add or replace an ASPA configuration");
 
         sub = GeneralArgs::add_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -832,7 +909,8 @@ impl Options {
     }
 
     fn make_cas_aspas_remove_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("remove").about("Remove the ASPA for a customer ASN");
+        let mut sub = SubCommand::with_name("remove")
+            .about("Remove the ASPA for a customer ASN");
 
         sub = GeneralArgs::add_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -849,7 +927,8 @@ impl Options {
     }
 
     fn make_cas_aspas_update_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("update").about("Update an existing ASPA configuration");
+        let mut sub = SubCommand::with_name("update")
+            .about("Update an existing ASPA configuration");
 
         sub = GeneralArgs::add_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -884,7 +963,8 @@ impl Options {
     }
 
     fn make_cas_aspas_list_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("list").about("Show current ASPA configurations");
+        let mut sub = SubCommand::with_name("list")
+            .about("Show current ASPA configurations");
 
         sub = GeneralArgs::add_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -893,7 +973,8 @@ impl Options {
     }
 
     fn make_cas_aspas_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("aspas").about("Manage ASPAs for a CA (experimental)");
+        let mut sub = SubCommand::with_name("aspas")
+            .about("Manage ASPAs for a CA (experimental)");
 
         sub = Self::make_cas_aspas_add_sc(sub);
         sub = Self::make_cas_aspas_remove_sc(sub);
@@ -904,7 +985,8 @@ impl Options {
     }
 
     fn make_cas_repo_request_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("request").about("Show RFC 8183 Publisher Request XML");
+        let mut sub = SubCommand::with_name("request")
+            .about("Show RFC 8183 Publisher Request XML");
 
         sub = GeneralArgs::add_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -913,7 +995,8 @@ impl Options {
     }
 
     fn make_cas_repo_show_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("show").about("Show current repo config");
+        let mut sub =
+            SubCommand::with_name("show").about("Show current repo config");
 
         sub = GeneralArgs::add_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -922,7 +1005,8 @@ impl Options {
     }
 
     fn make_cas_repo_status_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("status").about("Show current repo status");
+        let mut sub =
+            SubCommand::with_name("status").about("Show current repo status");
 
         sub = GeneralArgs::add_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -931,7 +1015,8 @@ impl Options {
     }
 
     fn make_cas_repo_configure_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("configure").about("Configure which repository a CA uses");
+        let mut sub = SubCommand::with_name("configure")
+            .about("Configure which repository a CA uses");
 
         sub = GeneralArgs::add_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -948,7 +1033,8 @@ impl Options {
     }
 
     fn make_cas_repo_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("repo").about("Manage the repository for a CA");
+        let mut sub = SubCommand::with_name("repo")
+            .about("Manage the repository for a CA");
 
         sub = Self::make_cas_repo_request_sc(sub);
         sub = Self::make_cas_repo_show_sc(sub);
@@ -959,7 +1045,8 @@ impl Options {
     }
 
     fn make_cas_issues_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("issues").about("Show issues for a CA");
+        let mut sub =
+            SubCommand::with_name("issues").about("Show issues for a CA");
 
         sub = GeneralArgs::add_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -1007,7 +1094,8 @@ impl Options {
 
     #[cfg(feature = "rta")]
     fn make_cas_rta_sign_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("sign").about("Create an RTA signed by a CA");
+        let mut sub = SubCommand::with_name("sign")
+            .about("Create an RTA signed by a CA");
 
         sub = GeneralArgs::add_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -1056,7 +1144,8 @@ impl Options {
 
     #[cfg(feature = "rta")]
     fn make_cas_rta_multi_prep_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("prep").about("Prepare keys for multi-signed RTA");
+        let mut sub = SubCommand::with_name("prep")
+            .about("Prepare keys for multi-signed RTA");
 
         sub = GeneralArgs::add_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -1086,7 +1175,8 @@ impl Options {
 
     #[cfg(feature = "rta")]
     fn make_cas_rta_multi_sign_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("cosign").about("Co-sign an existing (prepared) RTA");
+        let mut sub = SubCommand::with_name("cosign")
+            .about("Co-sign an existing (prepared) RTA");
 
         sub = GeneralArgs::add_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -1114,7 +1204,8 @@ impl Options {
 
     #[cfg(feature = "rta")]
     fn make_cas_rta_multi_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("multi").about("Manage RTA signed by multiple parties");
+        let mut sub = SubCommand::with_name("multi")
+            .about("Manage RTA signed by multiple parties");
 
         sub = Self::make_cas_rta_multi_prep_sc(sub);
         sub = Self::make_cas_rta_multi_sign_sc(sub);
@@ -1124,7 +1215,8 @@ impl Options {
 
     #[cfg(feature = "rta")]
     fn make_cas_rta_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("rta").about("Manage Resource Tagged Attestations");
+        let mut sub = SubCommand::with_name("rta")
+            .about("Manage Resource Tagged Attestations");
         sub = Self::make_cas_rta_list(sub);
         sub = Self::make_cas_rta_show(sub);
         sub = Self::make_cas_rta_sign_sc(sub);
@@ -1133,26 +1225,33 @@ impl Options {
     }
 
     fn make_bulk_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("bulk").about("Manually trigger refresh/republish/resync for all CAs");
+        let mut sub = SubCommand::with_name("bulk")
+            .about("Manually trigger refresh/republish/resync for all CAs");
 
-        let mut refresh =
-            SubCommand::with_name("refresh").about("Force that all CAs ask their parents for updated certificates");
+        let mut refresh = SubCommand::with_name("refresh").about(
+            "Force that all CAs ask their parents for updated certificates",
+        );
         refresh = GeneralArgs::add_args(refresh);
 
         let mut republish = SubCommand::with_name("publish")
             .about("Force that all CAs create new objects if needed (in which case they will also sync)");
         republish = GeneralArgs::add_args(republish);
 
-        let mut resync = SubCommand::with_name("sync").about("Force that all CAs sync with their repo server");
+        let mut resync = SubCommand::with_name("sync")
+            .about("Force that all CAs sync with their repo server");
         resync = GeneralArgs::add_args(resync);
 
-        sub = sub.subcommand(refresh).subcommand(republish).subcommand(resync);
+        sub = sub
+            .subcommand(refresh)
+            .subcommand(republish)
+            .subcommand(resync);
 
         app.subcommand(sub)
     }
 
     fn make_health_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let health = SubCommand::with_name("health").about("Perform an authenticated health check");
+        let health = SubCommand::with_name("health")
+            .about("Perform an authenticated health check");
         let health = GeneralArgs::add_args(health);
         app.subcommand(health)
     }
@@ -1164,13 +1263,15 @@ impl Options {
     }
 
     fn make_publishers_list_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("list").about("List all publishers");
+        let mut sub =
+            SubCommand::with_name("list").about("List all publishers");
         sub = GeneralArgs::add_args(sub);
         app.subcommand(sub)
     }
 
     fn make_publishers_stale_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("stale").about("List all publishers which have not published in a while");
+        let mut sub = SubCommand::with_name("stale")
+            .about("List all publishers which have not published in a while");
         sub = GeneralArgs::add_args(sub);
         sub = sub.arg(
             Arg::with_name("seconds")
@@ -1243,34 +1344,43 @@ impl Options {
     }
 
     fn make_publishers_remove_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("remove").about("Remove a publisher");
+        let mut sub =
+            SubCommand::with_name("remove").about("Remove a publisher");
         sub = GeneralArgs::add_args(sub);
         sub = Self::add_publisher_arg(sub);
         app.subcommand(sub)
     }
 
     fn make_publishers_show_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("show").about("Show details for a publisher");
+        let mut sub = SubCommand::with_name("show")
+            .about("Show details for a publisher");
         sub = GeneralArgs::add_args(sub);
         sub = Self::add_publisher_arg(sub);
         app.subcommand(sub)
     }
 
     fn make_publishers_response_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("response").about("Show RFC 8183 Repository Response XML");
+        let mut sub = SubCommand::with_name("response")
+            .about("Show RFC 8183 Repository Response XML");
         sub = GeneralArgs::add_args(sub);
         sub = Self::add_publisher_arg(sub);
         app.subcommand(sub)
     }
 
-    fn make_publication_server_stats_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("stats").about("Show publication server stats");
+    fn make_publication_server_stats_sc<'a, 'b>(
+        app: App<'a, 'b>,
+    ) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("stats")
+            .about("Show publication server stats");
         sub = GeneralArgs::add_args(sub);
         app.subcommand(sub)
     }
 
-    fn make_publication_server_init_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("init").about("Initialize publication server");
+    fn make_publication_server_init_sc<'a, 'b>(
+        app: App<'a, 'b>,
+    ) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("init")
+            .about("Initialize publication server");
         sub = GeneralArgs::add_args(sub);
 
         sub = Self::add_rsync_base_arg(sub);
@@ -1279,21 +1389,28 @@ impl Options {
         app.subcommand(sub)
     }
 
-    fn make_publication_server_clear_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("clear").about("Clear the publication server so it can re-initialized");
+    fn make_publication_server_clear_sc<'a, 'b>(
+        app: App<'a, 'b>,
+    ) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("clear")
+            .about("Clear the publication server so it can re-initialized");
         sub = GeneralArgs::add_args(sub);
         app.subcommand(sub)
     }
 
-    fn make_publication_server_session_reset_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("session-reset").about("Reset the RRDP session");
+    fn make_publication_server_session_reset_sc<'a, 'b>(
+        app: App<'a, 'b>,
+    ) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("session-reset")
+            .about("Reset the RRDP session");
         sub = GeneralArgs::add_args(sub);
 
         app.subcommand(sub)
     }
 
     fn make_publication_server_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("server").about("Manage the Publication Server (init/stats)");
+        let mut sub = SubCommand::with_name("server")
+            .about("Manage the Publication Server (init/stats)");
         sub = Self::make_publication_server_stats_sc(sub);
         sub = Self::make_publication_server_init_sc(sub);
         sub = Self::make_publication_server_clear_sc(sub);
@@ -1302,7 +1419,8 @@ impl Options {
     }
 
     fn make_publishers_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("publishers").about("Manage the publishers in your Publication Server");
+        let mut sub = SubCommand::with_name("publishers")
+            .about("Manage the publishers in your Publication Server");
 
         sub = Self::make_publishers_list_sc(sub);
         sub = Self::make_publishers_stale_sc(sub);
@@ -1315,7 +1433,8 @@ impl Options {
     }
 
     fn make_pubserver_delete_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("delete").about("Delete specific files from the Publication Server");
+        let mut sub = SubCommand::with_name("delete")
+            .about("Delete specific files from the Publication Server");
         sub = GeneralArgs::add_args(sub);
 
         sub = sub.arg(
@@ -1386,20 +1505,33 @@ impl Options {
             let mut my_ca = None;
 
             if let Ok(my_ca_env) = env::var(KRILL_CLI_MY_CA_ENV) {
-                my_ca = Some(CaHandle::from_str(&my_ca_env).map_err(|_| Error::InvalidHandle)?);
+                my_ca = Some(
+                    CaHandle::from_str(&my_ca_env)
+                        .map_err(|_| Error::InvalidHandle)?,
+                );
             }
 
             if let Some(my_ca_str) = matches.value_of(KRILL_CLI_MY_CA_ARG) {
-                my_ca = Some(CaHandle::from_str(my_ca_str).map_err(|_| Error::InvalidHandle)?);
+                my_ca = Some(
+                    CaHandle::from_str(my_ca_str)
+                        .map_err(|_| Error::InvalidHandle)?,
+                );
             }
 
-            my_ca.ok_or_else(|| Error::missing_arg_with_env(KRILL_CLI_MY_CA_ARG, KRILL_CLI_MY_CA_ENV))?
+            my_ca.ok_or_else(|| {
+                Error::missing_arg_with_env(
+                    KRILL_CLI_MY_CA_ARG,
+                    KRILL_CLI_MY_CA_ENV,
+                )
+            })?
         };
 
         Ok(my_ca)
     }
 
-    fn parse_resource_args(matches: &ArgMatches) -> Result<Option<ResourceSet>, Error> {
+    fn parse_resource_args(
+        matches: &ArgMatches,
+    ) -> Result<Option<ResourceSet>, Error> {
         let asn = matches.value_of("asn");
         let v4 = matches.value_of("ipv4");
         let v6 = matches.value_of("ipv6");
@@ -1417,7 +1549,9 @@ impl Options {
         }
     }
 
-    fn parse_matches_simple_config(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_simple_config(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
 
         #[cfg(not(feature = "multi-user"))]
@@ -1428,7 +1562,9 @@ impl Options {
 
         if let Some(data) = matches.value_of("data") {
             if !data.ends_with('/') {
-                return Err(Error::general("Path for --data MUST end with a '/'"));
+                return Err(Error::general(
+                    "Path for --data MUST end with a '/'",
+                ));
             }
             details.with_data_dir(data);
         }
@@ -1441,7 +1577,9 @@ impl Options {
     }
 
     #[cfg(feature = "multi-user")]
-    fn parse_matches_user_config(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_user_config(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::default();
         let mut details = KrillUserDetails::default();
         if let Some(id) = matches.value_of("id") {
@@ -1450,12 +1588,18 @@ impl Options {
         if let Some(attr_iter) = matches.values_of("attr") {
             for attr in attr_iter {
                 let mut iter = attr.split('=');
-                let k = iter
-                    .next()
-                    .ok_or_else(|| Error::general(&format!("attribute '{}' must be of the form key=value", attr)))?;
-                let v = iter
-                    .next()
-                    .ok_or_else(|| Error::general(&format!("attribute '{}' must be of the form key=value", attr)))?;
+                let k = iter.next().ok_or_else(|| {
+                    Error::general(&format!(
+                        "attribute '{}' must be of the form key=value",
+                        attr
+                    ))
+                })?;
+                let v = iter.next().ok_or_else(|| {
+                    Error::general(&format!(
+                        "attribute '{}' must be of the form key=value",
+                        attr
+                    ))
+                })?;
                 details.with_attr(k.to_string(), v.to_string());
             }
         }
@@ -1478,7 +1622,9 @@ impl Options {
         }
     }
 
-    fn parse_matches_cas_list(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_list(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let command = Command::CertAuth(CaCommand::List);
         Ok(Options::make(general_args, command))
@@ -1495,7 +1641,9 @@ impl Options {
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_delete(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_delete(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
@@ -1504,7 +1652,9 @@ impl Options {
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_show(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_show(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
@@ -1512,49 +1662,69 @@ impl Options {
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_history_details(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_history_details(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
         let key = matches.value_of("key").unwrap();
 
-        let command = Command::CertAuth(CaCommand::ShowHistoryDetails(my_ca, key.to_string()));
+        let command = Command::CertAuth(CaCommand::ShowHistoryDetails(
+            my_ca,
+            key.to_string(),
+        ));
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_history_commands(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_history_commands(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
         let mut options = HistoryOptions::default();
 
         if let Some(offset) = matches.value_of("offset") {
-            let offset = u64::from_str(offset).map_err(|e| Error::general(&format!("invalid number: {}", e)))?;
+            let offset = u64::from_str(offset).map_err(|e| {
+                Error::general(&format!("invalid number: {}", e))
+            })?;
             options.offset = offset
         }
 
         if let Some(rows) = matches.value_of("rows") {
-            let rows = u64::from_str(rows).map_err(|e| Error::general(&format!("invalid number: {}", e)))?;
+            let rows = u64::from_str(rows).map_err(|e| {
+                Error::general(&format!("invalid number: {}", e))
+            })?;
             if rows > 250 {
-                return Err(Error::general("No more than 250 rows allowed in history"));
+                return Err(Error::general(
+                    "No more than 250 rows allowed in history",
+                ));
             }
             options.rows = rows
         }
 
         if let Some(after) = matches.value_of("after") {
-            let time = Time::from_str(after).map_err(|e| Error::general(&format!("invalid date format: {}", e)))?;
+            let time = Time::from_str(after).map_err(|e| {
+                Error::general(&format!("invalid date format: {}", e))
+            })?;
             options.after = Some(time);
         }
 
         if let Some(after) = matches.value_of("before") {
-            let time = Time::from_str(after).map_err(|e| Error::general(&format!("invalid date format: {}", e)))?;
+            let time = Time::from_str(after).map_err(|e| {
+                Error::general(&format!("invalid date format: {}", e))
+            })?;
             options.before = Some(time);
         }
 
-        let command = Command::CertAuth(CaCommand::ShowHistoryCommands(my_ca, options));
+        let command =
+            Command::CertAuth(CaCommand::ShowHistoryCommands(my_ca, options));
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_history(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_history(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         if let Some(m) = matches.subcommand_matches("commands") {
             Self::parse_matches_cas_history_commands(m)
         } else if let Some(m) = matches.subcommand_matches("details") {
@@ -1564,7 +1734,9 @@ impl Options {
         }
     }
 
-    fn parse_matches_cas_children_add(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_children_add(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let path = matches.value_of("request").unwrap();
         let bytes = Self::read_file_arg(path)?;
         let child_request = idexchange::ChildRequest::parse(bytes.as_ref())?;
@@ -1573,27 +1745,35 @@ impl Options {
         let my_ca = Self::parse_my_ca(matches)?;
 
         let child = matches.value_of("child").unwrap();
-        let child = ChildHandle::from_str(child).map_err(|_| Error::InvalidHandle)?;
+        let child =
+            ChildHandle::from_str(child).map_err(|_| Error::InvalidHandle)?;
 
-        let resources = Self::parse_resource_args(matches)?.ok_or(Error::MissingResources)?;
+        let resources = Self::parse_resource_args(matches)?
+            .ok_or(Error::MissingResources)?;
 
         let id_cert = child_request.validate()?;
-        let add_child_request = AddChildRequest::new(child, resources, id_cert);
-        let command = Command::CertAuth(CaCommand::ChildAdd(my_ca, add_child_request));
+        let add_child_request =
+            AddChildRequest::new(child, resources, id_cert);
+        let command =
+            Command::CertAuth(CaCommand::ChildAdd(my_ca, add_child_request));
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_children_update(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_children_update(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
         let child = matches.value_of("child").unwrap();
-        let child = ChildHandle::from_str(child).map_err(|_| Error::InvalidHandle)?;
+        let child =
+            ChildHandle::from_str(child).map_err(|_| Error::InvalidHandle)?;
 
         let id_cert = {
             if let Some(path) = matches.value_of("idcert") {
                 let bytes = Self::read_file_arg(path)?;
-                let id_cert = IdCert::decode(bytes.as_ref()).map_err(|_| Error::InvalidChildIdCert)?;
+                let id_cert = IdCert::decode(bytes.as_ref())
+                    .map_err(|_| Error::InvalidChildIdCert)?;
                 Some(id_cert)
             } else {
                 None
@@ -1603,44 +1783,57 @@ impl Options {
 
         let update = UpdateChildRequest::new(id_cert, resources, None);
 
-        let command = Command::CertAuth(CaCommand::ChildUpdate(my_ca, child, update));
+        let command =
+            Command::CertAuth(CaCommand::ChildUpdate(my_ca, child, update));
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_children_info(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_children_info(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
         let child = matches.value_of("child").unwrap();
-        let child = ChildHandle::from_str(child).map_err(|_| Error::InvalidHandle)?;
+        let child =
+            ChildHandle::from_str(child).map_err(|_| Error::InvalidHandle)?;
 
         let command = Command::CertAuth(CaCommand::ChildInfo(my_ca, child));
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_children_response(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_children_response(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
         let child = matches.value_of("child").unwrap();
-        let child = ChildHandle::from_str(child).map_err(|_| Error::InvalidHandle)?;
+        let child =
+            ChildHandle::from_str(child).map_err(|_| Error::InvalidHandle)?;
 
-        let command = Command::CertAuth(CaCommand::ParentResponse(my_ca, child));
+        let command =
+            Command::CertAuth(CaCommand::ParentResponse(my_ca, child));
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_children_remove(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_children_remove(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
         let child = matches.value_of("child").unwrap();
-        let child = ChildHandle::from_str(child).map_err(|_| Error::InvalidHandle)?;
+        let child =
+            ChildHandle::from_str(child).map_err(|_| Error::InvalidHandle)?;
 
         let command = Command::CertAuth(CaCommand::ChildDelete(my_ca, child));
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_children_connections(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_children_connections(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
@@ -1648,33 +1841,43 @@ impl Options {
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_children_suspend(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_children_suspend(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
         let child = matches.value_of("child").unwrap();
-        let child = ChildHandle::from_str(child).map_err(|_| Error::InvalidHandle)?;
+        let child =
+            ChildHandle::from_str(child).map_err(|_| Error::InvalidHandle)?;
 
         let update = UpdateChildRequest::suspend();
 
-        let command = Command::CertAuth(CaCommand::ChildUpdate(my_ca, child, update));
+        let command =
+            Command::CertAuth(CaCommand::ChildUpdate(my_ca, child, update));
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_children_unsuspend(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_children_unsuspend(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
         let child = matches.value_of("child").unwrap();
-        let child = ChildHandle::from_str(child).map_err(|_| Error::InvalidHandle)?;
+        let child =
+            ChildHandle::from_str(child).map_err(|_| Error::InvalidHandle)?;
 
         let update = UpdateChildRequest::unsuspend();
 
-        let command = Command::CertAuth(CaCommand::ChildUpdate(my_ca, child, update));
+        let command =
+            Command::CertAuth(CaCommand::ChildUpdate(my_ca, child, update));
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_children(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_children(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         if let Some(m) = matches.subcommand_matches("add") {
             Self::parse_matches_cas_children_add(m)
         } else if let Some(m) = matches.subcommand_matches("response") {
@@ -1696,7 +1899,9 @@ impl Options {
         }
     }
 
-    fn parse_matches_cas_parents_request(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_parents_request(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
@@ -1705,7 +1910,9 @@ impl Options {
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_parents_add(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_parents_add(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let path = matches.value_of("response").unwrap();
         let bytes = Self::read_file_arg(path)?;
         let response = idexchange::ParentResponse::parse(bytes.as_ref())?;
@@ -1714,24 +1921,32 @@ impl Options {
         let my_ca = Self::parse_my_ca(matches)?;
 
         let parent = matches.value_of("parent").unwrap();
-        let parent = ParentHandle::from_str(parent).map_err(|_| Error::InvalidHandle)?;
+        let parent = ParentHandle::from_str(parent)
+            .map_err(|_| Error::InvalidHandle)?;
         let parent_req = ParentCaReq::new(parent, response);
 
-        let command = Command::CertAuth(CaCommand::AddParent(my_ca, parent_req));
+        let command =
+            Command::CertAuth(CaCommand::AddParent(my_ca, parent_req));
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_parents_info(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_parents_info(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
         let parent = matches.value_of("parent").unwrap();
-        let parent = ParentHandle::from_str(parent).map_err(|_| Error::InvalidHandle)?;
+        let parent = ParentHandle::from_str(parent)
+            .map_err(|_| Error::InvalidHandle)?;
 
-        let command = Command::CertAuth(CaCommand::MyParentCaContact(my_ca, parent));
+        let command =
+            Command::CertAuth(CaCommand::MyParentCaContact(my_ca, parent));
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_parents_statuses(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_parents_statuses(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
@@ -1739,17 +1954,23 @@ impl Options {
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_parents_remove(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_parents_remove(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
         let parent = matches.value_of("parent").unwrap();
-        let parent = ParentHandle::from_str(parent).map_err(|_| Error::InvalidHandle)?;
+        let parent = ParentHandle::from_str(parent)
+            .map_err(|_| Error::InvalidHandle)?;
 
-        let command = Command::CertAuth(CaCommand::RemoveParent(my_ca, parent));
+        let command =
+            Command::CertAuth(CaCommand::RemoveParent(my_ca, parent));
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_parents(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_parents(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         if let Some(m) = matches.subcommand_matches("request") {
             Self::parse_matches_cas_parents_request(m)
         } else if let Some(m) = matches.subcommand_matches("add") {
@@ -1765,7 +1986,9 @@ impl Options {
         }
     }
 
-    fn parse_matches_cas_keyroll_init(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_keyroll_init(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
@@ -1774,7 +1997,9 @@ impl Options {
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_keyroll_activate(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_keyroll_activate(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
@@ -1783,7 +2008,9 @@ impl Options {
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_keyroll(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_keyroll(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         if let Some(m) = matches.subcommand_matches("init") {
             Self::parse_matches_cas_keyroll_init(m)
         } else if let Some(m) = matches.subcommand_matches("activate") {
@@ -1793,22 +2020,29 @@ impl Options {
         }
     }
 
-    fn parse_matches_cas_routes_list(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_routes_list(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
-        let command = Command::CertAuth(CaCommand::RouteAuthorizationsList(my_ca));
+        let command =
+            Command::CertAuth(CaCommand::RouteAuthorizationsList(my_ca));
 
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_routes_update(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_routes_update(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
         let updates = if let Some(path) = matches.value_of("delta") {
             if matches.is_present("add") || matches.is_present("remove") {
-                return Err(Error::general("Cannot use --add or --remove if --delta is specified"));
+                return Err(Error::general(
+                    "Cannot use --add or --remove if --delta is specified",
+                ));
             }
 
             let bytes = Self::read_file_arg(path)?;
@@ -1842,21 +2076,31 @@ impl Options {
         };
 
         if matches.is_present("dryrun") && matches.is_present("try") {
-            return Err(Error::general("You cannot use both --dryrun and --try"));
+            return Err(Error::general(
+                "You cannot use both --dryrun and --try",
+            ));
         }
 
         let command = if matches.is_present("dryrun") {
-            Command::CertAuth(CaCommand::RouteAuthorizationsDryRunUpdate(my_ca, updates))
+            Command::CertAuth(CaCommand::RouteAuthorizationsDryRunUpdate(
+                my_ca, updates,
+            ))
         } else if matches.is_present("try") {
-            Command::CertAuth(CaCommand::RouteAuthorizationsTryUpdate(my_ca, updates))
+            Command::CertAuth(CaCommand::RouteAuthorizationsTryUpdate(
+                my_ca, updates,
+            ))
         } else {
-            Command::CertAuth(CaCommand::RouteAuthorizationsUpdate(my_ca, updates))
+            Command::CertAuth(CaCommand::RouteAuthorizationsUpdate(
+                my_ca, updates,
+            ))
         };
 
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_routes_bgp_full(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_routes_bgp_full(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
         Ok(Options::make(
@@ -1865,25 +2109,39 @@ impl Options {
         ))
     }
 
-    fn parse_matches_cas_routes_bgp_suggest(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_routes_bgp_suggest(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
         let v4 = matches.value_of("ipv4").unwrap_or("");
         let v6 = matches.value_of("ipv6").unwrap_or("");
 
-        let resources = ResourceSet::from_strs("", v4, v6)
-            .map_err(|e| Error::GeneralArgumentError(format!("Could not parse IP resources: {}", e)))?;
+        let resources = ResourceSet::from_strs("", v4, v6).map_err(|e| {
+            Error::GeneralArgumentError(format!(
+                "Could not parse IP resources: {}",
+                e
+            ))
+        })?;
 
-        let resources = if resources.is_empty() { None } else { Some(resources) };
+        let resources = if resources.is_empty() {
+            None
+        } else {
+            Some(resources)
+        };
 
         Ok(Options::make(
             general_args,
-            Command::CertAuth(CaCommand::BgpAnalysisSuggest(my_ca, resources)),
+            Command::CertAuth(CaCommand::BgpAnalysisSuggest(
+                my_ca, resources,
+            )),
         ))
     }
 
-    fn parse_matches_cas_routes_bgp(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_routes_bgp(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         if let Some(m) = matches.subcommand_matches("analyze") {
             Self::parse_matches_cas_routes_bgp_full(m)
         } else if let Some(m) = matches.subcommand_matches("suggest") {
@@ -1893,7 +2151,9 @@ impl Options {
         }
     }
 
-    fn parse_matches_cas_routes(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_routes(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         if let Some(m) = matches.subcommand_matches("list") {
             Self::parse_matches_cas_routes_list(m)
         } else if let Some(m) = matches.subcommand_matches("update") {
@@ -1905,7 +2165,9 @@ impl Options {
         }
     }
 
-    fn parse_matches_cas_bgpsec_list(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_bgpsec_list(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
@@ -1914,50 +2176,72 @@ impl Options {
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_bgpsec_add(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_bgpsec_add(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
         let asn_str = matches.value_of("asn").unwrap();
-        let asn = Asn::from_str(asn_str).map_err(|_| Error::invalid_asn(asn_str))?;
+        let asn = Asn::from_str(asn_str)
+            .map_err(|_| Error::invalid_asn(asn_str))?;
 
         let csr_file = matches.value_of("csr").unwrap();
         let csr_file_path = PathBuf::from(csr_file);
 
-        let bytes = file::read(&csr_file_path)
-            .map_err(|e| Error::GeneralArgumentError(format!("Cannot read file '{}', error: {}", csr_file, e,)))?;
-        let csr = BgpsecCsr::decode(bytes.as_ref())
-            .map_err(|e| Error::GeneralArgumentError(format!("Cannot parse CSR file '{}', error: {}", csr_file, e)))?;
+        let bytes = file::read(&csr_file_path).map_err(|e| {
+            Error::GeneralArgumentError(format!(
+                "Cannot read file '{}', error: {}",
+                csr_file, e,
+            ))
+        })?;
+        let csr = BgpsecCsr::decode(bytes.as_ref()).map_err(|e| {
+            Error::GeneralArgumentError(format!(
+                "Cannot parse CSR file '{}', error: {}",
+                csr_file, e
+            ))
+        })?;
 
         csr.verify_signature().map_err(|e| {
-            Error::GeneralArgumentError(format!("CSR in file '{}' is not valid. Error: {}", csr_file, e))
+            Error::GeneralArgumentError(format!(
+                "CSR in file '{}' is not valid. Error: {}",
+                csr_file, e
+            ))
         })?;
 
         let definition = BgpSecDefinition::new(asn, csr);
 
-        let command = Command::CertAuth(CaCommand::BgpSecAdd(my_ca, definition));
+        let command =
+            Command::CertAuth(CaCommand::BgpSecAdd(my_ca, definition));
 
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_bgpsec_remove(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_bgpsec_remove(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
         let asn_str = matches.value_of("asn").unwrap();
-        let asn = Asn::from_str(asn_str).map_err(|_| Error::invalid_asn(asn_str))?;
+        let asn = Asn::from_str(asn_str)
+            .map_err(|_| Error::invalid_asn(asn_str))?;
 
         let key_str = matches.value_of("key").unwrap();
-        let key = KeyIdentifier::from_str(key_str).map_err(|_| Error::general("Cannot parse key identifier"))?;
+        let key = KeyIdentifier::from_str(key_str)
+            .map_err(|_| Error::general("Cannot parse key identifier"))?;
 
         let definition = BgpSecAsnKey::new(asn, key);
 
-        let command = Command::CertAuth(CaCommand::BgpSecRemove(my_ca, definition));
+        let command =
+            Command::CertAuth(CaCommand::BgpSecRemove(my_ca, definition));
 
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_bgpsec(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_bgpsec(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         if let Some(m) = matches.subcommand_matches("list") {
             Self::parse_matches_cas_bgpsec_list(m)
         } else if let Some(m) = matches.subcommand_matches("add") {
@@ -1969,7 +2253,9 @@ impl Options {
         }
     }
 
-    fn parse_matches_cas_aspas_add(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_aspas_add(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
@@ -1982,23 +2268,30 @@ impl Options {
         } else if aspa.providers().is_empty() {
             Err(Error::general("At least one provider MUST be specified."))
         } else {
-            let command = Command::CertAuth(CaCommand::AspasAddOrReplace(my_ca, aspa));
+            let command =
+                Command::CertAuth(CaCommand::AspasAddOrReplace(my_ca, aspa));
             Ok(Options::make(general_args, command))
         }
     }
 
-    fn parse_matches_cas_aspas_remove(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_aspas_remove(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
         let customer_str = matches.value_of("customer").unwrap();
-        let customer = CustomerAsn::from_str(customer_str).map_err(|_| Error::invalid_asn(customer_str))?;
+        let customer = CustomerAsn::from_str(customer_str)
+            .map_err(|_| Error::invalid_asn(customer_str))?;
 
-        let command = Command::CertAuth(CaCommand::AspasRemove(my_ca, customer));
+        let command =
+            Command::CertAuth(CaCommand::AspasRemove(my_ca, customer));
 
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_aspas_update(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_aspas_update(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
@@ -2006,14 +2299,18 @@ impl Options {
         let mut removed = vec![];
 
         let customer_str = matches.value_of("customer").unwrap();
-        let customer = CustomerAsn::from_str(customer_str).map_err(|_| Error::invalid_asn(customer_str))?;
+        let customer = CustomerAsn::from_str(customer_str)
+            .map_err(|_| Error::invalid_asn(customer_str))?;
 
         if let Some(add) = matches.values_of("add") {
             for provider_str in add {
-                let provider = ProviderAsn::from_str(provider_str).map_err(|_| Error::invalid_asn(provider_str))?;
+                let provider = ProviderAsn::from_str(provider_str)
+                    .map_err(|_| Error::invalid_asn(provider_str))?;
 
                 if provider == customer {
-                    return Err(Error::general("Customer AS may not be added as provider."));
+                    return Err(Error::general(
+                        "Customer AS may not be added as provider.",
+                    ));
                 }
 
                 added.push(provider);
@@ -2022,8 +2319,8 @@ impl Options {
 
         if let Some(remove) = matches.values_of("remove") {
             for provider_as_str in remove {
-                let provider_as =
-                    ProviderAsn::from_str(provider_as_str).map_err(|_| Error::invalid_asn(provider_as_str))?;
+                let provider_as = ProviderAsn::from_str(provider_as_str)
+                    .map_err(|_| Error::invalid_asn(provider_as_str))?;
 
                 if added.iter().any(|added| *added == provider_as) {
                     return Err(Error::general("Do not add and remove the same AS in a single update."));
@@ -2035,15 +2332,21 @@ impl Options {
 
         let update = AspaProvidersUpdate::new(added, removed);
         if update.is_empty() {
-            return Err(Error::general("You MUST specify at least one of --add or --remove"));
+            return Err(Error::general(
+                "You MUST specify at least one of --add or --remove",
+            ));
         }
 
-        let command = Command::CertAuth(CaCommand::AspasUpdate(my_ca, customer, update));
+        let command = Command::CertAuth(CaCommand::AspasUpdate(
+            my_ca, customer, update,
+        ));
 
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_aspas_list(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_aspas_list(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
@@ -2052,7 +2355,9 @@ impl Options {
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_aspas(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_aspas(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         if let Some(m) = matches.subcommand_matches("add") {
             Self::parse_matches_cas_aspas_add(m)
         } else if let Some(m) = matches.subcommand_matches("remove") {
@@ -2066,16 +2371,21 @@ impl Options {
         }
     }
 
-    fn parse_matches_cas_repo_request(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_repo_request(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
-        let command = Command::CertAuth(CaCommand::RepoPublisherRequest(my_ca));
+        let command =
+            Command::CertAuth(CaCommand::RepoPublisherRequest(my_ca));
 
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_repo_details(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_repo_details(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
@@ -2084,7 +2394,9 @@ impl Options {
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_repo_status(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_repo_status(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
@@ -2093,7 +2405,9 @@ impl Options {
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_repo_configure(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_repo_configure(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
@@ -2101,12 +2415,15 @@ impl Options {
         let bytes = Self::read_file_arg(path)?;
         let response = idexchange::RepositoryResponse::parse(bytes.as_ref())?;
 
-        let command = Command::CertAuth(CaCommand::RepoUpdate(my_ca, response));
+        let command =
+            Command::CertAuth(CaCommand::RepoUpdate(my_ca, response));
 
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_repo(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_repo(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         if let Some(m) = matches.subcommand_matches("request") {
             Self::parse_matches_cas_repo_request(m)
         } else if let Some(m) = matches.subcommand_matches("show") {
@@ -2120,7 +2437,9 @@ impl Options {
         }
     }
 
-    fn parse_matches_cas_issues(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_issues(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general = GeneralArgs::from_matches(matches)?;
         let command = if let Ok(ca) = Self::parse_my_ca(matches) {
             Command::CertAuth(CaCommand::Issues(Some(ca)))
@@ -2130,21 +2449,29 @@ impl Options {
         Ok(Options::make(general, command))
     }
 
-    fn parse_matches_cas_rta_list(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_rta_list(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let ca = Self::parse_my_ca(matches)?;
         let command = Command::CertAuth(CaCommand::RtaList(ca));
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_rta_show(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_rta_show(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let ca = Self::parse_my_ca(matches)?;
         let name = matches.value_of("name").unwrap().to_string();
 
         let out_file = matches.value_of("out").unwrap();
-        let out_file = PathBuf::from_str(out_file)
-            .map_err(|_| Error::GeneralArgumentError(format!("Invalid filename: {}", out_file)))?;
+        let out_file = PathBuf::from_str(out_file).map_err(|_| {
+            Error::GeneralArgumentError(format!(
+                "Invalid filename: {}",
+                out_file
+            ))
+        })?;
 
         file::save(&[], &out_file).map_err(|e| {
             Error::GeneralArgumentError(format!(
@@ -2154,24 +2481,39 @@ impl Options {
             ))
         })?;
 
-        let command = Command::CertAuth(CaCommand::RtaShow(ca, name, Some(out_file)));
+        let command =
+            Command::CertAuth(CaCommand::RtaShow(ca, name, Some(out_file)));
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_rta_sign(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_rta_sign(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let ca = Self::parse_my_ca(matches)?;
 
         let days = matches.value_of("days").unwrap();
-        let days =
-            i64::from_str(days).map_err(|e| Error::GeneralArgumentError(format!("Invalid number of days: {}", e)))?;
+        let days = i64::from_str(days).map_err(|e| {
+            Error::GeneralArgumentError(format!(
+                "Invalid number of days: {}",
+                e
+            ))
+        })?;
 
         let in_file = matches.value_of("in").unwrap();
-        let in_file = PathBuf::from_str(in_file)
-            .map_err(|_| Error::GeneralArgumentError(format!("Invalid filename: {}", in_file)))?;
+        let in_file = PathBuf::from_str(in_file).map_err(|_| {
+            Error::GeneralArgumentError(format!(
+                "Invalid filename: {}",
+                in_file
+            ))
+        })?;
 
         let content = file::read(&in_file).map_err(|e| {
-            Error::GeneralArgumentError(format!("Can't read file '{}', error: {}", in_file.to_string_lossy(), e,))
+            Error::GeneralArgumentError(format!(
+                "Can't read file '{}', error: {}",
+                in_file.to_string_lossy(),
+                e,
+            ))
         })?;
 
         let name = matches.value_of("name").unwrap().to_string();
@@ -2184,7 +2526,8 @@ impl Options {
         let keys = if let Some(keys) = matches.values_of("keys") {
             let mut res = vec![];
             for key_str in keys {
-                let ki = KeyIdentifier::from_str(key_str).map_err(|_| Error::general("Invalid key identifier"))?;
+                let ki = KeyIdentifier::from_str(key_str)
+                    .map_err(|_| Error::general("Invalid key identifier"))?;
                 res.push(ki)
             }
             res
@@ -2192,31 +2535,46 @@ impl Options {
             vec![]
         };
 
-        let request = RtaContentRequest::new(resources, validity, keys, content);
-        let command = Command::CertAuth(CaCommand::RtaSign(ca, name, request));
+        let request =
+            RtaContentRequest::new(resources, validity, keys, content);
+        let command =
+            Command::CertAuth(CaCommand::RtaSign(ca, name, request));
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_rta_multi_sign(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_rta_multi_sign(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let ca = Self::parse_my_ca(matches)?;
         let name = matches.value_of("name").unwrap().to_string();
 
         let in_file = matches.value_of("in").unwrap();
-        let in_file = PathBuf::from_str(in_file)
-            .map_err(|_| Error::GeneralArgumentError(format!("Invalid filename: {}", in_file)))?;
+        let in_file = PathBuf::from_str(in_file).map_err(|_| {
+            Error::GeneralArgumentError(format!(
+                "Invalid filename: {}",
+                in_file
+            ))
+        })?;
 
         let content = file::read(&in_file).map_err(|e| {
-            Error::GeneralArgumentError(format!("Can't read file '{}', error: {}", in_file.to_string_lossy(), e,))
+            Error::GeneralArgumentError(format!(
+                "Can't read file '{}', error: {}",
+                in_file.to_string_lossy(),
+                e,
+            ))
         })?;
 
         let rta = ResourceTaggedAttestation::new(content);
 
-        let command = Command::CertAuth(CaCommand::RtaMultiCoSign(ca, name, rta));
+        let command =
+            Command::CertAuth(CaCommand::RtaMultiCoSign(ca, name, rta));
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_rta_multi_prep(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_rta_multi_prep(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let ca = Self::parse_my_ca(matches)?;
 
@@ -2225,17 +2583,24 @@ impl Options {
             .ok_or_else(|| Error::general("You must specify at least one of --ipv4, --ipv6 or --asn"))?;
 
         let days = matches.value_of("days").unwrap();
-        let days =
-            i64::from_str(days).map_err(|e| Error::GeneralArgumentError(format!("Invalid number of days: {}", e)))?;
+        let days = i64::from_str(days).map_err(|e| {
+            Error::GeneralArgumentError(format!(
+                "Invalid number of days: {}",
+                e
+            ))
+        })?;
         let validity = SignSupport::sign_validity_days(days);
 
         let request = RtaPrepareRequest::new(resources, validity);
 
-        let command = Command::CertAuth(CaCommand::RtaMultiPrep(ca, name, request));
+        let command =
+            Command::CertAuth(CaCommand::RtaMultiPrep(ca, name, request));
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_rta_multi(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_rta_multi(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         if let Some(m) = matches.subcommand_matches("prep") {
             Self::parse_matches_cas_rta_multi_prep(m)
         } else if let Some(m) = matches.subcommand_matches("cosign") {
@@ -2289,25 +2654,36 @@ impl Options {
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_publisher_arg(matches: &ArgMatches) -> Result<PublisherHandle, Error> {
+    fn parse_publisher_arg(
+        matches: &ArgMatches,
+    ) -> Result<PublisherHandle, Error> {
         let publisher_str = matches.value_of("publisher").unwrap();
-        PublisherHandle::from_str(publisher_str).map_err(|_| Error::InvalidHandle)
+        PublisherHandle::from_str(publisher_str)
+            .map_err(|_| Error::InvalidHandle)
     }
 
-    fn parse_matches_publishers_list(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_publishers_list(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let command = Command::PubServer(PubServerCommand::PublisherList);
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_publishers_stale(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_publishers_stale(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
-        let seconds = i64::from_str(matches.value_of("seconds").unwrap()).map_err(|_| Error::InvalidSeconds)?;
-        let command = Command::PubServer(PubServerCommand::StalePublishers(seconds));
+        let seconds = i64::from_str(matches.value_of("seconds").unwrap())
+            .map_err(|_| Error::InvalidSeconds)?;
+        let command =
+            Command::PubServer(PubServerCommand::StalePublishers(seconds));
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_publishers_add(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_publishers_add(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
 
         let path = matches.value_of("request").unwrap();
@@ -2315,47 +2691,69 @@ impl Options {
         let bytes = file::read(&path)?;
         let mut req = idexchange::PublisherRequest::parse(bytes.as_ref())?;
         req.validate().map_err(|e| {
-            Error::GeneralArgumentError(format!("Invalid certificate in RFC 8183 Publisher Request XML: {}", e))
+            Error::GeneralArgumentError(format!(
+                "Invalid certificate in RFC 8183 Publisher Request XML: {}",
+                e
+            ))
         })?;
 
         if let Some(publisher_str) = matches.value_of("publisher") {
-            let publisher_handle = PublisherHandle::from_str(publisher_str).map_err(|_| Error::InvalidHandle)?;
+            let publisher_handle = PublisherHandle::from_str(publisher_str)
+                .map_err(|_| Error::InvalidHandle)?;
             let (id_cert, _handle, tag) = req.unpack();
-            req = idexchange::PublisherRequest::new(id_cert, publisher_handle, tag);
+            req = idexchange::PublisherRequest::new(
+                id_cert,
+                publisher_handle,
+                tag,
+            );
         }
 
         let command = Command::PubServer(PubServerCommand::AddPublisher(req));
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_publishers_remove(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_publishers_remove(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let publisher = Self::parse_publisher_arg(matches)?;
-        let command = Command::PubServer(PubServerCommand::RemovePublisher(publisher));
+        let command =
+            Command::PubServer(PubServerCommand::RemovePublisher(publisher));
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_publishers_show(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_publishers_show(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let publisher = Self::parse_publisher_arg(matches)?;
-        let command = Command::PubServer(PubServerCommand::ShowPublisher(publisher));
+        let command =
+            Command::PubServer(PubServerCommand::ShowPublisher(publisher));
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_publishers_repo_response(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_publishers_repo_response(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let publisher = Self::parse_publisher_arg(matches)?;
-        let command = Command::PubServer(PubServerCommand::RepositoryResponse(publisher));
+        let command = Command::PubServer(
+            PubServerCommand::RepositoryResponse(publisher),
+        );
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_publication_server_stats(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_publication_server_stats(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let command = Command::PubServer(PubServerCommand::RepositoryStats);
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_publication_server_init(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_publication_server_init(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
 
         let rsync_str = matches.value_of("rsync").unwrap();
@@ -2369,31 +2767,41 @@ impl Options {
             return Err(Error::general("RRDP base URI must end with '/'"));
         }
 
-        let rsync = uri::Rsync::from_str(rsync_str)
-            .map_err(|e| Error::GeneralArgumentError(format!("Invalid rsync URI: {}", e)))?;
+        let rsync = uri::Rsync::from_str(rsync_str).map_err(|e| {
+            Error::GeneralArgumentError(format!("Invalid rsync URI: {}", e))
+        })?;
 
-        let rrdp = uri::Https::from_str(rrdp_str)
-            .map_err(|e| Error::GeneralArgumentError(format!("Invalid RRDP URI: {}", e)))?;
+        let rrdp = uri::Https::from_str(rrdp_str).map_err(|e| {
+            Error::GeneralArgumentError(format!("Invalid RRDP URI: {}", e))
+        })?;
 
         let uris = PublicationServerUris::new(rrdp, rsync);
 
-        let command = Command::PubServer(PubServerCommand::RepositoryInit(uris));
+        let command =
+            Command::PubServer(PubServerCommand::RepositoryInit(uris));
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_publication_server_clear(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_publication_server_clear(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let command = Command::PubServer(PubServerCommand::RepositoryClear);
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_publication_server_server_reset(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_publication_server_server_reset(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
-        let command = Command::PubServer(PubServerCommand::RepositorySessionReset);
+        let command =
+            Command::PubServer(PubServerCommand::RepositorySessionReset);
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_publication_server(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_publication_server(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         if let Some(m) = matches.subcommand_matches("stats") {
             Self::parse_matches_publication_server_stats(m)
         } else if let Some(m) = matches.subcommand_matches("init") {
@@ -2407,7 +2815,9 @@ impl Options {
         }
     }
 
-    fn parse_matches_publishers(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_publishers(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         if let Some(m) = matches.subcommand_matches("list") {
             Self::parse_matches_publishers_list(m)
         } else if let Some(m) = matches.subcommand_matches("stale") {
@@ -2429,15 +2839,19 @@ impl Options {
         let general_args = GeneralArgs::from_matches(matches)?;
 
         let base_uri_str = matches.value_of("base_uri").unwrap();
-        let base_uri = uri::Rsync::from_str(base_uri_str).map_err(Error::UriError)?;
+        let base_uri =
+            uri::Rsync::from_str(base_uri_str).map_err(Error::UriError)?;
 
         let criteria = RepoFileDeleteCriteria::new(base_uri);
 
-        let command = Command::PubServer(PubServerCommand::DeleteFiles(criteria));
+        let command =
+            Command::PubServer(PubServerCommand::DeleteFiles(criteria));
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_pubserver(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_pubserver(
+        matches: &ArgMatches,
+    ) -> Result<Options, Error> {
         if let Some(m) = matches.subcommand_matches("publishers") {
             Self::parse_matches_publishers(m)
         } else if let Some(m) = matches.subcommand_matches("delete") {
@@ -2518,7 +2932,8 @@ pub enum Command {
 pub enum CaCommand {
     Init(CertAuthInit), // Initialize a CA
     UpdateId(CaHandle), // Update CA id
-    Delete(CaHandle),   // Delete the CA -> let it withdraw and request revocation as well
+    Delete(CaHandle),   /* Delete the CA -> let it withdraw and request
+                         * revocation as well */
 
     // Publishing
     RepoPublisherRequest(CaHandle), // Get the RFC 8183 Publisher Request
@@ -2535,7 +2950,8 @@ pub enum CaCommand {
     Refresh(CaHandle), // Refresh with all parents
 
     // Children
-    ParentResponse(CaHandle, ChildHandle), // Get an RFC 8183 Parent Response for a child
+    ParentResponse(CaHandle, ChildHandle), /* Get an RFC 8183 Parent
+                                            * Response for a child */
     ChildInfo(CaHandle, ChildHandle),
     ChildAdd(CaHandle, AddChildRequest),
     ChildUpdate(CaHandle, ChildHandle, UpdateChildRequest),
@@ -2606,8 +3022,15 @@ impl Default for HistoryOptions {
 impl HistoryOptions {
     pub fn url_path_parameters(&self) -> String {
         if let Some(before) = self.before {
-            let after = self.after.map(|t| t.timestamp()).unwrap_or_else(|| 0);
-            format!("{}/{}/{}/{}", self.rows, self.offset, after, before.timestamp())
+            let after =
+                self.after.map(|t| t.timestamp()).unwrap_or_else(|| 0);
+            format!(
+                "{}/{}/{}/{}",
+                self.rows,
+                self.offset,
+                after,
+                before.timestamp()
+            )
         } else if let Some(after) = self.after {
             format!("{}/{}/{}", self.rows, self.offset, after.timestamp())
         } else if self.offset != 0 {

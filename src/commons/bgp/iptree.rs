@@ -13,7 +13,9 @@ pub struct IpRange(Range<u128>);
 
 impl IpRange {
     /// Returns the IPv4 (left) and IPv6 (right) ranges as a tuple.
-    pub fn for_resource_set(set: &ResourceSet) -> (Vec<IpRange>, Vec<IpRange>) {
+    pub fn for_resource_set(
+        set: &ResourceSet,
+    ) -> (Vec<IpRange>, Vec<IpRange>) {
         let mut v4_ranges = vec![];
         for block in set.ipv4().iter() {
             let min = block.min();
@@ -76,7 +78,10 @@ pub struct TypedPrefixTree<V: AsRef<TypedPrefix>> {
 }
 
 impl<V: AsRef<TypedPrefix>> TypedPrefixTree<V> {
-    pub fn matching_or_more_specific(&self, range: impl Into<IpRange>) -> Vec<&V> {
+    pub fn matching_or_more_specific(
+        &self,
+        range: impl Into<IpRange>,
+    ) -> Vec<&V> {
         let range: IpRange = range.into();
         let mut res = vec![];
         for el in self.tree.query(range.0.clone()) {
@@ -89,7 +94,10 @@ impl<V: AsRef<TypedPrefix>> TypedPrefixTree<V> {
         res
     }
 
-    pub fn matching_or_less_specific(&self, range: impl Into<IpRange>) -> Vec<&V> {
+    pub fn matching_or_less_specific(
+        &self,
+        range: impl Into<IpRange>,
+    ) -> Vec<&V> {
         let range: IpRange = range.into();
         let mut res = vec![];
         for el in self.tree.query(range.0.clone()) {
@@ -107,7 +115,10 @@ impl<V: AsRef<TypedPrefix>> TypedPrefixTree<V> {
     }
 
     pub fn all(&self) -> Vec<&V> {
-        self.tree.iter().flat_map(|el| el.value.as_slice()).collect()
+        self.tree
+            .iter()
+            .flat_map(|el| el.value.as_slice())
+            .collect()
     }
 }
 
@@ -132,7 +143,9 @@ impl<V: AsRef<TypedPrefix>> TypedPrefixTreeBuilder<V> {
 
 impl<V: AsRef<TypedPrefix>> Default for TypedPrefixTreeBuilder<V> {
     fn default() -> Self {
-        TypedPrefixTreeBuilder { values: HashMap::new() }
+        TypedPrefixTreeBuilder {
+            values: HashMap::new(),
+        }
     }
 }
 

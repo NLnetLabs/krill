@@ -16,7 +16,10 @@ use rpki::{
 
 use crate::{
     commons::{
-        api::{ObjectName, Revocation, RoaAggregateKey, RoaConfiguration, RoaPayload},
+        api::{
+            ObjectName, Revocation, RoaAggregateKey, RoaConfiguration,
+            RoaPayload,
+        },
         crypto::KrillSigner,
         error::Error,
         KrillResult,
@@ -89,7 +92,8 @@ impl<'de> Deserialize<'de> for RoaPayloadJsonMapKey {
         D: Deserializer<'de>,
     {
         let string = String::deserialize(d)?;
-        let def = RoaPayload::from_str(string.as_str()).map_err(de::Error::custom)?;
+        let def = RoaPayload::from_str(string.as_str())
+            .map_err(de::Error::custom)?;
         Ok(RoaPayloadJsonMapKey(def))
     }
 }
@@ -118,18 +122,27 @@ impl Routes {
         Routes { map: filtered }
     }
 
-    pub fn all(&self) -> impl Iterator<Item = (&RoaPayloadJsonMapKey, &RouteInfo)> {
+    pub fn all(
+        &self,
+    ) -> impl Iterator<Item = (&RoaPayloadJsonMapKey, &RouteInfo)> {
         self.map.iter()
     }
 
     pub fn roa_configurations(&self) -> Vec<RoaConfiguration> {
         self.map
             .iter()
-            .map(|(payload_key, route_info)| RoaConfiguration::new(payload_key.0, route_info.comment().cloned()))
+            .map(|(payload_key, route_info)| {
+                RoaConfiguration::new(
+                    payload_key.0,
+                    route_info.comment().cloned(),
+                )
+            })
             .collect()
     }
 
-    pub fn roa_payload_keys(&self) -> impl Iterator<Item = &RoaPayloadJsonMapKey> {
+    pub fn roa_payload_keys(
+        &self,
+    ) -> impl Iterator<Item = &RoaPayloadJsonMapKey> {
         self.map.keys()
     }
 
@@ -137,8 +150,11 @@ impl Routes {
         self.map.into_keys().collect()
     }
 
-    pub fn as_aggregates(&self) -> HashMap<RoaAggregateKey, Vec<RoaPayloadJsonMapKey>> {
-        let mut map: HashMap<RoaAggregateKey, Vec<RoaPayloadJsonMapKey>> = HashMap::new();
+    pub fn as_aggregates(
+        &self,
+    ) -> HashMap<RoaAggregateKey, Vec<RoaPayloadJsonMapKey>> {
+        let mut map: HashMap<RoaAggregateKey, Vec<RoaPayloadJsonMapKey>> =
+            HashMap::new();
 
         for auth in self.map.keys() {
             let key = RoaAggregateKey::new(auth.asn(), None);
@@ -174,7 +190,11 @@ impl Routes {
     }
 
     /// Updates the comment for an authorization
-    pub fn comment(&mut self, auth: &RoaPayloadJsonMapKey, comment: Option<String>) {
+    pub fn comment(
+        &mut self,
+        auth: &RoaPayloadJsonMapKey,
+        comment: Option<String>,
+    ) {
         if let Some(info) = self.map.get_mut(auth) {
             info.set_comment(comment)
         }
@@ -301,10 +321,12 @@ impl RoaInfo {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum RoaMode {
-    Simple,           // below aggregation threshold, and currently simple
-    StopAggregating,  // below de-aggregation threshold, and currently aggregating
+    Simple, // below aggregation threshold, and currently simple
+    StopAggregating, /* below de-aggregation threshold, and currently
+             * aggregating */
     StartAggregating, // above aggregation threshold, and currently simple
-    Aggregate,        // above de-aggregation threshold, and currently aggregating
+    Aggregate,        /* above de-aggregation threshold, and currently
+                       * aggregating */
 }
 
 //------------ Roas --------------------------------------------------------
@@ -312,10 +334,16 @@ enum RoaMode {
 /// ROAs held by a resource class in a CA.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Roas {
-    #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
+    #[serde(
+        skip_serializing_if = "HashMap::is_empty",
+        default = "HashMap::new"
+    )]
     simple: HashMap<RoaPayloadJsonMapKey, RoaInfo>,
 
-    #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
+    #[serde(
+        skip_serializing_if = "HashMap::is_empty",
+        default = "HashMap::new"
+    )]
     aggregate: HashMap<RoaAggregateKey, RoaInfo>,
 }
 
@@ -329,7 +357,8 @@ impl Roas {
     }
 
     pub fn updated(&mut self, updates: RoaUpdates) {
-        let (updated, removed, aggregate_updated, aggregate_removed) = updates.unpack();
+        let (updated, removed, aggregate_updated, aggregate_removed) =
+            updates.unpack();
 
         for (auth, info) in updated.into_iter() {
             self.simple.insert(auth, info);
@@ -349,8 +378,13 @@ impl Roas {
     }
 
     /// Returns all the current RoaInfos matching the given config
-    pub fn matching_roa_infos(&self, config: &RoaConfiguration) -> Vec<RoaInfo> {
-        let payload = RoaPayloadJsonMapKey::from(config.payload().into_explicit_max_length());
+    pub fn matching_roa_infos(
+        &self,
+        config: &RoaConfiguration,
+    ) -> Vec<RoaInfo> {
+        let payload = RoaPayloadJsonMapKey::from(
+            config.payload().into_explicit_max_length(),
+        );
         let mut roa_infos: Vec<RoaInfo> = self
             .simple
             .values()
@@ -379,10 +413,16 @@ impl Roas {
 
     /// Returns the desired RoaMode based on the current situation, and
     /// the intended changes.
-    fn mode(&self, total: usize, de_aggregation_threshold: usize, aggregation_threshold: usize) -> RoaMode {
+    fn mode(
+        &self,
+        total: usize,
+        de_aggregation_threshold: usize,
+        aggregation_threshold: usize,
+    ) -> RoaMode {
         let mode = {
             if total == 0 {
-                // if everything will be removed, make sure no strategy change is triggered
+                // if everything will be removed, make sure no strategy change
+                // is triggered
                 if self.is_currently_aggregating() {
                     RoaMode::Aggregate
                 } else {
@@ -451,9 +491,14 @@ impl Roas {
         issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<RoaUpdates> {
-        // First trigger the simple update, this will make sure that all current routes
-        // are added as simple (one prefix) ROAs
-        let mut roa_updates = self.update_simple(relevant_routes, certified_key, issuance_timing, signer)?;
+        // First trigger the simple update, this will make sure that all
+        // current routes are added as simple (one prefix) ROAs
+        let mut roa_updates = self.update_simple(
+            relevant_routes,
+            certified_key,
+            issuance_timing,
+            signer,
+        )?;
 
         // Then remove all aggregate ROAs
         for roa_key in self.aggregate.keys() {
@@ -471,9 +516,14 @@ impl Roas {
         issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<RoaUpdates> {
-        // First trigger the aggregate update, this will make sure that all current routes
-        // are added as aggregate ROAs
-        let mut roa_updates = self.update_aggregate(relevant_routes, certified_key, issuance_timing, signer)?;
+        // First trigger the aggregate update, this will make sure that all
+        // current routes are added as aggregate ROAs
+        let mut roa_updates = self.update_aggregate(
+            relevant_routes,
+            certified_key,
+            issuance_timing,
+            signer,
+        )?;
 
         // Then remove all simple ROAs
         for roa_key in self.simple.keys() {
@@ -502,19 +552,30 @@ impl Roas {
         for (key, authorizations) in desired_aggregates.iter() {
             if let Some(existing) = self.aggregate.get(key) {
                 // check if we need to update
-                let mut existing_authorizations = existing.authorizations().clone();
+                let mut existing_authorizations =
+                    existing.authorizations().clone();
                 existing_authorizations.sort();
 
                 if authorizations != &existing_authorizations {
                     // replace ROA
-                    let aggregate =
-                        Self::make_aggregate_roa(key, authorizations.clone(), certified_key, issuance_timing, signer)?;
+                    let aggregate = Self::make_aggregate_roa(
+                        key,
+                        authorizations.clone(),
+                        certified_key,
+                        issuance_timing,
+                        signer,
+                    )?;
                     roa_updates.update_aggregate(*key, aggregate);
                 }
             } else {
                 // new ROA
-                let aggregate =
-                    Self::make_aggregate_roa(key, authorizations.clone(), certified_key, issuance_timing, signer)?;
+                let aggregate = Self::make_aggregate_roa(
+                    key,
+                    authorizations.clone(),
+                    certified_key,
+                    issuance_timing,
+                    signer,
+                )?;
                 roa_updates.update_aggregate(*key, aggregate);
             }
         }
@@ -538,23 +599,38 @@ impl Roas {
         config: &Config,
         signer: &KrillSigner,
     ) -> KrillResult<RoaUpdates> {
-        let relevant_routes = all_routes.filter(certified_key.incoming_cert().resources());
+        let relevant_routes =
+            all_routes.filter(certified_key.incoming_cert().resources());
 
         match self.mode(
             relevant_routes.len(),
             config.roa_deaggregate_threshold,
             config.roa_aggregate_threshold,
         ) {
-            RoaMode::Simple => self.update_simple(&relevant_routes, certified_key, &config.issuance_timing, signer),
-            RoaMode::StopAggregating => {
-                self.update_stop_aggregating(&relevant_routes, certified_key, &config.issuance_timing, signer)
-            }
-            RoaMode::StartAggregating => {
-                self.update_start_aggregating(&relevant_routes, certified_key, &config.issuance_timing, signer)
-            }
-            RoaMode::Aggregate => {
-                self.update_aggregate(&relevant_routes, certified_key, &config.issuance_timing, signer)
-            }
+            RoaMode::Simple => self.update_simple(
+                &relevant_routes,
+                certified_key,
+                &config.issuance_timing,
+                signer,
+            ),
+            RoaMode::StopAggregating => self.update_stop_aggregating(
+                &relevant_routes,
+                certified_key,
+                &config.issuance_timing,
+                signer,
+            ),
+            RoaMode::StartAggregating => self.update_start_aggregating(
+                &relevant_routes,
+                certified_key,
+                &config.issuance_timing,
+                signer,
+            ),
+            RoaMode::Aggregate => self.update_aggregate(
+                &relevant_routes,
+                certified_key,
+                &config.issuance_timing,
+                signer,
+            ),
         }
     }
 
@@ -624,25 +700,42 @@ impl Roas {
 
         let asn = authorizations
             .first()
-            .ok_or_else(|| Error::custom("Attempt to create ROA without prefixes"))?
+            .ok_or_else(|| {
+                Error::custom("Attempt to create ROA without prefixes")
+            })?
             .asn();
 
         let mut roa_builder = RoaBuilder::new(asn.into());
 
         for auth in authorizations {
             if auth.asn() != asn {
-                return Err(Error::custom("Attempt to create ROA for multiple ASNs"));
+                return Err(Error::custom(
+                    "Attempt to create ROA for multiple ASNs",
+                ));
             }
             let prefix = auth.prefix();
             if auth.effective_max_length() > prefix.prefix().addr_len() {
-                roa_builder.push_addr(prefix.ip_addr(), prefix.addr_len(), auth.max_length());
+                roa_builder.push_addr(
+                    prefix.ip_addr(),
+                    prefix.addr_len(),
+                    auth.max_length(),
+                );
             } else {
-                roa_builder.push_addr(prefix.ip_addr(), prefix.addr_len(), None);
+                roa_builder.push_addr(
+                    prefix.ip_addr(),
+                    prefix.addr_len(),
+                    None,
+                );
             }
         }
 
-        let mut object_builder =
-            SignedObjectBuilder::new(signer.random_serial()?, validity, crl_uri, aia.clone(), roa_uri);
+        let mut object_builder = SignedObjectBuilder::new(
+            signer.random_serial()?,
+            validity,
+            crl_uri,
+            aia.clone(),
+            roa_uri,
+        );
         object_builder.set_issuer(Some(incoming_cert.subject().clone()));
         object_builder.set_signing_time(Some(Time::now()));
 
@@ -688,7 +781,8 @@ mod tests {
             let json = serde_json::to_string(&auth).unwrap();
             assert_eq!(format!("\"{}\"", s), json);
 
-            let des: RoaPayloadJsonMapKey = serde_json::from_str(&json).unwrap();
+            let des: RoaPayloadJsonMapKey =
+                serde_json::from_str(&json).unwrap();
             assert_eq!(des, auth);
         }
 

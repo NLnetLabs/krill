@@ -1,11 +1,15 @@
 use std::{collections::HashMap, sync::Arc};
 
-use base64::engine::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
+use base64::engine::Engine as _;
 use unicode_normalization::UnicodeNormalization;
 
+use crate::daemon::http::{HttpResponse, HyperRequest};
 use crate::{
-    commons::{actor::ActorDef, api::Token, error::Error, util::httpclient, KrillResult},
+    commons::{
+        actor::ActorDef, api::Token, error::Error, util::httpclient,
+        KrillResult,
+    },
     constants::{PW_HASH_LOG_N, PW_HASH_P, PW_HASH_R},
     daemon::{
         auth::common::{
@@ -17,7 +21,6 @@ use crate::{
         config::Config,
     },
 };
-use crate::daemon::http::{HttpResponse, HyperRequest};
 
 const UI_LOGIN_ROUTE_PATH: &str = "/login?withId=true";
 
@@ -27,17 +30,30 @@ struct UserDetails {
     attributes: HashMap<String, String>,
 }
 
-fn get_checked_config_user(id: &str, user: &ConfigUserDetails) -> KrillResult<UserDetails> {
+fn get_checked_config_user(
+    id: &str,
+    user: &ConfigUserDetails,
+) -> KrillResult<UserDetails> {
     let password_hash = user
         .password_hash
         .as_ref()
-        .ok_or_else(|| Error::ConfigError(format!("Password hash missing for user '{}'", id)))?
+        .ok_or_else(|| {
+            Error::ConfigError(format!(
+                "Password hash missing for user '{}'",
+                id
+            ))
+        })?
         .to_string();
 
     let salt = user
         .salt
         .as_ref()
-        .ok_or_else(|| Error::ConfigError(format!("Password salt missing for user '{}'", id)))?
+        .ok_or_else(|| {
+            Error::ConfigError(format!(
+                "Password salt missing for user '{}'",
+                id
+            ))
+        })?
         .to_string();
 
     Ok(UserDetails {
@@ -56,7 +72,10 @@ pub struct ConfigFileAuthProvider {
 }
 
 impl ConfigFileAuthProvider {
-    pub fn new(config: Arc<Config>, session_cache: Arc<LoginSessionCache>) -> KrillResult<Self> {
+    pub fn new(
+        config: Arc<Config>,
+        session_cache: Arc<LoginSessionCache>,
+    ) -> KrillResult<Self> {
         match &config.auth_users {
             Some(auth_users) => {
                 let mut users = HashMap::new();
@@ -74,7 +93,9 @@ impl ConfigFileAuthProvider {
                     fake_salt: hex::encode("fake salt"),
                 })
             }
-            None => Err(Error::ConfigError("Missing [auth_users] config section!".into())),
+            None => Err(Error::ConfigError(
+                "Missing [auth_users] config section!".into(),
+            )),
         }
     }
 
@@ -85,7 +106,8 @@ impl ConfigFileAuthProvider {
 
     /// Parse HTTP Basic Authorization header
     fn get_auth(&self, request: &HyperRequest) -> Option<Auth> {
-        let header = request.headers().get(hyper::http::header::AUTHORIZATION)?;
+        let header =
+            request.headers().get(hyper::http::header::AUTHORIZATION)?;
         let auth = header.to_str().ok()?.strip_prefix("Basic ")?;
         let auth = BASE64_ENGINE.decode(auth).ok()?;
         let auth = String::from_utf8(auth).ok()?;
@@ -100,7 +122,8 @@ impl ConfigFileAuthProvider {
 
 impl ConfigFileAuthProvider {
     pub fn authenticate(
-        &self, request: &HyperRequest
+        &self,
+        request: &HyperRequest,
     ) -> KrillResult<Option<ActorDef>> {
         if log_enabled!(log::Level::Trace) {
             trace!("Attempting to authenticate the request..");
@@ -108,11 +131,19 @@ impl ConfigFileAuthProvider {
 
         let res = match httpclient::get_bearer_token(request) {
             Some(token) => {
-                // see if we can decode, decrypt and deserialize the users token
-                // into a login session structure
-                let session = self.session_cache.decode(token, &self.session_key, true)?;
+                // see if we can decode, decrypt and deserialize the users
+                // token into a login session structure
+                let session = self.session_cache.decode(
+                    token,
+                    &self.session_key,
+                    true,
+                )?;
 
-                trace!("id={}, attributes={:?}", &session.id, &session.attributes);
+                trace!(
+                    "id={}, attributes={:?}",
+                    &session.id,
+                    &session.attributes
+                );
 
                 Ok(Some(ActorDef::user(session.id, session.attributes, None)))
             }
@@ -132,15 +163,25 @@ impl ConfigFileAuthProvider {
     }
 
     pub fn login(&self, request: &HyperRequest) -> KrillResult<LoggedInUser> {
-        if let Some(Auth::UsernameAndPassword { username, password }) = self.get_auth(request) {
+        if let Some(Auth::UsernameAndPassword { username, password }) =
+            self.get_auth(request)
+        {
             use scrypt::scrypt;
 
-            // Do NOT bail out if the user is not known because then the unknown user path would return very quickly
-            // compared to the known user path and timing differences can aid attackers.
-            let (user_password_hash, user_salt) = match self.users.get(&username) {
-                Some(user) => (user.password_hash.to_string(), user.salt.clone()),
-                None => (self.fake_password_hash.clone(), self.fake_salt.clone()),
-            };
+            // Do NOT bail out if the user is not known because then the
+            // unknown user path would return very quickly
+            // compared to the known user path and timing differences can aid
+            // attackers.
+            let (user_password_hash, user_salt) =
+                match self.users.get(&username) {
+                    Some(user) => {
+                        (user.password_hash.to_string(), user.salt.clone())
+                    }
+                    None => (
+                        self.fake_password_hash.clone(),
+                        self.fake_salt.clone(),
+                    ),
+                };
 
             let username = username.trim().nfkc().collect::<String>();
             let password = password.trim().nfkc().collect::<String>();
@@ -148,24 +189,41 @@ impl ConfigFileAuthProvider {
             // hash twice with two different salts
             // legacy hashing strategy to be compatible with lagosta
             let params = scrypt::Params::new(
-                PW_HASH_LOG_N, PW_HASH_R, PW_HASH_P,
+                PW_HASH_LOG_N,
+                PW_HASH_R,
+                PW_HASH_P,
                 scrypt::Params::RECOMMENDED_LEN,
-            ).unwrap();
+            )
+            .unwrap();
             let weak_salt = format!("krill-lagosta-{username}");
             let weak_salt = weak_salt.nfkc().collect::<String>();
 
             let mut interim_hash: [u8; 32] = [0; 32];
-            scrypt(password.as_bytes(), weak_salt.as_bytes(), &params, &mut interim_hash).unwrap();
+            scrypt(
+                password.as_bytes(),
+                weak_salt.as_bytes(),
+                &params,
+                &mut interim_hash,
+            )
+            .unwrap();
 
             let strong_salt: Vec<u8> = hex::decode(user_salt).unwrap();
             let mut hashed_hash: [u8; 32] = [0; 32];
-            scrypt(&interim_hash, strong_salt.as_slice(), &params, &mut hashed_hash).unwrap();
+            scrypt(
+                &interim_hash,
+                strong_salt.as_slice(),
+                &params,
+                &mut hashed_hash,
+            )
+            .unwrap();
 
             let encoded_hash = hex::encode(hashed_hash);
 
             if encoded_hash == user_password_hash {
-                // And now finally check the user, so that both known and unknown user code paths do the same work
-                // and don't result in an obvious timing difference between the two scenarios which could potentially
+                // And now finally check the user, so that both known and
+                // unknown user code paths do the same work
+                // and don't result in an obvious timing difference between
+                // the two scenarios which could potentially
                 // be used to discover user names.
                 if let Some(user) = self.users.get(&username) {
                     let api_token = self.session_cache.encode(
@@ -183,20 +241,27 @@ impl ConfigFileAuthProvider {
                     })
                 } else {
                     trace!("Incorrect password for user {}", username);
-                    Err(Error::ApiInvalidCredentials("Incorrect credentials".to_string()))
+                    Err(Error::ApiInvalidCredentials(
+                        "Incorrect credentials".to_string(),
+                    ))
                 }
             } else {
                 trace!("Unknown user {}", username);
-                Err(Error::ApiInvalidCredentials("Incorrect credentials".to_string()))
+                Err(Error::ApiInvalidCredentials(
+                    "Incorrect credentials".to_string(),
+                ))
             }
         } else {
             trace!("Missing pr incomplete credentials for login attempt");
-            Err(Error::ApiInvalidCredentials("Missing credentials".to_string()))
+            Err(Error::ApiInvalidCredentials(
+                "Missing credentials".to_string(),
+            ))
         }
     }
 
     pub fn logout(
-        &self, request: &HyperRequest
+        &self,
+        request: &HyperRequest,
     ) -> KrillResult<HttpResponse> {
         match httpclient::get_bearer_token(request) {
             Some(token) => {

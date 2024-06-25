@@ -34,7 +34,9 @@ impl BgpSecDefinition {
 
 impl PartialEq for BgpSecDefinition {
     fn eq(&self, other: &Self) -> bool {
-        self.asn == other.asn && self.csr.to_captured().as_slice() == other.csr.to_captured().as_slice()
+        self.asn == other.asn
+            && self.csr.to_captured().as_slice()
+                == other.csr.to_captured().as_slice()
     }
 }
 
@@ -94,10 +96,12 @@ impl FromStr for BgpSecAsnKey {
         let asn_hex = parts.first().ok_or(BgpSecAsnKeyFmtError)?;
         let key_id_str = parts.get(1).ok_or(BgpSecAsnKeyFmtError)?;
 
-        let asn_nr = u32::from_str_radix(asn_hex, 16).map_err(|_| BgpSecAsnKeyFmtError)?;
+        let asn_nr = u32::from_str_radix(asn_hex, 16)
+            .map_err(|_| BgpSecAsnKeyFmtError)?;
         let asn = Asn::from_u32(asn_nr);
 
-        let key = KeyIdentifier::from_str(key_id_str).map_err(|_| BgpSecAsnKeyFmtError)?;
+        let key = KeyIdentifier::from_str(key_id_str)
+            .map_err(|_| BgpSecAsnKeyFmtError)?;
 
         Ok(BgpSecAsnKey { asn, key })
     }
@@ -150,7 +154,10 @@ pub struct BgpSecDefinitionUpdates {
 }
 
 impl BgpSecDefinitionUpdates {
-    pub fn new(add: Vec<BgpSecDefinition>, remove: Vec<BgpSecAsnKey>) -> Self {
+    pub fn new(
+        add: Vec<BgpSecDefinition>,
+        remove: Vec<BgpSecAsnKey>,
+    ) -> Self {
         BgpSecDefinitionUpdates { add, remove }
     }
 
@@ -210,7 +217,11 @@ impl fmt::Display for BgpSecCsrInfoList {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "ASN, key identifier, CSR base64")?;
         for info in self.0.iter() {
-            writeln!(f, "{}, {}, {}", info.asn, info.key_identifier, info.csr)?;
+            writeln!(
+                f,
+                "{}, {}, {}",
+                info.asn, info.key_identifier, info.csr
+            )?;
         }
         Ok(())
     }
@@ -224,7 +235,8 @@ mod tests {
 
     #[test]
     fn bgp_sec_to_from_str() {
-        let string = "ROUTER-0000FDE8-17316903F0671229E8808BA8E8AB0105FA915A07";
+        let string =
+            "ROUTER-0000FDE8-17316903F0671229E8808BA8E8AB0105FA915A07";
         let key = BgpSecAsnKey::from_str(string).unwrap();
         let to_string = key.to_string();
         assert_eq!(string, &to_string);

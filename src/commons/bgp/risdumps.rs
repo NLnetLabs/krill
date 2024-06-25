@@ -31,14 +31,22 @@ impl RisDumpLoader {
         }
     }
 
-    pub async fn download_updates(&self) -> Result<Vec<Announcement>, RisDumpError> {
-        let v4_bytes: Bytes = reqwest::get(&self.bgp_risdumps_v4_uri).await?.bytes().await?;
+    pub async fn download_updates(
+        &self,
+    ) -> Result<Vec<Announcement>, RisDumpError> {
+        let v4_bytes: Bytes = reqwest::get(&self.bgp_risdumps_v4_uri)
+            .await?
+            .bytes()
+            .await?;
 
         let v4_bytes = Self::gunzip(v4_bytes)?;
 
         let mut res = Self::parse_dump(v4_bytes.as_slice())?;
 
-        let v6_bytes: Bytes = reqwest::get(&self.bgp_risdumps_v6_uri).await?.bytes().await?;
+        let v6_bytes: Bytes = reqwest::get(&self.bgp_risdumps_v6_uri)
+            .await?
+            .bytes()
+            .await?;
 
         let v6_bytes = Self::gunzip(v6_bytes)?;
 
@@ -49,12 +57,19 @@ impl RisDumpLoader {
 
     fn gunzip(bytes: Bytes) -> Result<Vec<u8>, RisDumpError> {
         let mut gunzipped: Vec<u8> = vec![];
-        let mut decoder = Decoder::new(bytes.as_ref())
-            .map_err(|e| RisDumpError::UnzipError(format!("Could not unzip dump file: {}", e)))?;
+        let mut decoder = Decoder::new(bytes.as_ref()).map_err(|e| {
+            RisDumpError::UnzipError(format!(
+                "Could not unzip dump file: {}",
+                e
+            ))
+        })?;
 
-        decoder
-            .read_to_end(&mut gunzipped)
-            .map_err(|e| RisDumpError::UnzipError(format!("Could not unzip dump file: {}", e)))?;
+        decoder.read_to_end(&mut gunzipped).map_err(|e| {
+            RisDumpError::UnzipError(format!(
+                "Could not unzip dump file: {}",
+                e
+            ))
+        })?;
 
         Ok(gunzipped)
     }
@@ -70,7 +85,8 @@ impl RisDumpLoader {
             let mut values = line.split_whitespace();
 
             let asn_str = values.next().ok_or(RisDumpError::MissingColumn)?;
-            let prefix_str = values.next().ok_or(RisDumpError::MissingColumn)?;
+            let prefix_str =
+                values.next().ok_or(RisDumpError::MissingColumn)?;
             let peers = values.next().ok_or(RisDumpError::MissingColumn)?;
 
             if u32::from_str(peers)? <= 5 {
@@ -105,11 +121,19 @@ pub enum RisDumpError {
 impl fmt::Display for RisDumpError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            RisDumpError::ReqwestError(e) => write!(f, "Cannot get uri: {}", e),
-            RisDumpError::MissingColumn => write!(f, "Missing column in announcements input"),
-            RisDumpError::ParseError(s) => write!(f, "Error parsing announcements: {}", s),
+            RisDumpError::ReqwestError(e) => {
+                write!(f, "Cannot get uri: {}", e)
+            }
+            RisDumpError::MissingColumn => {
+                write!(f, "Missing column in announcements input")
+            }
+            RisDumpError::ParseError(s) => {
+                write!(f, "Error parsing announcements: {}", s)
+            }
             RisDumpError::IoError(e) => write!(f, "IO error: {}", e),
-            RisDumpError::UnzipError(s) => write!(f, "Error unzipping: {}", s),
+            RisDumpError::UnzipError(s) => {
+                write!(f, "Error unzipping: {}", s)
+            }
         }
     }
 }
@@ -153,10 +177,13 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn download_bgp_ris_dumps() {
-        let bgp_ris_dump_v4_uri = "http://www.ris.ripe.net/dumps/riswhoisdump.IPv4.gz";
-        let bgp_ris_dump_v6_uri = "http://www.ris.ripe.net/dumps/riswhoisdump.IPv6.gz";
+        let bgp_ris_dump_v4_uri =
+            "http://www.ris.ripe.net/dumps/riswhoisdump.IPv4.gz";
+        let bgp_ris_dump_v6_uri =
+            "http://www.ris.ripe.net/dumps/riswhoisdump.IPv6.gz";
 
-        let loader = RisDumpLoader::new(bgp_ris_dump_v4_uri, bgp_ris_dump_v6_uri);
+        let loader =
+            RisDumpLoader::new(bgp_ris_dump_v4_uri, bgp_ris_dump_v6_uri);
         let announcements = loader.download_updates().await.unwrap();
 
         assert!(!announcements.is_empty())

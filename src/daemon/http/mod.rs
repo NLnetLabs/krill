@@ -4,10 +4,10 @@ use bytes::Bytes;
 use serde::{de::DeserializeOwned, Serialize};
 
 use http_body_util::{BodyExt, Either, Empty, Full, Limited};
-use hyper::{HeaderMap, Method, StatusCode};
 use hyper::body::Body;
 use hyper::header::USER_AGENT;
 use hyper::http::uri::PathAndQuery;
+use hyper::{HeaderMap, Method, StatusCode};
 
 use rpki::ca::{provisioning, publication};
 
@@ -72,13 +72,11 @@ impl AsRef<str> for ContentType {
     }
 }
 
-
 //------------ HyperRequest and HyperResponse --------------------------------
 
 pub type HyperRequest = hyper::Request<hyper::body::Incoming>;
 pub type HyperResponseBody = Either<Empty<Bytes>, Full<Bytes>>;
 pub type HyperResponse = hyper::Response<HyperResponseBody>;
-
 
 //----------- Response -------------------------------------------------------
 
@@ -107,7 +105,8 @@ impl Response {
             .header("Content-Type", self.content_type.as_ref());
 
         if let Some(max_age) = self.max_age {
-            builder = builder.header("Cache-Control", &format!("max-age={}", max_age));
+            builder = builder
+                .header("Cache-Control", &format!("max-age={}", max_age));
         }
 
         if self.status == StatusCode::UNAUTHORIZED {
@@ -116,8 +115,7 @@ impl Response {
 
         let body = if self.body.is_empty() {
             Either::Left(Empty::new())
-        }
-        else {
+        } else {
             Either::Right(Full::new(self.body.into()))
         };
         let response = builder.body(body).unwrap();
@@ -146,7 +144,8 @@ impl io::Write for Response {
     }
 }
 
-//------------ HttpResponse ---------------------------------------------------
+//------------ HttpResponse
+//------------ ---------------------------------------------------
 
 pub struct HttpResponse {
     response: HyperResponse,
@@ -181,23 +180,24 @@ impl HttpResponse {
         self.cause.as_ref()
     }
 
-    /// Hint to the response handling code that, if logging responses, that this
-    /// response should not be logged (perhaps it is sensitive, distracting or
-    /// simply not considered helpful).
+    /// Hint to the response handling code that, if logging responses, that
+    /// this response should not be logged (perhaps it is sensitive,
+    /// distracting or simply not considered helpful).
     pub fn do_not_log(&mut self) {
         self.loggable = false;
     }
 
     /// Hint to the response handling code that, if warning about certain
-    /// responses or classes of response, that this response should be considered
-    /// benign, i.e. not worth warning about.
+    /// responses or classes of response, that this response should be
+    /// considered benign, i.e. not worth warning about.
     pub fn with_benign(mut self, benign: bool) -> Self {
         self.benign = benign;
         self
     }
 
     /// When logging it can be useful to have the original cause to log rather
-    /// than the HTTP response body (as that might for example be JSON or XML).
+    /// than the HTTP response body (as that might for example be JSON or
+    /// XML).
     pub fn set_cause(&mut self, error: Error) {
         self.cause = Some(error);
     }
@@ -227,7 +227,9 @@ impl HttpResponse {
 
     pub fn json<O: Serialize>(object: &O) -> Self {
         match serde_json::to_string(object) {
-            Ok(json) => Self::ok_response(ContentType::Json, json.into_bytes()),
+            Ok(json) => {
+                Self::ok_response(ContentType::Json, json.into_bytes())
+            }
             Err(e) => Self::response_from_error(Error::JsonError(e)),
         }
     }
@@ -373,8 +375,9 @@ impl Request {
         match self.headers().get(&USER_AGENT) {
             None => None,
             Some(value) => value.to_str().ok().map(|s| {
-                // Note: HeaderValue.to_str() only returns ok in case the value is plain
-                //       ascii so it's safe to treat bytes as characters here.
+                // Note: HeaderValue.to_str() only returns ok in case the
+                // value is plain       ascii so it's safe to
+                // treat bytes as characters here.
                 if s.len() > HTTP_USER_AGENT_TRUNCATE {
                     s[..HTTP_USER_AGENT_TRUNCATE].to_string()
                 } else {
@@ -432,7 +435,8 @@ impl Request {
     pub async fn json<O: DeserializeOwned>(self) -> Result<O, Error> {
         let bytes = self.api_bytes().await?;
 
-        let string = from_utf8(&bytes).map_err(|_| Error::InvalidUtf8Input)?;
+        let string =
+            from_utf8(&bytes).map_err(|_| Error::InvalidUtf8Input)?;
         serde_json::from_str(string).map_err(Error::JsonError)
     }
 
@@ -462,12 +466,14 @@ impl Request {
             return Err(Error::PostTooBig);
         }
 
-        Ok(
-            Limited::new(
-                self.request.into_body(),
-                limit.try_into().unwrap_or(usize::MAX),
-            ).collect().await.map_err(|_| Error::PostCannotRead)?.to_bytes()
+        Ok(Limited::new(
+            self.request.into_body(),
+            limit.try_into().unwrap_or(usize::MAX),
         )
+        .collect()
+        .await
+        .map_err(|_| Error::PostCannotRead)?
+        .to_bytes())
     }
 
     pub async fn get_login_url(&self) -> KrillResult<HttpResponse> {
@@ -500,7 +506,10 @@ impl std::fmt::Display for RequestPath {
 impl RequestPath {
     pub fn from_request<B>(request: &hyper::Request<B>) -> Self {
         let path = request.uri().path_and_query().unwrap().clone();
-        let mut res = RequestPath { path, segment: (0, 0) };
+        let mut res = RequestPath {
+            path,
+            segment: (0, 0),
+        };
         res.next_segment();
         res
     }
@@ -531,7 +540,10 @@ impl RequestPath {
         }
         // Find the next slash. If we have one, that’s the end of
         // our segment, otherwise, we go all the way to the end of the path.
-        let end = path[start..].find('/').map(|x| x + start).unwrap_or_else(|| path.len());
+        let end = path[start..]
+            .find('/')
+            .map(|x| x + start)
+            .unwrap_or_else(|| path.len());
         self.segment = (start, end);
         true
     }
