@@ -6,6 +6,17 @@ Breaking Changes
 
 New
 
+Bug Fixes
+
+Other changes
+
+
+## 0.14.5-rc1
+
+Released 2024-06-21.
+
+New
+
 * Allow overriding the initial manifest number when initializing the TA
   signer, either by specifying `--initial_manifest_number` in the CLI or by
   including `ta_mft_nr_override: #nr` in the `ImportTa` JSON. ([#1178])
@@ -100,11 +111,28 @@ workaround for re-signing the trust anchor CRL and manifest. If you did, you
 may need to delete any surplus files and directories under "data/ta_signer"
 other than the directory called "ta".
 
+
+## 0.13.2-rc1
+
+Released 2024-06-21.
+
+Bug fixes
+
+* Updated the locked version of the h2 crate to 0.3.26 to fix
+  [RUSTSEC-2024-0332]. ([#1206])
+* Don’t apply “child revoke key” command if the resource class does not
+  exist. ([#1207])
+
+[#1206]: https://github.com/NLnetLabs/krill/pull/1206
+[#1207]: https://github.com/NLnetLabs/krill/pull/1207
+[RUSTSEC-2024-0332]: https://rustsec.org/advisories/RUSTSEC-2024-0332
+
 ## 0.13.1 'Scrollbars!'
 
 The Krill UI includes a CA selection dropdown in case you have multiple CAs.
 This dropdown used to have a scrollbar, which accidentally got lost in the
 UI overhaul we did in version 0.13.0. This is now fixed (#1071)
+
 
 ## 0.13.0 'DRY'
 
