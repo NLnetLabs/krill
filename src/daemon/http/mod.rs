@@ -1,5 +1,4 @@
 use std::{io, str::from_utf8, str::FromStr};
-use std::convert::TryInto;
 
 use bytes::Bytes;
 use serde::{de::DeserializeOwned, Serialize};

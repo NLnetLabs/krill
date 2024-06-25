@@ -88,8 +88,6 @@ impl CryptState {
     }
 
     pub fn from_key_vec(key_vec: Vec<u8>) -> KrillResult<CryptState> {
-        // Rust 1.43+ compatible
-        use std::convert::TryInto;
         let boxed_array: Box<[u8; CHACHA20_KEY_BYTE_LEN]> = key_vec
             .into_boxed_slice()
             .try_into()

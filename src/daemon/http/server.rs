@@ -2,7 +2,6 @@
 //!
 use std::{env, process};
 use std::collections::HashMap;
-use std::convert::TryInto;
 use std::fs::File;
 use std::io::Read;
 use std::net::SocketAddr;

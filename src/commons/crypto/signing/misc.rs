@@ -1,8 +1,6 @@
 //! Support for signing mft, crl, certificates, roas..
 //! Common objects for TAs and CAs
 
-use std::convert::TryFrom;
-
 use rpki::{
     ca::{csr::RpkiCaCsr, provisioning::RequestResourceLimit},
     crypto::{KeyIdentifier, PublicKey},

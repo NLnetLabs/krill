@@ -2,7 +2,7 @@
 # Note: some of these values are also used when building Debian packages below.
 name = "krill"
 version = "0.14.5-dev"
-edition = "2018"
+edition = "2021"
 rust-version = "1.70"
 authors = ["NLnet Labs <rpki-team@nlnetlabs.nl>"]
 description = "Resource Public Key Infrastructure (RPKI) daemon"
