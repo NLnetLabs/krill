@@ -59,9 +59,9 @@ jobs:
       with:
         rust-version: ${{ matrix.rust }}
     - if: matrix.rust == 'stable' && matrix.args == '--features all'
-      run: cargo clippy -- -D warnings
-    - run: cargo build --verbose ${{ matrix.args }} --locked
-    - run: cargo test --verbose ${{ matrix.args }} -- --test-threads=1 2>&1
+      run: cargo clippy ${{ matrix.args }} -- -D warnings
+    - run: cargo build ${{ matrix.args }} --locked
+    - run: cargo test ${{ matrix.args }} -- --test-threads=1 2>&1
 
   pykmip-test:
     name: pykmip-test
