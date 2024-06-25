@@ -8,8 +8,11 @@ New
 
 Bug Fixes
 
+* Fixed a potential infinite recursion in PKCS11 error handling. ([#1215])
+
 Other changes
 
+[#1215]: https://github.com/NLnetLabs/krill/pull/1215
 
 ## 0.14.5-rc1
 
