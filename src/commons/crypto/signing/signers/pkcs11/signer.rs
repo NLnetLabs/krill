@@ -1346,7 +1346,7 @@ impl From<Pkcs11Error> for SignerError {
 
 impl From<ProbeError<SignerError>> for InternalConnError {
     fn from(err: ProbeError<SignerError>) -> Self {
-        err.into()
+        SignerError::from(err).into()
     }
 }
 
