@@ -223,7 +223,7 @@ impl fmt::Display for ImportChild {
         writeln!(
             f,
             "Id Key:       {}",
-            self.id_cert.public_key().key_identifier().to_string()
+            self.id_cert.public_key().key_identifier()
         )?;
         writeln!(f, "Resources:    {}", self.resources)?;
         if let Some(class_name) = &self.issued_cert.class_name {

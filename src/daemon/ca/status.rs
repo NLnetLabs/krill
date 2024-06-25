@@ -95,6 +95,7 @@ impl StatusStore {
     /// issues parsing data then default values are used - this data is not critical
     /// so any missing, corrupted, or no longer supported data format - can be ignored.
     /// It will get updated with new status values as Krill is running.
+    #[allow(clippy::manual_unwrap_or_default)] // False positive in nightly
     fn load_full_status(&self, ca: &CaHandle) -> KrillResult<()> {
         let repo: RepoStatus = match self.store.get(&Self::repo_status_key(ca)) {
             Ok(Some(status)) => status,

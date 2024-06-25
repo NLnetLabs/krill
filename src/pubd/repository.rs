@@ -1605,7 +1605,7 @@ impl RepositoryAccessProxy {
     }
 
     pub fn get_publisher(&self, name: &PublisherHandle) -> KrillResult<Publisher> {
-        self.read()?.get_publisher(name).map(|p| p.clone())
+        self.read()?.get_publisher(name).cloned()
     }
 
     pub fn add_publisher(&self, req: idexchange::PublisherRequest, actor: &Actor) -> KrillResult<()> {
