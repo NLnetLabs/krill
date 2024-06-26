@@ -67,8 +67,15 @@ impl CsrInfo {
                 .unwrap_or_else(|| true)
     }
 
-    pub fn unpack(self) -> (CaRepository, RpkiManifest, Option<RpkiNotify>, PublicKey) {
-        (self.ca_repository, self.rpki_manifest, self.rpki_notify, self.key)
+    pub fn unpack(
+        self,
+    ) -> (CaRepository, RpkiManifest, Option<RpkiNotify>, PublicKey) {
+        (
+            self.ca_repository,
+            self.rpki_manifest,
+            self.rpki_notify,
+            self.key,
+        )
     }
 
     pub fn key(&self) -> &PublicKey {
@@ -126,19 +133,22 @@ impl SignSupport {
 
         let request = CertRequest::Ca(csr, validity);
 
-        let tbs = Self::make_tbs_cert(&resources, signing_cert, request, signer)?;
+        let tbs =
+            Self::make_tbs_cert(&resources, signing_cert, request, signer)?;
         let cert = signer.sign_cert(tbs, &signing_cert.key_identifier())?;
 
         let uri = signing_cert.uri_for_object(&cert);
 
-        // The following cannot fail in practice, because it can only fail if the certificate that
-        // we just signed did not include ca_repository in its SIA. This cannot happen because it's
+        // The following cannot fail in practice, because it can only fail if
+        // the certificate that we just signed did not include
+        // ca_repository in its SIA. This cannot happen because it's
         // guaranteed to be included in the CsrInfo.
         //
-        // Still, to to be absolutely sure and future proof it's better to fail with an error
-        // than it would be to unwrap and panic.
-        IssuedCertificate::create(cert, uri, resources, limit)
-            .map_err(|e| Error::Custom(format!("Signed certificate has issue: {}", e)))
+        // Still, to to be absolutely sure and future proof it's better to
+        // fail with an error than it would be to unwrap and panic.
+        IssuedCertificate::create(cert, uri, resources, limit).map_err(|e| {
+            Error::Custom(format!("Signed certificate has issue: {}", e))
+        })
     }
 
     /// Create an EE certificate for use in ResourceTaggedAttestations.
@@ -153,7 +163,8 @@ impl SignSupport {
     ) -> KrillResult<Cert> {
         let signing_cert = signing_key.incoming_cert();
         let request = CertRequest::Ee(pub_key, validity);
-        let tbs = Self::make_tbs_cert(resources, signing_cert, request, signer)?;
+        let tbs =
+            Self::make_tbs_cert(resources, signing_cert, request, signer)?;
 
         let cert = signer.sign_cert(tbs, signing_key.key_id())?;
         Ok(cert)
@@ -187,7 +198,9 @@ impl SignSupport {
 
         let overclaim = Overclaim::Refuse;
 
-        let mut cert = TbsCert::new(serial, issuer, validity, subject, pub_key, key_usage, overclaim);
+        let mut cert = TbsCert::new(
+            serial, issuer, validity, subject, pub_key, key_usage, overclaim,
+        );
 
         let asns = resources.to_as_resources();
         if asns.is_inherited() || !asns.to_blocks().unwrap().is_empty() {
@@ -204,13 +217,16 @@ impl SignSupport {
             cert.set_v6_resources(ipv6);
         }
 
-        cert.set_authority_key_identifier(Some(signing_cert.key_identifier()));
+        cert.set_authority_key_identifier(Some(
+            signing_cert.key_identifier(),
+        ));
         cert.set_ca_issuer(Some(signing_cert.uri().clone()));
         cert.set_crl_uri(Some(signing_cert.crl_uri()));
 
         match request {
             CertRequest::Ca(csr, _) => {
-                let (ca_repository, rpki_manifest, rpki_notify, _pub_key) = csr.unpack();
+                let (ca_repository, rpki_manifest, rpki_notify, _pub_key) =
+                    csr.unpack();
                 cert.set_basic_ca(Some(true));
                 cert.set_ca_repository(Some(ca_repository));
                 cert.set_rpki_manifest(Some(rpki_manifest));
@@ -224,16 +240,16 @@ impl SignSupport {
         Ok(cert)
     }
 
-    /// Returns a validity period from 5 minutes ago (in case of NTP mess-up), to
-    /// X weeks from now.
+    /// Returns a validity period from 5 minutes ago (in case of NTP mess-up),
+    /// to X weeks from now.
     pub fn sign_validity_years(years: i32) -> Validity {
         let from = Time::five_minutes_ago();
         let until = Time::years_from_now(years);
         Validity::new(from, until)
     }
 
-    /// Returns a validity period from 5 minutes ago (in case of NTP mess-up), to
-    /// X weeks from now.
+    /// Returns a validity period from 5 minutes ago (in case of NTP mess-up),
+    /// to X weeks from now.
     pub fn sign_validity_weeks(weeks: i64) -> Validity {
         let from = Time::five_minutes_ago();
         let until = Time::now() + chrono::Duration::weeks(weeks);

@@ -22,13 +22,17 @@ use serde::Serialize;
 
 use crate::{
     commons::{
-        api::{IdCertInfo, IssuedCertificate, ObjectName, ReceivedCert, Revocations},
+        api::{
+            IdCertInfo, IssuedCertificate, ObjectName, ReceivedCert,
+            Revocations,
+        },
         crypto::KrillSigner,
         error::Error,
         KrillResult,
     },
     daemon::ca::{
-        CrlBuilder, ManifestBuilder, ObjectSetRevision, PublishedCrl, PublishedManifest, PublishedObject, UsedKeyState,
+        CrlBuilder, ManifestBuilder, ObjectSetRevision, PublishedCrl,
+        PublishedManifest, PublishedObject, UsedKeyState,
     },
 };
 
@@ -88,7 +92,13 @@ impl TrustAnchorObjects {
         let signing_key = signing_cert.key_identifier();
         let issuer = signing_cert.subject().clone();
 
-        let crl = CrlBuilder::build(signing_key, issuer, &revocations, revision, signer)?;
+        let crl = CrlBuilder::build(
+            signing_key,
+            issuer,
+            &revocations,
+            revision,
+            signer,
+        )?;
 
         let manifest = ManifestBuilder::new(revision)
             .with_objects(&crl, &HashMap::new())
@@ -122,13 +132,19 @@ impl TrustAnchorObjects {
         let signing_key = signing_cert.key_identifier();
 
         if signing_key != self.key_identifier {
-            // This would be a bug.. we will need to re-think this when implementing
-            // signed TALs and TA key rollovers.
+            // This would be a bug.. we will need to re-think this when
+            // implementing signed TALs and TA key rollovers.
             Err(Error::custom("TA key changed when republishing"))
         } else {
             let issuer = signing_cert.subject().clone();
 
-            self.crl = CrlBuilder::build(signing_key, issuer, &self.revocations, self.revision, signer)?;
+            self.crl = CrlBuilder::build(
+                signing_key,
+                issuer,
+                &self.revocations,
+                self.revision,
+                signer,
+            )?;
 
             self.manifest = ManifestBuilder::new(self.revision)
                 .with_objects(&self.crl, &self.issued_certs_objects())
@@ -139,7 +155,9 @@ impl TrustAnchorObjects {
         }
     }
 
-    pub fn publish_elements(&self) -> KrillResult<Vec<crate::commons::api::rrdp::PublishElement>> {
+    pub fn publish_elements(
+        &self,
+    ) -> KrillResult<Vec<crate::commons::api::rrdp::PublishElement>> {
         let mut res = vec![];
 
         let mft_uri = self
@@ -155,10 +173,10 @@ impl TrustAnchorObjects {
         res.push(self.crl.publish_element(crl_uri));
 
         for (name, object) in self.issued_certs_objects() {
-            let cert_uri = self
-                .base_uri
-                .join(name.as_ref())
-                .map_err(|e| Error::Custom(format!("Cannot make uri: {}", e)))?;
+            let cert_uri =
+                self.base_uri.join(name.as_ref()).map_err(|e| {
+                    Error::Custom(format!("Cannot make uri: {}", e))
+                })?;
             res.push(object.publish_element(cert_uri));
         }
         Ok(res)
@@ -191,21 +209,27 @@ impl TrustAnchorObjects {
         Time::now() + chrono::Duration::weeks(weeks)
     }
 
-    // Adds a new issued certificate, replaces and revokes the previous if present.
+    // Adds a new issued certificate, replaces and revokes the previous if
+    // present.
     pub fn add_issued(&mut self, issued: IssuedCertificate) {
-        if let Some(previous) = self.issued.insert(issued.key_identifier(), issued) {
+        if let Some(previous) =
+            self.issued.insert(issued.key_identifier(), issued)
+        {
             self.revocations.add(previous.revocation());
             self.revocations.remove_expired();
         }
     }
 
     // Gets an issued certificate if it is known.
-    pub fn get_issued(&self, ki: &KeyIdentifier) -> Option<&IssuedCertificate> {
+    pub fn get_issued(
+        &self,
+        ki: &KeyIdentifier,
+    ) -> Option<&IssuedCertificate> {
         self.issued.get(ki)
     }
 
-    // Revoke any issued certificate for the given key, and remove it. Returns false
-    // if there was no such certificate.
+    // Revoke any issued certificate for the given key, and remove it. Returns
+    // false if there was no such certificate.
     pub fn revoke_issued(&mut self, key: &KeyIdentifier) -> bool {
         if let Some(issued) = self.issued.remove(key) {
             self.revocations.add(issued.revocation());
@@ -219,12 +243,22 @@ impl TrustAnchorObjects {
 
 impl fmt::Display for TrustAnchorObjects {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "-------------------------------------------------------")?;
+        writeln!(
+            f,
+            "-------------------------------------------------------"
+        )?;
         writeln!(f, "                 Trust Anchor Objects")?;
-        writeln!(f, "-------------------------------------------------------")?;
+        writeln!(
+            f,
+            "-------------------------------------------------------"
+        )?;
         writeln!(f)?;
         writeln!(f, "Revision:    {}", self.revision.number())?;
-        writeln!(f, "Next Update: {}", self.revision.next_update().to_rfc3339())?;
+        writeln!(
+            f,
+            "Next Update: {}",
+            self.revision.next_update().to_rfc3339()
+        )?;
         writeln!(f)?;
         writeln!(f, "Objects:",)?;
         for publish in self.publish_elements().map_err(|_| fmt::Error)? {
@@ -285,7 +319,11 @@ pub struct TrustAnchorLocator {
 
 impl TrustAnchorLocator {
     /// Creates a new TAL, panics when the provided Cert is not a TA cert.
-    pub fn new(uris: Vec<uri::Https>, rsync_uri: uri::Rsync, public_key: &PublicKey) -> Self {
+    pub fn new(
+        uris: Vec<uri::Https>,
+        rsync_uri: uri::Rsync,
+        public_key: &PublicKey,
+    ) -> Self {
         let encoded_ski = Base64::from_content(&public_key.to_info_bytes());
 
         TrustAnchorLocator {
@@ -344,23 +382,41 @@ pub struct TrustAnchorSignerInfo {
 
 impl fmt::Display for TrustAnchorSignerInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "-------------------------------------------------------")?;
+        writeln!(
+            f,
+            "-------------------------------------------------------"
+        )?;
         writeln!(f, "                 ID Certificate")?;
-        writeln!(f, "-------------------------------------------------------")?;
+        writeln!(
+            f,
+            "-------------------------------------------------------"
+        )?;
         writeln!(f)?;
         writeln!(f, "{}", self.id)?;
         writeln!(f)?;
-        writeln!(f, "-------------------------------------------------------")?;
+        writeln!(
+            f,
+            "-------------------------------------------------------"
+        )?;
         writeln!(f)?;
         writeln!(f, "{}", self.objects)?;
         writeln!(f)?;
-        writeln!(f, "-------------------------------------------------------")?;
+        writeln!(
+            f,
+            "-------------------------------------------------------"
+        )?;
         writeln!(f, "                          TAL")?;
-        writeln!(f, "-------------------------------------------------------")?;
+        writeln!(
+            f,
+            "-------------------------------------------------------"
+        )?;
         writeln!(f)?;
         writeln!(f, "{}", self.ta_cert_details.tal())?;
         writeln!(f)?;
-        writeln!(f, "-------------------------------------------------------")?;
+        writeln!(
+            f,
+            "-------------------------------------------------------"
+        )?;
 
         Ok(())
     }
@@ -406,18 +462,27 @@ pub struct TrustAnchorSignedMessage {
 }
 
 impl TrustAnchorSignedMessage {
-    pub fn validate(&self, issuer_key: &PublicKey) -> KrillResult<SignedMessage> {
+    pub fn validate(
+        &self,
+        issuer_key: &PublicKey,
+    ) -> KrillResult<SignedMessage> {
         self.validate_at(issuer_key, Time::now())
     }
 
-    pub fn validate_at(&self, issuer_key: &PublicKey, time: Time) -> KrillResult<SignedMessage> {
+    pub fn validate_at(
+        &self,
+        issuer_key: &PublicKey,
+        time: Time,
+    ) -> KrillResult<SignedMessage> {
         let bytes = self.message.to_bytes();
-        let signed_message = SignedMessage::decode(bytes, true)
-            .map_err(|e| Error::Custom(format!("Cannot decode signed message: {}", e)))?;
+        let signed_message =
+            SignedMessage::decode(bytes, true).map_err(|e| {
+                Error::Custom(format!("Cannot decode signed message: {}", e))
+            })?;
 
-        signed_message
-            .validate_at(issuer_key, time)
-            .map_err(|e| Error::Custom(format!("Invalid signed message: {}", e)))?;
+        signed_message.validate_at(issuer_key, time).map_err(|e| {
+            Error::Custom(format!("Invalid signed message: {}", e))
+        })?;
 
         Ok(signed_message)
     }
@@ -425,7 +490,8 @@ impl TrustAnchorSignedMessage {
 
 impl From<SignedMessage> for TrustAnchorSignedMessage {
     fn from(signed_msg: SignedMessage) -> Self {
-        let message = Base64::from_content(&signed_msg.to_captured().into_bytes());
+        let message =
+            Base64::from_content(&signed_msg.to_captured().into_bytes());
         TrustAnchorSignedMessage { message }
     }
 }
@@ -524,8 +590,12 @@ impl fmt::Display for TrustAnchorSignerRequest {
             writeln!(f, "entitlements:  {}", request.resources)?;
             for (key, child_req) in &request.requests {
                 match child_req {
-                    ProvisioningRequest::Issuance(_) => writeln!(f, "key:           {}    (re-)issue", key)?,
-                    ProvisioningRequest::Revocation(_) => writeln!(f, "key:           {}    revoke", key)?,
+                    ProvisioningRequest::Issuance(_) => {
+                        writeln!(f, "key:           {}    (re-)issue", key)?
+                    }
+                    ProvisioningRequest::Revocation(_) => {
+                        writeln!(f, "key:           {}    revoke", key)?
+                    }
                 }
             }
             writeln!(f)?;
@@ -601,7 +671,8 @@ impl fmt::Display for TrustAnchorSignedResponse {
 pub struct TrustAnchorSignerResponse {
     pub nonce: Nonce, // should match the request (replay protection)
     pub objects: TrustAnchorObjects,
-    pub child_responses: HashMap<ChildHandle, HashMap<KeyIdentifier, ProvisioningResponse>>,
+    pub child_responses:
+        HashMap<ChildHandle, HashMap<KeyIdentifier, ProvisioningResponse>>,
 }
 
 impl TrustAnchorSignerResponse {
@@ -639,9 +710,15 @@ impl fmt::Display for TrustAnchorSignerResponse {
             writeln!(f, "child:         {}", child)?;
             for (key, response) in responses.iter() {
                 match response {
-                    ProvisioningResponse::Error => writeln!(f, "key:           {}    ERROR", key)?,
-                    ProvisioningResponse::Issuance(_) => writeln!(f, "key:           {}    issued", key)?,
-                    ProvisioningResponse::Revocation(_) => writeln!(f, "key:           {}    revoked", key)?,
+                    ProvisioningResponse::Error => {
+                        writeln!(f, "key:           {}    ERROR", key)?
+                    }
+                    ProvisioningResponse::Issuance(_) => {
+                        writeln!(f, "key:           {}    issued", key)?
+                    }
+                    ProvisioningResponse::Revocation(_) => {
+                        writeln!(f, "key:           {}    revoked", key)?
+                    }
                 }
             }
         }
@@ -665,7 +742,11 @@ pub struct TrustAnchorChild {
 }
 
 impl TrustAnchorChild {
-    pub fn new(handle: ChildHandle, id: IdCertInfo, resources: ResourceSet) -> Self {
+    pub fn new(
+        handle: ChildHandle,
+        id: IdCertInfo,
+        resources: ResourceSet,
+    ) -> Self {
         TrustAnchorChild {
             handle,
             id,
@@ -689,15 +770,21 @@ pub enum ProvisioningRequest {
 impl ProvisioningRequest {
     pub fn key_identifier(&self) -> KeyIdentifier {
         match self {
-            ProvisioningRequest::Issuance(req) => req.csr().public_key().key_identifier(),
+            ProvisioningRequest::Issuance(req) => {
+                req.csr().public_key().key_identifier()
+            }
             ProvisioningRequest::Revocation(req) => req.key(),
         }
     }
 
     pub fn matches_response(&self, response: &ProvisioningResponse) -> bool {
         match self {
-            ProvisioningRequest::Issuance(_) => !matches!(response, ProvisioningResponse::Revocation(_)),
-            ProvisioningRequest::Revocation(_) => !matches!(response, ProvisioningResponse::Issuance(_)),
+            ProvisioningRequest::Issuance(_) => {
+                !matches!(response, ProvisioningResponse::Revocation(_))
+            }
+            ProvisioningRequest::Revocation(_) => {
+                !matches!(response, ProvisioningResponse::Issuance(_))
+            }
         }
     }
 }
@@ -705,8 +792,16 @@ impl ProvisioningRequest {
 impl std::fmt::Display for ProvisioningRequest {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            ProvisioningRequest::Issuance(_) => write!(f, "issue certificate for key: {}", self.key_identifier()),
-            ProvisioningRequest::Revocation(_) => write!(f, "revoke certificates for key: {}", self.key_identifier()),
+            ProvisioningRequest::Issuance(_) => write!(
+                f,
+                "issue certificate for key: {}",
+                self.key_identifier()
+            ),
+            ProvisioningRequest::Revocation(_) => write!(
+                f,
+                "revoke certificates for key: {}",
+                self.key_identifier()
+            ),
         }
     }
 }
@@ -722,13 +817,25 @@ pub enum ProvisioningResponse {
 }
 
 impl ProvisioningResponse {
-    pub fn to_provisioning_message(self, sender: SenderHandle, recipient: RecipientHandle) -> provisioning::Message {
+    pub fn to_provisioning_message(
+        self,
+        sender: SenderHandle,
+        recipient: RecipientHandle,
+    ) -> provisioning::Message {
         match self {
             ProvisioningResponse::Issuance(issuance_response) => {
-                provisioning::Message::issue_response(sender, recipient, issuance_response)
+                provisioning::Message::issue_response(
+                    sender,
+                    recipient,
+                    issuance_response,
+                )
             }
             ProvisioningResponse::Revocation(revocation_response) => {
-                provisioning::Message::revoke_response(sender, recipient, revocation_response)
+                provisioning::Message::revoke_response(
+                    sender,
+                    recipient,
+                    revocation_response,
+                )
             }
             ProvisioningResponse::Error => {
                 provisioning::Message::not_performed_response(

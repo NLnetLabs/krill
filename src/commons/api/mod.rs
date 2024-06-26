@@ -35,14 +35,18 @@ use rpki::{
     repository::resources::Asn,
 };
 
-use crate::{commons::error::RoaDeltaError, daemon::ca::RoaPayloadJsonMapKey};
+use crate::{
+    commons::error::RoaDeltaError, daemon::ca::RoaPayloadJsonMapKey,
+};
 
-// Some syntactic sugar to help this old coder's brain deal with the mess of Strings
+// Some syntactic sugar to help this old coder's brain deal with the mess of
+// Strings
 pub type Message = String;
 pub type ArgKey = String;
 pub type ArgVal = String;
 
-//------------ ErrorResponse --------------------------------------------------
+//------------ ErrorResponse
+//------------ --------------------------------------------------
 
 /// Defines an error response. Codes are unique and documented here:
 /// https://rpki.readthedocs.io/en/latest/krill/pub/api.html#error-responses
@@ -103,7 +107,9 @@ impl ErrorResponse {
     }
 
     pub fn with_auth(self, auth: &RoaPayloadJsonMapKey) -> Self {
-        let mut res = self.with_arg("prefix", auth.prefix()).with_arg("asn", auth.asn());
+        let mut res = self
+            .with_arg("prefix", auth.prefix())
+            .with_arg("asn", auth.asn());
 
         if let Some(max) = auth.max_length() {
             res = res.with_arg("max_length", max)
@@ -121,7 +127,10 @@ impl ErrorResponse {
         self.with_arg("bgpsec_csr", base64)
     }
 
-    pub fn with_roa_delta_error(mut self, roa_delta_error: &RoaDeltaError) -> Self {
+    pub fn with_roa_delta_error(
+        mut self,
+        roa_delta_error: &RoaDeltaError,
+    ) -> Self {
         self.delta_error = Some(roa_delta_error.clone());
         self
     }

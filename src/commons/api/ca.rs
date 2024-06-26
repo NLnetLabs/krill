@@ -1,5 +1,5 @@
-//! Common data types for Certificate Authorities, defined here so that the CLI
-//! can have access without needing to depend on the full krill_ca module.
+//! Common data types for Certificate Authorities, defined here so that the
+//! CLI can have access without needing to depend on the full krill_ca module.
 
 use std::collections::HashMap;
 use std::ops::{self};
@@ -7,8 +7,8 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::{fmt, str};
 
-use base64::engine::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
+use base64::engine::Engine as _;
 use bytes::Bytes;
 use chrono::{Duration, TimeZone, Utc};
 use rpki::ca::publication::{PublishDelta, PublishDeltaElement};
@@ -18,9 +18,12 @@ use serde::{Deserialize, Serialize};
 use rpki::{
     ca::{
         idcert::IdCert,
-        idexchange::{CaHandle, ChildHandle, ParentHandle, RepoInfo, ServiceUri},
+        idexchange::{
+            CaHandle, ChildHandle, ParentHandle, RepoInfo, ServiceUri,
+        },
         provisioning::{
-            IssuanceRequest, IssuedCert, RequestResourceLimit, ResourceClassEntitlements, ResourceClassListResponse,
+            IssuanceRequest, IssuedCert, RequestResourceLimit,
+            ResourceClassEntitlements, ResourceClassListResponse,
             ResourceClassName, SigningCert,
         },
         publication::Base64,
@@ -45,8 +48,8 @@ use crate::daemon::ca::BgpSecCertInfo;
 use crate::{
     commons::{
         api::{
-            rrdp::PublishElement, AspaDefinition, ErrorResponse, ParentCaContact, RepositoryContact, RoaAggregateKey,
-            RoaPayload,
+            rrdp::PublishElement, AspaDefinition, ErrorResponse,
+            ParentCaContact, RepositoryContact, RoaAggregateKey, RoaPayload,
         },
         util::KrillVersion,
     },
@@ -124,8 +127,12 @@ impl TryFrom<&IdCertInfo> for IdCert {
     type Error = error::Error;
 
     fn try_from(info: &IdCertInfo) -> Result<Self, Self::Error> {
-        IdCert::decode(info.base64.to_bytes().as_ref())
-            .map_err(|e| error::Error::Custom(format!("Could not decode IdCertInfo into IdCert: {}", e)))
+        IdCert::decode(info.base64.to_bytes().as_ref()).map_err(|e| {
+            error::Error::Custom(format!(
+                "Could not decode IdCertInfo into IdCert: {}",
+                e
+            ))
+        })
     }
 }
 
@@ -137,7 +144,9 @@ impl fmt::Display for IdCertInfo {
 
 //------------ ChildState ----------------------------------------------------
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(
+    Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum ChildState {
     #[default]
@@ -157,7 +166,8 @@ impl fmt::Display for ChildState {
 
 //------------ ChildCaInfo ---------------------------------------------------
 
-/// This type represents information about a child CA that is shared through the API.
+/// This type represents information about a child CA that is shared through
+/// the API.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildCaInfo {
     state: ChildState,
@@ -166,7 +176,11 @@ pub struct ChildCaInfo {
 }
 
 impl ChildCaInfo {
-    pub fn new(state: ChildState, id_cert: IdCertInfo, entitled_resources: ResourceSet) -> Self {
+    pub fn new(
+        state: ChildState,
+        id_cert: IdCertInfo,
+        entitled_resources: ResourceSet,
+    ) -> Self {
         ChildCaInfo {
             state,
             id_cert,
@@ -190,7 +204,11 @@ impl ChildCaInfo {
 impl fmt::Display for ChildCaInfo {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         writeln!(f, "{}", self.id_cert.pem())?;
-        writeln!(f, "SHA256 hash of PEM encoded certificate: {}", self.id_cert.hash())?;
+        writeln!(
+            f,
+            "SHA256 hash of PEM encoded certificate: {}",
+            self.id_cert.hash()
+        )?;
         writeln!(f, "resources: {}", self.entitled_resources)?;
         writeln!(f, "state: {}", self.state)
     }
@@ -217,7 +235,8 @@ pub type IssuedCertificate = CertInfo<Issued>;
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct Suspended;
 
-/// An issued certificate which has been (temporarily) suspended because the child is inactive.
+/// An issued certificate which has been (temporarily) suspended because the
+/// child is inactive.
 pub type SuspendedCert = CertInfo<Suspended>;
 
 //------------ UnsuspendedCertificate ----------------------------------------
@@ -232,9 +251,9 @@ pub type UnsuspendedCert = CertInfo<Unsuspended>;
 
 /// Contains all relevant info about an RPKI certificate.
 ///
-/// Note that while it would be tempting to keep the actual rpki-rs Cert, unfortunately
-/// this causes fragility with regards to keeping these objects in history and stricter
-/// parsing and validation in future. See issue #819.
+/// Note that while it would be tempting to keep the actual rpki-rs Cert,
+/// unfortunately this causes fragility with regards to keeping these objects
+/// in history and stricter parsing and validation in future. See issue #819.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CertInfo<T> {
     // Where this certificate is published by the parent
@@ -295,11 +314,18 @@ impl<T> CertInfo<T> {
         }?;
 
         let key = cert.subject_public_key_info().clone();
-        let ca_repository = cert.ca_repository().ok_or(InvalidCert::CaRepositoryMissing)?.clone();
-        let rpki_manifest = cert.rpki_manifest().ok_or(InvalidCert::RpkiManifestMissing)?.clone();
+        let ca_repository = cert
+            .ca_repository()
+            .ok_or(InvalidCert::CaRepositoryMissing)?
+            .clone();
+        let rpki_manifest = cert
+            .rpki_manifest()
+            .ok_or(InvalidCert::RpkiManifestMissing)?
+            .clone();
         let rpki_notify = cert.rpki_notify().cloned();
 
-        let csr_info = CsrInfo::new(ca_repository, rpki_manifest, rpki_notify, key);
+        let csr_info =
+            CsrInfo::new(ca_repository, rpki_manifest, rpki_notify, key);
 
         let subject = cert.subject().clone();
         let validity = cert.validity();
@@ -368,7 +394,8 @@ impl<T> CertInfo<T> {
     }
 
     pub fn to_cert(&self) -> Result<Cert, InvalidCert> {
-        Cert::decode(self.to_bytes().as_ref()).map_err(|e| InvalidCert::CannotDecode(e.to_string()))
+        Cert::decode(self.to_bytes().as_ref())
+            .map_err(|e| InvalidCert::CannotDecode(e.to_string()))
     }
 
     /// Represent as an RFC 6492 IssuedCert
@@ -415,11 +442,14 @@ impl<T> CertInfo<T> {
         }
     }
 
-    /// Returns a (possibly empty) set of reduced applicable resources which is the intersection
-    /// of the encompassing resources and this certificate's current resources.
-    /// Returns None if the current resource set is not overclaiming and does not need to be
-    /// reduced.
-    pub fn reduced_applicable_resources(&self, encompassing: &ResourceSet) -> Option<ResourceSet> {
+    /// Returns a (possibly empty) set of reduced applicable resources which
+    /// is the intersection of the encompassing resources and this
+    /// certificate's current resources. Returns None if the current
+    /// resource set is not overclaiming and does not need to be reduced.
+    pub fn reduced_applicable_resources(
+        &self,
+        encompassing: &ResourceSet,
+    ) -> Option<ResourceSet> {
         if encompassing.contains(&self.resources) {
             None
         } else {
@@ -516,8 +546,8 @@ impl PendingKeyInfo {
 //------------ CertifiedKeyInfo ----------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-/// Describes a Key that is certified. I.e. it received an incoming certificate
-/// and has at least a MFT and CRL.
+/// Describes a Key that is certified. I.e. it received an incoming
+/// certificate and has at least a MFT and CRL.
 pub struct CertifiedKeyInfo {
     key_id: KeyIdentifier,
     incoming_cert: ReceivedCert,
@@ -573,7 +603,9 @@ impl ObjectName {
     }
 
     pub fn bgpsec(asn: Asn, key: KeyIdentifier) -> Self {
-        ObjectName(format!("ROUTER-{:08X}-{}.cer", asn.into_u32(), key).into())
+        ObjectName(
+            format!("ROUTER-{:08X}-{}.cer", asn.into_u32(), key).into(),
+        )
     }
 }
 
@@ -612,7 +644,9 @@ impl From<&RoaAggregateKey> for ObjectName {
         ObjectName(
             match roa_group.group() {
                 None => format!("AS{}.roa", roa_group.asn()),
-                Some(number) => format!("AS{}-{}.roa", roa_group.asn(), number),
+                Some(number) => {
+                    format!("AS{}-{}.roa", roa_group.asn(), number)
+                }
             }
             .into(),
         )
@@ -663,15 +697,16 @@ impl fmt::Display for ObjectName {
 
 //------------ Revocation ----------------------------------------------------
 
-/// This type represents an entry to be used on a Certificate Revocation List (CRL).
+/// This type represents an entry to be used on a Certificate Revocation List
+/// (CRL).
 ///
-/// The "revocation_date" will be used for the "revocationDate" as described in
-/// section 5.1 of RFC 5280. The "expires" time is used to determine when a CRL
-/// entry can be deleted because it is no longer relevant.
+/// The "revocation_date" will be used for the "revocationDate" as described
+/// in section 5.1 of RFC 5280. The "expires" time is used to determine when a
+/// CRL entry can be deleted because it is no longer relevant.
 ///
-/// The "revocation_date" is set to the time that this object is first created,
-/// but it will be persisted for future use. In other words: there is no support
-/// for future or past dating this time.
+/// The "revocation_date" is set to the time that this object is first
+/// created, but it will be persisted for future use. In other words: there is
+/// no support for future or past dating this time.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Revocation {
     serial: Serial,
@@ -735,7 +770,8 @@ impl Revocations {
 
     /// Removes all expired revocations, and returns them.
     pub fn remove_expired(&mut self) -> Vec<Revocation> {
-        let (relevant, expired) = self.0.iter().partition(|r| r.expires > Time::now());
+        let (relevant, expired) =
+            self.0.iter().partition(|r| r.expires > Time::now());
         self.0 = relevant;
         expired
     }
@@ -818,10 +854,10 @@ impl fmt::Display for ResourceSetSummary {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CertAuthList {
-    // Even though we only have 1 field, we chose not to use a tuple struct here
-    // to allow for future extensions more easily.. we could then just add new
-    // fields and associated JSON members without affecting consumers of the API
-    // too much.
+    // Even though we only have 1 field, we chose not to use a tuple struct
+    // here to allow for future extensions more easily.. we could then
+    // just add new fields and associated JSON members without affecting
+    // consumers of the API too much.
     cas: Vec<CertAuthSummary>,
 }
 
@@ -926,7 +962,9 @@ impl ParentStatuses {
         self.0.get(parent)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&ParentHandle, &ParentStatus)> {
+    pub fn iter(
+        &self,
+    ) -> impl Iterator<Item = (&ParentHandle, &ParentStatus)> {
         self.0.iter()
     }
 
@@ -935,10 +973,15 @@ impl ParentStatuses {
     /// - then sort by last exchange, minute grade granularity - oldest first
     ///    - where failures come before success within the same minute
     /// - then take the first N parents for this batch
-    pub fn sync_candidates(&self, ca_parents: Vec<&ParentHandle>, batch: usize) -> Vec<ParentHandle> {
+    pub fn sync_candidates(
+        &self,
+        ca_parents: Vec<&ParentHandle>,
+        batch: usize,
+    ) -> Vec<ParentHandle> {
         let mut parents = vec![];
 
-        // Add any parent for which no current status is known to the candidate list first.
+        // Add any parent for which no current status is known to the
+        // candidate list first.
         for parent in ca_parents {
             if !self.0.contains_key(parent) {
                 parents.push(parent.clone());
@@ -958,32 +1001,49 @@ impl ParentStatuses {
 
     // Return the parents sorted by last exchange, i.e. let the parents
     // without an exchange be first, and then from longest ago to most recent.
-    // Uses minute grade granularity and in cases where the exchanges happened in
-    // the same minute failures take precedence (come before) successful exchanges.
+    // Uses minute grade granularity and in cases where the exchanges happened
+    // in the same minute failures take precedence (come before)
+    // successful exchanges.
     pub fn sorted_by_last_exchange(&self) -> Vec<ParentHandle> {
-        let mut sorted_parents: Vec<(&ParentHandle, &ParentStatus)> = self.iter().collect();
+        let mut sorted_parents: Vec<(&ParentHandle, &ParentStatus)> =
+            self.iter().collect();
         sorted_parents.sort_by(|a, b| {
             // we can map the 'no last exchange' case to 1970..
             let a_last_exchange = a.1.last_exchange.as_ref();
             let b_last_exchange = b.1.last_exchange.as_ref();
 
-            let a_last_exchange_time = a_last_exchange.map(|e| i64::from(e.timestamp)).unwrap_or(0) / 60;
-            let b_last_exchange_time = b_last_exchange.map(|e| i64::from(e.timestamp)).unwrap_or(0) / 60;
+            let a_last_exchange_time =
+                a_last_exchange.map(|e| i64::from(e.timestamp)).unwrap_or(0)
+                    / 60;
+            let b_last_exchange_time =
+                b_last_exchange.map(|e| i64::from(e.timestamp)).unwrap_or(0)
+                    / 60;
 
             if a_last_exchange_time == b_last_exchange_time {
                 // compare success / failure
-                let a_last_exchange_res = a_last_exchange.map(|e| e.result().was_success()).unwrap_or(false);
-                let b_last_exchange_res = b_last_exchange.map(|e| e.result().was_success()).unwrap_or(false);
+                let a_last_exchange_res = a_last_exchange
+                    .map(|e| e.result().was_success())
+                    .unwrap_or(false);
+                let b_last_exchange_res = b_last_exchange
+                    .map(|e| e.result().was_success())
+                    .unwrap_or(false);
                 a_last_exchange_res.cmp(&b_last_exchange_res)
             } else {
                 a_last_exchange_time.cmp(&b_last_exchange_time)
             }
         });
 
-        sorted_parents.into_iter().map(|(handle, _)| handle).cloned().collect()
+        sorted_parents
+            .into_iter()
+            .map(|(handle, _)| handle)
+            .cloned()
+            .collect()
     }
 
-    pub fn get_mut_status(&mut self, parent: &ParentHandle) -> &mut ParentStatus {
+    pub fn get_mut_status(
+        &mut self,
+        parent: &ParentHandle,
+    ) -> &mut ParentStatus {
         if !self.0.contains_key(parent) {
             self.0.insert(parent.clone(), ParentStatus::default());
         }
@@ -1002,7 +1062,8 @@ impl ParentStatuses {
 
 impl IntoIterator for ParentStatuses {
     type Item = (ParentHandle, ParentStatus);
-    type IntoIter = std::collections::hash_map::IntoIter<ParentHandle, ParentStatus>;
+    type IntoIter =
+        std::collections::hash_map::IntoIter<ParentHandle, ParentStatus>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
@@ -1018,7 +1079,11 @@ impl fmt::Display for ParentStatuses {
                 Some(exchange) => {
                     writeln!(f, "URI: {}", exchange.uri)?;
                     writeln!(f, "Status: {}", exchange.result)?;
-                    writeln!(f, "Last contacted: {}", exchange.timestamp().to_rfc3339())?;
+                    writeln!(
+                        f,
+                        "Last contacted: {}",
+                        exchange.timestamp().to_rfc3339()
+                    )?;
 
                     if exchange.was_success() {
                         write!(f, "Resource Entitlements:")?;
@@ -1031,20 +1096,49 @@ impl fmt::Display for ParentStatuses {
                     } else {
                         writeln!(f, " {}", status.all_resources)?;
                         for class in &status.classes {
-                            writeln!(f, "  resource class:     {}", class.class_name())?;
-                            writeln!(f, "  entitled resources: {}", class.resource_set())?;
-                            writeln!(f, "  entitled not after: {}", class.not_after().to_rfc3339())?;
+                            writeln!(
+                                f,
+                                "  resource class:     {}",
+                                class.class_name()
+                            )?;
+                            writeln!(
+                                f,
+                                "  entitled resources: {}",
+                                class.resource_set()
+                            )?;
+                            writeln!(
+                                f,
+                                "  entitled not after: {}",
+                                class.not_after().to_rfc3339()
+                            )?;
 
-                            let parent_cert: ParentStatusIssuingCert = class.signing_cert().into();
-                            writeln!(f, "  issuing cert uri: {}", parent_cert.uri)?;
-                            writeln!(f, "  issuing cert PEM:\n\n{}\n", parent_cert.cert_pem)?;
+                            let parent_cert: ParentStatusIssuingCert =
+                                class.signing_cert().into();
+                            writeln!(
+                                f,
+                                "  issuing cert uri: {}",
+                                parent_cert.uri
+                            )?;
+                            writeln!(
+                                f,
+                                "  issuing cert PEM:\n\n{}\n",
+                                parent_cert.cert_pem
+                            )?;
 
                             writeln!(f, "  received certificate(s):")?;
                             for issued in class.issued_certs().iter() {
                                 let issued: ParentStatusCert = issued.into();
 
-                                writeln!(f, "    published at: {}", issued.uri)?;
-                                writeln!(f, "    cert PEM:\n\n{}\n", issued.cert_pem)?;
+                                writeln!(
+                                    f,
+                                    "    published at: {}",
+                                    issued.uri
+                                )?;
+                                writeln!(
+                                    f,
+                                    "    cert PEM:\n\n{}\n",
+                                    issued.cert_pem
+                                )?;
                             }
                         }
                     }
@@ -1063,9 +1157,8 @@ pub struct ParentStatusIssuingCert {
 
 impl From<&SigningCert> for ParentStatusIssuingCert {
     fn from(signing: &SigningCert) -> Self {
-        let cert = BASE64_ENGINE.encode(
-            signing.cert().to_captured().as_slice()
-        );
+        let cert =
+            BASE64_ENGINE.encode(signing.cert().to_captured().as_slice());
         let cert_pem = format!(
             "-----BEGIN CERTIFICATE-----\n\
             {cert}\n\
@@ -1087,9 +1180,8 @@ pub struct ParentStatusCert {
 
 impl From<&IssuedCert> for ParentStatusCert {
     fn from(issued: &IssuedCert) -> Self {
-        let cert = BASE64_ENGINE.encode(
-            issued.cert().to_captured().as_slice()
-        );
+        let cert =
+            BASE64_ENGINE.encode(issued.cert().to_captured().as_slice());
         let cert_pem = format!(
             "-----BEGIN CERTIFICATE-----\n\
             {cert}\n\
@@ -1141,7 +1233,11 @@ impl ParentStatus {
         });
     }
 
-    pub fn set_entitlements(&mut self, uri: ServiceUri, entitlements: &ResourceClassListResponse) {
+    pub fn set_entitlements(
+        &mut self,
+        uri: ServiceUri,
+        entitlements: &ResourceClassListResponse,
+    ) {
         self.set_last_updated(uri);
 
         self.classes.clone_from(entitlements.classes());
@@ -1246,9 +1342,17 @@ impl fmt::Display for RepoStatus {
 
                 writeln!(f, "URI: {}", exchange.uri())?;
                 writeln!(f, "Status: {}", exchange.result)?;
-                writeln!(f, "Last contacted: {}", exchange.timestamp().to_rfc3339())?;
+                writeln!(
+                    f,
+                    "Last contacted: {}",
+                    exchange.timestamp().to_rfc3339()
+                )?;
                 if let Some(success) = self.last_success() {
-                    writeln!(f, "Last successful contact: {}", success.to_rfc3339())?;
+                    writeln!(
+                        f,
+                        "Last successful contact: {}",
+                        success.to_rfc3339()
+                    )?;
                 }
             }
         }
@@ -1329,7 +1433,10 @@ impl ChildrenConnectionStats {
         ChildrenConnectionStats { children }
     }
 
-    pub fn suspension_candidates(&self, threshold_seconds: i64) -> Vec<ChildHandle> {
+    pub fn suspension_candidates(
+        &self,
+        threshold_seconds: i64,
+    ) -> Vec<ChildHandle> {
         self.children
             .iter()
             .filter(|child| child.is_suspension_candidate(threshold_seconds))
@@ -1345,10 +1452,15 @@ impl fmt::Display for ChildrenConnectionStats {
             for child in &self.children {
                 match &child.last_exchange {
                     None => {
-                        writeln!(f, "{},n/a,never,n/a,{}", child.handle, child.state)?;
+                        writeln!(
+                            f,
+                            "{},n/a,never,n/a,{}",
+                            child.handle, child.state
+                        )?;
                     }
                     Some(exchange) => {
-                        let agent = exchange.user_agent.as_deref().unwrap_or("");
+                        let agent =
+                            exchange.user_agent.as_deref().unwrap_or("");
 
                         writeln!(
                             f,
@@ -1375,7 +1487,11 @@ pub struct ChildConnectionStats {
 }
 
 impl ChildConnectionStats {
-    pub fn new(handle: ChildHandle, last_exchange: Option<ChildExchange>, state: ChildState) -> Self {
+    pub fn new(
+        handle: ChildHandle,
+        last_exchange: Option<ChildExchange>,
+        state: ChildState,
+    ) -> Self {
         ChildConnectionStats {
             handle,
             last_exchange,
@@ -1393,7 +1509,10 @@ impl ChildConnectionStats {
         } else {
             self.last_exchange
                 .as_ref()
-                .map(|exchange| exchange.is_krill_above_0_9_1() && exchange.more_than_seconds_ago(threshold_seconds))
+                .map(|exchange| {
+                    exchange.is_krill_above_0_9_1()
+                        && exchange.more_than_seconds_ago(threshold_seconds)
+                })
                 .unwrap_or(false)
         }
     }
@@ -1420,7 +1539,11 @@ impl ChildStatus {
         self.suspended = None;
     }
 
-    pub fn set_failure(&mut self, user_agent: Option<String>, error_response: ErrorResponse) {
+    pub fn set_failure(
+        &mut self,
+        user_agent: Option<String>,
+        error_response: ErrorResponse,
+    ) {
         self.last_exchange = Some(ChildExchange {
             timestamp: Timestamp::now(),
             result: ExchangeResult::Failure(error_response),
@@ -1506,8 +1629,11 @@ impl ChildExchange {
 
 //------------ Timestamp -----------------------------------------------------
 
-/// A wrapper for unix timestamps with second precision, with some convenient stuff.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+/// A wrapper for unix timestamps with second precision, with some convenient
+/// stuff.
+#[derive(
+    Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize,
+)]
 pub struct Timestamp(i64);
 
 impl Timestamp {
@@ -1655,10 +1781,13 @@ impl CertAuthInfo {
         let parents = parents.into_keys().map(ParentInfo::new).collect();
 
         let empty = ResourceSet::default();
-        let resources = resource_classes.values().fold(ResourceSet::default(), |res, rci| {
-            let rc_resources = rci.current_resources().unwrap_or(&empty);
-            res.union(rc_resources)
-        });
+        let resources = resource_classes.values().fold(
+            ResourceSet::default(),
+            |res, rci| {
+                let rc_resources = rci.current_resources().unwrap_or(&empty);
+                res.union(rc_resources)
+            },
+        );
 
         CertAuthInfo {
             handle,
@@ -1692,7 +1821,9 @@ impl CertAuthInfo {
         &self.resources
     }
 
-    pub fn resource_classes(&self) -> &HashMap<ResourceClassName, ResourceClassInfo> {
+    pub fn resource_classes(
+        &self,
+    ) -> &HashMap<ResourceClassName, ResourceClassInfo> {
         &self.resource_classes
     }
 
@@ -1712,7 +1843,10 @@ impl fmt::Display for CertAuthInfo {
 
         if let Some(repo_info) = self.repo_info() {
             let base_uri = repo_info.base_uri();
-            let rrdp_uri = repo_info.rpki_notify().map(|uri| uri.as_str()).unwrap_or("<none>");
+            let rrdp_uri = repo_info
+                .rpki_notify()
+                .map(|uri| uri.as_str())
+                .unwrap_or("<none>");
 
             writeln!(f, "Base uri: {}", base_uri)?;
             writeln!(f, "RRDP uri: {}", rrdp_uri)?;
@@ -1775,7 +1909,11 @@ pub struct ResourceClassInfo {
 }
 
 impl ResourceClassInfo {
-    pub fn new(name_space: String, parent_handle: ParentHandle, keys: ResourceClassKeysInfo) -> Self {
+    pub fn new(
+        name_space: String,
+        parent_handle: ParentHandle,
+        keys: ResourceClassKeysInfo,
+    ) -> Self {
         ResourceClassInfo {
             name_space,
             parent_handle,
@@ -1859,8 +1997,12 @@ pub struct RollOldInfo {
 impl ResourceClassKeysInfo {
     pub fn current_key(&self) -> Option<&CertifiedKeyInfo> {
         match &self {
-            ResourceClassKeysInfo::Active(current) => Some(&current._active_key),
-            ResourceClassKeysInfo::RollPending(pending) => Some(&pending._active_key),
+            ResourceClassKeysInfo::Active(current) => {
+                Some(&current._active_key)
+            }
+            ResourceClassKeysInfo::RollPending(pending) => {
+                Some(&pending._active_key)
+            }
             ResourceClassKeysInfo::RollNew(new) => Some(&new._active_key),
             ResourceClassKeysInfo::RollOld(old) => Some(&old._active_key),
             _ => None,
@@ -1883,9 +2025,15 @@ impl fmt::Display for ResourceClassKeysInfo {
         match &self {
             ResourceClassKeysInfo::Pending(_) => write!(f, "pending")?,
             ResourceClassKeysInfo::Active(_) => write!(f, "active")?,
-            ResourceClassKeysInfo::RollPending(_) => write!(f, "roll phase 1: pending and active key")?,
-            ResourceClassKeysInfo::RollNew(_) => write!(f, "roll phase 2: new and active key")?,
-            ResourceClassKeysInfo::RollOld(_) => write!(f, "roll phase 3: active and old key")?,
+            ResourceClassKeysInfo::RollPending(_) => {
+                write!(f, "roll phase 1: pending and active key")?
+            }
+            ResourceClassKeysInfo::RollNew(_) => {
+                write!(f, "roll phase 2: new and active key")?
+            }
+            ResourceClassKeysInfo::RollOld(_) => {
+                write!(f, "roll phase 3: active and old key")?
+            }
         }
 
         if let Some(key) = self.current_key() {
@@ -1921,11 +2069,18 @@ impl fmt::Display for CaRepoDetails {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let repo_info = self.contact.repo_info();
         let server_info = self.contact.server_info();
-        let rrdp_uri = repo_info.rpki_notify().map(|uri| uri.as_str()).unwrap_or("<none>");
+        let rrdp_uri = repo_info
+            .rpki_notify()
+            .map(|uri| uri.as_str())
+            .unwrap_or("<none>");
 
         writeln!(f, "Repository Details:")?;
         writeln!(f, "  service uri:    {}", server_info.service_uri())?;
-        writeln!(f, "  key identifier: {}", server_info.public_key().key_identifier())?;
+        writeln!(
+            f,
+            "  key identifier: {}",
+            server_info.public_key().key_identifier()
+        )?;
         writeln!(f, "  base_uri:       {}", repo_info.base_uri())?;
         writeln!(f, "  rpki_notify:    {}", rrdp_uri)?;
         writeln!(f)?;
@@ -2002,7 +2157,11 @@ impl CertAuthIssues {
         self.repo_issue.as_ref()
     }
 
-    pub fn add_parent_issue(&mut self, parent: ParentHandle, issue: ErrorResponse) {
+    pub fn add_parent_issue(
+        &mut self,
+        parent: ParentHandle,
+        issue: ErrorResponse,
+    ) {
         let parent_issue = CertAuthParentIssue { parent, issue };
         self.parent_issues.push(parent_issue);
     }
@@ -2027,7 +2186,11 @@ impl fmt::Display for CertAuthIssues {
             let parent_issues = self.parent_issues();
             if !parent_issues.is_empty() {
                 for parent_issue in parent_issues.iter() {
-                    writeln!(f, "Parent '{}' has issue: {}", parent_issue.parent, parent_issue.issue)?;
+                    writeln!(
+                        f,
+                        "Parent '{}' has issue: {}",
+                        parent_issue.parent, parent_issue.issue
+                    )?;
                 }
             }
         }
@@ -2045,7 +2208,11 @@ pub struct CertAuthStats {
 }
 
 impl CertAuthStats {
-    pub fn new(roa_count: usize, child_count: usize, bgp_stats: BgpStats) -> Self {
+    pub fn new(
+        roa_count: usize,
+        child_count: usize,
+        bgp_stats: BgpStats,
+    ) -> Self {
         CertAuthStats {
             roa_count,
             child_count,
@@ -2182,7 +2349,9 @@ mod test {
 
     use rpki::crypto::PublicKeyFormat;
 
-    use crate::{commons::crypto::OpenSslSigner, ta::TrustAnchorLocator, test};
+    use crate::{
+        commons::crypto::OpenSslSigner, ta::TrustAnchorLocator, test,
+    };
 
     use super::*;
 
@@ -2207,11 +2376,15 @@ mod test {
     #[test]
     fn mft_uri() {
         test::test_in_memory(|storage_uri| {
-            let signer = OpenSslSigner::build(storage_uri, "dummy", None).unwrap();
+            let signer =
+                OpenSslSigner::build(storage_uri, "dummy", None).unwrap();
             let key_id = signer.create_key(PublicKeyFormat::Rsa).unwrap();
             let pub_key = signer.get_key_info(&key_id).unwrap();
 
-            let mft_uri = info().resolve("", ObjectName::mft_for_key(&pub_key.key_identifier()).as_ref());
+            let mft_uri = info().resolve(
+                "",
+                ObjectName::mft_for_key(&pub_key.key_identifier()).as_ref(),
+            );
 
             let mft_path = mft_uri.relative_to(&base_uri()).unwrap();
 
@@ -2249,7 +2422,11 @@ mod test {
         let uri = test::https("https://localhost/ta.cer");
         let rsync_uri = test::rsync("rsync://localhost/ta/ta.cer");
 
-        let tal = TrustAnchorLocator::new(vec![uri], rsync_uri, cert.subject_public_key_info());
+        let tal = TrustAnchorLocator::new(
+            vec![uri],
+            rsync_uri,
+            cert.subject_public_key_info(),
+        );
 
         let expected_tal = include_str!("../../../test-resources/test.tal");
         let found_tal = tal.to_string();
@@ -2260,11 +2437,13 @@ mod test {
     #[test]
     fn id_cert_pem_match_openssl() {
         let ncc_id = {
-            let bytes = include_bytes!("../../../test-resources/remote/ncc-id.der");
+            let bytes =
+                include_bytes!("../../../test-resources/remote/ncc-id.der");
             IdCert::decode(bytes.as_ref()).unwrap()
         };
 
-        let ncc_id_openssl_pem = include_str!("../../../test-resources/remote/ncc-id.pem");
+        let ncc_id_openssl_pem =
+            include_str!("../../../test-resources/remote/ncc-id.pem");
         let ncc_id_pem = IdCertInfo::from(&ncc_id);
 
         assert_eq!(ncc_id_pem.pem(), ncc_id_openssl_pem);
@@ -2278,11 +2457,15 @@ mod test {
         use crate::commons::util::httpclient;
 
         issues.add_repo_issue(
-            Error::HttpClientError(httpclient::Error::forbidden("https://example.com/")).to_error_response(),
+            Error::HttpClientError(httpclient::Error::forbidden(
+                "https://example.com/",
+            ))
+            .to_error_response(),
         );
         issues.add_parent_issue(
             ParentHandle::from_str("parent").unwrap(),
-            Error::Rfc6492InvalidCsrSent("invalid csr".to_string()).to_error_response(),
+            Error::Rfc6492InvalidCsrSent("invalid csr".to_string())
+                .to_error_response(),
         );
 
         // println!("{}", serde_json::to_string_pretty(&issues).unwrap());
@@ -2326,7 +2509,9 @@ mod test {
             }
         }
 
-        fn ca_stats_active_no_exchange(child: &CaHandle) -> ChildConnectionStats {
+        fn ca_stats_active_no_exchange(
+            child: &CaHandle,
+        ) -> ChildConnectionStats {
             ChildConnectionStats {
                 handle: child.convert(),
                 last_exchange: None,
@@ -2334,7 +2519,10 @@ mod test {
             }
         }
 
-        fn ca_stats_active(child: &CaHandle, exchange: ChildExchange) -> ChildConnectionStats {
+        fn ca_stats_active(
+            child: &CaHandle,
+            exchange: ChildExchange,
+        ) -> ChildConnectionStats {
             ChildConnectionStats {
                 handle: child.convert(),
                 last_exchange: Some(exchange),
@@ -2344,33 +2532,50 @@ mod test {
 
         let new_ca = ca_stats_active_no_exchange(&ca_handle);
 
-        let recent_krill_pre_0_9_2 = ca_stats_active(&ca_handle, new_exchange("krill"));
-        let recent_krill_post_0_9_1 = ca_stats_active(&ca_handle, new_exchange("krill/0.9.2-rc2"));
-        let recent_other_agent = ca_stats_active(&ca_handle, new_exchange("other"));
+        let recent_krill_pre_0_9_2 =
+            ca_stats_active(&ca_handle, new_exchange("krill"));
+        let recent_krill_post_0_9_1 =
+            ca_stats_active(&ca_handle, new_exchange("krill/0.9.2-rc2"));
+        let recent_other_agent =
+            ca_stats_active(&ca_handle, new_exchange("other"));
         let recent_no_agent = ca_stats_active(&ca_handle, new_exchange(""));
 
-        let old_krill_pre_0_9_2 = ca_stats_active(&ca_handle, old_exchange("krill"));
-        let old_krill_post_0_9_1 = ca_stats_active(&ca_handle, old_exchange("krill/0.9.2-rc2"));
-        let old_other_agent = ca_stats_active(&ca_handle, old_exchange("other"));
+        let old_krill_pre_0_9_2 =
+            ca_stats_active(&ca_handle, old_exchange("krill"));
+        let old_krill_post_0_9_1 =
+            ca_stats_active(&ca_handle, old_exchange("krill/0.9.2-rc2"));
+        let old_other_agent =
+            ca_stats_active(&ca_handle, old_exchange("other"));
         let old_no_agent = ca_stats_active(&ca_handle, old_exchange(""));
 
         assert!(!new_ca.is_suspension_candidate(threshold_seconds));
 
-        assert!(!recent_krill_pre_0_9_2.is_suspension_candidate(threshold_seconds));
-        assert!(!recent_krill_post_0_9_1.is_suspension_candidate(threshold_seconds));
-        assert!(!recent_other_agent.is_suspension_candidate(threshold_seconds));
+        assert!(!recent_krill_pre_0_9_2
+            .is_suspension_candidate(threshold_seconds));
+        assert!(!recent_krill_post_0_9_1
+            .is_suspension_candidate(threshold_seconds));
+        assert!(
+            !recent_other_agent.is_suspension_candidate(threshold_seconds)
+        );
         assert!(!recent_no_agent.is_suspension_candidate(threshold_seconds));
 
-        assert!(!old_krill_pre_0_9_2.is_suspension_candidate(threshold_seconds));
+        assert!(
+            !old_krill_pre_0_9_2.is_suspension_candidate(threshold_seconds)
+        );
         assert!(!old_other_agent.is_suspension_candidate(threshold_seconds));
         assert!(!old_no_agent.is_suspension_candidate(threshold_seconds));
 
-        assert!(old_krill_post_0_9_1.is_suspension_candidate(threshold_seconds));
+        assert!(
+            old_krill_post_0_9_1.is_suspension_candidate(threshold_seconds)
+        );
     }
 
     #[test]
     fn find_sync_candidates() {
-        let uri = ServiceUri::try_from("https://example.com/rfc6492/child/".to_string()).unwrap();
+        let uri = ServiceUri::try_from(
+            "https://example.com/rfc6492/child/".to_string(),
+        )
+        .unwrap();
 
         let five_seconds_ago = Timestamp::now_minus_seconds(5);
         let five_mins_ago = Timestamp::now_minus_seconds(300);
@@ -2404,7 +2609,9 @@ mod test {
             last_exchange: Some(ParentExchange {
                 timestamp: five_seconds_ago,
                 uri: uri.clone(),
-                result: ExchangeResult::Failure(ErrorResponse::new("err", "err!")),
+                result: ExchangeResult::Failure(ErrorResponse::new(
+                    "err", "err!",
+                )),
             }),
             last_success: None,
             all_resources: ResourceSet::default(),
@@ -2426,7 +2633,8 @@ mod test {
         inner_statuses.insert(p3_no_exchange.clone(), p3_status_no_exchange);
         inner_statuses.insert(p4_success.clone(), p4_status_success);
         inner_statuses.insert(p5_failure.clone(), p5_status_failure);
-        inner_statuses.insert(p6_success_long_ago.clone(), p6_status_success_long_ago);
+        inner_statuses
+            .insert(p6_success_long_ago.clone(), p6_status_success_long_ago);
 
         let parent_statuses = ParentStatuses(inner_statuses);
 
@@ -2439,7 +2647,8 @@ mod test {
             &p6_success_long_ago,
         ];
 
-        let candidates = parent_statuses.sync_candidates(ca_parents.clone(), 10);
+        let candidates =
+            parent_statuses.sync_candidates(ca_parents.clone(), 10);
 
         #[allow(clippy::redundant_clone)] // false positive in rust 1.63
         let expected = vec![
@@ -2453,7 +2662,8 @@ mod test {
 
         assert_eq!(candidates, expected);
 
-        let candidates_trimmed = parent_statuses.sync_candidates(ca_parents, 1);
+        let candidates_trimmed =
+            parent_statuses.sync_candidates(ca_parents, 1);
         let expected_trimmed = vec![p1_new_parent];
 
         assert_eq!(candidates_trimmed, expected_trimmed);

@@ -26,7 +26,14 @@ async fn functional_delegated_ca_import() {
     async fn start_testbed(port: u16) -> impl FnOnce() {
         let (data_dir, cleanup) = tmp_dir();
         let storage_uri = mem_storage();
-        let mut config = test_config(&storage_uri, Some(&data_dir), true, true, false, false);
+        let mut config = test_config(
+            &storage_uri,
+            Some(&data_dir),
+            true,
+            true,
+            false,
+            false,
+        );
         config.port = port;
         start_krill(config).await;
 
@@ -52,7 +59,8 @@ async fn functional_delegated_ca_import() {
 
     let child = ca_handle("child");
     let child_res = resources("AS65000", "10.0.0.0/16", "");
-    let child_res_2 = resources("AS65000-AS65010", "10.0.0.0/8", "2001:db8::/32");
+    let child_res_2 =
+        resources("AS65000-AS65010", "10.0.0.0/8", "2001:db8::/32");
     let child_rcn = ResourceClassName::from("custom");
 
     // Start a testbed
@@ -64,7 +72,8 @@ async fn functional_delegated_ca_import() {
 
     // Add child under parent_1
     set_up_ca_with_repo(&child).await;
-    set_up_ca_under_parent(&child, &parent_1, &child_res, Some(child_rcn)).await;
+    set_up_ca_under_parent(&child, &parent_1, &child_res, Some(child_rcn))
+        .await;
 
     // Export the child
     let exported_child = export_child(&parent_1, &child).await;
@@ -108,7 +117,12 @@ async fn export_child(parent: &CaHandle, child: &CaHandle) -> ExportChild {
 }
 
 async fn import_child(parent: &CaHandle, child: ImportChild) {
-    match krill_admin(Command::CertAuth(CaCommand::ChildImport(parent.clone(), child))).await {
+    match krill_admin(Command::CertAuth(CaCommand::ChildImport(
+        parent.clone(),
+        child,
+    )))
+    .await
+    {
         ApiResponse::Empty => {}
         _ => {
             panic!("Expected exported child")
@@ -124,7 +138,13 @@ async fn set_up_ca_under_parent(
 ) {
     let child_request = request(ca).await;
     let parent_ca_req = {
-        let response = add_child_rfc6492(parent.convert(), ca.convert(), child_request, resources.clone()).await;
+        let response = add_child_rfc6492(
+            parent.convert(),
+            ca.convert(),
+            child_request,
+            resources.clone(),
+        )
+        .await;
         ParentCaReq::new(parent.convert(), response)
     };
 
@@ -133,11 +153,13 @@ async fn set_up_ca_under_parent(
             name_in_parent: rcn(0),
             name_for_child: child_rcn,
         };
-        krill_admin(krill::cli::options::Command::CertAuth(CaCommand::ChildUpdate(
-            parent.convert(),
-            ca.convert(),
-            UpdateChildRequest::resource_class_name_mapping(mapping),
-        )))
+        krill_admin(krill::cli::options::Command::CertAuth(
+            CaCommand::ChildUpdate(
+                parent.convert(),
+                ca.convert(),
+                UpdateChildRequest::resource_class_name_mapping(mapping),
+            ),
+        ))
         .await;
     }
     add_parent_to_ca(ca, parent_ca_req).await;
@@ -156,10 +178,20 @@ async fn parent_contact(ca: &CaHandle, child: &CaHandle) -> ParentResponse {
     }
 }
 
-async fn update_child_resources(ca: &CaHandle, child: &CaHandle, resources: &ResourceSet) {
+async fn update_child_resources(
+    ca: &CaHandle,
+    child: &CaHandle,
+    resources: &ResourceSet,
+) {
     let child_handle = child.convert();
     let req = UpdateChildRequest::resources(resources.clone());
-    match krill_admin(Command::CertAuth(CaCommand::ChildUpdate(ca.clone(), child_handle, req))).await {
+    match krill_admin(Command::CertAuth(CaCommand::ChildUpdate(
+        ca.clone(),
+        child_handle,
+        req,
+    )))
+    .await
+    {
         ApiResponse::Empty => {}
         _ => panic!("Expected empty ok response"),
     }

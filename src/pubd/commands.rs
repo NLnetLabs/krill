@@ -5,7 +5,9 @@ use rpki::ca::idexchange::{MyHandle, PublisherHandle};
 use rpki::uri;
 
 use crate::commons::crypto::KrillSigner;
-use crate::commons::eventsourcing::{InitCommandDetails, SentInitCommand, WithStorableDetails};
+use crate::commons::eventsourcing::{
+    InitCommandDetails, SentInitCommand, WithStorableDetails,
+};
 use crate::{
     commons::{
         actor::Actor,
@@ -17,7 +19,8 @@ use crate::{
 
 //------------ RepositoryAccessCommand -------------------------------------
 
-pub type RepositoryAccessInitCommand = SentInitCommand<RepositoryAccessInitCommandDetails>;
+pub type RepositoryAccessInitCommand =
+    SentInitCommand<RepositoryAccessInitCommandDetails>;
 
 //------------ RepositoryAccessInitCommandDetails --------------------------
 #[derive(Clone, Debug)]
@@ -28,7 +31,11 @@ pub struct RepositoryAccessInitCommandDetails {
 }
 
 impl RepositoryAccessInitCommandDetails {
-    pub fn new(rrdp_base_uri: uri::Https, rsync_jail: uri::Rsync, signer: Arc<KrillSigner>) -> Self {
+    pub fn new(
+        rrdp_base_uri: uri::Https,
+        rsync_jail: uri::Rsync,
+        signer: Arc<KrillSigner>,
+    ) -> Self {
         RepositoryAccessInitCommandDetails {
             rrdp_base_uri,
             rsync_jail,
@@ -59,7 +66,8 @@ impl InitCommandDetails for RepositoryAccessInitCommandDetails {
 
 //------------ RepositoryAccessCommand -------------------------------------
 
-pub type RepositoryAccessCommand = SentCommand<RepositoryAccessCommandDetails>;
+pub type RepositoryAccessCommand =
+    SentCommand<RepositoryAccessCommandDetails>;
 
 //------------ RepositoryAccessCommandDetails ------------------------------
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -105,7 +113,11 @@ impl RepositoryAccessCommandDetails {
         )
     }
 
-    pub fn remove_publisher(handle: &MyHandle, name: PublisherHandle, actor: &Actor) -> RepositoryAccessCommand {
+    pub fn remove_publisher(
+        handle: &MyHandle,
+        name: PublisherHandle,
+        actor: &Actor,
+    ) -> RepositoryAccessCommand {
         SentCommand::new(
             handle,
             None,

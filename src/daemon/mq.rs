@@ -102,15 +102,29 @@ pub enum Task {
 impl Task {
     fn name(&self) -> KrillResult<SegmentBuf> {
         match self {
-            Task::SyncRepo { ca_handle: ca, .. } => SegmentBuf::from_str(&format!("sync_repo_{}", ca)),
-            Task::SyncParent {
-                ca_handle: ca, parent, ..
-            } => SegmentBuf::from_str(&format!("sync_{}_with_parent_{}", ca, parent)),
-            Task::SuspendChildrenIfNeeded { ca_handle: ca } => {
-                SegmentBuf::from_str(&format!("suspend_children_if_needed_{}", ca))
+            Task::SyncRepo { ca_handle: ca, .. } => {
+                SegmentBuf::from_str(&format!("sync_repo_{}", ca))
             }
-            Task::RepublishIfNeeded => Ok(segment!("all_cas_republish_if_needed").to_owned()),
-            Task::RenewObjectsIfNeeded => Ok(segment!("all_cas_renew_objects_if_needed").to_owned()),
+            Task::SyncParent {
+                ca_handle: ca,
+                parent,
+                ..
+            } => SegmentBuf::from_str(&format!(
+                "sync_{}_with_parent_{}",
+                ca, parent
+            )),
+            Task::SuspendChildrenIfNeeded { ca_handle: ca } => {
+                SegmentBuf::from_str(&format!(
+                    "suspend_children_if_needed_{}",
+                    ca
+                ))
+            }
+            Task::RepublishIfNeeded => {
+                Ok(segment!("all_cas_republish_if_needed").to_owned())
+            }
+            Task::RenewObjectsIfNeeded => {
+                Ok(segment!("all_cas_renew_objects_if_needed").to_owned())
+            }
             Task::ResourceClassRemoved {
                 ca_handle: ca,
                 parent,
@@ -131,14 +145,28 @@ impl Task {
                 ca,
                 rcn
             )),
-            Task::RefreshAnnouncementsInfo => Ok(segment!("refresh_bgp_announcements_info").to_owned()),
-            Task::UpdateSnapshots => Ok(segment!("update_stored_snapshots").to_owned()),
-            Task::RrdpUpdateIfNeeded => Ok(segment!("update_rrdp_if_needed").to_owned()),
+            Task::RefreshAnnouncementsInfo => {
+                Ok(segment!("refresh_bgp_announcements_info").to_owned())
+            }
+            Task::UpdateSnapshots => {
+                Ok(segment!("update_stored_snapshots").to_owned())
+            }
+            Task::RrdpUpdateIfNeeded => {
+                Ok(segment!("update_rrdp_if_needed").to_owned())
+            }
             #[cfg(feature = "multi-user")]
-            Task::SweepLoginCache => Ok(segment!("sweep_login_cache").to_owned()),
-            Task::RenewTestbedTa => Ok(segment!("renew_testbed_ta").to_owned()),
-            Task::SyncTrustAnchorProxySignerIfPossible => Ok(segment!("sync_ta_proxy_signer").to_owned()),
-            Task::QueueStartTasks => Ok(segment!("queue_start_tasks").to_owned()),
+            Task::SweepLoginCache => {
+                Ok(segment!("sweep_login_cache").to_owned())
+            }
+            Task::RenewTestbedTa => {
+                Ok(segment!("renew_testbed_ta").to_owned())
+            }
+            Task::SyncTrustAnchorProxySignerIfPossible => {
+                Ok(segment!("sync_ta_proxy_signer").to_owned())
+            }
+            Task::QueueStartTasks => {
+                Ok(segment!("queue_start_tasks").to_owned())
+            }
         }
         .map_err(|e| Error::Custom(format!("could not create name: {}", e)))
     }
@@ -148,28 +176,52 @@ impl fmt::Display for Task {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Task::QueueStartTasks => write!(f, "Server just started"),
-            Task::SyncRepo { ca_handle: ca, .. } => write!(f, "synchronize repo for '{}'", ca),
+            Task::SyncRepo { ca_handle: ca, .. } => {
+                write!(f, "synchronize repo for '{}'", ca)
+            }
             Task::SyncParent {
-                ca_handle: ca, parent, ..
-            } => write!(f, "synchronize CA '{}' with parent '{}'", ca, parent),
+                ca_handle: ca,
+                parent,
+                ..
+            } => {
+                write!(f, "synchronize CA '{}' with parent '{}'", ca, parent)
+            }
             Task::RenewTestbedTa => write!(f, "renew testbed TA"),
-            Task::SyncTrustAnchorProxySignerIfPossible => write!(f, "sync TA Proxy and Signer if both in this server."),
+            Task::SyncTrustAnchorProxySignerIfPossible => {
+                write!(f, "sync TA Proxy and Signer if both in this server.")
+            }
             Task::SuspendChildrenIfNeeded { ca_handle: ca } => {
                 write!(f, "verify if CA '{}' has children to suspend", ca)
             }
-            Task::RepublishIfNeeded => write!(f, "let CAs republish their mft/crls if needed"),
-            Task::RenewObjectsIfNeeded => write!(f, "let CAs renew their signed objects if needed"),
-            Task::RefreshAnnouncementsInfo => write!(f, "check for new announcement info"),
-            Task::UpdateSnapshots => write!(f, "update repository content snapshot on disk"),
-            Task::RrdpUpdateIfNeeded => write!(f, "create new RRDP delta, if needed"),
+            Task::RepublishIfNeeded => {
+                write!(f, "let CAs republish their mft/crls if needed")
+            }
+            Task::RenewObjectsIfNeeded => {
+                write!(f, "let CAs renew their signed objects if needed")
+            }
+            Task::RefreshAnnouncementsInfo => {
+                write!(f, "check for new announcement info")
+            }
+            Task::UpdateSnapshots => {
+                write!(f, "update repository content snapshot on disk")
+            }
+            Task::RrdpUpdateIfNeeded => {
+                write!(f, "create new RRDP delta, if needed")
+            }
 
             #[cfg(feature = "multi-user")]
             Task::SweepLoginCache => write!(f, "sweep up expired logins"),
             Task::ResourceClassRemoved { ca_handle: ca, .. } => {
                 write!(f, "resource class removed for '{}' ", ca)
             }
-            Task::UnexpectedKey { ca_handle: ca, rcn, .. } => {
-                write!(f, "unexpected key found for '{}' resource class: '{}'", ca, rcn)
+            Task::UnexpectedKey {
+                ca_handle: ca, rcn, ..
+            } => {
+                write!(
+                    f,
+                    "unexpected key found for '{}' resource class: '{}'",
+                    ca, rcn
+                )
             }
         }
     }
@@ -229,26 +281,59 @@ impl TaskQueue {
     ///
     /// This will NOT finish any possible running task by the same
     /// name.
-    pub fn schedule(&self, task: Task, priority: Priority) -> KrillResult<()> {
-        self.schedule_task(task, ScheduleMode::ReplaceExistingSoonest, priority)
+    pub fn schedule(
+        &self,
+        task: Task,
+        priority: Priority,
+    ) -> KrillResult<()> {
+        self.schedule_task(
+            task,
+            ScheduleMode::ReplaceExistingSoonest,
+            priority,
+        )
     }
 
     /// Schedules a task for the given priority. If the equivalent task
     /// was already present, then it will get the highest of the two
     /// priorities.
-    pub fn schedule_and_finish_existing(&self, task: Task, priority: Priority) -> KrillResult<()> {
-        self.schedule_task(task, ScheduleMode::FinishOrReplaceExistingSoonest, priority)
+    pub fn schedule_and_finish_existing(
+        &self,
+        task: Task,
+        priority: Priority,
+    ) -> KrillResult<()> {
+        self.schedule_task(
+            task,
+            ScheduleMode::FinishOrReplaceExistingSoonest,
+            priority,
+        )
     }
 
-    pub fn schedule_missing(&self, task: Task, priority: Priority) -> KrillResult<()> {
+    pub fn schedule_missing(
+        &self,
+        task: Task,
+        priority: Priority,
+    ) -> KrillResult<()> {
         self.schedule_task(task, ScheduleMode::IfMissing, priority)
     }
 
-    fn schedule_task(&self, task: Task, mode: ScheduleMode, priority: Priority) -> KrillResult<()> {
+    fn schedule_task(
+        &self,
+        task: Task,
+        mode: ScheduleMode,
+        priority: Priority,
+    ) -> KrillResult<()> {
         let task_name = task.name()?;
-        debug!("add task: {} with priority: {}", task_name, priority.to_string());
-        let json = serde_json::to_value(&task)
-            .map_err(|e| Error::Custom(format!("could not serialize task {}. error: {}", task_name, e)))?;
+        debug!(
+            "add task: {} with priority: {}",
+            task_name,
+            priority.to_string()
+        );
+        let json = serde_json::to_value(&task).map_err(|e| {
+            Error::Custom(format!(
+                "could not serialize task {}. error: {}",
+                task_name, e
+            ))
+        })?;
 
         self.q
             .schedule_task(task_name, json, Some(priority.to_millis()), mode)
@@ -262,7 +347,11 @@ impl TaskQueue {
     }
 
     /// Reschedule a running task, without finishing it.
-    pub fn reschedule(&self, task: &kvx::Key, priority: Priority) -> KrillResult<()> {
+    pub fn reschedule(
+        &self,
+        task: &kvx::Key,
+        priority: Priority,
+    ) -> KrillResult<()> {
         debug!("Reschedule task: {} to: {}", task, priority);
         self.q
             .reschedule_running_task(task, Some(priority.to_millis()))
@@ -292,10 +381,18 @@ impl TaskQueue {
 
 /// Implement listening for CertAuth events.
 impl TaskQueue {
-    fn schedule_for_ca_event(&self, ca: &CertAuth, ca_version: u64, event: &CertAuthEvent) -> KrillResult<()> {
+    fn schedule_for_ca_event(
+        &self,
+        ca: &CertAuth,
+        ca_version: u64,
+        event: &CertAuthEvent,
+    ) -> KrillResult<()> {
         let ca_handle = ca.handle().clone();
 
-        debug!("Seen event for CA {} version {}: '{}'", ca_handle, ca_version, event);
+        debug!(
+            "Seen event for CA {} version {}: '{}'",
+            ca_handle, ca_version, event
+        );
 
         match event {
             CertAuthEvent::RoasUpdated { .. }
@@ -305,10 +402,17 @@ impl TaskQueue {
             | CertAuthEvent::ChildKeyRevoked { .. }
             | CertAuthEvent::KeyPendingToNew { .. }
             | CertAuthEvent::KeyPendingToActive { .. }
-            | CertAuthEvent::KeyRollFinished { .. } => self.schedule(Task::SyncRepo { ca_handle, ca_version }, now()),
+            | CertAuthEvent::KeyRollFinished { .. } => self.schedule(
+                Task::SyncRepo {
+                    ca_handle,
+                    ca_version,
+                },
+                now(),
+            ),
 
             CertAuthEvent::KeyRollActivated {
-                resource_class_name, ..
+                resource_class_name,
+                ..
             } => {
                 if let Ok(parent) = ca.parent_for_rc(resource_class_name) {
                     // ensure that the revocation request for the old
@@ -323,10 +427,22 @@ impl TaskQueue {
                     )?;
                 }
                 // update published objects - remove old mft and crl
-                self.schedule(Task::SyncRepo { ca_handle, ca_version }, now())
+                self.schedule(
+                    Task::SyncRepo {
+                        ca_handle,
+                        ca_version,
+                    },
+                    now(),
+                )
             }
 
-            CertAuthEvent::ParentRemoved { .. } => self.schedule(Task::SyncRepo { ca_handle, ca_version }, now()),
+            CertAuthEvent::ParentRemoved { .. } => self.schedule(
+                Task::SyncRepo {
+                    ca_handle,
+                    ca_version,
+                },
+                now(),
+            ),
 
             CertAuthEvent::ResourceClassRemoved {
                 resource_class_name,
@@ -366,9 +482,13 @@ impl TaskQueue {
                 now(),
             ),
 
-            CertAuthEvent::ParentAdded { parent, .. } | CertAuthEvent::ParentUpdated { parent, .. } => {
+            CertAuthEvent::ParentAdded { parent, .. }
+            | CertAuthEvent::ParentUpdated { parent, .. } => {
                 if ca.repository_contact().is_ok() {
-                    debug!("Parent {} added to CA {}, scheduling sync", parent, ca_handle);
+                    debug!(
+                        "Parent {} added to CA {}, scheduling sync",
+                        parent, ca_handle
+                    );
                     self.schedule(
                         Task::SyncParent {
                             ca_handle: ca_handle.clone(),
@@ -378,8 +498,9 @@ impl TaskQueue {
                         now(),
                     )
                 } else {
-                    // Postpone parent sync. I.e. it will be triggered below when the event
-                    // for updating the repository is seen.
+                    // Postpone parent sync. I.e. it will be triggered below
+                    // when the event for updating the
+                    // repository is seen.
                     warn!(
                         "Synchronisation of CA '{}' with parent '{}' postponed until repository is configured.",
                         ca_handle, parent
@@ -401,9 +522,13 @@ impl TaskQueue {
                 Ok(())
             }
             CertAuthEvent::CertificateRequested {
-                resource_class_name, ..
+                resource_class_name,
+                ..
             } => {
-                debug!("CA {} requested certificate for RC {}", ca_handle, resource_class_name);
+                debug!(
+                    "CA {} requested certificate for RC {}",
+                    ca_handle, resource_class_name
+                );
                 if let Ok(parent) = ca.parent_for_rc(resource_class_name) {
                     debug!(
                         "CA {} will schedule sync for parent {} when CA is version {}",
@@ -428,7 +553,11 @@ impl TaskQueue {
 
 /// Implement pre-save listening for CertAuth events.
 impl eventsourcing::PreSaveEventListener<CertAuth> for TaskQueue {
-    fn listen(&self, ca: &CertAuth, events: &[CertAuthEvent]) -> KrillResult<()> {
+    fn listen(
+        &self,
+        ca: &CertAuth,
+        events: &[CertAuthEvent],
+    ) -> KrillResult<()> {
         for event in events {
             self.schedule_for_ca_event(ca, ca.version(), event)?;
         }
@@ -444,12 +573,14 @@ impl eventsourcing::PostSaveEventListener<CertAuth> for TaskQueue {
     fn listen(&self, ca: &CertAuth, events: &[CertAuthEvent]) {
         for event in events {
             match event {
-                CertAuthEvent::ChildUpdatedResources { child, .. } | CertAuthEvent::ChildKeyRevoked { child, .. } => {
+                CertAuthEvent::ChildUpdatedResources { child, .. }
+                | CertAuthEvent::ChildKeyRevoked { child, .. } => {
                     debug!("Schedule a sync from the child to this CA as their parent. This will be a no-op for remote children.");
                     if let Err(e) = self.schedule_and_finish_existing(
                         Task::SyncParent {
                             ca_handle: child.convert(),
-                            ca_version: 0, // no need to wait for updated child
+                            ca_version: 0, /* no need to wait for updated
+                                            * child */
                             parent: ca.handle().convert(),
                         },
                         now(),
@@ -473,13 +604,23 @@ impl eventsourcing::PostSaveEventListener<CertAuth> for TaskQueue {
 
 /// Implement pre-save listening for TrustAnchorProxy events.
 impl eventsourcing::PreSaveEventListener<TrustAnchorProxy> for TaskQueue {
-    fn listen(&self, proxy: &TrustAnchorProxy, events: &[TrustAnchorProxyEvent]) -> KrillResult<()> {
+    fn listen(
+        &self,
+        proxy: &TrustAnchorProxy,
+        events: &[TrustAnchorProxyEvent],
+    ) -> KrillResult<()> {
         for event in events {
             trace!("Seen TrustAnchorProxy event '{}'", event);
             match event {
-                TrustAnchorProxyEvent::ChildRequestAdded(_child, _request) => {
+                TrustAnchorProxyEvent::ChildRequestAdded(
+                    _child,
+                    _request,
+                ) => {
                     // schedule proxy -> signer sync
-                    self.schedule(Task::SyncTrustAnchorProxySignerIfPossible, now())?;
+                    self.schedule(
+                        Task::SyncTrustAnchorProxySignerIfPossible,
+                        now(),
+                    )?;
                 }
                 TrustAnchorProxyEvent::SignerResponseReceived(_response) => {
                     // schedule publication for the TA
@@ -506,13 +647,21 @@ impl eventsourcing::PreSaveEventListener<TrustAnchorProxy> for TaskQueue {
 
 /// Implement post-save listening for TrustAnchorProxy events.
 impl eventsourcing::PostSaveEventListener<TrustAnchorProxy> for TaskQueue {
-    fn listen(&self, _proxy: &TrustAnchorProxy, events: &[TrustAnchorProxyEvent]) {
+    fn listen(
+        &self,
+        _proxy: &TrustAnchorProxy,
+        events: &[TrustAnchorProxyEvent],
+    ) {
         for event in events {
             match event {
                 TrustAnchorProxyEvent::SignerResponseReceived(response) => {
-                    // Schedule child->ta sync(s) now that there is a response.
+                    // Schedule child->ta sync(s) now that there is a
+                    // response.
                     for ca in response.content().child_responses.keys() {
-                        trace!("Received signed response for TA child {}", ca);
+                        trace!(
+                            "Received signed response for TA child {}",
+                            ca
+                        );
                         if let Err(e) = self.schedule(
                             Task::SyncParent {
                                 ca_handle: ca.convert(),

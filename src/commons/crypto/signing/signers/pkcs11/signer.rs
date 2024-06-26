@@ -21,8 +21,8 @@ use cryptoki::{
 use rpki::{
     crypto::signer::KeyError,
     crypto::{
-        KeyIdentifier, PublicKey, PublicKeyFormat, RpkiSignature, RpkiSignatureAlgorithm, Signature,
-        SignatureAlgorithm, SigningError,
+        KeyIdentifier, PublicKey, PublicKeyFormat, RpkiSignature,
+        RpkiSignatureAlgorithm, Signature, SignatureAlgorithm, SigningError,
     },
 };
 use secrecy::ExposeSecret;
@@ -39,7 +39,8 @@ use crate::commons::crypto::{
     SignerError, SignerHandle,
 };
 
-//------------ Types and constants ------------------------------------------------------------------------------------
+//------------ Types and constants
+//------------ ------------------------------------------------------------------------------------
 
 use serde::{de::Visitor, Deserialize};
 
@@ -79,14 +80,14 @@ pub struct Pkcs11ConfigurableSecrets {
 
 impl PartialEq for Pkcs11ConfigurableSecrets {
     fn eq(&self, other: &Self) -> bool {
-        self.user_pin.as_ref().map(|s| s.expose_secret()).eq(
-            &other.user_pin.as_ref().map(|s| s.expose_secret())
-        )
+        self.user_pin
+            .as_ref()
+            .map(|s| s.expose_secret())
+            .eq(&other.user_pin.as_ref().map(|s| s.expose_secret()))
     }
 }
 
-impl Eq for Pkcs11ConfigurableSecrets { }
-
+impl Eq for Pkcs11ConfigurableSecrets {}
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct Pkcs11ConfigurablePublicKeyAttributes {
@@ -96,15 +97,16 @@ pub struct Pkcs11ConfigurablePublicKeyAttributes {
     cka_modifiable: Option<bool>,
 
     /// PKCS#11 v2.40 4.4: "CK_TRUE if object is a private object; CK_FALSE
-    /// if object is a public object. Default value is token-specific, and may
-    /// depend on the values of other attributes of the object."
+    /// if object is a public object. Default value is token-specific, and
+    /// may depend on the values of other attributes of the object."
     #[serde(alias = "CKA_PRIVATE")]
     cka_private: Option<bool>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct Pkcs11ConfigurablePrivateKeyAttributes {
-    /// PKCS#11 v2.40 4.9: "CK_TRUE if key is extractable and can be wrapped."
+    /// PKCS#11 v2.40 4.9: "CK_TRUE if key is extractable and can be
+    /// wrapped."
     #[serde(alias = "CKA_EXTRACTABLE")]
     cka_extractable: Option<bool>,
 
@@ -114,8 +116,8 @@ pub struct Pkcs11ConfigurablePrivateKeyAttributes {
     cka_modifiable: Option<bool>,
 
     /// PKCS#11 v2.40 4.4: "CK_TRUE if object is a private object; CK_FALSE
-    /// if object is a public object. Default value is token-specific, and may
-    /// depend on the values of other attributes of the object."
+    /// if object is a public object. Default value is token-specific, and
+    /// may depend on the values of other attributes of the object."
     #[serde(alias = "CKA_PRIVATE")]
     cka_private: Option<bool>,
 
@@ -172,15 +174,19 @@ impl Default for Pkcs11ConfigurablePrivateKeyAttributes {
         // These values are backward compatible with the hard-coded values
         // used by Krill before they were made configurable for #1018.
         //
-        // The original values chosen were partly informed by a SafeNet article:
+        // The original values chosen were partly informed by a SafeNet
+        // article:
         //
-        //   "Follow best practices when setting sensitive key attributes: If you have secret or private keys
-        //    that are particularly sensitive and you want to prevent them from being wrapped off, they can be
-        //    generated with their template attributes: CKA_SENSITIVE and CKA_PRIVATE set to True and
-        //    CKA_EXTRACTABLE and CKA_MODIFIABLE both set to False. This way, the keys are only
-        //    accessible by a user who is logged in, and key values cannot be read by anyone. Also, the keys
-        //    cannot be wrapped off and the attribute values cannot be changed at some later time to invalidate
-        //    the original settings."
+        //   "Follow best practices when setting sensitive key attributes: If
+        // you have secret or private keys    that are particularly
+        // sensitive and you want to prevent them from being wrapped off, they
+        // can be    generated with their template attributes:
+        // CKA_SENSITIVE and CKA_PRIVATE set to True and
+        //    CKA_EXTRACTABLE and CKA_MODIFIABLE both set to False. This way,
+        // the keys are only    accessible by a user who is logged in,
+        // and key values cannot be read by anyone. Also, the keys
+        //    cannot be wrapped off and the attribute values cannot be changed
+        // at some later time to invalidate    the original settings."
         //
         // See:
         //   - https://github.com/NLnetLabs/krill/issues/1018
@@ -215,12 +221,14 @@ impl Pkcs11ConfigurablePrivateKeyAttributes {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum LoginMode {
-    // The token can do cryptographic operations such as signing without requiring C_Login to be called first, and so a
-    // user pin is also not required.
+    // The token can do cryptographic operations such as signing without
+    // requiring C_Login to be called first, and so a user pin is also
+    // not required.
     LoginNotRequired,
 
-    // The token requires that C_Login be called prior to performing any cryptographic operations such as signing. A
-    // correct user pin may be needed for the login to succeed.
+    // The token requires that C_Login be called prior to performing any
+    // cryptographic operations such as signing. A correct user pin may
+    // be needed for the login to succeed.
     LoginRequired,
 }
 
@@ -236,22 +244,31 @@ pub enum SlotIdOrLabel {
 struct ConnectionSettings {
     lib_path: String,
 
-    // For some PKCS#11 libraries it is easy, or only possible, to connect by slot ID (rather than slot label). With
-    // others using labeled slots is easier (e.g. with SoftHSMv2 slot 0 has a seemingly random actual slot ID generated
-    // when the slot is initialized) or is dynamic (apparently the OpenDNSSec project has encountered this behaviour).
-    // When a slot label is supplied all available slots will be queried via `C_GetSlotList` and the slot id of the
-    // first slot with a matching label will be used to connect to the HSM.
+    // For some PKCS#11 libraries it is easy, or only possible, to connect by
+    // slot ID (rather than slot label). With others using labeled slots
+    // is easier (e.g. with SoftHSMv2 slot 0 has a seemingly random actual
+    // slot ID generated when the slot is initialized) or is dynamic
+    // (apparently the OpenDNSSec project has encountered this behaviour).
+    // When a slot label is supplied all available slots will be queried via
+    // `C_GetSlotList` and the slot id of the first slot with a matching
+    // label will be used to connect to the HSM.
     slot: SlotIdOrLabel,
 
-    // The user pin is optional, it may be possible to login without it. Quoting the PKCS#11 v2.20 specificiation for
-    // the C_Login operation:
+    // The user pin is optional, it may be possible to login without it.
+    // Quoting the PKCS#11 v2.20 specificiation for the C_Login
+    // operation:
     //
-    //   "If the token has a “protected authentication path”, as indicated by the CKF_PROTECTED_AUTHENTICATION_PATH
-    //    flag in its CK_TOKEN_INFO being set, then that means that there is some way for a user to be authenticated to
-    //    the token without having the application send a PIN through the Cryptoki library. One such possibility is that
-    //    the user enters a PIN on a PINpad on the token itself, or on the slot device. Or the user might not even use a
-    //    PIN—authentication could be achieved by some fingerprint-reading device, for example. To log into a token with
-    //    a protected authentication path, the pPin parameter to C_Login should be NULL_PTR."
+    //   "If the token has a “protected authentication path”, as indicated by
+    // the CKF_PROTECTED_AUTHENTICATION_PATH    flag in its CK_TOKEN_INFO
+    // being set, then that means that there is some way for a user to be
+    // authenticated to    the token without having the application send
+    // a PIN through the Cryptoki library. One such possibility is that
+    //    the user enters a PIN on a PINpad on the token itself, or on the
+    // slot device. Or the user might not even use a
+    //    PIN—authentication could be achieved by some fingerprint-reading
+    // device, for example. To log into a token with    a protected
+    // authentication path, the pPin parameter to C_Login should be
+    // NULL_PTR."
     user_pin: Option<AuthPin>,
 
     login_mode: LoginMode,
@@ -299,7 +316,9 @@ pub struct Pkcs11Signer {
     mapper: Arc<SignerMapper>,
 
     /// A probe dependent interface to the PKCS#11 server.
-    server: Arc<StatefulProbe<ConnectionSettings, SignerError, UsableServerState>>,
+    server: Arc<
+        StatefulProbe<ConnectionSettings, SignerError, UsableServerState>,
+    >,
 
     extra_public_key_attributes: Vec<Attribute>,
 
@@ -309,27 +328,37 @@ pub struct Pkcs11Signer {
 impl Pkcs11Signer {
     /// Creates a new instance of Pkcs11Signer.
     ///
-    /// Warning: invoking this function twice within the same process when testing with SoftHSM can lead to error
-    /// CKR_USER_ALREADY_LOGGED_IN. To avoid this tests should be run with `cargo test ... -- --test-threads=1`.
+    /// Warning: invoking this function twice within the same process when
+    /// testing with SoftHSM can lead to error CKR_USER_ALREADY_LOGGED_IN.
+    /// To avoid this tests should be run with `cargo test ... --
+    /// --test-threads=1`.
     pub fn build(
         name: &str,
         conf: &Pkcs11SignerConfig,
         probe_interval: Duration,
         mapper: Arc<SignerMapper>,
     ) -> Result<Self, SignerError> {
-        // Signer initialization should not block Krill startup. As such we verify that we are able to load the PKCS#11
-        // library don't we initialize the PKCS#11 interface yet because we don't know what it's code will do. If it
-        // were to block while trying to connect to a remote server it would block Krill from starting up completely.
-        // If the remote server is down and the library has logic to delay and retry, or lacks appropriate timeouts of
-        // connection attempts, we could get stuck for a while. Instead we defer initialization of the library until
-        // first use. The downside of this approach is that we won't detect any issues until that point. Another reason
-        // not to initialize the PKCS#11 library here is that if there are multiple instances of the Pkcs11Signer only
-        // the first of them should call the PKCS#11 C_Initialize() function as the PKCS#11 v2.20 specification states
-        // that "Note that exactly one call to C_Initialize should be made for each application (as opposed to one call
-        // for every thread, for example)". At least, for the same PKCS#11 library that is. If two instances of
-        // Pkcs11Signer each use a different PKCS#11 library, e.g. one uses the SoftHSMv2 library and the other uses the
-        // AWS CloudHSM library, presumably they both need initializing within the same instance of the Krill
-        // "application".
+        // Signer initialization should not block Krill startup. As such we
+        // verify that we are able to load the PKCS#11 library don't
+        // we initialize the PKCS#11 interface yet because we don't know what
+        // it's code will do. If it were to block while trying to
+        // connect to a remote server it would block Krill from starting up
+        // completely. If the remote server is down and the library
+        // has logic to delay and retry, or lacks appropriate timeouts of
+        // connection attempts, we could get stuck for a while. Instead we
+        // defer initialization of the library until first use. The
+        // downside of this approach is that we won't detect any issues until
+        // that point. Another reason not to initialize the PKCS#11
+        // library here is that if there are multiple instances of the
+        // Pkcs11Signer only the first of them should call the PKCS#11
+        // C_Initialize() function as the PKCS#11 v2.20 specification states
+        // that "Note that exactly one call to C_Initialize should be made for
+        // each application (as opposed to one call for every thread,
+        // for example)". At least, for the same PKCS#11 library that is. If
+        // two instances of Pkcs11Signer each use a different PKCS#11
+        // library, e.g. one uses the SoftHSMv2 library and the other uses the
+        // AWS CloudHSM library, presumably they both need initializing within
+        // the same instance of the Krill "application".
 
         let server = Arc::new(StatefulProbe::new(
             name.to_string(),
@@ -338,7 +367,8 @@ impl Pkcs11Signer {
         ));
 
         let extra_public_key_attributes = conf.public_key_attributes.to_vec();
-        let extra_private_key_attributes = conf.private_key_attributes.to_vec();
+        let extra_private_key_attributes =
+            conf.private_key_attributes.to_vec();
 
         let s = Pkcs11Signer {
             name: name.to_string(),
@@ -373,11 +403,20 @@ impl Pkcs11Signer {
         None
     }
 
-    pub fn create_registration_key(&self) -> Result<(PublicKey, String), SignerError> {
+    pub fn create_registration_key(
+        &self,
+    ) -> Result<(PublicKey, String), SignerError> {
         match self.build_key_internal(PublicKeyFormat::Rsa) {
-            Ok((public_key, _, _, internal_key_id)) => Ok((public_key, internal_key_id)),
+            Ok((public_key, _, _, internal_key_id)) => {
+                Ok((public_key, internal_key_id))
+            }
 
-            Err(err @ InternalConnError::Pkcs11Error(Pkcs11Error::Pkcs11(RvError::TemplateInconsistent, _))) => {
+            Err(
+                err @ InternalConnError::Pkcs11Error(Pkcs11Error::Pkcs11(
+                    RvError::TemplateInconsistent,
+                    _,
+                )),
+            ) => {
                 // https://github.com/NLnetLabs/krill/issues/1019
                 let err_msg = format!(
                     "{} [Note: This error can occur if the signer does not support authenticated \
@@ -402,11 +441,16 @@ impl Pkcs11Signer {
                 KeyError::KeyNotFound => SignerError::KeyNotFound,
                 KeyError::Signer(err) => err,
             })?;
-        self.sign_with_key(priv_handle, RpkiSignatureAlgorithm::default(), challenge.as_ref())
+        self.sign_with_key(
+            priv_handle,
+            RpkiSignatureAlgorithm::default(),
+            challenge.as_ref(),
+        )
     }
 }
 
-//------------ Probe based server access ------------------------------------------------------------------------------
+//------------ Probe based server access
+//------------ ------------------------------------------------------------------------------
 
 /// The details needed to interact with a usable PKCS#11 server.
 #[derive(Debug)]
@@ -419,12 +463,15 @@ struct UsableServerState {
 
     /// When login_mode is NOT LoginMode::LoginRequired this will be None.
     ///
-    /// Section 11.6 "Session management functions" of the PKCS#11 v2.20 specification says:
-    ///   "Call C_Login to log the user into the token. Since all sessions an application has with a token have a
-    ///    shared login state, C_Login only needs to be called for one of the sessions."
+    /// Section 11.6 "Session management functions" of the PKCS#11 v2.20
+    /// specification says:   "Call C_Login to log the user into the
+    /// token. Since all sessions an application has with a token have a
+    ///    shared login state, C_Login only needs to be called for one of the
+    /// sessions."
     ///
-    /// Therefore we hold a reference to the login session so that all future sessions are considered logged in.
-    /// The Drop impl for Pkcs11Session will log the session out if logged in.
+    /// Therefore we hold a reference to the login session so that all future
+    /// sessions are considered logged in. The Drop impl for
+    /// Pkcs11Session will log the session out if logged in.
     _login_session: Option<Pkcs11Session>,
 
     retry_interval: Duration,
@@ -461,12 +508,21 @@ impl UsableServerState {
 }
 
 impl Pkcs11Signer {
-    /// Verify if the configured server is contactable and supports the required capabilities.
+    /// Verify if the configured server is contactable and supports the
+    /// required capabilities.
     fn probe_server(
         name: String,
-        status: &ProbeStatus<ConnectionSettings, SignerError, UsableServerState>,
+        status: &ProbeStatus<
+            ConnectionSettings,
+            SignerError,
+            UsableServerState,
+        >,
     ) -> Result<UsableServerState, ProbeError<SignerError>> {
-        fn slot_label_eq(ctx: &RwLockReadGuard<Pkcs11Context>, slot: Slot, slot_label: &str) -> bool {
+        fn slot_label_eq(
+            ctx: &RwLockReadGuard<Pkcs11Context>,
+            slot: Slot,
+            slot_label: &str,
+        ) -> bool {
             match ctx.get_token_info(slot) {
                 Ok(info) => info.label().trim_end() == slot_label,
                 Err(err) => {
@@ -506,7 +562,10 @@ impl Pkcs11Signer {
             ctx: ThreadSafePkcs11Context,
             name: &str,
             lib_name: &String,
-        ) -> Result<(Info, Slot, SlotInfo, TokenInfo, Option<AuthPin>), ProbeError<SignerError>> {
+        ) -> Result<
+            (Info, Slot, SlotInfo, TokenInfo, Option<AuthPin>),
+            ProbeError<SignerError>,
+        > {
             let readable_ctx = ctx.read().unwrap();
 
             let cryptoki_info = readable_ctx.get_info().map_err(|err| {
@@ -640,15 +699,21 @@ impl Pkcs11Signer {
 
         debug!("[{}] Probing server using library '{}'", name, lib_name);
 
-        let context = initialize_if_needed(&conn_settings).map_err(|err| {
-            error!(
+        let context =
+            initialize_if_needed(&conn_settings).map_err(|err| {
+                error!(
                 "[{}] Unable to initialize PKCS#11 info for library '{}': {}",
                 name, lib_name, err
             );
-            ProbeError::CompletedUnusable
-        })?;
+                ProbeError::CompletedUnusable
+            })?;
 
-        match interrogate_token(&conn_settings, context.clone(), &name, lib_name) {
+        match interrogate_token(
+            &conn_settings,
+            context.clone(),
+            &name,
+            lib_name,
+        ) {
             Ok((cryptoki_info, slot, _slot_info, token_info, user_pin)) => {
                 let session = Pkcs11Session::new(context.clone(), slot).map_err(|err| {
                     error!(
@@ -658,20 +723,30 @@ impl Pkcs11Signer {
                     ProbeError::CompletedUnusable
                 })?;
 
-                // TODO: unlike the `pkcs11` crate, the `cryptoki` crate doesn't require lots of PKCS#11 functions to be
-                // implemented by the loaded library. Do we need to verify therefore for ourselves that the required
-                // functions exist/work? See: https://github.com/parallaxsecond/rust-cryptoki/issues/78
+                // TODO: unlike the `pkcs11` crate, the `cryptoki` crate
+                // doesn't require lots of PKCS#11 functions to be
+                // implemented by the loaded library. Do we need to verify
+                // therefore for ourselves that the required functions exist/work? See: https://github.com/parallaxsecond/rust-cryptoki/issues/78
 
                 // TODO: check for RSA key pair support?
 
                 // Login if needed
-                let login_session = login(session, conn_settings.login_mode, user_pin, &name, lib_name, slot)?;
+                let login_session = login(
+                    session,
+                    conn_settings.login_mode,
+                    user_pin,
+                    &name,
+                    lib_name,
+                    slot,
+                )?;
 
                 // Switch from probing the server to using it.
                 // -------------------------------------------
 
-                // Note: When Display'd via '{}' with format!() as is done below, the Rust `cryptoki` crate automatically trims
-                // trailing whitespace from Cryptoki padded strings such as the token info label, model and manufacturerID.
+                // Note: When Display'd via '{}' with format!() as is done
+                // below, the Rust `cryptoki` crate automatically trims
+                // trailing whitespace from Cryptoki padded strings such as
+                // the token info label, model and manufacturerID.
 
                 let server_identification = format!(
                     "{} (Cryptoki v{})",
@@ -709,7 +784,12 @@ impl Pkcs11Signer {
                 Ok(state)
             }
             Err(err) => {
-                if matches!(err, ProbeError::CallbackFailed(SignerError::TemporarilyUnavailable)) {
+                if matches!(
+                    err,
+                    ProbeError::CallbackFailed(
+                        SignerError::TemporarilyUnavailable
+                    )
+                ) {
                     // This error can occur if the PKCS#11 library has cached
                     // the available token state on startup and doesn't see
                     // the token even though it is now available. For example
@@ -728,26 +808,37 @@ impl Pkcs11Signer {
     }
 }
 
-//------------ Connection related functions ---------------------------------------------------------------------------
+//------------ Connection related functions
+//------------ ---------------------------------------------------------------------------
 
 impl Pkcs11Signer {
     /// Get a connection to the server, if the server is usable.
     fn connect(&self) -> Result<Pkcs11Session, InternalConnError> {
-        let conn = self.server.status(Self::probe_server)?.state()?.get_connection()?;
+        let conn = self
+            .server
+            .status(Self::probe_server)?
+            .state()?
+            .get_connection()?;
         Ok(conn)
     }
 
     /// Perform some operation using a PKCS#11 connection.
     ///
-    /// Fails if the PKCS#11 server is not [Usable]. If the operation fails due to a transient connection error, retry
-    /// with backoff upto a defined retry limit.
-    fn with_conn<T, F>(&self, desc: &str, mut do_something_with_conn: F) -> Result<T, InternalConnError>
+    /// Fails if the PKCS#11 server is not [Usable]. If the operation fails
+    /// due to a transient connection error, retry with backoff upto a
+    /// defined retry limit.
+    fn with_conn<T, F>(
+        &self,
+        desc: &str,
+        mut do_something_with_conn: F,
+    ) -> Result<T, InternalConnError>
     where
         F: FnMut(&Pkcs11Session) -> Result<T, Pkcs11Error>,
     {
         let signer_name = &self.name;
 
-        // Define a notify callback to customize messages written to the logger
+        // Define a notify callback to customize messages written to the
+        // logger
         let notify = |err, next: Duration| {
             warn!(
                 "[{}] {} failed, retrying in {} seconds: {}",
@@ -760,16 +851,21 @@ impl Pkcs11Signer {
 
         // Define an operation to (re)try
         let op = || {
-            // First get a (possibly already existing) connection from the pool
+            // First get a (possibly already existing) connection from the
+            // pool
             let conn = self.connect().map_err(retry_on_transient_error)?;
 
-            // Next, try to execute the callers operation using the connection. If it fails, examine the cause of
-            // failure to determine if it should be a hard-fail (no more retries) or if we should try again.
-            (do_something_with_conn)(&conn).map_err(retry_on_transient_pkcs11_error)
+            // Next, try to execute the callers operation using the
+            // connection. If it fails, examine the cause of
+            // failure to determine if it should be a hard-fail (no more
+            // retries) or if we should try again.
+            (do_something_with_conn)(&conn)
+                .map_err(retry_on_transient_pkcs11_error)
         };
 
-        // Don't even bother going round the retry loop if we haven't yet successfully connected to the PKCS#11 server
-        // and verified its capabilities:
+        // Don't even bother going round the retry loop if we haven't yet
+        // successfully connected to the PKCS#11 server and verified
+        // its capabilities:
         let status = self.server.status(Self::probe_server)?;
         let state = status.state()?;
 
@@ -783,13 +879,17 @@ impl Pkcs11Signer {
 
         // Try (and retry if needed) the requested operation.
         backoff::retry_notify(backoff_policy, op, notify).map_err(|e| {
-            error!("[{}] {} failed, retries exhausted: {}", signer_name, desc, e);
+            error!(
+                "[{}] {} failed, retries exhausted: {}",
+                signer_name, desc, e
+            );
             e.into()
         })
     }
 }
 
-//------------ High level helper functions for use by the public Signer interface implementation ----------------------
+//------------ High level helper functions for use by the public Signer
+//------------ interface implementation ----------------------
 
 impl Pkcs11Signer {
     pub(super) fn remember_key_id(
@@ -799,18 +899,30 @@ impl Pkcs11Signer {
     ) -> Result<(), SignerError> {
         let readable_handle = self.handle.read().unwrap();
         let signer_handle = readable_handle.as_ref().ok_or_else(|| {
-            SignerError::Other("PKCS#11: Failed to record signer key: Signer handle not set".to_string())
+            SignerError::Other(
+                "PKCS#11: Failed to record signer key: Signer handle not set"
+                    .to_string(),
+            )
         })?;
         self.mapper
             .add_key(signer_handle, key_id, &internal_key_id)
-            .map_err(|err| SignerError::Pkcs11Error(format!("Failed to record signer key: {}", err)))?;
+            .map_err(|err| {
+                SignerError::Pkcs11Error(format!(
+                    "Failed to record signer key: {}",
+                    err
+                ))
+            })?;
 
         Ok(())
     }
 
-    pub(super) fn lookup_key_id(&self, key_id: &KeyIdentifier) -> Result<String, KeyError<SignerError>> {
+    pub(super) fn lookup_key_id(
+        &self,
+        key_id: &KeyIdentifier,
+    ) -> Result<String, KeyError<SignerError>> {
         let readable_handle = self.handle.read().unwrap();
-        let signer_handle = readable_handle.as_ref().ok_or(KeyError::KeyNotFound)?;
+        let signer_handle =
+            readable_handle.as_ref().ok_or(KeyError::KeyNotFound)?;
 
         let internal_key_id = self
             .mapper
@@ -823,17 +935,21 @@ impl Pkcs11Signer {
     pub(super) fn build_key(
         &self,
         algorithm: PublicKeyFormat,
-    ) -> Result<(PublicKey, ObjectHandle, ObjectHandle, String), SignerError> {
+    ) -> Result<(PublicKey, ObjectHandle, ObjectHandle, String), SignerError>
+    {
         Ok(self.build_key_internal(algorithm)?)
     }
 
     fn build_key_internal(
         &self,
         algorithm: PublicKeyFormat,
-    ) -> Result<(PublicKey, ObjectHandle, ObjectHandle, String), InternalConnError> {
+    ) -> Result<
+        (PublicKey, ObjectHandle, ObjectHandle, String),
+        InternalConnError,
+    > {
         // https://tools.ietf.org/html/rfc6485#section-3: Asymmetric Key Pair Formats
-        //   "The RSA key pairs used to compute the signatures MUST have a 2048-bit
-        //    modulus and a public exponent (e) of 65,537."
+        //   "The RSA key pairs used to compute the signatures MUST have a
+        // 2048-bit    modulus and a public exponent (e) of 65,537."
 
         if !matches!(algorithm, PublicKeyFormat::Rsa) {
             return Err(SignerError::Pkcs11Error(format!(
@@ -845,30 +961,49 @@ impl Pkcs11Signer {
         let mech = Mechanism::RsaPkcsKeyPairGen;
 
         let mut cka_id: [u8; 20] = [0; 20];
-        openssl::rand::rand_bytes(&mut cka_id)
-            .map_err(|_| SignerError::Pkcs11Error("Internal error while generating a random number".to_string()))?;
-
-        let pub_template = self.mk_public_key_template(&cka_id, &self.extra_public_key_attributes);
-        let priv_template = self.mk_private_key_template(&cka_id, &self.extra_private_key_attributes);
-
-        let (pub_handle, priv_handle) = self.with_conn("generate key pair", |conn| {
-            // The Krill functional test once failed under GitHub Actions with error:
-            //   libsofthsm2.so::C_GenerateKeyPair() failed: PKCS#11: CKR_TEMPLATE_INCONSISTENT (0xd1)
-            // and with the underlying SoftHSM log containing this at the same timestamp:
-            //   ObjectFile.cpp(124): The attribute does not exist: 0x00000002
-            // and where the `pkcs11` Rust crate `types.rs` file defines that attribute as:
-            //   pub const CKA_PRIVATE: CK_ATTRIBUTE_TYPE = 0x00000002;
-            // How can the CKA_PRIVATE attribute not exist?
-            // Is this a real issue or just a transient problem with SoftHSMv2?
-            conn.generate_key_pair(&mech, &pub_template, &priv_template)
+        openssl::rand::rand_bytes(&mut cka_id).map_err(|_| {
+            SignerError::Pkcs11Error(
+                "Internal error while generating a random number".to_string(),
+            )
         })?;
+
+        let pub_template = self.mk_public_key_template(
+            &cka_id,
+            &self.extra_public_key_attributes,
+        );
+        let priv_template = self.mk_private_key_template(
+            &cka_id,
+            &self.extra_private_key_attributes,
+        );
+
+        let (pub_handle, priv_handle) =
+            self.with_conn("generate key pair", |conn| {
+                // The Krill functional test once failed under GitHub Actions
+                // with error:   libsofthsm2.
+                // so::C_GenerateKeyPair() failed: PKCS#11:
+                // CKR_TEMPLATE_INCONSISTENT (0xd1)
+                // and with the underlying SoftHSM log containing this at the
+                // same timestamp:   ObjectFile.cpp(124): The
+                // attribute does not exist: 0x00000002
+                // and where the `pkcs11` Rust crate `types.rs` file defines
+                // that attribute as:   pub const CKA_PRIVATE:
+                // CK_ATTRIBUTE_TYPE = 0x00000002; How can the
+                // CKA_PRIVATE attribute not exist?
+                // Is this a real issue or just a transient problem with
+                // SoftHSMv2?
+                conn.generate_key_pair(&mech, &pub_template, &priv_template)
+            })?;
 
         let public_key = self.get_public_key_from_handle(pub_handle)?;
 
         Ok((public_key, pub_handle, priv_handle, hex::encode(cka_id)))
     }
 
-    fn mk_private_key_template(&self, cka_id: &[u8], extra_attrs: &[Attribute]) -> Vec<Attribute> {
+    fn mk_private_key_template(
+        &self,
+        cka_id: &[u8],
+        extra_attrs: &[Attribute],
+    ) -> Vec<Attribute> {
         let mut priv_template = vec![
             Attribute::Id(cka_id.to_vec()),
             Attribute::Sign(true),
@@ -881,7 +1016,11 @@ impl Pkcs11Signer {
         priv_template
     }
 
-    fn mk_public_key_template(&self, cka_id: &[u8], extra_attrs: &[Attribute]) -> Vec<Attribute> {
+    fn mk_public_key_template(
+        &self,
+        cka_id: &[u8],
+        extra_attrs: &[Attribute],
+    ) -> Vec<Attribute> {
         let mut pub_template = vec![
             Attribute::Id(cka_id.to_vec()),
             Attribute::Verify(true),
@@ -896,13 +1035,21 @@ impl Pkcs11Signer {
         pub_template
     }
 
-    pub(super) fn get_public_key_from_handle(&self, pub_handle: ObjectHandle) -> Result<PublicKey, SignerError> {
+    pub(super) fn get_public_key_from_handle(
+        &self,
+        pub_handle: ObjectHandle,
+    ) -> Result<PublicKey, SignerError> {
         let res = self.with_conn("get key pair parts", |conn| {
-            conn.get_attributes(pub_handle, &[AttributeType::Modulus, AttributeType::PublicExponent])
+            conn.get_attributes(
+                pub_handle,
+                &[AttributeType::Modulus, AttributeType::PublicExponent],
+            )
         })?;
 
         if res.len() == 2 {
-            if let (Attribute::Modulus(m), Attribute::PublicExponent(e)) = (&res[0], &res[1]) {
+            if let (Attribute::Modulus(m), Attribute::PublicExponent(e)) =
+                (&res[0], &res[1])
+            {
                 PublicKey::rsa_from_components(m, e).map_err(|e| {
                     SignerError::Pkcs11Error(format!(
                         "Failed to construct RSA Public for key '{:?}'. Error: {}",
@@ -944,19 +1091,26 @@ impl Pkcs11Signer {
         // https://docs.aws.amazon.com/cloudhsm/latest/userguide/ki-pkcs11-sdk.html#ki-pkcs11-7
         //
         //   Issue: You could not hash more than 16KB of data
-        //   For larger buffers, only the first 16KB will be hashed and returned. The excess data would have been
-        //   silently ignored.
-        //   Resolution status: Data less than 16KB in size continues to be sent to the HSM for hashing. We have added
-        //   capability to hash locally, in software, data between 16KB and 64KB in size. The client and the SDKs will
-        //   explicitly fail if the data buffer is larger than 64KB. You must update your client and SDK(s) to version
-        //   1.1.1 or higher to benefit from the fix.
+        //   For larger buffers, only the first 16KB will be hashed and
+        // returned. The excess data would have been   silently
+        // ignored.   Resolution status: Data less than 16KB in size
+        // continues to be sent to the HSM for hashing. We have added
+        //   capability to hash locally, in software, data between 16KB and
+        // 64KB in size. The client and the SDKs will   explicitly
+        // fail if the data buffer is larger than 64KB. You must update your
+        // client and SDK(s) to version   1.1.1 or higher to benefit
+        // from the fix.
         //
-        // TODO: if data is larger than 16KB we should hash locally and only use the HSM for signing, not for hashing.
-        // Should we enable this behaviour based on detection of an AWS CloudHSM or a config flag or ??? As an example,
-        // Oracle enables an AWS CloudHSM specific workaround by detecting a CLOUDHSM_IGNORE_CKA_MODIFIABLE_FALSE
-        // environment variable.
+        // TODO: if data is larger than 16KB we should hash locally and only
+        // use the HSM for signing, not for hashing. Should we enable
+        // this behaviour based on detection of an AWS CloudHSM or a config
+        // flag or ??? As an example, Oracle enables an AWS CloudHSM
+        // specific workaround by detecting a
+        // CLOUDHSM_IGNORE_CKA_MODIFIABLE_FALSE environment variable.
 
-        let signature_data = self.with_conn("sign", |conn| conn.sign(&mechanism, private_key_handle, data))?;
+        let signature_data = self.with_conn("sign", |conn| {
+            conn.sign(&mechanism, private_key_handle, data)
+        })?;
 
         let sig = Signature::new(algorithm, Bytes::from(signature_data));
 
@@ -974,16 +1128,23 @@ impl Pkcs11Signer {
             _ => "key",
         };
 
-        let cka_id = hex::decode(cka_id_hex_str).map_err(|_| KeyError::Signer(SignerError::DecodeError))?;
+        let cka_id = hex::decode(cka_id_hex_str)
+            .map_err(|_| KeyError::Signer(SignerError::DecodeError))?;
 
         let results = self
             .with_conn("find key", |conn| {
-                // Find at most one result that matches the given key class (public or private) and the given PKCS#11
+                // Find at most one result that matches the given key class
+                // (public or private) and the given PKCS#11
                 // CKA_ID bytes.
 
-                // A PKCS#11 session can have at most one active search operation at a time. A search must be initialized,
-                // results fetched, and then finalized, only then can the session perform another search.
-                conn.find_objects(&[Attribute::Class(key_class), Attribute::Id(cka_id.clone())])
+                // A PKCS#11 session can have at most one active search
+                // operation at a time. A search must be initialized,
+                // results fetched, and then finalized, only then can the
+                // session perform another search.
+                conn.find_objects(&[
+                    Attribute::Class(key_class),
+                    Attribute::Id(cka_id.clone()),
+                ])
             })
             .map_err(SignerError::from)?;
 
@@ -997,42 +1158,68 @@ impl Pkcs11Signer {
         }
     }
 
-    pub(super) fn destroy_key_by_handle(&self, key_handle: ObjectHandle) -> Result<(), SignerError> {
-        trace!("[{}] Destroying key with PKCS#11 handle {}", self.name, key_handle);
-        Ok(self.with_conn("destroy", |conn| conn.destroy_object(key_handle))?)
+    pub(super) fn destroy_key_by_handle(
+        &self,
+        key_handle: ObjectHandle,
+    ) -> Result<(), SignerError> {
+        trace!(
+            "[{}] Destroying key with PKCS#11 handle {}",
+            self.name,
+            key_handle
+        );
+        Ok(self
+            .with_conn("destroy", |conn| conn.destroy_object(key_handle))?)
     }
 }
 
-//------------ Functions required to exist by the `SignerProvider` ----------------------------------------------------
+//------------ Functions required to exist by the `SignerProvider`
+//------------ ----------------------------------------------------
 
-// Implement the functions defined by the `Signer` trait because `SignerProvider` expects to invoke them, but as the
-// dispatching is not trait based we don't actually have to implement the `Signer` trait.
+// Implement the functions defined by the `Signer` trait because
+// `SignerProvider` expects to invoke them, but as the dispatching is not
+// trait based we don't actually have to implement the `Signer` trait.
 
 impl Pkcs11Signer {
-    pub fn create_key(&self, algorithm: PublicKeyFormat) -> Result<KeyIdentifier, SignerError> {
+    pub fn create_key(
+        &self,
+        algorithm: PublicKeyFormat,
+    ) -> Result<KeyIdentifier, SignerError> {
         let (key, _, _, internal_key_id) = self.build_key(algorithm)?;
         let key_id = key.key_identifier();
         self.remember_key_id(&key_id, internal_key_id)?;
         Ok(key_id)
     }
 
-    pub fn get_key_info(&self, key_id: &KeyIdentifier) -> Result<PublicKey, KeyError<SignerError>> {
+    pub fn get_key_info(
+        &self,
+        key_id: &KeyIdentifier,
+    ) -> Result<PublicKey, KeyError<SignerError>> {
         let internal_key_id = self.lookup_key_id(key_id)?;
-        let pub_handle = self.find_key(&internal_key_id, ObjectClass::PUBLIC_KEY)?;
-        self.get_public_key_from_handle(pub_handle).map_err(KeyError::Signer)
+        let pub_handle =
+            self.find_key(&internal_key_id, ObjectClass::PUBLIC_KEY)?;
+        self.get_public_key_from_handle(pub_handle)
+            .map_err(KeyError::Signer)
     }
 
-    pub fn destroy_key(&self, key_id: &KeyIdentifier) -> Result<(), KeyError<SignerError>> {
+    pub fn destroy_key(
+        &self,
+        key_id: &KeyIdentifier,
+    ) -> Result<(), KeyError<SignerError>> {
         debug!("[{}] Destroying key pair with ID {}", self.name, key_id);
         let internal_key_id = self.lookup_key_id(key_id)?;
         let mut res: Result<(), KeyError<SignerError>> = Ok(());
 
         // try deleting the public key
-        if let Ok(pub_handle) = self.find_key(&internal_key_id, ObjectClass::PUBLIC_KEY) {
-            res = self.destroy_key_by_handle(pub_handle).map_err(|err| match err {
-                SignerError::KeyNotFound => KeyError::KeyNotFound,
-                _ => KeyError::Signer(err),
-            });
+        if let Ok(pub_handle) =
+            self.find_key(&internal_key_id, ObjectClass::PUBLIC_KEY)
+        {
+            res =
+                self.destroy_key_by_handle(pub_handle).map_err(
+                    |err| match err {
+                        SignerError::KeyNotFound => KeyError::KeyNotFound,
+                        _ => KeyError::Signer(err),
+                    },
+                );
 
             if let Err(err) = &res {
                 warn!(
@@ -1043,11 +1230,16 @@ impl Pkcs11Signer {
         }
 
         // try deleting the private key
-        if let Ok(priv_handle) = self.find_key(&internal_key_id, ObjectClass::PRIVATE_KEY) {
-            let res2 = self.destroy_key_by_handle(priv_handle).map_err(|err| match err {
-                SignerError::KeyNotFound => KeyError::KeyNotFound,
-                _ => KeyError::Signer(err),
-            });
+        if let Ok(priv_handle) =
+            self.find_key(&internal_key_id, ObjectClass::PRIVATE_KEY)
+        {
+            let res2 =
+                self.destroy_key_by_handle(priv_handle).map_err(|err| {
+                    match err {
+                        SignerError::KeyNotFound => KeyError::KeyNotFound,
+                        _ => KeyError::Signer(err),
+                    }
+                });
 
             if let Err(err) = &res2 {
                 warn!(
@@ -1061,10 +1253,9 @@ impl Pkcs11Signer {
 
         // remove the key from the signer mapper as well
         if let Some(signer_handle) = self.handle.read().unwrap().as_ref() {
-            let res3 = self
-                .mapper
-                .remove_key(signer_handle, key_id)
-                .map_err(|err| KeyError::Signer(SignerError::Other(err.to_string())));
+            let res3 = self.mapper.remove_key(signer_handle, key_id).map_err(
+                |err| KeyError::Signer(SignerError::Other(err.to_string())),
+            );
 
             if let Err(err) = &res3 {
                 warn!(
@@ -1102,11 +1293,17 @@ impl Pkcs11Signer {
         algorithm: Alg,
         data: &D,
     ) -> Result<(Signature<Alg>, PublicKey), SignerError> {
-        let (key, pub_handle, priv_handle, _) = self.build_key(PublicKeyFormat::Rsa)?;
+        let (key, pub_handle, priv_handle, _) =
+            self.build_key(PublicKeyFormat::Rsa)?;
 
         let signature_res = self
             .sign_with_key(priv_handle, algorithm, data.as_ref())
-            .map_err(|err| SignerError::Pkcs11Error(format!("One-off signing of data failed: {}", err)));
+            .map_err(|err| {
+                SignerError::Pkcs11Error(format!(
+                    "One-off signing of data failed: {}",
+                    err
+                ))
+            });
 
         let _ = self.destroy_key_by_handle(pub_handle);
         let _ = self.destroy_key_by_handle(priv_handle);
@@ -1151,7 +1348,9 @@ impl From<SignerError> for InternalConnError {
 impl From<InternalConnError> for SignerError {
     fn from(v: InternalConnError) -> Self {
         match v {
-            InternalConnError::Pkcs11Error(v) => SignerError::Pkcs11Error(v.to_string()),
+            InternalConnError::Pkcs11Error(v) => {
+                SignerError::Pkcs11Error(v.to_string())
+            }
             InternalConnError::SignerError(v) => v,
         }
     }
@@ -1166,7 +1365,9 @@ impl From<backoff::Error<InternalConnError>> for InternalConnError {
     }
 }
 
-fn retry_on_transient_pkcs11_error(err: Pkcs11Error) -> backoff::Error<InternalConnError> {
+fn retry_on_transient_pkcs11_error(
+    err: Pkcs11Error,
+) -> backoff::Error<InternalConnError> {
     if is_transient_error(&err) {
         backoff::Error::transient(err.into())
     } else {
@@ -1174,17 +1375,27 @@ fn retry_on_transient_pkcs11_error(err: Pkcs11Error) -> backoff::Error<InternalC
     }
 }
 
-fn retry_on_transient_signer_error(err: SignerError) -> backoff::Error<InternalConnError> {
+fn retry_on_transient_signer_error(
+    err: SignerError,
+) -> backoff::Error<InternalConnError> {
     match err {
-        SignerError::TemporarilyUnavailable => backoff::Error::transient(err.into()),
+        SignerError::TemporarilyUnavailable => {
+            backoff::Error::transient(err.into())
+        }
         _ => backoff::Error::Permanent(err.into()),
     }
 }
 
-fn retry_on_transient_error(err: InternalConnError) -> backoff::Error<InternalConnError> {
+fn retry_on_transient_error(
+    err: InternalConnError,
+) -> backoff::Error<InternalConnError> {
     match err {
-        InternalConnError::Pkcs11Error(err) => retry_on_transient_pkcs11_error(err),
-        InternalConnError::SignerError(err) => retry_on_transient_signer_error(err),
+        InternalConnError::Pkcs11Error(err) => {
+            retry_on_transient_pkcs11_error(err)
+        }
+        InternalConnError::SignerError(err) => {
+            retry_on_transient_signer_error(err)
+        }
     }
 }
 
@@ -1201,38 +1412,48 @@ fn is_transient_error(err: &Pkcs11Error) -> bool {
         | Pkcs11Error::InvalidValue
         | Pkcs11Error::PinNotSet
         | Pkcs11Error::AlreadyInitialized => {
-            // The Rust `pkcs11` crate had a serious problem such as the loaded library not exporting a required
-            // function or that it was asked to initialize an already initialized library.
+            // The Rust `pkcs11` crate had a serious problem such as the
+            // loaded library not exporting a required function or
+            // that it was asked to initialize an already initialized library.
             false
         }
         Pkcs11Error::Pkcs11(err, _) => {
-            // Error codes were taken from the `types` module of the Rust `pkcs11` crate.
-            // See section 11.1 of the PKCS#11 v2.20 specification for an explanation of each value.
-            // Return true only for errors which might succeed very soon after they failed. Errors which are solvable
-            // by an operator changing data or configuration in the HSM are not treated as transient errors as they
-            // are unlikely to be solved in the immediate future and thus there is no value in retrying.
+            // Error codes were taken from the `types` module of the Rust
+            // `pkcs11` crate. See section 11.1 of the PKCS#11
+            // v2.20 specification for an explanation of each value.
+            // Return true only for errors which might succeed very soon after
+            // they failed. Errors which are solvable
+            // by an operator changing data or configuration in the HSM are
+            // not treated as transient errors as they
+            // are unlikely to be solved in the immediate future and thus
+            // there is no value in retrying.
             //
-            // Causes of certain errors that might be worth documenting or suggesting as guidance to the user in the
-            // logs:
+            // Causes of certain errors that might be worth documenting or
+            // suggesting as guidance to the user in the logs:
             //
-            //   - CKR_FUNCTION_FAILED:   Can happen when the PKCS#11 library doesn't have access to its files, e.g.
-            //                            when `softhsm2-util --init-token` was run as root but Krill is run as a
-            //                            different user.
-            //   - CKR_FUNCTION_FAILED:   Can happen when the PKCS#11 library cannot find its configuration files, e.g.
-            //                            when the YubiHSM PKCS#11 library cannot find `yubihsm_pkcs11.conf` in the
-            //                            current directory and the environment variable `YUBIHSM_PKCS11_CONF` is not
-            //                            set and pointing to the correct location of the file or if the file is not
-            //                            readable by the Krill user.
-            //   - CKR_TOKEN_NOT_PRESENT: Can happen when the YubiHSM PKCS#11 configuration file `connector` setting
-            //                            reers to a URL at which `yubihsm-connector -d` should be listening but the
-            //                            YubiHSM PKCS#11 library fails to connect to (either because the URL is
-            //                            incorrect or it is a HTTPS URL but there is a TLS failure such as invalid
-            //                            certificate or unknown signing CA etc) or some other issue such as a firewall
-            //                            or operating system restriction preventing access.
+            //   - CKR_FUNCTION_FAILED:   Can happen when the PKCS#11 library
+            //     doesn't have access to its files, e.g. when `softhsm2-util
+            //     --init-token` was run as root but Krill is run as a
+            //     different user.
+            //   - CKR_FUNCTION_FAILED:   Can happen when the PKCS#11 library
+            //     cannot find its configuration files, e.g. when the YubiHSM
+            //     PKCS#11 library cannot find `yubihsm_pkcs11.conf` in the
+            //     current directory and the environment variable
+            //     `YUBIHSM_PKCS11_CONF` is not set and pointing to the
+            //     correct location of the file or if the file is not readable
+            //     by the Krill user.
+            //   - CKR_TOKEN_NOT_PRESENT: Can happen when the YubiHSM PKCS#11
+            //     configuration file `connector` setting reers to a URL at
+            //     which `yubihsm-connector -d` should be listening but the
+            //     YubiHSM PKCS#11 library fails to connect to (either because
+            //     the URL is incorrect or it is a HTTPS URL but there is a
+            //     TLS failure such as invalid certificate or unknown signing
+            //     CA etc) or some other issue such as a firewall or operating
+            //     system restriction preventing access.
             match err {
                 cryptoki::error::RvError::ActionProhibited => false,
-                cryptoki::error::RvError::ArgumentsBad => false, // resubmitting the same bad arguments will just fail again
-                cryptoki::error::RvError::AttributeReadOnly => false, // for attributes that are always read only retrying will not succeed
+                cryptoki::error::RvError::ArgumentsBad => false, /* resubmitting the same bad arguments will just fail again */
+                cryptoki::error::RvError::AttributeReadOnly => false, /* for attributes that are always read only retrying will not succeed */
                 cryptoki::error::RvError::AttributeSensitive => false,
                 cryptoki::error::RvError::AttributeTypeInvalid => false,
                 cryptoki::error::RvError::AttributeValueInvalid => false,
@@ -1244,16 +1465,16 @@ fn is_transient_error(err: &Pkcs11Error) -> bool {
                 cryptoki::error::RvError::CurveNotSupported => false,
                 cryptoki::error::RvError::DataInvalid => false,
                 cryptoki::error::RvError::DataLenRange => false,
-                cryptoki::error::RvError::DeviceError => true, // some error but we don't know what so could be transient
-                cryptoki::error::RvError::DeviceMemory => true, // maybe the token frees up some memory such that a retry succeeds?
-                cryptoki::error::RvError::DeviceRemoved => true, // not present at the time the function was executed but might be later
+                cryptoki::error::RvError::DeviceError => true, /* some error but we don't know what so could be transient */
+                cryptoki::error::RvError::DeviceMemory => true, /* maybe the token frees up some memory such that a retry succeeds? */
+                cryptoki::error::RvError::DeviceRemoved => true, /* not present at the time the function was executed but might be later */
                 cryptoki::error::RvError::DomainParamsInvalid => false,
                 cryptoki::error::RvError::EncryptedDataInvalid => false,
                 cryptoki::error::RvError::EncryptedDataLenRange => false,
                 cryptoki::error::RvError::ExceededMaxIterations => false,
                 cryptoki::error::RvError::FipsSelfTestFailed => false,
                 cryptoki::error::RvError::FunctionCanceled => false,
-                cryptoki::error::RvError::FunctionFailed => true, // the spec says the situation is not necessarily totally hopeless
+                cryptoki::error::RvError::FunctionFailed => true, /* the spec says the situation is not necessarily totally hopeless */
                 cryptoki::error::RvError::FunctionNotParallel => false,
                 cryptoki::error::RvError::FunctionNotSupported => false,
                 cryptoki::error::RvError::FunctionRejected => false,
@@ -1273,17 +1494,17 @@ fn is_transient_error(err: &Pkcs11Error) -> bool {
                 cryptoki::error::RvError::LibraryLoadFailed => false,
                 cryptoki::error::RvError::MechanismInvalid => false,
                 cryptoki::error::RvError::MechanismParamInvalid => false,
-                cryptoki::error::RvError::MutexBad => false, // should never happen so consider it fatal?
-                cryptoki::error::RvError::MutexNotLocked => false, // should never happen so consider it fatal?
+                cryptoki::error::RvError::MutexBad => false, /* should never happen so consider it fatal? */
+                cryptoki::error::RvError::MutexNotLocked => false, /* should never happen so consider it fatal? */
                 cryptoki::error::RvError::NeedToCreateThreads => false,
                 cryptoki::error::RvError::NewPinMode => false,
                 cryptoki::error::RvError::NextOtp => false,
                 cryptoki::error::RvError::NoEvent => false,
                 cryptoki::error::RvError::ObjectHandleInvalid => false,
-                cryptoki::error::RvError::OperationActive => true, // the active operation might finish thereby permitting a retry to succeed
+                cryptoki::error::RvError::OperationActive => true, /* the active operation might finish thereby permitting a retry to succeed */
                 cryptoki::error::RvError::OperationNotInitialized => false,
                 cryptoki::error::RvError::PinExpired => false,
-                cryptoki::error::RvError::PinIncorrect => true, // maybe the operator misconfigured the token and will fix it
+                cryptoki::error::RvError::PinIncorrect => true, /* maybe the operator misconfigured the token and will fix it */
                 cryptoki::error::RvError::PinInvalid => false,
                 cryptoki::error::RvError::PinLenRange => false,
                 cryptoki::error::RvError::PinLocked => false,
@@ -1292,38 +1513,44 @@ fn is_transient_error(err: &Pkcs11Error) -> bool {
                 cryptoki::error::RvError::RandomNoRng => false,
                 cryptoki::error::RvError::RandomSeedNotSupported => false,
                 cryptoki::error::RvError::SavedStateInvalid => false,
-                cryptoki::error::RvError::SessionClosed => true, // maybe on retry we open a new session and succeed?
-                cryptoki::error::RvError::SessionCount => true, // if a session closes it might be possible on retry for a session open to succeed
+                cryptoki::error::RvError::SessionClosed => true, /* maybe on retry we open a new session and succeed? */
+                cryptoki::error::RvError::SessionCount => true, /* if a session closes it might be possible on retry for a session open to succeed */
                 cryptoki::error::RvError::SessionExists => false,
                 cryptoki::error::RvError::SessionHandleInvalid => false,
-                cryptoki::error::RvError::SessionParallelNotSupported => false,
+                cryptoki::error::RvError::SessionParallelNotSupported => {
+                    false
+                }
                 cryptoki::error::RvError::SessionReadOnly => false,
-                cryptoki::error::RvError::SessionReadOnlyExists => true, // will succeed on retry if the conflicting SO session logs out
-                cryptoki::error::RvError::SessionReadWriteSoExists => true, // will succeed on retry if the conflicting SO session logs out
+                cryptoki::error::RvError::SessionReadOnlyExists => true, /* will succeed on retry if the conflicting SO session logs out */
+                cryptoki::error::RvError::SessionReadWriteSoExists => true, /* will succeed on retry if the conflicting SO session logs out */
                 cryptoki::error::RvError::SignatureInvalid => false,
                 cryptoki::error::RvError::SignatureLenRange => false,
-                cryptoki::error::RvError::SlotIdInvalid => true, // maybe we tried accessing the slot just before it is created?
-                cryptoki::error::RvError::StateUnsaveable => true, // the spec doesn't seem to rule out this being a temporary condition
+                cryptoki::error::RvError::SlotIdInvalid => true, /* maybe we tried accessing the slot just before it is created? */
+                cryptoki::error::RvError::StateUnsaveable => true, /* the spec doesn't seem to rule out this being a temporary condition */
                 cryptoki::error::RvError::TemplateIncomplete => false,
                 cryptoki::error::RvError::TemplateInconsistent => false,
-                cryptoki::error::RvError::TokenNotPresent => true, // not present at the time the function was executed but might be later
+                cryptoki::error::RvError::TokenNotPresent => true, /* not present at the time the function was executed but might be later */
                 cryptoki::error::RvError::TokenNotRecognized => false,
-                cryptoki::error::RvError::TokenWriteProtected => true, // maybe the write protection is a transient condition?
+                cryptoki::error::RvError::TokenWriteProtected => true, /* maybe the write protection is a transient condition? */
                 cryptoki::error::RvError::UnwrappingKeyHandleInvalid => false,
                 cryptoki::error::RvError::UnwrappingKeySizeRange => false,
-                cryptoki::error::RvError::UnwrappingKeyTypeInconsistent => false,
-                cryptoki::error::RvError::UserAlreadyLoggedIn => true, // maybe another client was is busy logging out so try again?
+                cryptoki::error::RvError::UnwrappingKeyTypeInconsistent => {
+                    false
+                }
+                cryptoki::error::RvError::UserAlreadyLoggedIn => true, /* maybe another client was is busy logging out so try again? */
                 cryptoki::error::RvError::UserAnotherAlreadyLoggedIn => true,
                 cryptoki::error::RvError::UserNotLoggedIn => false,
-                cryptoki::error::RvError::UserPinNotInitialized => true, // maybe the operator will initialize the PIN
-                cryptoki::error::RvError::UserTooManyTypes => true, // maybe some sessions are terminated while retrying permitting us to succeed?
-                cryptoki::error::RvError::UserTypeInvalid => true,  // maybe the operator will fix the users type
-                cryptoki::error::RvError::VendorDefined => true, // we have no way of knowing what this kind of failure is, maybe it is transient
+                cryptoki::error::RvError::UserPinNotInitialized => true, /* maybe the operator will initialize the PIN */
+                cryptoki::error::RvError::UserTooManyTypes => true, /* maybe some sessions are terminated while retrying permitting us to succeed? */
+                cryptoki::error::RvError::UserTypeInvalid => true, /* maybe the operator will fix the users type */
+                cryptoki::error::RvError::VendorDefined => true, /* we have no way of knowing what this kind of failure is, maybe it is transient */
                 cryptoki::error::RvError::WrappedKeyInvalid => false,
                 cryptoki::error::RvError::WrappedKeyLenRange => false,
                 cryptoki::error::RvError::WrappingKeyHandleInvalid => false,
                 cryptoki::error::RvError::WrappingKeySizeRange => false,
-                cryptoki::error::RvError::WrappingKeyTypeInconsistent => false,
+                cryptoki::error::RvError::WrappingKeyTypeInconsistent => {
+                    false
+                }
             }
         }
     }
@@ -1366,7 +1593,9 @@ macro_rules! integer_to_slot_id {
 }
 
 // Based on https://serde.rs/string-or-struct.html
-fn slot_id_or_label<'de, D>(deserializer: D) -> Result<SlotIdOrLabel, D::Error>
+fn slot_id_or_label<'de, D>(
+    deserializer: D,
+) -> Result<SlotIdOrLabel, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
@@ -1375,8 +1604,12 @@ where
     impl<'de> Visitor<'de> for UintOrString {
         type Value = SlotIdOrLabel;
 
-        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-            formatter.write_str("PKCS#11 unsigned integer slot ID or string label")
+        fn expecting(
+            &self,
+            formatter: &mut std::fmt::Formatter,
+        ) -> std::fmt::Result {
+            formatter
+                .write_str("PKCS#11 unsigned integer slot ID or string label")
         }
 
         fn visit_str<E>(self, value: &str) -> Result<SlotIdOrLabel, E>
@@ -1421,7 +1654,9 @@ mod tests {
         "#;
         let config: Pkcs11SignerConfig = toml::from_str(config_str).unwrap();
         let expected_label = "well well well".to_string();
-        assert!(matches!(config.slot, SlotIdOrLabel::Label(label) if label == expected_label));
+        assert!(
+            matches!(config.slot, SlotIdOrLabel::Label(label) if label == expected_label)
+        );
     }
 
     #[test]
@@ -1430,7 +1665,8 @@ mod tests {
             lib_path = "dummy path"
             slot = -1234
         "#;
-        let err = toml::from_str::<Pkcs11SignerConfig>(config_str).unwrap_err();
+        let err =
+            toml::from_str::<Pkcs11SignerConfig>(config_str).unwrap_err();
         assert!(err.to_string().contains("not a valid PKCS#11 slot ID"))
     }
 
@@ -1440,21 +1676,42 @@ mod tests {
             lib_path = "dummy path"
             slot = 1234
         "#;
-        let config = toml::from_str::<Pkcs11SignerConfig>(config_str).unwrap();
+        let config =
+            toml::from_str::<Pkcs11SignerConfig>(config_str).unwrap();
 
         let attrs = config.public_key_attributes.to_vec();
-        assert!(!attrs.iter().any(|attr| matches!(attr, Attribute::Modifiable(_))));
-        assert!(attrs.iter().any(|attr| matches!(attr, Attribute::Private(true))));
-        assert!(!attrs.iter().any(|attr| matches!(attr, Attribute::Private(false))));
+        assert!(!attrs
+            .iter()
+            .any(|attr| matches!(attr, Attribute::Modifiable(_))));
+        assert!(attrs
+            .iter()
+            .any(|attr| matches!(attr, Attribute::Private(true))));
+        assert!(!attrs
+            .iter()
+            .any(|attr| matches!(attr, Attribute::Private(false))));
 
         let attrs = config.private_key_attributes.to_vec();
-        assert!(attrs.iter().any(|attr| matches!(attr, Attribute::Extractable(false))));
-        assert!(!attrs.iter().any(|attr| matches!(attr, Attribute::Extractable(true))));
-        assert!(!attrs.iter().any(|attr| matches!(attr, Attribute::Modifiable(_))));
-        assert!(attrs.iter().any(|attr| matches!(attr, Attribute::Private(true))));
-        assert!(!attrs.iter().any(|attr| matches!(attr, Attribute::Private(false))));
-        assert!(attrs.iter().any(|attr| matches!(attr, Attribute::Sensitive(true))));
-        assert!(!attrs.iter().any(|attr| matches!(attr, Attribute::Sensitive(false))));
+        assert!(attrs
+            .iter()
+            .any(|attr| matches!(attr, Attribute::Extractable(false))));
+        assert!(!attrs
+            .iter()
+            .any(|attr| matches!(attr, Attribute::Extractable(true))));
+        assert!(!attrs
+            .iter()
+            .any(|attr| matches!(attr, Attribute::Modifiable(_))));
+        assert!(attrs
+            .iter()
+            .any(|attr| matches!(attr, Attribute::Private(true))));
+        assert!(!attrs
+            .iter()
+            .any(|attr| matches!(attr, Attribute::Private(false))));
+        assert!(attrs
+            .iter()
+            .any(|attr| matches!(attr, Attribute::Sensitive(true))));
+        assert!(!attrs
+            .iter()
+            .any(|attr| matches!(attr, Attribute::Sensitive(false))));
     }
 
     #[test]
@@ -1473,37 +1730,64 @@ mod tests {
             CKA_SENSITIVE = false
             CKA_PRIVATE = false 
         "#;
-        let config = toml::from_str::<Pkcs11SignerConfig>(config_str).unwrap();
+        let config =
+            toml::from_str::<Pkcs11SignerConfig>(config_str).unwrap();
 
         let attrs = config.public_key_attributes.to_vec();
-        assert!(attrs.iter().any(|attr| matches!(attr, Attribute::Modifiable(true))));
-        assert!(attrs.iter().any(|attr| matches!(attr, Attribute::Private(false))));
+        assert!(attrs
+            .iter()
+            .any(|attr| matches!(attr, Attribute::Modifiable(true))));
+        assert!(attrs
+            .iter()
+            .any(|attr| matches!(attr, Attribute::Private(false))));
 
         let attrs = config.private_key_attributes.to_vec();
-        assert!(attrs.iter().any(|attr| matches!(attr, Attribute::Extractable(true))));
-        assert!(attrs.iter().any(|attr| matches!(attr, Attribute::Modifiable(false))));
-        assert!(attrs.iter().any(|attr| matches!(attr, Attribute::Private(false))));
-        assert!(attrs.iter().any(|attr| matches!(attr, Attribute::Sensitive(false))));
+        assert!(attrs
+            .iter()
+            .any(|attr| matches!(attr, Attribute::Extractable(true))));
+        assert!(attrs
+            .iter()
+            .any(|attr| matches!(attr, Attribute::Modifiable(false))));
+        assert!(attrs
+            .iter()
+            .any(|attr| matches!(attr, Attribute::Private(false))));
+        assert!(attrs
+            .iter()
+            .any(|attr| matches!(attr, Attribute::Sensitive(false))));
     }
 
     #[test]
-    fn overriding_key_attributes_sets_others_to_pkcs11_default_if_not_specified() {
+    fn overriding_key_attributes_sets_others_to_pkcs11_default_if_not_specified(
+    ) {
         let config_str = r#"
             lib_path = "dummy path"
             slot = 1234
             public_key_attributes = {}
             private_key_attributes = {}
         "#;
-        let config = toml::from_str::<Pkcs11SignerConfig>(config_str).unwrap();
+        let config =
+            toml::from_str::<Pkcs11SignerConfig>(config_str).unwrap();
 
         let attrs = config.public_key_attributes.to_vec();
-        assert!(!attrs.iter().any(|attr| matches!(attr, Attribute::Modifiable(_))));
-        assert!(!attrs.iter().any(|attr| matches!(attr, Attribute::Private(_))));
+        assert!(!attrs
+            .iter()
+            .any(|attr| matches!(attr, Attribute::Modifiable(_))));
+        assert!(!attrs
+            .iter()
+            .any(|attr| matches!(attr, Attribute::Private(_))));
 
         let attrs = config.private_key_attributes.to_vec();
-        assert!(!attrs.iter().any(|attr| matches!(attr, Attribute::Extractable(_))));
-        assert!(!attrs.iter().any(|attr| matches!(attr, Attribute::Private(_))));
-        assert!(!attrs.iter().any(|attr| matches!(attr, Attribute::Sensitive(_))));
-        assert!(!attrs.iter().any(|attr| matches!(attr, Attribute::Modifiable(_))));
+        assert!(!attrs
+            .iter()
+            .any(|attr| matches!(attr, Attribute::Extractable(_))));
+        assert!(!attrs
+            .iter()
+            .any(|attr| matches!(attr, Attribute::Private(_))));
+        assert!(!attrs
+            .iter()
+            .any(|attr| matches!(attr, Attribute::Sensitive(_))));
+        assert!(!attrs
+            .iter()
+            .any(|attr| matches!(attr, Attribute::Modifiable(_))));
     }
 }

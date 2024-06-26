@@ -1,6 +1,9 @@
 use rpki::ca::idexchange::MyHandle;
 
-use super::{AggregateStoreError, Command, Event, InitCommand, InitEvent, Storable, StoredCommand};
+use super::{
+    AggregateStoreError, Command, Event, InitCommand, InitEvent, Storable,
+    StoredCommand,
+};
 use crate::commons::eventsourcing::WithStorableDetails;
 
 //------------ Aggregate -----------------------------------------------------
@@ -8,20 +11,23 @@ use crate::commons::eventsourcing::WithStorableDetails;
 /// This trait defines an Aggregate for use with the event sourcing framework.
 ///
 /// An aggregate is term coming from DDD (Domain Driven Design) and is used to
-/// describe an abstraction where a cluster of structs (the aggregate) provides
-/// a 'bounded context' for functionality that is exposed only by a single top-level
-/// struct: the aggregate root. Here we name this aggregate root simply 'Aggregate'
-/// for brevity.
+/// describe an abstraction where a cluster of structs (the aggregate)
+/// provides a 'bounded context' for functionality that is exposed only by a
+/// single top-level struct: the aggregate root. Here we name this aggregate
+/// root simply 'Aggregate' for brevity.
 ///
 /// The aggregate root is responsible for guarding its own consistency. In the
-/// context of the event sourcing framework this means that it can be sent a command,
-/// through the [`process_command`] method. A command represents an intent to
-/// achieve something sent by the used of the aggregate. The Aggregate will then take
-/// this intent and decide whether it can be executed. If successful a number of
-/// 'events' are returned that contain state changes to the aggregate. These events
-/// still need to be applied to become persisted.
+/// context of the event sourcing framework this means that it can be sent a
+/// command, through the [`process_command`] method. A command represents an
+/// intent to achieve something sent by the used of the aggregate. The
+/// Aggregate will then take this intent and decide whether it can be
+/// executed. If successful a number of 'events' are returned that contain
+/// state changes to the aggregate. These events still need to be applied to
+/// become persisted.
 pub trait Aggregate: Storable + Send + Sync + 'static {
-    type InitCommand: InitCommand<StorableDetails = Self::StorableCommandDetails>;
+    type InitCommand: InitCommand<
+        StorableDetails = Self::StorableCommandDetails,
+    >;
     type InitEvent: InitEvent;
 
     type Command: Command<StorableDetails = Self::StorableCommandDetails>;
@@ -48,7 +54,9 @@ pub trait Aggregate: Storable + Send + Sync + 'static {
     /// Tries to initialise a new InitEvent for a new instance. This
     /// can fail. The InitEvent is not applied here, but returned so
     /// that we can re-build state from history.
-    fn process_init_command(command: Self::InitCommand) -> Result<Self::InitEvent, Self::Error>;
+    fn process_init_command(
+        command: Self::InitCommand,
+    ) -> Result<Self::InitEvent, Self::Error>;
 
     /// Returns the current version of the aggregate.
     fn version(&self) -> u64;
@@ -85,5 +93,8 @@ pub trait Aggregate: Storable + Send + Sync + 'static {
     ///
     /// The events are not applied here, but need to be applied using
     /// [`apply_command`] so that we can re-build state from history.
-    fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Event>, Self::Error>;
+    fn process_command(
+        &self,
+        command: Self::Command,
+    ) -> Result<Vec<Self::Event>, Self::Error>;
 }

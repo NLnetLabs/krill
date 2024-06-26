@@ -8,16 +8,22 @@ use rpki::ca::idexchange;
 use crate::{
     commons::{
         api::{
-            import::ExportChild, AllCertAuthIssues, AspaDefinitionList, BgpSecCsrInfoList, CaCommandDetails,
-            CaRepoDetails, CertAuthInfo, CertAuthIssues, CertAuthList, ChildCaInfo, ChildrenConnectionStats,
-            CommandHistory, ConfiguredRoas, IdCertInfo, ParentCaContact, ParentStatuses, PublisherDetails,
-            PublisherList, RepoStatus, RepositoryContact, RtaList, RtaPrepResponse, ServerInfo,
+            import::ExportChild, AllCertAuthIssues, AspaDefinitionList,
+            BgpSecCsrInfoList, CaCommandDetails, CaRepoDetails, CertAuthInfo,
+            CertAuthIssues, CertAuthList, ChildCaInfo,
+            ChildrenConnectionStats, CommandHistory, ConfiguredRoas,
+            IdCertInfo, ParentCaContact, ParentStatuses, PublisherDetails,
+            PublisherList, RepoStatus, RepositoryContact, RtaList,
+            RtaPrepResponse, ServerInfo,
         },
         bgp::{BgpAnalysisAdvice, BgpAnalysisReport, BgpAnalysisSuggestion},
     },
     daemon::ca::ResourceTaggedAttestation,
     pubd::RepoStats,
-    ta::{TrustAnchorProxySignerExchanges, TrustAnchorSignedRequest, TrustAnchorSignedResponse, TrustAnchorSignerInfo},
+    ta::{
+        TrustAnchorProxySignerExchanges, TrustAnchorSignedRequest,
+        TrustAnchorSignedResponse, TrustAnchorSignerInfo,
+    },
 };
 
 //------------ ApiResponse ---------------------------------------------------
@@ -72,12 +78,16 @@ pub enum ApiResponse {
     RtaMultiPrep(RtaPrepResponse),
     Rta(ResourceTaggedAttestation),
 
-    Empty,               // Typically a successful post just gets an empty 200 response
-    GenericBody(String), // For when the server echos Json to a successful post
+    Empty, // Typically a successful post just gets an empty 200 response
+    GenericBody(String), /* For when the server echos Json to a
+            * successful post */
 }
 
 impl ApiResponse {
-    pub fn report(&self, fmt: ReportFormat) -> Result<Option<String>, ReportError> {
+    pub fn report(
+        &self,
+        fmt: ReportFormat,
+    ) -> Result<Option<String>, ReportError> {
         if fmt == ReportFormat::None {
             Ok(None)
         } else {
@@ -85,31 +95,77 @@ impl ApiResponse {
                 ApiResponse::Health => Ok(None),
                 ApiResponse::Info(info) => Ok(Some(info.report(fmt)?)),
                 ApiResponse::CertAuths(list) => Ok(Some(list.report(fmt)?)),
-                ApiResponse::CertAuthInfo(info) => Ok(Some(info.report(fmt)?)),
-                ApiResponse::CertAuthHistory(history) => Ok(Some(history.report(fmt)?)),
-                ApiResponse::CertAuthAction(details) => Ok(Some(details.report(fmt)?)),
-                ApiResponse::CertAuthIssues(issues) => Ok(Some(issues.report(fmt)?)),
-                ApiResponse::AllCertAuthIssues(issues) => Ok(Some(issues.report(fmt)?)),
-                ApiResponse::RouteAuthorizations(definitions) => Ok(Some(definitions.report(fmt)?)),
-                ApiResponse::BgpAnalysisAdvice(analysis) => Ok(Some(analysis.report(fmt)?)),
-                ApiResponse::BgpAnalysisFull(table) => Ok(Some(table.report(fmt)?)),
-                ApiResponse::BgpAnalysisSuggestions(suggestions) => Ok(Some(suggestions.report(fmt)?)),
-                ApiResponse::AspaDefinitions(definitions) => Ok(Some(definitions.report(fmt)?)),
-                ApiResponse::BgpSecDefinitions(definitions) => Ok(Some(definitions.report(fmt)?)),
-                ApiResponse::ParentCaContact(contact) => Ok(Some(contact.report(fmt)?)),
-                ApiResponse::ParentStatuses(statuses) => Ok(Some(statuses.report(fmt)?)),
+                ApiResponse::CertAuthInfo(info) => {
+                    Ok(Some(info.report(fmt)?))
+                }
+                ApiResponse::CertAuthHistory(history) => {
+                    Ok(Some(history.report(fmt)?))
+                }
+                ApiResponse::CertAuthAction(details) => {
+                    Ok(Some(details.report(fmt)?))
+                }
+                ApiResponse::CertAuthIssues(issues) => {
+                    Ok(Some(issues.report(fmt)?))
+                }
+                ApiResponse::AllCertAuthIssues(issues) => {
+                    Ok(Some(issues.report(fmt)?))
+                }
+                ApiResponse::RouteAuthorizations(definitions) => {
+                    Ok(Some(definitions.report(fmt)?))
+                }
+                ApiResponse::BgpAnalysisAdvice(analysis) => {
+                    Ok(Some(analysis.report(fmt)?))
+                }
+                ApiResponse::BgpAnalysisFull(table) => {
+                    Ok(Some(table.report(fmt)?))
+                }
+                ApiResponse::BgpAnalysisSuggestions(suggestions) => {
+                    Ok(Some(suggestions.report(fmt)?))
+                }
+                ApiResponse::AspaDefinitions(definitions) => {
+                    Ok(Some(definitions.report(fmt)?))
+                }
+                ApiResponse::BgpSecDefinitions(definitions) => {
+                    Ok(Some(definitions.report(fmt)?))
+                }
+                ApiResponse::ParentCaContact(contact) => {
+                    Ok(Some(contact.report(fmt)?))
+                }
+                ApiResponse::ParentStatuses(statuses) => {
+                    Ok(Some(statuses.report(fmt)?))
+                }
                 ApiResponse::ChildInfo(info) => Ok(Some(info.report(fmt)?)),
-                ApiResponse::ChildExported(child) => Ok(Some(child.report(fmt)?)),
-                ApiResponse::ChildrenStats(stats) => Ok(Some(stats.report(fmt)?)),
-                ApiResponse::PublisherList(list) => Ok(Some(list.report(fmt)?)),
-                ApiResponse::PublisherDetails(details) => Ok(Some(details.report(fmt)?)),
+                ApiResponse::ChildExported(child) => {
+                    Ok(Some(child.report(fmt)?))
+                }
+                ApiResponse::ChildrenStats(stats) => {
+                    Ok(Some(stats.report(fmt)?))
+                }
+                ApiResponse::PublisherList(list) => {
+                    Ok(Some(list.report(fmt)?))
+                }
+                ApiResponse::PublisherDetails(details) => {
+                    Ok(Some(details.report(fmt)?))
+                }
                 ApiResponse::RepoStats(stats) => Ok(Some(stats.report(fmt)?)),
-                ApiResponse::Rfc8183ParentResponse(res) => Ok(Some(res.report(fmt)?)),
-                ApiResponse::Rfc8183ChildRequest(req) => Ok(Some(req.report(fmt)?)),
-                ApiResponse::Rfc8183PublisherRequest(req) => Ok(Some(req.report(fmt)?)),
-                ApiResponse::Rfc8183RepositoryResponse(res) => Ok(Some(res.report(fmt)?)),
-                ApiResponse::RepoDetails(details) => Ok(Some(details.report(fmt)?)),
-                ApiResponse::RepoStatus(status) => Ok(Some(status.report(fmt)?)),
+                ApiResponse::Rfc8183ParentResponse(res) => {
+                    Ok(Some(res.report(fmt)?))
+                }
+                ApiResponse::Rfc8183ChildRequest(req) => {
+                    Ok(Some(req.report(fmt)?))
+                }
+                ApiResponse::Rfc8183PublisherRequest(req) => {
+                    Ok(Some(req.report(fmt)?))
+                }
+                ApiResponse::Rfc8183RepositoryResponse(res) => {
+                    Ok(Some(res.report(fmt)?))
+                }
+                ApiResponse::RepoDetails(details) => {
+                    Ok(Some(details.report(fmt)?))
+                }
+                ApiResponse::RepoStatus(status) => {
+                    Ok(Some(status.report(fmt)?))
+                }
                 ApiResponse::Rta(rta) => Ok(Some(rta.report(fmt)?)),
                 ApiResponse::RtaList(list) => Ok(Some(list.report(fmt)?)),
                 ApiResponse::RtaMultiPrep(res) => Ok(Some(res.report(fmt)?)),
@@ -155,8 +211,12 @@ pub enum ReportError {
 impl fmt::Display for ReportError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ReportError::UnsupportedFormat => write!(f, "This report format is not supported for this data"),
-            ReportError::UnrecognizedFormat(s) => write!(f, "This report format is not recognized: {}", s),
+            ReportError::UnsupportedFormat => {
+                write!(f, "This report format is not supported for this data")
+            }
+            ReportError::UnrecognizedFormat(s) => {
+                write!(f, "This report format is not recognized: {}", s)
+            }
         }
     }
 }

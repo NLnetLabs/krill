@@ -8,7 +8,9 @@ use rpki::{
     ca::{
         idcert::IdCert,
         idexchange::{self, ServiceUri},
-        idexchange::{CaHandle, ChildHandle, ParentHandle, PublisherHandle, RepoInfo},
+        idexchange::{
+            CaHandle, ChildHandle, ParentHandle, PublisherHandle, RepoInfo,
+        },
         provisioning::ResourceClassName,
     },
     crypto::PublicKey,
@@ -112,7 +114,8 @@ pub struct PublisherList {
 
 impl PublisherList {
     pub fn build(publishers: &[PublisherHandle]) -> PublisherList {
-        let publishers: Vec<PublisherSummary> = publishers.iter().map(|p| p.into()).collect();
+        let publishers: Vec<PublisherSummary> =
+            publishers.iter().map(|p| p.into()).collect();
 
         PublisherList { publishers }
     }
@@ -228,7 +231,9 @@ pub struct ApiRepositoryContact {
 
 impl ApiRepositoryContact {
     pub fn new(repository_response: idexchange::RepositoryResponse) -> Self {
-        ApiRepositoryContact { repository_response }
+        ApiRepositoryContact {
+            repository_response,
+        }
     }
 }
 
@@ -249,12 +254,21 @@ pub struct RepositoryContact {
 }
 
 impl RepositoryContact {
-    pub fn new(repo_info: RepoInfo, server_info: PublicationServerInfo) -> Self {
-        RepositoryContact { repo_info, server_info }
+    pub fn new(
+        repo_info: RepoInfo,
+        server_info: PublicationServerInfo,
+    ) -> Self {
+        RepositoryContact {
+            repo_info,
+            server_info,
+        }
     }
 
-    pub fn for_response(repository_response: idexchange::RepositoryResponse) -> KrillResult<Self> {
-        let id_cert = repository_response.validate().map_err(Error::rfc8183)?;
+    pub fn for_response(
+        repository_response: idexchange::RepositoryResponse,
+    ) -> KrillResult<Self> {
+        let id_cert =
+            repository_response.validate().map_err(Error::rfc8183)?;
         let public_key = id_cert.public_key().clone();
         let service_uri = repository_response.service_uri().clone();
 
@@ -264,7 +278,10 @@ impl RepositoryContact {
             service_uri,
         };
 
-        Ok(RepositoryContact { repo_info, server_info })
+        Ok(RepositoryContact {
+            repo_info,
+            server_info,
+        })
     }
 
     pub fn repo_info(&self) -> &RepoInfo {
@@ -284,13 +301,15 @@ impl fmt::Display for RepositoryContact {
 
 impl std::hash::Hash for RepositoryContact {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.server_info.service_uri.as_str().hash(state); // unique for each repo contact
+        self.server_info.service_uri.as_str().hash(state); // unique for each
+                                                           // repo contact
     }
 }
 
 impl PartialEq for RepositoryContact {
     fn eq(&self, other: &Self) -> bool {
-        self.repo_info == other.repo_info && self.server_info == other.server_info
+        self.repo_info == other.repo_info
+            && self.server_info == other.server_info
     }
 }
 
@@ -319,7 +338,10 @@ impl fmt::Display for ParentCaReq {
 }
 
 impl ParentCaReq {
-    pub fn new(handle: ParentHandle, response: idexchange::ParentResponse) -> Self {
+    pub fn new(
+        handle: ParentHandle,
+        response: idexchange::ParentResponse,
+    ) -> Self {
         ParentCaReq { handle, response }
     }
 
@@ -391,7 +413,11 @@ impl fmt::Display for ParentServerInfo {
         writeln!(f, "parent handle:  {}", self.parent_handle)?;
         writeln!(f, "child handle:   {}", self.child_handle)?;
         writeln!(f, "parent certificate:")?;
-        writeln!(f, "   key identifier: {}", self.id_cert().public_key().key_identifier())?;
+        writeln!(
+            f,
+            "   key identifier: {}",
+            self.id_cert().public_key().key_identifier()
+        )?;
         writeln!(f, "   hash (of cert): {}", self.id_cert().hash())?;
         writeln!(f, "   PEM:\n\n{}", self.id_cert().pem())
     }
@@ -410,7 +436,8 @@ pub enum ParentCaContact {
     // This is still an enum for backward compatibility without the need for
     // a data migration of past events, and.. because theoretically we may
     // need other options in future if there is an alternative to RFC 6492
-    // one day. Oh.. and having the "type" tag doesn't really hurt that much..
+    // one day. Oh.. and having the "type" tag doesn't really hurt that
+    // much..
     Rfc6492(ParentServerInfo),
 }
 
@@ -419,7 +446,9 @@ impl ParentCaContact {
         ParentCaContact::Rfc6492(server_info)
     }
 
-    pub fn for_rfc8183_parent_response(response: idexchange::ParentResponse) -> Result<Self, idexchange::Error> {
+    pub fn for_rfc8183_parent_response(
+        response: idexchange::ParentResponse,
+    ) -> Result<Self, idexchange::Error> {
         let id_cert = response.validate()?;
         let id_cert = IdCertInfo::from(&id_cert);
 
@@ -518,7 +547,11 @@ impl fmt::Display for AddChildRequest {
 }
 
 impl AddChildRequest {
-    pub fn new(handle: ChildHandle, resources: ResourceSet, id_cert: IdCert) -> Self {
+    pub fn new(
+        handle: ChildHandle,
+        resources: ResourceSet,
+        id_cert: IdCert,
+    ) -> Self {
         AddChildRequest {
             handle,
             resources,
@@ -559,7 +592,11 @@ pub struct ResourceClassNameMapping {
 }
 
 impl UpdateChildRequest {
-    pub fn new(id_cert: Option<IdCert>, resources: Option<ResourceSet>, suspend: Option<bool>) -> Self {
+    pub fn new(
+        id_cert: Option<IdCert>,
+        resources: Option<ResourceSet>,
+        suspend: Option<bool>,
+    ) -> Self {
         UpdateChildRequest {
             id_cert,
             resources,
@@ -603,7 +640,9 @@ impl UpdateChildRequest {
         }
     }
 
-    pub fn resource_class_name_mapping(mapping: ResourceClassNameMapping) -> Self {
+    pub fn resource_class_name_mapping(
+        mapping: ResourceClassNameMapping,
+    ) -> Self {
         UpdateChildRequest {
             id_cert: None,
             resources: None,
@@ -671,15 +710,20 @@ impl ServerInfo {
 
 impl fmt::Display for ServerInfo {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Version: {}\nStarted: {}", self.version(), self.started.to_rfc3339())
+        write!(
+            f,
+            "Version: {}\nStarted: {}",
+            self.version(),
+            self.started.to_rfc3339()
+        )
     }
 }
 
 //------------ RepoFileDeleteCriteria ----------------------------------------
 
-/// This is used to send criteria for purging matching files from the publication
-/// server. Currently only needs to support `base_uri` but it could be extended in
-/// future and therefore we introduce a type for it now.
+/// This is used to send criteria for purging matching files from the
+/// publication server. Currently only needs to support `base_uri` but it
+/// could be extended in future and therefore we introduce a type for it now.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct RepoFileDeleteCriteria {
     base_uri: uri::Rsync,

@@ -12,7 +12,10 @@ use openssl::{
 
 use rpki::{
     ca::idcert::IdCert,
-    crypto::{signer::SigningAlgorithm, KeyIdentifier, PublicKey, Signature, SignatureAlgorithm},
+    crypto::{
+        signer::SigningAlgorithm, KeyIdentifier, PublicKey, Signature,
+        SignatureAlgorithm,
+    },
     repository::x509::{Time, Validity},
 };
 
@@ -67,15 +70,25 @@ impl rpki::crypto::Signer for HttpsSigner {
     type KeyId = KeyIdentifier;
     type Error = Error;
 
-    fn create_key(&self, _algorithm: rpki::crypto::PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
+    fn create_key(
+        &self,
+        _algorithm: rpki::crypto::PublicKeyFormat,
+    ) -> Result<Self::KeyId, Self::Error> {
         unimplemented!("not needed in this context")
     }
 
-    fn get_key_info(&self, _key: &Self::KeyId) -> Result<PublicKey, rpki::crypto::signer::KeyError<Self::Error>> {
-        self.public_key_info().map_err(rpki::crypto::signer::KeyError::Signer)
+    fn get_key_info(
+        &self,
+        _key: &Self::KeyId,
+    ) -> Result<PublicKey, rpki::crypto::signer::KeyError<Self::Error>> {
+        self.public_key_info()
+            .map_err(rpki::crypto::signer::KeyError::Signer)
     }
 
-    fn destroy_key(&self, _key: &Self::KeyId) -> Result<(), rpki::crypto::signer::KeyError<Self::Error>> {
+    fn destroy_key(
+        &self,
+        _key: &Self::KeyId,
+    ) -> Result<(), rpki::crypto::signer::KeyError<Self::Error>> {
         unimplemented!("not needed in this context")
     }
 
@@ -85,7 +98,8 @@ impl rpki::crypto::Signer for HttpsSigner {
         algorithm: Alg,
         data: &D,
     ) -> Result<Signature<Alg>, rpki::crypto::SigningError<Self::Error>> {
-        self.sign(algorithm, data).map_err(rpki::crypto::SigningError::Signer)
+        self.sign(algorithm, data)
+            .map_err(rpki::crypto::SigningError::Signer)
     }
 
     fn sign_one_off<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
@@ -136,22 +150,33 @@ impl HttpsSigner {
     ) -> Result<Signature<Alg>, Error> {
         let signing_algorithm = algorithm.signing_algorithm();
         if !matches!(signing_algorithm, SigningAlgorithm::RsaSha256) {
-            return Err(Error::SignerError("Only RSA SHA256 signing is supported.".to_string()));
+            return Err(Error::SignerError(
+                "Only RSA SHA256 signing is supported.".to_string(),
+            ));
         }
 
-        let mut signer = ::openssl::sign::Signer::new(MessageDigest::sha256(), &self.private)?;
+        let mut signer = ::openssl::sign::Signer::new(
+            MessageDigest::sha256(),
+            &self.private,
+        )?;
         signer.update(data.as_ref())?;
 
-        let signature = Signature::new(algorithm, Bytes::from(signer.sign_to_vec()?));
+        let signature =
+            Signature::new(algorithm, Bytes::from(signer.sign_to_vec()?));
         Ok(signature)
     }
 
     /// Saves a self-signed certificate so that hyper can use it.
     fn save_certificate(&mut self, tls_keys_dir: &Path) -> Result<(), Error> {
-        let validity = Validity::new(Time::five_minutes_ago(), Time::years_from_now(100));
+        let validity = Validity::new(
+            Time::five_minutes_ago(),
+            Time::years_from_now(100),
+        );
         let pub_key = self.public_key_info()?;
 
-        let id_cert = IdCert::new_ta(validity, &pub_key.key_identifier(), self).map_err(Error::signer)?;
+        let id_cert =
+            IdCert::new_ta(validity, &pub_key.key_identifier(), self)
+                .map_err(Error::signer)?;
         let id_cert_pem = IdCertInfo::from(&id_cert);
 
         let path = cert_file_path(tls_keys_dir);
@@ -193,10 +218,18 @@ impl fmt::Display for Error {
             Error::OpenSslError(e) => e.fmt(f),
             Error::DecodeError(e) => e.fmt(f),
             Error::BuildError => write!(f, "Could not make certificate"),
-            Error::EmptyCertStack => write!(f, "Certificate PEM file contains no certificates"),
-            Error::Pkcs12(e) => write!(f, "Cannot create PKCS12 Identity: {}", e),
+            Error::EmptyCertStack => {
+                write!(f, "Certificate PEM file contains no certificates")
+            }
+            Error::Pkcs12(e) => {
+                write!(f, "Cannot create PKCS12 Identity: {}", e)
+            }
             Error::Connection(e) => write!(f, "Connection error: {}", e),
-            Error::SignerError(e) => write!(f, "Error signing self-signed HTTPS certificate: {}", e),
+            Error::SignerError(e) => write!(
+                f,
+                "Error signing self-signed HTTPS certificate: {}",
+                e
+            ),
         }
     }
 }

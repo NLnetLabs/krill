@@ -25,7 +25,11 @@ pub struct RepositoryAccessInitEvent {
 impl InitEvent for RepositoryAccessInitEvent {}
 
 impl RepositoryAccessInitEvent {
-    pub fn new(id_cert: IdCertInfo, rrdp_base_uri: uri::Https, rsync_jail: uri::Rsync) -> Self {
+    pub fn new(
+        id_cert: IdCertInfo,
+        rrdp_base_uri: uri::Https,
+        rsync_jail: uri::Rsync,
+    ) -> Self {
         RepositoryAccessInitEvent {
             id_cert,
             rrdp_base_uri,
@@ -85,18 +89,27 @@ impl Event for RepositoryAccessEvent {}
 impl fmt::Display for RepositoryAccessEvent {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            RepositoryAccessEvent::PublisherAdded { name, .. } => write!(f, "Publisher '{}' added", name),
-            RepositoryAccessEvent::PublisherRemoved { name } => write!(f, "Publisher '{}' removed", name),
+            RepositoryAccessEvent::PublisherAdded { name, .. } => {
+                write!(f, "Publisher '{}' added", name)
+            }
+            RepositoryAccessEvent::PublisherRemoved { name } => {
+                write!(f, "Publisher '{}' removed", name)
+            }
         }
     }
 }
 
 impl RepositoryAccessEvent {
-    pub(super) fn publisher_added(name: PublisherHandle, publisher: Publisher) -> RepositoryAccessEvent {
+    pub(super) fn publisher_added(
+        name: PublisherHandle,
+        publisher: Publisher,
+    ) -> RepositoryAccessEvent {
         RepositoryAccessEvent::PublisherAdded { name, publisher }
     }
 
-    pub(super) fn publisher_removed(name: PublisherHandle) -> RepositoryAccessEvent {
+    pub(super) fn publisher_removed(
+        name: PublisherHandle,
+    ) -> RepositoryAccessEvent {
         RepositoryAccessEvent::PublisherRemoved { name }
     }
 }

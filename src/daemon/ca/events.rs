@@ -3,7 +3,10 @@ use std::{collections::HashMap, fmt};
 use rpki::{
     ca::{
         idexchange::{ChildHandle, ParentHandle},
-        provisioning::{IssuanceRequest, ParentResourceClassName, ResourceClassName, RevocationRequest},
+        provisioning::{
+            IssuanceRequest, ParentResourceClassName, ResourceClassName,
+            RevocationRequest,
+        },
     },
     crypto::KeyIdentifier,
     repository::resources::ResourceSet,
@@ -12,15 +15,19 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            AspaDefinition, AspaProvidersUpdate, BgpSecAsnKey, CustomerAsn, IdCertInfo, IssuedCertificate, ObjectName,
-            ParentCaContact, ReceivedCert, RepositoryContact, ResourceClassNameMapping, RoaAggregateKey, RtaName,
-            SuspendedCert, UnsuspendedCert,
+            AspaDefinition, AspaProvidersUpdate, BgpSecAsnKey, CustomerAsn,
+            IdCertInfo, IssuedCertificate, ObjectName, ParentCaContact,
+            ReceivedCert, RepositoryContact, ResourceClassNameMapping,
+            RoaAggregateKey, RtaName, SuspendedCert, UnsuspendedCert,
         },
         crypto::KrillSigner,
         eventsourcing::{Event, InitEvent},
         KrillResult,
     },
-    daemon::ca::{AspaInfo, CertifiedKey, PreparedRta, RoaInfo, RoaPayloadJsonMapKey, SignedRta},
+    daemon::ca::{
+        AspaInfo, CertifiedKey, PreparedRta, RoaInfo, RoaPayloadJsonMapKey,
+        SignedRta,
+    },
 };
 
 use super::{BgpSecCertInfo, StoredBgpSecCsr};
@@ -95,13 +102,19 @@ impl fmt::Display for CertAuthInitEvent {
 /// Describes an update to the set of ROAs under a ResourceClass.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RoaUpdates {
-    #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
+    #[serde(
+        skip_serializing_if = "HashMap::is_empty",
+        default = "HashMap::new"
+    )]
     updated: HashMap<RoaPayloadJsonMapKey, RoaInfo>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
     removed: Vec<RoaPayloadJsonMapKey>,
 
-    #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
+    #[serde(
+        skip_serializing_if = "HashMap::is_empty",
+        default = "HashMap::new"
+    )]
     aggregate_updated: HashMap<RoaAggregateKey, RoaInfo>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
@@ -358,7 +371,10 @@ impl ChildCertificateUpdates {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.issued.is_empty() && self.removed.is_empty() && self.suspended.is_empty() && self.unsuspended.is_empty()
+        self.issued.is_empty()
+            && self.removed.is_empty()
+            && self.suspended.is_empty()
+            && self.unsuspended.is_empty()
     }
 
     /// Add an issued certificate to the current set of issued certificates.
@@ -517,45 +533,55 @@ pub enum CertAuthEvent {
 
     // Key life cycle
     KeyRollPendingKeyAdded {
-        // A pending key is added to an existing resource class in order to initiate
-        // a key roll. Note that there will be a separate 'CertificateRequested' event for
-        // this key.
+        // A pending key is added to an existing resource class in order to
+        // initiate a key roll. Note that there will be a separate
+        // 'CertificateRequested' event for this key.
         resource_class_name: ResourceClassName,
         pending_key_id: KeyIdentifier,
     },
     KeyPendingToNew {
-        // A pending key is marked as 'new' when it has received its (first) certificate.
-        // This means that the key is staged and a mft and crl will be published. According
-        // to RFC 6489 this key should be staged for 24 hours before it is promoted to
-        // become the active key. However, in practice this time can be shortened.
+        // A pending key is marked as 'new' when it has received its (first)
+        // certificate. This means that the key is staged and a mft
+        // and crl will be published. According to RFC 6489 this key
+        // should be staged for 24 hours before it is promoted to
+        // become the active key. However, in practice this time can be
+        // shortened.
         resource_class_name: ResourceClassName,
-        new_key: CertifiedKey, // pending key which received a certificate becomes 'new', i.e. it is staged.
+        new_key: CertifiedKey, /* pending key which received a certificate
+                                * becomes 'new', i.e. it is staged. */
     },
     KeyPendingToActive {
-        // When a new resource class is created it will have a single pending key only which
-        // is promoted to become the active (current) key for the resource class immediately
-        // after receiving its first certificate. Technically this is not a roll, but a simple
+        // When a new resource class is created it will have a single pending
+        // key only which is promoted to become the active (current)
+        // key for the resource class immediately after receiving its
+        // first certificate. Technically this is not a roll, but a simple
         // first activation.
         resource_class_name: ResourceClassName,
-        current_key: CertifiedKey, // there was no current key, pending becomes active without staging when cert is received.
+        current_key: CertifiedKey, /* there was no current key, pending
+                                    * becomes active without staging when
+                                    * cert is received. */
     },
     KeyRollActivated {
-        // When a 'new' key is activated (becomes current), the previous current key will be
-        // marked as old and we will request its revocation. Note that any current ROAs and/or
-        // issued certificates will also be re-issued under the new 'current' key. These changes
-        // are tracked in separate `RoasUpdated` and `ChildCertificatesUpdated` events.
+        // When a 'new' key is activated (becomes current), the previous
+        // current key will be marked as old and we will request its
+        // revocation. Note that any current ROAs and/or
+        // issued certificates will also be re-issued under the new 'current'
+        // key. These changes are tracked in separate `RoasUpdated`
+        // and `ChildCertificatesUpdated` events.
         resource_class_name: ResourceClassName,
         revoke_req: RevocationRequest,
     },
     KeyRollFinished {
-        // The key roll is finished when the parent confirms that the old key is revoked.
-        // We can remove it and stop publishing its mft and crl.
+        // The key roll is finished when the parent confirms that the old key
+        // is revoked. We can remove it and stop publishing its mft
+        // and crl.
         resource_class_name: ResourceClassName,
     },
     UnexpectedKeyFound {
-        // This event is generated in case our parent reports keys to us that we do not
-        // believe we have. This should not happen in practice, but this is tracked so that
-        // we can recover from this situation. We can request revocation for all these keys
+        // This event is generated in case our parent reports keys to us that
+        // we do not believe we have. This should not happen in
+        // practice, but this is tracked so that we can recover from
+        // this situation. We can request revocation for all these keys
         // and create new keys in the RC as needed.
         resource_class_name: ResourceClassName,
         revoke_req: RevocationRequest,
@@ -563,10 +589,12 @@ pub enum CertAuthEvent {
 
     // Route Authorizations
     RouteAuthorizationAdded {
-        // Tracks a single authorization (VRP) which is added. Note that (1) a command to
-        // update ROAs can contain multiple changes in which case multiple events will
-        // result, and (2) we do not have a 'modify' event. Modifications of e.g. the
-        // max length are expressed as a 'removed' and 'added' event in a single transaction.
+        // Tracks a single authorization (VRP) which is added. Note that (1)
+        // a command to update ROAs can contain multiple changes in
+        // which case multiple events will result, and (2) we do not
+        // have a 'modify' event. Modifications of e.g. the
+        // max length are expressed as a 'removed' and 'added' event in a
+        // single transaction.
         auth: RoaPayloadJsonMapKey,
     },
     RouteAuthorizationComment {
@@ -574,7 +602,8 @@ pub enum CertAuthEvent {
         comment: Option<String>,
     },
     RouteAuthorizationRemoved {
-        // Tracks a single authorization (VRP) which is removed. See remark for RouteAuthorizationAdded.
+        // Tracks a single authorization (VRP) which is removed. See remark
+        // for RouteAuthorizationAdded.
         auth: RoaPayloadJsonMapKey,
     },
     RoasUpdated {
@@ -613,16 +642,18 @@ pub enum CertAuthEvent {
         key: BgpSecAsnKey,
     },
     BgpSecCertificatesUpdated {
-        // Tracks the actual BGPSec certificates (re-)issued in a resource class
+        // Tracks the actual BGPSec certificates (re-)issued in a resource
+        // class
         resource_class_name: ResourceClassName,
         updates: BgpSecCertificateUpdates,
     },
 
     // Publishing
     RepoUpdated {
-        // Adds the repository contact for this CA so that publication can commence,
-        // and certificates can be requested from parents. Note: the CA can only start
-        // requesting certificates when it knows which URIs it can use.
+        // Adds the repository contact for this CA so that publication can
+        // commence, and certificates can be requested from parents.
+        // Note: the CA can only start requesting certificates when
+        // it knows which URIs it can use.
         contact: RepositoryContact,
     },
 
@@ -636,8 +667,8 @@ pub enum CertAuthEvent {
         rta: SignedRta,
     },
     RtaPrepared {
-        // Adds a 'prepared' RTA. I.e. the context of keys which need to be included
-        // in a multi-signed RTA.
+        // Adds a 'prepared' RTA. I.e. the context of keys which need to be
+        // included in a multi-signed RTA.
         name: RtaName,
         prepared: PreparedRta,
     },
@@ -652,16 +683,26 @@ impl CertAuthEvent {
     }
 
     /// This marks a parent as added to the CA.
-    pub(super) fn parent_added(parent: ParentHandle, contact: ParentCaContact) -> CertAuthEvent {
+    pub(super) fn parent_added(
+        parent: ParentHandle,
+        contact: ParentCaContact,
+    ) -> CertAuthEvent {
         CertAuthEvent::ParentAdded { parent, contact }
     }
 
     /// This marks a parent contact as updated
-    pub(super) fn parent_updated(parent: ParentHandle, contact: ParentCaContact) -> CertAuthEvent {
+    pub(super) fn parent_updated(
+        parent: ParentHandle,
+        contact: ParentCaContact,
+    ) -> CertAuthEvent {
         CertAuthEvent::ParentUpdated { parent, contact }
     }
 
-    pub(super) fn child_added(child: ChildHandle, id_cert: IdCertInfo, resources: ResourceSet) -> CertAuthEvent {
+    pub(super) fn child_added(
+        child: ChildHandle,
+        id_cert: IdCertInfo,
+        resources: ResourceSet,
+    ) -> CertAuthEvent {
         CertAuthEvent::ChildAdded {
             child,
             id_cert,
@@ -669,11 +710,17 @@ impl CertAuthEvent {
         }
     }
 
-    pub(super) fn child_updated_cert(child: ChildHandle, id_cert: IdCertInfo) -> CertAuthEvent {
+    pub(super) fn child_updated_cert(
+        child: ChildHandle,
+        id_cert: IdCertInfo,
+    ) -> CertAuthEvent {
         CertAuthEvent::ChildUpdatedIdCert { child, id_cert }
     }
 
-    pub(super) fn child_updated_resources(child: ChildHandle, resources: ResourceSet) -> CertAuthEvent {
+    pub(super) fn child_updated_resources(
+        child: ChildHandle,
+        resources: ResourceSet,
+    ) -> CertAuthEvent {
         CertAuthEvent::ChildUpdatedResources { child, resources }
     }
 

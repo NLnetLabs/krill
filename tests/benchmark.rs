@@ -1,5 +1,4 @@
 //! Perform functional tests on a Krill instance, using the API
-//!
 use krill::{daemon::config::Benchmark, test::*};
 use log::LevelFilter;
 
@@ -11,7 +10,8 @@ async fn benchmark() {
     let cas = 10;
     let ca_roas = 10;
 
-    let mut config = test_config(&storage_uri, Some(&data_dir), true, false, false, true);
+    let mut config =
+        test_config(&storage_uri, Some(&data_dir), true, false, false, true);
     config.benchmark = Some(Benchmark { cas, ca_roas });
     config.log_level = LevelFilter::Info;
     start_krill(config).await;

@@ -12,7 +12,9 @@ use chrono::SecondsFormat;
 use rpki::{
     ca::{
         idexchange::{ChildHandle, RepoInfo},
-        provisioning::{self, IssuanceResponse, RequestResourceLimit, RevocationResponse},
+        provisioning::{
+            self, IssuanceResponse, RequestResourceLimit, RevocationResponse,
+        },
     },
     crypto::KeyIdentifier,
     repository::{
@@ -29,7 +31,9 @@ use crate::{
         api::{IdCertInfo, ObjectName, ReceivedCert},
         crypto::{CsrInfo, KrillSigner, SignSupport},
         error::Error,
-        eventsourcing::{self, Event, InitCommandDetails, InitEvent, WithStorableDetails},
+        eventsourcing::{
+            self, Event, InitCommandDetails, InitEvent, WithStorableDetails,
+        },
         KrillResult,
     },
     daemon::ca::Rfc8183Id,
@@ -64,7 +68,8 @@ pub struct TrustAnchorSigner {
 
 //------------ TrustAnchorSigner: Commands and Events ----------------------
 
-pub type TrustAnchorSignerInitCommand = eventsourcing::SentInitCommand<TrustAnchorSignerInitCommandDetails>;
+pub type TrustAnchorSignerInitCommand =
+    eventsourcing::SentInitCommand<TrustAnchorSignerInitCommandDetails>;
 
 #[derive(Clone, Debug)]
 pub struct TrustAnchorSignerInitCommandDetails {
@@ -92,7 +97,8 @@ impl InitCommandDetails for TrustAnchorSignerInitCommandDetails {
     }
 }
 
-pub type TrustAnchorSignerCommand = eventsourcing::SentCommand<TrustAnchorSignerCommandDetails>;
+pub type TrustAnchorSignerCommand =
+    eventsourcing::SentCommand<TrustAnchorSignerCommandDetails>;
 
 // Initialisation
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -107,7 +113,8 @@ impl InitEvent for TrustAnchorSignerInitEvent {}
 
 impl fmt::Display for TrustAnchorSignerInitEvent {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // note that this is a summary, full details are stored in the init event.
+        // note that this is a summary, full details are stored in the init
+        // event.
         write!(f, "Trust Anchor Signer was initialised.")
     }
 }
@@ -191,12 +198,17 @@ pub enum TrustAnchorSignerStorableCommand {
     TrustAnchorSignerRequest(TrustAnchorSignedRequest),
 }
 
-impl From<&TrustAnchorSignerCommandDetails> for TrustAnchorSignerStorableCommand {
+impl From<&TrustAnchorSignerCommandDetails>
+    for TrustAnchorSignerStorableCommand
+{
     fn from(details: &TrustAnchorSignerCommandDetails) -> Self {
         match details {
-            TrustAnchorSignerCommandDetails::TrustAnchorSignerRequest { signed_request, .. } => {
-                TrustAnchorSignerStorableCommand::TrustAnchorSignerRequest(signed_request.clone())
-            }
+            TrustAnchorSignerCommandDetails::TrustAnchorSignerRequest {
+                signed_request,
+                ..
+            } => TrustAnchorSignerStorableCommand::TrustAnchorSignerRequest(
+                signed_request.clone(),
+            ),
         }
     }
 }
@@ -205,12 +217,18 @@ impl eventsourcing::WithStorableDetails for TrustAnchorSignerStorableCommand {
     fn summary(&self) -> crate::commons::api::CommandSummary {
         match self {
             TrustAnchorSignerStorableCommand::Init => {
-                crate::commons::api::CommandSummary::new("cmd-ta-signer-init", self)
+                crate::commons::api::CommandSummary::new(
+                    "cmd-ta-signer-init",
+                    self,
+                )
             }
-            TrustAnchorSignerStorableCommand::TrustAnchorSignerRequest(request) => {
-                crate::commons::api::CommandSummary::new("cmd-ta-signer-process-request", self)
-                    .with_arg("nonce", &request.content().nonce)
-            }
+            TrustAnchorSignerStorableCommand::TrustAnchorSignerRequest(
+                request,
+            ) => crate::commons::api::CommandSummary::new(
+                "cmd-ta-signer-process-request",
+                self,
+            )
+            .with_arg("nonce", &request.content().nonce),
         }
     }
 
@@ -226,8 +244,14 @@ impl fmt::Display for TrustAnchorSignerStorableCommand {
             TrustAnchorSignerStorableCommand::Init => {
                 write!(f, "Initialise TA signer")
             }
-            TrustAnchorSignerStorableCommand::TrustAnchorSignerRequest(req) => {
-                write!(f, "Process signer request with nonce: {}", req.content().nonce)
+            TrustAnchorSignerStorableCommand::TrustAnchorSignerRequest(
+                req,
+            ) => {
+                write!(
+                    f,
+                    "Process signer request with nonce: {}",
+                    req.content().nonce
+                )
             }
         }
     }
@@ -254,7 +278,9 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
         }
     }
 
-    fn process_init_command(command: TrustAnchorSignerInitCommand) -> Result<TrustAnchorSignerInitEvent, Error> {
+    fn process_init_command(
+        command: TrustAnchorSignerInitCommand,
+    ) -> Result<TrustAnchorSignerInitEvent, Error> {
         let cmd = command.into_details();
         let timing = cmd.timing;
 
@@ -311,7 +337,10 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
         }
     }
 
-    fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Event>, Self::Error> {
+    fn process_command(
+        &self,
+        command: Self::Command,
+    ) -> Result<Vec<Self::Event>, Self::Error> {
         if log_enabled!(log::Level::Trace) {
             trace!(
                 "Sending command to Trust Anchor Signer '{}', version: {}: {}",
@@ -327,7 +356,12 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
                 ta_timing_config,
                 ta_mft_number_override,
                 signer,
-            } => self.process_signer_request(signed_request, ta_timing_config, ta_mft_number_override, &signer),
+            } => self.process_signer_request(
+                signed_request,
+                ta_timing_config,
+                ta_mft_number_override,
+                &signer,
+            ),
         }
     }
 }
@@ -380,17 +414,19 @@ impl TrustAnchorSigner {
 
             cert.set_basic_ca(Some(true));
 
-            // The TA will publish directly in its root. It only has 1 resource class
-            // so it does not use namespaces (sub-folders). Furthermore, this should
-            // facilitate a structure where the TA can publish to the root of the
-            // rsync repository, and other CAs get their own folders under it. This
-            // will help recursive rsync fetches.
+            // The TA will publish directly in its root. It only has 1
+            // resource class so it does not use namespaces
+            // (sub-folders). Furthermore, this should facilitate
+            // a structure where the TA can publish to the root of the
+            // rsync repository, and other CAs get their own folders under it.
+            // This will help recursive rsync fetches.
             let ns = "";
 
             cert.set_ca_repository(Some(repo_info.ca_repository(ns)));
-            cert.set_rpki_manifest(Some(
-                repo_info.resolve(ns, ObjectName::mft_for_key(&pub_key.key_identifier()).as_ref()),
-            ));
+            cert.set_rpki_manifest(Some(repo_info.resolve(
+                ns,
+                ObjectName::mft_for_key(&pub_key.key_identifier()).as_ref(),
+            )));
             cert.set_rpki_notify(repo_info.rpki_notify().cloned());
 
             cert.set_as_resources(resources.to_as_resources());
@@ -400,10 +436,19 @@ impl TrustAnchorSigner {
             signer.sign_cert(cert, &key)?
         };
 
-        let tal = TrustAnchorLocator::new(tal_https, tal_rsync.clone(), cert.subject_public_key_info());
+        let tal = TrustAnchorLocator::new(
+            tal_https,
+            tal_rsync.clone(),
+            cert.subject_public_key_info(),
+        );
 
-        let rcvd_cert =
-            ReceivedCert::create(cert, tal_rsync, resources, RequestResourceLimit::default()).map_err(Error::custom)?;
+        let rcvd_cert = ReceivedCert::create(
+            cert,
+            tal_rsync,
+            resources,
+            RequestResourceLimit::default(),
+        )
+        .map_err(Error::custom)?;
 
         Ok(TaCertDetails::new(rcvd_cert, tal))
     }
@@ -422,7 +467,10 @@ impl TrustAnchorSigner {
 
         let mut objects = self.objects.clone();
 
-        let mut child_responses: HashMap<ChildHandle, HashMap<KeyIdentifier, ProvisioningResponse>> = HashMap::new();
+        let mut child_responses: HashMap<
+            ChildHandle,
+            HashMap<KeyIdentifier, ProvisioningResponse>,
+        > = HashMap::new();
 
         let signing_cert = self.ta_cert_details.cert();
         let ta_rcn = ta_resource_class_name();
@@ -430,7 +478,9 @@ impl TrustAnchorSigner {
         for child_request in &signed_request.content().child_requests {
             let mut responses = HashMap::new();
 
-            for (key_id, provisioning_request) in child_request.requests.clone() {
+            for (key_id, provisioning_request) in
+                child_request.requests.clone()
+            {
                 match provisioning_request {
                     ProvisioningRequest::Issuance(issuance_req) => {
                         let (rcn, limit, csr) = issuance_req.unpack();
@@ -442,9 +492,12 @@ impl TrustAnchorSigner {
                             )));
                         }
 
-                        let validity =
-                            SignSupport::sign_validity_weeks(ta_timing_config.issued_certificate_validity_weeks);
-                        let issue_resources = limit.apply_to(&child_request.resources)?;
+                        let validity = SignSupport::sign_validity_weeks(
+                            ta_timing_config
+                                .issued_certificate_validity_weeks,
+                        );
+                        let issue_resources =
+                            limit.apply_to(&child_request.resources)?;
 
                         // Create issued certificate
                         let issued_cert = SignSupport::make_issued_cert(
@@ -464,19 +517,26 @@ impl TrustAnchorSigner {
                             provisioning::IssuedCert::new(
                                 issued_cert.uri().clone(),
                                 limit,
-                                issued_cert.to_cert().unwrap(), // cannot fail
+                                issued_cert.to_cert().unwrap(), /* cannot fail */
                             ),
-                            provisioning::SigningCert::new(signing_cert.uri().clone(), signing_cert.to_cert().unwrap()),
+                            provisioning::SigningCert::new(
+                                signing_cert.uri().clone(),
+                                signing_cert.to_cert().unwrap(),
+                            ),
                         );
 
                         // extend the objects with the issued certs
                         objects.add_issued(issued_cert);
 
                         // add the response so it can be returned to the child
-                        responses.insert(key_id, ProvisioningResponse::Issuance(response));
+                        responses.insert(
+                            key_id,
+                            ProvisioningResponse::Issuance(response),
+                        );
                     }
                     ProvisioningRequest::Revocation(revocation_req) => {
-                        let response = RevocationResponse::from(&revocation_req);
+                        let response =
+                            RevocationResponse::from(&revocation_req);
 
                         let (rcn, key) = revocation_req.unpack();
 
@@ -487,13 +547,17 @@ impl TrustAnchorSigner {
                             )));
                         }
 
-                        // Try to revoke for this key. Return an error in case of issues.
-                        // Note.. we could make this idempotent instead. I.e. if there is no
-                        // such key, then perhaps we can just consider it revoked and call
-                        // it a day. Then again, we really do not expect that this should
-                        // happen between a krill CA and its local TA (proxy). So.. it's
-                        // most likely best to have an explicit error in this case so the
-                        // issue can be investigated.
+                        // Try to revoke for this key. Return an error in case
+                        // of issues. Note.. we could
+                        // make this idempotent instead. I.e. if there is no
+                        // such key, then perhaps we can just consider it
+                        // revoked and call
+                        // it a day. Then again, we really do not expect that
+                        // this should happen between
+                        // a krill CA and its local TA (proxy). So.. it's
+                        // most likely best to have an explicit error in this
+                        // case so the issue can be
+                        // investigated.
                         if !objects.revoke_issued(&key) {
                             return Err(Error::Custom(format!(
                                 "TA child requests revocation for unknown key '{}'",
@@ -501,7 +565,10 @@ impl TrustAnchorSigner {
                             )));
                         }
 
-                        responses.insert(key_id, ProvisioningResponse::Revocation(response));
+                        responses.insert(
+                            key_id,
+                            ProvisioningResponse::Revocation(response),
+                        );
                     }
                 }
             }
@@ -533,7 +600,9 @@ impl TrustAnchorSigner {
             response,
         };
 
-        Ok(vec![TrustAnchorSignerEvent::ProxySignerExchangeDone(exchange)])
+        Ok(vec![TrustAnchorSignerEvent::ProxySignerExchangeDone(
+            exchange,
+        )])
     }
 
     /// Get all exchanges
@@ -542,17 +611,27 @@ impl TrustAnchorSigner {
     }
 
     /// Get exchange for nonce
-    pub fn get_exchange(&self, nonce: &Nonce) -> Option<&TrustAnchorProxySignerExchange> {
-        self.exchanges.0.iter().find(|ex| &ex.request.content().nonce == nonce)
+    pub fn get_exchange(
+        &self,
+        nonce: &Nonce,
+    ) -> Option<&TrustAnchorProxySignerExchange> {
+        self.exchanges
+            .0
+            .iter()
+            .find(|ex| &ex.request.content().nonce == nonce)
     }
 
-    pub fn get_latest_exchange(&self) -> Option<&TrustAnchorProxySignerExchange> {
+    pub fn get_latest_exchange(
+        &self,
+    ) -> Option<&TrustAnchorProxySignerExchange> {
         self.exchanges.0.last()
     }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
-pub struct TrustAnchorProxySignerExchanges(Vec<TrustAnchorProxySignerExchange>);
+pub struct TrustAnchorProxySignerExchanges(
+    Vec<TrustAnchorProxySignerExchange>,
+);
 
 impl fmt::Display for TrustAnchorProxySignerExchanges {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -563,7 +642,11 @@ impl fmt::Display for TrustAnchorProxySignerExchanges {
                 f,
                 "==================================================================================="
             )?;
-            writeln!(f, "                  Session number:    {}", revision.number() - 1)?; // We don't count init mft
+            writeln!(
+                f,
+                "                  Session number:    {}",
+                revision.number() - 1
+            )?; // We don't count init mft
             writeln!(
                 f,
                 "                  Session date:      {}",
@@ -572,7 +655,9 @@ impl fmt::Display for TrustAnchorProxySignerExchanges {
             writeln!(
                 f,
                 "                  Plan next before:  {}",
-                revision.next_update().to_rfc3339_opts(SecondsFormat::Secs, false)
+                revision
+                    .next_update()
+                    .to_rfc3339_opts(SecondsFormat::Secs, false)
             )?;
             writeln!(
                 f,
@@ -583,7 +668,9 @@ impl fmt::Display for TrustAnchorProxySignerExchanges {
                 writeln!(f, "   response |               key identifier             |  child ")?;
                 writeln!(f, "   --------------------------------------------------------------")?;
 
-                for (child, response) in &exchange.response.content().child_responses {
+                for (child, response) in
+                    &exchange.response.content().child_responses
+                {
                     for (key, res) in response.iter() {
                         let res_type = match res {
                             ProvisioningResponse::Issuance(_) => "issued  ",
@@ -596,7 +683,13 @@ impl fmt::Display for TrustAnchorProxySignerExchanges {
                 writeln!(f)?;
             }
 
-            for published in exchange.response.content().objects.publish_elements().unwrap() {
+            for published in exchange
+                .response
+                .content()
+                .objects
+                .publish_elements()
+                .unwrap()
+            {
                 writeln!(f, "   {}", published.uri())?;
             }
 

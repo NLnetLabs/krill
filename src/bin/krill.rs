@@ -27,11 +27,14 @@ async fn main() {
         )
         .get_matches();
 
-    let config_file = matches.value_of("config").unwrap_or(KRILL_DEFAULT_CONFIG_FILE);
+    let config_file = matches
+        .value_of("config")
+        .unwrap_or(KRILL_DEFAULT_CONFIG_FILE);
 
     match Config::create(config_file, false) {
         Ok(config) => {
-            if let Err(e) = server::start_krill_daemon(Arc::new(config)).await {
+            if let Err(e) = server::start_krill_daemon(Arc::new(config)).await
+            {
                 error!("Krill failed to start: {}", e);
                 ::std::process::exit(1);
             }

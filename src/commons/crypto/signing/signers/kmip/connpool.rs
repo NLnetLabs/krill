@@ -1,15 +1,18 @@
 /// KMIP TLS connection pool
 ///
 /// Used to:
-///  - Avoid repeated TCP connection setup and TLS session establishment for mutiple KMIP requests made close together
-///    in time.
-///  - Handle loss of connectivity by re-creating the connection when an existing connection is considered to be
-///    "broken" at the network level.
+///  - Avoid repeated TCP connection setup and TLS session establishment
+///    for mutiple KMIP requests made close together in time.
+///  - Handle loss of connectivity by re-creating the connection when an
+///    existing connection is considered to be "broken" at the network
+///    level.
 use std::{sync::Arc, time::Duration};
 
 use kmip::client::ConnectionSettings;
 
-use crate::commons::crypto::signers::{error::SignerError, kmip::signer::KmipTlsClient};
+use crate::commons::crypto::signers::{
+    error::SignerError, kmip::signer::KmipTlsClient,
+};
 
 /// Manages KMIP TCP + TLS connection creation.
 ///
@@ -67,8 +70,11 @@ impl ConnectionManager {
 
     /// Connect using the given connection settings to a KMIP server.
     ///
-    /// This function creates a new connection to the server. The connection is NOT taken from the connection pool.
-    pub fn connect_one_off(settings: &ConnectionSettings) -> Result<KmipTlsClient, kmip::client::Error> {
+    /// This function creates a new connection to the server. The connection
+    /// is NOT taken from the connection pool.
+    pub fn connect_one_off(
+        settings: &ConnectionSettings,
+    ) -> Result<KmipTlsClient, kmip::client::Error> {
         let conn = kmip::client::tls::openssl::connect(settings)?;
         Ok(conn)
     }
@@ -79,22 +85,27 @@ impl r2d2::ManageConnection for ConnectionManager {
 
     type Error = kmip::client::Error;
 
-    /// Establishes a KMIP server connection which will be added to the connection pool.
+    /// Establishes a KMIP server connection which will be added to the
+    /// connection pool.
     fn connect(&self) -> Result<Self::Connection, Self::Error> {
         Self::connect_one_off(&self.conn_settings)
     }
 
-    /// This function is never used because the [r2d2] `test_on_check_out` flag is set to false when the connection
-    /// pool is created.
+    /// This function is never used because the [r2d2] `test_on_check_out`
+    /// flag is set to false when the connection pool is created.
     ///
     /// [r2d2]: https://crates.io/crates/r2d2/
-    fn is_valid(&self, _conn: &mut Self::Connection) -> Result<(), Self::Error> {
+    fn is_valid(
+        &self,
+        _conn: &mut Self::Connection,
+    ) -> Result<(), Self::Error> {
         unreachable!()
     }
 
     /// Quickly verify if an existing connection is broken.
     ///
-    /// Used to discard and re-create connections that encounter multiple connection related errors.
+    /// Used to discard and re-create connections that encounter multiple
+    /// connection related errors.
     fn has_broken(&self, conn: &mut Self::Connection) -> bool {
         conn.connection_error_count() > 1
     }
@@ -102,15 +113,18 @@ impl r2d2::ManageConnection for ConnectionManager {
 
 /// A Krill specific [r2d2] error logging handler.
 ///
-/// Logs connection pool related connection error messages using the format `"[<LEVEL>] Pool error: ..."` instead of
-/// the default [r2d2] `"[ERROR] [r2d2] Server error: ..."` format. Assumes that the logging framework will include the
-/// logging module context in the logged message, i.e. `xxx::kmip::xxx` and thus we don't need to mention KMIP in the
-/// logged message content.
+/// Logs connection pool related connection error messages using the format
+/// `"[<LEVEL>] Pool error: ..."` instead of
+/// the default [r2d2] `"[ERROR] [r2d2] Server error: ..."` format. Assumes
+/// that the logging framework will include the logging module context in the
+/// logged message, i.e. `xxx::kmip::xxx` and thus we don't need to mention
+/// KMIP in the logged message content.
 ///
 /// Rationale:
-///   - The use of the [r2d2] crate is an internal detail which of no use to end users consulting the logs and which we
-///     may change at any time.
-///   - Krill should be the one to determine the appropriate level to log a connection issue at, not [r2d2].
+///   - The use of the [r2d2] crate is an internal detail which of no use to
+///     end users consulting the logs and which we may change at any time.
+///   - Krill should be the one to determine the appropriate level to log a
+///     connection issue at, not [r2d2].
 #[derive(Debug)]
 struct ErrorLoggingHandler;
 

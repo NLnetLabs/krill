@@ -25,7 +25,6 @@ impl Publisher {
 }
 
 /// # Life cycle
-///
 impl Publisher {
     pub fn new(id_cert: IdCertInfo, base_uri: uri::Rsync) -> Self {
         Publisher { id_cert, base_uri }

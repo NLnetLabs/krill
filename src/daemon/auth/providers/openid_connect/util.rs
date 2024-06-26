@@ -1,35 +1,40 @@
 use openidconnect::{
     core::{
-        CoreAuthDisplay, CoreAuthPrompt, CoreClaimName, CoreClaimType, CoreClientAuthMethod, CoreErrorResponseType,
-        CoreGenderClaim, CoreGrantType, CoreJsonWebKey, CoreJsonWebKeyType, CoreJsonWebKeyUse,
-        CoreJweContentEncryptionAlgorithm, CoreJweKeyManagementAlgorithm, CoreJwsSigningAlgorithm, CoreResponseMode,
-        CoreResponseType, CoreRevocableToken, CoreRevocationErrorResponse, CoreSubjectIdentifierType,
-        CoreTokenIntrospectionResponse, CoreTokenType,
+        CoreAuthDisplay, CoreAuthPrompt, CoreClaimName, CoreClaimType,
+        CoreClientAuthMethod, CoreErrorResponseType, CoreGenderClaim,
+        CoreGrantType, CoreJsonWebKey, CoreJsonWebKeyType, CoreJsonWebKeyUse,
+        CoreJweContentEncryptionAlgorithm, CoreJweKeyManagementAlgorithm,
+        CoreJwsSigningAlgorithm, CoreResponseMode, CoreResponseType,
+        CoreRevocableToken, CoreRevocationErrorResponse,
+        CoreSubjectIdentifierType, CoreTokenIntrospectionResponse,
+        CoreTokenType,
     },
-    AdditionalClaims, AdditionalProviderMetadata, Client, ExtraTokenFields, IdTokenClaims, IdTokenFields,
-    ProviderMetadata, StandardErrorResponse, StandardTokenResponse, UserInfoClaims,
+    AdditionalClaims, AdditionalProviderMetadata, Client, ExtraTokenFields,
+    IdTokenClaims, IdTokenFields, ProviderMetadata, StandardErrorResponse,
+    StandardTokenResponse, UserInfoClaims,
 };
 
 use crate::commons::{error::Error, KrillResult};
 
 // -----------------------------------------------------------------------------
 // Swap out the openidconnect crate types EmptyAdditionalClaims and
-// EmptyExtraTokenFields with our own types which are flexible enough to handle
-// deserialization of any possible (but known in advance) claim/token fields
-// that the OpenID Connect provider might include in a response to us. Otherwise
-// the default openidconnect crate implementation drops such response fields
-// during deserialization preventing us from extracting them (e.g. to learn
-// which Krill role the identity provider logged in user should have).
+// EmptyExtraTokenFields with our own types which are flexible enough to
+// handle deserialization of any possible (but known in advance) claim/token
+// fields that the OpenID Connect provider might include in a response to us.
+// Otherwise the default openidconnect crate implementation drops such
+// response fields during deserialization preventing us from extracting them
+// (e.g. to learn which Krill role the identity provider logged in user should
+// have).
 // -----------------------------------------------------------------------------
 
 // Define additional claims that we might receive from the OpenID Connect
 // provider as an arbitrary JSON hierarchy as we cannot know at compile time
-// which claim name we should expect to look for from a given customers provider
-// rather they must tell us that via runtime configuration. If we were instead
-// to, for example, define a "role" member field of our custom additional claims
-// struct, serde_json would fail to deserialize it if the the field is not
-// present or not structured as expected. Using this approach we can inspect the
-// structure when we receive it from the provider.
+// which claim name we should expect to look for from a given customers
+// provider rather they must tell us that via runtime configuration. If we
+// were instead to, for example, define a "role" member field of our custom
+// additional claims struct, serde_json would fail to deserialize it if the
+// the field is not present or not structured as expected. Using this approach
+// we can inspect the structure when we receive it from the provider.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CustomerDefinedAdditionalClaims(serde_json::Value);
 impl AdditionalClaims for CustomerDefinedAdditionalClaims {}
@@ -66,13 +71,16 @@ pub type FlexibleClient = Client<
     CoreRevocableToken,
     CoreRevocationErrorResponse,
 >;
-pub type FlexibleIdTokenClaims = IdTokenClaims<CustomerDefinedAdditionalClaims, CoreGenderClaim>;
-pub type FlexibleUserInfoClaims = UserInfoClaims<CustomerDefinedAdditionalClaims, CoreGenderClaim>;
+pub type FlexibleIdTokenClaims =
+    IdTokenClaims<CustomerDefinedAdditionalClaims, CoreGenderClaim>;
+pub type FlexibleUserInfoClaims =
+    UserInfoClaims<CustomerDefinedAdditionalClaims, CoreGenderClaim>;
 
-// Define additional metadata fields that we hope to find in the OpenID Connect
-// Discovery response from the .well-known/openid-configuration provider
-// endpoint. These fields are optional if we cannot be sure that the provider
-// will set them in its response, otherwise response deserialization would fail.
+// Define additional metadata fields that we hope to find in the OpenID
+// Connect Discovery response from the .well-known/openid-configuration
+// provider endpoint. These fields are optional if we cannot be sure that the
+// provider will set them in its response, otherwise response deserialization
+// would fail.
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct DesiredAdditionalProviderMetadata {
     pub end_session_endpoint: Option<String>,
@@ -81,8 +89,8 @@ pub struct DesiredAdditionalProviderMetadata {
 impl AdditionalProviderMetadata for DesiredAdditionalProviderMetadata {}
 
 // Define a type which we can use to instruct the openidconnect Rust crate to
-// expect to receive and deserialize the additional metadata fields that we just
-// defined.
+// expect to receive and deserialize the additional metadata fields that we
+// just defined.
 pub type WantedMeta = ProviderMetadata<
     DesiredAdditionalProviderMetadata,
     CoreAuthDisplay,
@@ -163,11 +171,17 @@ impl<T> LogOrFail for Option<T> {
 
         match self {
             Some(_) => {
-                debug!("OpenID Connect provider has capability {}", prop_val_text);
+                debug!(
+                    "OpenID Connect provider has capability {}",
+                    prop_val_text
+                );
                 Ok(())
             }
             None => {
-                let err = format!("OpenID Connect provider lacks capability {}", prop_val_text);
+                let err = format!(
+                    "OpenID Connect provider lacks capability {}",
+                    prop_val_text
+                );
                 error!("{}", err);
                 Err(Error::Custom(err))
             }

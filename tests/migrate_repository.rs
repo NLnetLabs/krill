@@ -1,5 +1,4 @@
 //! Perform functional tests on a Krill instance, using the API
-//!
 use std::{path::Path, str::FromStr, time::Duration};
 
 use hyper::StatusCode;
@@ -21,27 +20,58 @@ use krill::{
 async fn migrate_repository() {
     let cleanup_logging = init_logging();
 
-    info("##################################################################");
-    info("#                                                                #");
-    info("#                --= Test Migrating a Repository  =--            #");
-    info("#                                                                #");
-    info("##################################################################");
+    info(
+        "##################################################################",
+    );
+    info(
+        "#                                                                #",
+    );
+    info(
+        "#                --= Test Migrating a Repository  =--            #",
+    );
+    info(
+        "#                                                                #",
+    );
+    info(
+        "##################################################################",
+    );
 
-    info("##################################################################");
-    info("#                                                                #");
-    info("#                      Start Krill                               #");
-    info("#                                                                #");
-    info("##################################################################");
+    info(
+        "##################################################################",
+    );
+    info(
+        "#                                                                #",
+    );
+    info(
+        "#                      Start Krill                               #",
+    );
+    info(
+        "#                                                                #",
+    );
+    info(
+        "##################################################################",
+    );
     info("");
-    // Use a 5 second RRDP update interval for the Krill server, so that we can also
-    // test here that the re-scheduling of delayed RRDP deltas works.
+    // Use a 5 second RRDP update interval for the Krill server, so that we
+    // can also test here that the re-scheduling of delayed RRDP deltas
+    // works.
     let cleanup_krill_dir = start_krill_testbed_with_rrdp_interval(5).await;
 
-    info("##################################################################");
-    info("#                                                                #");
-    info("#               Start Secondary Publication Server               #");
-    info("#                                                                #");
-    info("##################################################################");
+    info(
+        "##################################################################",
+    );
+    info(
+        "#                                                                #",
+    );
+    info(
+        "#               Start Secondary Publication Server               #",
+    );
+    info(
+        "#                                                                #",
+    );
+    info(
+        "##################################################################",
+    );
     info("");
     let cleanup_pubd_dir = start_krill_pubd(5).await;
 
@@ -49,17 +79,32 @@ async fn migrate_repository() {
 
     let ca1 = ca_handle("CA1");
     let ca1_res = ipv4_resources("10.0.0.0/16");
-    let ca1_route_definition = RoaPayload::from_str("10.0.0.0/16-16 => 65000").unwrap();
+    let ca1_route_definition =
+        RoaPayload::from_str("10.0.0.0/16-16 => 65000").unwrap();
 
     let rcn_0 = ResourceClassName::from(0);
 
-    info("##################################################################");
-    info("#                                                                #");
-    info("# Wait for the *testbed* CA to get its certificate, this means   #");
-    info("# that all CAs which are set up as part of krill_start under the #");
-    info("# testbed config have been set up.                               #");
-    info("#                                                                #");
-    info("##################################################################");
+    info(
+        "##################################################################",
+    );
+    info(
+        "#                                                                #",
+    );
+    info(
+        "# Wait for the *testbed* CA to get its certificate, this means   #",
+    );
+    info(
+        "# that all CAs which are set up as part of krill_start under the #",
+    );
+    info(
+        "# testbed config have been set up.                               #",
+    );
+    info(
+        "#                                                                #",
+    );
+    info(
+        "##################################################################",
+    );
     info("");
     assert!(ca_contains_resources(&testbed, &ResourceSet::all()).await);
 
@@ -113,13 +158,23 @@ async fn migrate_repository() {
         info("##################################################################");
         info("");
         let mut expected_files = expected_mft_and_crl(&ca1, &rcn_0).await;
-        expected_files.push(ObjectName::from(&ca1_route_definition).to_string());
+        expected_files
+            .push(ObjectName::from(&ca1_route_definition).to_string());
 
-        assert!(will_publish_embedded("CA1 should publish the certificate for CA3", &ca1, &expected_files).await);
+        assert!(
+            will_publish_embedded(
+                "CA1 should publish the certificate for CA3",
+                &ca1,
+                &expected_files
+            )
+            .await
+        );
     }
 
-    // Verify that actual RRDP operation is roughly working as expected (without writing an entire RPKI
-    // client into our test suite, integration tests are better suited for testing with a full RPKI client).
+    // Verify that actual RRDP operation is roughly working as expected
+    // (without writing an entire RPKI client into our test suite,
+    // integration tests are better suited for testing with a full RPKI
+    // client).
     {
         info("##################################################################");
         info("#                                                                #");
@@ -128,29 +183,51 @@ async fn migrate_repository() {
         info("##################################################################");
         info("");
 
-        // Verify that requesting rrdp/ on a publishing instance of Krill results in a 404 Not Found error rather than
-        // a panic.
-        assert_http_status(krill_anon_http_get("rrdp/").await, StatusCode::NOT_FOUND);
+        // Verify that requesting rrdp/ on a publishing instance of Krill
+        // results in a 404 Not Found error rather than a panic.
+        assert_http_status(
+            krill_anon_http_get("rrdp/").await,
+            StatusCode::NOT_FOUND,
+        );
 
-        // Verify that requesting garbage file and directory URLs results in an error rather than a panic.
-        assert_http_status(krill_anon_http_get("rrdp/i/dont/exist").await, StatusCode::NOT_FOUND);
-        assert_http_status(krill_anon_http_get("rrdp/i/dont/exist/").await, StatusCode::NOT_FOUND);
+        // Verify that requesting garbage file and directory URLs results in
+        // an error rather than a panic.
+        assert_http_status(
+            krill_anon_http_get("rrdp/i/dont/exist").await,
+            StatusCode::NOT_FOUND,
+        );
+        assert_http_status(
+            krill_anon_http_get("rrdp/i/dont/exist/").await,
+            StatusCode::NOT_FOUND,
+        );
 
         // Verify that we can fetch the notification XML.
-        let notification_xml = krill_anon_http_get("rrdp/notification.xml").await.unwrap();
+        let notification_xml =
+            krill_anon_http_get("rrdp/notification.xml").await.unwrap();
         assert!(notification_xml.starts_with("<notification"));
 
         // Verify that we can fetch the snapshot XML.
         let re = Regex::new(r#"<snapshot uri="(?P<uri>[^"]+)".+/>"#).unwrap();
-        let snapshot_uri = re.captures(&notification_xml).unwrap().name("uri").unwrap().as_str();
-        let snapshot_xml = httpclient::get_text(snapshot_uri, None).await.unwrap();
+        let snapshot_uri = re
+            .captures(&notification_xml)
+            .unwrap()
+            .name("uri")
+            .unwrap()
+            .as_str();
+        let snapshot_xml =
+            httpclient::get_text(snapshot_uri, None).await.unwrap();
         assert!(snapshot_xml.starts_with("<snapshot"));
 
-        // Verify that attempting to fetch a valid subdirectory results in an error rather than a panic.
+        // Verify that attempting to fetch a valid subdirectory results in an
+        // error rather than a panic.
         let mut url = urlparse::urlparse(snapshot_uri);
-        url.path = Path::new(&url.path).parent().unwrap().display().to_string();
+        url.path =
+            Path::new(&url.path).parent().unwrap().display().to_string();
         let url = urlparse::urlunparse(url);
-        assert_http_status(httpclient::get_text(&url, None).await, StatusCode::NOT_FOUND);
+        assert_http_status(
+            httpclient::get_text(&url, None).await,
+            StatusCode::NOT_FOUND,
+        );
         assert_http_status(
             httpclient::get_text(&format!("{}/", url), None).await,
             StatusCode::NOT_FOUND,
@@ -183,20 +260,23 @@ async fn migrate_repository() {
         dedicated_repo_add_publisher(publisher_request).await;
         let response = dedicated_repository_response(&ca1).await;
 
-        // Wait a tiny bit.. when we add a new repo we check that it's available or
-        // it will be rejected.
+        // Wait a tiny bit.. when we add a new repo we check that it's
+        // available or it will be rejected.
         sleep(Duration::from_secs(1)).await;
 
         // Update CA1 to use dedicated repo
         repo_update(&ca1, response).await;
 
-        // This should result in a key roll and content published in both repos
+        // This should result in a key roll and content published in both
+        // repos
         assert!(state_becomes_new_key(&ca1).await);
 
-        // Expect that CA1 still publishes two current keys in the embedded repo
+        // Expect that CA1 still publishes two current keys in the embedded
+        // repo
         {
             let mut expected_files = expected_mft_and_crl(&ca1, &rcn_0).await;
-            expected_files.push(ObjectName::from(&ca1_route_definition).to_string());
+            expected_files
+                .push(ObjectName::from(&ca1_route_definition).to_string());
 
             assert!(
                 will_publish_embedded(
@@ -210,7 +290,8 @@ async fn migrate_repository() {
 
         // Expect that CA1 publishes two new keys in the dedicated repo
         {
-            let expected_files = expected_new_key_mft_and_crl(&ca1, &rcn_0).await;
+            let expected_files =
+                expected_new_key_mft_and_crl(&ca1, &rcn_0).await;
             assert!(
                 will_publish_dedicated(
                     "CA1 should publish the MFT and CRL for both new keys in the dedicated repo",
@@ -221,14 +302,16 @@ async fn migrate_repository() {
             );
         }
 
-        // Complete the keyroll, this should remove the content in the embedded repo
+        // Complete the keyroll, this should remove the content in the
+        // embedded repo
         ca_roll_activate(&ca1).await;
         assert!(state_becomes_active(&ca1).await);
 
         // Expect that CA1 publishes two current keys in the dedicated repo
         {
             let mut expected_files = expected_mft_and_crl(&ca1, &rcn_0).await;
-            expected_files.push(ObjectName::from(&ca1_route_definition).to_string());
+            expected_files
+                .push(ObjectName::from(&ca1_route_definition).to_string());
 
             assert!(
                 will_publish_dedicated(

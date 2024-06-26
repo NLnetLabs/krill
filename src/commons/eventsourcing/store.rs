@@ -14,8 +14,9 @@ use crate::commons::{
     api::{CommandHistory, CommandHistoryCriteria, CommandHistoryRecord},
     error::KrillIoError,
     eventsourcing::{
-        cmd::Command, segment, Aggregate, Key, KeyValueError, KeyValueStore, PostSaveEventListener,
-        PreSaveEventListener, Scope, Segment, SegmentExt, StoredCommand, StoredCommandBuilder,
+        cmd::Command, segment, Aggregate, Key, KeyValueError, KeyValueStore,
+        PostSaveEventListener, PreSaveEventListener, Scope, Segment,
+        SegmentExt, StoredCommand, StoredCommandBuilder,
     },
 };
 
@@ -25,8 +26,14 @@ pub type StoreResult<T> = Result<T, AggregateStoreError>;
 
 //------------ Storable ------------------------------------------------------
 
-pub trait Storable: Clone + Serialize + DeserializeOwned + Sized + 'static {}
-impl<T: Clone + Serialize + DeserializeOwned + Sized + 'static> Storable for T {}
+pub trait Storable:
+    Clone + Serialize + DeserializeOwned + Sized + 'static
+{
+}
+impl<T: Clone + Serialize + DeserializeOwned + Sized + 'static> Storable
+    for T
+{
+}
 
 //------------ AggregateStore ------------------------------------------------
 
@@ -34,16 +41,20 @@ impl<T: Clone + Serialize + DeserializeOwned + Sized + 'static> Storable for T {
 pub struct AggregateStore<A: Aggregate> {
     kv: KeyValueStore,
     cache: RwLock<HashMap<MyHandle, Arc<A>>>,
-    history_cache: Option<Mutex<HashMap<MyHandle, Vec<CommandHistoryRecord>>>>,
+    history_cache:
+        Option<Mutex<HashMap<MyHandle, Vec<CommandHistoryRecord>>>>,
     pre_save_listeners: Vec<Arc<dyn PreSaveEventListener<A>>>,
     post_save_listeners: Vec<Arc<dyn PostSaveEventListener<A>>>,
 }
 
 /// # Starting up
-///
 impl<A: Aggregate> AggregateStore<A> {
     /// Creates an AggregateStore using the given storage url
-    pub fn create(storage_uri: &Url, namespace: &Namespace, use_history_cache: bool) -> StoreResult<Self> {
+    pub fn create(
+        storage_uri: &Url,
+        namespace: &Namespace,
+        use_history_cache: bool,
+    ) -> StoreResult<Self> {
         let kv = KeyValueStore::create(storage_uri, namespace)?;
         Self::create_from_kv(kv, use_history_cache)
     }
@@ -54,11 +65,15 @@ impl<A: Aggregate> AggregateStore<A> {
         name_space: &Namespace,
         use_history_cache: bool,
     ) -> StoreResult<Self> {
-        let kv = KeyValueStore::create_upgrade_store(storage_uri, name_space)?;
+        let kv =
+            KeyValueStore::create_upgrade_store(storage_uri, name_space)?;
         Self::create_from_kv(kv, use_history_cache)
     }
 
-    fn create_from_kv(kv: KeyValueStore, use_history_cache: bool) -> StoreResult<Self> {
+    fn create_from_kv(
+        kv: KeyValueStore,
+        use_history_cache: bool,
+    ) -> StoreResult<Self> {
         let cache = RwLock::new(HashMap::new());
         let history_cache = if !use_history_cache {
             None
@@ -79,7 +94,8 @@ impl<A: Aggregate> AggregateStore<A> {
         Ok(store)
     }
 
-    /// Warms up the cache, to be used after startup. Will fail if any aggregates fail to load.
+    /// Warms up the cache, to be used after startup. Will fail if any
+    /// aggregates fail to load.
     pub fn warm(&self) -> StoreResult<()> {
         for handle in self.list()? {
             self.warm_aggregate(&handle)?;
@@ -92,25 +108,32 @@ impl<A: Aggregate> AggregateStore<A> {
     pub fn warm_aggregate(&self, handle: &MyHandle) -> StoreResult<()> {
         info!("Warming the cache for: '{}'", handle);
 
-        self.get_latest(handle)
-            .map_err(|e| AggregateStoreError::WarmupFailed(handle.clone(), e.to_string()))?;
+        self.get_latest(handle).map_err(|e| {
+            AggregateStoreError::WarmupFailed(handle.clone(), e.to_string())
+        })?;
 
         Ok(())
     }
 
     /// Adds a listener that will receive all events before they are stored.
-    pub fn add_pre_save_listener<L: PreSaveEventListener<A>>(&mut self, sync_listener: Arc<L>) {
+    pub fn add_pre_save_listener<L: PreSaveEventListener<A>>(
+        &mut self,
+        sync_listener: Arc<L>,
+    ) {
         self.pre_save_listeners.push(sync_listener);
     }
 
-    /// Adds a listener that will receive a reference to all events after they are stored.
-    pub fn add_post_save_listener<L: PostSaveEventListener<A>>(&mut self, listener: Arc<L>) {
+    /// Adds a listener that will receive a reference to all events after they
+    /// are stored.
+    pub fn add_post_save_listener<L: PostSaveEventListener<A>>(
+        &mut self,
+        listener: Arc<L>,
+    ) {
         self.post_save_listeners.push(listener);
     }
 }
 
 /// # Manage Aggregates
-///
 impl<A: Aggregate> AggregateStore<A>
 where
     A::Error: From<AggregateStoreError>,
@@ -131,8 +154,12 @@ where
         Ok(())
     }
 
-    /// Gets the latest version for the given aggregate and updates the snapshot.
-    pub fn save_snapshot(&self, handle: &MyHandle) -> Result<Arc<A>, A::Error> {
+    /// Gets the latest version for the given aggregate and updates the
+    /// snapshot.
+    pub fn save_snapshot(
+        &self,
+        handle: &MyHandle,
+    ) -> Result<Arc<A>, A::Error> {
         self.execute_opt_command(handle, None, true)
     }
 
@@ -148,22 +175,28 @@ where
 
                 if kv.has(&init_command_key)? {
                     // This is no good.. this aggregate already exists.
-                    Ok(Err(A::Error::from(AggregateStoreError::DuplicateAggregate(handle))))
+                    Ok(Err(A::Error::from(
+                        AggregateStoreError::DuplicateAggregate(handle),
+                    )))
                 } else {
-                    let processed_command_builder = StoredCommandBuilder::<A>::new(
-                        cmd.actor().to_string(),
-                        Time::now(),
-                        handle.clone(),
-                        0,
-                        cmd.store(),
-                    );
+                    let processed_command_builder =
+                        StoredCommandBuilder::<A>::new(
+                            cmd.actor().to_string(),
+                            Time::now(),
+                            handle.clone(),
+                            0,
+                            cmd.store(),
+                        );
 
                     match A::process_init_command(cmd.clone()) {
                         Ok(init_event) => {
-                            let aggregate = A::init(handle.clone(), init_event.clone());
-                            let processed_command = processed_command_builder.finish_with_init_event(init_event);
+                            let aggregate =
+                                A::init(handle.clone(), init_event.clone());
+                            let processed_command = processed_command_builder
+                                .finish_with_init_event(init_event);
 
-                            let json = serde_json::to_value(&processed_command)?;
+                            let json =
+                                serde_json::to_value(&processed_command)?;
                             kv.store(&init_command_key, json)?;
 
                             let arc = Arc::new(aggregate);
@@ -176,10 +209,13 @@ where
                     }
                 }
             })
-            .map_err(|e| A::Error::from(AggregateStoreError::KeyStoreError(e)))?
+            .map_err(|e| {
+                A::Error::from(AggregateStoreError::KeyStoreError(e))
+            })?
     }
 
-    /// Send a command to the latest aggregate referenced by the handle in the command.
+    /// Send a command to the latest aggregate referenced by the handle in the
+    /// command.
     ///
     /// This will:
     /// - Wait for a lock for the latest aggregate for this command.
@@ -427,7 +463,6 @@ where
 }
 
 /// # Manage Commands
-///
 impl<A: Aggregate> AggregateStore<A>
 where
     A::Error: From<AggregateStoreError>,
@@ -507,12 +542,18 @@ where
     }
 
     /// Get the command for this key, if it exists
-    pub fn get_command(&self, id: &MyHandle, version: u64) -> Result<StoredCommand<A>, AggregateStoreError> {
+    pub fn get_command(
+        &self,
+        id: &MyHandle,
+        version: u64,
+    ) -> Result<StoredCommand<A>, AggregateStoreError> {
         let key = Self::key_for_command(id, version);
 
         match self.kv.get(&key)? {
             Some(cmd) => Ok(cmd),
-            None => Err(AggregateStoreError::CommandNotFound(id.clone(), version)),
+            None => {
+                Err(AggregateStoreError::CommandNotFound(id.clone(), version))
+            }
         }
     }
 }
@@ -535,13 +576,14 @@ where
 }
 
 /// # Manage values in the KeyValue store
-///
 impl<A: Aggregate> AggregateStore<A>
 where
     A::Error: From<AggregateStoreError>,
 {
     fn scope_for_agg(agg: &MyHandle) -> Scope {
-        Scope::from_segment(Segment::parse_lossy(agg.as_str())) // agg should always be a valid Segment
+        Scope::from_segment(Segment::parse_lossy(agg.as_str())) // agg should
+                                                                // always be a
+                                                                // valid Segment
     }
 
     fn key_for_snapshot(agg: &MyHandle) -> Key {
@@ -551,7 +593,7 @@ where
     fn key_for_command(agg: &MyHandle, version: u64) -> Key {
         Key::new_scoped(
             Self::scope_for_agg(agg),
-            Segment::parse(&format!("command-{}.json", version)).unwrap(), // cannot panic as a u64 cannot contain a Scope::SEPARATOR
+            Segment::parse(&format!("command-{}.json", version)).unwrap(), /* cannot panic as a u64 cannot contain a Scope::SEPARATOR */
         )
     }
 
@@ -569,7 +611,10 @@ where
     }
 
     /// Drop an aggregate, completely. Handle with care!
-    pub fn drop_aggregate(&self, id: &MyHandle) -> Result<(), AggregateStoreError> {
+    pub fn drop_aggregate(
+        &self,
+        id: &MyHandle,
+    ) -> Result<(), AggregateStoreError> {
         let scope = Self::scope_for_agg(id);
 
         self.kv.execute(&scope, |kv| kv.delete_scope(&scope))?;
@@ -603,18 +648,36 @@ impl fmt::Display for AggregateStoreError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             AggregateStoreError::IoError(e) => e.fmt(f),
-            AggregateStoreError::KeyStoreError(e) => write!(f, "KeyStore Error: {}", e),
-            AggregateStoreError::NotInitialized => write!(f, "This aggregate store is not initialized"),
-            AggregateStoreError::UnknownAggregate(handle) => write!(f, "unknown entity: {}", handle),
-            AggregateStoreError::DuplicateAggregate(handle) => write!(f, "duplicate entity: {}", handle),
-            AggregateStoreError::InitError(handle) => write!(f, "Command 0 for '{}' has no init", handle),
-            AggregateStoreError::ReplayError(handle, version, fail_version) => write!(
+            AggregateStoreError::KeyStoreError(e) => {
+                write!(f, "KeyStore Error: {}", e)
+            }
+            AggregateStoreError::NotInitialized => {
+                write!(f, "This aggregate store is not initialized")
+            }
+            AggregateStoreError::UnknownAggregate(handle) => {
+                write!(f, "unknown entity: {}", handle)
+            }
+            AggregateStoreError::DuplicateAggregate(handle) => {
+                write!(f, "duplicate entity: {}", handle)
+            }
+            AggregateStoreError::InitError(handle) => {
+                write!(f, "Command 0 for '{}' has no init", handle)
+            }
+            AggregateStoreError::ReplayError(
+                handle,
+                version,
+                fail_version,
+            ) => write!(
                 f,
                 "Event for '{}' version '{}' had version '{}'",
                 handle, version, fail_version
             ),
             AggregateStoreError::ConcurrentModification(handle) => {
-                write!(f, "concurrent modification attempt for entity: '{}'", handle)
+                write!(
+                    f,
+                    "concurrent modification attempt for entity: '{}'",
+                    handle
+                )
             }
             AggregateStoreError::UnknownCommand(handle, version) => write!(
                 f,
@@ -630,10 +693,18 @@ impl fmt::Display for AggregateStoreError {
                 handle, e
             ),
             AggregateStoreError::CommandCorrupt(handle, key) => {
-                write!(f, "StoredCommand '{}' for '{}' was corrupt", handle, key)
+                write!(
+                    f,
+                    "StoredCommand '{}' for '{}' was corrupt",
+                    handle, key
+                )
             }
             AggregateStoreError::CommandNotFound(handle, key) => {
-                write!(f, "StoredCommand '{}' for '{}' cannot be found", handle, key)
+                write!(
+                    f,
+                    "StoredCommand '{}' for '{}' cannot be found",
+                    handle, key
+                )
             }
         }
     }

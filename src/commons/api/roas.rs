@@ -3,7 +3,9 @@ use std::{cmp::Ordering, fmt, net::IpAddr, ops::Deref, str::FromStr};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 use rpki::repository::{
-    resources::{AsBlocks, Asn, IpBlocks, IpBlocksBuilder, Prefix, ResourceSet},
+    resources::{
+        AsBlocks, Asn, IpBlocks, IpBlocksBuilder, Prefix, ResourceSet,
+    },
     roa::RoaIpAddress,
 };
 
@@ -46,16 +48,20 @@ impl FromStr for RoaAggregateKey {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut parts = s.split('-');
 
-        let asn_part = parts.next().ok_or_else(|| RoaAggregateKeyFmtError::string(s))?;
+        let asn_part = parts
+            .next()
+            .ok_or_else(|| RoaAggregateKeyFmtError::string(s))?;
 
         if !asn_part.starts_with("AS") || asn_part.len() < 3 {
             return Err(RoaAggregateKeyFmtError::string(s));
         }
 
-        let asn = AsNumber::from_str(&asn_part[2..]).map_err(|_| RoaAggregateKeyFmtError::string(s))?;
+        let asn = AsNumber::from_str(&asn_part[2..])
+            .map_err(|_| RoaAggregateKeyFmtError::string(s))?;
 
         let group = if let Some(group) = parts.next() {
-            let group = u32::from_str(group).map_err(|_| RoaAggregateKeyFmtError::string(s))?;
+            let group = u32::from_str(group)
+                .map_err(|_| RoaAggregateKeyFmtError::string(s))?;
             Some(group)
         } else {
             None
@@ -160,7 +166,11 @@ pub struct RoaPayload {
 }
 
 impl RoaPayload {
-    pub fn new(asn: AsNumber, prefix: TypedPrefix, max_length: Option<u8>) -> Self {
+    pub fn new(
+        asn: AsNumber,
+        prefix: TypedPrefix,
+        max_length: Option<u8>,
+    ) -> Self {
         RoaPayload {
             asn,
             prefix,
@@ -215,8 +225,12 @@ impl RoaPayload {
     pub fn max_length_valid(&self) -> bool {
         if let Some(max_length) = self.max_length {
             match self.prefix {
-                TypedPrefix::V4(_) => max_length >= self.prefix.addr_len() && max_length <= 32,
-                TypedPrefix::V6(_) => max_length >= self.prefix.addr_len() && max_length <= 128,
+                TypedPrefix::V4(_) => {
+                    max_length >= self.prefix.addr_len() && max_length <= 32
+                }
+                TypedPrefix::V6(_) => {
+                    max_length >= self.prefix.addr_len() && max_length <= 128
+                }
             }
         } else {
             true
@@ -232,7 +246,8 @@ impl RoaPayload {
 
     /// Returns `true` if this is an AS0 definition which overlaps the other.
     pub fn overlaps(&self, other: &RoaPayload) -> bool {
-        self.prefix.matching_or_less_specific(&other.prefix) || other.prefix.matching_or_less_specific(&self.prefix)
+        self.prefix.matching_or_less_specific(&other.prefix)
+            || other.prefix.matching_or_less_specific(&self.prefix)
     }
 }
 
@@ -243,18 +258,25 @@ impl FromStr for RoaPayload {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut parts = s.split("=>");
 
-        let prefix_part = parts.next().ok_or_else(|| AuthorizationFmtError::auth(s))?;
+        let prefix_part =
+            parts.next().ok_or_else(|| AuthorizationFmtError::auth(s))?;
         let mut prefix_parts = prefix_part.split('-');
-        let prefix_str = prefix_parts.next().ok_or_else(|| AuthorizationFmtError::auth(s))?;
+        let prefix_str = prefix_parts
+            .next()
+            .ok_or_else(|| AuthorizationFmtError::auth(s))?;
 
         let prefix = TypedPrefix::from_str(prefix_str.trim())?;
 
         let max_length = match prefix_parts.next() {
             None => None,
-            Some(length_str) => Some(u8::from_str(length_str.trim()).map_err(|_| AuthorizationFmtError::auth(s))?),
+            Some(length_str) => Some(
+                u8::from_str(length_str.trim())
+                    .map_err(|_| AuthorizationFmtError::auth(s))?,
+            ),
         };
 
-        let asn_str = parts.next().ok_or_else(|| AuthorizationFmtError::auth(s))?;
+        let asn_str =
+            parts.next().ok_or_else(|| AuthorizationFmtError::auth(s))?;
         if parts.next().is_some() {
             return Err(AuthorizationFmtError::auth(s));
         }
@@ -278,7 +300,9 @@ impl fmt::Display for RoaPayload {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.max_length {
             None => write!(f, "{} => {}", self.prefix, self.asn),
-            Some(length) => write!(f, "{}-{} => {}", self.prefix, length, self.asn),
+            Some(length) => {
+                write!(f, "{}-{} => {}", self.prefix, length, self.asn)
+            }
         }
     }
 }
@@ -288,7 +312,9 @@ impl Ord for RoaPayload {
         let mut ordering = self.prefix.cmp(&other.prefix);
 
         if ordering == Ordering::Equal {
-            ordering = self.effective_max_length().cmp(&other.effective_max_length());
+            ordering = self
+                .effective_max_length()
+                .cmp(&other.effective_max_length());
         }
 
         if ordering == Ordering::Equal {
@@ -320,9 +346,9 @@ impl AsRef<TypedPrefix> for RoaPayload {
 /// It includes the actual ROA payload that needs be authorized on an RFC 6482
 /// ROA object, as well as other information that is only visible to the Krill
 /// users - like the optional comment field, which can be used to store useful
-/// reminders of the purpose of this configuration. And in future perhaps other
-/// things such as tags used for classification/monitoring/bpp analysis could
-/// be added.
+/// reminders of the purpose of this configuration. And in future perhaps
+/// other things such as tags used for classification/monitoring/bpp analysis
+/// could be added.
 ///
 /// Note that the [`ConfiguredRoa`] type defines an *existing* configured ROA.
 /// Existing ROAs may contain other information that the Krill system is
@@ -337,8 +363,8 @@ pub struct RoaConfiguration {
     // I.e:
     // - The API can still accept the 'old' style JSON without comments
     // - We do not need to do data migrations on upgrade
-    // - The query API will include an extra field ("comment"), but
-    //   most API users will ignore additional fields.
+    // - The query API will include an extra field ("comment"), but most API
+    //   users will ignore additional fields.
     #[serde(flatten)]
     payload: RoaPayload,
     #[serde(default)] // missing is same as no comment
@@ -388,7 +414,8 @@ impl FromStr for RoaConfiguration {
     // "192.168.0.0/16 => 64496 # my nice ROA"
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut parts = s.splitn(2, '#');
-        let payload_part = parts.next().ok_or_else(|| AuthorizationFmtError::auth(s))?;
+        let payload_part =
+            parts.next().ok_or_else(|| AuthorizationFmtError::auth(s))?;
 
         let payload = RoaPayload::from_str(payload_part)?;
         let comment = parts.next().map(|s| s.trim().to_string());
@@ -411,7 +438,10 @@ impl PartialOrd for RoaConfiguration {
 
 impl From<RoaPayload> for RoaConfiguration {
     fn from(payload: RoaPayload) -> Self {
-        RoaConfiguration { payload, comment: None }
+        RoaConfiguration {
+            payload,
+            comment: None,
+        }
     }
 }
 
@@ -431,7 +461,10 @@ pub struct ConfiguredRoa {
 }
 
 impl ConfiguredRoa {
-    pub fn new(roa_configuration: RoaConfiguration, roa_objects: Vec<RoaInfo>) -> Self {
+    pub fn new(
+        roa_configuration: RoaConfiguration,
+        roa_objects: Vec<RoaInfo>,
+    ) -> Self {
         ConfiguredRoa {
             roa_configuration,
             roa_objects,
@@ -535,14 +568,25 @@ impl RoaConfigurationUpdates {
         self.added.is_empty() && self.removed.is_empty()
     }
 
-    pub fn new(added: Vec<RoaConfiguration>, removed: Vec<RoaPayload>) -> Self {
+    pub fn new(
+        added: Vec<RoaConfiguration>,
+        removed: Vec<RoaPayload>,
+    ) -> Self {
         RoaConfigurationUpdates { added, removed }
     }
 
     /// Ensures that an explicit (canonical) max length is used.
     pub fn into_explicit_max_length(self) -> Self {
-        let added = self.added.into_iter().map(|a| a.into_explicit_max_length()).collect();
-        let removed = self.removed.into_iter().map(|r| r.into_explicit_max_length()).collect();
+        let added = self
+            .added
+            .into_iter()
+            .map(|a| a.into_explicit_max_length())
+            .collect();
+        let removed = self
+            .removed
+            .into_iter()
+            .map(|r| r.into_explicit_max_length())
+            .collect();
 
         RoaConfigurationUpdates { added, removed }
     }
@@ -551,7 +595,8 @@ impl RoaConfigurationUpdates {
     pub fn affected_prefixes(&self) -> ResourceSet {
         let mut resources = ResourceSet::default();
         for roa_config in &self.added {
-            resources = resources.union(&roa_config.payload().prefix().into());
+            resources =
+                resources.union(&roa_config.payload().prefix().into());
         }
         for roa_payload in &self.removed {
             resources = resources.union(&roa_payload.prefix().into());
@@ -675,11 +720,13 @@ impl FromStr for TypedPrefix {
     fn from_str(prefix: &str) -> Result<Self, Self::Err> {
         if prefix.contains('.') {
             Ok(TypedPrefix::V4(Ipv4Prefix(
-                Prefix::from_v4_str(prefix.trim()).map_err(|_| AuthorizationFmtError::pfx(prefix))?,
+                Prefix::from_v4_str(prefix.trim())
+                    .map_err(|_| AuthorizationFmtError::pfx(prefix))?,
             )))
         } else {
             Ok(TypedPrefix::V6(Ipv6Prefix(
-                Prefix::from_v6_str(prefix.trim()).map_err(|_| AuthorizationFmtError::pfx(prefix))?,
+                Prefix::from_v6_str(prefix.trim())
+                    .map_err(|_| AuthorizationFmtError::pfx(prefix))?,
             )))
         }
     }
@@ -760,14 +807,22 @@ impl From<TypedPrefix> for ResourceSet {
                 builder.push(v4.0);
                 let blocks = builder.finalize();
 
-                ResourceSet::new(AsBlocks::empty(), blocks.into(), IpBlocks::empty().into())
+                ResourceSet::new(
+                    AsBlocks::empty(),
+                    blocks.into(),
+                    IpBlocks::empty().into(),
+                )
             }
             TypedPrefix::V6(v6) => {
                 let mut builder = IpBlocksBuilder::new();
                 builder.push(v6.0);
                 let blocks = builder.finalize();
 
-                ResourceSet::new(AsBlocks::empty(), IpBlocks::empty().into(), blocks.into())
+                ResourceSet::new(
+                    AsBlocks::empty(),
+                    IpBlocks::empty().into(),
+                    blocks.into(),
+                )
             }
         }
     }
@@ -843,7 +898,8 @@ impl FromStr for AsNumber {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s = s.trim();
-        let number = u32::from_str(s).map_err(|_| AuthorizationFmtError::asn(s))?;
+        let number =
+            u32::from_str(s).map_err(|_| AuthorizationFmtError::asn(s))?;
         Ok(AsNumber(number))
     }
 }
@@ -885,10 +941,18 @@ pub enum AuthorizationFmtError {
 impl fmt::Display for AuthorizationFmtError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            AuthorizationFmtError::Pfx(s) => write!(f, "Invalid prefix string: {}", s),
-            AuthorizationFmtError::Asn(s) => write!(f, "Invalid asn in string: {}", s),
-            AuthorizationFmtError::Auth(s) => write!(f, "Invalid authorization string: {}", s),
-            AuthorizationFmtError::Delta(s) => write!(f, "Invalid authorization delta string: {}", s),
+            AuthorizationFmtError::Pfx(s) => {
+                write!(f, "Invalid prefix string: {}", s)
+            }
+            AuthorizationFmtError::Asn(s) => {
+                write!(f, "Invalid asn in string: {}", s)
+            }
+            AuthorizationFmtError::Auth(s) => {
+                write!(f, "Invalid authorization string: {}", s)
+            }
+            AuthorizationFmtError::Delta(s) => {
+                write!(f, "Invalid authorization delta string: {}", s)
+            }
         }
     }
 }
@@ -943,7 +1007,8 @@ mod tests {
         let parsed = RoaConfigurationUpdates::from_str(delta).unwrap();
         assert_eq!(expected, parsed);
 
-        let re_parsed = RoaConfigurationUpdates::from_str(&parsed.to_string()).unwrap();
+        let re_parsed =
+            RoaConfigurationUpdates::from_str(&parsed.to_string()).unwrap();
         assert_eq!(parsed, re_parsed);
     }
 
@@ -962,7 +1027,8 @@ mod tests {
 
         let def = roa_payload("192.168.0.0/16-24 => 64496");
         let json = serde_json::to_string(&def).unwrap();
-        let expected = "{\"asn\":64496,\"prefix\":\"192.168.0.0/16\",\"max_length\":24}";
+        let expected =
+            "{\"asn\":64496,\"prefix\":\"192.168.0.0/16\",\"max_length\":24}";
         assert_eq!(json, expected);
     }
 
@@ -978,7 +1044,9 @@ mod tests {
 
         parse_ser_de_print_configuration("192.168.0.0/16 => 64496 # comment");
         parse_ser_de_print_configuration("192.168.0.0/16-24 => 64496");
-        parse_ser_de_print_configuration("2001:db8::/32 => 64496 # comment with extra #");
+        parse_ser_de_print_configuration(
+            "2001:db8::/32 => 64496 # comment with extra #",
+        );
         parse_ser_de_print_configuration("2001:db8::/32-48 => 64496");
     }
 
@@ -1032,7 +1100,8 @@ mod tests {
         let included_no_ml = roa_payload("192.168.0.0/16 => 64496");
         let included_more_specific = roa_payload("192.168.0.0/20 => 64496");
 
-        let allowing_more_specific = roa_payload("192.168.0.0/16-24 => 64496");
+        let allowing_more_specific =
+            roa_payload("192.168.0.0/16-24 => 64496");
         let more_specific = roa_payload("192.168.3.0/24 => 64496");
         let other_asn = roa_payload("192.168.3.0/24 => 64497");
 
@@ -1052,9 +1121,14 @@ mod tests {
         };
 
         let roa_group_asn_only_expected_str = "AS0";
-        assert_eq!(roa_group_asn_only.to_string().as_str(), roa_group_asn_only_expected_str);
+        assert_eq!(
+            roa_group_asn_only.to_string().as_str(),
+            roa_group_asn_only_expected_str
+        );
 
-        let roa_group_asn_only_expected = RoaAggregateKey::from_str(roa_group_asn_only_expected_str).unwrap();
+        let roa_group_asn_only_expected =
+            RoaAggregateKey::from_str(roa_group_asn_only_expected_str)
+                .unwrap();
         assert_eq!(roa_group_asn_only, roa_group_asn_only_expected)
     }
 

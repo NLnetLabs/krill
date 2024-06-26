@@ -8,7 +8,10 @@ use rpki::{
 
 use crate::{
     commons::{
-        api::{ChildCaInfo, ChildState, IdCertInfo, IssuedCertificate, ReceivedCert, SuspendedCert, UnsuspendedCert},
+        api::{
+            ChildCaInfo, ChildState, IdCertInfo, IssuedCertificate,
+            ReceivedCert, SuspendedCert, UnsuspendedCert,
+        },
         crypto::{KrillSigner, SignSupport},
         error::Error,
         KrillResult,
@@ -25,13 +28,15 @@ use crate::{
 #[serde(rename_all = "snake_case")]
 pub enum UsedKeyState {
     #[serde(alias = "current")]
-    InUse(ResourceClassName), // Multiple keys are possible during a key rollover.
+    InUse(ResourceClassName), /* Multiple keys are possible during a key
+                               * rollover. */
     Revoked,
 }
 
 //------------ ChildInfo ---------------------------------------------------
 
-/// Contains information about a child CA needed by a parent [CertAuth](ca.CertAuth).
+/// Contains information about a child CA needed by a parent
+/// [CertAuth](ca.CertAuth).
 ///
 /// Note that the actual [IssuedCert] corresponding to the [KeyIdentifier]
 /// and [ResourceClassName] are kept in the parent's [ResourceClass].
@@ -85,7 +90,11 @@ impl ChildDetails {
         self.resources = resources;
     }
 
-    pub fn add_mapping(&mut self, name_in_parent: ResourceClassName, name_for_child: ResourceClassName) {
+    pub fn add_mapping(
+        &mut self,
+        name_in_parent: ResourceClassName,
+        name_for_child: ResourceClassName,
+    ) {
         self.rcn_map.insert(name_in_parent, name_for_child);
     }
 
@@ -97,8 +106,14 @@ impl ChildDetails {
     /// from somewhere and then imported into Krill. In such cases the
     /// resource class names that were used for the child may not match
     /// the internal resource class names used. See issue: 1133
-    pub(super) fn name_for_parent_rcn(&self, name_in_parent: &ResourceClassName) -> ResourceClassName {
-        self.rcn_map.get(name_in_parent).unwrap_or(name_in_parent).clone()
+    pub(super) fn name_for_parent_rcn(
+        &self,
+        name_in_parent: &ResourceClassName,
+    ) -> ResourceClassName {
+        self.rcn_map
+            .get(name_in_parent)
+            .unwrap_or(name_in_parent)
+            .clone()
     }
 
     /// Resolve the resource class name used by the parent, to the
@@ -109,7 +124,10 @@ impl ChildDetails {
     /// from somewhere and then imported into Krill. In such cases the
     /// resource class names that were used for the child may not match
     /// the internal resource class names used. See issue: 1133
-    pub(super) fn parent_name_for_rcn(&self, name_in_child: &ResourceClassName) -> ResourceClassName {
+    pub(super) fn parent_name_for_rcn(
+        &self,
+        name_in_child: &ResourceClassName,
+    ) -> ResourceClassName {
         self.rcn_map
             .iter()
             .find(|(_k, v)| *v == name_in_child)
@@ -117,7 +135,10 @@ impl ChildDetails {
             .unwrap_or_else(|| name_in_child.clone())
     }
 
-    pub fn issued(&self, parent_rcn: &ResourceClassName) -> Vec<KeyIdentifier> {
+    pub fn issued(
+        &self,
+        parent_rcn: &ResourceClassName,
+    ) -> Vec<KeyIdentifier> {
         let mut res = vec![];
 
         for (ki, used_key_state) in self.used_keys.iter() {
@@ -135,7 +156,11 @@ impl ChildDetails {
         matches!(self.used_keys.get(ki), Some(UsedKeyState::InUse(_)))
     }
 
-    pub fn add_issue_response(&mut self, parent_rcn: ResourceClassName, ki: KeyIdentifier) {
+    pub fn add_issue_response(
+        &mut self,
+        parent_rcn: ResourceClassName,
+        ki: KeyIdentifier,
+    ) {
         self.used_keys.insert(ki, UsedKeyState::InUse(parent_rcn));
     }
 
@@ -144,7 +169,11 @@ impl ChildDetails {
     }
 
     /// Returns an error in case the key is already in use in another class.
-    pub fn verify_key_allowed(&self, ki: &KeyIdentifier, parent_rcn: &ResourceClassName) -> KrillResult<()> {
+    pub fn verify_key_allowed(
+        &self,
+        ki: &KeyIdentifier,
+        parent_rcn: &ResourceClassName,
+    ) -> KrillResult<()> {
         if let Some(last_response) = self.used_keys.get(ki) {
             let allowed = match last_response {
                 UsedKeyState::Revoked => false,
@@ -174,13 +203,19 @@ pub struct Children {
 
 //------------ ChildCertificates -------------------------------------------
 
-/// The collection of certificates issued under a [ResourceClass](ca.ResourceClass).
+/// The collection of certificates issued under a
+/// [ResourceClass](ca.ResourceClass).
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildCertificates {
-    #[serde(alias = "inner")] // Note: we cannot remove this unless we migrate existing json on upgrade.
+    #[serde(alias = "inner")]
+    // Note: we cannot remove this unless we migrate existing json on
+    // upgrade.
     issued: HashMap<KeyIdentifier, IssuedCertificate>,
 
-    #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
+    #[serde(
+        skip_serializing_if = "HashMap::is_empty",
+        default = "HashMap::new"
+    )]
     suspended: HashMap<KeyIdentifier, SuspendedCert>,
 }
 
@@ -211,11 +246,17 @@ impl ChildCertificates {
         self.suspended.remove(key);
     }
 
-    pub fn get_issued(&self, ki: &KeyIdentifier) -> Option<&IssuedCertificate> {
+    pub fn get_issued(
+        &self,
+        ki: &KeyIdentifier,
+    ) -> Option<&IssuedCertificate> {
         self.issued.get(ki)
     }
 
-    pub fn get_suspended(&self, ki: &KeyIdentifier) -> Option<&SuspendedCert> {
+    pub fn get_suspended(
+        &self,
+        ki: &KeyIdentifier,
+    ) -> Option<&SuspendedCert> {
         self.suspended.get(ki)
     }
 
@@ -232,13 +273,26 @@ impl ChildCertificates {
     ) -> KrillResult<ChildCertificateUpdates> {
         let mut updates = ChildCertificateUpdates::default();
         for issued in self.issued.values() {
-            updates.issue(self.re_issue(issued, None, signing_cert, issuance_timing, signer)?);
+            updates.issue(self.re_issue(
+                issued,
+                None,
+                signing_cert,
+                issuance_timing,
+                signer,
+            )?);
         }
-        // Also re-issue suspended certificates, they may yet become unsuspended at some point
+        // Also re-issue suspended certificates, they may yet become
+        // unsuspended at some point
         for suspended in self.suspended.values() {
             updates.suspend(
-                self.re_issue(&suspended.convert(), None, signing_cert, issuance_timing, signer)?
-                    .into_converted(),
+                self.re_issue(
+                    &suspended.convert(),
+                    None,
+                    signing_cert,
+                    issuance_timing,
+                    signer,
+                )?
+                .into_converted(),
             );
         }
         Ok(updates)
@@ -246,9 +300,10 @@ impl ChildCertificates {
 
     /// Shrink any overclaiming certificates.
     ///
-    /// NOTE: We need to pro-actively shrink child certificates to avoid invalidating them.
-    ///       But, if we gain additional resources it is up to child to request a new certificate
-    ///       with those resources.
+    /// NOTE: We need to pro-actively shrink child certificates to avoid
+    /// invalidating them.       But, if we gain additional resources it
+    /// is up to child to request a new certificate       with those
+    /// resources.
     pub fn shrink_overclaiming(
         &self,
         received_cert: &ReceivedCert,
@@ -260,28 +315,39 @@ impl ChildCertificates {
         let updated_resources = received_cert.resources();
 
         for issued in self.issued.values() {
-            if let Some(reduced_set) = issued.reduced_applicable_resources(updated_resources) {
+            if let Some(reduced_set) =
+                issued.reduced_applicable_resources(updated_resources)
+            {
                 if reduced_set.is_empty() {
                     // revoke
                     updates.remove(issued.key_identifier());
                 } else {
                     // re-issue
-                    updates.issue(self.re_issue(issued, Some(reduced_set), received_cert, issuance_timing, signer)?);
+                    updates.issue(self.re_issue(
+                        issued,
+                        Some(reduced_set),
+                        received_cert,
+                        issuance_timing,
+                        signer,
+                    )?);
                 }
             }
         }
 
         // Also shrink suspended, in case they would come back
         for suspended in self.suspended.values() {
-            if let Some(reduced_set) = suspended.reduced_applicable_resources(updated_resources) {
+            if let Some(reduced_set) =
+                suspended.reduced_applicable_resources(updated_resources)
+            {
                 if reduced_set.is_empty() {
                     // revoke
                     updates.remove(suspended.key_identifier());
                 } else {
                     // re-issue shrunk suspended
                     //
-                    // Note: this will not be published yet, but remain suspended
-                    //       until the child contacts us again, or is manually
+                    // Note: this will not be published yet, but remain
+                    // suspended       until the child
+                    // contacts us again, or is manually
                     //       un-suspended.
                     updates.suspend(
                         self.re_issue(
@@ -311,7 +377,8 @@ impl ChildCertificates {
         signer: &KrillSigner,
     ) -> KrillResult<IssuedCertificate> {
         let csr_info = previous.csr_info().clone();
-        let resource_set = updated_resources.unwrap_or_else(|| previous.resources().clone());
+        let resource_set =
+            updated_resources.unwrap_or_else(|| previous.resources().clone());
         let limit = previous.limit().clone();
 
         let re_issued = SignSupport::make_issued_cert(
@@ -326,14 +393,23 @@ impl ChildCertificates {
         Ok(re_issued)
     }
 
-    pub fn expiring(&self, issuance_timing: &IssuanceTimingConfig) -> Vec<&IssuedCertificate> {
+    pub fn expiring(
+        &self,
+        issuance_timing: &IssuanceTimingConfig,
+    ) -> Vec<&IssuedCertificate> {
         self.issued
             .values()
-            .filter(|issued| issued.validity().not_after() < issuance_timing.new_child_cert_issuance_threshold())
+            .filter(|issued| {
+                issued.validity().not_after()
+                    < issuance_timing.new_child_cert_issuance_threshold()
+            })
             .collect()
     }
 
-    pub fn overclaiming(&self, resources: &ResourceSet) -> Vec<&IssuedCertificate> {
+    pub fn overclaiming(
+        &self,
+        resources: &ResourceSet,
+    ) -> Vec<&IssuedCertificate> {
         self.issued
             .values()
             .filter(|issued| !resources.contains(issued.resources()))

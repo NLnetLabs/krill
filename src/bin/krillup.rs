@@ -9,7 +9,9 @@ use krill::{
         config::{Config, LogType},
         properties::PropertiesManager,
     },
-    upgrades::{data_migration::migrate, prepare_upgrade_data_migrations, UpgradeMode},
+    upgrades::{
+        data_migration::migrate, prepare_upgrade_data_migrations, UpgradeMode,
+    },
 };
 use url::Url;
 
@@ -23,8 +25,10 @@ fn main() {
         }
         Ok(mode) => match mode {
             KrillUpMode::Prepare { config } => {
-                let properties_manager = match PropertiesManager::create(&config.storage_uri, config.use_history_cache)
-                {
+                let properties_manager = match PropertiesManager::create(
+                    &config.storage_uri,
+                    config.use_history_cache,
+                ) {
                     Ok(mgr) => mgr,
                     Err(e) => {
                         eprintln!("*** Error Preparing Data Migration ***");
@@ -36,7 +40,11 @@ fn main() {
                     }
                 };
 
-                match prepare_upgrade_data_migrations(UpgradeMode::PrepareOnly, &config, &properties_manager) {
+                match prepare_upgrade_data_migrations(
+                    UpgradeMode::PrepareOnly,
+                    &config,
+                    &properties_manager,
+                ) {
                     Err(e) => {
                         eprintln!("*** Error Preparing Data Migration ***");
                         eprintln!("{}", e);
@@ -66,7 +74,9 @@ fn main() {
                     eprintln!("*** Error Migrating DATA ***");
                     eprintln!("{}", e);
                     eprintln!();
-                    eprintln!("Note that your server data has NOT been modified.");
+                    eprintln!(
+                        "Note that your server data has NOT been modified."
+                    );
                     ::std::process::exit(1);
                 }
             }
@@ -118,8 +128,11 @@ fn parse_matches(matches: ArgMatches) -> Result<KrillUpMode, String> {
         let config = parse_config(m)?;
         Ok(KrillUpMode::Prepare { config })
     } else if let Some(m) = matches.subcommand_matches("migrate") {
-        let target_str = m.value_of("target").ok_or("--target missing".to_string())?;
-        let target = Url::parse(target_str).map_err(|e| format!("cannot parse url: {}. Error: {}", target_str, e))?;
+        let target_str =
+            m.value_of("target").ok_or("--target missing".to_string())?;
+        let target = Url::parse(target_str).map_err(|e| {
+            format!("cannot parse url: {}. Error: {}", target_str, e)
+        })?;
 
         let config = parse_config(m)?;
         Ok(KrillUpMode::Migrate { config, target })
@@ -129,9 +142,11 @@ fn parse_matches(matches: ArgMatches) -> Result<KrillUpMode, String> {
 }
 
 fn parse_config(m: &ArgMatches) -> Result<Config, String> {
-    let config_file = m.value_of("config").unwrap_or(KRILL_DEFAULT_CONFIG_FILE);
-    let mut config = Config::create(config_file, true)
-        .map_err(|e| format!("Cannot parse config file '{}'. Error: {}", config_file, e))?;
+    let config_file =
+        m.value_of("config").unwrap_or(KRILL_DEFAULT_CONFIG_FILE);
+    let mut config = Config::create(config_file, true).map_err(|e| {
+        format!("Cannot parse config file '{}'. Error: {}", config_file, e)
+    })?;
 
     config.log_level = LevelFilter::Info;
     config.log_type = LogType::Stderr;

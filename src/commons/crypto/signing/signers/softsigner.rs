@@ -5,8 +5,8 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use base64::engine::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
+use base64::engine::Engine as _;
 use bytes::Bytes;
 use openssl::{
     hash::MessageDigest,
@@ -15,15 +15,18 @@ use openssl::{
 };
 use rpki::crypto::{
     signer::{KeyError, SigningAlgorithm},
-    KeyIdentifier, PublicKey, PublicKeyFormat, RpkiSignature, RpkiSignatureAlgorithm, Signature, SignatureAlgorithm,
-    SigningError,
+    KeyIdentifier, PublicKey, PublicKeyFormat, RpkiSignature,
+    RpkiSignatureAlgorithm, Signature, SignatureAlgorithm, SigningError,
 };
 use serde::{de, ser, Deserialize, Deserializer, Serialize, Serializer};
 use url::Url;
 
 use crate::{
     commons::{
-        crypto::{dispatch::signerinfo::SignerMapper, signers::error::SignerError, SignerHandle},
+        crypto::{
+            dispatch::signerinfo::SignerMapper, signers::error::SignerError,
+            SignerHandle,
+        },
         eventsourcing::{Key, KeyValueStore, Segment, SegmentExt},
     },
     constants::KEYS_NS,
@@ -60,10 +63,16 @@ pub struct OpenSslSigner {
 }
 
 impl OpenSslSigner {
-    /// The OpenSslSigner can be used with or without a SignerMapper. Without a SignerMapper a caller that needs to
-    /// dispatch requests to the Signer that owns a given KeyIdentifier will be unable to do so as the SignerMapper
-    /// only knows about keys created by the OpenSslSigner if the OpenSslSigner registers the new keys in the mapper.
-    pub fn build(storage_uri: &Url, name: &str, mapper: Option<Arc<SignerMapper>>) -> Result<Self, SignerError> {
+    /// The OpenSslSigner can be used with or without a SignerMapper. Without
+    /// a SignerMapper a caller that needs to dispatch requests to the
+    /// Signer that owns a given KeyIdentifier will be unable to do so as the
+    /// SignerMapper only knows about keys created by the OpenSslSigner if
+    /// the OpenSslSigner registers the new keys in the mapper.
+    pub fn build(
+        storage_uri: &Url,
+        name: &str,
+        mapper: Option<Arc<SignerMapper>>,
+    ) -> Result<Self, SignerError> {
         let keys_store = Self::init_keys_store(storage_uri)?;
 
         let s = OpenSslSigner {
@@ -97,8 +106,11 @@ impl OpenSslSigner {
         self.info.clone()
     }
 
-    pub fn create_registration_key(&self) -> Result<(PublicKey, String), SignerError> {
-        // For the OpenSslSigner we use the KeyIdentifier as the internal key id so the two are the same.
+    pub fn create_registration_key(
+        &self,
+    ) -> Result<(PublicKey, String), SignerError> {
+        // For the OpenSslSigner we use the KeyIdentifier as the internal key
+        // id so the two are the same.
         let key_id = self.build_key()?;
         let internal_key_id = key_id.to_string();
         let key_pair = self.load_key(&key_id)?;
@@ -111,15 +123,22 @@ impl OpenSslSigner {
         signer_private_key_id: &str,
         challenge: &D,
     ) -> Result<RpkiSignature, SignerError> {
-        let key_id = KeyIdentifier::from_str(signer_private_key_id).map_err(|_| SignerError::KeyNotFound)?;
+        let key_id = KeyIdentifier::from_str(signer_private_key_id)
+            .map_err(|_| SignerError::KeyNotFound)?;
         let key_pair = self.load_key(&key_id)?;
-        let signature = Self::sign_with_key(key_pair.pkey.as_ref(), RpkiSignatureAlgorithm::default(), challenge)?;
+        let signature = Self::sign_with_key(
+            key_pair.pkey.as_ref(),
+            RpkiSignatureAlgorithm::default(),
+            challenge,
+        )?;
         Ok(signature)
     }
 }
 
 impl OpenSslSigner {
-    fn init_keys_store(storage_uri: &Url) -> Result<KeyValueStore, SignerError> {
+    fn init_keys_store(
+        storage_uri: &Url,
+    ) -> Result<KeyValueStore, SignerError> {
         let store = KeyValueStore::create(storage_uri, KEYS_NS)
             .map_err(|_| SignerError::InvalidStorage(storage_uri.clone()))?;
         Ok(store)
@@ -130,7 +149,10 @@ impl OpenSslSigner {
         self.store_key(kp)
     }
 
-    fn store_key(&self, kp: OpenSslKeyPair) -> Result<KeyIdentifier, SignerError> {
+    fn store_key(
+        &self,
+        kp: OpenSslKeyPair,
+    ) -> Result<KeyIdentifier, SignerError> {
         let pk = &kp.subject_public_key_info()?;
         let key_id = pk.key_identifier();
 
@@ -152,18 +174,25 @@ impl OpenSslSigner {
     ) -> Result<Signature<Alg>, SignerError> {
         let signing_algorithm = algorithm.signing_algorithm();
         if !matches!(signing_algorithm, SigningAlgorithm::RsaSha256) {
-            return Err(SignerError::UnsupportedSigningAlg(signing_algorithm));
+            return Err(SignerError::UnsupportedSigningAlg(
+                signing_algorithm,
+            ));
         }
 
-        let mut signer = ::openssl::sign::Signer::new(MessageDigest::sha256(), pkey)?;
+        let mut signer =
+            ::openssl::sign::Signer::new(MessageDigest::sha256(), pkey)?;
         signer.update(data.as_ref())?;
 
-        let signature = Signature::new(algorithm, Bytes::from(signer.sign_to_vec()?));
+        let signature =
+            Signature::new(algorithm, Bytes::from(signer.sign_to_vec()?));
 
         Ok(signature)
     }
 
-    fn load_key(&self, key_id: &KeyIdentifier) -> Result<OpenSslKeyPair, SignerError> {
+    fn load_key(
+        &self,
+        key_id: &KeyIdentifier,
+    ) -> Result<OpenSslKeyPair, SignerError> {
         // TODO decrypt key after read
         match self
             .keys_store
@@ -175,10 +204,15 @@ impl OpenSslSigner {
         }
     }
 
-    fn remember_key_id(&self, key_id: &KeyIdentifier) -> Result<(), SignerError> {
-        // When testing the OpenSSlSigner in isolation there is no need for a mapper as we don't need to determine
-        // which signer to use for a particular KeyIdentifier as there is only one signer, and the OpenSslSigner
-        // doesn't need a mapper to map from KeyIdentifier to internal key id as the internal key id IS the
+    fn remember_key_id(
+        &self,
+        key_id: &KeyIdentifier,
+    ) -> Result<(), SignerError> {
+        // When testing the OpenSSlSigner in isolation there is no need for a
+        // mapper as we don't need to determine which signer to use
+        // for a particular KeyIdentifier as there is only one signer, and the
+        // OpenSslSigner doesn't need a mapper to map from
+        // KeyIdentifier to internal key id as the internal key id IS the
         // KeyIdentifier.
         if let Some(mapper) = &self.mapper {
             let readable_handle = self.handle.read().unwrap();
@@ -187,17 +221,26 @@ impl OpenSslSigner {
             })?;
             mapper
                 .add_key(signer_handle, key_id, &format!("{}", key_id))
-                .map_err(|err| SignerError::Other(format!("Failed to record signer key: {}", err)))
+                .map_err(|err| {
+                    SignerError::Other(format!(
+                        "Failed to record signer key: {}",
+                        err
+                    ))
+                })
         } else {
             Ok(())
         }
     }
 }
 
-// Implement the functions defined by the `Signer` trait because `SignerProvider` expects to invoke them, but as the
-// dispatching is not trait based we don't actually have to implement the `Signer` trait.
+// Implement the functions defined by the `Signer` trait because
+// `SignerProvider` expects to invoke them, but as the dispatching is not
+// trait based we don't actually have to implement the `Signer` trait.
 impl OpenSslSigner {
-    pub fn create_key(&self, _algorithm: PublicKeyFormat) -> Result<KeyIdentifier, SignerError> {
+    pub fn create_key(
+        &self,
+        _algorithm: PublicKeyFormat,
+    ) -> Result<KeyIdentifier, SignerError> {
         let key_id = self.build_key()?;
         self.remember_key_id(&key_id)?;
 
@@ -205,7 +248,10 @@ impl OpenSslSigner {
     }
 
     /// Import an existing RSA key pair from the PEM encoded private key
-    pub fn import_key(&self, pem: &str) -> Result<KeyIdentifier, SignerError> {
+    pub fn import_key(
+        &self,
+        pem: &str,
+    ) -> Result<KeyIdentifier, SignerError> {
         let kp = OpenSslKeyPair::from_pem(pem)?;
         let key_id = self.store_key(kp)?;
         self.remember_key_id(&key_id)?;
@@ -213,14 +259,22 @@ impl OpenSslSigner {
         Ok(key_id)
     }
 
-    pub fn get_key_info(&self, key_id: &KeyIdentifier) -> Result<PublicKey, KeyError<SignerError>> {
+    pub fn get_key_info(
+        &self,
+        key_id: &KeyIdentifier,
+    ) -> Result<PublicKey, KeyError<SignerError>> {
         let key_pair = self.load_key(key_id)?;
         Ok(key_pair.subject_public_key_info()?)
     }
 
-    pub fn destroy_key(&self, key_id: &KeyIdentifier) -> Result<(), KeyError<SignerError>> {
+    pub fn destroy_key(
+        &self,
+        key_id: &KeyIdentifier,
+    ) -> Result<(), KeyError<SignerError>> {
         self.keys_store
-            .drop_key(&Key::new_global(Segment::parse_lossy(&key_id.to_string()))) // key_id should always be a valid Segment
+            .drop_key(&Key::new_global(Segment::parse_lossy(
+                &key_id.to_string(),
+            ))) // key_id should always be a valid Segment
             .map_err(|_| KeyError::Signer(SignerError::KeyNotFound))
     }
 
@@ -231,7 +285,8 @@ impl OpenSslSigner {
         data: &D,
     ) -> Result<Signature<Alg>, SigningError<SignerError>> {
         let key_pair = self.load_key(key_id)?;
-        Self::sign_with_key(key_pair.pkey.as_ref(), algorithm, data).map_err(SigningError::Signer)
+        Self::sign_with_key(key_pair.pkey.as_ref(), algorithm, data)
+            .map_err(SigningError::Signer)
     }
 
     pub fn sign_one_off<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
@@ -240,7 +295,8 @@ impl OpenSslSigner {
         data: &D,
     ) -> Result<(Signature<Alg>, PublicKey), SignerError> {
         let kp = OpenSslKeyPair::build()?;
-        let signature = Self::sign_with_key(kp.pkey.as_ref(), algorithm, data)?;
+        let signature =
+            Self::sign_with_key(kp.pkey.as_ref(), algorithm, data)?;
         let key = kp.subject_public_key_info()?;
 
         Ok((signature, key))
@@ -259,7 +315,11 @@ impl Serialize for OpenSslKeyPair {
     where
         S: Serializer,
     {
-        let bytes: Vec<u8> = self.pkey.as_ref().private_key_to_der().map_err(ser::Error::custom)?;
+        let bytes: Vec<u8> = self
+            .pkey
+            .as_ref()
+            .private_key_to_der()
+            .map_err(ser::Error::custom)?;
 
         BASE64_ENGINE.encode(bytes).serialize(s)
     }
@@ -271,7 +331,9 @@ impl<'de> Deserialize<'de> for OpenSslKeyPair {
         D: Deserializer<'de>,
     {
         match String::deserialize(d) {
-            Ok(base64) => Self::from_base64(&base64).map_err(de::Error::custom),
+            Ok(base64) => {
+                Self::from_base64(&base64).map_err(de::Error::custom)
+            }
             Err(err) => Err(err),
         }
     }
@@ -288,7 +350,8 @@ impl OpenSslKeyPair {
 
     fn subject_public_key_info(&self) -> Result<PublicKey, SignerError> {
         let rsa = self.pkey.rsa().map_err(SignerError::other)?;
-        let bytes = Bytes::from(rsa.public_key_to_der().map_err(SignerError::other)?);
+        let bytes =
+            Bytes::from(rsa.public_key_to_der().map_err(SignerError::other)?);
 
         PublicKey::decode(bytes).map_err(SignerError::other)
     }
@@ -298,7 +361,9 @@ impl OpenSslKeyPair {
     pub fn from_pem(pem: &str) -> Result<OpenSslKeyPair, SignerError> {
         PKey::private_key_from_pem(pem.as_bytes())
             .map(|pkey| OpenSslKeyPair { pkey })
-            .map_err(|e| SignerError::Other(format!("Invalid private key: {}", e)))
+            .map_err(|e| {
+                SignerError::Other(format!("Invalid private key: {}", e))
+            })
     }
 
     fn from_base64(base64: &str) -> Result<OpenSslKeyPair, SignerError> {
@@ -336,7 +401,8 @@ pub mod tests {
     fn should_serialize_and_deserialize_key() {
         let key = OpenSslKeyPair::build().unwrap();
         let json = serde_json::to_string(&key).unwrap();
-        let key_des: OpenSslKeyPair = serde_json::from_str(json.as_str()).unwrap();
+        let key_des: OpenSslKeyPair =
+            serde_json::from_str(json.as_str()).unwrap();
         let json_from_des = serde_json::to_string(&key_des).unwrap();
 
         // comparing json, because OpenSslKeyPair and its internal friends do
@@ -347,9 +413,13 @@ pub mod tests {
     #[test]
     fn import_existing_pkcs1_openssl_key() {
         test::test_in_memory(|storage_uri| {
-            // The following key was generated using OpenSSL on the command line
-            let pem = include_str!("../../../../../test-resources/ta/example-pkcs1.pem");
-            let signer = OpenSslSigner::build(storage_uri, "dummy", None).unwrap();
+            // The following key was generated using OpenSSL on the command
+            // line
+            let pem = include_str!(
+                "../../../../../test-resources/ta/example-pkcs1.pem"
+            );
+            let signer =
+                OpenSslSigner::build(storage_uri, "dummy", None).unwrap();
 
             let ki = signer.import_key(pem).unwrap();
             signer.get_key_info(&ki).unwrap();
@@ -360,9 +430,13 @@ pub mod tests {
     #[test]
     fn import_existing_pkcs8_openssl_key() {
         test::test_in_memory(|storage_uri| {
-            // The following key was generated using OpenSSL on the command line
-            let pem = include_str!("../../../../../test-resources/ta/example-pkcs8.pem");
-            let signer = OpenSslSigner::build(storage_uri, "dummy", None).unwrap();
+            // The following key was generated using OpenSSL on the command
+            // line
+            let pem = include_str!(
+                "../../../../../test-resources/ta/example-pkcs8.pem"
+            );
+            let signer =
+                OpenSslSigner::build(storage_uri, "dummy", None).unwrap();
 
             let ki = signer.import_key(pem).unwrap();
             signer.get_key_info(&ki).unwrap();

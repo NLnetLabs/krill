@@ -7,7 +7,9 @@ use crate::{
 
 #[cfg(feature = "multi-user")]
 use {
-    crate::daemon::{auth::LoggedInUser, http::server::render_error_redirect},
+    crate::daemon::{
+        auth::LoggedInUser, http::server::render_error_redirect,
+    },
     urlparse::quote,
 };
 
@@ -25,19 +27,19 @@ fn build_auth_redirect_location(user: LoggedInUser) -> Result<String, Error> {
     use std::collections::HashMap;
 
     fn b64_encode_attributes_with_mapped_error(
-        a: &HashMap<String, String>
+        a: &HashMap<String, String>,
     ) -> Result<String, Error> {
-        use base64::engine::Engine as _;
         use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
+        use base64::engine::Engine as _;
 
         Ok(BASE64_ENGINE.encode(
-            serde_json::to_string(a).map_err(|err| {
-                Error::custom(err.to_string())
-            })?,
+            serde_json::to_string(a)
+                .map_err(|err| Error::custom(err.to_string()))?,
         ))
     }
 
-    let attributes = b64_encode_attributes_with_mapped_error(&user.attributes)?;
+    let attributes =
+        b64_encode_attributes_with_mapped_error(&user.attributes)?;
 
     Ok(format!(
         "/ui/login?token={}&id={}&attributes={}",
@@ -73,12 +75,18 @@ pub async fn auth(req: Request) -> RoutingResult {
                 .map(|location| HttpResponse::found(&location))
                 .or_else(render_error_redirect)
         }
-        AUTH_LOGIN_ENDPOINT if *req.method() == Method::GET => req.get_login_url().await.or_else(render_error),
-        AUTH_LOGIN_ENDPOINT if *req.method() == Method::POST => match req.login().await {
-            Ok(logged_in_user) => Ok(HttpResponse::json(&logged_in_user)),
-            Err(err) => render_error(err),
-        },
-        AUTH_LOGOUT_ENDPOINT if *req.method() == Method::POST => req.logout().await.or_else(render_error),
+        AUTH_LOGIN_ENDPOINT if *req.method() == Method::GET => {
+            req.get_login_url().await.or_else(render_error)
+        }
+        AUTH_LOGIN_ENDPOINT if *req.method() == Method::POST => {
+            match req.login().await {
+                Ok(logged_in_user) => Ok(HttpResponse::json(&logged_in_user)),
+                Err(err) => render_error(err),
+            }
+        }
+        AUTH_LOGOUT_ENDPOINT if *req.method() == Method::POST => {
+            req.logout().await.or_else(render_error)
+        }
         _ => Err(req),
     }
 }

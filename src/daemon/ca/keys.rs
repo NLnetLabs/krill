@@ -6,7 +6,8 @@ use rpki::{
     ca::{
         idexchange::{CaHandle, RepoInfo},
         provisioning::{
-            IssuanceRequest, RequestResourceLimit, ResourceClassEntitlements, ResourceClassName, RevocationRequest,
+            IssuanceRequest, RequestResourceLimit, ResourceClassEntitlements,
+            ResourceClassName, RevocationRequest,
         },
     },
     crypto::KeyIdentifier,
@@ -16,8 +17,9 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            ActiveInfo, CertifiedKeyInfo, PendingInfo, PendingKeyInfo, ReceivedCert, ResourceClassKeysInfo,
-            RollNewInfo, RollOldInfo, RollPendingInfo,
+            ActiveInfo, CertifiedKeyInfo, PendingInfo, PendingKeyInfo,
+            ReceivedCert, ResourceClassKeysInfo, RollNewInfo, RollOldInfo,
+            RollPendingInfo,
         },
         crypto::KrillSigner,
         error::Error,
@@ -29,8 +31,8 @@ use crate::{
 //------------ CertifiedKey --------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-/// Describes a Key that is certified. I.e. it received an incoming certificate
-/// and has at least a MFT and CRL.
+/// Describes a Key that is certified. I.e. it received an incoming
+/// certificate and has at least a MFT and CRL.
 pub struct CertifiedKey {
     key_id: KeyIdentifier,
     incoming_cert: ReceivedCert,
@@ -97,14 +99,17 @@ impl CertifiedKey {
         new_resources: &ResourceSet,
         new_not_after: Time,
     ) -> bool {
-        // If we did not have a trailing slash for the id-ad-caRepository, then
-        // we should make a new CSR which will include it. See issue #1030.
+        // If we did not have a trailing slash for the id-ad-caRepository,
+        // then we should make a new CSR which will include it. See
+        // issue #1030.
         if !self.incoming_cert().ca_repository().ends_with("/") {
             return true;
         }
 
-        // If resources have changed, then we need to request a new certificate.
-        let resources_diff = new_resources.difference(self.incoming_cert.resources());
+        // If resources have changed, then we need to request a new
+        // certificate.
+        let resources_diff =
+            new_resources.difference(self.incoming_cert.resources());
 
         if !resources_diff.is_empty() {
             info!(
@@ -114,17 +119,20 @@ impl CertifiedKey {
             return true;
         }
 
-        // If the remaining validity time eligibility has changed by more than 10% then we will
-        // want to request a new certificate.
+        // If the remaining validity time eligibility has changed by more than
+        // 10% then we will want to request a new certificate.
         //
-        // We use this 10% margin to avoid ending up in endless request loops - in particular
-        // in cases where the parent uses a simple strategy like: not-after = now + 1 year for
-        // every list request we send. See issue #95.
+        // We use this 10% margin to avoid ending up in endless request loops
+        // - in particular in cases where the parent uses a simple
+        // strategy like: not-after = now + 1 year for every list
+        // request we send. See issue #95.
         //
-        // As it turns out there can also be timing issues with remaining time *reduction*. This
-        // is rather odd - as the parent is not really expected to reduce the time compared to
-        // what they issued to us before. But if it does happen (on every request like above)
-        // then we still want to avoid ending up in request loops. See issue #775
+        // As it turns out there can also be timing issues with remaining time
+        // *reduction*. This is rather odd - as the parent is not
+        // really expected to reduce the time compared to
+        // what they issued to us before. But if it does happen (on every
+        // request like above) then we still want to avoid ending up
+        // in request loops. See issue #775
 
         let not_after = self.incoming_cert().validity().not_after();
 
@@ -135,9 +143,9 @@ impl CertifiedKey {
         if remaining_seconds_on_eligible <= 0 {
             // eligible remaining time is in the past!
             //
-            // This is rather odd. The parent should just exclude the resource class in the
-            // eligible entitlements instead. So, we will essentially just ignore this until
-            // they do.
+            // This is rather odd. The parent should just exclude the resource
+            // class in the eligible entitlements instead. So, we
+            // will essentially just ignore this until they do.
             warn!(
                 "Will NOT request certificate for CA '{}' under RC '{}', the eligible not after time is set in the past: {}",
                 handle,
@@ -145,7 +153,9 @@ impl CertifiedKey {
                 new_not_after.to_rfc3339()
             );
             false
-        } else if remaining_seconds_on_current == remaining_seconds_on_eligible {
+        } else if remaining_seconds_on_current
+            == remaining_seconds_on_eligible
+        {
             debug!(
                 "Will not request new certificate for CA '{}' under RC '{}'. Resources and not after time are unchanged.",
                 handle,
@@ -153,7 +163,9 @@ impl CertifiedKey {
             );
             false
         } else if remaining_seconds_on_current > 0
-            && (remaining_seconds_on_eligible as f64 / remaining_seconds_on_current as f64) < 0.9_f64
+            && (remaining_seconds_on_eligible as f64
+                / remaining_seconds_on_current as f64)
+                < 0.9_f64
         {
             warn!(
                 "Parent of CA '{}' *reduced* not after time for certificate under RC '{}'. This is odd, but.. requesting new certificate.",
@@ -161,7 +173,9 @@ impl CertifiedKey {
             );
             true
         } else if remaining_seconds_on_current <= 0
-            || (remaining_seconds_on_eligible as f64 / remaining_seconds_on_current as f64) > 1.1_f64
+            || (remaining_seconds_on_eligible as f64
+                / remaining_seconds_on_current as f64)
+                > 1.1_f64
         {
             info!(
                 "Will request new certificate for CA '{}' under RC '{}'. Not after time increased to: {}",
@@ -199,7 +213,10 @@ pub struct PendingKey {
 
 impl PendingKey {
     pub fn new(key_id: KeyIdentifier) -> Self {
-        PendingKey { key_id, request: None }
+        PendingKey {
+            key_id,
+            request: None,
+        }
     }
 
     pub fn as_info(&self) -> PendingKeyInfo {
@@ -279,7 +296,11 @@ impl KeyState {
         KeyState::Pending(PendingKey::new(pending_key))
     }
 
-    pub fn add_request(&mut self, key_id: KeyIdentifier, req: IssuanceRequest) {
+    pub fn add_request(
+        &mut self,
+        key_id: KeyIdentifier,
+        req: IssuanceRequest,
+    ) {
         match self {
             KeyState::Pending(pending) => pending.add_request(req),
             KeyState::Active(current) => current.add_request(req),
@@ -308,20 +329,31 @@ impl KeyState {
     }
 
     /// Revoke all current keys
-    pub fn revoke(&self, class_name: ResourceClassName, signer: &KrillSigner) -> KrillResult<Vec<RevocationRequest>> {
+    pub fn revoke(
+        &self,
+        class_name: ResourceClassName,
+        signer: &KrillSigner,
+    ) -> KrillResult<Vec<RevocationRequest>> {
         match self {
             KeyState::Pending(_pending) => Ok(vec![]), // nothing to revoke
             KeyState::Active(current) | KeyState::RollPending(_, current) => {
-                let revoke_current = Self::revoke_key(class_name, current.key_id(), signer)?;
+                let revoke_current =
+                    Self::revoke_key(class_name, current.key_id(), signer)?;
                 Ok(vec![revoke_current])
             }
             KeyState::RollNew(new, current) => {
-                let revoke_new = Self::revoke_key(class_name.clone(), new.key_id(), signer)?;
-                let revoke_current = Self::revoke_key(class_name, current.key_id(), signer)?;
+                let revoke_new = Self::revoke_key(
+                    class_name.clone(),
+                    new.key_id(),
+                    signer,
+                )?;
+                let revoke_current =
+                    Self::revoke_key(class_name, current.key_id(), signer)?;
                 Ok(vec![revoke_new, revoke_current])
             }
             KeyState::RollOld(current, old) => {
-                let revoke_current = Self::revoke_key(class_name, current.key_id(), signer)?;
+                let revoke_current =
+                    Self::revoke_key(class_name, current.key_id(), signer)?;
                 let revoke_old = old.revoke_req().clone();
                 Ok(vec![revoke_current, revoke_old])
             }
@@ -333,7 +365,10 @@ impl KeyState {
         key_id: &KeyIdentifier,
         signer: &KrillSigner,
     ) -> KrillResult<RevocationRequest> {
-        let ki = signer.get_key_info(key_id).map_err(Error::signer)?.key_identifier();
+        let ki = signer
+            .get_key_info(key_id)
+            .map_err(Error::signer)?
+            .key_identifier();
 
         Ok(RevocationRequest::new(class_name, ki))
     }
@@ -354,34 +389,64 @@ impl KeyState {
                 keys_for_requests.push((base_repo, pending.key_id()));
             }
             KeyState::Active(current) => {
-                if current.wants_update(handle, &rcn, entitlement.resource_set(), entitlement.not_after()) {
+                if current.wants_update(
+                    handle,
+                    &rcn,
+                    entitlement.resource_set(),
+                    entitlement.not_after(),
+                ) {
                     let repo = current.old_repo.as_ref().unwrap_or(base_repo);
                     keys_for_requests.push((repo, current.key_id()));
                 }
             }
             KeyState::RollPending(pending, current) => {
                 keys_for_requests.push((base_repo, pending.key_id()));
-                if current.wants_update(handle, &rcn, entitlement.resource_set(), entitlement.not_after()) {
+                if current.wants_update(
+                    handle,
+                    &rcn,
+                    entitlement.resource_set(),
+                    entitlement.not_after(),
+                ) {
                     let repo = current.old_repo.as_ref().unwrap_or(base_repo);
                     keys_for_requests.push((repo, current.key_id()));
                 }
             }
             KeyState::RollNew(new, current) => {
-                if new.wants_update(handle, &rcn, entitlement.resource_set(), entitlement.not_after()) {
+                if new.wants_update(
+                    handle,
+                    &rcn,
+                    entitlement.resource_set(),
+                    entitlement.not_after(),
+                ) {
                     let repo = new.old_repo.as_ref().unwrap_or(base_repo);
                     keys_for_requests.push((repo, new.key_id()));
                 }
-                if current.wants_update(handle, &rcn, entitlement.resource_set(), entitlement.not_after()) {
+                if current.wants_update(
+                    handle,
+                    &rcn,
+                    entitlement.resource_set(),
+                    entitlement.not_after(),
+                ) {
                     let repo = current.old_repo.as_ref().unwrap_or(base_repo);
                     keys_for_requests.push((repo, current.key_id()));
                 }
             }
             KeyState::RollOld(current, old) => {
-                if current.wants_update(handle, &rcn, entitlement.resource_set(), entitlement.not_after()) {
+                if current.wants_update(
+                    handle,
+                    &rcn,
+                    entitlement.resource_set(),
+                    entitlement.not_after(),
+                ) {
                     let repo = current.old_repo.as_ref().unwrap_or(base_repo);
                     keys_for_requests.push((repo, current.key_id()));
                 }
-                if old.wants_update(handle, &rcn, entitlement.resource_set(), entitlement.not_after()) {
+                if old.wants_update(
+                    handle,
+                    &rcn,
+                    entitlement.resource_set(),
+                    entitlement.not_after(),
+                ) {
                     let repo = old.old_repo.as_ref().unwrap_or(base_repo);
                     keys_for_requests.push((repo, current.key_id()));
                 }
@@ -391,8 +456,13 @@ impl KeyState {
         let mut res = vec![];
 
         for (base_repo, key_id) in keys_for_requests.into_iter() {
-            let req =
-                self.create_issuance_req(base_repo, name_space, entitlement.class_name().clone(), key_id, signer)?;
+            let req = self.create_issuance_req(
+                base_repo,
+                name_space,
+                entitlement.class_name().clone(),
+                key_id,
+                signer,
+            )?;
 
             res.push(CertAuthEvent::CertificateRequested {
                 resource_class_name: rcn.clone(),
@@ -407,7 +477,10 @@ impl KeyState {
             .map(|c| c.cert().subject_key_identifier())
         {
             if !self.knows_key(key) {
-                let revoke_req = RevocationRequest::new(entitlement.class_name().clone(), key);
+                let revoke_req = RevocationRequest::new(
+                    entitlement.class_name().clone(),
+                    key,
+                );
                 res.push(CertAuthEvent::UnexpectedKeyFound {
                     resource_class_name: rcn.clone(),
                     revoke_req,
@@ -430,13 +503,25 @@ impl KeyState {
         let keys = match self {
             KeyState::Pending(pending) => vec![pending.key_id()],
             KeyState::Active(current) => vec![current.key_id()],
-            KeyState::RollPending(pending, current) => vec![pending.key_id(), current.key_id()],
-            KeyState::RollNew(new, current) => vec![new.key_id(), current.key_id()],
-            KeyState::RollOld(current, old) => vec![current.key_id(), old.key_id()],
+            KeyState::RollPending(pending, current) => {
+                vec![pending.key_id(), current.key_id()]
+            }
+            KeyState::RollNew(new, current) => {
+                vec![new.key_id(), current.key_id()]
+            }
+            KeyState::RollOld(current, old) => {
+                vec![current.key_id(), old.key_id()]
+            }
         };
 
         for ki in keys {
-            let req = self.create_issuance_req(base_repo, name_space, rcn.clone(), ki, signer)?;
+            let req = self.create_issuance_req(
+                base_repo,
+                name_space,
+                rcn.clone(),
+                ki,
+                signer,
+            )?;
             res.push(CertAuthEvent::CertificateRequested {
                 resource_class_name: rcn.clone(),
                 req,
@@ -499,7 +584,11 @@ impl KeyState {
         signer: &KrillSigner,
     ) -> KrillResult<IssuanceRequest> {
         let csr = signer.sign_csr(base_repo, name_space, key)?;
-        Ok(IssuanceRequest::new(class_name, RequestResourceLimit::default(), csr))
+        Ok(IssuanceRequest::new(
+            class_name,
+            RequestResourceLimit::default(),
+            csr,
+        ))
     }
 
     /// Returns the revoke request if there is an old key.
@@ -512,33 +601,43 @@ impl KeyState {
 
     pub fn as_info(&self) -> ResourceClassKeysInfo {
         match self.clone() {
-            KeyState::Pending(p) => ResourceClassKeysInfo::Pending(PendingInfo {
-                _pending_key: p.as_info(),
-            }),
-            KeyState::Active(c) => ResourceClassKeysInfo::Active(ActiveInfo {
-                _active_key: c.as_info(),
-            }),
-            KeyState::RollPending(p, c) => ResourceClassKeysInfo::RollPending(RollPendingInfo {
-                _pending_key: p.as_info(),
-                _active_key: c.as_info(),
-            }),
-            KeyState::RollNew(n, c) => ResourceClassKeysInfo::RollNew(RollNewInfo {
-                _new_key: n.as_info(),
-                _active_key: c.as_info(),
-            }),
-            KeyState::RollOld(c, o) => ResourceClassKeysInfo::RollOld(RollOldInfo {
-                _old_key: o.as_info(),
-                _active_key: c.as_info(),
-            }),
+            KeyState::Pending(p) => {
+                ResourceClassKeysInfo::Pending(PendingInfo {
+                    _pending_key: p.as_info(),
+                })
+            }
+            KeyState::Active(c) => {
+                ResourceClassKeysInfo::Active(ActiveInfo {
+                    _active_key: c.as_info(),
+                })
+            }
+            KeyState::RollPending(p, c) => {
+                ResourceClassKeysInfo::RollPending(RollPendingInfo {
+                    _pending_key: p.as_info(),
+                    _active_key: c.as_info(),
+                })
+            }
+            KeyState::RollNew(n, c) => {
+                ResourceClassKeysInfo::RollNew(RollNewInfo {
+                    _new_key: n.as_info(),
+                    _active_key: c.as_info(),
+                })
+            }
+            KeyState::RollOld(c, o) => {
+                ResourceClassKeysInfo::RollOld(RollOldInfo {
+                    _old_key: o.as_info(),
+                    _active_key: c.as_info(),
+                })
+            }
         }
     }
 }
 
 /// # Key Life Cycle
-///
 impl KeyState {
-    /// Initiates a key roll if the current state is 'Active'. This will return event details
-    /// for a newly create pending key and requested certificate for it.
+    /// Initiates a key roll if the current state is 'Active'. This will
+    /// return event details for a newly create pending key and requested
+    /// certificate for it.
     pub fn keyroll_initiate(
         &self,
         resource_class_name: ResourceClassName,
@@ -551,8 +650,13 @@ impl KeyState {
             KeyState::Active(_current) => {
                 let pending_key_id = signer.create_key()?;
 
-                let req =
-                    self.create_issuance_req(base_repo, name_space, parent_class_name, &pending_key_id, signer)?;
+                let req = self.create_issuance_req(
+                    base_repo,
+                    name_space,
+                    parent_class_name,
+                    &pending_key_id,
+                    signer,
+                )?;
 
                 Ok(vec![
                     CertAuthEvent::KeyRollPendingKeyAdded {
@@ -570,8 +674,8 @@ impl KeyState {
         }
     }
 
-    /// Marks the new key as current, and the current key as old, and requests revocation of
-    /// the old key.
+    /// Marks the new key as current, and the current key as old, and requests
+    /// revocation of the old key.
     pub fn keyroll_activate(
         &self,
         resource_class_name: ResourceClassName,
@@ -583,7 +687,11 @@ impl KeyState {
                 if new.request().is_some() || current.request().is_some() {
                     Err(Error::KeyRollActivatePendingRequests)
                 } else {
-                    let revoke_req = Self::revoke_key(parent_class_name, current.key_id(), signer)?;
+                    let revoke_req = Self::revoke_key(
+                        parent_class_name,
+                        current.key_id(),
+                        signer,
+                    )?;
                     Ok(CertAuthEvent::KeyRollActivated {
                         resource_class_name,
                         revoke_req,
@@ -594,7 +702,8 @@ impl KeyState {
         }
     }
 
-    /// Returns the new key, iff there is a key roll in progress and there is a new key.
+    /// Returns the new key, iff there is a key roll in progress and there is
+    /// a new key.
     pub fn new_key(&self) -> Option<&CertifiedKey> {
         match self {
             KeyState::RollNew(new, _) => Some(new),
@@ -606,18 +715,23 @@ impl KeyState {
         match self {
             KeyState::Pending(pending) => pending.key_id == key_id,
             KeyState::Active(current) => current.key_id == key_id,
-            KeyState::RollPending(pending, current) => pending.key_id == key_id || current.key_id == key_id,
-            KeyState::RollNew(new, current) => new.key_id == key_id || current.key_id == key_id,
-            KeyState::RollOld(current, old) => current.key_id == key_id || old.key_id == key_id,
+            KeyState::RollPending(pending, current) => {
+                pending.key_id == key_id || current.key_id == key_id
+            }
+            KeyState::RollNew(new, current) => {
+                new.key_id == key_id || current.key_id == key_id
+            }
+            KeyState::RollOld(current, old) => {
+                current.key_id == key_id || old.key_id == key_id
+            }
         }
     }
 }
 
 /// # Migrate repositories
-///
 impl KeyState {
-    /// Mark an old_repo for the current key, so that a new repo can be introduced in a pending
-    /// key and a keyroll can be done.
+    /// Mark an old_repo for the current key, so that a new repo can be
+    /// introduced in a pending key and a keyroll can be done.
     pub fn set_old_repo_if_in_active_state(&mut self, repo: RepoInfo) {
         if let KeyState::Active(current) = self {
             current.set_old_repo(repo);

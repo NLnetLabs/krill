@@ -6,8 +6,8 @@ use rpki::{
     ca::{
         idexchange::{CaHandle, ChildHandle, ParentHandle},
         provisioning::{
-            IssuanceRequest, ResourceClassListResponse as Entitlements, ResourceClassName, RevocationRequest,
-            RevocationResponse,
+            IssuanceRequest, ResourceClassListResponse as Entitlements,
+            ResourceClassName, RevocationRequest, RevocationResponse,
         },
     },
     repository::resources::ResourceSet,
@@ -17,15 +17,23 @@ use crate::{
     commons::{
         actor::Actor,
         api::{
-            import::ImportChild, AspaDefinitionUpdates, AspaProvidersUpdate, BgpSecDefinitionUpdates,
-            CertAuthStorableCommand, CustomerAsn, IdCertInfo, ParentCaContact, ReceivedCert, RepositoryContact,
-            ResourceClassNameMapping, RoaConfigurationUpdates, RtaName, StorableRcEntitlement,
+            import::ImportChild, AspaDefinitionUpdates, AspaProvidersUpdate,
+            BgpSecDefinitionUpdates, CertAuthStorableCommand, CustomerAsn,
+            IdCertInfo, ParentCaContact, ReceivedCert, RepositoryContact,
+            ResourceClassNameMapping, RoaConfigurationUpdates, RtaName,
+            StorableRcEntitlement,
         },
         crypto::KrillSigner,
-        eventsourcing::{self, InitCommandDetails, SentCommand, SentInitCommand, WithStorableDetails},
+        eventsourcing::{
+            self, InitCommandDetails, SentCommand, SentInitCommand,
+            WithStorableDetails,
+        },
     },
     daemon::{
-        ca::{CertAuthEvent, ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest},
+        ca::{
+            CertAuthEvent, ResourceTaggedAttestation, RtaContentRequest,
+            RtaPrepareRequest,
+        },
         config::Config,
     },
 };
@@ -95,7 +103,10 @@ pub enum CertAuthCommandDetails {
 
     // Update the mapping the parent uses to map its own resource
     // class name to another name for the child.
-    ChildUpdateResourceClassNameMapping(ChildHandle, ResourceClassNameMapping),
+    ChildUpdateResourceClassNameMapping(
+        ChildHandle,
+        ResourceClassNameMapping,
+    ),
 
     // Process an issuance request sent by an existing child.
     ChildCertify(ChildHandle, IssuanceRequest, Arc<Config>, Arc<KrillSigner>),
@@ -103,18 +114,21 @@ pub enum CertAuthCommandDetails {
     // Process a revoke request by an existing child.
     ChildRevokeKey(ChildHandle, RevocationRequest),
 
-    // Remove child (also revokes, and removes issued certs, and republishes)
+    // Remove child (also revokes, and removes issued certs, and
+    // republishes)
     ChildRemove(ChildHandle),
 
-    // Suspend a child (done by a background process which checks for inactive children)
-    // When a child is inactive it is assumed that they no longer maintain their repository.
-    // The certificate(s) issued to the child will be removed (and revoked) until
-    // the child is seen again and unsuspended (see below).
+    // Suspend a child (done by a background process which checks for
+    // inactive children) When a child is inactive it is assumed that
+    // they no longer maintain their repository. The certificate(s)
+    // issued to the child will be removed (and revoked) until the child
+    // is seen again and unsuspended (see below).
     ChildSuspendInactive(ChildHandle),
 
-    // Unsuspend a child (when it contacts the server again). I.e. mark it as active once
-    // again and republish existing certificates provided that they are not expired, or
-    // about to expire, and do not claim resources no longer associated with this child.
+    // Unsuspend a child (when it contacts the server again). I.e. mark it
+    // as active once again and republish existing certificates provided
+    // that they are not expired, or about to expire, and do not claim
+    // resources no longer associated with this child.
     ChildUnsuspend(ChildHandle),
 
     // ------------------------------------------------------------
@@ -142,7 +156,12 @@ pub enum CertAuthCommandDetails {
     UpdateEntitlements(ParentHandle, Entitlements, Arc<KrillSigner>),
 
     // Process a new certificate received from a parent.
-    UpdateRcvdCert(ResourceClassName, ReceivedCert, Arc<Config>, Arc<KrillSigner>),
+    UpdateRcvdCert(
+        ResourceClassName,
+        ReceivedCert,
+        Arc<Config>,
+        Arc<KrillSigner>,
+    ),
 
     // Drop a resource class under a parent because of issues
     // obtaining a certificate for it.
@@ -152,24 +171,27 @@ pub enum CertAuthCommandDetails {
     // Key rolls
     // ------------------------------------------------------------
 
-    // Initiate a key roll for all resource classes under each parent, where there is
-    // a current active key only, i.e. there is no roll in progress, and this key's age
-    // exceeds the given duration.
+    // Initiate a key roll for all resource classes under each parent, where
+    // there is a current active key only, i.e. there is no roll in
+    // progress, and this key's age exceeds the given duration.
     KeyRollInitiate(Duration, Arc<KrillSigner>),
 
-    // For all resource classes with a 'new' key with an age exceeding the duration:
+    // For all resource classes with a 'new' key with an age exceeding the
+    // duration:
     //  - Promote the new key to current key
     //  - Publish all objects under the new current key
     //  - Promote the current key to old key
     //  - Publish a mft and crl only under the old key
     //  - Issue a revoke request for the old key
     //
-    // RFC6489 dictates that 24 hours MUST be observed. However, shorter time frames can
-    // be used for testing, and in case of emergency rolls.
+    // RFC6489 dictates that 24 hours MUST be observed. However, shorter
+    // time frames can be used for testing, and in case of emergency
+    // rolls.
     KeyRollActivate(Duration, Arc<Config>, Arc<KrillSigner>),
 
-    // Finish the keyroll after the parent confirmed that a key for a parent and resource
-    // class has been revoked. I.e. remove the old key, and withdraw the crl and mft for it.
+    // Finish the keyroll after the parent confirmed that a key for a parent
+    // and resource class has been revoked. I.e. remove the old key, and
+    // withdraw the crl and mft for it.
     KeyRollFinish(ResourceClassName, RevocationResponse),
 
     // ------------------------------------------------------------
@@ -177,9 +199,14 @@ pub enum CertAuthCommandDetails {
     // ------------------------------------------------------------
 
     // Update the authorizations for a CA.
-    // Note: ROA *objects* will be created by the CA itself. The command just
-    // contains the intent for which announcements should be authorized.
-    RouteAuthorizationsUpdate(RoaConfigurationUpdates, Arc<Config>, Arc<KrillSigner>),
+    // Note: ROA *objects* will be created by the CA itself. The command
+    // just contains the intent for which announcements should be
+    // authorized.
+    RouteAuthorizationsUpdate(
+        RoaConfigurationUpdates,
+        Arc<Config>,
+        Arc<KrillSigner>,
+    ),
 
     // Re-issue any and all ROA objects which would otherwise expire in
     // some time (default 4 weeks, configurable). Note that this command
@@ -199,7 +226,12 @@ pub enum CertAuthCommandDetails {
     AspasUpdate(AspaDefinitionUpdates, Arc<Config>, Arc<KrillSigner>),
 
     // Updates an existing AspaProviders for the given AspaCustomer
-    AspasUpdateExisting(CustomerAsn, AspaProvidersUpdate, Arc<Config>, Arc<KrillSigner>),
+    AspasUpdateExisting(
+        CustomerAsn,
+        AspaProvidersUpdate,
+        Arc<Config>,
+        Arc<KrillSigner>,
+    ),
 
     // Re-issue any and all ASPA objects which would otherwise expire in
     // some time (default 4 weeks, configurable). Note that this command
@@ -212,7 +244,11 @@ pub enum CertAuthCommandDetails {
     // ------------------------------------------------------------
 
     // Update BgpSecDefinitions
-    BgpSecUpdateDefinitions(BgpSecDefinitionUpdates, Arc<Config>, Arc<KrillSigner>),
+    BgpSecUpdateDefinitions(
+        BgpSecDefinitionUpdates,
+        Arc<Config>,
+        Arc<KrillSigner>,
+    ),
 
     // Re-issue any and all BgpSec certificates which would otherwise
     // expire in some time.
@@ -260,25 +296,45 @@ impl From<CertAuthCommandDetails> for CertAuthStorableCommand {
             // ------------------------------------------------------------
             // Being a parent
             // ------------------------------------------------------------
-            CertAuthCommandDetails::ChildAdd(child, id_cert, resources) => CertAuthStorableCommand::ChildAdd {
+            CertAuthCommandDetails::ChildAdd(child, id_cert, resources) => {
+                CertAuthStorableCommand::ChildAdd {
+                    child,
+                    ski: id_cert.public_key().key_identifier().to_string(),
+                    resources,
+                }
+            }
+            CertAuthCommandDetails::ChildImport(import_child, _, _) => {
+                CertAuthStorableCommand::ChildImport {
+                    child: import_child.name,
+                    ski: import_child
+                        .id_cert
+                        .public_key()
+                        .key_identifier()
+                        .to_string(),
+                    resources: import_child.resources,
+                }
+            }
+            CertAuthCommandDetails::ChildUpdateResources(
                 child,
-                ski: id_cert.public_key().key_identifier().to_string(),
+                resources,
+            ) => CertAuthStorableCommand::ChildUpdateResources {
+                child,
                 resources,
             },
-            CertAuthCommandDetails::ChildImport(import_child, _, _) => CertAuthStorableCommand::ChildImport {
-                child: import_child.name,
-                ski: import_child.id_cert.public_key().key_identifier().to_string(),
-                resources: import_child.resources,
-            },
-            CertAuthCommandDetails::ChildUpdateResources(child, resources) => {
-                CertAuthStorableCommand::ChildUpdateResources { child, resources }
+            CertAuthCommandDetails::ChildUpdateId(child, id_cert) => {
+                CertAuthStorableCommand::ChildUpdateId {
+                    child,
+                    ski: id_cert.public_key().key_identifier().to_string(),
+                }
             }
-            CertAuthCommandDetails::ChildUpdateId(child, id_cert) => CertAuthStorableCommand::ChildUpdateId {
+            CertAuthCommandDetails::ChildUpdateResourceClassNameMapping(
                 child,
-                ski: id_cert.public_key().key_identifier().to_string(),
-            },
-            CertAuthCommandDetails::ChildUpdateResourceClassNameMapping(child, mapping) => {
-                CertAuthStorableCommand::ChildUpdateResourceClassNameMapping { child, mapping }
+                mapping,
+            ) => {
+                CertAuthStorableCommand::ChildUpdateResourceClassNameMapping {
+                    child,
+                    mapping,
+                }
             }
             CertAuthCommandDetails::ChildCertify(child, req, _, _) => {
                 let (resource_class_name, limit, csr) = req.unpack();
@@ -293,28 +349,42 @@ impl From<CertAuthCommandDetails> for CertAuthStorableCommand {
             CertAuthCommandDetails::ChildRevokeKey(child, revoke_req) => {
                 CertAuthStorableCommand::ChildRevokeKey { child, revoke_req }
             }
-            CertAuthCommandDetails::ChildRemove(child) => CertAuthStorableCommand::ChildRemove { child },
+            CertAuthCommandDetails::ChildRemove(child) => {
+                CertAuthStorableCommand::ChildRemove { child }
+            }
             CertAuthCommandDetails::ChildSuspendInactive(child) => {
                 CertAuthStorableCommand::ChildSuspendInactive { child }
             }
-            CertAuthCommandDetails::ChildUnsuspend(child) => CertAuthStorableCommand::ChildUnsuspend { child },
+            CertAuthCommandDetails::ChildUnsuspend(child) => {
+                CertAuthStorableCommand::ChildUnsuspend { child }
+            }
 
             // ------------------------------------------------------------
             // Being a child
             // ------------------------------------------------------------
-            CertAuthCommandDetails::GenerateNewIdKey(_) => CertAuthStorableCommand::GenerateNewIdKey,
-            CertAuthCommandDetails::AddParent(parent, contact) => CertAuthStorableCommand::AddParent {
-                parent,
-                contact: contact.into(),
-            },
+            CertAuthCommandDetails::GenerateNewIdKey(_) => {
+                CertAuthStorableCommand::GenerateNewIdKey
+            }
+            CertAuthCommandDetails::AddParent(parent, contact) => {
+                CertAuthStorableCommand::AddParent {
+                    parent,
+                    contact: contact.into(),
+                }
+            }
             CertAuthCommandDetails::UpdateParentContact(parent, contact) => {
                 CertAuthStorableCommand::UpdateParentContact {
                     parent,
                     contact: contact.into(),
                 }
             }
-            CertAuthCommandDetails::RemoveParent(parent) => CertAuthStorableCommand::RemoveParent { parent },
-            CertAuthCommandDetails::UpdateEntitlements(parent, cmd_entitlements, _) => {
+            CertAuthCommandDetails::RemoveParent(parent) => {
+                CertAuthStorableCommand::RemoveParent { parent }
+            }
+            CertAuthCommandDetails::UpdateEntitlements(
+                parent,
+                cmd_entitlements,
+                _,
+            ) => {
                 let mut entitlements = vec![];
                 for entitlement in cmd_entitlements.classes() {
                     entitlements.push(StorableRcEntitlement {
@@ -323,51 +393,81 @@ impl From<CertAuthCommandDetails> for CertAuthStorableCommand {
                     });
                 }
 
-                CertAuthStorableCommand::UpdateResourceEntitlements { parent, entitlements }
-            }
-            CertAuthCommandDetails::UpdateRcvdCert(resource_class_name, rcvd_cert, _, _) => {
-                CertAuthStorableCommand::UpdateRcvdCert {
-                    resource_class_name,
-                    resources: rcvd_cert.resources().clone(),
+                CertAuthStorableCommand::UpdateResourceEntitlements {
+                    parent,
+                    entitlements,
                 }
             }
-            CertAuthCommandDetails::DropResourceClass(resource_class_name, reason, _) => {
-                CertAuthStorableCommand::DropResourceClass {
-                    resource_class_name,
-                    reason,
-                }
-            }
+            CertAuthCommandDetails::UpdateRcvdCert(
+                resource_class_name,
+                rcvd_cert,
+                _,
+                _,
+            ) => CertAuthStorableCommand::UpdateRcvdCert {
+                resource_class_name,
+                resources: rcvd_cert.resources().clone(),
+            },
+            CertAuthCommandDetails::DropResourceClass(
+                resource_class_name,
+                reason,
+                _,
+            ) => CertAuthStorableCommand::DropResourceClass {
+                resource_class_name,
+                reason,
+            },
 
             // ------------------------------------------------------------
             // Key rolls
             // ------------------------------------------------------------
-            CertAuthCommandDetails::KeyRollInitiate(older_than, _) => CertAuthStorableCommand::KeyRollInitiate {
-                older_than_seconds: older_than.num_seconds(),
-            },
-            CertAuthCommandDetails::KeyRollActivate(staged_for, _, _) => CertAuthStorableCommand::KeyRollActivate {
-                staged_for_seconds: staged_for.num_seconds(),
-            },
+            CertAuthCommandDetails::KeyRollInitiate(older_than, _) => {
+                CertAuthStorableCommand::KeyRollInitiate {
+                    older_than_seconds: older_than.num_seconds(),
+                }
+            }
+            CertAuthCommandDetails::KeyRollActivate(staged_for, _, _) => {
+                CertAuthStorableCommand::KeyRollActivate {
+                    staged_for_seconds: staged_for.num_seconds(),
+                }
+            }
             CertAuthCommandDetails::KeyRollFinish(resource_class_name, _) => {
-                CertAuthStorableCommand::KeyRollFinish { resource_class_name }
+                CertAuthStorableCommand::KeyRollFinish {
+                    resource_class_name,
+                }
             }
 
             // ------------------------------------------------------------
             // ROA Support
             // ------------------------------------------------------------
-            CertAuthCommandDetails::RouteAuthorizationsUpdate(updates, _, _) => {
-                CertAuthStorableCommand::RoaDefinitionUpdates { updates }
+            CertAuthCommandDetails::RouteAuthorizationsUpdate(
+                updates,
+                _,
+                _,
+            ) => CertAuthStorableCommand::RoaDefinitionUpdates { updates },
+            CertAuthCommandDetails::RouteAuthorizationsRenew(_, _) => {
+                CertAuthStorableCommand::ReissueBeforeExpiring
             }
-            CertAuthCommandDetails::RouteAuthorizationsRenew(_, _) => CertAuthStorableCommand::ReissueBeforeExpiring,
-            CertAuthCommandDetails::RouteAuthorizationsForceRenew(_, _) => CertAuthStorableCommand::ForceReissue,
+            CertAuthCommandDetails::RouteAuthorizationsForceRenew(_, _) => {
+                CertAuthStorableCommand::ForceReissue
+            }
 
             // ------------------------------------------------------------
             // ASPA Support
             // ------------------------------------------------------------
-            CertAuthCommandDetails::AspasUpdate(updates, _, _) => CertAuthStorableCommand::AspasUpdate { updates },
-            CertAuthCommandDetails::AspasUpdateExisting(customer, update, _, _) => {
-                CertAuthStorableCommand::AspasUpdateExisting { customer, update }
+            CertAuthCommandDetails::AspasUpdate(updates, _, _) => {
+                CertAuthStorableCommand::AspasUpdate { updates }
             }
-            CertAuthCommandDetails::AspasRenew(_, _) => CertAuthStorableCommand::ReissueBeforeExpiring,
+            CertAuthCommandDetails::AspasUpdateExisting(
+                customer,
+                update,
+                _,
+                _,
+            ) => CertAuthStorableCommand::AspasUpdateExisting {
+                customer,
+                update,
+            },
+            CertAuthCommandDetails::AspasRenew(_, _) => {
+                CertAuthStorableCommand::ReissueBeforeExpiring
+            }
 
             // ------------------------------------------------------------
             // BGPSec Support
@@ -375,21 +475,31 @@ impl From<CertAuthCommandDetails> for CertAuthStorableCommand {
             CertAuthCommandDetails::BgpSecUpdateDefinitions(_, _, _) => {
                 CertAuthStorableCommand::BgpSecDefinitionUpdates
             }
-            CertAuthCommandDetails::BgpSecRenew(_, _) => CertAuthStorableCommand::ReissueBeforeExpiring,
+            CertAuthCommandDetails::BgpSecRenew(_, _) => {
+                CertAuthStorableCommand::ReissueBeforeExpiring
+            }
 
             // ------------------------------------------------------------
             // Publishing
             // ------------------------------------------------------------
-            CertAuthCommandDetails::RepoUpdate(contact, _) => CertAuthStorableCommand::RepoUpdate {
-                service_uri: contact.server_info().service_uri().clone(),
-            },
+            CertAuthCommandDetails::RepoUpdate(contact, _) => {
+                CertAuthStorableCommand::RepoUpdate {
+                    service_uri: contact.server_info().service_uri().clone(),
+                }
+            }
 
             // ------------------------------------------------------------
             // Resource Tagged Attestations
             // ------------------------------------------------------------
-            CertAuthCommandDetails::RtaMultiPrepare(name, _, _) => CertAuthStorableCommand::RtaPrepare { name },
-            CertAuthCommandDetails::RtaSign(name, _, _) => CertAuthStorableCommand::RtaSign { name },
-            CertAuthCommandDetails::RtaCoSign(name, _, _) => CertAuthStorableCommand::RtaCoSign { name },
+            CertAuthCommandDetails::RtaMultiPrepare(name, _, _) => {
+                CertAuthStorableCommand::RtaPrepare { name }
+            }
+            CertAuthCommandDetails::RtaSign(name, _, _) => {
+                CertAuthStorableCommand::RtaSign { name }
+            }
+            CertAuthCommandDetails::RtaCoSign(name, _, _) => {
+                CertAuthStorableCommand::RtaCoSign { name }
+            }
         }
     }
 }
@@ -407,7 +517,11 @@ impl CertAuthCommandDetails {
         eventsourcing::SentCommand::new(
             handle,
             None,
-            CertAuthCommandDetails::ChildAdd(child_handle, id_cert, resources),
+            CertAuthCommandDetails::ChildAdd(
+                child_handle,
+                id_cert,
+                resources,
+            ),
             actor,
         )
     }
@@ -436,7 +550,10 @@ impl CertAuthCommandDetails {
         eventsourcing::SentCommand::new(
             handle,
             None,
-            CertAuthCommandDetails::ChildUpdateResources(child_handle, resources),
+            CertAuthCommandDetails::ChildUpdateResources(
+                child_handle,
+                resources,
+            ),
             actor,
         )
     }
@@ -464,7 +581,10 @@ impl CertAuthCommandDetails {
         eventsourcing::SentCommand::new(
             handle,
             None,
-            CertAuthCommandDetails::ChildUpdateResourceClassNameMapping(child_handle, mapping),
+            CertAuthCommandDetails::ChildUpdateResourceClassNameMapping(
+                child_handle,
+                mapping,
+            ),
             actor,
         )
     }
@@ -482,7 +602,12 @@ impl CertAuthCommandDetails {
         eventsourcing::SentCommand::new(
             handle,
             None,
-            CertAuthCommandDetails::ChildCertify(child_handle, request, config, signer),
+            CertAuthCommandDetails::ChildCertify(
+                child_handle,
+                request,
+                config,
+                signer,
+            ),
             actor,
         )
     }
@@ -502,11 +627,24 @@ impl CertAuthCommandDetails {
         )
     }
 
-    pub fn child_remove(handle: &CaHandle, child_handle: ChildHandle, actor: &Actor) -> CertAuthCommand {
-        eventsourcing::SentCommand::new(handle, None, CertAuthCommandDetails::ChildRemove(child_handle), actor)
+    pub fn child_remove(
+        handle: &CaHandle,
+        child_handle: ChildHandle,
+        actor: &Actor,
+    ) -> CertAuthCommand {
+        eventsourcing::SentCommand::new(
+            handle,
+            None,
+            CertAuthCommandDetails::ChildRemove(child_handle),
+            actor,
+        )
     }
 
-    pub fn child_suspend_inactive(handle: &CaHandle, child_handle: ChildHandle, actor: &Actor) -> CertAuthCommand {
+    pub fn child_suspend_inactive(
+        handle: &CaHandle,
+        child_handle: ChildHandle,
+        actor: &Actor,
+    ) -> CertAuthCommand {
         eventsourcing::SentCommand::new(
             handle,
             None,
@@ -515,7 +653,11 @@ impl CertAuthCommandDetails {
         )
     }
 
-    pub fn child_unsuspend(handle: &CaHandle, child_handle: ChildHandle, actor: &Actor) -> CertAuthCommand {
+    pub fn child_unsuspend(
+        handle: &CaHandle,
+        child_handle: ChildHandle,
+        actor: &Actor,
+    ) -> CertAuthCommand {
         eventsourcing::SentCommand::new(
             handle,
             None,
@@ -524,8 +666,17 @@ impl CertAuthCommandDetails {
         )
     }
 
-    pub fn update_id(handle: &CaHandle, signer: Arc<KrillSigner>, actor: &Actor) -> CertAuthCommand {
-        eventsourcing::SentCommand::new(handle, None, CertAuthCommandDetails::GenerateNewIdKey(signer), actor)
+    pub fn update_id(
+        handle: &CaHandle,
+        signer: Arc<KrillSigner>,
+        actor: &Actor,
+    ) -> CertAuthCommand {
+        eventsourcing::SentCommand::new(
+            handle,
+            None,
+            CertAuthCommandDetails::GenerateNewIdKey(signer),
+            actor,
+        )
     }
 
     pub fn add_parent(
@@ -534,7 +685,12 @@ impl CertAuthCommandDetails {
         info: ParentCaContact,
         actor: &Actor,
     ) -> CertAuthCommand {
-        eventsourcing::SentCommand::new(handle, None, CertAuthCommandDetails::AddParent(parent, info), actor)
+        eventsourcing::SentCommand::new(
+            handle,
+            None,
+            CertAuthCommandDetails::AddParent(parent, info),
+            actor,
+        )
     }
 
     pub fn update_parent(
@@ -551,8 +707,17 @@ impl CertAuthCommandDetails {
         )
     }
 
-    pub fn remove_parent(handle: &CaHandle, parent: ParentHandle, actor: &Actor) -> CertAuthCommand {
-        eventsourcing::SentCommand::new(handle, None, CertAuthCommandDetails::RemoveParent(parent), actor)
+    pub fn remove_parent(
+        handle: &CaHandle,
+        parent: ParentHandle,
+        actor: &Actor,
+    ) -> CertAuthCommand {
+        eventsourcing::SentCommand::new(
+            handle,
+            None,
+            CertAuthCommandDetails::RemoveParent(parent),
+            actor,
+        )
     }
 
     pub fn update_entitlements(
@@ -565,7 +730,11 @@ impl CertAuthCommandDetails {
         eventsourcing::SentCommand::new(
             handle,
             None,
-            CertAuthCommandDetails::UpdateEntitlements(parent, entitlements, signer),
+            CertAuthCommandDetails::UpdateEntitlements(
+                parent,
+                entitlements,
+                signer,
+            ),
             actor,
         )
     }
@@ -581,7 +750,9 @@ impl CertAuthCommandDetails {
         eventsourcing::SentCommand::new(
             handle,
             None,
-            CertAuthCommandDetails::UpdateRcvdCert(class_name, cert, config, signer),
+            CertAuthCommandDetails::UpdateRcvdCert(
+                class_name, cert, config, signer,
+            ),
             actor,
         )
     }
@@ -596,7 +767,9 @@ impl CertAuthCommandDetails {
         eventsourcing::SentCommand::new(
             handle,
             None,
-            CertAuthCommandDetails::DropResourceClass(class_name, reason, signer),
+            CertAuthCommandDetails::DropResourceClass(
+                class_name, reason, signer,
+            ),
             actor,
         )
     }
@@ -640,7 +813,12 @@ impl CertAuthCommandDetails {
         res: RevocationResponse,
         actor: &Actor,
     ) -> CertAuthCommand {
-        eventsourcing::SentCommand::new(handle, None, CertAuthCommandDetails::KeyRollFinish(rcn, res), actor)
+        eventsourcing::SentCommand::new(
+            handle,
+            None,
+            CertAuthCommandDetails::KeyRollFinish(rcn, res),
+            actor,
+        )
     }
 
     pub fn update_repo(
@@ -649,7 +827,12 @@ impl CertAuthCommandDetails {
         signer: Arc<KrillSigner>,
         actor: &Actor,
     ) -> CertAuthCommand {
-        eventsourcing::SentCommand::new(handle, None, CertAuthCommandDetails::RepoUpdate(contact, signer), actor)
+        eventsourcing::SentCommand::new(
+            handle,
+            None,
+            CertAuthCommandDetails::RepoUpdate(contact, signer),
+            actor,
+        )
     }
 
     //-------------------------------------------------------------------------------
@@ -665,7 +848,9 @@ impl CertAuthCommandDetails {
         eventsourcing::SentCommand::new(
             handle,
             None,
-            CertAuthCommandDetails::RouteAuthorizationsUpdate(updates, config, signer),
+            CertAuthCommandDetails::RouteAuthorizationsUpdate(
+                updates, config, signer,
+            ),
             actor,
         )
     }
@@ -699,7 +884,9 @@ impl CertAuthCommandDetails {
         eventsourcing::SentCommand::new(
             ca,
             None,
-            CertAuthCommandDetails::AspasUpdateExisting(customer, update, config, signer),
+            CertAuthCommandDetails::AspasUpdateExisting(
+                customer, update, config, signer,
+            ),
             actor,
         )
     }
@@ -717,7 +904,9 @@ impl CertAuthCommandDetails {
         eventsourcing::SentCommand::new(
             ca,
             None,
-            CertAuthCommandDetails::BgpSecUpdateDefinitions(updates, config, signer),
+            CertAuthCommandDetails::BgpSecUpdateDefinitions(
+                updates, config, signer,
+            ),
             actor,
         )
     }

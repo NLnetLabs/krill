@@ -5,18 +5,24 @@ use std::{
     path::PathBuf,
 };
 
-use rpki::{ca::idexchange::PublisherHandle, repository::x509::Time, rrdp::Hash, uri};
+use rpki::{
+    ca::idexchange::PublisherHandle, repository::x509::Time, rrdp::Hash, uri,
+};
 
 use crate::{
     commons::{
         api::rrdp::{
-            CurrentObjectUri, CurrentObjects, DeltaData, DeltaElements, PublishElement, RrdpFileRandom, RrdpSession,
-            SnapshotData, UpdateElement, WithdrawElement,
+            CurrentObjectUri, CurrentObjects, DeltaData, DeltaElements,
+            PublishElement, RrdpFileRandom, RrdpSession, SnapshotData,
+            UpdateElement, WithdrawElement,
         },
         error::Error,
         eventsourcing::{WalChange, WalSupport},
     },
-    pubd::{RepositoryContent, RepositoryContentCommand, RrdpServer, RrdpSessionReset, RrdpUpdated, RsyncdStore},
+    pubd::{
+        RepositoryContent, RepositoryContentCommand, RrdpServer,
+        RrdpSessionReset, RrdpUpdated, RsyncdStore,
+    },
 };
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -126,9 +132,15 @@ impl OldRrdpServer {
                 OldDeltaElement::Withdraw(wdr) => withdraws.push(wdr),
             }
         }
-        let delta_elements = DeltaElements::new(publishes, updates, withdraws);
+        let delta_elements =
+            DeltaElements::new(publishes, updates, withdraws);
 
-        let delta = DeltaData::new(self.serial, update.time, update.random, delta_elements);
+        let delta = DeltaData::new(
+            self.serial,
+            update.time,
+            update.random,
+            delta_elements,
+        );
 
         self.snapshot = self
             .snapshot
@@ -170,43 +182,67 @@ impl OldRrdpServer {
         let (publishes, updates, withdraws) = elements.unpack();
         for pbl in publishes {
             let uri = pbl.uri().clone();
-            // A publish that follows a withdraw for the same URI should be Update.
-            if let Some(OldDeltaElement::Withdraw(staged_withdraw)) = self.staged_elements.0.get(&uri) {
+            // A publish that follows a withdraw for the same URI should be
+            // Update.
+            if let Some(OldDeltaElement::Withdraw(staged_withdraw)) =
+                self.staged_elements.0.get(&uri)
+            {
                 let hash = staged_withdraw.hash();
-                let update = UpdateElement::new(uri.clone(), hash, pbl.base64().clone());
-                self.staged_elements.0.insert(uri, OldDeltaElement::Update(update));
+                let update = UpdateElement::new(
+                    uri.clone(),
+                    hash,
+                    pbl.base64().clone(),
+                );
+                self.staged_elements
+                    .0
+                    .insert(uri, OldDeltaElement::Update(update));
             } else {
                 // In any other case we just keep the new publish.
-                // Because deltas are checked before they are applied we know that publish
-                // elements cannot occur after another publish or update. They would have
+                // Because deltas are checked before they are applied we know
+                // that publish elements cannot occur after
+                // another publish or update. They would have
                 // had to be an update in that case.
-                // Because this is checked when the publication delta is submitted, we can
-                // ignore this case here.
-                self.staged_elements.0.insert(uri, OldDeltaElement::Publish(pbl));
+                // Because this is checked when the publication delta is
+                // submitted, we can ignore this case here.
+                self.staged_elements
+                    .0
+                    .insert(uri, OldDeltaElement::Publish(pbl));
             };
         }
 
         for mut upd in updates {
             let uri = upd.uri().clone();
-            // An update that follows a staged publish, should be fresh publish.
-            // An update that follows a staged update, should use the hash from the previous update.
-            // An update cannot follow a staged withdraw. It would have been a publish in that case.
-            if let Some(OldDeltaElement::Publish(_)) = self.staged_elements.0.get(&uri) {
+            // An update that follows a staged publish, should be fresh
+            // publish. An update that follows a staged update,
+            // should use the hash from the previous update.
+            // An update cannot follow a staged withdraw. It would have been a
+            // publish in that case.
+            if let Some(OldDeltaElement::Publish(_)) =
+                self.staged_elements.0.get(&uri)
+            {
+                self.staged_elements.0.insert(
+                    uri,
+                    OldDeltaElement::Publish(upd.into_publish()),
+                );
+            } else if let Some(OldDeltaElement::Update(staged_update)) =
+                self.staged_elements.0.get(&uri)
+            {
+                upd.with_updated_hash(staged_update.hash()); // set hash to previous update hash
                 self.staged_elements
                     .0
-                    .insert(uri, OldDeltaElement::Publish(upd.into_publish()));
-            } else if let Some(OldDeltaElement::Update(staged_update)) = self.staged_elements.0.get(&uri) {
-                upd.with_updated_hash(staged_update.hash()); // set hash to previous update hash
-                self.staged_elements.0.insert(uri, OldDeltaElement::Update(upd));
+                    .insert(uri, OldDeltaElement::Update(upd));
             } else {
-                self.staged_elements.0.insert(uri, OldDeltaElement::Update(upd));
+                self.staged_elements
+                    .0
+                    .insert(uri, OldDeltaElement::Update(upd));
             }
         }
 
         for wdr in withdraws {
             // withdraws should always remove any staged publishes or updates.
-            // they cannot follow staged withdraws (checked when delta is submitted)
-            // so just add them all to the staged elements
+            // they cannot follow staged withdraws (checked when delta is
+            // submitted) so just add them all to the staged
+            // elements
             self.staged_elements
                 .0
                 .insert(wdr.uri().clone(), OldDeltaElement::Withdraw(wdr));
@@ -230,8 +266,8 @@ pub struct OldSnapshotData {
     // The random value will be used to make the snapshot URI unguessable and
     // prevent cache poisoning (through CDN cached 404 not founds).
     //
-    // Old versions of Krill did not have this. We can just use a default (new)
-    // random value in these cases.
+    // Old versions of Krill did not have this. We can just use a default
+    // (new) random value in these cases.
     #[serde(default)]
     random: RrdpFileRandom,
 
@@ -242,7 +278,11 @@ impl OldSnapshotData {
     /// Creates a new snapshot with the delta applied. This assumes
     /// that the delta had been checked before. This should not be
     /// any issue as deltas are verified when they are submitted.
-    fn with_delta(&self, random: RrdpFileRandom, elements: DeltaElements) -> OldSnapshotData {
+    fn with_delta(
+        &self,
+        random: RrdpFileRandom,
+        elements: DeltaElements,
+    ) -> OldSnapshotData {
         let mut current_objects = self.current_objects.clone();
         current_objects.apply_delta(elements);
 
@@ -253,7 +293,10 @@ impl OldSnapshotData {
     }
 
     fn size(&self) -> usize {
-        self.current_objects.0.values().fold(0, |sum, p| sum + p.size_approx())
+        self.current_objects
+            .0
+            .values()
+            .fold(0, |sum, p| sum + p.size_approx())
     }
 }
 
@@ -308,14 +351,22 @@ impl WalSupport for OldRepositoryContent {
         for change in set.into_changes() {
             match change {
                 OldRepositoryContentChange::SessionReset { .. } => {
-                    // Ignore this.. we will do a new session reset after migrating
+                    // Ignore this.. we will do a new session reset after
+                    // migrating
                 }
-                OldRepositoryContentChange::RrdpUpdated { update } => self.rrdp.apply_rrdp_updated(update),
-                OldRepositoryContentChange::RrdpDeltaStaged { delta } => self.rrdp.apply_rrdp_staged(delta),
+                OldRepositoryContentChange::RrdpUpdated { update } => {
+                    self.rrdp.apply_rrdp_updated(update)
+                }
+                OldRepositoryContentChange::RrdpDeltaStaged { delta } => {
+                    self.rrdp.apply_rrdp_staged(delta)
+                }
                 OldRepositoryContentChange::PublisherAdded { publisher } => {
-                    self.publishers.insert(publisher, OldCurrentObjects::default());
+                    self.publishers
+                        .insert(publisher, OldCurrentObjects::default());
                 }
-                OldRepositoryContentChange::PublisherRemoved { publisher } => {
+                OldRepositoryContentChange::PublisherRemoved {
+                    publisher,
+                } => {
                     self.publishers.remove(&publisher);
                 }
                 OldRepositoryContentChange::PublishedObjects {
@@ -329,8 +380,13 @@ impl WalSupport for OldRepositoryContent {
         self.revision += 1;
     }
 
-    fn process_command(&self, _command: Self::Command) -> Result<Vec<Self::Change>, Self::Error> {
-        unreachable!("We will not apply any new commands to the old repository")
+    fn process_command(
+        &self,
+        _command: Self::Command,
+    ) -> Result<Vec<Self::Change>, Self::Error> {
+        unreachable!(
+            "We will not apply any new commands to the old repository"
+        )
     }
 }
 
@@ -342,23 +398,25 @@ impl TryFrom<OldRepositoryContent> for RepositoryContent {
         //
         // - Make a new snapshot, with content from old.publishers
         // - Keep the old deltas, session and serial
-        // - Work out what the difference between the *old* snapshot
-        //   and the *new* snapshot. If there *is* a difference:
+        // - Work out what the difference between the *old* snapshot and the
+        //   *new* snapshot. If there *is* a difference:
         //     - update the snapshot random
         //     - increment serial and last_update time
         //     - add a delta to get from old snapshot to current
         //
-        // Note that we can ignore staged elements in this migration. The staged
-        // elements for the new RrdpServer will be empty as the snapshot will
-        // contain all current objects. The old staged elements can be ignored:
-        // we will work out what the delta is and publish. This delta will include
-        // the old staged elements.
+        // Note that we can ignore staged elements in this migration. The
+        // staged elements for the new RrdpServer will be empty as the
+        // snapshot will contain all current objects. The old staged
+        // elements can be ignored: we will work out what the delta is
+        // and publish. This delta will include the old staged
+        // elements.
         //
-        // Additionally, because the old RrdpServer kept the data in two places
-        // there could have been an inconsistency between the sets (however
-        // unlikely). The delta will include compensating fixes for any such
-        // issue. And because there is no more duplication of data in the new
-        // RrdpServer we cannot have this issue anymore after the migration.
+        // Additionally, because the old RrdpServer kept the data in two
+        // places there could have been an inconsistency between the
+        // sets (however unlikely). The delta will include
+        // compensating fixes for any such issue. And because there is
+        // no more duplication of data in the new RrdpServer we cannot
+        // have this issue anymore after the migration.
 
         let rrdp_base_uri = old.rrdp.rrdp_base_uri;
         let rrdp_base_dir = old.rrdp.rrdp_base_dir;
@@ -373,14 +431,18 @@ impl TryFrom<OldRepositoryContent> for RepositoryContent {
             .into_iter()
             .map(|(p, old_objects)| (p, old_objects.into()))
             .collect();
-        let mut snapshot = SnapshotData::new(old.rrdp.snapshot.random, publishers_current_objects);
+        let mut snapshot = SnapshotData::new(
+            old.rrdp.snapshot.random,
+            publishers_current_objects,
+        );
         let mut deltas = old.rrdp.deltas;
 
         // Check if there is a difference between the new snapshot data
         // and the old snapshot data.
         let delta_elements = {
             let old_snapshot_objects = old.rrdp.snapshot.current_objects;
-            let old_snapshot_objects = CurrentObjects::from(old_snapshot_objects);
+            let old_snapshot_objects =
+                CurrentObjects::from(old_snapshot_objects);
 
             let mut all_new_snapshot_objects = CurrentObjects::default();
             for objects in snapshot.publishers_current_objects().values() {
@@ -399,7 +461,12 @@ impl TryFrom<OldRepositoryContent> for RepositoryContent {
             serial += 1;
 
             //     - add a delta to get from old snapshot to current
-            let delta = DeltaData::new(serial, Time::now(), RrdpFileRandom::default(), delta_elements);
+            let delta = DeltaData::new(
+                serial,
+                Time::now(),
+                RrdpFileRandom::default(),
+                delta_elements,
+            );
             deltas.push_front(delta);
         }
 

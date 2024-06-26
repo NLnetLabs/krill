@@ -4,7 +4,6 @@
 //! See the following drafts:
 //! https://datatracker.ietf.org/doc/draft-ietf-sidrops-aspa-profile/
 //! https://datatracker.ietf.org/doc/draft-ietf-sidrops-aspa-verification/
-//!
 
 use std::{collections::HashMap, fmt::Debug};
 
@@ -42,7 +41,9 @@ pub fn make_aspa_object(
 
     let aspa_builder = {
         let (customer_as, providers) = aspa_def.unpack();
-        AspaBuilder::new(customer_as, providers).map_err(|e| Error::Custom(format!("Cannot use aspa config: {}", e)))
+        AspaBuilder::new(customer_as, providers).map_err(|e| {
+            Error::Custom(format!("Cannot use aspa config: {}", e))
+        })
     }?;
 
     let object_builder = {
@@ -52,15 +53,24 @@ pub fn make_aspa_object(
         let aspa_uri = incoming_cert.uri_for_name(&name);
         let ca_issuer = incoming_cert.uri().clone();
 
-        let mut object_builder =
-            SignedObjectBuilder::new(signer.random_serial()?, validity, crl_uri, ca_issuer, aspa_uri);
+        let mut object_builder = SignedObjectBuilder::new(
+            signer.random_serial()?,
+            validity,
+            crl_uri,
+            ca_issuer,
+            aspa_uri,
+        );
         object_builder.set_issuer(Some(incoming_cert.subject().clone()));
         object_builder.set_signing_time(Some(Time::now()));
 
         object_builder
     };
 
-    Ok(signer.sign_aspa(aspa_builder, object_builder, certified_key.key_id())?)
+    Ok(signer.sign_aspa(
+        aspa_builder,
+        object_builder,
+        certified_key.key_id(),
+    )?)
 }
 
 //------------ AspaDefinitions ---------------------------------------------
@@ -86,19 +96,25 @@ impl AspaDefinitions {
         self.attestations.remove(&customer);
     }
 
-    // Applies an update. This assumes that the update was verified beforehand.
-    pub fn apply_update(&mut self, customer: CustomerAsn, update: &AspaProvidersUpdate) {
+    // Applies an update. This assumes that the update was verified
+    // beforehand.
+    pub fn apply_update(
+        &mut self,
+        customer: CustomerAsn,
+        update: &AspaProvidersUpdate,
+    ) {
         if let Some(current) = self.attestations.get_mut(&customer) {
             current.apply_update(update);
 
-            // If there are no remaining providers for this AspaDefinition, then
-            // remove it so that its ASPA object will also be removed.
+            // If there are no remaining providers for this AspaDefinition,
+            // then remove it so that its ASPA object will also be
+            // removed.
             if current.providers().is_empty() {
                 self.attestations.remove(&customer);
             }
         } else {
-            // There was no AspaDefinition. So create an empty definition, apply
-            // the update and then add it.
+            // There was no AspaDefinition. So create an empty definition,
+            // apply the update and then add it.
             let mut def = AspaDefinition::new(customer, vec![]);
             def.apply_update(update);
 
@@ -112,7 +128,6 @@ impl AspaDefinitions {
 }
 
 /// # Set operations
-///
 impl AspaDefinitions {
     pub fn get(&self, customer: CustomerAsn) -> Option<&AspaDefinition> {
         self.attestations.get(&customer)
@@ -170,7 +185,8 @@ impl AspaObjects {
         let mut object_updates = AspaObjectsUpdates::default();
         let resources = certified_key.incoming_cert().resources();
 
-        // Issue new and updated ASPAs for definitions relevant to the resources in scope
+        // Issue new and updated ASPAs for definitions relevant to the
+        // resources in scope
         for relevant_aspa in all_aspa_defs
             .all()
             .filter(|aspa| resources.contains_asn(aspa.customer()))
@@ -182,15 +198,21 @@ impl AspaObjects {
                 .unwrap_or(true);
 
             if need_to_issue {
-                let aspa_info =
-                    self.make_aspa(relevant_aspa.clone(), certified_key, &config.issuance_timing, signer)?;
+                let aspa_info = self.make_aspa(
+                    relevant_aspa.clone(),
+                    certified_key,
+                    &config.issuance_timing,
+                    signer,
+                )?;
                 object_updates.add_updated(aspa_info);
             }
         }
 
         // Check if any currently held ASPA object needs to be removed
         for customer in self.0.keys() {
-            if !all_aspa_defs.has(*customer) || !resources.contains_asn(*customer) {
+            if !all_aspa_defs.has(*customer)
+                || !resources.contains_asn(*customer)
+            {
                 // definition was removed, or it's overclaiming
                 object_updates.add_removed(*customer);
             }
@@ -219,7 +241,12 @@ impl AspaObjects {
             if renew {
                 let aspa_definition = aspa.definition().clone();
 
-                let new_aspa = self.make_aspa(aspa_definition, certified_key, issuance_timing, signer)?;
+                let new_aspa = self.make_aspa(
+                    aspa_definition,
+                    certified_key,
+                    issuance_timing,
+                    signer,
+                )?;
                 updates.add_updated(new_aspa);
             }
         }

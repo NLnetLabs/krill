@@ -9,7 +9,10 @@ use rpki::{
         provisioning, publication,
         sigmsg::SignedMessage,
     },
-    crypto::{KeyIdentifier, PublicKey, PublicKeyFormat, RpkiSignature, RpkiSignatureAlgorithm, Signer},
+    crypto::{
+        KeyIdentifier, PublicKey, PublicKeyFormat, RpkiSignature,
+        RpkiSignatureAlgorithm, Signer,
+    },
     repository::{
         aspa::{Aspa, AspaBuilder},
         cert::TbsCert,
@@ -58,18 +61,24 @@ use crate::commons::crypto::{
 ///   - Delegates Signer management and dispatch to [SignerRouter].
 ///   - Maps Result<SignerError> to KrillResult.
 ///   - Directs signers to use the RPKI standard key format (RSA).
-///   - Directs signers to use the RPKI standard signature algorithm (RSA PKCS #1 v1.5 with SHA-256).
+///   - Directs signers to use the RPKI standard signature algorithm (RSA PKCS
+///     #1 v1.5 with SHA-256).
 ///   - Offers additional high level functions compared to the [Signer] trait.
 ///
-/// We delegate to [SignerRouter] because our interface differs to that of the [Signer] trait and because the code is
-/// easier to read if we separate out responsibilities.
+/// We delegate to [SignerRouter] because our interface differs to that of the
+/// [Signer] trait and because the code is easier to read if we separate out
+/// responsibilities.
 ///
-/// We need dispatch to the correct [Signer] to be done by a Struct that implements the [Signer] trait itself because
-/// otherwise functions elsewhere in Krill that take a [Signer] trait as input will not invoke the correct [Signer].
+/// We need dispatch to the correct [Signer] to be done by a Struct that
+/// implements the [Signer] trait itself because otherwise functions elsewhere
+/// in Krill that take a [Signer] trait as input will not invoke the correct
+/// [Signer].
 ///
-/// We _could_ implement the [Signer] trait in [KrillSigner] but then we would implement two almost identical but
-/// subtly different interfaces in the same struct AND implement management of signers and dispatch to the correct
-/// signer all in one place, and that quickly becomes harder to read, understand and maintain.
+/// We _could_ implement the [Signer] trait in [KrillSigner] but then we would
+/// implement two almost identical but subtly different interfaces in the same
+/// struct AND implement management of signers and dispatch to the correct
+/// signer all in one place, and that quickly becomes harder to read,
+/// understand and maintain.
 
 type SignerBuilderFn = fn(
     &SignerType,
@@ -90,7 +99,11 @@ pub struct KrillSignerBuilder<'a> {
 }
 
 impl<'a> KrillSignerBuilder<'a> {
-    pub fn new(storage_uri: &Url, probe_interval: Duration, signer_configs: &'a [SignerConfig]) -> Self {
+    pub fn new(
+        storage_uri: &Url,
+        probe_interval: Duration,
+        signer_configs: &'a [SignerConfig],
+    ) -> Self {
         Self {
             storage_uri: storage_uri.clone(),
             probe_interval,
@@ -100,19 +113,27 @@ impl<'a> KrillSignerBuilder<'a> {
         }
     }
 
-    pub fn with_default_signer(&'a mut self, signer_config: &'a SignerConfig) -> &'a mut Self {
+    pub fn with_default_signer(
+        &'a mut self,
+        signer_config: &'a SignerConfig,
+    ) -> &'a mut Self {
         self.default_signer = Some(signer_config);
         self
     }
 
-    pub fn with_one_off_signer(&'a mut self, signer_config: &'a SignerConfig) -> &'a mut Self {
+    pub fn with_one_off_signer(
+        &'a mut self,
+        signer_config: &'a SignerConfig,
+    ) -> &'a mut Self {
         self.one_off_signer = Some(signer_config);
         self
     }
 
     pub fn build(&'a mut self) -> KrillResult<KrillSigner> {
         if self.signer_configs.is_empty() {
-            return Err(Error::ConfigError("At least one signer must be defined".to_string()));
+            return Err(Error::ConfigError(
+                "At least one signer must be defined".to_string(),
+            ));
         }
 
         if self.signer_configs.len() == 1 {
@@ -125,24 +146,30 @@ impl<'a> KrillSignerBuilder<'a> {
         }
 
         if self.default_signer.is_none() {
-            return Err(Error::ConfigError("No default signer is defined".to_string()));
+            return Err(Error::ConfigError(
+                "No default signer is defined".to_string(),
+            ));
         }
         let default_signer = self.default_signer.unwrap();
 
         if !self.signer_configs.contains(default_signer) {
             return Err(Error::ConfigError(
-                "The default signer must be one of the defined signers".to_string(),
+                "The default signer must be one of the defined signers"
+                    .to_string(),
             ));
         }
 
         if self.one_off_signer.is_none() {
-            return Err(Error::ConfigError("No one-off signer is defined".to_string()));
+            return Err(Error::ConfigError(
+                "No one-off signer is defined".to_string(),
+            ));
         }
         let one_off_signer = self.one_off_signer.unwrap();
 
         if !self.signer_configs.contains(one_off_signer) {
             return Err(Error::ConfigError(
-                "The one-off signer must be one of the defined signers".to_string(),
+                "The one-off signer must be one of the defined signers"
+                    .to_string(),
             ));
         }
 
@@ -192,7 +219,9 @@ impl KrillSigner {
     }
 
     #[cfg(feature = "hsm")]
-    pub fn get_active_signers(&self) -> HashMap<SignerHandle, Arc<SignerProvider>> {
+    pub fn get_active_signers(
+        &self,
+    ) -> HashMap<SignerHandle, Arc<SignerProvider>> {
         self.router.get_active_signers()
     }
 
@@ -214,38 +243,63 @@ impl KrillSigner {
             Time::years_from_now(ID_CERTIFICATE_VALIDITY_YEARS),
         );
 
-        IdCert::new_ta(validity, &key, &self.router).map_err(crypto::Error::signer)
+        IdCert::new_ta(validity, &key, &self.router)
+            .map_err(crypto::Error::signer)
     }
 
     pub fn destroy_key(&self, key_id: &KeyIdentifier) -> CryptoResult<()> {
-        self.router.destroy_key(key_id).map_err(crypto::Error::key_error)
+        self.router
+            .destroy_key(key_id)
+            .map_err(crypto::Error::key_error)
     }
 
-    pub fn get_key_info(&self, key_id: &KeyIdentifier) -> CryptoResult<PublicKey> {
-        self.router.get_key_info(key_id).map_err(crypto::Error::key_error)
+    pub fn get_key_info(
+        &self,
+        key_id: &KeyIdentifier,
+    ) -> CryptoResult<PublicKey> {
+        self.router
+            .get_key_info(key_id)
+            .map_err(crypto::Error::key_error)
     }
 
     pub fn random_serial(&self) -> CryptoResult<Serial> {
         Serial::random(&self.router).map_err(crypto::Error::signer)
     }
 
-    pub fn sign<D: AsRef<[u8]> + ?Sized>(&self, key_id: &KeyIdentifier, data: &D) -> CryptoResult<RpkiSignature> {
+    pub fn sign<D: AsRef<[u8]> + ?Sized>(
+        &self,
+        key_id: &KeyIdentifier,
+        data: &D,
+    ) -> CryptoResult<RpkiSignature> {
         self.router
             .sign(key_id, RpkiSignatureAlgorithm::default(), data)
             .map_err(crypto::Error::signing)
     }
 
-    pub fn sign_one_off<D: AsRef<[u8]> + ?Sized>(&self, data: &D) -> CryptoResult<(RpkiSignature, PublicKey)> {
+    pub fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
+        &self,
+        data: &D,
+    ) -> CryptoResult<(RpkiSignature, PublicKey)> {
         self.router
             .sign_one_off(RpkiSignatureAlgorithm::default(), data)
             .map_err(crypto::Error::signer)
     }
 
-    pub fn sign_csr(&self, base_repo: &RepoInfo, name_space: &str, key: &KeyIdentifier) -> CryptoResult<RpkiCaCsr> {
-        let signing_key_id = self.router.get_key_info(key).map_err(crypto::Error::key_error)?;
-        let mft_file_name = ObjectName::mft_for_key(&signing_key_id.key_identifier());
+    pub fn sign_csr(
+        &self,
+        base_repo: &RepoInfo,
+        name_space: &str,
+        key: &KeyIdentifier,
+    ) -> CryptoResult<RpkiCaCsr> {
+        let signing_key_id = self
+            .router
+            .get_key_info(key)
+            .map_err(crypto::Error::key_error)?;
+        let mft_file_name =
+            ObjectName::mft_for_key(&signing_key_id.key_identifier());
 
-        // The rpki-rs library returns a signed and encoded CSR for a CA certificate.
+        // The rpki-rs library returns a signed and encoded CSR for a CA
+        // certificate.
         let signed_and_encoded_csr = Csr::construct_rpki_ca(
             &self.router,
             key,
@@ -256,15 +310,26 @@ impl KrillSigner {
         .map_err(crypto::Error::signing)?;
 
         // Decode the encoded CSR again to get a typed RpkiCaCsr
-        RpkiCaCsr::decode(signed_and_encoded_csr.as_slice()).map_err(crypto::Error::signing)
+        RpkiCaCsr::decode(signed_and_encoded_csr.as_slice())
+            .map_err(crypto::Error::signing)
     }
 
-    pub fn sign_cert(&self, tbs: TbsCert, key_id: &KeyIdentifier) -> CryptoResult<Cert> {
-        tbs.into_cert(&self.router, key_id).map_err(crypto::Error::signing)
+    pub fn sign_cert(
+        &self,
+        tbs: TbsCert,
+        key_id: &KeyIdentifier,
+    ) -> CryptoResult<Cert> {
+        tbs.into_cert(&self.router, key_id)
+            .map_err(crypto::Error::signing)
     }
 
-    pub fn sign_crl(&self, tbs: TbsCertList<Vec<CrlEntry>>, key_id: &KeyIdentifier) -> CryptoResult<Crl> {
-        tbs.into_crl(&self.router, key_id).map_err(crypto::Error::signing)
+    pub fn sign_crl(
+        &self,
+        tbs: TbsCertList<Vec<CrlEntry>>,
+        key_id: &KeyIdentifier,
+    ) -> CryptoResult<Crl> {
+        tbs.into_crl(&self.router, key_id)
+            .map_err(crypto::Error::signing)
     }
 
     pub fn sign_manifest(
@@ -300,7 +365,11 @@ impl KrillSigner {
             .map_err(crypto::Error::signing)
     }
 
-    pub fn sign_rta(&self, rta_builder: &mut rta::RtaBuilder, ee: Cert) -> CryptoResult<()> {
+    pub fn sign_rta(
+        &self,
+        rta_builder: &mut rta::RtaBuilder,
+        ee: Cert,
+    ) -> CryptoResult<()> {
         let key = ee.subject_key_identifier();
         rta_builder.push_cert(ee);
         rta_builder
@@ -313,7 +382,12 @@ impl KrillSigner {
         message: provisioning::Message,
         signing_key: &KeyIdentifier,
     ) -> CryptoResult<provisioning::ProvisioningCms> {
-        provisioning::ProvisioningCms::create(message, signing_key, &self.router).map_err(crypto::Error::signing)
+        provisioning::ProvisioningCms::create(
+            message,
+            signing_key,
+            &self.router,
+        )
+        .map_err(crypto::Error::signing)
     }
 
     pub fn create_rfc8181_cms(
@@ -321,7 +395,12 @@ impl KrillSigner {
         message: publication::Message,
         signing_key: &KeyIdentifier,
     ) -> CryptoResult<publication::PublicationCms> {
-        publication::PublicationCms::create(message, signing_key, &self.router).map_err(crypto::Error::signing)
+        publication::PublicationCms::create(
+            message,
+            signing_key,
+            &self.router,
+        )
+        .map_err(crypto::Error::signing)
     }
 
     pub fn create_ta_signed_message(
@@ -332,7 +411,8 @@ impl KrillSigner {
     ) -> CryptoResult<SignedMessage> {
         let validity = SignSupport::sign_validity_days(validity_days);
 
-        SignedMessage::create(data, validity, signing_key, &self.router).map_err(crypto::Error::signing)
+        SignedMessage::create(data, validity, signing_key, &self.router)
+            .map_err(crypto::Error::signing)
     }
 }
 
@@ -356,7 +436,10 @@ impl KrillSigner {
         // Instantiate each configured signer
         let mut signers = Vec::new();
         for config in configs.iter() {
-            let flags = SignerFlags::new(config.name == default_signer.name, config.name == one_off_signer.name);
+            let flags = SignerFlags::new(
+                config.name == default_signer.name,
+                config.name == one_off_signer.name,
+            );
 
             info!(
                 "Configuring signer '{}' (type: {}, {})",
@@ -390,18 +473,30 @@ fn signer_builder(
 ) -> KrillResult<SignerProvider> {
     match r#type {
         SignerType::OpenSsl(conf) => {
-            let storage_uri = conf.keys_storage_uri.as_ref().unwrap_or(storage_uri);
-            let signer = OpenSslSigner::build(storage_uri, name, mapper.clone())?;
+            let storage_uri =
+                conf.keys_storage_uri.as_ref().unwrap_or(storage_uri);
+            let signer =
+                OpenSslSigner::build(storage_uri, name, mapper.clone())?;
             Ok(SignerProvider::OpenSsl(flags, signer))
         }
         #[cfg(feature = "hsm")]
         SignerType::Pkcs11(conf) => {
-            let signer = Pkcs11Signer::build(name, conf, probe_interval, mapper.as_ref().unwrap().clone())?;
+            let signer = Pkcs11Signer::build(
+                name,
+                conf,
+                probe_interval,
+                mapper.as_ref().unwrap().clone(),
+            )?;
             Ok(SignerProvider::Pkcs11(flags, signer))
         }
         #[cfg(feature = "hsm")]
         SignerType::Kmip(conf) => {
-            let signer = KmipSigner::build(name, conf, probe_interval, mapper.as_ref().unwrap().clone())?;
+            let signer = KmipSigner::build(
+                name,
+                conf,
+                probe_interval,
+                mapper.as_ref().unwrap().clone(),
+            )?;
             Ok(SignerProvider::Kmip(flags, signer))
         }
     }
@@ -418,15 +513,17 @@ pub mod tests {
     use std::time::Duration;
 
     use crate::{
-        commons::crypto::signers::mocksigner::{MockSigner, MockSignerCallCounts},
+        commons::crypto::signers::mocksigner::{
+            MockSigner, MockSignerCallCounts,
+        },
         daemon::config::Config,
         test,
     };
 
     use super::*;
 
-    /// A signer builder fn that builds MockSigner instances instead of real signer instances.
-    /// Used to test KrillSigner::build_signers().
+    /// A signer builder fn that builds MockSigner instances instead of real
+    /// signer instances. Used to test KrillSigner::build_signers().
     fn mock_signer_builder(
         r#type: &SignerType,
         flags: SignerFlags,
@@ -436,13 +533,21 @@ pub mod tests {
         mapper: &Option<Arc<SignerMapper>>,
     ) -> KrillResult<SignerProvider> {
         let call_counts = Arc::new(MockSignerCallCounts::new());
-        let mut mock_signer = MockSigner::new(name, mapper.as_ref().unwrap().clone(), call_counts, None, None);
+        let mut mock_signer = MockSigner::new(
+            name,
+            mapper.as_ref().unwrap().clone(),
+            call_counts,
+            None,
+            None,
+        );
         mock_signer.set_info(&format!("mock {} signer", r#type));
         Ok(SignerProvider::Mock(flags, mock_signer))
     }
 
     /// Create a Krill Config object from a Krill config file text fragment.
-    fn config_fragment_to_config_object(fragment: &str) -> Result<Config, toml::de::Error> {
+    fn config_fragment_to_config_object(
+        fragment: &str,
+    ) -> Result<Config, toml::de::Error> {
         let mut config_str = r#"admin_token = "***""#.to_string();
         config_str.push_str(fragment);
         toml::from_str(&config_str)
@@ -453,8 +558,12 @@ pub mod tests {
         storage_uri: &Url,
         mapper: Arc<SignerMapper>,
     ) -> KrillResult<Vec<SignerProvider>> {
-        let mut config = config_fragment_to_config_object(signers_config_fragment).unwrap();
-        config.process().map_err(|err| Error::ConfigError(err.to_string()))?;
+        let mut config =
+            config_fragment_to_config_object(signers_config_fragment)
+                .unwrap();
+        config
+            .process()
+            .map_err(|err| Error::ConfigError(err.to_string()))?;
         let mapper = Some(mapper);
         let probe_interval = std::time::Duration::from_secs(1);
         KrillSigner::build_signers(
@@ -473,7 +582,10 @@ pub mod tests {
     }
 
     fn assert_signer_type(signer: &SignerProvider, expected: &str) {
-        assert_eq!(signer.get_info().unwrap(), format!("mock {} signer", expected));
+        assert_eq!(
+            signer.get_info().unwrap(),
+            format!("mock {} signer", expected)
+        );
     }
 
     fn assert_signer_name_and_type(signer: &SignerProvider, expected: &str) {
@@ -481,20 +593,29 @@ pub mod tests {
         assert_signer_type(signer, expected);
     }
 
-    fn assert_signer_flags(signer: &SignerProvider, expected_default: bool, expected_one_off: bool) {
+    fn assert_signer_flags(
+        signer: &SignerProvider,
+        expected_default: bool,
+        expected_one_off: bool,
+    ) {
         assert_eq!(expected_default, signer.is_default_signer());
         assert_eq!(expected_one_off, signer.is_one_off_signer());
     }
 
-    /// Prior to the addition of HSM support Krill had no notion of configurable signers. Instead it always created a
-    /// single OpenSSL signer that was used for all signing related operations (i.e. key creation, deletion, signing,
-    /// one-off signing and random number generation). With HSM support enabled, if no signers are defined in the Krill
-    /// configuration file the behaviour should be the same as it was before HSM support was added.
+    /// Prior to the addition of HSM support Krill had no notion of
+    /// configurable signers. Instead it always created a single OpenSSL
+    /// signer that was used for all signing related operations (i.e. key
+    /// creation, deletion, signing, one-off signing and random number
+    /// generation). With HSM support enabled, if no signers are defined in
+    /// the Krill configuration file the behaviour should be the same as
+    /// it was before HSM support was added.
     #[test]
     pub fn no_signers_equals_one_openssl_signer_for_backward_compatibility() {
         test::test_in_memory(|storage_uri| {
             let mapper = Arc::new(SignerMapper::build(storage_uri).unwrap());
-            let signers = build_krill_signer_from_config("", storage_uri, mapper).unwrap();
+            let signers =
+                build_krill_signer_from_config("", storage_uri, mapper)
+                    .unwrap();
             assert_eq!(signers.len(), 1);
             let signer = &signers[0];
             assert_signer_name(signer, "Default OpenSSL signer");
@@ -512,7 +633,12 @@ pub mod tests {
                 type = "OpenSSL"
                 name = "Some test name"
             "#;
-            let signers = build_krill_signer_from_config(signers_config_fragment, storage_uri, mapper).unwrap();
+            let signers = build_krill_signer_from_config(
+                signers_config_fragment,
+                storage_uri,
+                mapper,
+            )
+            .unwrap();
             assert_eq!(signers.len(), 1);
             let signer = &signers[0];
             assert_signer_name(signer, "Some test name");
@@ -521,10 +647,13 @@ pub mod tests {
         });
     }
 
-    /// To make it easier for the operator we don't want them to have to manually remember to mark a single OpenSSL
-    /// signer configuration as the default one, it should just automatically be the default signer and should in fact
-    /// be used for all signing related operations, i.e. one-off signing and random number generation as well as the
-    /// key creation, deletion and signing operations handled by the default signer.
+    /// To make it easier for the operator we don't want them to have to
+    /// manually remember to mark a single OpenSSL signer configuration as
+    /// the default one, it should just automatically be the default signer
+    /// and should in fact be used for all signing related operations,
+    /// i.e. one-off signing and random number generation as well as the
+    /// key creation, deletion and signing operations handled by the default
+    /// signer.
     #[test]
     pub fn single_openssl_signer_is_made_the_default_all_signer() {
         test::test_in_memory(|storage_uri| {
@@ -534,7 +663,12 @@ pub mod tests {
                 type = "OpenSSL"
                 name = "OpenSSL"
             "#;
-            let signers = build_krill_signer_from_config(signers_config_fragment, storage_uri, mapper).unwrap();
+            let signers = build_krill_signer_from_config(
+                signers_config_fragment,
+                storage_uri,
+                mapper,
+            )
+            .unwrap();
             assert_eq!(signers.len(), 1);
             let signer = &signers[0];
             assert_signer_name_and_type(signer, "OpenSSL");
@@ -553,7 +687,12 @@ pub mod tests {
                 name = "KMIP"
                 host = "dummy host"
             "#;
-            let signers = build_krill_signer_from_config(signer_config_fragment, storage_uri, mapper.clone()).unwrap();
+            let signers = build_krill_signer_from_config(
+                signer_config_fragment,
+                storage_uri,
+                mapper.clone(),
+            )
+            .unwrap();
             assert_eq!(signers.len(), 2);
             let signer = &signers[0];
             assert_signer_name_and_type(signer, "KMIP");
@@ -573,7 +712,12 @@ pub mod tests {
                 lib_path = "dummy"
                 slot = "dummy slot"
             "#;
-            let signers = build_krill_signer_from_config(signer_config_fragment, storage_uri, mapper).unwrap();
+            let signers = build_krill_signer_from_config(
+                signer_config_fragment,
+                storage_uri,
+                mapper,
+            )
+            .unwrap();
             assert_eq!(signers.len(), 2);
             let signer = &signers[0];
             assert_signer_name_and_type(signer, "PKCS#11");
@@ -599,7 +743,12 @@ pub mod tests {
                 name = "KMIP"
                 host = "dummy host"
             "#;
-            let signers = build_krill_signer_from_config(signer_config_fragment, storage_uri, mapper.clone()).unwrap();
+            let signers = build_krill_signer_from_config(
+                signer_config_fragment,
+                storage_uri,
+                mapper.clone(),
+            )
+            .unwrap();
             assert_eq!(signers.len(), 1);
             let signer = &signers[0];
             assert_signer_name_and_type(signer, "KMIP");
@@ -616,7 +765,12 @@ pub mod tests {
                 lib_path = "dummy"
                 slot = "dummy slot"
             "#;
-            let signers = build_krill_signer_from_config(signer_config_fragment, storage_uri, mapper).unwrap();
+            let signers = build_krill_signer_from_config(
+                signer_config_fragment,
+                storage_uri,
+                mapper,
+            )
+            .unwrap();
             assert_eq!(signers.len(), 1);
             let signer = &signers[0];
             assert_signer_name_and_type(signer, "PKCS#11");
@@ -641,7 +795,12 @@ pub mod tests {
                 name = "Signer 2"
                 host = "dummy host"
             "#;
-            let signers = build_krill_signer_from_config(signer_config_fragment, storage_uri, mapper).unwrap();
+            let signers = build_krill_signer_from_config(
+                signer_config_fragment,
+                storage_uri,
+                mapper,
+            )
+            .unwrap();
             assert_eq!(signers.len(), 2);
 
             let signer = &signers[0];
@@ -674,7 +833,12 @@ pub mod tests {
                 name = "Signer 2" # default and one off signer
                 host = "dummy host"
             "#;
-            let signers = build_krill_signer_from_config(signer_config_fragment, storage_uri, mapper).unwrap();
+            let signers = build_krill_signer_from_config(
+                signer_config_fragment,
+                storage_uri,
+                mapper,
+            )
+            .unwrap();
             assert_eq!(signers.len(), 2);
 
             let signer = &signers[0];
@@ -713,7 +877,12 @@ pub mod tests {
                 lib_path = "dummy"
                 slot = "dummy slot"
             "#;
-            let signers = build_krill_signer_from_config(signer_config_fragment, storage_uri, mapper).unwrap();
+            let signers = build_krill_signer_from_config(
+                signer_config_fragment,
+                storage_uri,
+                mapper,
+            )
+            .unwrap();
             assert_eq!(signers.len(), 3);
 
             let signer = &signers[0];

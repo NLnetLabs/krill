@@ -22,12 +22,13 @@ pub fn init_runtime() -> Runtime {
 }
 
 /// Custom JMESPath recap(haystack, regex) function that returns the value of
-/// the first capture group of the first match in the haystack by the specified
-/// regex.
+/// the first capture group of the first match in the haystack by the
+/// specified regex.
 ///
 /// Returns an empty string if no match is found.
 fn make_recap_fn() -> Box<CustomFunction> {
-    let fn_signature = Signature::new(vec![ArgumentType::Any, ArgumentType::String], None);
+    let fn_signature =
+        Signature::new(vec![ArgumentType::Any, ArgumentType::String], None);
 
     let fn_impl = Box::new(|args: &[Rcvar], _: &mut Context| {
         trace!("jmespath recap() arguments: {:?}", args);
@@ -41,7 +42,8 @@ fn make_recap_fn() -> Box<CustomFunction> {
                         let mut iter = re.captures_iter(str);
                         if let Some(captures) = iter.next() {
                             // captures[0] is the entire match
-                            // captures[1] is the value of the first capture group match
+                            // captures[1] is the value of the first capture
+                            // group match
                             res = captures[1].to_string();
                         }
                     }
@@ -49,7 +51,10 @@ fn make_recap_fn() -> Box<CustomFunction> {
                         return Err(JmespathError::new(
                             re_str,
                             0,
-                            ErrorReason::Parse(format!("Invalid regular expression: {}", err)),
+                            ErrorReason::Parse(format!(
+                                "Invalid regular expression: {}",
+                                err
+                            )),
                         ));
                     }
                 }
@@ -70,7 +75,11 @@ fn make_recap_fn() -> Box<CustomFunction> {
 /// Returns the given string unchanged if no match is found to replace.
 fn make_resub_fn() -> Box<CustomFunction> {
     let fn_signature = Signature::new(
-        vec![ArgumentType::Any, ArgumentType::String, ArgumentType::String],
+        vec![
+            ArgumentType::Any,
+            ArgumentType::String,
+            ArgumentType::String,
+        ],
         None,
     );
 
@@ -83,13 +92,18 @@ fn make_resub_fn() -> Box<CustomFunction> {
                 if let jmespath::Variable::String(newval) = &*args[2] {
                     match Regex::new(re_str) {
                         Ok(re) => {
-                            res = re.replace(str.as_str(), newval.as_str()).to_string();
+                            res = re
+                                .replace(str.as_str(), newval.as_str())
+                                .to_string();
                         }
                         Err(err) => {
                             return Err(JmespathError::new(
                                 re_str,
                                 0,
-                                ErrorReason::Parse(format!("Invalid regular expression: {}", err)),
+                                ErrorReason::Parse(format!(
+                                    "Invalid regular expression: {}",
+                                    err
+                                )),
                             ));
                         }
                     }
@@ -127,7 +141,8 @@ mod tests {
         let result = should_yield_null.search(&jmespath_var).unwrap();
         assert_eq!(jmespath::Variable::Null, *result);
 
-        // Now use that expression as input to the resub() function and verify that it returns null too
+        // Now use that expression as input to the resub() function and verify
+        // that it returns null too
         let should_also_yield_null = runtime
             .compile(&format!("resub({}, '^.+$', 'admin')", null_expr))
             .unwrap();
@@ -139,8 +154,11 @@ mod tests {
     fn resub_should_return_error_when_given_an_invalid_regex() {
         let runtime = init_runtime();
 
-        // an opening square bracket without matching closing square bracket is an invalid regular expression
-        let should_also_yield_null = runtime.compile("resub('dummy input', '[', 'admin')").unwrap();
+        // an opening square bracket without matching closing square bracket
+        // is an invalid regular expression
+        let should_also_yield_null = runtime
+            .compile("resub('dummy input', '[', 'admin')")
+            .unwrap();
 
         // Parse some JSON data into a JMESPath variable
         let json_str = r#"

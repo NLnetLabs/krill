@@ -1,11 +1,14 @@
 use std::sync::Arc;
 
+use crate::daemon::http::{HttpResponse, HyperRequest};
 use crate::{
-    commons::{actor::ActorDef, api::Token, error::Error, util::httpclient, KrillResult},
+    commons::{
+        actor::ActorDef, api::Token, error::Error, util::httpclient,
+        KrillResult,
+    },
     constants::ACTOR_DEF_ADMIN_TOKEN,
     daemon::{auth::LoggedInUser, config::Config},
 };
-use crate::daemon::http::{HyperRequest, HttpResponse};
 
 // This is NOT an actual relative path to redirect to. Instead it is the path
 // string of an entry in the Vue router routes table to "route" to (in the
@@ -28,15 +31,20 @@ impl AdminTokenAuthProvider {
 
 impl AdminTokenAuthProvider {
     pub fn authenticate(
-        &self, request: &HyperRequest
+        &self,
+        request: &HyperRequest,
     ) -> KrillResult<Option<ActorDef>> {
         if log_enabled!(log::Level::Trace) {
             trace!("Attempting to authenticate the request..");
         }
 
         let res = match httpclient::get_bearer_token(request) {
-            Some(token) if token == self.required_token => Ok(Some(ACTOR_DEF_ADMIN_TOKEN)),
-            Some(_) => Err(Error::ApiInvalidCredentials("Invalid bearer token".to_string())),
+            Some(token) if token == self.required_token => {
+                Ok(Some(ACTOR_DEF_ADMIN_TOKEN))
+            }
+            Some(_) => Err(Error::ApiInvalidCredentials(
+                "Invalid bearer token".to_string(),
+            )),
             None => Ok(None),
         };
 
@@ -59,12 +67,15 @@ impl AdminTokenAuthProvider {
                 id: actor_def.name.as_str().to_string(),
                 attributes: actor_def.attributes.as_map(),
             }),
-            None => Err(Error::ApiInvalidCredentials("Missing bearer token".to_string())),
+            None => Err(Error::ApiInvalidCredentials(
+                "Missing bearer token".to_string(),
+            )),
         }
     }
 
     pub fn logout(
-        &self, request: &HyperRequest
+        &self,
+        request: &HyperRequest,
     ) -> KrillResult<HttpResponse> {
         if let Ok(Some(actor)) = self.authenticate(request) {
             info!("User logged out: {}", actor.name.as_str());

@@ -1,5 +1,4 @@
 //! Certificate Authority related code.
-//!
 use rpki::ca::idexchange::CaHandle;
 
 use crate::commons::error::Error;

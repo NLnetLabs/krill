@@ -23,14 +23,17 @@ use crate::{
         util::KrillVersion,
     },
     constants::{
-        CASERVER_NS, PROPERTIES_NS, PUBSERVER_CONTENT_NS, PUBSERVER_NS, SCHEDULER_INTERVAL_RENEW_MINS,
-        SCHEDULER_INTERVAL_REPUBLISH_MINS, SCHEDULER_RESYNC_REPO_CAS_THRESHOLD, SCHEDULER_USE_JITTER_CAS_THRESHOLD,
-        SIGNERS_NS,
+        CASERVER_NS, PROPERTIES_NS, PUBSERVER_CONTENT_NS, PUBSERVER_NS,
+        SCHEDULER_INTERVAL_RENEW_MINS, SCHEDULER_INTERVAL_REPUBLISH_MINS,
+        SCHEDULER_RESYNC_REPO_CAS_THRESHOLD,
+        SCHEDULER_USE_JITTER_CAS_THRESHOLD, SIGNERS_NS,
     },
     daemon::{
         ca::{CaManager, CertAuth},
         config::Config,
-        mq::{in_hours, in_minutes, in_seconds, in_weeks, now, Task, TaskQueue},
+        mq::{
+            in_hours, in_minutes, in_seconds, in_weeks, now, Task, TaskQueue,
+        },
         properties::Properties,
     },
     pubd::{RepositoryAccess, RepositoryContent, RepositoryManager},
@@ -60,7 +63,9 @@ impl Scheduler {
         ca_manager: Arc<CaManager>,
         repo_manager: Arc<RepositoryManager>,
         bgp_analyser: Arc<BgpAnalyser>,
-        #[cfg(feature = "multi-user")] login_session_cache: Arc<LoginSessionCache>,
+        #[cfg(feature = "multi-user")] login_session_cache: Arc<
+            LoginSessionCache,
+        >,
         config: Arc<Config>,
         system_actor: Actor,
     ) -> Self {
@@ -77,8 +82,8 @@ impl Scheduler {
         }
     }
 
-    /// Run the scheduler in the background. It will sweep the message queue for tasks
-    /// and re-schedule new tasks as needed.
+    /// Run the scheduler in the background. It will sweep the message queue
+    /// for tasks and re-schedule new tasks as needed.
     pub async fn run(&self) {
         loop {
             while let Some(running_task) = self.tasks.pop() {
@@ -87,24 +92,34 @@ impl Scheduler {
 
                 match serde_json::from_value(running_task.value) {
                     Err(e) => {
-                        // If we cannot parse the value of this task, then we have a major
-                        // issue. Essentially, this can only happen if we did a Krill upgrade
-                        // to a new version that no longer understands existing tasks.
+                        // If we cannot parse the value of this task, then we
+                        // have a major
+                        // issue. Essentially, this can only happen if we did
+                        // a Krill upgrade
+                        // to a new version that no longer understands
+                        // existing tasks.
                         //
-                        // So, if we ever change the content of tasks then we should make sure
-                        // that Krill is either backward compatible, or the task queue is migrated
-                        // on upgrade.
+                        // So, if we ever change the content of tasks then we
+                        // should make sure that Krill
+                        // is either backward compatible, or the task queue is
+                        // migrated on upgrade.
                         error!("Fatal error parsing task: {}. Krill will now stop! This may be because this task is not for this Krill version ({}). If this issue persists, then try deleting this task from storage, it will appear in the 'tasks' dir if you use disk storage. The error was {}", task_key, KrillVersion::code_version(), e);
                         std::process::exit(1);
                     }
                     Ok(task) => match self.process_task(task).await {
                         Ok(result) => {
                             if let Err(e) = match result {
-                                TaskResult::Done => self.tasks.finish(&task_key),
-                                TaskResult::FollowUp(task, priority) => {
-                                    self.tasks.schedule_and_finish_existing(task, priority)
+                                TaskResult::Done => {
+                                    self.tasks.finish(&task_key)
                                 }
-                                TaskResult::Reschedule(priority) => self.tasks.reschedule(&task_key, priority),
+                                TaskResult::FollowUp(task, priority) => {
+                                    self.tasks.schedule_and_finish_existing(
+                                        task, priority,
+                                    )
+                                }
+                                TaskResult::Reschedule(priority) => {
+                                    self.tasks.reschedule(&task_key, priority)
+                                }
                             } {
                                 error!("Error finishing / scheduling task {}. Krill will stop as there is no good way to recover from this. When Krill starts it will try to reschedule any missing tasks. Error was: {}", task_key, e);
                                 std::process::exit(1);
@@ -124,12 +139,15 @@ impl Scheduler {
 
     /// Process a single task
     ///
-    /// May only return fatal errors. Temporary, or suspected temporary, issues
-    /// such as not being able to contact a parent CA should result in an
-    /// Ok(TaskResult::Reschedule) instead.
-    async fn process_task(&self, task: Task) -> Result<TaskResult, FatalError> {
+    /// May only return fatal errors. Temporary, or suspected temporary,
+    /// issues such as not being able to contact a parent CA should result
+    /// in an Ok(TaskResult::Reschedule) instead.
+    async fn process_task(
+        &self,
+        task: Task,
+    ) -> Result<TaskResult, FatalError> {
         match task {
-            Task::QueueStartTasks => self.queue_start_tasks().await, // return error and stop server on failure
+            Task::QueueStartTasks => self.queue_start_tasks().await, /* return error and stop server on failure */
 
             Task::SyncRepo {
                 ca_handle: ca,
@@ -144,15 +162,23 @@ impl Scheduler {
 
             Task::RenewTestbedTa => self.renew_testbed_ta().await,
 
-            Task::SyncTrustAnchorProxySignerIfPossible => self.sync_ta_proxy_signer_if_possible().await,
+            Task::SyncTrustAnchorProxySignerIfPossible => {
+                self.sync_ta_proxy_signer_if_possible().await
+            }
 
-            Task::SuspendChildrenIfNeeded { ca_handle: ca } => self.suspend_children_if_needed(ca).await,
+            Task::SuspendChildrenIfNeeded { ca_handle: ca } => {
+                self.suspend_children_if_needed(ca).await
+            }
 
             Task::RepublishIfNeeded => self.republish_if_needed().await,
 
-            Task::RenewObjectsIfNeeded => self.renew_objects_if_needed().await,
+            Task::RenewObjectsIfNeeded => {
+                self.renew_objects_if_needed().await
+            }
 
-            Task::RefreshAnnouncementsInfo => self.announcements_refresh().await,
+            Task::RefreshAnnouncementsInfo => {
+                self.announcements_refresh().await
+            }
 
             #[cfg(feature = "multi-user")]
             Task::SweepLoginCache => self.sweep_login_cache(),
@@ -168,8 +194,14 @@ impl Scheduler {
                 rcn,
                 revocation_requests,
             } => {
-                self.resource_class_removed(ca, ca_version, parent, rcn, revocation_requests)
-                    .await
+                self.resource_class_removed(
+                    ca,
+                    ca_version,
+                    parent,
+                    rcn,
+                    revocation_requests,
+                )
+                .await
             }
 
             Task::UnexpectedKey {
@@ -177,7 +209,10 @@ impl Scheduler {
                 ca_version,
                 rcn,
                 revocation_request,
-            } => self.unexpected_key(ca, ca_version, rcn, revocation_request).await,
+            } => {
+                self.unexpected_key(ca, ca_version, rcn, revocation_request)
+                    .await
+            }
         }
     }
 
@@ -202,7 +237,10 @@ impl Scheduler {
         // to avoid a thundering herd. Note that the operator can always
         // choose to run bulk operations manually if they know that they
         // cannot wait.
-        let ca_list = self.ca_manager.ca_list(&self.system_actor).map_err(FatalError)?;
+        let ca_list = self
+            .ca_manager
+            .ca_list(&self.system_actor)
+            .map_err(FatalError)?;
         let cas = ca_list.cas();
         debug!("Adding missing tasks at start up");
 
@@ -213,11 +251,19 @@ impl Scheduler {
         let use_jitter = cas.len() >= SCHEDULER_USE_JITTER_CAS_THRESHOLD;
 
         for summary in cas {
-            let ca = self.ca_manager.get_ca(summary.handle()).await.map_err(FatalError)?;
+            let ca = self
+                .ca_manager
+                .get_ca(summary.handle())
+                .await
+                .map_err(FatalError)?;
             let ca_handle = ca.handle();
             let ca_version = ca.version();
 
-            debug!("Adding tasks for CA {}, using jitter: {}", ca.handle(), use_jitter);
+            debug!(
+                "Adding tasks for CA {}, using jitter: {}",
+                ca.handle(),
+                use_jitter
+            );
 
             for parent in ca.parents() {
                 self.tasks
@@ -232,12 +278,13 @@ impl Scheduler {
                     .map_err(FatalError)?;
             }
 
-            // Plan a sync with the repo. But only in case we only have a handful
-            // of CAs.
+            // Plan a sync with the repo. But only in case we only have a
+            // handful of CAs.
             //
-            // Note: if circumstances dictate a sync e.g. because ROAs are changed,
-            // then it will be scheduled accordingly. Furthermore, users can use the
-            // 'bulk' function to explicitly force schedule a sync.
+            // Note: if circumstances dictate a sync e.g. because ROAs are
+            // changed, then it will be scheduled accordingly.
+            // Furthermore, users can use the 'bulk' function to
+            // explicitly force schedule a sync.
             if cas.len() <= SCHEDULER_RESYNC_REPO_CAS_THRESHOLD {
                 self.tasks
                     .schedule_missing(
@@ -251,10 +298,11 @@ impl Scheduler {
             }
 
             // If suspension is enabled then plan a task for it. Since this is
-            // a cheap no-op in most cases, we do not need jitter. If we do not
-            // add this task then it will not be executed (obviously), but more
-            // importantly.. by adding this task we ensure that it will keep being
-            // re-scheduled when it's done.
+            // a cheap no-op in most cases, we do not need jitter. If we do
+            // not add this task then it will not be executed
+            // (obviously), but more importantly.. by adding this
+            // task we ensure that it will keep being re-scheduled
+            // when it's done.
             if self.config.suspend_child_after_inactive_seconds().is_some() {
                 self.tasks
                     .schedule_missing(
@@ -304,7 +352,11 @@ impl Scheduler {
         Ok(TaskResult::Done)
     }
 
-    async fn sync_repo(&self, ca: CaHandle, version: u64) -> Result<TaskResult, FatalError> {
+    async fn sync_repo(
+        &self,
+        ca: CaHandle,
+        version: u64,
+    ) -> Result<TaskResult, FatalError> {
         info!("Synchronize CA {} with repository", ca);
 
         match self
@@ -331,8 +383,14 @@ impl Scheduler {
         }
     }
 
-    /// Try to synchronize a CA with a specific parent, reschedule if this fails
-    async fn sync_parent(&self, ca: CaHandle, ca_version: u64, parent: ParentHandle) -> Result<TaskResult, FatalError> {
+    /// Try to synchronize a CA with a specific parent, reschedule if this
+    /// fails
+    async fn sync_parent(
+        &self,
+        ca: CaHandle,
+        ca_version: u64,
+        parent: ParentHandle,
+    ) -> Result<TaskResult, FatalError> {
         if self.ca_manager.has_ca(&ca).map_err(FatalError)? {
             info!("Synchronize CA '{}' with its parent '{}'", ca, parent);
             match self
@@ -367,8 +425,9 @@ impl Scheduler {
                 }
             }
         } else {
-            // Note: if one day we can have a notification extension to RFC 6492 then we will
-            //       also be able to alert remote children.
+            // Note: if one day we can have a notification extension to RFC
+            // 6492 then we will       also be able to alert
+            // remote children.
             debug!(
                 "Skipping parent sync fo CA '{}'. It is either a remote child, or a local CA that has been removed",
                 ca
@@ -383,25 +442,42 @@ impl Scheduler {
             error!("There was an issue renewing the testbed TA: {}", e);
         }
         let weeks_to_resync = self.config.ta_timing.mft_next_update_weeks / 2;
-        Ok(TaskResult::FollowUp(Task::RenewTestbedTa, in_weeks(weeks_to_resync)))
+        Ok(TaskResult::FollowUp(
+            Task::RenewTestbedTa,
+            in_weeks(weeks_to_resync),
+        ))
     }
 
-    /// Try to synchronise the Trust Anchor Proxy with the *local* Signer - if it exists
-    /// in this server.
-    async fn sync_ta_proxy_signer_if_possible(&self) -> Result<TaskResult, FatalError> {
+    /// Try to synchronise the Trust Anchor Proxy with the *local* Signer - if
+    /// it exists in this server.
+    async fn sync_ta_proxy_signer_if_possible(
+        &self,
+    ) -> Result<TaskResult, FatalError> {
         debug!("Synchronise Trust Anchor Proxy with Signer - if Signer is local.");
-        if let Err(e) = self.ca_manager.sync_ta_proxy_signer_if_possible().await {
+        if let Err(e) =
+            self.ca_manager.sync_ta_proxy_signer_if_possible().await
+        {
             error!("There was an issue synchronising the TA Proxy and Signer: {}", e);
         }
         Ok(TaskResult::Done)
     }
 
     /// Try to suspend children for a CA
-    async fn suspend_children_if_needed(&self, ca_handle: CaHandle) -> Result<TaskResult, FatalError> {
+    async fn suspend_children_if_needed(
+        &self,
+        ca_handle: CaHandle,
+    ) -> Result<TaskResult, FatalError> {
         if self.ca_manager.has_ca(&ca_handle).map_err(FatalError)? {
-            debug!("Verify if CA '{}' has children that need to be suspended", ca_handle);
+            debug!(
+                "Verify if CA '{}' has children that need to be suspended",
+                ca_handle
+            );
             self.ca_manager
-                .ca_suspend_inactive_children(&ca_handle, self.started, &self.system_actor)
+                .ca_suspend_inactive_children(
+                    &ca_handle,
+                    self.started,
+                    &self.system_actor,
+                )
                 .await;
 
             Ok(TaskResult::FollowUp(
@@ -409,33 +485,46 @@ impl Scheduler {
                 in_hours(1),
             ))
         } else {
-            debug!("Drop task to suspend children for removed CA {ca_handle}");
+            debug!(
+                "Drop task to suspend children for removed CA {ca_handle}"
+            );
             Ok(TaskResult::Done)
         }
     }
 
     /// Let CAs that need it republish their CRL/MFT
     async fn republish_if_needed(&self) -> Result<TaskResult, FatalError> {
-        // Note that CRL/MFT re-issuance is handled by the `CaObjects` companion
-        // struct, rather than the event-sourced `CertAuth`. Meaning... that we
-        // do not get to see an event in case there is an actual update and
-        // therefore we get no triggered task to synchronise with the repository.
+        // Note that CRL/MFT re-issuance is handled by the `CaObjects`
+        // companion struct, rather than the event-sourced `CertAuth`.
+        // Meaning... that we do not get to see an event in case there
+        // is an actual update and therefore we get no triggered task
+        // to synchronise with the repository.
         //
         // Instead we get back a list of CAs that had changes, and we need to
         // schedule a synchronisation for each of them here.
-        let cas = self.ca_manager.republish_all(false).await.map_err(FatalError)?;
+        let cas = self
+            .ca_manager
+            .republish_all(false)
+            .await
+            .map_err(FatalError)?;
 
         for ca_handle in cas {
             info!("Re-issued MFT and CRL for CA: {}", ca_handle);
 
             let ca_version = 0; // we use 0 because we don't need to wait for an updated CertAuth
             self.tasks
-                .schedule(Task::SyncRepo { ca_handle, ca_version }, now())
+                .schedule(
+                    Task::SyncRepo {
+                        ca_handle,
+                        ca_version,
+                    },
+                    now(),
+                )
                 .map_err(FatalError)?;
         }
 
-        // check again in a short while.. no jitter needed as this is a cheap operation
-        // which is often a no-op.
+        // check again in a short while.. no jitter needed as this is a cheap
+        // operation which is often a no-op.
 
         Ok(TaskResult::FollowUp(
             Task::RepublishIfNeeded,
@@ -449,19 +538,26 @@ impl Scheduler {
             error!("Failed to update BGP announcements: {}", e)
         }
 
-        // check again in 10 minutes, note.. this is a no-op in case the actual update was less
-        // then 1 hour ago. See BGP_RIS_REFRESH_MINUTES constant.
-        Ok(TaskResult::FollowUp(Task::RefreshAnnouncementsInfo, in_minutes(10)))
+        // check again in 10 minutes, note.. this is a no-op in case the
+        // actual update was less then 1 hour ago. See
+        // BGP_RIS_REFRESH_MINUTES constant.
+        Ok(TaskResult::FollowUp(
+            Task::RefreshAnnouncementsInfo,
+            in_minutes(10),
+        ))
     }
 
     /// Let CAs that need it re-issue signed objects
-    async fn renew_objects_if_needed(&self) -> Result<TaskResult, FatalError> {
+    async fn renew_objects_if_needed(
+        &self,
+    ) -> Result<TaskResult, FatalError> {
         self.ca_manager
             .renew_objects_all(&self.system_actor)
             .await
             .map_err(FatalError)?;
 
-        // check again in a short while.. note that this is usually a cheap no-op
+        // check again in a short while.. note that this is usually a cheap
+        // no-op
         Ok(TaskResult::FollowUp(
             Task::RenewObjectsIfNeeded,
             in_minutes(SCHEDULER_INTERVAL_RENEW_MINS),
@@ -471,7 +567,10 @@ impl Scheduler {
     #[cfg(feature = "multi-user")]
     fn sweep_login_cache(&self) -> Result<TaskResult, FatalError> {
         if let Err(e) = self.login_session_cache.sweep() {
-            error!("Background sweep of session decryption cache failed: {}", e);
+            error!(
+                "Background sweep of session decryption cache failed: {}",
+                e
+            );
         }
 
         Ok(TaskResult::FollowUp(Task::SweepLoginCache, in_minutes(1)))
@@ -479,11 +578,15 @@ impl Scheduler {
 
     // Call update_snapshots on all AggregateStores and WalStores
     fn update_snapshots(&self) -> Result<TaskResult, FatalError> {
-        fn update_aggregate_store_snapshots<A: Aggregate>(storage_uri: &Url, namespace: &Namespace) {
+        fn update_aggregate_store_snapshots<A: Aggregate>(
+            storage_uri: &Url,
+            namespace: &Namespace,
+        ) {
             match AggregateStore::<A>::create(storage_uri, namespace, false) {
                 Err(e) => {
-                    // Note: this is highly unlikely.. probably something else is broken and Krill
-                    //       would have panicked as a result already.
+                    // Note: this is highly unlikely.. probably something else
+                    // is broken and Krill       would
+                    // have panicked as a result already.
                     error!(
                         "Could not update snapshots for {} will try again in 24 hours. Error: {}",
                         namespace, e
@@ -491,7 +594,8 @@ impl Scheduler {
                 }
                 Ok(store) => {
                     if let Err(e) = store.update_snapshots() {
-                        // Note: this is highly unlikely.. probably something else is broken and Krill
+                        // Note: this is highly unlikely.. probably something
+                        // else is broken and Krill
                         //       would have panicked as a result already.
                         error!(
                             "Could not update snapshots for {} will try again in 24 hours. Error: {}",
@@ -504,11 +608,15 @@ impl Scheduler {
             }
         }
 
-        fn update_wal_store_snapshots<W: WalSupport>(storage_uri: &Url, namespace: &Namespace) {
+        fn update_wal_store_snapshots<W: WalSupport>(
+            storage_uri: &Url,
+            namespace: &Namespace,
+        ) {
             match WalStore::<W>::create(storage_uri, namespace) {
                 Err(e) => {
-                    // Note: this is highly unlikely.. probably something else is broken and Krill
-                    //       would have panicked as a result already.
+                    // Note: this is highly unlikely.. probably something else
+                    // is broken and Krill       would
+                    // have panicked as a result already.
                     error!(
                         "Could not update snapshots for {} will try again in 24 hours. Error: {}",
                         namespace, e
@@ -516,7 +624,8 @@ impl Scheduler {
                 }
                 Ok(store) => {
                     if let Err(e) = store.update_snapshots() {
-                        // Note: this is highly unlikely.. probably something else is broken and Krill
+                        // Note: this is highly unlikely.. probably something
+                        // else is broken and Krill
                         //       would have panicked as a result already.
                         error!(
                             "Could not update snapshots for {} will try again in 24 hours. Error: {}",
@@ -527,12 +636,27 @@ impl Scheduler {
             }
         }
 
-        update_aggregate_store_snapshots::<CertAuth>(&self.config.storage_uri, CASERVER_NS);
-        update_aggregate_store_snapshots::<SignerInfo>(&self.config.storage_uri, SIGNERS_NS);
-        update_aggregate_store_snapshots::<Properties>(&self.config.storage_uri, PROPERTIES_NS);
-        update_aggregate_store_snapshots::<RepositoryAccess>(&self.config.storage_uri, PUBSERVER_NS);
+        update_aggregate_store_snapshots::<CertAuth>(
+            &self.config.storage_uri,
+            CASERVER_NS,
+        );
+        update_aggregate_store_snapshots::<SignerInfo>(
+            &self.config.storage_uri,
+            SIGNERS_NS,
+        );
+        update_aggregate_store_snapshots::<Properties>(
+            &self.config.storage_uri,
+            PROPERTIES_NS,
+        );
+        update_aggregate_store_snapshots::<RepositoryAccess>(
+            &self.config.storage_uri,
+            PUBSERVER_NS,
+        );
 
-        update_wal_store_snapshots::<RepositoryContent>(&self.config.storage_uri, PUBSERVER_CONTENT_NS);
+        update_wal_store_snapshots::<RepositoryContent>(
+            &self.config.storage_uri,
+            PUBSERVER_CONTENT_NS,
+        );
 
         Ok(TaskResult::FollowUp(Task::UpdateSnapshots, in_hours(24)))
     }
@@ -541,8 +665,9 @@ impl Scheduler {
         match self.repo_manager.update_rrdp_if_needed() {
             Err(e) => {
                 error!("Could not update RRDP deltas! Error: {}", e);
-                // Should we panic in this case? For now, just keep trying, this may
-                // be an issue that gets resolved (permission? disk space?)
+                // Should we panic in this case? For now, just keep trying,
+                // this may be an issue that gets resolved
+                // (permission? disk space?)
                 Ok(TaskResult::Reschedule(in_hours(1)))
             }
             Ok(None) => {
@@ -550,8 +675,9 @@ impl Scheduler {
                 Ok(TaskResult::Done)
             }
             Ok(Some(later_time)) => {
-                // Update was NOT done. There are staged changes, but the rrdp update
-                // interval has not yet passed. It can be done at later_time.
+                // Update was NOT done. There are staged changes, but the rrdp
+                // update interval has not yet passed. It can
+                // be done at later_time.
                 Ok(TaskResult::Reschedule(later_time.into()))
             }
         }
@@ -573,7 +699,11 @@ impl Scheduler {
         let requests = HashMap::from([(rcn, revocation_requests)]);
 
         if self.ca_manager.has_ca(&ca_handle).map_err(FatalError)? {
-            let ca = self.ca_manager.get_ca(&ca_handle).await.map_err(FatalError)?;
+            let ca = self
+                .ca_manager
+                .get_ca(&ca_handle)
+                .await
+                .map_err(FatalError)?;
             if ca.version() < ca_version {
                 // premature, we need to wait for the CA to be committed.
                 Ok(TaskResult::Reschedule(in_seconds(1)))
@@ -586,7 +716,10 @@ impl Scheduler {
                 debug!("Could not revoke key for resource class removed by parent - most likely already revoked.");
                 Ok(TaskResult::Done)
             } else {
-                debug!("Revoked keys for CA '{}' under parent '{}'", ca_handle, parent);
+                debug!(
+                    "Revoked keys for CA '{}' under parent '{}'",
+                    ca_handle, parent
+                );
                 Ok(TaskResult::Done)
             }
         } else {
@@ -608,7 +741,11 @@ impl Scheduler {
                 revocation_request.key(),
                 rcn
             );
-            let ca = self.ca_manager.get_ca(&ca_handle).await.map_err(FatalError)?;
+            let ca = self
+                .ca_manager
+                .get_ca(&ca_handle)
+                .await
+                .map_err(FatalError)?;
 
             if ca.version() < ca_version {
                 debug!("reschedule premature task");
@@ -617,7 +754,11 @@ impl Scheduler {
             } else {
                 if let Err(e) = self
                     .ca_manager
-                    .send_revoke_unexpected_key(&ca_handle, rcn, revocation_request)
+                    .send_revoke_unexpected_key(
+                        &ca_handle,
+                        rcn,
+                        revocation_request,
+                    )
                     .await
                 {
                     warn!(
@@ -629,7 +770,9 @@ impl Scheduler {
                 Ok(TaskResult::Done)
             }
         } else {
-            debug!("Dropping task for surplus key for removed CA {ca_handle}");
+            debug!(
+                "Dropping task for surplus key for removed CA {ca_handle}"
+            );
             Ok(TaskResult::Done)
         }
     }

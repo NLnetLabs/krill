@@ -3,7 +3,9 @@
 use rpki::{
     ca::{
         idexchange::{ChildHandle, ParentHandle, ServiceUri},
-        provisioning::{RequestResourceLimit, ResourceClassName, RevocationRequest},
+        provisioning::{
+            RequestResourceLimit, ResourceClassName, RevocationRequest,
+        },
     },
     crypto::KeyIdentifier,
     repository::resources::ResourceSet,
@@ -12,8 +14,8 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            CertAuthStorableCommand, CustomerAsn, RoaConfigurationUpdates, RtaName, StorableParentContact,
-            StorableRcEntitlement,
+            CertAuthStorableCommand, CustomerAsn, RoaConfigurationUpdates,
+            RtaName, StorableParentContact, StorableRcEntitlement,
         },
         eventsourcing::WithStorableDetails,
     },

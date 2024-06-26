@@ -1,38 +1,88 @@
 //! Perform functional tests on a Krill instance, using the API
-//!
 use rpki::repository::resources::ResourceSet;
 
 use krill::test::*;
 
 #[tokio::test]
 async fn functional_parent_child() {
-    // let cleanup = start_krill_with_default_test_config(true, false, false, false).await;
-    let cleanup = start_krill_with_default_test_config_disk(true, false, false, false).await;
+    // let cleanup = start_krill_with_default_test_config(true, false, false,
+    // false).await;
+    let cleanup =
+        start_krill_with_default_test_config_disk(true, false, false, false)
+            .await;
 
-    info("##################################################################");
-    info("#                                                                #");
-    info("# Test Krill parent - child interactions.                         #");
-    info("#                                                                #");
-    info("#                  TA                                            #");
-    info("#                   |                                            #");
-    info("#                testbed (two children)                          #");
-    info("#                 |   |                                          #");
-    info("#               CA1   CA2                                        #");
-    info("#                 |   |                                          #");
-    info("#                  CA3 (two parents, two resource classes)       #");
-    info("#                  | |                                           #");
-    info("#                  CA4 (two resource classes)                    #");
-    info("#                                                                #");
-    info("#                                                                #");
-    info("# We will verify that:                                           #");
-    info("#  * CAs can be set up as parent child using RFC6492             #");
-    info("#  * CAs can publish using RFC8181                               #");
-    info("#  * CA1 can perform a key roll                                  #");
-    info("#  * We can remove and re-add parents / children                 #");
-    info("#  * A CA will request revocation and withdraw objects when      #");
-    info("#     it is deleted gracefully                                   #");
-    info("#                                                                #");
-    info("##################################################################");
+    info(
+        "##################################################################",
+    );
+    info(
+        "#                                                                #",
+    );
+    info(
+        "# Test Krill parent - child interactions.                         #",
+    );
+    info(
+        "#                                                                #",
+    );
+    info(
+        "#                  TA                                            #",
+    );
+    info(
+        "#                   |                                            #",
+    );
+    info(
+        "#                testbed (two children)                          #",
+    );
+    info(
+        "#                 |   |                                          #",
+    );
+    info(
+        "#               CA1   CA2                                        #",
+    );
+    info(
+        "#                 |   |                                          #",
+    );
+    info(
+        "#                  CA3 (two parents, two resource classes)       #",
+    );
+    info(
+        "#                  | |                                           #",
+    );
+    info(
+        "#                  CA4 (two resource classes)                    #",
+    );
+    info(
+        "#                                                                #",
+    );
+    info(
+        "#                                                                #",
+    );
+    info(
+        "# We will verify that:                                           #",
+    );
+    info(
+        "#  * CAs can be set up as parent child using RFC6492             #",
+    );
+    info(
+        "#  * CAs can publish using RFC8181                               #",
+    );
+    info(
+        "#  * CA1 can perform a key roll                                  #",
+    );
+    info(
+        "#  * We can remove and re-add parents / children                 #",
+    );
+    info(
+        "#  * A CA will request revocation and withdraw objects when      #",
+    );
+    info(
+        "#     it is deleted gracefully                                   #",
+    );
+    info(
+        "#                                                                #",
+    );
+    info(
+        "##################################################################",
+    );
     info("");
 
     let testbed = ca_handle("testbed");
@@ -53,13 +103,27 @@ async fn functional_parent_child() {
     let rcn_0 = rcn(0);
     let rcn_1 = rcn(1);
 
-    info("##################################################################");
-    info("#                                                                #");
-    info("# Wait for the *testbed* CA to get its certificate, this means   #");
-    info("# that all CAs which are set up as part of krill_start under the #");
-    info("# testbed config have been set up.                               #");
-    info("#                                                                #");
-    info("##################################################################");
+    info(
+        "##################################################################",
+    );
+    info(
+        "#                                                                #",
+    );
+    info(
+        "# Wait for the *testbed* CA to get its certificate, this means   #",
+    );
+    info(
+        "# that all CAs which are set up as part of krill_start under the #",
+    );
+    info(
+        "# testbed config have been set up.                               #",
+    );
+    info(
+        "#                                                                #",
+    );
+    info(
+        "##################################################################",
+    );
     info("");
     assert!(ca_contains_resources(&testbed, &ResourceSet::all()).await);
 
@@ -113,7 +177,12 @@ async fn functional_parent_child() {
         info("##################################################################");
         info("");
         set_up_ca_with_repo(&ca3).await;
-        set_up_ca_under_parent_with_resources(&ca3, &ca1, &ca3_res_under_ca_1).await;
+        set_up_ca_under_parent_with_resources(
+            &ca3,
+            &ca1,
+            &ca3_res_under_ca_1,
+        )
+        .await;
     }
 
     {
@@ -125,7 +194,14 @@ async fn functional_parent_child() {
         info("");
         let mut expected_files = expected_mft_and_crl(&ca1, &rcn_0).await;
         expected_files.push(expected_issued_cer(&ca3, &rcn_0).await);
-        assert!(will_publish_embedded("CA1 should publish the certificate for CA3", &ca1, &expected_files).await);
+        assert!(
+            will_publish_embedded(
+                "CA1 should publish the certificate for CA3",
+                &ca1,
+                &expected_files
+            )
+            .await
+        );
     }
 
     {
@@ -135,7 +211,12 @@ async fn functional_parent_child() {
         info("#                                                                #");
         info("##################################################################");
         info("");
-        set_up_ca_under_parent_with_resources(&ca3, &ca2, &ca3_res_under_ca_2).await;
+        set_up_ca_under_parent_with_resources(
+            &ca3,
+            &ca2,
+            &ca3_res_under_ca_2,
+        )
+        .await;
     }
 
     {
@@ -146,9 +227,17 @@ async fn functional_parent_child() {
         info("##################################################################");
         info("");
         let mut expected_files = expected_mft_and_crl(&ca2, &rcn_0).await;
-        // CA3 will have the certificate from CA2 under its resource class '1' rather than '0'
+        // CA3 will have the certificate from CA2 under its resource class '1'
+        // rather than '0'
         expected_files.push(expected_issued_cer(&ca3, &rcn_1).await);
-        assert!(will_publish_embedded("CA2 should have mft, crl and a cert for CA3", &ca2, &expected_files).await);
+        assert!(
+            will_publish_embedded(
+                "CA2 should have mft, crl and a cert for CA3",
+                &ca2,
+                &expected_files
+            )
+            .await
+        );
     }
 
     {
@@ -159,7 +248,12 @@ async fn functional_parent_child() {
         info("##################################################################");
         info("");
         set_up_ca_with_repo(&ca4).await;
-        set_up_ca_under_parent_with_resources(&ca4, &ca3, &ca4_res_under_ca_3).await;
+        set_up_ca_under_parent_with_resources(
+            &ca4,
+            &ca3,
+            &ca4_res_under_ca_3,
+        )
+        .await;
     }
 
     //
@@ -216,7 +310,8 @@ async fn functional_parent_child() {
 
         let mut expected_files = expected_mft_and_crl(&ca1, &rcn_0).await;
         expected_files.push(expected_issued_cer(&ca3, &rcn_0).await);
-        expected_files.append(&mut expected_new_key_mft_and_crl(&ca1, &rcn_0).await);
+        expected_files
+            .append(&mut expected_new_key_mft_and_crl(&ca1, &rcn_0).await);
         assert!(
             will_publish_embedded(
                 "CA1 should publish MFT and CRL for both keys and the certificate for CA3 and a ROA",
@@ -243,11 +338,21 @@ async fn functional_parent_child() {
 
     //--------------------------------------------------------------
 
-    info("##################################################################");
-    info("#                                                                #");
-    info("# Remove parent from CA4, we expect that objects are withdrawn   #");
-    info("#                                                                #");
-    info("##################################################################");
+    info(
+        "##################################################################",
+    );
+    info(
+        "#                                                                #",
+    );
+    info(
+        "# Remove parent from CA4, we expect that objects are withdrawn   #",
+    );
+    info(
+        "#                                                                #",
+    );
+    info(
+        "##################################################################",
+    );
     info("");
     {
         // Remove parent CA3 from CA4
@@ -256,19 +361,41 @@ async fn functional_parent_child() {
 
         // Expect that CA4 withdraws all
         {
-            assert!(will_publish_embedded("CA4 should withdraw objects when parent is removed", &ca4, &[]).await);
+            assert!(
+                will_publish_embedded(
+                    "CA4 should withdraw objects when parent is removed",
+                    &ca4,
+                    &[]
+                )
+                .await
+            );
         }
     }
 
-    info("##################################################################");
-    info("#                                                                #");
-    info("# Add parent back to CA4, expect that ROAs are published again   #");
-    info("#                                                                #");
-    info("##################################################################");
+    info(
+        "##################################################################",
+    );
+    info(
+        "#                                                                #",
+    );
+    info(
+        "# Add parent back to CA4, expect that ROAs are published again   #",
+    );
+    info(
+        "#                                                                #",
+    );
+    info(
+        "##################################################################",
+    );
     info("");
     {
         // Add parent CA3 back to CA4
-        set_up_ca_under_parent_with_resources(&ca4, &ca3, &ca4_res_under_ca_3).await;
+        set_up_ca_under_parent_with_resources(
+            &ca4,
+            &ca3,
+            &ca4_res_under_ca_3,
+        )
+        .await;
 
         // We expect new resource classes to be used now:
         let rcn_2 = rcn(2);
@@ -286,12 +413,24 @@ async fn functional_parent_child() {
         );
     }
 
-    info("##################################################################");
-    info("#                                                                #");
-    info("# Remove CA3, we expect that its objects are also removed since  #");
-    info("# we are doing this all gracefully.                              #");
-    info("#                                                                #");
-    info("##################################################################");
+    info(
+        "##################################################################",
+    );
+    info(
+        "#                                                                #",
+    );
+    info(
+        "# Remove CA3, we expect that its objects are also removed since  #",
+    );
+    info(
+        "# we are doing this all gracefully.                              #",
+    );
+    info(
+        "#                                                                #",
+    );
+    info(
+        "##################################################################",
+    );
     info("");
     {
         assert!(ca_details_opt(&ca3).await.is_some());

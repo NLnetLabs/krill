@@ -1,8 +1,9 @@
 //! Perform functional tests on a Krill instance, using the API
-//!
 use bytes::Bytes;
 use rpki::{
-    ca::{csr::BgpsecCsr, idexchange::CaHandle, provisioning::ResourceClassName},
+    ca::{
+        csr::BgpsecCsr, idexchange::CaHandle, provisioning::ResourceClassName,
+    },
     repository::resources::{Asn, ResourceSet},
 };
 
@@ -13,22 +14,49 @@ use krill::{
 
 #[tokio::test]
 async fn functional_bgpsec() {
-    let cleanup = start_krill_with_default_test_config(true, false, false, false).await;
+    let cleanup =
+        start_krill_with_default_test_config(true, false, false, false).await;
 
-    info("##################################################################");
-    info("#                                                                #");
+    info(
+        "##################################################################",
+    );
+    info(
+        "#                                                                #",
+    );
     info("# Test BGPSec support.                                             #");
-    info("#                                                                #");
-    info("# Uses the following lay-out:                                    #");
-    info("#                                                                #");
-    info("#                  TA                                            #");
-    info("#                   |                                            #");
-    info("#                testbed                                         #");
-    info("#                   |                                            #");
-    info("#                  CA                                            #");
-    info("#                                                                #");
-    info("#                                                                #");
-    info("##################################################################");
+    info(
+        "#                                                                #",
+    );
+    info(
+        "# Uses the following lay-out:                                    #",
+    );
+    info(
+        "#                                                                #",
+    );
+    info(
+        "#                  TA                                            #",
+    );
+    info(
+        "#                   |                                            #",
+    );
+    info(
+        "#                testbed                                         #",
+    );
+    info(
+        "#                   |                                            #",
+    );
+    info(
+        "#                  CA                                            #",
+    );
+    info(
+        "#                                                                #",
+    );
+    info(
+        "#                                                                #",
+    );
+    info(
+        "##################################################################",
+    );
     info("");
 
     let testbed = ca_handle("testbed");
@@ -36,13 +64,27 @@ async fn functional_bgpsec() {
     let ca_res = resources("AS65000", "10.0.0.0/16", "");
     let ca_res_shrunk = resources("", "10.0.0.0/16", "");
 
-    info("##################################################################");
-    info("#                                                                #");
-    info("# Wait for the *testbed* CA to get its certificate, this means   #");
-    info("# that all CAs which are set up as part of krill_start under the #");
-    info("# testbed config have been set up.                               #");
-    info("#                                                                #");
-    info("##################################################################");
+    info(
+        "##################################################################",
+    );
+    info(
+        "#                                                                #",
+    );
+    info(
+        "# Wait for the *testbed* CA to get its certificate, this means   #",
+    );
+    info(
+        "# that all CAs which are set up as part of krill_start under the #",
+    );
+    info(
+        "# testbed config have been set up.                               #",
+    );
+    info(
+        "#                                                                #",
+    );
+    info(
+        "##################################################################",
+    );
     info("");
     assert!(ca_contains_resources(&testbed, &ResourceSet::all()).await);
 
@@ -58,7 +100,10 @@ async fn functional_bgpsec() {
     }
 
     // short hand to expect published BGPSec certs under CA
-    async fn expect_bgpsec_objects(ca: &CaHandle, definitions: &[BgpSecCsrInfo]) {
+    async fn expect_bgpsec_objects(
+        ca: &CaHandle,
+        definitions: &[BgpSecCsrInfo],
+    ) {
         let rcn_0 = ResourceClassName::from(0);
 
         let mut expected_files = expected_mft_and_crl(ca, &rcn_0).await;

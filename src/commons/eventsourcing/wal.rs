@@ -10,7 +10,10 @@ use rpki::ca::idexchange::MyHandle;
 use serde::Serialize;
 use url::Url;
 
-use crate::commons::eventsourcing::{segment, Key, KeyValueError, KeyValueStore, Scope, Segment, SegmentExt, Storable};
+use crate::commons::eventsourcing::{
+    segment, Key, KeyValueError, KeyValueStore, Scope, Segment, SegmentExt,
+    Storable,
+};
 
 //------------ WalSupport ----------------------------------------------------
 
@@ -74,7 +77,10 @@ pub trait WalSupport: Storable {
     ///
     /// The command is moved, because we want to enable moving its data
     /// without reallocating.
-    fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Change>, Self::Error>;
+    fn process_command(
+        &self,
+        command: Self::Command,
+    ) -> Result<Vec<Self::Change>, Self::Error>;
 }
 
 //------------ WalCommand ----------------------------------------------------
@@ -85,13 +91,16 @@ pub trait WalCommand: Clone + fmt::Display {
 
 //------------ WalEvent ------------------------------------------------------
 
-pub trait WalChange: fmt::Display + Eq + PartialEq + Send + Sync + Storable {}
+pub trait WalChange:
+    fmt::Display + Eq + PartialEq + Send + Sync + Storable
+{
+}
 
 //------------ WalSet --------------------------------------------------------
 
 /// Describes a set of "write-ahead" changes affecting the specified revision.
-/// Meaning that it can only be applied if the type is of the given revision, and
-/// it will get this revision + 1 after it has been applied.
+/// Meaning that it can only be applied if the type is of the given revision,
+/// and it will get this revision + 1 after it has been applied.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WalSet<T: WalSupport> {
     revision: u64,
@@ -113,8 +122,8 @@ impl<T: WalSupport> WalSet<T> {
 /// This is similar to how [`AggregateStore`] is used to manage [`Aggregate`]
 /// types. However, there are some important differences:
 /// - Commands and events for a change are saved as a single file.
-/// - Old commands and events are no longer relevant and will be removed.
-///   (we may want to support archiving those in future).
+/// - Old commands and events are no longer relevant and will be removed. (we
+///   may want to support archiving those in future).
 /// - We do not have any listeners in this case.
 /// - We cannot replay [`WriteAheadSupport`] types from just events, we
 ///   *always* need to start with an existing snapshot.
@@ -127,7 +136,10 @@ pub struct WalStore<T: WalSupport> {
 impl<T: WalSupport> WalStore<T> {
     /// Creates a new store using a disk based keystore for the given data
     /// directory and namespace (directory).
-    pub fn create(storage_uri: &Url, name_space: &Namespace) -> WalStoreResult<Self> {
+    pub fn create(
+        storage_uri: &Url,
+        name_space: &Namespace,
+    ) -> WalStoreResult<Self> {
         let kv = KeyValueStore::create(storage_uri, name_space)?;
         let cache = RwLock::new(HashMap::new());
 
@@ -137,9 +149,9 @@ impl<T: WalSupport> WalStore<T> {
     /// Warms up the store: caches all instances.
     pub fn warm(&self) -> WalStoreResult<()> {
         for handle in self.list()? {
-            let latest = self
-                .get_latest(&handle)
-                .map_err(|e| WalStoreError::WarmupFailed(handle.clone(), e.to_string()))?;
+            let latest = self.get_latest(&handle).map_err(|e| {
+                WalStoreError::WarmupFailed(handle.clone(), e.to_string())
+            })?;
 
             self.cache.write().unwrap().insert(handle, latest);
         }
@@ -167,7 +179,9 @@ impl<T: WalSupport> WalStore<T> {
     /// Checks whether there is an instance for the given handle.
     pub fn has(&self, handle: &MyHandle) -> WalStoreResult<bool> {
         let scope = Self::scope_for_handle(handle);
-        self.kv.has_scope(&scope).map_err(WalStoreError::KeyStoreError)
+        self.kv
+            .has_scope(&scope)
+            .map_err(WalStoreError::KeyStoreError)
     }
 
     /// Get the latest revision for the given handle.
@@ -216,7 +230,10 @@ impl<T: WalSupport> WalStore<T> {
     ///     - apply the wal set locally
     ///     - save the wal set
     ///     - if saved properly update the cache
-    pub fn send_command(&self, command: T::Command) -> Result<Arc<T>, T::Error> {
+    pub fn send_command(
+        &self,
+        command: T::Command,
+    ) -> Result<Arc<T>, T::Error> {
         let handle = command.handle().clone();
         self.execute_opt_command(&handle, Some(command), false)
     }
@@ -380,7 +397,10 @@ impl<T: WalSupport> WalStore<T> {
     }
 
     /// Update snapshot and archive or delete old wal sets
-    pub fn update_snapshot(&self, handle: &MyHandle) -> Result<Arc<T>, T::Error> {
+    pub fn update_snapshot(
+        &self,
+        handle: &MyHandle,
+    ) -> Result<Arc<T>, T::Error> {
         self.execute_opt_command(handle, None, true)
     }
 
@@ -402,13 +422,16 @@ impl<T: WalSupport> WalStore<T> {
     }
 
     fn key_for_snapshot(handle: &MyHandle) -> Key {
-        Key::new_scoped(Self::scope_for_handle(handle), segment!("snapshot.json"))
+        Key::new_scoped(
+            Self::scope_for_handle(handle),
+            segment!("snapshot.json"),
+        )
     }
 
     fn key_for_wal_set(handle: &MyHandle, revision: u64) -> Key {
         Key::new_scoped(
             Self::scope_for_handle(handle),
-            Segment::parse(&format!("wal-{}.json", revision)).unwrap(), // cannot panic as a u64 cannot contain a Scope::SEPARATOR
+            Segment::parse(&format!("wal-{}.json", revision)).unwrap(), /* cannot panic as a u64 cannot contain a Scope::SEPARATOR */
         )
     }
 }
@@ -436,9 +459,17 @@ impl From<KeyValueError> for WalStoreError {
 impl fmt::Display for WalStoreError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            WalStoreError::KeyStoreError(e) => write!(f, "KeyStore Error: {}", e),
-            WalStoreError::Unknown(handle) => write!(f, "Unknown entity: {}", handle),
-            WalStoreError::WarmupFailed(handle, e) => write!(f, "Warmup failed with entity '{}' error: {}", handle, e),
+            WalStoreError::KeyStoreError(e) => {
+                write!(f, "KeyStore Error: {}", e)
+            }
+            WalStoreError::Unknown(handle) => {
+                write!(f, "Unknown entity: {}", handle)
+            }
+            WalStoreError::WarmupFailed(handle, e) => write!(
+                f,
+                "Warmup failed with entity '{}' error: {}",
+                handle, e
+            ),
         }
     }
 }

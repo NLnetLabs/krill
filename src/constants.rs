@@ -43,8 +43,9 @@ pub fn test_announcements_enabled() -> bool {
     std::env::var(KRILL_ENV_TEST_ANN).is_ok()
 }
 
-// until const fn's are more versatile for str's, we need to use lazy_static to be able to expand the segment macro at
-// compile time, while running the expanded code, which actually makes it a Segment, at runtime
+// until const fn's are more versatile for str's, we need to use lazy_static
+// to be able to expand the segment macro at compile time, while running the
+// expanded code, which actually makes it a Segment, at runtime
 pub const TASK_QUEUE_NS: &Namespace = namespace!("tasks");
 pub const CASERVER_NS: &Namespace = namespace!("cas");
 pub const CA_OBJECTS_NS: &Namespace = namespace!("ca_objects");
@@ -106,8 +107,10 @@ pub const NO_RESOURCE: NoResourceType = NoResourceType;
 pub const ACTOR_DEF_KRILL: ActorDef = ActorDef::system("krill", "admin");
 pub const ACTOR_DEF_KRILLTA: ActorDef = ActorDef::system("krillta", "admin");
 pub const ACTOR_DEF_ANON: ActorDef = ActorDef::anonymous();
-pub const ACTOR_DEF_ADMIN_TOKEN: ActorDef = ActorDef::system("admin-token", "admin");
-pub const ACTOR_DEF_TESTBED: ActorDef = ActorDef::system("testbed", "testbed");
+pub const ACTOR_DEF_ADMIN_TOKEN: ActorDef =
+    ActorDef::system("admin-token", "admin");
+pub const ACTOR_DEF_TESTBED: ActorDef =
+    ActorDef::system("testbed", "testbed");
 
 #[cfg(test)]
 pub const ACTOR_DEF_TEST: ActorDef = ActorDef::system("test", "admin");

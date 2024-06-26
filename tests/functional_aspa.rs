@@ -1,5 +1,4 @@
 //! Perform functional tests on a Krill instance, using the API
-//!
 use std::str::FromStr;
 
 use rpki::{
@@ -8,41 +7,87 @@ use rpki::{
 };
 
 use krill::{
-    commons::api::{AspaDefinition, AspaDefinitionList, AspaProvidersUpdate, CustomerAsn, ObjectName, ProviderAsn},
+    commons::api::{
+        AspaDefinition, AspaDefinitionList, AspaProvidersUpdate, CustomerAsn,
+        ObjectName, ProviderAsn,
+    },
     test::*,
 };
 
 #[tokio::test]
 async fn functional_aspa() {
-    let cleanup = start_krill_with_default_test_config(true, false, false, false).await;
+    let cleanup =
+        start_krill_with_default_test_config(true, false, false, false).await;
 
-    info("##################################################################");
-    info("#                                                                #");
-    info("# Test ASPA support.                                             #");
-    info("#                                                                #");
-    info("# Uses the following lay-out:                                    #");
-    info("#                                                                #");
-    info("#                  TA                                            #");
-    info("#                   |                                            #");
-    info("#                testbed                                         #");
-    info("#                   |                                            #");
-    info("#                  CA                                            #");
-    info("#                                                                #");
-    info("#                                                                #");
-    info("##################################################################");
+    info(
+        "##################################################################",
+    );
+    info(
+        "#                                                                #",
+    );
+    info(
+        "# Test ASPA support.                                             #",
+    );
+    info(
+        "#                                                                #",
+    );
+    info(
+        "# Uses the following lay-out:                                    #",
+    );
+    info(
+        "#                                                                #",
+    );
+    info(
+        "#                  TA                                            #",
+    );
+    info(
+        "#                   |                                            #",
+    );
+    info(
+        "#                testbed                                         #",
+    );
+    info(
+        "#                   |                                            #",
+    );
+    info(
+        "#                  CA                                            #",
+    );
+    info(
+        "#                                                                #",
+    );
+    info(
+        "#                                                                #",
+    );
+    info(
+        "##################################################################",
+    );
     info("");
 
     let testbed = ca_handle("testbed");
     let ca = ca_handle("CA");
     let ca_res = resources("AS65000", "10.0.0.0/16", "");
 
-    info("##################################################################");
-    info("#                                                                #");
-    info("# Wait for the *testbed* CA to get its certificate, this means   #");
-    info("# that all CAs which are set up as part of krill_start under the #");
-    info("# testbed config have been set up.                               #");
-    info("#                                                                #");
-    info("##################################################################");
+    info(
+        "##################################################################",
+    );
+    info(
+        "#                                                                #",
+    );
+    info(
+        "# Wait for the *testbed* CA to get its certificate, this means   #",
+    );
+    info(
+        "# that all CAs which are set up as part of krill_start under the #",
+    );
+    info(
+        "# testbed config have been set up.                               #",
+    );
+    info(
+        "#                                                                #",
+    );
+    info(
+        "##################################################################",
+    );
     info("");
     assert!(ca_contains_resources(&testbed, &ResourceSet::all()).await);
 
@@ -64,10 +109,18 @@ async fn functional_aspa() {
         let mut expected_files = expected_mft_and_crl(ca, &rcn_0).await;
 
         for aspa in aspas {
-            expected_files.push(ObjectName::aspa(aspa.customer()).to_string());
+            expected_files
+                .push(ObjectName::aspa(aspa.customer()).to_string());
         }
 
-        assert!(will_publish_embedded("published ASPAs do not match expectations", ca, &expected_files).await);
+        assert!(
+            will_publish_embedded(
+                "published ASPAs do not match expectations",
+                ca,
+                &expected_files
+            )
+            .await
+        );
     }
 
     {
@@ -78,13 +131,15 @@ async fn functional_aspa() {
         info("##################################################################");
         info("");
 
-        let aspa_65000 = AspaDefinition::from_str("AS65000 => <none>").unwrap();
+        let aspa_65000 =
+            AspaDefinition::from_str("AS65000 => <none>").unwrap();
 
         ca_aspas_add_expect_error(&ca, aspa_65000.clone()).await;
 
         let expected_aspas = vec![];
         expect_aspa_objects(&ca, &expected_aspas).await;
-        expect_aspa_definitions(&ca, AspaDefinitionList::new(expected_aspas)).await;
+        expect_aspa_definitions(&ca, AspaDefinitionList::new(expected_aspas))
+            .await;
     }
 
     {
@@ -95,7 +150,9 @@ async fn functional_aspa() {
         info("##################################################################");
         info("");
 
-        let aspa_65000 = AspaDefinition::from_str("AS65000 => AS65000, AS65003, AS65005").unwrap();
+        let aspa_65000 =
+            AspaDefinition::from_str("AS65000 => AS65000, AS65003, AS65005")
+                .unwrap();
 
         ca_aspas_add_expect_error(&ca, aspa_65000.clone()).await;
 
@@ -112,7 +169,9 @@ async fn functional_aspa() {
         info("##################################################################");
         info("");
 
-        let aspa_65000 = AspaDefinition::from_str("AS65000 => AS65002, AS65003, AS65005").unwrap();
+        let aspa_65000 =
+            AspaDefinition::from_str("AS65000 => AS65002, AS65003, AS65005")
+                .unwrap();
 
         ca_aspas_add(&ca, aspa_65000.clone()).await;
 
@@ -137,7 +196,9 @@ async fn functional_aspa() {
 
         ca_aspas_update(&ca, customer, aspa_update).await;
 
-        let updated_aspa = AspaDefinition::from_str("AS65000 => AS65003, AS65005, AS65006").unwrap();
+        let updated_aspa =
+            AspaDefinition::from_str("AS65000 => AS65003, AS65005, AS65006")
+                .unwrap();
         let aspas = vec![updated_aspa.clone()];
 
         expect_aspa_objects(&ca, &aspas).await;
@@ -153,11 +214,16 @@ async fn functional_aspa() {
         info("");
 
         let customer = CustomerAsn::from_str("AS65000").unwrap();
-        let aspa_update = AspaProvidersUpdate::new(vec![ProviderAsn::from_str("AS65000").unwrap()], vec![]);
+        let aspa_update = AspaProvidersUpdate::new(
+            vec![ProviderAsn::from_str("AS65000").unwrap()],
+            vec![],
+        );
 
         ca_aspas_update_expect_error(&ca, customer, aspa_update).await;
 
-        let unmodified_aspa = AspaDefinition::from_str("AS65000 => AS65003, AS65005, AS65006").unwrap();
+        let unmodified_aspa =
+            AspaDefinition::from_str("AS65000 => AS65003, AS65005, AS65006")
+                .unwrap();
         let aspas = vec![unmodified_aspa.clone()];
 
         expect_aspa_objects(&ca, &aspas).await;
@@ -187,7 +253,8 @@ async fn functional_aspa() {
         // when all providers are removed from the existing definition.
         let expected_aspas = vec![];
         expect_aspa_objects(&ca, &expected_aspas).await;
-        expect_aspa_definitions(&ca, AspaDefinitionList::new(expected_aspas)).await;
+        expect_aspa_definitions(&ca, AspaDefinitionList::new(expected_aspas))
+            .await;
     }
 
     {
@@ -215,7 +282,9 @@ async fn functional_aspa() {
 
         ca_aspas_update(&ca, customer, aspa_update).await;
 
-        let updated_aspa = AspaDefinition::from_str("AS65000 => AS65003, AS65005, AS65006").unwrap();
+        let updated_aspa =
+            AspaDefinition::from_str("AS65000 => AS65003, AS65005, AS65006")
+                .unwrap();
         let aspas = vec![updated_aspa.clone()];
 
         expect_aspa_objects(&ca, &aspas).await;
@@ -234,17 +303,19 @@ async fn functional_aspa() {
         let aspa_update = AspaProvidersUpdate::new(
             vec![
                 ProviderAsn::from_str("AS65002").unwrap(), // add
-                ProviderAsn::from_str("AS65005").unwrap(), // add, but was already present, so ignored
+                ProviderAsn::from_str("AS65005").unwrap(), /* add, but was already present, so ignored */
             ],
             vec![
                 ProviderAsn::from_str("AS65006").unwrap(), // remove
-                ProviderAsn::from_str("AS65007").unwrap(), // remove, but was not present, so ignored
+                ProviderAsn::from_str("AS65007").unwrap(), /* remove, but was not present, so ignored */
             ],
         );
 
         ca_aspas_update(&ca, customer, aspa_update).await;
 
-        let updated_aspa = AspaDefinition::from_str("AS65000 => AS65002, AS65003, AS65005").unwrap();
+        let updated_aspa =
+            AspaDefinition::from_str("AS65000 => AS65002, AS65003, AS65005")
+                .unwrap();
         let aspas = vec![updated_aspa.clone()];
 
         expect_aspa_objects(&ca, &aspas).await;

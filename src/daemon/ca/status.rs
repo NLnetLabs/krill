@@ -10,11 +10,13 @@ use url::Url;
 
 use crate::commons::{
     api::{
-        ChildConnectionStats, ChildStatus, ChildrenConnectionStats, ErrorResponse, ParentStatus, ParentStatuses,
-        RepoStatus,
+        ChildConnectionStats, ChildStatus, ChildrenConnectionStats,
+        ErrorResponse, ParentStatus, ParentStatuses, RepoStatus,
     },
     error::Error,
-    eventsourcing::{segment, Key, KeyValueStore, Scope, Segment, SegmentExt},
+    eventsourcing::{
+        segment, Key, KeyValueStore, Scope, Segment, SegmentExt,
+    },
     util::httpclient,
     KrillResult,
 };
@@ -29,7 +31,10 @@ const JSON_SUFFIX: &str = ".json";
 pub struct CaStatus {
     repo: RepoStatus,
     parents: ParentStatuses,
-    #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
+    #[serde(
+        skip_serializing_if = "HashMap::is_empty",
+        default = "HashMap::new"
+    )]
     children: HashMap<ChildHandle, ChildStatus>,
 }
 
@@ -68,7 +73,10 @@ pub struct StatusStore {
 }
 
 impl StatusStore {
-    pub fn create(storage_uri: &Url, namespace: &Namespace) -> KrillResult<Self> {
+    pub fn create(
+        storage_uri: &Url,
+        namespace: &Namespace,
+    ) -> KrillResult<Self> {
         let store = KeyValueStore::create(storage_uri, namespace)?;
         let cache = RwLock::new(HashMap::new());
 
@@ -78,8 +86,8 @@ impl StatusStore {
         Ok(store)
     }
 
-    /// Load existing status from disk, support the pre 0.9.5 format and silently
-    /// convert it if needed.
+    /// Load existing status from disk, support the pre 0.9.5 format and
+    /// silently convert it if needed.
     fn warm(&self) -> KrillResult<()> {
         for scope in self.store.scopes()? {
             if let Ok(ca) = CaHandle::from_str(&scope.to_string()) {
@@ -91,16 +99,18 @@ impl StatusStore {
         Ok(())
     }
 
-    /// Load current status from disk, to be used when starting up. If there are any
-    /// issues parsing data then default values are used - this data is not critical
-    /// so any missing, corrupted, or no longer supported data format - can be ignored.
-    /// It will get updated with new status values as Krill is running.
+    /// Load current status from disk, to be used when starting up. If there
+    /// are any issues parsing data then default values are used - this
+    /// data is not critical so any missing, corrupted, or no longer
+    /// supported data format - can be ignored. It will get updated with
+    /// new status values as Krill is running.
     #[allow(clippy::manual_unwrap_or_default)] // False positive in nightly
     fn load_full_status(&self, ca: &CaHandle) -> KrillResult<()> {
-        let repo: RepoStatus = match self.store.get(&Self::repo_status_key(ca)) {
-            Ok(Some(status)) => status,
-            _ => RepoStatus::default(),
-        };
+        let repo: RepoStatus =
+            match self.store.get(&Self::repo_status_key(ca)) {
+                Ok(Some(status)) => status,
+                _ => RepoStatus::default(),
+            };
 
         // We use the following mapping for keystore keys to parents/children:
         //  parents-{parent-handle}.json
@@ -118,14 +128,21 @@ impl StatusStore {
                 .name()
                 .as_str()
                 .strip_prefix(PARENTS_PREFIX.as_str())
-                .and_then(|pfx_stripped| pfx_stripped.strip_suffix(JSON_SUFFIX))
-                .and_then(|handle_str| ParentHandle::from_str(handle_str).ok())
+                .and_then(|pfx_stripped| {
+                    pfx_stripped.strip_suffix(JSON_SUFFIX)
+                })
+                .and_then(|handle_str| {
+                    ParentHandle::from_str(handle_str).ok()
+                })
             {
                 // try to read the status, if there is any issue, e.g. because
                 // the format changed in a new version, then just fall back to
                 // an empty default value. We will get a new connection status
                 // value soon enough as Krill is running.
-                let status: ParentStatus = match self.store.get(&Self::parent_status_key(ca, &parent)) {
+                let status: ParentStatus = match self
+                    .store
+                    .get(&Self::parent_status_key(ca, &parent))
+                {
                     Ok(Some(status)) => status,
                     _ => ParentStatus::default(),
                 };
@@ -146,17 +163,21 @@ impl StatusStore {
                 .name()
                 .as_str()
                 .strip_prefix(CHILDREN_PREFIX.as_str())
-                .and_then(|pfx_stripped| pfx_stripped.strip_suffix(JSON_SUFFIX))
+                .and_then(|pfx_stripped| {
+                    pfx_stripped.strip_suffix(JSON_SUFFIX)
+                })
                 .and_then(|handle_str| ChildHandle::from_str(handle_str).ok())
             {
                 // try to read the status, if there is any issue, e.g. because
                 // the format changed in a new version, then just fall back to
                 // an empty default value. We will get a new connection status
                 // value soon enough as Krill is running.
-                let status: ChildStatus = match self.store.get(&Self::child_status_key(ca, &child)) {
-                    Ok(Some(status)) => status,
-                    _ => ChildStatus::default(),
-                };
+                let status: ChildStatus =
+                    match self.store.get(&Self::child_status_key(ca, &child))
+                    {
+                        Ok(Some(status)) => status,
+                        _ => ChildStatus::default(),
+                    };
 
                 children.insert(child, status);
             }
@@ -176,7 +197,10 @@ impl StatusStore {
         Ok(())
     }
 
-    fn convert_pre_0_9_5_full_status_if_present(&self, ca: &CaHandle) -> KrillResult<()> {
+    fn convert_pre_0_9_5_full_status_if_present(
+        &self,
+        ca: &CaHandle,
+    ) -> KrillResult<()> {
         let key = Key::new_scoped(
             Scope::from_segment(Segment::parse_lossy(ca.as_str())),
             segment!("status.json"),
@@ -189,16 +213,19 @@ impl StatusStore {
                 ca
             );
             // repo status
-            self.store.store(&Self::repo_status_key(ca), full_status.repo())?;
+            self.store
+                .store(&Self::repo_status_key(ca), full_status.repo())?;
 
             // parents
             for (parent, status) in full_status.parents().iter() {
-                self.store.store(&Self::parent_status_key(ca, parent), status)?;
+                self.store
+                    .store(&Self::parent_status_key(ca, parent), status)?;
             }
 
             // children
             for (child, status) in full_status.children.iter() {
-                self.store.store(&Self::child_status_key(ca, child), status)?;
+                self.store
+                    .store(&Self::child_status_key(ca, child), status)?;
             }
 
             self.store.drop_key(&key)?;
@@ -210,28 +237,40 @@ impl StatusStore {
     fn repo_status_key(ca: &CaHandle) -> Key {
         // we may need to support multiple repos in future
         Key::new_scoped(
-            Scope::from_segment(Segment::parse_lossy(ca.as_str())), // ca should always be a valid Segment
+            Scope::from_segment(Segment::parse_lossy(ca.as_str())), /* ca should always be a valid Segment */
             segment!("repos-main.json"),
         )
     }
 
     fn parent_status_key(ca: &CaHandle, parent: &ParentHandle) -> Key {
         Key::new_scoped(
-            Scope::from_segment(Segment::parse_lossy(ca.as_str())), // ca should always be a valid Segment
-            Segment::parse_lossy(&format!("{}{}{}", PARENTS_PREFIX, parent, JSON_SUFFIX)),
+            Scope::from_segment(Segment::parse_lossy(ca.as_str())), /* ca should always be a valid Segment */
+            Segment::parse_lossy(&format!(
+                "{}{}{}",
+                PARENTS_PREFIX, parent, JSON_SUFFIX
+            )),
         )
     }
 
     fn child_status_key(ca: &CaHandle, child: &ChildHandle) -> Key {
         Key::new_scoped(
-            Scope::from_segment(Segment::parse_lossy(ca.as_str())), // ca should always be a valid Segment
-            Segment::parse_lossy(&format!("{}{}{}", CHILDREN_PREFIX, child, JSON_SUFFIX)),
+            Scope::from_segment(Segment::parse_lossy(ca.as_str())), /* ca should always be a valid Segment */
+            Segment::parse_lossy(&format!(
+                "{}{}{}",
+                CHILDREN_PREFIX, child, JSON_SUFFIX
+            )),
         )
     }
 
-    /// Returns the stored CaStatus for a CA, or a default (empty) status if it can't be found
+    /// Returns the stored CaStatus for a CA, or a default (empty) status if
+    /// it can't be found
     pub fn get_ca_status(&self, ca: &CaHandle) -> CaStatus {
-        self.cache.read().unwrap().get(ca).cloned().unwrap_or_default()
+        self.cache
+            .read()
+            .unwrap()
+            .get(ca)
+            .cloned()
+            .unwrap_or_default()
     }
 
     pub fn set_parent_failure(
@@ -242,11 +281,20 @@ impl StatusStore {
         error: &Error,
     ) -> KrillResult<()> {
         let error_response = Self::error_to_error_res(error);
-        self.update_ca_parent_status(ca, parent, |status| status.set_failure(uri.clone(), error_response))
+        self.update_ca_parent_status(ca, parent, |status| {
+            status.set_failure(uri.clone(), error_response)
+        })
     }
 
-    pub fn set_parent_last_updated(&self, ca: &CaHandle, parent: &ParentHandle, uri: &ServiceUri) -> KrillResult<()> {
-        self.update_ca_parent_status(ca, parent, |status| status.set_last_updated(uri.clone()))
+    pub fn set_parent_last_updated(
+        &self,
+        ca: &CaHandle,
+        parent: &ParentHandle,
+        uri: &ServiceUri,
+    ) -> KrillResult<()> {
+        self.update_ca_parent_status(ca, parent, |status| {
+            status.set_last_updated(uri.clone())
+        })
     }
 
     pub fn set_parent_entitlements(
@@ -256,10 +304,16 @@ impl StatusStore {
         uri: &ServiceUri,
         entitlements: &Entitlements,
     ) -> KrillResult<()> {
-        self.update_ca_parent_status(ca, parent, |status| status.set_entitlements(uri.clone(), entitlements))
+        self.update_ca_parent_status(ca, parent, |status| {
+            status.set_entitlements(uri.clone(), entitlements)
+        })
     }
 
-    pub fn remove_parent(&self, ca: &CaHandle, parent: &ParentHandle) -> KrillResult<()> {
+    pub fn remove_parent(
+        &self,
+        ca: &CaHandle,
+        parent: &ParentHandle,
+    ) -> KrillResult<()> {
         let mut cache = self.cache.write().unwrap();
 
         if let Some(ca_status) = cache.get_mut(ca) {
@@ -269,8 +323,15 @@ impl StatusStore {
         Ok(())
     }
 
-    pub fn set_child_success(&self, ca: &CaHandle, child: &ChildHandle, user_agent: Option<String>) -> KrillResult<()> {
-        self.update_ca_child_status(ca, child, |status| status.set_success(user_agent))
+    pub fn set_child_success(
+        &self,
+        ca: &CaHandle,
+        child: &ChildHandle,
+        user_agent: Option<String>,
+    ) -> KrillResult<()> {
+        self.update_ca_child_status(ca, child, |status| {
+            status.set_success(user_agent)
+        })
     }
 
     pub fn set_child_failure(
@@ -281,30 +342,46 @@ impl StatusStore {
         error: &Error,
     ) -> KrillResult<()> {
         let error_response = Self::error_to_error_res(error);
-        self.update_ca_child_status(ca, child, |status| status.set_failure(user_agent, error_response))
+        self.update_ca_child_status(ca, child, |status| {
+            status.set_failure(user_agent, error_response)
+        })
     }
 
-    /// Marks a child as suspended. Note that it will be implicitly unsuspended whenever a new success or
-    /// or failure is recorded for the child.
-    pub fn set_child_suspended(&self, ca: &CaHandle, child: &ChildHandle) -> KrillResult<()> {
-        self.update_ca_child_status(ca, child, |status| status.set_suspended())
+    /// Marks a child as suspended. Note that it will be implicitly
+    /// unsuspended whenever a new success or or failure is recorded for
+    /// the child.
+    pub fn set_child_suspended(
+        &self,
+        ca: &CaHandle,
+        child: &ChildHandle,
+    ) -> KrillResult<()> {
+        self.update_ca_child_status(ca, child, |status| {
+            status.set_suspended()
+        })
     }
 
     /// Remove a CA from the saved status
-    /// This should be called when the CA is removed from Krill, but note that if this is done for a CA which still exists
-    /// a new empty default status will be re-generated when it is accessed for this CA.
+    /// This should be called when the CA is removed from Krill, but note that
+    /// if this is done for a CA which still exists a new empty default
+    /// status will be re-generated when it is accessed for this CA.
     pub fn remove_ca(&self, ca: &CaHandle) -> KrillResult<()> {
         self.cache.write().unwrap().remove(ca);
 
         self.store
-            .drop_scope(&Scope::from_segment(Segment::parse_lossy(ca.as_str())))?; // will only fail if scope is present and cannot be removed
-                                                                                   // ca should always be a valid Segment
+            .drop_scope(&Scope::from_segment(Segment::parse_lossy(
+                ca.as_str(),
+            )))?; // will only fail if scope is present and cannot be removed
+                  // ca should always be a valid Segment
 
         Ok(())
     }
 
     /// Removes a child for the given CA.
-    pub fn remove_child(&self, ca: &CaHandle, child: &ChildHandle) -> KrillResult<()> {
+    pub fn remove_child(
+        &self,
+        ca: &CaHandle,
+        child: &ChildHandle,
+    ) -> KrillResult<()> {
         let mut cache = self.cache.write().unwrap();
 
         if let Some(ca_status) = cache.get_mut(ca) {
@@ -315,17 +392,35 @@ impl StatusStore {
         Ok(())
     }
 
-    pub fn set_status_repo_failure(&self, ca: &CaHandle, uri: ServiceUri, error: &Error) -> KrillResult<()> {
+    pub fn set_status_repo_failure(
+        &self,
+        ca: &CaHandle,
+        uri: ServiceUri,
+        error: &Error,
+    ) -> KrillResult<()> {
         let error_response = Self::error_to_error_res(error);
-        self.update_repo_status(ca, |status| status.set_failure(uri, error_response))
+        self.update_repo_status(ca, |status| {
+            status.set_failure(uri, error_response)
+        })
     }
 
-    pub fn set_status_repo_success(&self, ca: &CaHandle, uri: ServiceUri) -> KrillResult<()> {
+    pub fn set_status_repo_success(
+        &self,
+        ca: &CaHandle,
+        uri: ServiceUri,
+    ) -> KrillResult<()> {
         self.update_repo_status(ca, |status| status.set_last_updated(uri))
     }
 
-    pub fn set_status_repo_published(&self, ca: &CaHandle, uri: ServiceUri, delta: PublishDelta) -> KrillResult<()> {
-        self.update_repo_status(ca, |status| status.update_published(uri, delta))
+    pub fn set_status_repo_published(
+        &self,
+        ca: &CaHandle,
+        uri: ServiceUri,
+        delta: PublishDelta,
+    ) -> KrillResult<()> {
+        self.update_repo_status(ca, |status| {
+            status.update_published(uri, delta)
+        })
     }
 
     fn update_repo_status<F>(&self, ca: &CaHandle, op: F) -> KrillResult<()>
@@ -341,12 +436,18 @@ impl StatusStore {
         let ca_status = cache.get_mut(ca).unwrap(); // safe, we just set it if missing
         op(&mut ca_status.repo);
 
-        self.store.store(&Self::repo_status_key(ca), ca_status.repo())?;
+        self.store
+            .store(&Self::repo_status_key(ca), ca_status.repo())?;
 
         Ok(())
     }
 
-    fn update_ca_child_status<F>(&self, ca: &CaHandle, child: &ChildHandle, op: F) -> KrillResult<()>
+    fn update_ca_child_status<F>(
+        &self,
+        ca: &CaHandle,
+        child: &ChildHandle,
+        op: F,
+    ) -> KrillResult<()>
     where
         F: FnOnce(&mut ChildStatus),
     {
@@ -360,7 +461,9 @@ impl StatusStore {
             let ca_status = cache.get_mut(ca).unwrap(); // safe, we just set it if missing
 
             if !ca_status.children.contains_key(child) {
-                ca_status.children.insert(child.clone(), ChildStatus::default());
+                ca_status
+                    .children
+                    .insert(child.clone(), ChildStatus::default());
             }
 
             let child_status = ca_status.children.get_mut(child).unwrap();
@@ -369,12 +472,18 @@ impl StatusStore {
             child_status.clone()
         };
 
-        self.store.store(&Self::child_status_key(ca, child), &status)?;
+        self.store
+            .store(&Self::child_status_key(ca, child), &status)?;
 
         Ok(())
     }
 
-    fn update_ca_parent_status<F>(&self, ca: &CaHandle, parent: &ParentHandle, op: F) -> KrillResult<()>
+    fn update_ca_parent_status<F>(
+        &self,
+        ca: &CaHandle,
+        parent: &ParentHandle,
+        op: F,
+    ) -> KrillResult<()>
     where
         F: FnOnce(&mut ParentStatus),
     {
@@ -392,14 +501,17 @@ impl StatusStore {
             parent_status.clone()
         };
 
-        self.store.store(&Self::parent_status_key(ca, parent), &status)?;
+        self.store
+            .store(&Self::parent_status_key(ca, parent), &status)?;
 
         Ok(())
     }
 
     fn error_to_error_res(error: &Error) -> ErrorResponse {
         match error {
-            Error::HttpClientError(httpclient::Error::ErrorResponseWithJson(_, _, res)) => *res.clone(),
+            Error::HttpClientError(
+                httpclient::Error::ErrorResponseWithJson(_, _, res),
+            ) => *res.clone(),
             _ => error.to_error_response(),
         }
     }
@@ -413,13 +525,17 @@ mod tests {
 
     #[test]
     fn read_save_status() {
-        let source_dir_path_str = "test-resources/status_store/migration-0.9.5/";
-        let source_dir_url = Url::parse(&format!("local://{}", source_dir_path_str)).unwrap();
+        let source_dir_path_str =
+            "test-resources/status_store/migration-0.9.5/";
+        let source_dir_url =
+            Url::parse(&format!("local://{}", source_dir_path_str)).unwrap();
 
-        let source_store = KeyValueStore::create(&source_dir_url, STATUS_NS).unwrap();
+        let source_store =
+            KeyValueStore::create(&source_dir_url, STATUS_NS).unwrap();
 
         let test_storage_uri = test::mem_storage();
-        let status_kv_store = KeyValueStore::create(&test_storage_uri, STATUS_NS).unwrap();
+        let status_kv_store =
+            KeyValueStore::create(&test_storage_uri, STATUS_NS).unwrap();
 
         // copy the source KV store (files) into the test KV store (in memory)
         status_kv_store.import(&source_store).unwrap();
@@ -431,11 +547,13 @@ mod tests {
             Scope::from_segment(segment!("testbed")),
             Segment::parse("status.json").unwrap(),
         );
-        let status_testbed_before_migration: CaStatus = status_kv_store.get(&testbed_status_key).unwrap().unwrap();
+        let status_testbed_before_migration: CaStatus =
+            status_kv_store.get(&testbed_status_key).unwrap().unwrap();
 
         // Initialise the StatusStore using the new (in memory) storage,
         // and migrate the data.
-        let store = StatusStore::create(&test_storage_uri, STATUS_NS).unwrap();
+        let store =
+            StatusStore::create(&test_storage_uri, STATUS_NS).unwrap();
         let testbed = CaHandle::from_str("testbed").unwrap();
 
         // Get the migrated status for testbed and verify that it's equivalent

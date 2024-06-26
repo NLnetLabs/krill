@@ -13,7 +13,10 @@ use crate::{
         api::{ErrorResponse, Token},
         util::file,
     },
-    constants::{HTTP_CLIENT_TIMEOUT_SECS, KRILL_CLI_API_ENV, KRILL_HTTPS_ROOT_CERTS_ENV, KRILL_VERSION},
+    constants::{
+        HTTP_CLIENT_TIMEOUT_SECS, KRILL_CLI_API_ENV,
+        KRILL_HTTPS_ROOT_CERTS_ENV, KRILL_VERSION,
+    },
 };
 
 const JSON_CONTENT: &str = "application/json";
@@ -26,7 +29,12 @@ fn report_get_and_exit(uri: &str, token: Option<&Token>) {
     std::process::exit(0);
 }
 
-fn report_post_and_exit(uri: &str, content_type: Option<&str>, token: Option<&Token>, body: &str) {
+fn report_post_and_exit(
+    uri: &str,
+    content_type: Option<&str>,
+    token: Option<&Token>,
+    body: &str,
+) {
     println!("POST:\n  {}", uri);
 
     if content_type.is_some() || token.is_some() {
@@ -43,7 +51,11 @@ fn report_post_and_exit(uri: &str, content_type: Option<&str>, token: Option<&To
     std::process::exit(0);
 }
 
-fn report_delete(uri: &str, content_type: Option<&str>, token: Option<&Token>) {
+fn report_delete(
+    uri: &str,
+    content_type: Option<&str>,
+    token: Option<&Token>,
+) {
     if env::var(KRILL_CLI_API_ENV).is_ok() {
         println!("DELETE:\n  {}", uri);
         if content_type.is_some() || token.is_some() {
@@ -62,19 +74,26 @@ fn report_delete(uri: &str, content_type: Option<&str>, token: Option<&Token>) {
 
 /// Gets the Bearer token from the request header, if present.
 pub fn get_bearer_token(
-    request: &hyper::Request<hyper::body::Incoming>
+    request: &hyper::Request<hyper::body::Incoming>,
 ) -> Option<Token> {
     request
         .headers()
         .get(hyper::header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
-        .and_then(|header_string| header_string.strip_prefix("Bearer ").map(|s| Token::from(s.trim())))
+        .and_then(|header_string| {
+            header_string
+                .strip_prefix("Bearer ")
+                .map(|s| Token::from(s.trim()))
+        })
 }
 
 /// Performs a GET request that expects a json response that can be
-/// deserialized into the an owned value of the expected type. Returns an error
-/// if nothing is returned.
-pub async fn get_json<T: DeserializeOwned>(uri: &str, token: Option<&Token>) -> Result<T, Error> {
+/// deserialized into the an owned value of the expected type. Returns an
+/// error if nothing is returned.
+pub async fn get_json<T: DeserializeOwned>(
+    uri: &str,
+    token: Option<&Token>,
+) -> Result<T, Error> {
     if env::var(KRILL_CLI_API_ENV).is_ok() {
         report_get_and_exit(uri, token);
     }
@@ -93,7 +112,10 @@ pub async fn get_json<T: DeserializeOwned>(uri: &str, token: Option<&Token>) -> 
 
 /// Performs a get request and expects a response that can be turned
 /// into a string (in particular, not a binary response).
-pub async fn get_text(uri: &str, token: Option<&Token>) -> Result<String, Error> {
+pub async fn get_text(
+    uri: &str,
+    token: Option<&Token>,
+) -> Result<String, Error> {
     if env::var(KRILL_CLI_API_ENV).is_ok() {
         report_get_and_exit(uri, token);
     }
@@ -130,8 +152,13 @@ pub async fn get_ok(uri: &str, token: Option<&Token>) -> Result<(), Error> {
 
 /// Performs a POST of data that can be serialized into json, and expects
 /// a 200 OK response, without a body.
-pub async fn post_json(uri: &str, data: impl Serialize, token: Option<&Token>) -> Result<(), Error> {
-    let body = serde_json::to_string_pretty(&data).map_err(|e| Error::request_build_json(uri, e))?;
+pub async fn post_json(
+    uri: &str,
+    data: impl Serialize,
+    token: Option<&Token>,
+) -> Result<(), Error> {
+    let body = serde_json::to_string_pretty(&data)
+        .map_err(|e| Error::request_build_json(uri, e))?;
 
     if env::var(KRILL_CLI_API_ENV).is_ok() {
         report_post_and_exit(uri, Some(JSON_CONTENT), token, &body);
@@ -171,7 +198,8 @@ pub async fn post_json_with_opt_response<T: DeserializeOwned>(
     data: impl Serialize,
     token: Option<&Token>,
 ) -> Result<Option<T>, Error> {
-    let body = serde_json::to_string_pretty(&data).map_err(|e| Error::request_build_json(uri, e))?;
+    let body = serde_json::to_string_pretty(&data)
+        .map_err(|e| Error::request_build_json(uri, e))?;
 
     if env::var(KRILL_CLI_API_ENV).is_ok() {
         report_post_and_exit(uri, Some(JSON_CONTENT), token, &body);
@@ -189,19 +217,29 @@ pub async fn post_json_with_opt_response<T: DeserializeOwned>(
     process_opt_json_response(uri, res).await
 }
 
-/// Performs a POST with no data to the given URI and expects and empty 200 OK response.
-pub async fn post_empty(uri: &str, token: Option<&Token>) -> Result<(), Error> {
+/// Performs a POST with no data to the given URI and expects and empty 200 OK
+/// response.
+pub async fn post_empty(
+    uri: &str,
+    token: Option<&Token>,
+) -> Result<(), Error> {
     let res = do_empty_post(uri, token).await?;
     empty_response(uri, res).await
 }
 
 /// Performs a POST with no data to the given URI and expects a response.
-pub async fn post_empty_with_response<T: DeserializeOwned>(uri: &str, token: Option<&Token>) -> Result<T, Error> {
+pub async fn post_empty_with_response<T: DeserializeOwned>(
+    uri: &str,
+    token: Option<&Token>,
+) -> Result<T, Error> {
     let res = do_empty_post(uri, token).await?;
     process_json_response(uri, res).await
 }
 
-async fn do_empty_post(uri: &str, token: Option<&Token>) -> Result<Response, Error> {
+async fn do_empty_post(
+    uri: &str,
+    token: Option<&Token>,
+) -> Result<Response, Error> {
     if env::var(KRILL_CLI_API_ENV).is_ok() {
         report_post_and_exit(uri, None, token, "<empty>");
     }
@@ -215,9 +253,9 @@ async fn do_empty_post(uri: &str, token: Option<&Token>) -> Result<Response, Err
         .map_err(|e| Error::execute(uri, e))
 }
 
-/// Posts binary data, and expects a binary response. Includes the full krill version
-/// as the user agent. Intended for sending RFC 6492 (provisioning) and 8181 (publication)
-/// to the trusted parent or publication server.
+/// Posts binary data, and expects a binary response. Includes the full krill
+/// version as the user agent. Intended for sending RFC 6492 (provisioning)
+/// and 8181 (publication) to the trusted parent or publication server.
 ///
 /// Note: Bytes may be empty if the post was successful, but the response was
 /// empty.
@@ -232,8 +270,10 @@ pub async fn post_binary_with_full_ua(
     let mut headers = HeaderMap::new();
 
     let ua_string = format!("krill/{}", KRILL_VERSION);
-    let user_agent_value = HeaderValue::from_str(&ua_string).map_err(|e| Error::request_build(uri, e))?;
-    let content_type_value = HeaderValue::from_str(content_type).map_err(|e| Error::request_build(uri, e))?;
+    let user_agent_value = HeaderValue::from_str(&ua_string)
+        .map_err(|e| Error::request_build(uri, e))?;
+    let content_type_value = HeaderValue::from_str(content_type)
+        .map_err(|e| Error::request_build(uri, e))?;
 
     headers.insert(USER_AGENT, user_agent_value);
     headers.insert(CONTENT_TYPE, content_type_value);
@@ -254,10 +294,9 @@ pub async fn post_binary_with_full_ua(
 
     match res.status() {
         StatusCode::OK => {
-            let bytes = res
-                .bytes()
-                .await
-                .map_err(|e| Error::response(uri, format!("cannot get body: {}", e)))?;
+            let bytes = res.bytes().await.map_err(|e| {
+                Error::response(uri, format!("cannot get body: {}", e))
+            })?;
             Ok(bytes)
         }
         _ => Err(Error::from_res(uri, res).await),
@@ -284,20 +323,31 @@ pub async fn delete(uri: &str, token: Option<&Token>) -> Result<(), Error> {
 
 #[allow(clippy::result_large_err)]
 fn load_root_cert(path_str: &str) -> Result<reqwest::Certificate, Error> {
-    let path = PathBuf::from_str(path_str).map_err(|e| Error::request_build_https_cert(path_str, e))?;
-    let file = file::read(&path).map_err(|e| Error::request_build_https_cert(path_str, e))?;
-    reqwest::Certificate::from_pem(file.as_ref()).map_err(|e| Error::request_build_https_cert(path_str, e))
+    let path = PathBuf::from_str(path_str)
+        .map_err(|e| Error::request_build_https_cert(path_str, e))?;
+    let file = file::read(&path)
+        .map_err(|e| Error::request_build_https_cert(path_str, e))?;
+    reqwest::Certificate::from_pem(file.as_ref())
+        .map_err(|e| Error::request_build_https_cert(path_str, e))
 }
 
 /// Default client for Krill use cases.
 #[allow(clippy::result_large_err)]
 pub fn client(uri: &str) -> Result<reqwest::Client, Error> {
-    client_with_tweaks(uri, Duration::from_secs(HTTP_CLIENT_TIMEOUT_SECS), true)
+    client_with_tweaks(
+        uri,
+        Duration::from_secs(HTTP_CLIENT_TIMEOUT_SECS),
+        true,
+    )
 }
 
 /// Client with tweaks - in particular needed by the openid connect client
 #[allow(clippy::result_large_err)]
-pub fn client_with_tweaks(uri: &str, timeout: Duration, allow_redirects: bool) -> Result<reqwest::Client, Error> {
+pub fn client_with_tweaks(
+    uri: &str,
+    timeout: Duration,
+    allow_redirects: bool,
+) -> Result<reqwest::Client, Error> {
     let mut builder = reqwest::ClientBuilder::new().timeout(timeout);
 
     if !allow_redirects {
@@ -311,7 +361,9 @@ pub fn client_with_tweaks(uri: &str, timeout: Duration, allow_redirects: bool) -
         }
     }
 
-    if uri.starts_with("https://localhost") || uri.starts_with("https://127.0.0.1") {
+    if uri.starts_with("https://localhost")
+        || uri.starts_with("https://127.0.0.1")
+    {
         builder.danger_accept_invalid_certs(true).build()
     } else {
         builder.build()
@@ -320,38 +372,54 @@ pub fn client_with_tweaks(uri: &str, timeout: Duration, allow_redirects: bool) -
 }
 
 #[allow(clippy::result_large_err)]
-fn headers(uri: &str, content_type: Option<&str>, token: Option<&Token>) -> Result<HeaderMap, Error> {
+fn headers(
+    uri: &str,
+    content_type: Option<&str>,
+    token: Option<&Token>,
+) -> Result<HeaderMap, Error> {
     let mut headers = HeaderMap::new();
     headers.insert(USER_AGENT, HeaderValue::from_static("krill"));
 
     if let Some(content_type) = content_type {
         headers.insert(
             CONTENT_TYPE,
-            HeaderValue::from_str(content_type).map_err(|e| Error::request_build(uri, e))?,
+            HeaderValue::from_str(content_type)
+                .map_err(|e| Error::request_build(uri, e))?,
         );
     }
     if let Some(token) = token {
         headers.insert(
             hyper::header::AUTHORIZATION,
-            HeaderValue::from_str(&format!("Bearer {}", token)).map_err(|e| Error::request_build(uri, e))?,
+            HeaderValue::from_str(&format!("Bearer {}", token))
+                .map_err(|e| Error::request_build(uri, e))?,
         );
     }
     Ok(headers)
 }
 
-async fn process_json_response<T: DeserializeOwned>(uri: &str, res: Response) -> Result<T, Error> {
+async fn process_json_response<T: DeserializeOwned>(
+    uri: &str,
+    res: Response,
+) -> Result<T, Error> {
     match process_opt_json_response(uri, res).await? {
         None => Err(Error::response(uri, "got empty response body")),
         Some(res) => Ok(res),
     }
 }
 
-async fn process_opt_json_response<T: DeserializeOwned>(uri: &str, res: Response) -> Result<Option<T>, Error> {
+async fn process_opt_json_response<T: DeserializeOwned>(
+    uri: &str,
+    res: Response,
+) -> Result<Option<T>, Error> {
     match opt_text_response(uri, res).await? {
         None => Ok(None),
         Some(s) => {
-            let res: T = serde_json::from_str(&s)
-                .map_err(|e| Error::response(uri, format!("could not parse JSON response: {}", e)))?;
+            let res: T = serde_json::from_str(&s).map_err(|e| {
+                Error::response(
+                    uri,
+                    format!("could not parse JSON response: {}", e),
+                )
+            })?;
             Ok(Some(res))
         }
     }
@@ -371,7 +439,10 @@ async fn text_response(uri: &str, res: Response) -> Result<String, Error> {
     }
 }
 
-async fn opt_text_response(uri: &str, res: Response) -> Result<Option<String>, Error> {
+async fn opt_text_response(
+    uri: &str,
+    res: Response,
+) -> Result<Option<String>, Error> {
     match res.status() {
         StatusCode::OK => match res.text().await.ok() {
             None => Ok(None),
@@ -411,17 +482,37 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Error::RequestBuild(uri, msg) => write!(f, "Issue creating request for URI: {}, error: {}", uri, msg),
+            Error::RequestBuild(uri, msg) => write!(
+                f,
+                "Issue creating request for URI: {}, error: {}",
+                uri, msg
+            ),
             Error::RequestBuildHttpsCert(path, msg) => {
-                write!(f, "Cannot use configured HTTPS root cert '{}'. Error: {}", path, msg)
+                write!(
+                    f,
+                    "Cannot use configured HTTPS root cert '{}'. Error: {}",
+                    path, msg
+                )
             }
 
-            Error::RequestExecute(uri, msg) => write!(f, "Issue accessing URI: {}, error: {}", uri, msg),
+            Error::RequestExecute(uri, msg) => {
+                write!(f, "Issue accessing URI: {}, error: {}", uri, msg)
+            }
 
-            Error::Response(uri, msg) => write!(f, "Issue processing response from URI: {}, error: {}", uri, msg),
-            Error::Forbidden(uri) => write!(f, "Got 'Forbidden' response for URI: {}", uri),
+            Error::Response(uri, msg) => write!(
+                f,
+                "Issue processing response from URI: {}, error: {}",
+                uri, msg
+            ),
+            Error::Forbidden(uri) => {
+                write!(f, "Got 'Forbidden' response for URI: {}", uri)
+            }
             Error::ErrorResponseWithBody(uri, code, e) => {
-                write!(f, "Error response from URI: {}, Status: {}, Error: {}", uri, code, e)
+                write!(
+                    f,
+                    "Error response from URI: {}, Status: {}, Error: {}",
+                    uri, code, e
+                )
             }
             Error::ErrorResponseWithJson(uri, code, res) => write!(
                 f,
@@ -438,10 +529,16 @@ impl Error {
     }
 
     pub fn request_build_json(uri: &str, e: impl fmt::Display) -> Self {
-        Error::RequestBuild(uri.to_string(), format!("could not serialize type to JSON: {}", e))
+        Error::RequestBuild(
+            uri.to_string(),
+            format!("could not serialize type to JSON: {}", e),
+        )
     }
 
-    pub fn request_build_https_cert(path: &str, msg: impl fmt::Display) -> Self {
+    pub fn request_build_https_cert(
+        path: &str,
+        msg: impl fmt::Display,
+    ) -> Self {
         Error::RequestBuildHttpsCert(path.to_string(), msg.to_string())
     }
 
@@ -473,8 +570,16 @@ impl Error {
                     Self::response_unexpected_status(uri, status)
                 } else {
                     match serde_json::from_str::<ErrorResponse>(&body) {
-                        Ok(res) => Error::ErrorResponseWithJson(uri.to_string(), status, Box::new(res)),
-                        Err(_) => Error::ErrorResponseWithBody(uri.to_string(), status, body),
+                        Ok(res) => Error::ErrorResponseWithJson(
+                            uri.to_string(),
+                            status,
+                            Box::new(res),
+                        ),
+                        Err(_) => Error::ErrorResponseWithBody(
+                            uri.to_string(),
+                            status,
+                            body,
+                        ),
                     }
                 }
             }
