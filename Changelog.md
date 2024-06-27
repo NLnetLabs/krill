@@ -1,10 +1,10 @@
 # Change Log
 
-## Unreleased next version
+## 0.14.5 ‘Who dis? New Phone’
 
-Bug fixes
+Released 2024-06-27.
 
-Other changes
+There were no changes since 0.14.5-rc1.
 
 
 ## 0.14.5-rc1
@@ -106,6 +106,30 @@ may have symlinked the "signer" directory to "ta_signer" to support a manual
 workaround for re-signing the trust anchor CRL and manifest. If you did, you
 may need to delete any surplus files and directories under "data/ta_signer"
 other than the directory called "ta".
+
+
+## 0.13.2 ‘Be kind, rewind’
+
+Released 2024-06-27.
+
+There were no changes since 0.13.2-rc1.
+
+
+## 0.13.2-rc1
+
+Released 2024-06-21.
+
+Bug fixes
+
+* Updated the locked version of the h2 crate to 0.3.26 to fix
+  [RUSTSEC-2024-0332]. ([#1206])
+* Don’t apply “child revoke key” command if the resource class does not
+  exist. ([#1207])
+
+[#1206]: https://github.com/NLnetLabs/krill/pull/1206
+[#1207]: https://github.com/NLnetLabs/krill/pull/1207
+[RUSTSEC-2024-0332]: https://rustsec.org/advisories/RUSTSEC-2024-0332
+
 
 ## 0.13.1 'Scrollbars!'
 
