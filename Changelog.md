@@ -1,10 +1,10 @@
 # Changelog
 
-## Unreleased next version
+## 0.13.2 ‘Be kind, rewind’
 
-Bug fixes
+Released 2024-06-27.
 
-Other changes
+There were no changes since 0.13.2-rc1.
 
 
 ## 0.13.2-rc1
