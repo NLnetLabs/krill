@@ -1,7 +1,7 @@
 .. _doc_krill:
 
-About
-======
+Krill |version|
+===============
 
 |docsupdated| |discord|
 
