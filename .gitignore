@@ -9,3 +9,4 @@ target/
 tmp
 work
 examples/openid_connect_mock.rs
+/doc/manual/build/
