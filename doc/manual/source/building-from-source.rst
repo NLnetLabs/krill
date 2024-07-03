@@ -11,9 +11,8 @@ Rust
 """"
 
 The Rust compiler runs on, and compiles to, a great number of platforms,
-though not all of them are equally supported. The official `Rust
-Platform Support <https://forge.rust-lang.org/platform-support.html>`_
-page provides an overview of the various support levels.
+though not all of them are equally supported. The official `Rust Platform
+Support`_ page provides an overview of the various support levels.
 
 While some system distributions include Rust as system packages,
 Krill relies on a relatively new version of Rust, currently |rustversion| or
@@ -35,44 +34,28 @@ You can update your Rust installation later by running:
 
    rustup update
 
-For some platforms, :command:`rustup` cannot provide binary releases to install
-directly. The `Rust Platform Support
-<https://forge.rust-lang.org/platform-support.html>`_ page lists
-several platforms where official binary releases are not available,
-but Rust is still guaranteed to build. For these platforms, automated
-tests are not run so it’s not guaranteed to produce a working build, but
-they often work to quite a good degree.
+Platform Specific Instructions
+------------------------------
 
-One such example that is especially relevant for the routing community
-is OpenBSD. On this platform, `patches
+For some platforms, :program:`rustup` cannot provide binary releases to
+install directly. The `Rust Platform Support`_ page lists
+several platforms where official binary releases are not available, but Rust
+is still guaranteed to build. For these platforms, automated tests are not
+run so it’s not guaranteed to produce a working build, but they often work to
+quite a good degree.
+
+.. _Rust Platform Support:  https://doc.rust-lang.org/nightly/rustc/platform-support.html
+
+On OpenBSD, `patches
 <https://github.com/openbsd/ports/tree/master/lang/rust/patches>`_ are
-required to get Rust running correctly, but these are well maintained
-and offer the latest version of Rust quite quickly.
+required to get Rust running correctly, but these are well maintained and
+offer the latest version of Rust quite quickly.
 
 Rust can be installed on OpenBSD by running:
 
 .. code-block:: bash
 
    pkg_add rust
-
-Another example where the standard installation method does not work is
-CentOS 6, where you will end up with a long list of error messages about
-missing assembler instructions. This is because the assembler shipped with
-CentOS 6 is too old.
-
-You can get the necessary version by installing the `Developer Toolset 6
-<https://www.softwarecollections.org/en/scls/rhscl/devtoolset-6/>`_ from the
-`Software Collections
-<https://wiki.centos.org/AdditionalResources/Repositories/SCL>`_ repository. On
-a virgin system, you can install Rust using these steps:
-
-.. code-block:: bash
-
-   sudo yum install centos-release-scl
-   sudo yum install devtoolset-6
-   scl enable devtoolset-6 bash
-   curl https://sh.rustup.rs -sSf | sh
-   source $HOME/.cargo/env
 
 C Toolchain
 """""""""""
