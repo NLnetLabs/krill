@@ -41,7 +41,7 @@ Krill uses what it calls a "signer" to create and manage keys and to
 sign data with them. For the most part the Krill CA code is unaware of
 which signer implementation is associated with a key. For long-lived
 key-pairs such as the keys used in RPKI CA certificates (the resource
-certificate signed by the parent) and the ID certifcate used in the
+certificate signed by the parent) and the ID certificate used in the
 :RFC:`6492` (provisioning) and :RFC:`8181` (publication) protocols, it
 will only keep track of the public key identifier.
 
@@ -218,7 +218,7 @@ file, one for each signer that you wish to define.
 All signers must have a ``type`` and a ``name`` and properties specific
 to the type of signer.
 
-The default configuration is equivalent to addding the following in
+The default configuration is equivalent to adding the following in
 ``krill.conf``:
 
 .. code-block::

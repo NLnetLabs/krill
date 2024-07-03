@@ -3,11 +3,13 @@
 Krill as a Trust Anchor
 =======================
 
-Krill can be set up to operate an RPKI Trust Anchor (TA). An RPKI TA
-serves as an `entry point for RPKI validators <https://rpki.readthedocs.io/en/latest/rpki/using-rpki-data.html#connecting-to-the-trust-anchor>`_.
-There are currently `five globally used TAs <https://rpki.readthedocs.io/en/latest/rpki/introduction.html#mapping-the-resource-allocation-hierarchy-into-the-rpki>`_
-operated by the five RIRs, where each RIR is responsible for IPv4, IPv6
-and AS number resources that are allocated to them by IANA.
+Krill can be set up to operate an RPKI Trust Anchor (TA). An RPKI TA serves
+as an `entry point for RPKI validators
+<https://rpki.readthedocs.io/en/latest/rpki/using-rpki-data.html#connecting-to-the-trust-anchor>`_.
+There are currently `five globally used TAs
+<https://rpki.readthedocs.io/en/latest/rpki/introduction.html#mapping-the-resource-allocation-hierarchy-into-the-rpki>`_
+operated by the five RIRs, where each RIR is responsible for IPv4, IPv6 and
+AS number resources that are allocated to them by IANA.
 
 If you are not an RIR, then you will not need to run your own RPKI TA for
 normal RPKI operations. Instead, you would operate one or more RPKI CAs that get

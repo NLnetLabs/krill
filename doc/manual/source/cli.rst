@@ -130,22 +130,19 @@ Other operations:
    :ref:`children<cmd_krillc_children>`      Manage children for a CA
    :ref:`keyroll<cmd_krillc_keyroll>`       Perform a manual key rollover for a CA
 
-
-
 .. _cmd_krillc_config:
 
 krillc config
 -------------
 
-This subcommand is implemented on the CLI only and is intended to help generate a configuration
-file which can be used for your Krill server.
+This subcommand is implemented on the CLI only and is intended to help
+generate a configuration file which can be used for your Krill server.
 
-We currently support two subcommands for this: `krillc config simple` and `krillc config user`.
-The first can be used to generate general server configuration. The second can be used to generate
-user (`id`) entries to use if you want to have multiple local users access the Krill UI by their own
+We currently support two subcommands for this: ``krillc config simple`` and
+``krillc config user``. The first can be used to generate general server
+configuration. The second can be used to generate user (``id``) entries to
+use if you want to have multiple local users access the Krill UI by their own
 name and password.
-
-....
 
 .. _cmd_krillc_health:
 

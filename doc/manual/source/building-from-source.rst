@@ -85,7 +85,7 @@ this should be as simple as running:
 Building with Cargo
 """""""""""""""""""
 
-Rust uses its own build tool, called ```cargo```.
+Rust uses its own build tool, called ``cargo``.
 
 https://github.com/NLnetLabs/krill
 
@@ -94,7 +94,7 @@ You can clone the
 a release and then use ```cargo build --release --locked``` to build the code.
 
 An easier way to build a specific release with the need to clone the
-repository first is to leave it to ```cargo```. Krill releases and tags
+repository first is to leave it to ``cargo``. Krill releases and tags
 are listed `here <https://github.com/NLnetLabs/krill/releases>`_
 
 You can install a tagged github release using cargo by saying:

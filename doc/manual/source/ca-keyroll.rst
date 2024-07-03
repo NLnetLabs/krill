@@ -9,13 +9,10 @@ the content of all 'objects', like ROAs and possibly certificates issued to chil
 is preserved in re-issued objects under the new key, without noticeable interruptions
 to RPKI validators.
 
-Before we can dive in to key rollovers we need to take a step back and talk a bit
-about RPKI CA certificates and keys.
-
 For most users their CA will have only one parent CA and only one key and CA certificate
-under that parent. But, krill supports having multiple so-called "Resource Classes" under
+under that parent. But, Krill supports having multiple so-called "Resource Classes" under
 a parent. The term Resource Class stems from :rfc:`6492` - essentially you can think of
-these as a way to to group a set of resources that can appear on a single certificate.
+these as a way to group a set of resources that can appear on a single certificate.
 This construct is needed because RPKI CA certificates can have only one signing parent CA
 certificate. So, if your parent received resources on different certificate (presumably from
 different sources), then they cannot sign a single certificate to you with all those resources.
@@ -43,13 +40,11 @@ First you need to initialise a new key to start the process:
 
    krillc keyroll init
 
-
 Then, you should wait 24 hours and before activating the new key and retiring the old:
 
 .. code-block:: text
 
    krillc keyroll activate
-
 
 Caveats:
 

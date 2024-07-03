@@ -100,11 +100,11 @@ Proxy for Remote Publishers
 ---------------------------
 
 Krill runs the RFC8181 Publication Server. Remote publishers, CAs which use your
-Publication Server, will need to connect to this under the `/rfc8181` path under
-the `service_uri` that you specified in your server.
+Publication Server, will need to connect to this under the ``/rfc8181`` path under
+the ``service_uri`` that you specified in your server.
 
 Make sure that you set up a proxy server such as NGINX, Apache, etc. which uses
-a valid HTTPS certificate, and which proxies `/rfc8181` to Krill.
+a valid HTTPS certificate, and which proxies ``/rfc8181`` to Krill.
 
 Note that you should not add any additional authentication mechanisms to this
 location. RFC 8181 uses cryptographically signed messages sent over HTTP and is
@@ -125,14 +125,14 @@ proxy access to the path '/api' to Krill.
 Example NGINX configuration
 ---------------------------
 
-As introduced above krill has two paths that contain the endpoints. `/api` for the
-krill API that you may want to restrict. `/rfc8181` is used for publication. A
-configuration that allows `192.0.2.0/24` and the IPv6 documentation prefix access to
+As introduced above, Krill has two paths that contain the endpoints: ``/api`` for the
+Krill API that you may want to restrict and ``/rfc8181`` is used for publication. A
+configuration that allows ``192.0.2.0/24`` and the IPv6 documentation prefix access to
 the API, and all clients to publish is below.
 
 It is recommended to publish the RRDP content on a different hostname.
 
-`/etc/nginx/sites-enabled/krill.example.org`
+``/etc/nginx/sites-enabled/krill.example.org``
 
 .. code-block:: text
 
@@ -201,8 +201,6 @@ Configure the Repository
           their content. We use the term **Repository Server** to describe a server
           which makes this content available to RPKI Validators.
 
-
-
 Synchronise Repository Data
 """""""""""""""""""""""""""
 
@@ -237,8 +235,8 @@ sets of data to disk for use by your Repository Servers.
 Another option is to use some kind of shared file system (NFS, clustered filesystem, network
 storage) where the **Krill Publication Server** can write, and your **Repository Servers** can read.
 
-If you go down this path, then make sure that the entire `$DATA_DIR/repo` is on a share.
-In particular: don't use a mount point at `$DATA_DIR/repo/rsync/current` as this directory
+If you go down this path, then make sure that the entire :file:`$DATA_DIR/repo` is on a share.
+In particular: don't use a mount point at :file:`$DATA_DIR/repo/rsync/current` as this directory
 is recreated by Krill whenever it publishes new data.
 
 There can be issues with this approach with regards to availability and atomicity of updates
@@ -247,8 +245,6 @@ to avoid issues like Relying Parties retrieving a new notification.xml file *bef
 or deltas are available. It will also write new files to temporary files and then rename them
 to avoid that partially written files are shown to users. However, dependent on the implementation
 details of the shared data these strategies may not work.
-
-
 
 Rsync
 """""
@@ -359,12 +355,11 @@ on their certificates.
 If you should end up in this situation, then you could set up a new Publication
 Server instead, and then migrate your existing CAs to that server, and then
 remove your current server altogether. Alternatively, you can remove all
-publishers from your server first, then clear and re-inialise it, and then
+publishers from your server first, then clear and re-initialise it, and then
 add your CAs again and migrate them to this newly initialised version.
 
 In short: it is best to avoid this and ensure that your are happy with the
 URIs used before adding publishers.
-
 
 Repository Stats
 """"""""""""""""
@@ -463,7 +458,7 @@ from the UI, as described :ref:`here<doc_krill_using_ui_repository_setup>`.
 The XML will include a so-called 'handle' - essentially the name that the CA likes
 to use for itself. This handle needs to be unique on the server side - we can't
 have all CAs calling themselves `mr-black`. For this reason the CLI offers an
-optional argument ``--publisher`` that allows overriding the handle in the reqeust
+optional argument ``--publisher`` that allows overriding the handle in the request
 with a locally unique value - e.g. a UUID.
 
 After adding a publisher the server will respond with the unique :rfc:`8183` Repository

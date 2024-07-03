@@ -59,8 +59,8 @@ Restart nginx and we have our proxy server set up:
    systemctl restart nginx
 
 
-Set up Letsencrypt
-^^^^^^^^^^^^^^^^^^
+Set up Let's Encrypt
+^^^^^^^^^^^^^^^^^^^^
 
 This is as easy as installing the `certbot` and running its interactive
 script to setup integration with NGINX:
@@ -75,16 +75,8 @@ script to setup integration with NGINX:
 Install Krill
 ^^^^^^^^^^^^^
 
-We use our debian package to install Krill on a test system:
-
-.. code-block:: text
-
-  echo "deb [arch=amd64] https://packages.nlnetlabs.nl/linux/ubuntu/ focal main" >> /etc/apt/sources.list
-  apt-get update
-  apt-get install krill
-
-You can read more about Krill installation options `here <https://rpki.readthedocs.io/en/latest/krill/install-and-run.html#installing-with-debian-and-ubuntu-packages>`_.
-
+Install Krill according to the :ref:`installation instructions
+<doc_krill_install_and_run>` for Debian, Ubuntu or Red Hat Enterprise Linux. 
 
 Configure Testbed
 ^^^^^^^^^^^^^^^^^
@@ -102,10 +94,8 @@ public URI for your proxy server:
 
   service_uri = "https://krill.example.org/"
 
-
 Add the following section to your config and change the values to
 your machine's hostname.
-
 
 .. code-block:: text
 

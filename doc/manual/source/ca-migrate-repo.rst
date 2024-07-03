@@ -17,8 +17,6 @@ new key that will use the new server, and the base URIs it got from that server.
 Then you need to complete the key rollover (activate the new key), to remove
 the old key and the dependency on the old server.
 
-There is no web UI support for this (yet), but you can do this using the CLI.
-
 First, get the so-called :rfc:`8183` Publisher Request XML for your CA:
 
 .. code-block:: text

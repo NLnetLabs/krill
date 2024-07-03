@@ -47,7 +47,7 @@ called ``archived`` under the relevant data directory, i.e.
 ``data_dir/pubd/0/archived`` if you are using the Krill Publication Server and
 ``data_dir/cas/<your-ca-name>/archived`` for each of your CAs.
 
-You can set up a cronjob to delete these events once and for all, but we
+You can set up a cron job to delete these events once and for all, but we
 recommend that you save them in long term storage if you can. The reason is that
 if (and only if) you have this data, you will be able to rebuild the complete
 Krill state based on its *audit* log of events, and irrevocably prove that no
@@ -60,10 +60,7 @@ Saving State Changes
 
 You can skip this section if you're not interested in the gory details. However,
 understanding this section will help to explain how backup and restore works in
-Krill, and why a standby fail-over node can be used, but Krill's locking and
-storage mechanism needs to be changed in order to make
-`multiple active nodes <https://github.com/NLnetLabs/krill/issues/20>`_
-work.
+Krill, and how a standby fail-over node can be used.
 
 State changes in Krill are tracked using *events*. Krill CA(s) and Publication
 Servers are versioned. They can only be changed by applying an *event* for a
@@ -76,9 +73,7 @@ so-called *aggregates*.
 Events are not applied directly. Rather, users of Krill and background jobs will
 send their intent to make a change through the API, which then translates
 this into a so-called *command*. Krill will then *lock* the target aggregate
-and send the command to it. This locking mechanism is not aware of any
-clustering, and it's a primary reason why Krill cannot run as an active-active
-cluster yet.
+and send the command to it. 
 
 Upon receiving a command the aggregate (your CA etc.) will do some work. In some
 cases a command can have a side-effect. For example it may instruct your CA to
