@@ -33,7 +33,8 @@ use std::{
         HashMap,
     },
     ops::Deref,
-    sync::Arc,
+    sync::Arc, 
+    time::Instant,
 };
 
 use tokio::sync::{RwLock, RwLockReadGuard};
@@ -151,6 +152,7 @@ pub struct ProviderConnectionProperties {
     client: FlexibleClient,
     email_scope_supported: bool,
     userinfo_endpoint_supported: bool,
+    time_established: Instant,
     logout_mode: LogoutMode,
 }
 
@@ -179,7 +181,8 @@ impl OpenIDConnectAuthProvider {
     async fn initialize_connection_if_needed(&self) -> KrillResult<()> {
         let mut conn_guard = self.conn.write().await;
 
-        if conn_guard.is_none() {
+        if conn_guard.is_none() || conn_guard.as_ref().unwrap()
+            .time_established.elapsed().as_secs() >= 60 {
             *conn_guard = Some(self.initialize_connection().await?);
         }
 
@@ -194,10 +197,12 @@ impl OpenIDConnectAuthProvider {
         let (email_scope_supported, userinfo_endpoint_supported, logout_mode) =
             self.check_provider_capabilities(&meta)?;
         let client = self.build_client(meta, &logout_mode)?;
+        let time_established = Instant::now();
         let conn = ProviderConnectionProperties {
             client,
             email_scope_supported,
             userinfo_endpoint_supported,
+            time_established,
             logout_mode,
         };
         trace!("OpenID Connect: Provider connection initialized");
