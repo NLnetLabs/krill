@@ -50,7 +50,7 @@ mod tests {
     #[test]
     fn init_ta() {
         test::test_in_memory(|storage_uri| {
-            stderrlog::new().verbosity(5).init().unwrap();
+            let _ = stderrlog::new().verbosity(5).init();
 
             let ta_signer_store: AggregateStore<TrustAnchorSigner> =
                 AggregateStore::create(
