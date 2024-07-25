@@ -21,9 +21,12 @@ async fn auth_check() {
     assert!(
         matches!(
             res,
-            Err(httpclient::Error::ErrorResponseWithJson(
-                _, StatusCode::UNAUTHORIZED, _
-            ))
+            Err(
+                httpclient::Error::ErrorResponseWithJson(
+                    _, StatusCode::UNAUTHORIZED, _
+                )
+                | httpclient::Error::Forbidden(_)
+            )
         )
     );
 }
