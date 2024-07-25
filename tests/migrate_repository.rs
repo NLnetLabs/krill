@@ -1,337 +1,168 @@
-//! Perform functional tests on a Krill instance, using the API
-use std::{path::Path, str::FromStr, time::Duration};
+//! Test migrating a CA to a different repository.
 
-use hyper::StatusCode;
-use regex::Regex;
-use tokio::time::sleep;
-
-use rpki::ca::provisioning::ResourceClassName;
+use rpki::rrdp;
 use rpki::repository::resources::ResourceSet;
+use krill::commons::api;
+use krill::commons::util::httpclient;
 
-use krill::{
-    commons::{
-        api::{ObjectName, RoaConfigurationUpdates, RoaPayload},
-        util::httpclient,
-    },
-    test::*,
-};
+mod common;
+
+
+//------------ Test Function -------------------------------------------------
 
 #[tokio::test]
 async fn migrate_repository() {
-    let cleanup_logging = init_logging();
+    let testbed = common::ca_handle("testbed");
 
-    info(
-        "##################################################################",
-    );
-    info(
-        "#                                                                #",
-    );
-    info(
-        "#                --= Test Migrating a Repository  =--            #",
-    );
-    info(
-        "#                                                                #",
-    );
-    info(
-        "##################################################################",
-    );
+    let ca1 = common::ca_handle("CA1");
+    let ca1_res = common::ipv4_resources("10.0.0.0/16");
+    let ca1_roa = common::roa_payload("10.0.0.0/16-16 => 65000");
+    let ca1_roa_name = api::ObjectName::from(&ca1_roa).to_string();
 
-    info(
-        "##################################################################",
-    );
-    info(
-        "#                                                                #",
-    );
-    info(
-        "#                      Start Krill                               #",
-    );
-    info(
-        "#                                                                #",
-    );
-    info(
-        "##################################################################",
-    );
-    info("");
+    let rcn0 = common::rcn(0);
+
+    eprintln!(">>>> Start Krill.");
     // Use a 5 second RRDP update interval for the Krill server, so that we
     // can also test here that the re-scheduling of delayed RRDP deltas
     // works.
-    let cleanup_krill_dir = start_krill_testbed_with_rrdp_interval(5).await;
+    let (server, _krilltmp) = common::KrillServer::start_with_config_testbed(
+        |config| {
+            config.rrdp_updates_config.rrdp_delta_interval_min_seconds = 5
+        }
+    ).await;
 
-    info(
-        "##################################################################",
-    );
-    info(
-        "#                                                                #",
-    );
-    info(
-        "#               Start Secondary Publication Server               #",
-    );
-    info(
-        "#                                                                #",
-    );
-    info(
-        "##################################################################",
-    );
-    info("");
-    let cleanup_pubd_dir = start_krill_pubd(5).await;
+    eprintln!(">>>> Start a secondary publication server.");
+    let (pubd, _pubtmp) = common::KrillServer::start_pubd(5).await;
 
-    let testbed = ca_handle("testbed");
-
-    let ca1 = ca_handle("CA1");
-    let ca1_res = ipv4_resources("10.0.0.0/16");
-    let ca1_route_definition =
-        RoaPayload::from_str("10.0.0.0/16-16 => 65000").unwrap();
-
-    let rcn_0 = ResourceClassName::from(0);
-
-    info(
-        "##################################################################",
+    // Wait for the *testbed* CA to get its certificate, this means
+    // that all CAs which are set up as part of krill_start under the
+    // testbed config have been set up.
+    assert!(
+        server.wait_for_ca_resources(&testbed, &ResourceSet::all()).await
     );
-    info(
-        "#                                                                #",
-    );
-    info(
-        "# Wait for the *testbed* CA to get its certificate, this means   #",
-    );
-    info(
-        "# that all CAs which are set up as part of krill_start under the #",
-    );
-    info(
-        "# testbed config have been set up.                               #",
-    );
-    info(
-        "#                                                                #",
-    );
-    info(
-        "##################################################################",
-    );
-    info("");
-    assert!(ca_contains_resources(&testbed, &ResourceSet::all()).await);
 
-    {
-        info("##################################################################");
-        info("#                                                                #");
-        info("#                      Set up CA1 under testbed                  #");
-        info("#                                                                #");
-        info("##################################################################");
-        info("");
-        set_up_ca_with_repo(&ca1).await;
-        set_up_ca_under_parent_with_resources(&ca1, &testbed, &ca1_res).await;
-    }
+    eprintln!(">>>> Set up CA1 under testbed.");
+    server.create_ca_with_repo(&ca1).await;
+    server.register_ca_with_parent(&ca1, &testbed, &ca1_res).await;
 
-    {
-        info("##################################################################");
-        info("#                                                                #");
-        info("#                      Create a ROA for CA1                      #");
-        info("#                                                                #");
-        info("##################################################################");
-        info("");
-        let mut updates = RoaConfigurationUpdates::empty();
-        updates.add(ca1_route_definition.into());
-        ca_route_authorizations_update(&ca1, updates).await;
-    }
+    eprintln!(">>>> Create a ROA for CA1.");
+    server.client().roas_update(
+        &ca1,
+        api::RoaConfigurationUpdates::new(
+            vec![ca1_roa.clone().into()], vec![]
+        )
+    ).await.unwrap();
 
-    {
-        info("##################################################################");
-        info("#                                                                #");
-        info("#    Verify that the testbed published the expected objects      #");
-        info("#                                                                #");
-        info("##################################################################");
-        info("");
-        let mut expected_files = expected_mft_and_crl(&testbed, &rcn_0).await;
-        expected_files.push(expected_issued_cer(&ca1, &rcn_0).await);
-        assert!(
-            will_publish_embedded(
-                "testbed CA should have mft, crl and certs for CA1 and CA2",
-                &testbed,
-                &expected_files
-            )
-            .await
-        );
-    }
+    eprintln!(">>>> Verify that the testbed published the expected objects");
+    let mut files = server.expected_objects(&testbed);
+    files.push_mft_and_crl(&rcn0).await;
+    files.push_cer(&ca1, &rcn0).await;
+    assert!(files.wait_for_published().await);
 
-    {
-        info("##################################################################");
-        info("#                                                                #");
-        info("#       Expect that CA1 publishes in the embedded repo           #");
-        info("#                                                                #");
-        info("##################################################################");
-        info("");
-        let mut expected_files = expected_mft_and_crl(&ca1, &rcn_0).await;
-        expected_files
-            .push(ObjectName::from(&ca1_route_definition).to_string());
+    eprintln!(">>>> Verify that CA1 publishes in the embedded repo.");
+    let mut files = server.expected_objects(&ca1);
+    files.push_mft_and_crl(&rcn0).await;
+    files.push(ca1_roa_name.clone());
+    assert!(files.wait_for_published().await);
 
-        assert!(
-            will_publish_embedded(
-                "CA1 should publish the certificate for CA3",
-                &ca1,
-                &expected_files
-            )
-            .await
-        );
-    }
-
+    eprintln!(">>>> Sanity check the operation of the RRDP endpoint.");
     // Verify that actual RRDP operation is roughly working as expected
     // (without writing an entire RPKI client into our test suite,
     // integration tests are better suited for testing with a full RPKI
     // client).
-    {
-        info("##################################################################");
-        info("#                                                                #");
-        info("#        Sanity check the operation of the RRDP endpoint         #");
-        info("#                                                                #");
-        info("##################################################################");
-        info("");
 
-        // Verify that requesting rrdp/ on a publishing instance of Krill
-        // results in a 404 Not Found error rather than a panic.
-        assert_http_status(
-            krill_anon_http_get("rrdp/").await,
-            StatusCode::NOT_FOUND,
-        );
+    // Verify that requesting rrdp/ on a publishing instance of Krill
+    // results in a 404 Not Found error rather than a panic.
+    assert!(server.http_get_404("rrdp/").await);
 
-        // Verify that requesting garbage file and directory URLs results in
-        // an error rather than a panic.
-        assert_http_status(
-            krill_anon_http_get("rrdp/i/dont/exist").await,
-            StatusCode::NOT_FOUND,
-        );
-        assert_http_status(
-            krill_anon_http_get("rrdp/i/dont/exist/").await,
-            StatusCode::NOT_FOUND,
-        );
+    // Verify that requesting garbage file and directory URLs results in
+    // an error rather than a panic.
+    assert!(server.http_get_404("rrdp/i/dont/exist").await);
+    assert!(server.http_get_404("rrdp/i/dont/exist/").await);
 
-        // Verify that we can fetch the notification XML.
-        let notification_xml =
-            krill_anon_http_get("rrdp/notification.xml").await.unwrap();
-        assert!(notification_xml.starts_with("<notification"));
+    // Verify that we can fetch the notification XML.
+    let notify = rrdp::NotificationFile::parse(
+        server.http_get(
+            "rrdp/notification.xml"
+        ).await.unwrap().as_bytes()
+    ).unwrap();
 
-        // Verify that we can fetch the snapshot XML.
-        let re = Regex::new(r#"<snapshot uri="(?P<uri>[^"]+)".+/>"#).unwrap();
-        let snapshot_uri = re
-            .captures(&notification_xml)
-            .unwrap()
-            .name("uri")
-            .unwrap()
-            .as_str();
-        let snapshot_xml =
-            httpclient::get_text(snapshot_uri, None).await.unwrap();
-        assert!(snapshot_xml.starts_with("<snapshot"));
+    // Verify that we can fetch the snapshot XML.
+    let snapshot = httpclient::get_text(
+        notify.snapshot().uri().as_str(), None
+    ).await.unwrap();
+    let _ = rrdp::Snapshot::parse(snapshot.as_bytes()).unwrap();
 
-        // Verify that attempting to fetch a valid subdirectory results in an
-        // error rather than a panic.
-        let mut url = urlparse::urlparse(snapshot_uri);
-        url.path =
-            Path::new(&url.path).parent().unwrap().display().to_string();
-        let url = urlparse::urlunparse(url);
-        assert_http_status(
-            httpclient::get_text(&url, None).await,
-            StatusCode::NOT_FOUND,
-        );
-        assert_http_status(
-            httpclient::get_text(&format!("{}/", url), None).await,
-            StatusCode::NOT_FOUND,
-        );
-    }
+    // Verify that attempting to fetch a valid subdirectory results in an
+    // error rather than a panic.
+    assert!(common::check_not_found(
+        httpclient::get_text(
+            notify.snapshot().uri().parent().unwrap().as_str(), None
+        ).await
+    ));
+    assert!(common::check_not_found(
+        httpclient::get_text(
+            notify.snapshot().uri().parent().unwrap()
+                .as_str().strip_suffix('/').unwrap(),
+            None
+        ).await
+    ));
 
-    {
-        info("##################################################################");
-        info("#                                                                #");
-        info("# Migrate a Repository for CA1 (using a keyroll)                 #");
-        info("#                                                                #");
-        info("# CA1 currently uses the embedded publication server. In order   #");
-        info("# to migrate it, we will need to do the following:               #");
-        info("#                                                                #");
-        info("# - get the RFC 8183 publisher request from CA1                  #");
-        info("# - add CA1 as a publisher under the dedicated (separate) pubd,  #");
-        info("# - get the response                                             #");
-        info("# - update the repo config for CA1 using the 8183 response       #");
-        info("#    -- this should initiate a key roll                          #");
-        info("#    -- the new key publishes in the new repo                    #");
-        info("# - complete the key roll                                        #");
-        info("#    -- the old key should be cleaned up,                        #");
-        info("#    -- nothing published for CA1 in the embedded repo           #");
-        info("#                                                                #");
-        info("##################################################################");
-        info("");
+    eprintln!(">>>> Migrate a Repository for CA1 (using a keyroll).");
+    // CA1 currently uses the embedded publication server. In order
+    // to migrate it, we will need to do the following:
+    //
+    // - get the RFC 8183 publisher request from CA1
+    // - add CA1 as a publisher under the dedicated (separate) pubd,
+    // - get the response
+    // - update the repo config for CA1 using the 8183 response
+    //    - this should initiate a key roll
+    //    - the new key publishes in the new repo
+    // - complete the key roll
+    //    - the old key should be cleaned up,
+    //    - nothing published for CA1 in the embedded repo
 
-        // Add CA1 to dedicated repo
-        let publisher_request = publisher_request(&ca1).await;
-        dedicated_repo_add_publisher(publisher_request).await;
-        let response = dedicated_repository_response(&ca1).await;
+    // Add CA1 to dedicated repo
+    let request = server.client().repo_request(&ca1).await.unwrap();
+    let response = pubd.client().publishers_add(request).await.unwrap();
+    assert_eq!(
+        response,
+        pubd.client().publisher_response(&ca1.convert()).await.unwrap()
+    );
 
-        // Wait a tiny bit.. when we add a new repo we check that it's
-        // available or it will be rejected.
-        sleep(Duration::from_secs(1)).await;
+    // Wait a tiny bit.. when we add a new repo we check that it's
+    // available or it will be rejected.
+    common::sleep_seconds(1).await;
 
-        // Update CA1 to use dedicated repo
-        repo_update(&ca1, response).await;
+    // Update CA1 to use dedicated repo
+    server.client().repo_update(&ca1, response).await.unwrap();
 
-        // This should result in a key roll and content published in both
-        // repos
-        assert!(state_becomes_new_key(&ca1).await);
+    // This should result in a key roll and content published in both repos
+    assert!(server.wait_for_state_new_key(&ca1).await);
 
-        // Expect that CA1 still publishes two current keys in the embedded
-        // repo
-        {
-            let mut expected_files = expected_mft_and_crl(&ca1, &rcn_0).await;
-            expected_files
-                .push(ObjectName::from(&ca1_route_definition).to_string());
+    // Expect that CA1 still publishes two current keys in the embedded repo
+    let mut files = server.expected_objects(&ca1);
+    files.push_mft_and_crl(&rcn0).await;
+    files.push(ca1_roa_name.clone());
+    assert!(files.wait_for_published().await);
 
-            assert!(
-                will_publish_embedded(
-                    "CA1 should publish the MFT and CRL for both current keys in the embedded repo",
-                    &ca1,
-                    &expected_files
-                )
-                .await
-            );
-        }
+    // Expect that CA1 publishes two new keys in the dedicated repo
+    let mut files = server.expected_objects(&ca1);
+    files.push_new_key_mft_and_crl(&rcn0).await;
+    assert!(files.wait_for_published_at(&pubd).await);
 
-        // Expect that CA1 publishes two new keys in the dedicated repo
-        {
-            let expected_files =
-                expected_new_key_mft_and_crl(&ca1, &rcn_0).await;
-            assert!(
-                will_publish_dedicated(
-                    "CA1 should publish the MFT and CRL for both new keys in the dedicated repo",
-                    &ca1,
-                    &expected_files
-                )
-                .await
-            );
-        }
+    // Complete the keyroll, this should remove the content in the
+    // embedded repo
+    server.client().ca_activate_keyroll(&ca1).await.unwrap();
+    assert!(server.wait_for_state_active(&ca1).await);
 
-        // Complete the keyroll, this should remove the content in the
-        // embedded repo
-        ca_roll_activate(&ca1).await;
-        assert!(state_becomes_active(&ca1).await);
+    // Expect that CA1 publishes two current keys in the dedicated repo
+    let mut files = server.expected_objects(&ca1);
+    files.push_mft_and_crl(&rcn0).await;
+    files.push(ca1_roa_name.clone());
+    assert!(files.wait_for_published_at(&pubd).await);
 
-        // Expect that CA1 publishes two current keys in the dedicated repo
-        {
-            let mut expected_files = expected_mft_and_crl(&ca1, &rcn_0).await;
-            expected_files
-                .push(ObjectName::from(&ca1_route_definition).to_string());
-
-            assert!(
-                will_publish_dedicated(
-                    "CA1 should publish the MFT and CRL for both current keys in the dedicated repo",
-                    &ca1,
-                    &expected_files
-                )
-                .await
-            );
-        }
-
-        // Expect that CA1 publishes nothing in the embedded repo
-        {
-            assert!(
-                will_publish_embedded("CA1 should no longer publish anything in the embedded repo", &ca1, &[]).await
-            );
-        }
-    }
-
-    cleanup_logging();
-    cleanup_krill_dir();
-    cleanup_pubd_dir();
+    // Expect that CA1 publishes nothing in the embedded repo
+    assert!(server.expected_objects(&ca1).wait_for_published().await);
 }
+

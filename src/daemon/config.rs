@@ -56,19 +56,19 @@ impl ConfigDefaults {
         true
     }
 
-    fn ip() -> Vec<IpAddr> {
+    pub fn ip() -> Vec<IpAddr> {
         vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))]
     }
 
-    fn port() -> u16 {
+    pub fn port() -> u16 {
         3000
     }
 
-    fn https_mode() -> HttpsMode {
+    pub fn https_mode() -> HttpsMode {
         HttpsMode::Generate
     }
 
-    fn storage_uri() -> Url {
+    pub fn storage_uri() -> Url {
         env::var(KRILL_ENV_STORAGE_URI)
             .ok()
             .and_then(|s| Url::parse(&s).ok())
@@ -107,15 +107,15 @@ impl ConfigDefaults {
         }
     }
 
-    fn log_file() -> Option<PathBuf> {
+    pub fn log_file() -> Option<PathBuf> {
         Some(PathBuf::from("./krill.log"))
     }
 
-    fn syslog_facility() -> String {
+    pub fn syslog_facility() -> String {
         "daemon".to_string()
     }
 
-    fn auth_type() -> AuthType {
+    pub fn auth_type() -> AuthType {
         AuthType::AdminToken
     }
 
@@ -133,65 +133,65 @@ impl ConfigDefaults {
     }
 
     #[cfg(feature = "multi-user")]
-    fn auth_policies() -> Vec<PathBuf> {
+    pub fn auth_policies() -> Vec<PathBuf> {
         vec![]
     }
 
     #[cfg(feature = "multi-user")]
-    fn auth_private_attributes() -> Vec<String> {
+    pub fn auth_private_attributes() -> Vec<String> {
         vec![]
     }
 
-    fn ca_refresh_seconds() -> u32 {
+    pub fn ca_refresh_seconds() -> u32 {
         24 * 3600 // 24 hours
     }
 
-    fn ca_refresh_jitter_seconds() -> u32 {
+    pub fn ca_refresh_jitter_seconds() -> u32 {
         12 * 3600 // 12 hours
     }
 
-    fn ca_refresh_parents_batch_size() -> usize {
+    pub fn ca_refresh_parents_batch_size() -> usize {
         25
     }
 
-    fn post_limit_api() -> u64 {
+    pub fn post_limit_api() -> u64 {
         256 * 1024 // 256kB
     }
 
-    fn post_limit_rfc8181() -> u64 {
+    pub fn post_limit_rfc8181() -> u64 {
         32 * 1024 * 1024 // 32MB (roughly 8000 issued certificates, so a key
                          // roll for nicbr and 100% uptake should be okay)
     }
 
-    fn rfc8181_log_dir() -> Option<PathBuf> {
+    pub fn rfc8181_log_dir() -> Option<PathBuf> {
         None
     }
 
-    fn post_limit_rfc6492() -> u64 {
+    pub fn post_limit_rfc6492() -> u64 {
         1024 * 1024 // 1MB (for ref. the NIC br cert is about 200kB)
     }
 
-    fn rfc6492_log_dir() -> Option<PathBuf> {
+    pub fn rfc6492_log_dir() -> Option<PathBuf> {
         None
     }
 
-    fn post_protocol_msg_timeout_seconds() -> u64 {
+    pub fn post_protocol_msg_timeout_seconds() -> u64 {
         240 // 4 minutes by default should be plenty in most cases
     }
 
-    fn bgp_risdumps_enabled() -> bool {
+    pub fn bgp_risdumps_enabled() -> bool {
         true
     }
 
-    fn bgp_risdumps_v4_uri() -> String {
+    pub fn bgp_risdumps_v4_uri() -> String {
         "http://www.ris.ripe.net/dumps/riswhoisdump.IPv4.gz".to_string()
     }
 
-    fn bgp_risdumps_v6_uri() -> String {
+    pub fn bgp_risdumps_v6_uri() -> String {
         "http://www.ris.ripe.net/dumps/riswhoisdump.IPv6.gz".to_string()
     }
 
-    fn roa_aggregate_threshold() -> usize {
+    pub fn roa_aggregate_threshold() -> usize {
         if let Ok(from_env) = env::var("KRILL_ROA_AGGREGATE_THRESHOLD") {
             if let Ok(nr) = usize::from_str(&from_env) {
                 return nr;
@@ -200,7 +200,7 @@ impl ConfigDefaults {
         100
     }
 
-    fn roa_deaggregate_threshold() -> usize {
+    pub fn roa_deaggregate_threshold() -> usize {
         if let Ok(from_env) = env::var("KRILL_ROA_DEAGGREGATE_THRESHOLD") {
             if let Ok(nr) = usize::from_str(&from_env) {
                 return nr;
@@ -209,47 +209,47 @@ impl ConfigDefaults {
         90
     }
 
-    fn timing_publish_next_hours() -> u32 {
+    pub fn timing_publish_next_hours() -> u32 {
         24
     }
 
-    fn timing_publish_next_jitter_hours() -> u32 {
+    pub fn timing_publish_next_jitter_hours() -> u32 {
         4
     }
 
-    fn timing_publish_hours_before_next() -> u32 {
+    pub fn timing_publish_hours_before_next() -> u32 {
         8
     }
 
-    fn timing_child_certificate_valid_weeks() -> u32 {
+    pub fn timing_child_certificate_valid_weeks() -> u32 {
         52
     }
 
-    fn timing_child_certificate_reissue_weeks_before() -> u32 {
+    pub fn timing_child_certificate_reissue_weeks_before() -> u32 {
         4
     }
 
-    fn timing_roa_valid_weeks() -> u32 {
+    pub fn timing_roa_valid_weeks() -> u32 {
         52
     }
 
-    fn timing_roa_reissue_weeks_before() -> u32 {
+    pub fn timing_roa_reissue_weeks_before() -> u32 {
         4
     }
 
-    fn timing_aspa_valid_weeks() -> u32 {
+    pub fn timing_aspa_valid_weeks() -> u32 {
         52
     }
 
-    fn timing_aspa_reissue_weeks_before() -> u32 {
+    pub fn timing_aspa_reissue_weeks_before() -> u32 {
         4
     }
 
-    fn timing_bgpsec_valid_weeks() -> u32 {
+    pub fn timing_bgpsec_valid_weeks() -> u32 {
         52
     }
 
-    fn timing_bgpsec_reissue_weeks_before() -> u32 {
+    pub fn timing_bgpsec_reissue_weeks_before() -> u32 {
         4
     }
 
@@ -490,13 +490,13 @@ pub struct Config {
         default = "ConfigDefaults::ip",
         deserialize_with = "deserialize_config_ips"
     )]
-    ip: Vec<IpAddr>,
+    pub ip: Vec<IpAddr>,
 
     #[serde(default = "ConfigDefaults::port")]
     pub port: u16,
 
     #[serde(default = "ConfigDefaults::https_mode")]
-    https_mode: HttpsMode,
+    pub https_mode: HttpsMode,
 
     // Deserialize this field from data_dir or storage_uri
     #[serde(
@@ -509,9 +509,9 @@ pub struct Config {
     #[serde(default = "ConfigDefaults::dflt_true")]
     pub use_history_cache: bool,
 
-    tls_keys_dir: Option<PathBuf>,
+    pub tls_keys_dir: Option<PathBuf>,
 
-    repo_dir: Option<PathBuf>,
+    pub repo_dir: Option<PathBuf>,
 
     // default is false
     // implicitly enabled in case of testbed
@@ -529,9 +529,9 @@ pub struct Config {
     #[serde(default)]
     pub ta_signer_enabled: bool,
 
-    pid_file: Option<PathBuf>,
+    pub pid_file: Option<PathBuf>,
 
-    service_uri: Option<uri::Https>,
+    pub service_uri: Option<uri::Https>,
 
     #[serde(
         default = "ConfigDefaults::log_level",
@@ -543,10 +543,10 @@ pub struct Config {
     pub log_type: LogType,
 
     #[serde(default = "ConfigDefaults::log_file")]
-    log_file: Option<PathBuf>,
+    pub log_file: Option<PathBuf>,
 
     #[serde(default = "ConfigDefaults::syslog_facility")]
-    syslog_facility: String,
+    pub syslog_facility: String,
 
     #[serde(default = "ConfigDefaults::admin_token", alias = "auth_token")]
     pub admin_token: Token,
@@ -584,17 +584,17 @@ pub struct Config {
         default = "ConfigDefaults::ca_refresh_seconds",
         alias = "ca_refresh"
     )]
-    ca_refresh_seconds: u32,
+    pub ca_refresh_seconds: u32,
 
     #[serde(default = "ConfigDefaults::ca_refresh_jitter_seconds")]
-    ca_refresh_jitter_seconds: u32,
+    pub ca_refresh_jitter_seconds: u32,
 
     #[serde(default = "ConfigDefaults::ca_refresh_parents_batch_size")]
     pub ca_refresh_parents_batch_size: usize,
 
     #[serde(skip)]
-    suspend_child_after_inactive_seconds: Option<u32>,
-    suspend_child_after_inactive_hours: Option<u32>,
+    pub suspend_child_after_inactive_seconds: Option<u32>,
+    pub suspend_child_after_inactive_hours: Option<u32>,
 
     #[serde(default = "ConfigDefaults::post_limit_api")]
     pub post_limit_api: u64,
@@ -649,31 +649,31 @@ pub struct Config {
 #[derive(Clone, Debug, Deserialize)]
 pub struct IssuanceTimingConfig {
     #[serde(default = "ConfigDefaults::timing_publish_next_hours")]
-    timing_publish_next_hours: u32,
+    pub timing_publish_next_hours: u32,
     #[serde(default = "ConfigDefaults::timing_publish_next_jitter_hours")]
-    timing_publish_next_jitter_hours: u32,
+    pub timing_publish_next_jitter_hours: u32,
     #[serde(default = "ConfigDefaults::timing_publish_hours_before_next")]
-    timing_publish_hours_before_next: u32,
+    pub timing_publish_hours_before_next: u32,
     #[serde(
         default = "ConfigDefaults::timing_child_certificate_valid_weeks"
     )]
-    timing_child_certificate_valid_weeks: u32,
+    pub timing_child_certificate_valid_weeks: u32,
     #[serde(
         default = "ConfigDefaults::timing_child_certificate_reissue_weeks_before"
     )]
-    timing_child_certificate_reissue_weeks_before: u32,
+    pub timing_child_certificate_reissue_weeks_before: u32,
     #[serde(default = "ConfigDefaults::timing_roa_valid_weeks")]
-    timing_roa_valid_weeks: u32,
+    pub timing_roa_valid_weeks: u32,
     #[serde(default = "ConfigDefaults::timing_roa_reissue_weeks_before")]
-    timing_roa_reissue_weeks_before: u32,
+    pub timing_roa_reissue_weeks_before: u32,
     #[serde(default = "ConfigDefaults::timing_aspa_valid_weeks")]
-    timing_aspa_valid_weeks: u32,
+    pub timing_aspa_valid_weeks: u32,
     #[serde(default = "ConfigDefaults::timing_aspa_reissue_weeks_before")]
-    timing_aspa_reissue_weeks_before: u32,
+    pub timing_aspa_reissue_weeks_before: u32,
     #[serde(default = "ConfigDefaults::timing_bgpsec_valid_weeks")]
-    timing_bgpsec_valid_weeks: u32,
+    pub timing_bgpsec_valid_weeks: u32,
     #[serde(default = "ConfigDefaults::timing_bgpsec_reissue_weeks_before")]
-    timing_bgpsec_reissue_weeks_before: u32,
+    pub timing_bgpsec_reissue_weeks_before: u32,
 }
 
 impl IssuanceTimingConfig {
@@ -1094,6 +1094,7 @@ impl Config {
 
 /// # Create
 impl Config {
+    #[cfg(test)]
     fn test_config(
         storage_uri: &Url,
         data_dir: Option<&Path>,
@@ -1280,6 +1281,7 @@ impl Config {
         }
     }
 
+    #[cfg(test)]
     pub fn test(
         test_storage: &Url,
         test_dir: Option<&Path>,
@@ -1316,7 +1318,7 @@ impl Config {
 
     /// Creates the config (at startup).
     pub fn create(
-        config_file: &str,
+        config_file: &Path,
         upgrade_only: bool,
     ) -> Result<Self, ConfigError> {
         let mut config = Self::read_config(config_file)?;
@@ -1330,20 +1332,20 @@ impl Config {
         if upgrade_only {
             info!(
                 "Prepare upgrade using configuration file: {}",
-                config_file
+                config_file.display(),
             );
             info!("Processing data from: {}", config.storage_uri);
         } else {
             info!(
                 "{} uses configuration file: {}",
-                KRILL_SERVER_APP, config_file
+                KRILL_SERVER_APP, config_file.display()
             );
         }
 
         config.process().map_err(|e| {
             ConfigError::Other(format!(
                 "Error parsing config file: {}, error: {}",
-                config_file, e
+                config_file.display(), e
             ))
         })?;
 
@@ -1654,20 +1656,21 @@ impl Config {
         Ok(())
     }
 
-    pub fn read_config(file: &str) -> Result<Self, ConfigError> {
+    pub fn read_config(file: impl AsRef<Path>) -> Result<Self, ConfigError> {
+        let file = file.as_ref();
         let mut v = String::new();
         let mut f = File::open(file).map_err(|e| {
             KrillIoError::new(
                 format!(
                     "Could not read config file '{}'. Note: you may want to override the default location using --config <path>",
-                    file
+                    file.display()
                 ),
                 e,
             )
         })?;
         f.read_to_string(&mut v).map_err(|e| {
             KrillIoError::new(
-                format!("Could not read config file '{}'", file),
+                format!("Could not read config file '{}'", file.display()),
                 e,
             )
         })?;
@@ -1675,7 +1678,7 @@ impl Config {
         toml::from_str(&v).map_err(|e| {
             ConfigError::Other(format!(
                 "Error parsing config file: {}, error: {}",
-                file, e
+                file.display(), e
             ))
         })
     }

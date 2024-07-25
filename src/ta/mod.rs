@@ -50,7 +50,7 @@ mod tests {
     #[test]
     fn init_ta() {
         test::test_in_memory(|storage_uri| {
-            let cleanup = test::init_logging();
+            stderrlog::new().verbosity(5).init().unwrap();
 
             let ta_signer_store: AggregateStore<TrustAnchorSigner> =
                 AggregateStore::create(
@@ -223,7 +223,6 @@ mod tests {
             // testbed support, which will use the TrustAnchorProxy and
             // Signer.
 
-            cleanup();
         })
     }
 }

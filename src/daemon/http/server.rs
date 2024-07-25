@@ -25,6 +25,7 @@ use serde::Serialize;
 use tokio::net::TcpListener;
 use tokio::select;
 use tokio_rustls::TlsAcceptor;
+use tokio::sync::oneshot;
 
 use crate::{
     commons::{
@@ -118,7 +119,10 @@ fn test_data_dirs_or_die(config: &Config) {
     }
 }
 
-pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
+pub async fn start_krill_daemon(
+    config: Arc<Config>,
+    mut signal_running: Option<oneshot::Sender<()>>,
+) -> Result<(), Error> {
     write_pid_file_or_die(&config);
     test_data_dirs_or_die(&config);
 
@@ -190,6 +194,7 @@ pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
                 krill_server.clone(),
                 socket_addr,
                 config.clone(),
+                signal_running.take(),
             ))
         }),
     );
@@ -207,6 +212,7 @@ async fn single_http_listener(
     krill_server: Arc<KrillServer>,
     addr: SocketAddr,
     config: Arc<Config>,
+    signal_running: Option<oneshot::Sender<()>>,
 ) {
     let listener = match TcpListener::bind(addr).await {
         Ok(listener) => listener,
@@ -230,6 +236,10 @@ async fn single_http_listener(
             }
         }
     };
+
+    if let Some(tx) = signal_running {
+        let _ = tx.send(());
+    }
 
     loop {
         let stream = match listener.accept().await {
@@ -2878,6 +2888,9 @@ async fn api_ta(req: Request, path: &mut RequestPath) -> RoutingResult {
     }
 }
 
+/* XXX The server is extensively tested in the integration tests so I don’t
+ *     think we need it to start it here.
+ *
 //------------ Tests ---------------------------------------------------------
 #[cfg(test)]
 mod tests {
@@ -2902,3 +2915,4 @@ mod tests {
         cleanup();
     }
 }
+*/

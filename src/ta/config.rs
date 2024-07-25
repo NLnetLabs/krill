@@ -340,8 +340,7 @@ impl Config {
     }
 }
 
-//------------------------ ConfigError
-//------------------------ ------------------------------------------
+//------------ ConfigError ---------------------------------------------------
 
 #[derive(Clone, Debug)]
 pub enum ConfigError {
@@ -363,6 +362,12 @@ impl std::fmt::Display for ConfigError {
         }
     }
 }
+
+impl std::error::Error for ConfigError { }
+
+
+//============ Tests =========================================================
+
 #[cfg(test)]
 mod tests {
     use super::*;

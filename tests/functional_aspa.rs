@@ -1,341 +1,214 @@
-//! Perform functional tests on a Krill instance, using the API
+//! Test manipulating ASPA definitions.
+
+use std::slice;
 use std::str::FromStr;
-
-use rpki::{
-    ca::{idexchange::CaHandle, provisioning::ResourceClassName},
-    repository::resources::ResourceSet,
+use reqwest::StatusCode;
+use rpki::ca::idexchange::CaHandle;
+use rpki::ca::provisioning::ResourceClassName;
+use rpki::repository::resources::ResourceSet;
+use krill::commons::api::{
+    AspaDefinition, AspaDefinitionList, AspaProvidersUpdate, CustomerAsn,
+    ObjectName, ProviderAsn,
 };
+use krill::commons::util::httpclient;
 
-use krill::{
-    commons::api::{
-        AspaDefinition, AspaDefinitionList, AspaProvidersUpdate, CustomerAsn,
-        ObjectName, ProviderAsn,
-    },
-    test::*,
-};
+mod common;
 
+
+//------------ Test Function -------------------------------------------------
+
+/// Tests sdding, updating, and deleting ASPA definitions.
+///
+/// Uses the following layout:
+///
+/// ```text
+///   TA
+///    |
+///   testbed
+///    |
+///   CA
+/// ```
 #[tokio::test]
 async fn functional_aspa() {
-    let cleanup =
-        start_krill_with_default_test_config(true, false, false, false).await;
+    let (server, _tempdir) = common::KrillServer::start_with_testbed().await;
 
-    info(
-        "##################################################################",
+    let testbed = common::ca_handle("testbed");
+    let ca = common::ca_handle("CA");
+    let ca_res = common::resources("AS65000", "10.0.0.0/16", "");
+
+    // Wait for the *testbed* CA to get its certificate, this means
+    // that all CAs which are set up as part of krill_start under the
+    // testbed config have been set up.
+    assert!(
+        server.wait_for_ca_resources(&testbed, &ResourceSet::all()).await
     );
-    info(
-        "#                                                                #",
-    );
-    info(
-        "# Test ASPA support.                                             #",
-    );
-    info(
-        "#                                                                #",
-    );
-    info(
-        "# Uses the following lay-out:                                    #",
-    );
-    info(
-        "#                                                                #",
-    );
-    info(
-        "#                  TA                                            #",
-    );
-    info(
-        "#                   |                                            #",
-    );
-    info(
-        "#                testbed                                         #",
-    );
-    info(
-        "#                   |                                            #",
-    );
-    info(
-        "#                  CA                                            #",
-    );
-    info(
-        "#                                                                #",
-    );
-    info(
-        "#                                                                #",
-    );
-    info(
-        "##################################################################",
-    );
-    info("");
 
-    let testbed = ca_handle("testbed");
-    let ca = ca_handle("CA");
-    let ca_res = resources("AS65000", "10.0.0.0/16", "");
+    eprintln!(">>>> Set up 'CA' under 'testbed'.");
+    server.create_ca_with_repo(&ca).await;
+    server.register_ca_with_parent(&ca, &testbed, &ca_res).await;
 
-    info(
-        "##################################################################",
-    );
-    info(
-        "#                                                                #",
-    );
-    info(
-        "# Wait for the *testbed* CA to get its certificate, this means   #",
-    );
-    info(
-        "# that all CAs which are set up as part of krill_start under the #",
-    );
-    info(
-        "# testbed config have been set up.                               #",
-    );
-    info(
-        "#                                                                #",
-    );
-    info(
-        "##################################################################",
-    );
-    info("");
-    assert!(ca_contains_resources(&testbed, &ResourceSet::all()).await);
+    eprintln!(">>>> Reject ASPA without providers.");
+    let aspa = aspa_definition("AS65000 => <none>");
+    assert!(!server.try_add_aspa(&ca, aspa.clone()).await);
+    assert!(server.wait_for_objects(&ca, &[]).await);
+    assert_eq!(server.aspa_definitions(&ca).await.as_ref(), &[]);
 
-    {
-        info("##################################################################");
-        info("#                                                                #");
-        info("#                      Set up CA  under testbed                  #");
-        info("#                                                                #");
-        info("##################################################################");
-        info("");
-        set_up_ca_with_repo(&ca).await;
-        set_up_ca_under_parent_with_resources(&ca, &testbed, &ca_res).await;
-    }
+    eprintln!(">>>> Reject ASPA using customer as provider.");
+    let aspa = aspa_definition("AS65000 => AS65000, AS65003, AS65005");
+    assert!(!server.try_add_aspa(&ca, aspa.clone()).await);
+    assert!(server.wait_for_objects(&ca, &[]).await);
+    assert_eq!(server.aspa_definitions(&ca).await.as_ref(), &[]);
 
-    // short hand to expect ASPAs under CA
-    async fn expect_aspa_objects(ca: &CaHandle, aspas: &[AspaDefinition]) {
-        let rcn_0 = ResourceClassName::from(0);
+    eprintln!(">>>> Add an ASPA under CA.");
+    let aspa = aspa_definition("AS65000 => AS65002, AS65003, AS65005");
+    assert!(server.try_add_aspa(&ca, aspa.clone()).await);
+    let aspas = slice::from_ref(&aspa);
+    assert!(server.wait_for_objects(&ca, aspas).await);
+    assert_eq!(server.aspa_definitions(&ca).await.as_ref(), aspas);
 
-        let mut expected_files = expected_mft_and_crl(ca, &rcn_0).await;
+    eprintln!(">>>> Update an existing ASPA.");
+    assert!(server.try_update_aspa(
+        &ca, "AS65000", ["AS65006"], ["AS65002"]
+    ).await);
+    let aspa = aspa_definition("AS65000 => AS65003, AS65005, AS65006");
+    let aspas = slice::from_ref(&aspa);
+    assert!(server.wait_for_objects(&ca, aspas).await);
+    assert_eq!(server.aspa_definitions(&ca).await.as_ref(), aspas);
 
-        for aspa in aspas {
-            expected_files
-                .push(ObjectName::aspa(aspa.customer()).to_string());
-        }
+    eprintln!(">>>> Reject update that adds customer as provider.");
+    assert!(!server.try_update_aspa(&ca, "AS65000", ["AS65000"], []).await);
+    // Use `aspas` from before.
+    assert!(server.wait_for_objects(&ca, aspas).await);
+    assert_eq!(server.aspa_definitions(&ca).await.as_ref(), aspas);
 
-        assert!(
-            will_publish_embedded(
-                "published ASPAs do not match expectations",
-                ca,
-                &expected_files
-            )
-            .await
-        );
-    }
+    eprintln!(">>>> Removing all providers should result in delete.");
+    assert!(server.try_update_aspa(
+        &ca, "AS65000", [], ["AS65003", "AS65005", "AS65006"]
+    ).await);
+    assert!(server.wait_for_objects(&ca, &[]).await);
+    assert_eq!(server.aspa_definitions(&ca).await.as_ref(), &[]);
 
-    {
-        info("##################################################################");
-        info("#                                                                #");
-        info("# Reject ASPA without providers                                  #");
-        info("#                                                                #");
-        info("##################################################################");
-        info("");
+    eprintln!(">>>> Adding provider to non-existing customer should add it.");
+    // This is useful for two reasons:
+    // 1) it allows for automation using just updates
+    // 2) because empty provider lists were accepted in Krill <0.13.0
+    //    we need the code to deal with removing all providers, which
+    //    will remove the AspaConfig when replayed, and then adding
+    //    some provider again.
+    assert!(server.try_update_aspa(
+        &ca, "AS65000", ["AS65003", "AS65005", "AS65006"], []
+    ).await);
+    let aspa = aspa_definition("AS65000 => AS65003, AS65005, AS65006");
+    let aspas = slice::from_ref(&aspa);
+    assert!(server.wait_for_objects(&ca, aspas).await);
+    assert_eq!(server.aspa_definitions(&ca).await.as_ref(), aspas);
 
-        let aspa_65000 =
-            AspaDefinition::from_str("AS65000 => <none>").unwrap();
+    eprintln!(">>>> Add existing and remove nonexisting provider.");
+    assert!(server.try_update_aspa(
+        &ca, "AS65000",
+        ["AS65002", "AS65005"],
+        ["AS65006", "AS65007"],
+    ).await);
+    let aspa = aspa_definition("AS65000 => AS65002, AS65003, AS65005");
+    let aspas = slice::from_ref(&aspa);
+    assert!(server.wait_for_objects(&ca, aspas).await);
+    assert_eq!(server.aspa_definitions(&ca).await.as_ref(), aspas);
 
-        ca_aspas_add_expect_error(&ca, aspa_65000.clone()).await;
-
-        let expected_aspas = vec![];
-        expect_aspa_objects(&ca, &expected_aspas).await;
-        expect_aspa_definitions(&ca, AspaDefinitionList::new(expected_aspas))
-            .await;
-    }
-
-    {
-        info("##################################################################");
-        info("#                                                                #");
-        info("# Reject ASPA using customer as provider                         #");
-        info("#                                                                #");
-        info("##################################################################");
-        info("");
-
-        let aspa_65000 =
-            AspaDefinition::from_str("AS65000 => AS65000, AS65003, AS65005")
-                .unwrap();
-
-        ca_aspas_add_expect_error(&ca, aspa_65000.clone()).await;
-
-        let aspas = vec![];
-        expect_aspa_objects(&ca, &aspas).await;
-        expect_aspa_definitions(&ca, AspaDefinitionList::new(aspas)).await;
-    }
-
-    {
-        info("##################################################################");
-        info("#                                                                #");
-        info("# Add an ASPA under CA                                           #");
-        info("#                                                                #");
-        info("##################################################################");
-        info("");
-
-        let aspa_65000 =
-            AspaDefinition::from_str("AS65000 => AS65002, AS65003, AS65005")
-                .unwrap();
-
-        ca_aspas_add(&ca, aspa_65000.clone()).await;
-
-        let aspas = vec![aspa_65000];
-        expect_aspa_objects(&ca, &aspas).await;
-        expect_aspa_definitions(&ca, AspaDefinitionList::new(aspas)).await;
-    }
-
-    {
-        info("##################################################################");
-        info("#                                                                #");
-        info("# Update an existing ASPA                                        #");
-        info("#                                                                #");
-        info("##################################################################");
-        info("");
-
-        let customer = CustomerAsn::from_str("AS65000").unwrap();
-        let aspa_update = AspaProvidersUpdate::new(
-            vec![ProviderAsn::from_str("AS65006").unwrap()],
-            vec![ProviderAsn::from_str("AS65002").unwrap()],
-        );
-
-        ca_aspas_update(&ca, customer, aspa_update).await;
-
-        let updated_aspa =
-            AspaDefinition::from_str("AS65000 => AS65003, AS65005, AS65006")
-                .unwrap();
-        let aspas = vec![updated_aspa.clone()];
-
-        expect_aspa_objects(&ca, &aspas).await;
-        expect_aspa_definitions(&ca, AspaDefinitionList::new(aspas)).await;
-    }
-
-    {
-        info("##################################################################");
-        info("#                                                                #");
-        info("# Reject update that adds customer as provider                   #");
-        info("#                                                                #");
-        info("##################################################################");
-        info("");
-
-        let customer = CustomerAsn::from_str("AS65000").unwrap();
-        let aspa_update = AspaProvidersUpdate::new(
-            vec![ProviderAsn::from_str("AS65000").unwrap()],
-            vec![],
-        );
-
-        ca_aspas_update_expect_error(&ca, customer, aspa_update).await;
-
-        let unmodified_aspa =
-            AspaDefinition::from_str("AS65000 => AS65003, AS65005, AS65006")
-                .unwrap();
-        let aspas = vec![unmodified_aspa.clone()];
-
-        expect_aspa_objects(&ca, &aspas).await;
-        expect_aspa_definitions(&ca, AspaDefinitionList::new(aspas)).await;
-    }
-
-    {
-        info("##################################################################");
-        info("#                                                                #");
-        info("# Update ASPA and remove all providers, should amount to delete  #");
-        info("#                                                                #");
-        info("##################################################################");
-
-        let customer = CustomerAsn::from_str("AS65000").unwrap();
-        let aspa_update = AspaProvidersUpdate::new(
-            vec![],
-            vec![
-                ProviderAsn::from_str("AS65003").unwrap(),
-                ProviderAsn::from_str("AS65005").unwrap(),
-                ProviderAsn::from_str("AS65006").unwrap(),
-            ],
-        );
-
-        ca_aspas_update(&ca, customer, aspa_update).await;
-
-        // expect that the ASPA definition and object will be removed
-        // when all providers are removed from the existing definition.
-        let expected_aspas = vec![];
-        expect_aspa_objects(&ca, &expected_aspas).await;
-        expect_aspa_definitions(&ca, AspaDefinitionList::new(expected_aspas))
-            .await;
-    }
-
-    {
-        info("##################################################################");
-        info("#                                                                #");
-        info("# Add provider to non-existing definition, this should create a  #");
-        info("# a new AspaDefinition. This is useful for two reasons:          #");
-        info("# 1) it allows for automation using just updates                 #");
-        info("# 2) because empty provider lists were accepted in Krill <0.13.0 #");
-        info("#    we need the code to deal with removing all providers, which #");
-        info("#    will remove the AspaConfig when replayed, and then adding   #");
-        info("#    some provider again.                                        #");
-        info("#                                                                #");
-        info("##################################################################");
-
-        let customer = CustomerAsn::from_str("AS65000").unwrap();
-        let aspa_update = AspaProvidersUpdate::new(
-            vec![
-                ProviderAsn::from_str("AS65003").unwrap(),
-                ProviderAsn::from_str("AS65005").unwrap(),
-                ProviderAsn::from_str("AS65006").unwrap(),
-            ],
-            vec![],
-        );
-
-        ca_aspas_update(&ca, customer, aspa_update).await;
-
-        let updated_aspa =
-            AspaDefinition::from_str("AS65000 => AS65003, AS65005, AS65006")
-                .unwrap();
-        let aspas = vec![updated_aspa.clone()];
-
-        expect_aspa_objects(&ca, &aspas).await;
-        expect_aspa_definitions(&ca, AspaDefinitionList::new(aspas)).await;
-    }
-
-    {
-        info("##################################################################");
-        info("#                                                                #");
-        info("# Adding an existing provider, and removing a non-existing       #");
-        info("# provider to/from an AspaDefinition should be idempotent.       #");
-        info("#                                                                #");
-        info("##################################################################");
-
-        let customer = CustomerAsn::from_str("AS65000").unwrap();
-        let aspa_update = AspaProvidersUpdate::new(
-            vec![
-                ProviderAsn::from_str("AS65002").unwrap(), // add
-                ProviderAsn::from_str("AS65005").unwrap(), /* add, but was already present, so ignored */
-            ],
-            vec![
-                ProviderAsn::from_str("AS65006").unwrap(), // remove
-                ProviderAsn::from_str("AS65007").unwrap(), /* remove, but was not present, so ignored */
-            ],
-        );
-
-        ca_aspas_update(&ca, customer, aspa_update).await;
-
-        let updated_aspa =
-            AspaDefinition::from_str("AS65000 => AS65002, AS65003, AS65005")
-                .unwrap();
-        let aspas = vec![updated_aspa.clone()];
-
-        expect_aspa_objects(&ca, &aspas).await;
-        expect_aspa_definitions(&ca, AspaDefinitionList::new(aspas)).await;
-    }
-
-    {
-        info("##################################################################");
-        info("#                                                                #");
-        info("# Delete an existing ASPA                                        #");
-        info("#                                                                #");
-        info("##################################################################");
-        info("");
-
-        let customer = CustomerAsn::from_str("AS65000").unwrap();
-        ca_aspas_remove(&ca, customer).await;
-
-        expect_aspa_objects(&ca, &[]).await;
-        expect_aspa_definitions(&ca, AspaDefinitionList::new(vec![])).await;
-    }
-
-    cleanup();
+    eprintln!(">>>> Delete an existing ASPA.");
+    server.client().aspas_delete_single(
+        &ca, customer("AS65000")
+    ).await.unwrap();
+    assert!(server.wait_for_objects(&ca, &[]).await);
+    assert_eq!(server.aspa_definitions(&ca).await.as_ref(), &[]);
 }
+
+
+//------------ Extend KrillServer --------------------------------------------
+
+impl common::KrillServer {
+    /// Adds a single ASPA definition.
+    ///
+    /// Returns whether adding succeeded. Panics on error if anything other
+    /// than the server refusing to add the ASPA happened.
+    async fn try_add_aspa(
+        &self, ca: &CaHandle, aspa: AspaDefinition
+    ) -> bool {
+        match self.client().aspas_add_single(ca, aspa).await {
+            Ok(_) => true,
+            Err(err) => {
+                assert!(matches!(
+                    err,
+                    httpclient::Error::ErrorResponseWithJson(
+                        _, StatusCode::BAD_REQUEST, _
+                    )
+                ));
+                false
+            }
+        }
+    }
+
+    /// Updates a single ASPA definition.
+    ///
+    /// Returns whether adding succeeded. Panics on error if anything other
+    /// than the server refusing to add the ASPA happened.
+    async fn try_update_aspa(
+        &self,
+        ca: &CaHandle,
+        customer_str: &str,
+        add: impl IntoIterator<Item=&str>,
+        remove: impl IntoIterator<Item=&str>,
+    ) -> bool {
+        match self.client().aspas_update_single(
+            ca,
+            customer(customer_str),
+            AspaProvidersUpdate::new(
+                add.into_iter().map(|s| provider(s)).collect(),
+                remove.into_iter().map(|s| provider(s)).collect(),
+            )
+        ).await {
+            Ok(_) => true,
+            Err(err) => {
+                assert!(matches!(
+                    err,
+                    httpclient::Error::ErrorResponseWithJson(
+                        _, StatusCode::BAD_REQUEST, _
+                    )
+                ));
+                false
+            }
+        }
+    }
+
+    /// Checks that the given CA has the given ASPA definitions.
+    async fn wait_for_objects<'s>(
+        &'s self, ca: &'s CaHandle, aspas: &'s [AspaDefinition]
+    ) -> bool {
+        let mut files = self.expected_objects(ca);
+        files.push_mft_and_crl(&ResourceClassName::from(0)).await;
+        files.extend(aspas.iter().map(|aspa| {
+            ObjectName::aspa(aspa.customer()).to_string()
+        }));
+        files.wait_for_published().await
+    }
+
+    /// Returns the current ASPA definitions.
+    async fn aspa_definitions(&self, ca: &CaHandle) -> AspaDefinitionList {
+        self.client().aspas_list(ca).await.unwrap()
+    }
+}
+
+
+//------------ Misc Helpers --------------------------------------------------
+
+pub fn aspa_definition(s: &str) -> AspaDefinition {
+    AspaDefinition::from_str(s).unwrap()
+}
+
+pub fn customer(s: &str) -> CustomerAsn {
+    CustomerAsn::from_str(s).unwrap()
+}
+
+pub fn provider(s: &str) -> ProviderAsn {
+    ProviderAsn::from_str(s).unwrap()
+}
+

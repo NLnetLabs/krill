@@ -1,3 +1,4 @@
+/*
 extern crate krill;
 
 use clap::{App, Arg, ArgMatches, SubCommand};
@@ -14,8 +15,10 @@ use krill::{
     },
 };
 use url::Url;
+*/
 
 fn main() {
+/*
     let matches = make_matches();
 
     match parse_matches(matches) {
@@ -157,4 +160,5 @@ fn parse_config(m: &ArgMatches) -> Result<Config, String> {
 enum KrillUpMode {
     Prepare { config: Config },
     Migrate { config: Config, target: Url },
+    */
 }

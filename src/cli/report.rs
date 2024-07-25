@@ -1,317 +1,163 @@
-use std::fmt;
-use std::str::FromStr;
+//! Reporting client results.
 
-use serde::Serialize;
+use std::{fmt, io};
+use std::io::{stderr, stdout};
+use serde::ser::{Serialize, SerializeStruct};
+use crate::commons::api::Success;
 
-use rpki::ca::idexchange;
+//------------ Report --------------------------------------------------------
 
-use crate::{
-    commons::{
-        api::{
-            import::ExportChild, AllCertAuthIssues, AspaDefinitionList,
-            BgpSecCsrInfoList, CaCommandDetails, CaRepoDetails, CertAuthInfo,
-            CertAuthIssues, CertAuthList, ChildCaInfo,
-            ChildrenConnectionStats, CommandHistory, ConfiguredRoas,
-            IdCertInfo, ParentCaContact, ParentStatuses, PublisherDetails,
-            PublisherList, RepoStatus, RepositoryContact, RtaList,
-            RtaPrepResponse, ServerInfo,
-        },
-        bgp::{BgpAnalysisAdvice, BgpAnalysisReport, BgpAnalysisSuggestion},
-    },
-    daemon::ca::ResourceTaggedAttestation,
-    pubd::RepoStats,
-    ta::{
-        TrustAnchorProxySignerExchanges, TrustAnchorSignedRequest,
-        TrustAnchorSignedResponse, TrustAnchorSignerInfo,
-    },
-};
+pub struct Report {
+    /// The content of the report.
+    content: Box<dyn ReportContent>,
 
-//------------ ApiResponse ---------------------------------------------------
-
-/// This type defines all supported responses for the api
-#[derive(Clone, Debug, Eq, PartialEq)]
-#[allow(clippy::large_enum_variant)]
-pub enum ApiResponse {
-    Health,
-    Info(ServerInfo),
-
-    CertAuthInfo(CertAuthInfo),
-    CertAuthHistory(CommandHistory),
-    CertAuthAction(CaCommandDetails),
-    CertAuths(CertAuthList),
-
-    // ROA related
-    RouteAuthorizations(ConfiguredRoas),
-    BgpAnalysisAdvice(BgpAnalysisAdvice),
-    BgpAnalysisFull(BgpAnalysisReport),
-    BgpAnalysisSuggestions(BgpAnalysisSuggestion),
-
-    // ASPA related
-    AspaDefinitions(AspaDefinitionList),
-
-    // BGPSec related
-    BgpSecDefinitions(BgpSecCsrInfoList),
-
-    ParentCaContact(ParentCaContact),
-    ParentStatuses(ParentStatuses),
-
-    ChildInfo(ChildCaInfo),
-    ChildExported(ExportChild),
-    ChildrenStats(ChildrenConnectionStats),
-
-    PublisherDetails(PublisherDetails),
-    PublisherList(PublisherList),
-    RepoStats(RepoStats),
-
-    Rfc8183ParentResponse(idexchange::ParentResponse),
-    Rfc8183RepositoryResponse(idexchange::RepositoryResponse),
-    Rfc8183ChildRequest(idexchange::ChildRequest),
-    Rfc8183PublisherRequest(idexchange::PublisherRequest),
-
-    RepoDetails(CaRepoDetails),
-    RepoStatus(RepoStatus),
-
-    CertAuthIssues(CertAuthIssues),
-    AllCertAuthIssues(AllCertAuthIssues),
-
-    RtaList(RtaList),
-    RtaMultiPrep(RtaPrepResponse),
-    Rta(ResourceTaggedAttestation),
-
-    Empty, // Typically a successful post just gets an empty 200 response
-    GenericBody(String), /* For when the server echos Json to a
-            * successful post */
+    /// Does the report stem from an error?
+    is_err: bool,
 }
 
-impl ApiResponse {
-    pub fn report(
-        &self,
-        fmt: ReportFormat,
-    ) -> Result<Option<String>, ReportError> {
-        if fmt == ReportFormat::None {
-            Ok(None)
-        } else {
-            match self {
-                ApiResponse::Health => Ok(None),
-                ApiResponse::Info(info) => Ok(Some(info.report(fmt)?)),
-                ApiResponse::CertAuths(list) => Ok(Some(list.report(fmt)?)),
-                ApiResponse::CertAuthInfo(info) => {
-                    Ok(Some(info.report(fmt)?))
+impl Report {
+    /// Creates a new report that is not an error.
+    pub fn new(content: impl ReportContent + 'static) -> Self {
+        Self {
+            content: Box::new(content),
+            is_err: false
+        }
+    }
+
+    /// Outputs the report.
+    ///
+    /// Picks either stdout or stderr, depending on whether things went
+    /// well or not. Returns the exit code to use.
+    pub fn report(self, format: ReportFormat) -> i32 {
+        if self.is_err {
+            let _ = self.content.write(format, &mut stdout().lock());
+            0
+        }
+        else {
+            let _ = self.content.write(format, &mut stderr().lock());
+            1
+        }
+    }
+
+    /// Create a report from a result of an option.
+    pub fn from_opt_result<T, E>(src: Result<Option<T>, E>) -> Self
+    where
+        T: fmt::Display + Serialize + 'static,
+        E: fmt::Display + 'static,
+    {
+        src.map(OptContent).into()
+    }
+}
+
+impl<T, E> From<Result<T, E>> for Report
+where
+    T: ReportContent + 'static,
+    E: fmt::Display + 'static,
+{
+    fn from(content: Result<T, E>) -> Self {
+        match content {
+            Ok(content) => {
+                Self {
+                    content: Box::new(content),
+                    is_err: false,
                 }
-                ApiResponse::CertAuthHistory(history) => {
-                    Ok(Some(history.report(fmt)?))
+            }
+            Err(content) => {
+                Self {
+                    content: Box::new(ErrorReport(content)),
+                    is_err: true,
                 }
-                ApiResponse::CertAuthAction(details) => {
-                    Ok(Some(details.report(fmt)?))
-                }
-                ApiResponse::CertAuthIssues(issues) => {
-                    Ok(Some(issues.report(fmt)?))
-                }
-                ApiResponse::AllCertAuthIssues(issues) => {
-                    Ok(Some(issues.report(fmt)?))
-                }
-                ApiResponse::RouteAuthorizations(definitions) => {
-                    Ok(Some(definitions.report(fmt)?))
-                }
-                ApiResponse::BgpAnalysisAdvice(analysis) => {
-                    Ok(Some(analysis.report(fmt)?))
-                }
-                ApiResponse::BgpAnalysisFull(table) => {
-                    Ok(Some(table.report(fmt)?))
-                }
-                ApiResponse::BgpAnalysisSuggestions(suggestions) => {
-                    Ok(Some(suggestions.report(fmt)?))
-                }
-                ApiResponse::AspaDefinitions(definitions) => {
-                    Ok(Some(definitions.report(fmt)?))
-                }
-                ApiResponse::BgpSecDefinitions(definitions) => {
-                    Ok(Some(definitions.report(fmt)?))
-                }
-                ApiResponse::ParentCaContact(contact) => {
-                    Ok(Some(contact.report(fmt)?))
-                }
-                ApiResponse::ParentStatuses(statuses) => {
-                    Ok(Some(statuses.report(fmt)?))
-                }
-                ApiResponse::ChildInfo(info) => Ok(Some(info.report(fmt)?)),
-                ApiResponse::ChildExported(child) => {
-                    Ok(Some(child.report(fmt)?))
-                }
-                ApiResponse::ChildrenStats(stats) => {
-                    Ok(Some(stats.report(fmt)?))
-                }
-                ApiResponse::PublisherList(list) => {
-                    Ok(Some(list.report(fmt)?))
-                }
-                ApiResponse::PublisherDetails(details) => {
-                    Ok(Some(details.report(fmt)?))
-                }
-                ApiResponse::RepoStats(stats) => Ok(Some(stats.report(fmt)?)),
-                ApiResponse::Rfc8183ParentResponse(res) => {
-                    Ok(Some(res.report(fmt)?))
-                }
-                ApiResponse::Rfc8183ChildRequest(req) => {
-                    Ok(Some(req.report(fmt)?))
-                }
-                ApiResponse::Rfc8183PublisherRequest(req) => {
-                    Ok(Some(req.report(fmt)?))
-                }
-                ApiResponse::Rfc8183RepositoryResponse(res) => {
-                    Ok(Some(res.report(fmt)?))
-                }
-                ApiResponse::RepoDetails(details) => {
-                    Ok(Some(details.report(fmt)?))
-                }
-                ApiResponse::RepoStatus(status) => {
-                    Ok(Some(status.report(fmt)?))
-                }
-                ApiResponse::Rta(rta) => Ok(Some(rta.report(fmt)?)),
-                ApiResponse::RtaList(list) => Ok(Some(list.report(fmt)?)),
-                ApiResponse::RtaMultiPrep(res) => Ok(Some(res.report(fmt)?)),
-                ApiResponse::GenericBody(body) => Ok(Some(body.clone())),
-                ApiResponse::Empty => Ok(None),
             }
         }
     }
 }
 
+
+//------------ ReportContent ------------------------------------------------
+
+pub trait ReportContent {
+    fn write(
+        &self, format: ReportFormat, target: &mut dyn io::Write
+    ) -> Result<(), io::Error>;
+}
+
+impl<T: Serialize + fmt::Display> ReportContent for T {
+    fn write(
+        &self, format: ReportFormat, mut target: &mut dyn io::Write
+    ) -> Result<(), io::Error> {
+        match format {
+            ReportFormat::None => { Ok(()) }
+            ReportFormat::Json => {
+                // The &mut here seems to be necessary to avoid a move into
+                // the function.
+                serde_json::to_writer_pretty(&mut target, self)?;
+                target.write_all(b"\n")?;
+                Ok(())
+            }
+            ReportFormat::Text => {
+                writeln!(target, "{}", self)
+            }
+        }
+    }
+}
+
+
+//------------ OptContent ----------------------------------------------------
+
+struct OptContent<T>(Option<T>);
+
+impl<T: fmt::Display> fmt::Display for OptContent<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match &self.0 {
+            Some(content) => content.fmt(f),
+            None => Success.fmt(f)
+        }
+    }
+}
+
+impl<T: Serialize> Serialize for OptContent<T> {
+    fn serialize<S: serde::Serializer>(
+        &self, serializer: S
+    ) -> Result<S::Ok, S::Error> {
+        match &self.0 {
+            Some(content) => content.serialize(serializer),
+            None => Success.serialize(serializer),
+        }
+    }
+}
+
+
+//------------ ErrorReport ---------------------------------------------------
+
+struct ErrorReport<T>(T);
+
+impl<T: fmt::Display> fmt::Display for ErrorReport<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl<T: fmt::Display> Serialize for ErrorReport<T> {
+    fn serialize<S: serde::Serializer>(
+        &self, serializer: S
+    ) -> Result<S::Ok, S::Error> {
+        let mut serializer = serializer.serialize_struct(
+            "HttpClientError", 1
+        )?;
+        serializer.serialize_field("error", &format_args!("{}", self.0))?;
+        serializer.end()
+    }
+}
+
+
+
 //------------ ReportFormat --------------------------------------------------
 
 /// This type defines the format to use when representing the api response
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, clap::ValueEnum)]
 pub enum ReportFormat {
     None,
     Json,
     Text,
 }
 
-impl FromStr for ReportFormat {
-    type Err = ReportError;
-
-    fn from_str(s: &str) -> Result<Self, ReportError> {
-        match s {
-            "none" => Ok(ReportFormat::None),
-            "json" => Ok(ReportFormat::Json),
-            "text" => Ok(ReportFormat::Text),
-            _ => Err(ReportError::UnrecognizedFormat(s.to_string())),
-        }
-    }
-}
-
-//------------ ReportError ---------------------------------------------------
-
-/// This type defines possible Errors for KeyStore
-#[derive(Debug)]
-pub enum ReportError {
-    UnsupportedFormat,
-    UnrecognizedFormat(String),
-}
-
-impl fmt::Display for ReportError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            ReportError::UnsupportedFormat => {
-                write!(f, "This report format is not supported for this data")
-            }
-            ReportError::UnrecognizedFormat(s) => {
-                write!(f, "This report format is not recognized: {}", s)
-            }
-        }
-    }
-}
-
-//------------ Report --------------------------------------------------------
-
-/// This trait should be implemented by all api responses, so that the
-/// response can be formatted for users.
-pub trait Report: Serialize + ToString {
-    fn text(&self) -> Result<String, ReportError> {
-        Ok(self.to_string())
-    }
-
-    fn json(&self) -> String {
-        serde_json::to_string_pretty(self).unwrap()
-    }
-
-    fn report(&self, format: ReportFormat) -> Result<String, ReportError> {
-        match format {
-            ReportFormat::None => Ok("".to_string()),
-            ReportFormat::Json => Ok(self.json()),
-            ReportFormat::Text => self.text(),
-        }
-    }
-}
-
-impl Report for CertAuthList {}
-impl Report for CertAuthInfo {}
-impl Report for IdCertInfo {}
-impl Report for RepositoryContact {}
-
-impl Report for ChildCaInfo {}
-impl Report for ExportChild {}
-
-impl Report for ParentCaContact {}
-impl Report for ParentStatuses {}
-
-impl Report for CommandHistory {}
-impl Report for CaCommandDetails {}
-
-impl Report for PublisherList {}
-
-impl Report for RepoStats {}
-impl Report for ChildrenConnectionStats {}
-
-impl Report for PublisherDetails {}
-
-impl Report for idexchange::RepositoryResponse {
-    fn text(&self) -> Result<String, ReportError> {
-        Ok(self.to_xml_string())
-    }
-}
-
-impl Report for idexchange::ParentResponse {
-    fn text(&self) -> Result<String, ReportError> {
-        Ok(self.to_xml_string())
-    }
-}
-
-impl Report for idexchange::ChildRequest {
-    fn text(&self) -> Result<String, ReportError> {
-        Ok(self.to_xml_string())
-    }
-}
-
-impl Report for idexchange::PublisherRequest {
-    fn text(&self) -> Result<String, ReportError> {
-        Ok(self.to_xml_string())
-    }
-}
-
-impl Report for ConfiguredRoas {}
-
-impl Report for BgpAnalysisAdvice {}
-impl Report for BgpAnalysisReport {}
-impl Report for BgpAnalysisSuggestion {}
-
-impl Report for AspaDefinitionList {}
-
-impl Report for BgpSecCsrInfoList {}
-
-impl Report for CaRepoDetails {}
-impl Report for RepoStatus {}
-
-impl Report for CertAuthIssues {}
-
-impl Report for AllCertAuthIssues {}
-
-impl Report for ServerInfo {}
-
-impl Report for ResourceTaggedAttestation {}
-impl Report for RtaList {}
-impl Report for RtaPrepResponse {}
-
-impl Report for TrustAnchorSignerInfo {}
-impl Report for TrustAnchorSignedRequest {}
-impl Report for TrustAnchorSignedResponse {}
-impl Report for TrustAnchorProxySignerExchanges {}

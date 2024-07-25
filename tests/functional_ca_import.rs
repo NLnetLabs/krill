@@ -1,30 +1,22 @@
-//! Perform functional tests on a Krill instance, using the API
+//! Test importing a CA.
+
+use krill::commons::api;
+
+mod common;
+
+
+//------------ Test Function -------------------------------------------------
 
 #[cfg(not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11")))]
 #[tokio::test]
 async fn functional_ca_import() {
-    use krill::{
-        commons::api::{self, ObjectName},
-        test::*,
-    };
-
-    // Start an empty Krill instance.
-    let (data_dir, cleanup) = tmp_dir();
-    let krill_storage = mem_storage();
-    let mut config = test_config(
-        &krill_storage,
-        Some(&data_dir),
-        false,
-        false,
-        false,
-        false,
-    );
+    let (mut config, _tempdir) = common::TestConfig::mem_storage().finalize();
     config.ta_support_enabled = true;
     config.ta_signer_enabled = true;
+    let server = common::KrillServer::start_with_config(config).await;
 
-    start_krill(config).await;
-
-    // Import CA structure. We expect:
+    eprintln!(">>>> Import CA structure.");
+    // We expect:
     //
     //        TA
     //        |
@@ -34,132 +26,82 @@ async fn functional_ca_import() {
     //      \    /
     //     grandchild (two parents)
     //
-    let rcn_0 = rcn(0);
-    let rcn_1 = rcn(1);
+    let rc0 = common::rcn(0);
+    let rc1 = common::rcn(1);
 
     let ca_imports_json =
         include_str!("../test-resources/bulk-ca-import/structure.json");
     let ca_imports: api::import::Structure =
         serde_json::from_str(ca_imports_json).unwrap();
 
-    let parent = ca_handle("parent");
-    let parent_resources = resources(
-        "AS65000-AS65535",
-        "10.0.0.0/8, 192.168.0.0/16",
-        "fc00::/7",
+    let parent = common::ca_handle("parent");
+    let parent_resources = common::resources(
+        "AS65000-AS65535", "10.0.0.0/8, 192.168.0.0/16", "fc00::/7",
     );
 
-    let child1 = ca_handle("child1");
-    let child1_resources =
-        resources("AS65000", "192.168.0.0/16", "fc00::/56");
+    let child1 = common::ca_handle("child1");
+    let child1_resources = common::resources(
+        "AS65000", "192.168.0.0/16", "fc00::/56"
+    );
     let child1_roas = vec![
-        roa_configuration("192.168.0.0/23-24 => 65000 # my precious route"),
-        roa_configuration("192.168.2.0/23 => 65001"),
-        roa_configuration("fc00::/56 => 65000"),
+        common::roa_conf("192.168.0.0/23-24 => 65000 # my precious route"),
+        common::roa_conf("192.168.2.0/23 => 65001"),
+        common::roa_conf("fc00::/56 => 65000"),
     ];
 
-    let child2 = ca_handle("child2");
-    let child2_resources = resources("AS65001", "10.0.0.0/16", "");
+    let child2 = common::ca_handle("child2");
+    let child2_resources = common::resources("AS65001", "10.0.0.0/16", "");
 
-    let grandchild = ca_handle("grandchild");
-    let grandchild_resources =
-        resources("AS65001", "10.0.0.0/24, 192.168.0.0/24", "");
+    let grandchild = common::ca_handle("grandchild");
+    let grandchild_resources = common::resources(
+        "AS65001", "10.0.0.0/24, 192.168.0.0/24", ""
+    );
     let grandchild_roas = [
-        roa_configuration("192.168.0.0/24 => 65000"),
-        roa_configuration("10.0.0.0/24 => 65001"),
+        common::roa_conf("192.168.0.0/24 => 65000"),
+        common::roa_conf("10.0.0.0/24 => 65001"),
     ];
 
-    import_cas(ca_imports).await;
+    server.client().bulk_import(ca_imports).await.unwrap();
 
-    {
-        // check parent exists and has resources
-        assert!(ca_contains_resources(&parent, &parent_resources).await);
-    }
 
-    {
-        // check child1
-        // - resources
-        // - configured roas
-        // - published roas and cert for grandchild
-        assert!(ca_contains_resources(&child1, &child1_resources).await);
-        expect_configured_roas(&child1, &child1_roas).await;
+    eprintln!(">>>> Check 'parent'.");
+    assert!(server.wait_for_ca_resources(&parent, &parent_resources).await);
 
-        let mut expected_files_child1_rc0 =
-            expected_mft_and_crl(&child1, &rcn_0).await;
-        expected_files_child1_rc0
-            .push(expected_issued_cer(&grandchild, &rcn_0).await);
-        for roa in &child1_roas {
-            expected_files_child1_rc0.push(
-                ObjectName::from(&roa.payload().into_explicit_max_length())
-                    .to_string(),
-            );
-        }
-        assert!(
-            will_publish_embedded(
-                "child1 should publish certificate for grandchild and 3 roas",
-                &child1,
-                &expected_files_child1_rc0
-            )
-            .await
-        );
-    }
+    eprintln!(">>>> Check 'child1'.");
+    // resources
+    assert!(server.wait_for_ca_resources(&child1, &child1_resources).await);
+    // ROAs
+    assert!(server.check_configured_roas(&child1, &child1_roas).await);
+    // Published objects, including cer for grandchild.
+    let mut files = server.expected_objects(&child1);
+    files.push_mft_and_crl(&rc0).await;
+    files.push_cer(&grandchild, &rc0).await;
+    files.push_roas(&child1_roas);
+    assert!(files.wait_for_published().await);
 
-    {
-        // check child2
-        // - resources
-        // - no roas
-        // - published cert for grandchild
-        assert!(ca_contains_resources(&child2, &child2_resources).await);
+    eprintln!(">>>> Check 'child2'.");
+    // resources
+    assert!(server.wait_for_ca_resources(&child2, &child2_resources).await);
+    // no ROAs
+    // Published objects, including cer for grandchild in RC1.
+    let mut files = server.expected_objects(&child2);
+    files.push_mft_and_crl(&rc0).await;
+    files.push_cer(&grandchild, &rc1).await;
+    assert!(files.wait_for_published().await);
 
-        let mut expected_files_child2_rc0 =
-            expected_mft_and_crl(&child2, &rcn_0).await;
-        // the certificate is issued under rc0 of child2, but from the
-        // grandchild's perspective this is in its rc1
-        expected_files_child2_rc0
-            .push(expected_issued_cer(&grandchild, &rcn_1).await);
-
-        assert!(
-            will_publish_embedded(
-                "child2 should publish certificate for grandchild and no roas",
-                &child2,
-                &expected_files_child2_rc0
-            )
-            .await
-        );
-    }
-
-    {
-        // check grandchild
-        // - resources under both parents
-        // - configured roas
-        // - publish a ROA in rc0 under parent child1
-        // - publish a ROA in rc1 under parent child2
-        assert!(
-            ca_contains_resources(&grandchild, &grandchild_resources).await
-        );
-        expect_configured_roas(&grandchild, &grandchild_roas).await;
-
-        let mut expected_files_grandchild =
-            expected_mft_and_crl(&grandchild, &rcn_0).await;
-        expected_files_grandchild
-            .append(&mut expected_mft_and_crl(&grandchild, &rcn_1).await);
-
-        for roa in &grandchild_roas {
-            expected_files_grandchild.push(
-                ObjectName::from(&roa.payload().into_explicit_max_length())
-                    .to_string(),
-            );
-        }
-
-        assert!(
-            will_publish_embedded(
-                "grandchild should publish certificate for grandchild and 2 roas",
-                &grandchild,
-                &expected_files_grandchild
-            )
-            .await
-        );
-    }
-
-    cleanup();
+    eprintln!(">>>> Check 'grandchild'.");
+    // resources
+    assert!(
+        server.wait_for_ca_resources(&grandchild, &grandchild_resources).await
+    );
+    // configured ROAs
+    assert!(server.check_configured_roas(&grandchild, &grandchild_roas).await);
+    // publish objects in rc0 under parent child1
+    // publish objects in rc1 under parent child2
+    let mut files = server.expected_objects(&grandchild);
+    files.push_mft_and_crl(&rc0).await;
+    files.push_mft_and_crl(&rc1).await;
+    files.push_roas(&grandchild_roas);
+    assert!(files.wait_for_published().await);
 }
+
