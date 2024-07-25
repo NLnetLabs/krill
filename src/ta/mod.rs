@@ -82,7 +82,9 @@ mod tests {
 
             let timing = TaTimingConfig::default();
 
-            let actor = test::test_actor();
+            let actor = crate::commons::actor::Actor::actor_from_def(
+                crate::constants::ACTOR_DEF_KRILL,
+            );
 
             let proxy_handle = TrustAnchorHandle::new("proxy".into());
             let proxy_init = TrustAnchorProxyInitCommand::make(
