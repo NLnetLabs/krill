@@ -118,10 +118,10 @@ impl TestConfig {
         }
         else {
             eprintln!(
-                "Disabled Krill log output. \
+                "Limiting Krill log output. \
                  Set KRILLTEST_DEBUG=1 to enable debug log to stderr."
             );
-            LevelFilter::Off
+            LevelFilter::Error
         };
         let log_type = LogType::Stderr;
         let syslog_facility = ConfigDefaults::syslog_facility();
