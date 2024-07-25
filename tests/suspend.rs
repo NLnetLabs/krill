@@ -78,7 +78,7 @@ impl common::KrillServer {
         let rcn0 = common::rcn(0);
         let child_handle = child.convert();
 
-        let mut files = self.expected_objects(&ca);
+        let mut files = self.expected_objects(ca);
         files.push_mft_and_crl(&rcn0).await;
         files.push_cer(child, &rcn0).await;
         assert!(files.wait_for_published().await);
@@ -92,7 +92,7 @@ impl common::KrillServer {
         let rcn0 = common::rcn(0);
         let child_handle = child.convert();
 
-        let mut files = self.expected_objects(&ca);
+        let mut files = self.expected_objects(ca);
         files.push_mft_and_crl(&rcn0).await;
         assert!(files.wait_for_published().await);
         

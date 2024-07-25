@@ -360,15 +360,6 @@ impl ChildrenAdd {
     }
 }
 
-#[derive(Clone, Copy, Default, Debug)]
-struct AcrMsg;
-
-impl fmt::Display for AcrMsg {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str("child info")
-    }
-}
-
 
 //------------ ChildrenResponse ----------------------------------------------
 

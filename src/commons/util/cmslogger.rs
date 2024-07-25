@@ -105,7 +105,7 @@ impl CmsLogger {
     fn save(&self, content: &[u8], ext: &str) -> Result<(), KrillIoError> {
         if let Some(path) = self.path.as_ref() {
             let mut path = path.clone();
-            path.push(&format!("{}.{}", self.now, ext));
+            path.push(format!("{}.{}", self.now, ext));
 
             file::save(content, &path)
         } else {

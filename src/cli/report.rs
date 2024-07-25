@@ -83,14 +83,14 @@ pub trait ReportContent {
 
 impl<T: Serialize + fmt::Display> ReportContent for T {
     fn write(
-        &self, format: ReportFormat, mut target: &mut dyn io::Write
+        &self, format: ReportFormat, target: &mut dyn io::Write
     ) -> Result<(), io::Error> {
         match format {
             ReportFormat::None => { Ok(()) }
             ReportFormat::Json => {
                 // The &mut here seems to be necessary to avoid a move into
                 // the function.
-                serde_json::to_writer_pretty(&mut target, self)?;
+                serde_json::to_writer_pretty(&mut *target, self)?;
                 target.write_all(b"\n")?;
                 Ok(())
             }

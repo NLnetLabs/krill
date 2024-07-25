@@ -49,7 +49,7 @@ async fn migrate_repository() {
     server.client().roas_update(
         &ca1,
         api::RoaConfigurationUpdates::new(
-            vec![ca1_roa.clone().into()], vec![]
+            vec![ca1_roa.into()], vec![]
         )
     ).await.unwrap();
 

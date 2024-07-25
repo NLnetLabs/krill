@@ -242,7 +242,7 @@ impl FromStr for KeyValuePair {
     fn from_str(src: &str) -> Result<Self, Self::Err> {
         match src.split_once(src) {
             Some((key, value)) => Ok(Self(key.into(), value.into())),
-            None => return Err("expecting \"key=value\"")
+            None => Err("expecting \"key=value\"")
         }
     }
 }

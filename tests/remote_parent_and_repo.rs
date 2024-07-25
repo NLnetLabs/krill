@@ -55,7 +55,7 @@ async fn remote_parent_and_repo() {
     server2.client().roas_update(
         &ca1,
         RoaConfigurationUpdates::new(
-            vec![ca1_roa.clone().into()], vec![]
+            vec![ca1_roa.into()], vec![]
         )
     ).await.unwrap();
 

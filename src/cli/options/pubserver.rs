@@ -34,7 +34,7 @@ impl Command {
         match self {
             Self::Publishers(cmd) => cmd.run(client).await,
             Self::Delete(cmd) => cmd.run(client).await.into(),
-            Self::Server(cmd) => cmd.run(client).await.into(),
+            Self::Server(cmd) => cmd.run(client).await,
         }
     }
 }

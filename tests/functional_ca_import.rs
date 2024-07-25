@@ -1,7 +1,5 @@
 //! Test importing a CA.
 
-use krill::commons::api;
-
 mod common;
 
 

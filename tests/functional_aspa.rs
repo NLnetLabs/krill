@@ -162,8 +162,8 @@ impl common::KrillServer {
             ca,
             customer(customer_str),
             AspaProvidersUpdate::new(
-                add.into_iter().map(|s| provider(s)).collect(),
-                remove.into_iter().map(|s| provider(s)).collect(),
+                add.into_iter().map(provider).collect(),
+                remove.into_iter().map(provider).collect(),
             )
         ).await {
             Ok(_) => true,
