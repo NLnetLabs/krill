@@ -362,7 +362,8 @@ impl KrillServer {
     /// server and wait for it to become ready.
     pub async fn start_second_with_testbed() -> (Self, TempDir) {
         let (config, data_dir) = TestConfig::mem_storage()
-            .alternative_port().enable_testbed().finalize();
+            .alternative_port().enable_testbed().enable_second_signer()
+            .finalize();
         (Self::start_with_config(config).await, data_dir)
     }
 
