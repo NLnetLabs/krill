@@ -1,6 +1,5 @@
 use std::fmt;
 use std::borrow::Cow;
-use std::str::FromStr;
 use serde::ser::{Serialize, Serializer, SerializeStruct};
 use crate::cli::client::KrillClient;
 use crate::cli::report::Report;
@@ -233,10 +232,12 @@ impl User {
 //-------- KeyValuePair --------------------------------------------------
 
 /// A key-value pair parsed from a string in `key=value` format.
+#[cfg(feature = "multi-user")]
 #[derive(Clone, Debug)]
 pub struct KeyValuePair(pub String, pub String);
 
-impl FromStr for KeyValuePair {
+#[cfg(feature = "multi-user")]
+impl std::str::FromStr for KeyValuePair {
     type Err = &'static str;
 
     fn from_str(src: &str) -> Result<Self, Self::Err> {

@@ -1,4 +1,4 @@
-#![allow(dead_code, unused_imports)]
+#![allow(dead_code)] // Different tests use different parts.
 
 use std::env;
 use std::str::FromStr;
@@ -9,11 +9,9 @@ use log::{debug, error};
 use reqwest::StatusCode;
 use rpki::uri;
 use rpki::ca::idexchange::{
-    CaHandle, ChildHandle, ChildRequest, ParentResponse, PublisherRequest,
-    RepositoryResponse, ServiceUri
+    CaHandle, ChildHandle, ChildRequest, ParentResponse, ServiceUri
 };
 use rpki::ca::provisioning::ResourceClassName;
-use rpki::repository::Manifest;
 use rpki::repository::resources::ResourceSet;
 use tempfile::TempDir;
 use tokio::sync::oneshot;
@@ -108,7 +106,8 @@ impl TestConfig {
         self
     }
 
-    pub fn finalize(self) -> (Config, TempDir) {
+    #[allow(unused_mut)] // for mut self if feature = "hsm"
+    pub fn finalize(mut self) -> (Config, TempDir) {
         let ip = ConfigDefaults::ip();
         let port = self.port;
 
@@ -145,7 +144,9 @@ impl TestConfig {
         // Multiple signers are only needed and can only be configured when
         // the "hsm" feature is enabled.
         #[cfg(not(feature = "hsm"))]
-        let second_signer = false;
+        {
+            self.second_signer = false;
+        }
 
         let signers = match self.second_signer {
             false => ConfigDefaults::signers(),
