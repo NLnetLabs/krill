@@ -472,7 +472,10 @@ impl KrillClient {
         &self, ca: &CaHandle, updates: api::RoaConfigurationUpdates
     ) -> Result<bgp::BgpAnalysisReport, Error> {
         self.post_json_with_response(
-            ca_path(ca).into_iter().chain(once("routes/dryrun")), updates
+            ca_path(ca).into_iter().chain(
+                once("routes/analysis/dryrun")
+            ),
+            updates
         ).await
     }
 
@@ -659,79 +662,6 @@ impl KrillClient {
         &self
     ) -> Result<api::Success, Error> {
         self.delete(once("api/v1/pubd/init")).await
-    }
-
-    pub async fn ta_init(&self) -> Result<api::Success, Error> {
-        self.post_empty(once("api/v1/ta/proxy/init")).await
-    }
-
-    pub async fn ta_id(&self) -> Result<api::IdCertInfo, Error> {
-        self.get_json(once("api/v1/ta/proxy/id")).await
-    }
-
-    pub async fn ta_repo_request(
-        &self
-    ) -> Result<idexchange::PublisherRequest, Error> {
-        self.get_json(once("api/v1/ta/proxy/repo/request.json")).await
-    }
-
-    pub async fn ta_repo_details(
-        &self
-    ) -> Result<api::RepositoryContact, Error> {
-        self.get_json(once("api/v1/ta/proxy/repo")).await
-    }
-
-    pub async fn ta_repo_add(
-        &self, repo_response: api::ApiRepositoryContact
-    ) -> Result<api::Success, Error> {
-        self.post_json(once("api/v1/ta/proxy/repo"), repo_response).await
-    }
-
-    pub async fn ta_signer_add(
-        &self, info: ta::TrustAnchorSignerInfo
-    ) -> Result<api::Success, Error> {
-        self.post_json(once("api/v1/ta/proxy/signer/add"), info).await
-    }
-
-    pub async fn ta_signer_request_create(
-        &self
-    ) -> Result<ta::TrustAnchorSignedRequest, Error> {
-        self.post_empty_with_response(
-            once("api/v1/ta/proxy/signer/request")
-        ).await
-    }
-
-    pub async fn ta_signer_request_show(
-        &self
-    ) -> Result<ta::TrustAnchorSignedRequest, Error> {
-        self.get_json(once("api/v1/ta/proxy/signer/request")).await
-    }
-
-    pub async fn ta_signer_response(
-        &self, response: ta::TrustAnchorSignedResponse
-    ) -> Result<api::Success, Error> {
-        self.post_json(
-            once("api/v1/ta/proxy/signer/response"), response
-        ).await
-    }
-
-    pub async fn ta_child_add(
-        &self, child: api::AddChildRequest
-    ) -> Result<idexchange::ParentResponse, Error> {
-        self.post_json_with_response(
-            once("api/v1/ta/proxy/children"), child
-        ).await
-    }
-
-    pub async fn ta_child_response(
-        &self, child: &ChildHandle
-    ) -> Result<idexchange::ParentResponse, Error> {
-        self.get_json(
-            [
-                "api/v1/ta/proxy/children", child.as_str(),
-                "parent_response.json",
-            ]
-        ).await
     }
 
     pub async fn testbed_enabled(&self) -> Result<Success, Error> {
