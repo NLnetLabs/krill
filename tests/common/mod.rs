@@ -382,15 +382,7 @@ impl KrillServer {
             rrdp_delta_min_interval_seconds;
         let port = config.port;
         let server = Self::start_with_config(config).await;
-
-        server.client().pubserver_init(
-            uri::Https::from_str(
-                &format!("https://localhost:{}/test-rrdp/", port)
-            ).unwrap(),
-            uri::Rsync::from_str(
-                "rsync://localhost/dedicated-repo/"
-            ).unwrap(),
-        ).await.unwrap();
+        server.pubserver_init(port).await;
         (server, data_dir)
     }
 
@@ -434,6 +426,17 @@ impl KrillServer {
             Ok(Ok(_)) => { debug!("health check succeded") },
             err => panic!("health check failed: {:?}", err),
         }
+    }
+
+    pub async fn pubserver_init(&self, port: u16) {
+        self.client().pubserver_init(
+            uri::Https::from_str(
+                &format!("https://localhost:{}/test-rrdp/", port)
+            ).unwrap(),
+            uri::Rsync::from_str(
+                "rsync://localhost/dedicated-repo/"
+            ).unwrap(),
+        ).await.unwrap();
     }
 
     /// Aborts the server and waits for it to conclude cleanup.

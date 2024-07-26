@@ -830,9 +830,12 @@ impl KrillClient {
     }
 
     pub async fn ta_proxy_repo_configure(
-        &self, response: api::ApiRepositoryContact
+        &self, response: idexchange::RepositoryResponse, 
     ) -> Result<Success, Error> {
-        self.post_json(once("api/v1/ta/proxy/repo"), response).await
+        self.post_json(
+            once("api/v1/ta/proxy/repo"),
+            api::ApiRepositoryContact::new(response.into()),
+        ).await
     }
 
     pub async fn ta_proxy_signer_add(

@@ -174,9 +174,7 @@ impl RepoConfigure {
     pub async fn run(
         self, client: &KrillClient
     ) -> Result<api::Success, httpclient::Error> {
-        client.ta_proxy_repo_configure(
-            api::ApiRepositoryContact::new(self.response.into())
-        ).await
+        client.ta_proxy_repo_configure(self.response.into()).await
     }
 }
 

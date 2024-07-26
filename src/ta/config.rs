@@ -155,7 +155,7 @@ impl Config {
         Self::parse_str(&v)
     }
 
-    fn parse_str(s: &str) -> Result<Self, ConfigError> {
+    pub fn parse_str(s: &str) -> Result<Self, ConfigError> {
         let mut config: Config = toml::from_str(s).map_err(|err| {
             ConfigError::Other(format!("Error parsing config file: {err}"))
         })?;
