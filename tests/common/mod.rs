@@ -12,7 +12,7 @@ use rpki::ca::idexchange::{
     CaHandle, ChildHandle, ChildRequest, ParentResponse, ServiceUri
 };
 use rpki::ca::provisioning::ResourceClassName;
-use rpki::repository::resources::ResourceSet;
+use rpki::repository::resources::{Asn, ResourceSet};
 use tempfile::TempDir;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
@@ -761,6 +761,10 @@ pub fn rcn(nr: u32) -> ResourceClassName {
 
 pub fn resources(asn: &str, v4: &str, v6: &str) -> ResourceSet {
     ResourceSet::from_strs(asn, v4, v6).unwrap()
+}
+
+pub fn asn(asn: &str) -> Asn {
+    Asn::from_str(asn).unwrap()
 }
 
 pub fn ipv4_resources(v4: &str) -> ResourceSet {
