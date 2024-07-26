@@ -19,7 +19,8 @@ mod common;
 /// [Krill as a Trust Anchor]: https://krill.docs.nlnetlabs.nl/en/stable/trust-anchor.html
 #[tokio::test]
 async fn functional_at() {
-    let (mut config, _tempdir) = common::TestConfig::mem_storage().finalize();
+    let (mut config, _tempdir) = common::TestConfig::mem_storage()
+        .enable_second_signer().finalize();
     let port = config.port;
     config.ta_support_enabled = true;
     let server = common::KrillServer::start_with_config(config).await;
