@@ -834,7 +834,7 @@ impl KrillClient {
     ) -> Result<Success, Error> {
         self.post_json(
             once("api/v1/ta/proxy/repo"),
-            api::ApiRepositoryContact::new(response.into()),
+            api::ApiRepositoryContact::new(response),
         ).await
     }
 
