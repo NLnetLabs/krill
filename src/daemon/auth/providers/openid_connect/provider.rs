@@ -181,8 +181,11 @@ impl OpenIDConnectAuthProvider {
     async fn initialize_connection_if_needed(&self) -> KrillResult<()> {
         let mut conn_guard = self.conn.write().await;
 
-        if conn_guard.is_none() || conn_guard.as_ref().unwrap()
-            .time_established.elapsed().as_secs() >= 60 {
+        // If we don’t have a connection or it is older than 60 seconds,
+        // get a new one.
+        if conn_guard.map(|c| {
+            c.time_established.elapsed().as_secs()
+        }).unwrap_or(60) >= 60 {
             *conn_guard = Some(self.initialize_connection().await?);
         }
 
