@@ -155,6 +155,6 @@ async fn client_coverage() {
     server.client().pubserver_clear().await.unwrap();
 
     // testbed commands tested in testbed
-    // ta_proxy commands tests in ta
+    // ta_proxy commands tests in functional_ta
 }
 

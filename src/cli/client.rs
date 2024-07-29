@@ -663,7 +663,11 @@ impl KrillClient {
     ) -> Result<api::Success, Error> {
         self.delete(once("api/v1/pubd/init")).await
     }
+}
 
+
+/// # Testbed commands
+impl KrillClient {
     pub async fn testbed_enabled(&self) -> Result<Success, Error> {
         httpclient::get_ok(
             &self.create_uri(once("testbed/enabled")), None
