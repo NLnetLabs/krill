@@ -183,7 +183,7 @@ impl OpenIDConnectAuthProvider {
 
         // If we don’t have a connection or it is older than 60 seconds,
         // get a new one.
-        if conn_guard.map(|c| {
+        if conn_guard.as_ref().map(|c| {
             c.time_established.elapsed().as_secs()
         }).unwrap_or(60) >= 60 {
             *conn_guard = Some(self.initialize_connection().await?);
