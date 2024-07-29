@@ -9,10 +9,13 @@ New
 Bug Fixes
 
 * Fixed a potential infinite recursion in PKCS11 error handling. ([#1215])
+* Open ID connect: Re-initialize the connection after 60s to pick up
+  configuration changes at the provider. ([#1226])
 
 Other changes
 
 [#1215]: https://github.com/NLnetLabs/krill/pull/1215
+[#1226]: https://github.com/NLnetLabs/krill/pull/1226
 
 ## 0.14.5-rc1
 
