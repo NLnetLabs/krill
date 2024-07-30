@@ -4,6 +4,7 @@ use std::{error, fmt, fs, io};
 use std::str::FromStr;
 use std::sync::Arc;
 use rpki::uri;
+use crate::constants;
 use crate::cli::options::args::JsonFile;
 use crate::cli::report::{Report, ReportFormat};
 use crate::cli::ta::signer::{
@@ -24,7 +25,7 @@ pub struct Command {
     #[arg(
         long, short,
         value_name = "path",
-        default_value = "/etc/krillta.conf"
+        default_value = constants::KRILL_DEFAULT_TA_CONFIG_FILE,
     )]
     config: ConfigFile,
 
