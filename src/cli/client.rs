@@ -154,11 +154,11 @@ impl KrillClient {
 ///
 impl KrillClient {
     pub async fn authorized(&self) -> Result<api::Success, Error> {
-        self.get_ok(once("api/v1/authorized".into())).await
+        self.get_ok(once("api/v1/authorized")).await
     }
 
     pub async fn info(&self) -> Result<api::ServerInfo, Error> {
-        self.get_json(once("stats/info".into())).await
+        self.get_json(once("stats/info")).await
     }
 
     pub async fn bulk_issues(&self) -> Result<api::AllCertAuthIssues, Error> {
