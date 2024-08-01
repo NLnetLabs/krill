@@ -1188,6 +1188,7 @@ dependencies = [
  "openidconnect",
  "openssl",
  "oso",
+ "percent-encoding",
  "pin-project-lite",
  "r2d2",
  "rand",

@@ -1,6 +1,7 @@
 //! A client to talk to the Krill server.
 
-use std::iter::once;
+use std::borrow::Cow;
+use percent_encoding::{CONTROLS, AsciiSet, utf8_percent_encode};
 use rpki::uri;
 use rpki::crypto::KeyIdentifier;
 use rpki::ca::idexchange;
@@ -56,7 +57,7 @@ impl KrillClient {
 
     /// Performs a GET request and checks that it gets a 200 OK back.
     pub async fn get_ok<'a>(
-        &self, path: impl IntoIterator<Item = &'a str>
+        &self, path: impl IntoIterator<Item = Cow<'a, str>>
     ) -> Result<Success, Error> {
         httpclient::get_ok(
             &self.create_uri(path), Some(&self.token)
@@ -65,7 +66,7 @@ impl KrillClient {
 
     /// Performs a GET request expecting a JSON response.
     pub async fn get_json<'a, T: DeserializeOwned>(
-        &self, path: impl IntoIterator<Item = &'a str>
+        &self, path: impl IntoIterator<Item = Cow<'a, str>>
     ) -> Result<T, Error> {
         httpclient::get_json(
             &self.create_uri(path), Some(&self.token)
@@ -74,7 +75,7 @@ impl KrillClient {
 
     /// Performs an empty POST request.
     pub async fn post_empty<'a>(
-        &self, path: impl IntoIterator<Item = &'a str>
+        &self, path: impl IntoIterator<Item = Cow<'a, str>>
     ) -> Result<Success, Error> {
         httpclient::post_empty(
             &self.create_uri(path), Some(&self.token)
@@ -84,7 +85,7 @@ impl KrillClient {
     /// Posts JSON-encoded data and expects a JSON-encoded response.
     pub async fn post_empty_with_response<'a, T: DeserializeOwned>(
         &self,
-        path: impl IntoIterator<Item = &'a str>,
+        path: impl IntoIterator<Item = Cow<'a, str>>,
     ) -> Result<T, Error> {
         httpclient::post_empty_with_response(
             &self.create_uri(path), Some(&self.token)
@@ -94,7 +95,7 @@ impl KrillClient {
     /// Posts JSON-encoded data.
     pub async fn post_json<'a>(
         &self,
-        path: impl IntoIterator<Item = &'a str>,
+        path: impl IntoIterator<Item = Cow<'a, str>>,
         data: impl Serialize,
     ) -> Result<Success, Error> {
         httpclient::post_json(
@@ -105,7 +106,7 @@ impl KrillClient {
     /// Posts JSON-encoded data and expects a JSON-encoded response.
     pub async fn post_json_with_response<'a, T: DeserializeOwned>(
         &self,
-        path: impl IntoIterator<Item = &'a str>,
+        path: impl IntoIterator<Item = Cow<'a, str>>,
         data: impl Serialize,
     ) -> Result<T, Error> {
         httpclient::post_json_with_response(
@@ -116,7 +117,7 @@ impl KrillClient {
     /// Posts JSON-encoded data and expects an optional JSON-encoded response.
     pub async fn post_json_with_opt_response<'a, T: DeserializeOwned>(
         &self,
-        path: impl IntoIterator<Item = &'a str>,
+        path: impl IntoIterator<Item = Cow<'a, str>>,
         data: impl Serialize,
     ) -> Result<Option<T>, Error> {
         httpclient::post_json_with_opt_response(
@@ -126,7 +127,7 @@ impl KrillClient {
 
     /// Sends a DELETE request.
     pub async fn delete<'a>(
-        &self, path: impl IntoIterator<Item = &'a str>
+        &self, path: impl IntoIterator<Item = Cow<'a, str>>
     ) -> Result<Success, Error> {
         httpclient::delete(
             &self.create_uri(path), Some(&self.token)
@@ -135,14 +136,14 @@ impl KrillClient {
 
     /// Creates the full URI for the HTTP request.
     fn create_uri<'a>(
-        &self, path: impl IntoIterator<Item = &'a str>
+        &self, path: impl IntoIterator<Item = Cow<'a, str>>
     ) -> String {
         let mut res = String::from(self.base_uri.as_str());
         for item in path {
             if !res.ends_with('/') {
                 res.push('/');
             }
-            res.push_str(item);
+            res.push_str(&item);
         }
         res
     }
@@ -153,11 +154,11 @@ impl KrillClient {
 ///
 impl KrillClient {
     pub async fn authorized(&self) -> Result<api::Success, Error> {
-        self.get_ok(once("api/v1/authorized")).await
+        self.get_ok(once("api/v1/authorized".into())).await
     }
 
     pub async fn info(&self) -> Result<api::ServerInfo, Error> {
-        self.get_json(once("stats/info")).await
+        self.get_json(once("stats/info".into())).await
     }
 
     pub async fn bulk_issues(&self) -> Result<api::AllCertAuthIssues, Error> {
@@ -256,7 +257,7 @@ impl KrillClient {
         };
         self.get_json(
             ca_path(ca).into_iter().chain(
-                ["history/commands", &path]
+                ["history/commands".into(), path.into()]
             )
         ).await
     }
@@ -265,7 +266,9 @@ impl KrillClient {
         &self, ca: &CaHandle, key: &str
     ) -> Result<api::CaCommandDetails, Error> {
         self.get_json(
-            ca_path(ca).into_iter().chain(["history/details", key])
+            ca_path(ca).into_iter().chain(
+                ["history/details".into(), encode(key)]
+            )
         ).await
     }
 
@@ -306,9 +309,7 @@ impl KrillClient {
         &self, ca: &CaHandle
     ) -> Result<api::ChildrenConnectionStats, Error> {
         self.get_json(
-            ca_path(ca).into_iter().chain(
-                once("stats/children/connections")
-            )
+            ca_path(ca).into_iter().chain(once("stats/children/connections"))
         ).await
     }
 
@@ -333,7 +334,11 @@ impl KrillClient {
     ) -> Result<api::Success, Error> {
         self.post_json(
             ca_path(ca).into_iter().chain(
-                ["children", import.name.clone().as_str(), "import"]
+                [
+                    "children".into(),
+                    encode(import.name.clone().as_str()),
+                    "import".into()
+                ]
             ),
             import
         ).await
@@ -379,9 +384,7 @@ impl KrillClient {
         &self, ca: &CaHandle
     ) -> Result<idexchange::ChildRequest, Error> {
         self.get_json(
-            ca_path(ca).into_iter().chain(
-                once("id/child_request.json")
-            )
+            ca_path(ca).into_iter().chain(once("id/child_request.json"))
         ).await
     }
 
@@ -582,7 +585,7 @@ impl KrillClient {
     ) -> Result<api::Success, Error> {
         self.post_json(
             ca_path(ca).into_iter().chain(
-                [ "aspas", "as", &customer.to_string()]),
+                [ "aspas".into(), "as".into(), customer.to_string().into()]),
             update,
         ).await
     }
@@ -596,7 +599,9 @@ impl KrillClient {
     pub async fn publishers_stale(
         &self, seconds: u64,
     ) -> Result<api::PublisherList, Error> {
-        self.get_json(["api/v1/pubd/stale", &seconds.to_string()]).await
+        self.get_json(
+            ["api/v1/pubd/stale".into(), seconds.to_string().into()]
+        ).await
     }
 
     pub async fn publishers_add(
@@ -691,9 +696,11 @@ impl KrillClient {
         &self, child: &ChildHandle,
     ) -> Result<String, Error> {
         httpclient::get_text(
-            &self.create_uri(
-                ["testbed/children", child.as_str(), "parent_response.xml"]
-            ),
+            &self.create_uri([
+                "testbed/children".into(),
+                encode(child.as_str()),
+                "parent_response.xml".into()
+            ]),
             None,
         ).await
     }
@@ -702,7 +709,9 @@ impl KrillClient {
         &self, ca: &CaHandle
     ) -> Result<Success, Error> {
         httpclient::delete(
-            &self.create_uri(["testbed/children", ca.as_str()]),
+            &self.create_uri(
+                ["testbed/children".into(), encode(ca.as_str())]
+            ),
             None,
         ).await.map(|_| Success)
     }
@@ -721,7 +730,9 @@ impl KrillClient {
         &self, ca: &CaHandle
     ) -> Result<Success, Error> {
         httpclient::delete(
-            &self.create_uri(["testbed/publishers", ca.as_str()]),
+            &self.create_uri(
+                ["testbed/publishers".into(), ca.as_str().into()]
+            ),
             None,
         ).await.map(|_| Success)
     }
@@ -813,35 +824,63 @@ impl KrillClient {
     pub async fn ta_proxy_child_response(
         &self, child: &ChildHandle
     ) -> Result<idexchange::ParentResponse, Error> {
-        self.get_json(
-            ["api/v1/ta/proxy/children", child.as_str(),
-             "parent_response.json"]
-        ).await
+        self.get_json([
+            "api/v1/ta/proxy/children".into(),
+            encode(child.as_str()),
+            "parent_response.json".into(),
+        ]).await
     }
 }
 
 
+
 //------------ Path Helpers --------------------------------------------------
 
-fn ca_path(ca: &CaHandle) -> impl IntoIterator<Item = &'_ str> {
-    ["api/v1/cas", ca.as_str()]
+fn ca_path(ca: &CaHandle) -> impl IntoIterator<Item = Cow<'_, str>> {
+    ["api/v1/cas".into(), ca.as_str().into()]
 }
 
 fn child_path<'s>(
     ca: &'s CaHandle, child: &'s ChildHandle
-) -> impl IntoIterator<Item = &'s str> {
-    ca_path(ca).into_iter().chain([ "children", child.as_str() ])
+) -> impl IntoIterator<Item = Cow<'s, str>> {
+    ca_path(ca).into_iter().chain(["children".into(), encode(child.as_str())])
 }
 
 fn parent_path<'s>(
     ca: &'s CaHandle, parent: &'s ParentHandle
-) -> impl IntoIterator<Item = &'s str> {
-    ca_path(ca).into_iter().chain([ "parents", parent.as_str() ])
+) -> impl IntoIterator<Item = Cow<'s, str>> {
+    ca_path(ca).into_iter().chain(["parents".into(), encode(parent.as_str())])
 }
 
 fn publisher_path(
     publisher: &PublisherHandle
-) -> impl IntoIterator<Item = &'_ str> {
-    ["api/v1/pubd/publishers", publisher.as_str()]
+) -> impl IntoIterator<Item = Cow<'_, str>> {
+    ["api/v1/pubd/publishers".into(), encode(publisher.as_str())]
+}
+
+fn once(s: &str) -> impl Iterator<Item = Cow<'_, str>> {
+    std::iter::once(s.into())
+}
+
+/// The set of ASCII characters that needs percent encoding in a path.
+///
+/// RFC 3986 defines the characters that do _not_ need encoding:
+///
+/// ```text
+/// pchar         = unreserved / pct-encoded / sub-delims / ":" / "@"
+/// unreserved    = ALPHA / DIGIT / "-" / "." / "_" / "~"
+/// sub-delims    = "!" / "$" / "&" / "'" / "(" / ")"
+///                 / "*" / "+" / "," / ";" / "="
+/// ```
+///
+/// XXX Someone please double-check this.
+const PATH_ENCODE_SET: &AsciiSet =
+    &CONTROLS
+    .add(b' ').add(b'"').add(b'#').add(b'%').add(b'/').add(b'<').add(b'>')
+    .add(b'?').add(b'[').add(b'\\').add(b']').add(b'^').add(b'`').add(b'{')
+    .add(b'|').add(b'}').add(b'\x7f');
+
+fn encode(s: &str) -> Cow<'_, str> {
+    utf8_percent_encode(s, PATH_ENCODE_SET).into()
 }
 
