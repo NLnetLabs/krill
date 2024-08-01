@@ -3,7 +3,7 @@
 name = "krill"
 version = "0.14.5-dev"
 edition = "2021"
-rust-version = "1.70"
+rust-version = "1.74"
 authors = ["NLnet Labs <rpki-team@nlnetlabs.nl>"]
 description = "Resource Public Key Infrastructure (RPKI) daemon"
 homepage = "https://www.nlnetlabs.nl/projects/rpki/krill/"
@@ -26,7 +26,7 @@ base64          = "0.22.1"
 basic-cookies   = { version = "0.1", optional = true }
 bytes           = "1"
 chrono          = { version = "0.4", features = ["serde"] }
-clap            = "2.33"
+clap            = { version = "4.5.7", features = ["cargo", "derive", "env",  "wrap_help"]}
 cryptoki        = { version = "0.7", optional = true }
 fern            = { version = "0.6.2", features = ["syslog-6"] }
 futures-util    = "0.3"
@@ -45,13 +45,14 @@ once_cell       = { version = "1.7.2", optional = true }
 openidconnect   = { version = "2.0.0", optional = true, default-features = false }
 openssl         = { version = "0.10", features = ["v110"] }
 oso             = { version = "0.12", optional = true, default-features = false }
+percent-encoding = "2.3.1"
 pin-project-lite = "0.2.4"
 r2d2            = { version = "0.8.9", optional = true }
 rand            = "0.8"
 regex           = { version = "1.5.5", optional = true, default-features = false, features = [ "std" ] }
 reqwest         = { version = "0.12.5", features = ["json"] }
 rpassword       = { version = "7.3.1", optional = true }
-rpki            = { version = "0.18.4", features = ["ca", "compat", "rrdp"] }
+rpki            = { version = "0.18.4", features = ["ca", "compat", "rrdp"], git = "https://github.com/NLnetLabs/rpki-rs.git" }
 rustls-pemfile  = "2.1.2"
 scrypt          = { version = "0.11", optional = true, default-features = false }
 secrecy         = { version = "0.8", features = ["serde"] }
@@ -100,8 +101,10 @@ hsm-tests-kmip = ["hsm"]
 hsm-tests-pkcs11 = ["hsm"]
 
 [dev-dependencies]
-regex    = "1.5.5"
-urlparse = "0.7"
+regex     = "1.5.5"
+stderrlog = "0.6"
+tempfile  = "3.10.1"
+urlparse  = "0.7"
 
 # Make sure that Krill crashes on panics, rather than losing threads and
 # limping on in a bad state.

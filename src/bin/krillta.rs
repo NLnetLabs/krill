@@ -1,30 +1,17 @@
-extern crate krill;
-
-use krill::cli::ta_client::*;
+use std::process;
+use krill::cli::ta::options::Command;
 
 #[tokio::main]
 async fn main() {
-    match TrustAnchorClientCommand::from_args() {
-        Ok(command) => {
-            let fmt = command.report_format();
-            match TrustAnchorClient::process(command).await {
-                Ok(response) => match response.report(fmt) {
-                    Ok(Some(msg)) => println!("{}", msg),
-                    Ok(None) => {}
-                    Err(e) => {
-                        eprintln!("{}", e);
-                        ::std::process::exit(1);
-                    }
-                },
-                Err(e) => {
-                    eprintln!("{}", e);
-                    ::std::process::exit(1);
-                }
-            }
+    let status = match Command::from_args() {
+        Command::Proxy(proxy) => {
+            let format = proxy.general.format;
+            proxy.run().await.report(format)
         }
-        Err(e) => {
-            eprintln!("{}", e);
-            ::std::process::exit(1);
+        Command::Signer(signer) => {
+            let format = signer.format;
+            signer.run().report(format)
         }
-    }
+    };
+    process::exit(status);
 }

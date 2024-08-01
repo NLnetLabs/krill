@@ -1,4 +1,8 @@
-use std::{cmp::Ordering, fmt, net::IpAddr, ops::Deref, str::FromStr};
+use std::{error, fmt};
+use std::cmp::Ordering;
+use std::net::IpAddr;
+use std::ops::Deref;
+use std::str::FromStr;
 
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
@@ -938,6 +942,24 @@ pub enum AuthorizationFmtError {
     Delta(String),
 }
 
+impl AuthorizationFmtError {
+    fn pfx(s: &str) -> Self {
+        AuthorizationFmtError::Pfx(s.to_string())
+    }
+
+    fn asn(s: &str) -> Self {
+        AuthorizationFmtError::Asn(s.to_string())
+    }
+
+    pub fn auth(s: &str) -> Self {
+        AuthorizationFmtError::Auth(s.to_string())
+    }
+
+    pub fn delta(s: &str) -> Self {
+        AuthorizationFmtError::Delta(s.to_string())
+    }
+}
+
 impl fmt::Display for AuthorizationFmtError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -957,23 +979,7 @@ impl fmt::Display for AuthorizationFmtError {
     }
 }
 
-impl AuthorizationFmtError {
-    fn pfx(s: &str) -> Self {
-        AuthorizationFmtError::Pfx(s.to_string())
-    }
-
-    fn asn(s: &str) -> Self {
-        AuthorizationFmtError::Asn(s.to_string())
-    }
-
-    pub fn auth(s: &str) -> Self {
-        AuthorizationFmtError::Auth(s.to_string())
-    }
-
-    pub fn delta(s: &str) -> Self {
-        AuthorizationFmtError::Delta(s.to_string())
-    }
-}
+impl error::Error for AuthorizationFmtError { }
 
 //------------ Tests -------------------------------------------------------
 

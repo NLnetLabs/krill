@@ -1,190 +1,114 @@
-//! Perform functional tests on a Krill instance, using the API
-use bytes::Bytes;
-use rpki::{
-    ca::{
-        csr::BgpsecCsr, idexchange::CaHandle, provisioning::ResourceClassName,
-    },
-    repository::resources::{Asn, ResourceSet},
-};
+//! Tests manipulating BGPsec router keys.
 
-use krill::{
-    commons::api::{BgpSecAsnKey, BgpSecCsrInfo, BgpSecDefinition},
-    test::*,
-};
+use rpki::ca::csr::BgpsecCsr;
+use rpki::ca::idexchange::CaHandle;
+use rpki::ca::provisioning::ResourceClassName;
+use rpki::repository::resources::{Asn, ResourceSet};
+use krill::commons::api::{BgpSecCsrInfo, UpdateChildRequest};
 
+mod common;
+
+
+//------------ Test Function -------------------------------------------------
+
+/// Tests sdding, updating, and deleting router keys.
+///
+/// Uses the following layout:
+///
+/// ```text
+///   TA
+///    |
+///   testbed
+///    |
+///   CA
+/// ```
 #[tokio::test]
 async fn functional_bgpsec() {
-    let cleanup =
-        start_krill_with_default_test_config(true, false, false, false).await;
+    let (server, _tempdir) = common::KrillServer::start_with_testbed().await;
 
-    info(
-        "##################################################################",
-    );
-    info(
-        "#                                                                #",
-    );
-    info("# Test BGPSec support.                                             #");
-    info(
-        "#                                                                #",
-    );
-    info(
-        "# Uses the following lay-out:                                    #",
-    );
-    info(
-        "#                                                                #",
-    );
-    info(
-        "#                  TA                                            #",
-    );
-    info(
-        "#                   |                                            #",
-    );
-    info(
-        "#                testbed                                         #",
-    );
-    info(
-        "#                   |                                            #",
-    );
-    info(
-        "#                  CA                                            #",
-    );
-    info(
-        "#                                                                #",
-    );
-    info(
-        "#                                                                #",
-    );
-    info(
-        "##################################################################",
-    );
-    info("");
+    let testbed = common::ca_handle("testbed");
+    let ca = common::ca_handle("CA");
+    let ca_res = common::resources("AS65000", "10.0.0.0/16", "");
+    let ca_res_shrunk = common::resources("", "10.0.0.0/16", "");
 
-    let testbed = ca_handle("testbed");
-    let ca = ca_handle("CA");
-    let ca_res = resources("AS65000", "10.0.0.0/16", "");
-    let ca_res_shrunk = resources("", "10.0.0.0/16", "");
-
-    info(
-        "##################################################################",
+    // Wait for the *testbed* CA to get its certificate, this means
+    // that all CAs which are set up as part of krill_start under the
+    // testbed config have been set up.
+    assert!(
+        server.wait_for_ca_resources(&testbed, &ResourceSet::all()).await
     );
-    info(
-        "#                                                                #",
-    );
-    info(
-        "# Wait for the *testbed* CA to get its certificate, this means   #",
-    );
-    info(
-        "# that all CAs which are set up as part of krill_start under the #",
-    );
-    info(
-        "# testbed config have been set up.                               #",
-    );
-    info(
-        "#                                                                #",
-    );
-    info(
-        "##################################################################",
-    );
-    info("");
-    assert!(ca_contains_resources(&testbed, &ResourceSet::all()).await);
 
-    {
-        info("##################################################################");
-        info("#                                                                #");
-        info("#                      Set up CA  under testbed                  #");
-        info("#                                                                #");
-        info("##################################################################");
-        info("");
-        set_up_ca_with_repo(&ca).await;
-        set_up_ca_under_parent_with_resources(&ca, &testbed, &ca_res).await;
-    }
+    eprintln!(">>>> Set up 'CA' under 'testbed'.");
+    server.create_ca_with_repo(&ca).await;
+    server.register_ca_with_parent(&ca, &testbed, &ca_res).await;
 
-    // short hand to expect published BGPSec certs under CA
-    async fn expect_bgpsec_objects(
-        ca: &CaHandle,
-        definitions: &[BgpSecCsrInfo],
-    ) {
-        let rcn_0 = ResourceClassName::from(0);
-
-        let mut expected_files = expected_mft_and_crl(ca, &rcn_0).await;
-
-        for csr_info in definitions {
-            expected_files.push(csr_info.object_name().to_string());
-        }
-
-        assert!(
-            will_publish_embedded(
-                "published BGPSec certificates do not match expectations",
-                ca,
-                &expected_files
-            )
-            .await
-        );
-    }
-
-    let csr_bytes = include_bytes!("../test-resources/bgpsec/router-csr.der");
-    let csr_bytes = Bytes::copy_from_slice(csr_bytes);
-    let csr = BgpsecCsr::decode(csr_bytes.as_ref()).unwrap();
+    let csr = BgpsecCsr::decode(
+        include_bytes!("../test-resources/bgpsec/router-csr.der").as_ref()
+    ).unwrap();
 
     let asn_owned = Asn::from_u32(65000);
     let asn_not_owned = Asn::from_u32(65001);
 
-    let bgpsec_def_owned = BgpSecDefinition::new(asn_owned, csr.clone());
-    let bgpsec_def_not_owned = BgpSecDefinition::new(asn_not_owned, csr);
-    let bgpsec_def_key = BgpSecAsnKey::from(&bgpsec_def_owned);
+    eprintln!(">>>> Reject BGPsec definition for ASN not held.");
+    assert!(common::check_bad_request(
+        server.client().bgpsec_add_single(
+            &ca, asn_not_owned, csr.clone()
+        ).await
+    ));
+    assert!(server.wait_for_objects(&ca, &[]).await);
 
-    // Refuse adding BGPSec definition for ASN which is not held
-    ca_bgpsec_add_expect_error(&ca, bgpsec_def_not_owned).await;
+    eprintln!(">>>> Add BGPsec definition.");
+    server.client().bgpsec_add_single(
+        &ca, asn_owned, csr.clone()
+    ).await.unwrap();
+    let definitions = server.client().bgpsec_list(&ca).await.unwrap().unpack();
+    assert_eq!(definitions.len(), 1);
+    assert_eq!(definitions.first().unwrap().asn(), asn_owned);
+    assert!(server.wait_for_objects(&ca, &definitions).await);
 
-    // Add BGPSec definition
-    {
-        ca_bgpsec_add(&ca, bgpsec_def_owned).await;
+    eprintln!(">>>> Shrink resources: definition but no certificate.");
+    server.client().child_update(
+        &testbed, &ca.convert(),
+        UpdateChildRequest::resources(ca_res_shrunk.clone())
+    ).await.unwrap();
+    let definitions = server.client().bgpsec_list(&ca).await.unwrap().unpack();
+    assert_eq!(definitions.len(), 1);
+    assert_eq!(definitions.first().unwrap().asn(), asn_owned);
+    assert!(server.wait_for_objects(&ca, &[]).await);
 
-        // List definitions
-        let definitions = ca_bgpsec_list(&ca).await.unpack();
-        assert_eq!(1, definitions.len());
+    eprintln!(">>>> Grow resources: certificate comes back.");
+    server.client().child_update(
+        &testbed, &ca.convert(),
+        UpdateChildRequest::resources(ca_res.clone())
+    ).await.unwrap();
+    let definitions = server.client().bgpsec_list(&ca).await.unwrap().unpack();
+    assert_eq!(definitions.len(), 1);
+    assert_eq!(definitions.first().unwrap().asn(), asn_owned);
+    assert!(server.wait_for_objects(&ca, &definitions).await);
 
-        // Expect it's published
-        expect_bgpsec_objects(&ca, &definitions).await;
-    }
-
-    // Shrink resources.
-    {
-        update_child(&testbed, &ca.convert(), &ca_res_shrunk).await;
-        ca_equals_resources(&ca, &ca_res_shrunk).await;
-
-        // Expect the definition still exists
-        let definitions = ca_bgpsec_list(&ca).await.unpack();
-        assert_eq!(1, definitions.len());
-
-        // But expect that the BGPSec certificate is removed.
-        expect_bgpsec_objects(&ca, &[]).await;
-    }
-
-    // Grow resources
-    {
-        update_child(&testbed, &ca.convert(), &ca_res).await;
-        ca_equals_resources(&ca, &ca_res).await;
-
-        // Expect the definition still exists
-        let definitions = ca_bgpsec_list(&ca).await.unpack();
-        assert_eq!(1, definitions.len());
-
-        // And expect that the BGPSec certificate is published again.
-        expect_bgpsec_objects(&ca, &definitions).await;
-    }
-
-    // Remove BGPSec definition
-    {
-        ca_bgpsec_remove(&ca, bgpsec_def_key).await;
-
-        // Expect the definition is removed
-        let definitions = ca_bgpsec_list(&ca).await.unpack();
-        assert_eq!(0, definitions.len());
-
-        // Expect that the BGPSec certificate is removed.
-        expect_bgpsec_objects(&ca, &[]).await;
-    }
-
-    cleanup();
+    eprintln!(">>>> Remove BGPsec definition.");
+    server.client().bgpsec_delete_single(
+        &ca, asn_owned, csr.public_key().key_identifier()
+    ).await.unwrap();
+    let definitions = server.client().bgpsec_list(&ca).await.unwrap().unpack();
+    assert_eq!(definitions.len(), 0);
+    assert!(server.wait_for_objects(&ca, &[]).await);
 }
+
+
+//------------ Extend KrillServer --------------------------------------------
+
+impl common::KrillServer {
+    /// Checks that the given CA has the given ASPA definitions.
+    async fn wait_for_objects(
+        &self, ca: &CaHandle, definitions: &[BgpSecCsrInfo]
+    ) -> bool {
+        let mut files = self.expected_objects(ca);
+        files.push_mft_and_crl(&ResourceClassName::from(0)).await;
+        files.extend(definitions.iter().map(|csr_info| {
+            csr_info.object_name().to_string()
+        }));
+        files.wait_for_published().await
+    }
+}
+

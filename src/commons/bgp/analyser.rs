@@ -1,4 +1,5 @@
 use std::fmt;
+use std::str::FromStr;
 
 use chrono::Duration;
 use tokio::sync::RwLock;
@@ -376,19 +377,19 @@ impl BgpAnalyser {
     }
 
     fn test_announcements() -> Vec<Announcement> {
-        use crate::test::announcement;
-
-        vec![
-            announcement("10.0.0.0/22 => 64496"),
-            announcement("10.0.2.0/23 => 64496"),
-            announcement("10.0.0.0/24 => 64496"),
-            announcement("10.0.0.0/22 => 64497"),
-            announcement("10.0.0.0/21 => 64497"),
-            announcement("192.168.0.0/24 => 64497"),
-            announcement("192.168.0.0/24 => 64496"),
-            announcement("192.168.1.0/24 => 64497"),
-            announcement("2001:DB8::/32 => 64498"),
-        ]
+        [
+            "10.0.0.0/22 => 64496",
+            "10.0.2.0/23 => 64496",
+            "10.0.0.0/24 => 64496",
+            "10.0.0.0/22 => 64497",
+            "10.0.0.0/21 => 64497",
+            "192.168.0.0/24 => 64497",
+            "192.168.0.0/24 => 64496",
+            "192.168.1.0/24 => 64497",
+            "2001:DB8::/32 => 64498",
+        ].into_iter().map(|s| {
+            Announcement::from(RoaPayload::from_str(s).unwrap())
+        }).collect()
     }
 
     fn with_test_announcements() -> Self {

@@ -56,6 +56,7 @@ impl fmt::Display for AspaDefinitionUpdates {
 }
 
 //------------ AspaDefinitionList ----------------------------------------
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AspaDefinitionList(Vec<AspaDefinition>);
 
@@ -73,6 +74,13 @@ impl fmt::Display for AspaDefinitionList {
         Ok(())
     }
 }
+
+impl AsRef<[AspaDefinition]> for AspaDefinitionList {
+    fn as_ref(&self) -> &[AspaDefinition] {
+        self.0.as_slice()
+    }
+}
+
 
 //------------ AspaDefinition --------------------------------------------
 

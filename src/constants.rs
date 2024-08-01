@@ -15,6 +15,7 @@ pub const KRILL_CLIENT_APP: &str = "Krill Client";
 pub const KRILL_TA_CLIENT_APP: &str = "Krill Trust Anchor Client";
 
 pub const KRILL_DEFAULT_CONFIG_FILE: &str = "/etc/krill.conf";
+pub const KRILL_DEFAULT_TA_CONFIG_FILE: &str = "/etc/krillta.conf";
 
 const KRILL_ENV_TEST: &str = "KRILL_TEST";
 const KRILL_ENV_TEST_ANN: &str = "KRILL_TEST_ANN";

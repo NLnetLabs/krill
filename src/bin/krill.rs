@@ -1,40 +1,40 @@
 extern crate krill;
 
+use std::path::PathBuf;
 use std::sync::Arc;
-
-use clap::{App, Arg};
+use clap::Parser;
 use log::error;
-
-use krill::{
-    constants::{KRILL_DEFAULT_CONFIG_FILE, KRILL_SERVER_APP, KRILL_VERSION},
-    daemon::{config::Config, http::server},
+use krill::constants::{
+    KRILL_DEFAULT_CONFIG_FILE, KRILL_SERVER_APP, KRILL_VERSION
 };
+use krill::daemon::{config::Config, http::server};
+
+
+//------------ Args ----------------------------------------------------------
+
+#[derive(clap::Parser)]
+#[command(
+    version = KRILL_VERSION, name = KRILL_SERVER_APP,
+    about, long_about = None,
+)]
+struct Args {
+    /// Override the path to the config file
+    #[arg(short, long, default_value = KRILL_DEFAULT_CONFIG_FILE)]
+    config: PathBuf,
+}
+
+
+//------------ main ----------------------------------------------------------
 
 #[tokio::main]
 async fn main() {
-    let matches = App::new(KRILL_SERVER_APP)
-        .version(KRILL_VERSION)
-        .arg(
-            Arg::with_name("config")
-                .short("c")
-                .long("config")
-                .value_name("FILE")
-                .help(&format!(
-                    "Override the path to the config file (default: '{}')",
-                    KRILL_DEFAULT_CONFIG_FILE
-                ))
-                .required(false),
-        )
-        .get_matches();
+    let args = Args::parse();
 
-    let config_file = matches
-        .value_of("config")
-        .unwrap_or(KRILL_DEFAULT_CONFIG_FILE);
-
-    match Config::create(config_file, false) {
+    match Config::create(&args.config, false) {
         Ok(config) => {
-            if let Err(e) = server::start_krill_daemon(Arc::new(config)).await
-            {
+            if let Err(e) = server::start_krill_daemon(
+                Arc::new(config), None
+            ).await {
                 error!("Krill failed to start: {}", e);
                 ::std::process::exit(1);
             }

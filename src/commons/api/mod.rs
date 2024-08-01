@@ -15,6 +15,9 @@ pub use self::ca::*;
 mod history;
 pub use self::history::*;
 
+mod misc;
+pub use self::misc::*;
+
 pub mod import;
 
 mod roas;
@@ -45,8 +48,7 @@ pub type Message = String;
 pub type ArgKey = String;
 pub type ArgVal = String;
 
-//------------ ErrorResponse
-//------------ --------------------------------------------------
+//------------ ErrorResponse -------------------------------------------------
 
 /// Defines an error response. Codes are unique and documented here:
 /// https://rpki.readthedocs.io/en/latest/krill/pub/api.html#error-responses

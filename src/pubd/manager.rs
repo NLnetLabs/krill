@@ -370,7 +370,7 @@ mod tests {
         constants::*,
         daemon::config::{SignerConfig, SignerType},
         pubd::{Publisher, RrdpServer},
-        test::{self, https, init_config, rsync},
+        test::{self, https, rsync},
     };
 
     fn publisher_alice(storage_uri: &Url) -> Publisher {
@@ -416,17 +416,22 @@ mod tests {
         )
     }
 
-    fn make_server(storage_uri: &Url, data_dir: &Path) -> RepositoryManager {
+    fn make_server(
+        storage_uri: &Url
+    ) -> (RepositoryManager, tempfile::TempDir) {
+        let data_dir = tempfile::tempdir().unwrap();
+
         enable_test_mode();
         let mut config = Config::test(
             storage_uri,
-            Some(data_dir),
+            Some(data_dir.path()),
             true,
             false,
             false,
             false,
         );
-        init_config(&mut config);
+        let _ = config.init_logging();
+        config.process().unwrap();
 
         let signer = KrillSignerBuilder::new(
             storage_uri,
@@ -451,15 +456,14 @@ mod tests {
 
         repository_manager.init(uris).unwrap();
 
-        repository_manager
+        (repository_manager, data_dir)
     }
 
     #[test]
     fn should_add_publisher() {
         // we need a disk, as repo_dir, etc. use data_dir by default
-        let (data_dir, cleanup) = test::tmp_dir();
         let storage_uri = test::mem_storage();
-        let server = make_server(&storage_uri, &data_dir);
+        let (server, _data_dir) = make_server(&storage_uri);
 
         let alice = publisher_alice(&storage_uri);
 
@@ -476,17 +480,12 @@ mod tests {
         assert_eq!(alice_found.base_uri(), alice.base_uri());
         assert_eq!(alice_found.id_cert(), alice.id_cert());
         assert!(alice_found.current_files().is_empty());
-
-        cleanup();
     }
 
     #[test]
     fn should_not_add_publisher_twice() {
-        // we need a disk, as repo_dir, etc. use data_dir by default
-        let (data_dir, cleanup) = test::tmp_dir();
         let storage_uri = test::mem_storage();
-
-        let server = make_server(&storage_uri, &data_dir);
+        let (server, _data_dir) = make_server(&storage_uri);
 
         let alice = publisher_alice(&storage_uri);
 
@@ -505,16 +504,12 @@ mod tests {
             }
             _ => panic!("Expected error"),
         }
-
-        cleanup();
     }
 
     #[test]
     fn should_list_files() {
-        // we need a disk, as repo_dir, etc. use data_dir by default
-        let (data_dir, cleanup) = test::tmp_dir();
         let storage_uri = test::mem_storage();
-        let server = make_server(&storage_uri, &data_dir);
+        let (server, _data_dir) = make_server(&storage_uri);
 
         let alice = publisher_alice(&storage_uri);
 
@@ -527,18 +522,15 @@ mod tests {
 
         let list_reply = server.list(&alice_handle).unwrap();
         assert_eq!(0, list_reply.elements().len());
-
-        cleanup();
     }
 
     #[tokio::test]
     async fn should_publish_files() {
         // we need a disk, as repo_dir, etc. use data_dir by default
-        let (data_dir, cleanup) = test::tmp_dir();
         let storage_uri = test::mem_storage();
-        let server = make_server(&storage_uri, &data_dir);
+        let (server, data_dir) = make_server(&storage_uri);
 
-        let session = session_dir(&data_dir);
+        let session = session_dir(data_dir.path());
 
         // Check that the server starts with dir for serial 1 for RRDP
         // and does not use 0 (RFC 8182)
@@ -774,15 +766,12 @@ mod tests {
             &session,
             RRDP_FIRST_SERIAL + 3
         ));
-
-        cleanup();
     }
 
     #[test]
     pub fn repository_session_reset() {
-        let (data_dir, cleanup) = test::tmp_dir();
         let storage_uri = test::mem_storage();
-        let server = make_server(&storage_uri, &data_dir);
+        let (server, data_dir) = make_server(&storage_uri);
 
         // set up server with default repository, and publisher alice
         let alice = publisher_alice(&storage_uri);
@@ -839,7 +828,7 @@ mod tests {
         let stats_before = server.repo_stats().unwrap();
         let session_before = stats_before.session();
         let snapshot_before_session_reset = find_in_session_and_serial_dir(
-            &data_dir,
+            data_dir.path(),
             &session_before,
             RRDP_FIRST_SERIAL + 1,
             "snapshot.xml",
@@ -855,7 +844,7 @@ mod tests {
         let session_after = stats_after.session();
 
         let snapshot_after_session_reset = find_in_session_and_serial_dir(
-            &data_dir,
+            &data_dir.path(),
             &session_after,
             RRDP_FIRST_SERIAL,
             "snapshot.xml",
@@ -869,15 +858,13 @@ mod tests {
 
         // and clean up old dir
         let snapshot_before_session_reset = find_in_session_and_serial_dir(
-            &data_dir,
+            data_dir.path(),
             &session_before,
             RRDP_FIRST_SERIAL + 1,
             "snapshot.xml",
         );
 
         assert!(snapshot_before_session_reset.is_none());
-
-        cleanup();
     }
 
     fn session_dir(base_dir: &Path) -> PathBuf {

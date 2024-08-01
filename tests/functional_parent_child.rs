@@ -1,473 +1,182 @@
-//! Perform functional tests on a Krill instance, using the API
+//! Tests parent/child interactions.
+
+use std::{fs, io};
 use rpki::repository::resources::ResourceSet;
 
-use krill::test::*;
+mod common;
 
+
+//------------ Test Function -------------------------------------------------
+
+/// Test Krill parent/child interactions.
+///
+/// The setup is:
+///
+/// ```text
+///       TA
+///        |
+///     testbed
+///      |   |
+///    CA1   CA2
+///      |   |
+///       CA3     (two parents, two resource classes)
+///       | |
+///       CA4     (one parent, two resources classes)
+/// ```
+///
+/// The test verifies that:
+///  * CAs can be set up as parent child using RFC6492,
+///  * CAs can publish using RFC8181,
+///  * CA1 can perform a key roll,
+///  * we can remove and re-add parents / children,
+///  * a CA will request revocation and withdraw objects when it is deleted
+///    gracefully
 #[tokio::test]
 async fn functional_parent_child() {
-    // let cleanup = start_krill_with_default_test_config(true, false, false,
-    // false).await;
-    let cleanup =
-        start_krill_with_default_test_config_disk(true, false, false, false)
-            .await;
+    let (server, tmpdir)
+        = common::KrillServer::start_with_file_storage_and_testbed().await;
 
-    info(
-        "##################################################################",
-    );
-    info(
-        "#                                                                #",
-    );
-    info(
-        "# Test Krill parent - child interactions.                         #",
-    );
-    info(
-        "#                                                                #",
-    );
-    info(
-        "#                  TA                                            #",
-    );
-    info(
-        "#                   |                                            #",
-    );
-    info(
-        "#                testbed (two children)                          #",
-    );
-    info(
-        "#                 |   |                                          #",
-    );
-    info(
-        "#               CA1   CA2                                        #",
-    );
-    info(
-        "#                 |   |                                          #",
-    );
-    info(
-        "#                  CA3 (two parents, two resource classes)       #",
-    );
-    info(
-        "#                  | |                                           #",
-    );
-    info(
-        "#                  CA4 (two resource classes)                    #",
-    );
-    info(
-        "#                                                                #",
-    );
-    info(
-        "#                                                                #",
-    );
-    info(
-        "# We will verify that:                                           #",
-    );
-    info(
-        "#  * CAs can be set up as parent child using RFC6492             #",
-    );
-    info(
-        "#  * CAs can publish using RFC8181                               #",
-    );
-    info(
-        "#  * CA1 can perform a key roll                                  #",
-    );
-    info(
-        "#  * We can remove and re-add parents / children                 #",
-    );
-    info(
-        "#  * A CA will request revocation and withdraw objects when      #",
-    );
-    info(
-        "#     it is deleted gracefully                                   #",
-    );
-    info(
-        "#                                                                #",
-    );
-    info(
-        "##################################################################",
-    );
-    info("");
+    let testbed = common::ca_handle("testbed");
 
-    let testbed = ca_handle("testbed");
+    let ca1 = common::ca_handle("CA1");
+    let ca1_res = common::resources("AS65000", "10.0.0.0/16", "");
 
-    let ca1 = ca_handle("CA1");
-    let ca1_res = resources("AS65000", "10.0.0.0/16", "");
+    let ca2 = common::ca_handle("CA2");
+    let ca2_res = common::resources("AS65001", "10.1.0.0/16", "");
 
-    let ca2 = ca_handle("CA2");
-    let ca2_res = resources("AS65001", "10.1.0.0/16", "");
+    let ca3 = common::ca_handle("CA3");
+    let ca3_res_under_ca_1 = common::resources("65000", "10.0.0.0/16", "");
+    let ca3_res_under_ca_2 = common::resources("65001", "10.1.0.0/24", "");
 
-    let ca3 = ca_handle("CA3");
-    let ca3_res_under_ca_1 = resources("65000", "10.0.0.0/16", "");
-    let ca3_res_under_ca_2 = resources("65001", "10.1.0.0/24", "");
-
-    let ca4 = ca_handle("CA4");
-    let ca4_res_under_ca_3 = resources("65000", "10.0.0.0-10.1.0.255", "");
-
-    let rcn_0 = rcn(0);
-    let rcn_1 = rcn(1);
-
-    info(
-        "##################################################################",
+    let ca4 = common::ca_handle("CA4");
+    let ca4_res_under_ca_3 = common::resources(
+        "65000", "10.0.0.0-10.1.0.255", ""
     );
-    info(
-        "#                                                                #",
+
+    let rcn0 = common::rcn(0);
+    let rcn1 = common::rcn(1);
+    let rcn2 = common::rcn(2);
+    let rcn3 = common::rcn(3);
+
+    // Wait for the *testbed* CA to get its certificate, this means
+    // that all CAs which are set up as part of krill_start under the
+    // testbed config have been set up.
+    assert!(
+        server.wait_for_ca_resources(&testbed, &ResourceSet::all()).await
     );
-    info(
-        "# Wait for the *testbed* CA to get its certificate, this means   #",
+
+    eprintln!(">>>> Set up CA1 under testbed.");
+    server.create_ca_with_repo(&ca1).await;
+    server.register_ca_with_parent(&ca1, &testbed, &ca1_res).await;
+
+    eprintln!(">>>> Set up CA2 under testbed.");
+    server.create_ca_with_repo(&ca2).await;
+    server.register_ca_with_parent(&ca2, &testbed, &ca2_res).await;
+
+    eprintln!(">>>> Verify that the testbed published the expected objects");
+    let mut files = server.expected_objects(&testbed);
+    files.push_mft_and_crl(&rcn0).await;
+    files.push_cer(&ca1, &rcn0).await;
+    files.push_cer(&ca2, &rcn0).await;
+    assert!(files.wait_for_published().await);
+
+    eprintln!(">>>> Set up CA3 under CA1.");
+    server.create_ca_with_repo(&ca3).await;
+    server.register_ca_with_parent(&ca3, &ca1, &ca3_res_under_ca_1).await;
+
+    eprintln!(">>>> Expect that CA1 publishes the certificate for CA3.");
+    let mut files = server.expected_objects(&ca1);
+    files.push_mft_and_crl(&rcn0).await;
+    files.push_cer(&ca3, &rcn0).await;
+    assert!(files.wait_for_published().await);
+    
+    eprintln!(">>>> Set up CA3 under CA2.");
+    server.register_ca_with_parent(&ca3, &ca2, &ca3_res_under_ca_2).await;
+
+    eprintln!(">>>> Expect that CA2 publishes the certificate for CA3.");
+    let mut files = server.expected_objects(&ca2);
+    files.push_mft_and_crl(&rcn0).await;
+    // CA3 will have the certificate from CA2 under its resource class '1'
+    // rather than '0'
+    files.push_cer(&ca3, &rcn1).await;
+    assert!(files.wait_for_published().await);
+
+    eprintln!(">>>> Set up CA4 under CA3 with resources from both parents.");
+    server.create_ca_with_repo(&ca4).await;
+    server.register_ca_with_parent(&ca4, &ca3, &ca4_res_under_ca_3).await;
+
+    eprintln!(">>>> Expect that CA3 publishes two certificates for CA4.");
+    let mut files = server.expected_objects(&ca3);
+    files.push_mft_and_crl(&rcn0).await;
+    files.push_cer(&ca4, &rcn0).await;
+    files.push_mft_and_crl(&rcn1).await;
+    files.push_cer(&ca4, &rcn1).await;
+    assert!(files.wait_for_published().await);
+
+    eprintln!(">>>> Expect that CA4 publishes two resource classes.");
+    let mut files = server.expected_objects(&ca4);
+    files.push_mft_and_crl(&rcn0).await;
+    files.push_mft_and_crl(&rcn1).await;
+    assert!(files.wait_for_published().await);
+
+    eprintln!(">>>> Let CA1 do a keyroll.");
+    server.client().ca_init_keyroll(&ca1).await.unwrap();
+    assert!(server.wait_for_state_new_key(&ca1).await);
+
+    let mut files = server.expected_objects(&ca1);
+    files.push_mft_and_crl(&rcn0).await;
+    files.push_cer(&ca3, &rcn0).await;
+    files.push_new_key_mft_and_crl(&rcn0).await;
+    assert!(files.wait_for_published().await);
+
+    server.client().ca_activate_keyroll(&ca1).await.unwrap();
+    assert!(server.wait_for_state_active(&ca1).await);
+
+    let mut files = server.expected_objects(&ca1);
+    files.push_mft_and_crl(&rcn0).await;
+    files.push_cer(&ca3, &rcn0).await;
+    assert!(files.wait_for_published().await);
+
+    eprintln!(">>>> Remove parent from CA4, expect objects to be withdrawn.");
+    server.client().parent_delete(&ca4, &ca3.convert()).await.unwrap();
+    server.client().child_delete(&ca3, &ca4.convert()).await.unwrap();
+    assert!(server.expected_objects(&ca4).wait_for_published().await);
+
+    eprintln!(">>>> Add parent back to CA4, expect objects published again.");
+    server.register_ca_with_parent(&ca4, &ca3, &ca4_res_under_ca_3).await;
+
+    // We expect new resource classes 2 and 3 to be used now
+    let mut files = server.expected_objects(&ca4);
+    files.push_mft_and_crl(&rcn2).await;
+    files.push_mft_and_crl(&rcn3).await;
+    assert!(files.wait_for_published().await);
+
+    eprintln!(">>>> Remove CA3, expect that its objects are also removed.");
+    
+    // Check that CA3 exists both according to the API and on disk.
+    assert!(server.client().ca_details(&ca3).await.is_ok());
+    assert!(
+        fs::metadata(
+            tmpdir.path().join("data/ca_objects/CA3.json")
+        ).unwrap().is_file()
     );
-    info(
-        "# that all CAs which are set up as part of krill_start under the #",
+
+    server.client().ca_delete(&ca3).await.unwrap();
+
+    // Now it should be gone.
+    assert!(server.client().ca_details(&ca3).await.is_err());
+    assert_eq!(
+        fs::metadata(
+            tmpdir.path().join("data/ca_objects/CA3.json")
+        ).unwrap_err().kind(),
+        io::ErrorKind::NotFound
     );
-    info(
-        "# testbed config have been set up.                               #",
-    );
-    info(
-        "#                                                                #",
-    );
-    info(
-        "##################################################################",
-    );
-    info("");
-    assert!(ca_contains_resources(&testbed, &ResourceSet::all()).await);
 
-    {
-        info("##################################################################");
-        info("#                                                                #");
-        info("#                      Set up CA1 under testbed                  #");
-        info("#                                                                #");
-        info("##################################################################");
-        info("");
-        set_up_ca_with_repo(&ca1).await;
-        set_up_ca_under_parent_with_resources(&ca1, &testbed, &ca1_res).await;
-    }
+    // Nothing published any more.
+    assert!(server.expected_objects(&ca3).wait_for_published().await);
 
-    {
-        info("##################################################################");
-        info("#                                                                #");
-        info("#                      Set up CA2 under testbed                  #");
-        info("#                                                                #");
-        info("##################################################################");
-        info("");
-        set_up_ca_with_repo(&ca2).await;
-        set_up_ca_under_parent_with_resources(&ca2, &testbed, &ca2_res).await;
-    }
-
-    {
-        info("##################################################################");
-        info("#                                                                #");
-        info("#    Verify that the testbed published the expected objects      #");
-        info("#                                                                #");
-        info("##################################################################");
-        info("");
-        let mut expected_files = expected_mft_and_crl(&testbed, &rcn_0).await;
-        expected_files.push(expected_issued_cer(&ca1, &rcn_0).await);
-        expected_files.push(expected_issued_cer(&ca2, &rcn_0).await);
-        assert!(
-            will_publish_embedded(
-                "testbed CA should have mft, crl and certs for CA1 and CA2",
-                &testbed,
-                &expected_files
-            )
-            .await
-        );
-    }
-
-    {
-        info("##################################################################");
-        info("#                                                                #");
-        info("#                      Set up CA3 under CA1                      #");
-        info("#                                                                #");
-        info("##################################################################");
-        info("");
-        set_up_ca_with_repo(&ca3).await;
-        set_up_ca_under_parent_with_resources(
-            &ca3,
-            &ca1,
-            &ca3_res_under_ca_1,
-        )
-        .await;
-    }
-
-    {
-        info("##################################################################");
-        info("#                                                                #");
-        info("#       Expect that CA1 publishes the certificate for CA3        #");
-        info("#                                                                #");
-        info("##################################################################");
-        info("");
-        let mut expected_files = expected_mft_and_crl(&ca1, &rcn_0).await;
-        expected_files.push(expected_issued_cer(&ca3, &rcn_0).await);
-        assert!(
-            will_publish_embedded(
-                "CA1 should publish the certificate for CA3",
-                &ca1,
-                &expected_files
-            )
-            .await
-        );
-    }
-
-    {
-        info("##################################################################");
-        info("#                                                                #");
-        info("#                      Set up CA3 under CA2                      #");
-        info("#                                                                #");
-        info("##################################################################");
-        info("");
-        set_up_ca_under_parent_with_resources(
-            &ca3,
-            &ca2,
-            &ca3_res_under_ca_2,
-        )
-        .await;
-    }
-
-    {
-        info("##################################################################");
-        info("#                                                                #");
-        info("#       Expect that CA2 publishes the certificate for CA3        #");
-        info("#                                                                #");
-        info("##################################################################");
-        info("");
-        let mut expected_files = expected_mft_and_crl(&ca2, &rcn_0).await;
-        // CA3 will have the certificate from CA2 under its resource class '1'
-        // rather than '0'
-        expected_files.push(expected_issued_cer(&ca3, &rcn_1).await);
-        assert!(
-            will_publish_embedded(
-                "CA2 should have mft, crl and a cert for CA3",
-                &ca2,
-                &expected_files
-            )
-            .await
-        );
-    }
-
-    {
-        info("##################################################################");
-        info("#                                                                #");
-        info("#     Set up CA4 under CA3 with resources from both parents      #");
-        info("#                                                                #");
-        info("##################################################################");
-        info("");
-        set_up_ca_with_repo(&ca4).await;
-        set_up_ca_under_parent_with_resources(
-            &ca4,
-            &ca3,
-            &ca4_res_under_ca_3,
-        )
-        .await;
-    }
-
-    //
-    {
-        info("##################################################################");
-        info("#                                                                #");
-        info("#       Expect that CA3 publishes two certificates for CA4       #");
-        info("#                                                                #");
-        info("##################################################################");
-        info("");
-        let mut expected_files = expected_mft_and_crl(&ca3, &rcn_0).await;
-        expected_files.push(expected_issued_cer(&ca4, &rcn_0).await);
-        expected_files.append(&mut expected_mft_and_crl(&ca3, &rcn_1).await);
-        expected_files.push(expected_issued_cer(&ca4, &rcn_1).await);
-        assert!(
-            will_publish_embedded(
-                "CA3 should have two resource classes and a cert for CA4 in each",
-                &ca3,
-                &expected_files
-            )
-            .await
-        );
-    }
-
-    {
-        info("##################################################################");
-        info("#                                                                #");
-        info("# Expect that CA4 publishes two resource classes, with only crls #");
-        info("# and manifests                                                  #");
-        info("#                                                                #");
-        info("##################################################################");
-        info("");
-        let mut expected_files = expected_mft_and_crl(&ca4, &rcn_0).await;
-        expected_files.append(&mut expected_mft_and_crl(&ca4, &rcn_1).await);
-        assert!(
-            will_publish_embedded(
-                "CA4 should now have two resource classes, each with a mft and crl",
-                &ca4,
-                &expected_files
-            )
-            .await
-        );
-    }
-
-    {
-        info("##################################################################");
-        info("#                                                                #");
-        info("#                      Let CA1 do a Key Roll                     #");
-        info("#                                                                #");
-        info("##################################################################");
-        info("");
-        ca_roll_init(&ca1).await;
-        assert!(state_becomes_new_key(&ca1).await);
-
-        let mut expected_files = expected_mft_and_crl(&ca1, &rcn_0).await;
-        expected_files.push(expected_issued_cer(&ca3, &rcn_0).await);
-        expected_files
-            .append(&mut expected_new_key_mft_and_crl(&ca1, &rcn_0).await);
-        assert!(
-            will_publish_embedded(
-                "CA1 should publish MFT and CRL for both keys and the certificate for CA3 and a ROA",
-                &ca1,
-                &expected_files
-            )
-            .await
-        );
-
-        ca_roll_activate(&ca1).await;
-        assert!(state_becomes_active(&ca1).await);
-
-        let mut expected_files = expected_mft_and_crl(&ca1, &rcn_0).await;
-        expected_files.push(expected_issued_cer(&ca3, &rcn_0).await);
-        assert!(
-            will_publish_embedded(
-                "CA1 should now publish MFT and CRL for the activated key only, and the certificate for CA3 and a ROA",
-                &ca1,
-                &expected_files
-            )
-            .await
-        );
-    }
-
-    //--------------------------------------------------------------
-
-    info(
-        "##################################################################",
-    );
-    info(
-        "#                                                                #",
-    );
-    info(
-        "# Remove parent from CA4, we expect that objects are withdrawn   #",
-    );
-    info(
-        "#                                                                #",
-    );
-    info(
-        "##################################################################",
-    );
-    info("");
-    {
-        // Remove parent CA3 from CA4
-        delete_parent(&ca4, &ca3).await;
-        delete_child(&ca3, &ca4).await;
-
-        // Expect that CA4 withdraws all
-        {
-            assert!(
-                will_publish_embedded(
-                    "CA4 should withdraw objects when parent is removed",
-                    &ca4,
-                    &[]
-                )
-                .await
-            );
-        }
-    }
-
-    info(
-        "##################################################################",
-    );
-    info(
-        "#                                                                #",
-    );
-    info(
-        "# Add parent back to CA4, expect that ROAs are published again   #",
-    );
-    info(
-        "#                                                                #",
-    );
-    info(
-        "##################################################################",
-    );
-    info("");
-    {
-        // Add parent CA3 back to CA4
-        set_up_ca_under_parent_with_resources(
-            &ca4,
-            &ca3,
-            &ca4_res_under_ca_3,
-        )
-        .await;
-
-        // We expect new resource classes to be used now:
-        let rcn_2 = rcn(2);
-        let rcn_3 = rcn(3);
-
-        let mut expected_files = expected_mft_and_crl(&ca4, &rcn_2).await;
-        expected_files.append(&mut expected_mft_and_crl(&ca4, &rcn_3).await);
-        assert!(
-            will_publish_embedded(
-                "CA4 should now have two resource classes, each with a mft and crl",
-                &ca4,
-                &expected_files
-            )
-            .await
-        );
-    }
-
-    info(
-        "##################################################################",
-    );
-    info(
-        "#                                                                #",
-    );
-    info(
-        "# Remove CA3, we expect that its objects are also removed since  #",
-    );
-    info(
-        "# we are doing this all gracefully.                              #",
-    );
-    info(
-        "#                                                                #",
-    );
-    info(
-        "##################################################################",
-    );
-    info("");
-    {
-        assert!(ca_details_opt(&ca3).await.is_some());
-        delete_ca(&ca3).await;
-        assert!(ca_details_opt(&ca3).await.is_none());
-
-        // Also checked manually that ca_objects/CA3.json is gone
-        // using disk based storage. This is not so easy to check
-        // here (automated) because we don't have direct access to
-        // the in-memory store.
-
-        // Expect that CA3 no longer publishes anything
-        {
-            assert!(
-                will_publish_embedded(
-                    "CA3 should no longer publish anything after it has been deleted",
-                    &ca3,
-                    &[]
-                )
-                .await
-            );
-        }
-
-        // Expect that CA1 no longer publishes the certificate for CA3
-        // i.e. CA3 requested its revocation.
-        {
-            let expected_files = expected_mft_and_crl(&ca1, &rcn_0).await;
-            assert!(
-                will_publish_embedded(
-                    "CA1 should no longer publish the cer for CA3 after CA3 has been deleted",
-                    &ca1,
-                    &expected_files
-                )
-                .await
-            );
-        }
-    }
-
-    cleanup();
+    // CA1 doesn’t publish the certificate for CA3 any more.
+    let mut files = server.expected_objects(&ca1);
+    files.push_mft_and_crl(&rcn0).await;
+    assert!(files.wait_for_published().await);
 }
