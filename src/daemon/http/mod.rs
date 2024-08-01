@@ -8,6 +8,7 @@ use hyper::body::Body;
 use hyper::header::USER_AGENT;
 use hyper::http::uri::PathAndQuery;
 use hyper::{HeaderMap, Method, StatusCode};
+use percent_encoding::percent_decode_str;
 
 use rpki::ca::{provisioning, publication};
 
@@ -561,6 +562,10 @@ impl RequestPath {
     where
         T: FromStr,
     {
-        self.next().and_then(|s| T::from_str(s).ok())
+        self.next().and_then(|s| {
+            percent_decode_str(s).decode_utf8().ok()
+        }).and_then(|s| {
+            T::from_str(&s).ok()
+        })
     }
 }
