@@ -837,7 +837,7 @@ impl KrillClient {
 //------------ Path Helpers --------------------------------------------------
 
 fn ca_path(ca: &CaHandle) -> impl IntoIterator<Item = Cow<'_, str>> {
-    ["api/v1/cas".into(), ca.as_str().into()]
+    ["api/v1/cas".into(), encode(ca.as_str())]
 }
 
 fn child_path<'s>(
