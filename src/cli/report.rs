@@ -31,11 +31,11 @@ impl Report {
     pub fn report(self, format: ReportFormat) -> i32 {
         if self.is_err {
             let _ = self.content.write(format, &mut stdout().lock());
-            0
+            1
         }
         else {
             let _ = self.content.write(format, &mut stderr().lock());
-            1
+            0
         }
     }
 
