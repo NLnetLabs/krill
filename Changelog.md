@@ -4,6 +4,16 @@
 
 Breaking Changes
 
+* Refactored command line options processing for all binaries. As a
+  result, options for both `krillc` and `krillta` have slightly changed.
+  For `krillc`, the `--server`, `--token`, `--format`, and `--api` options
+  are now before the first subcommand (since they affect all commands). For
+  `krillta`, those options are now after `krillta proxy` but before the next
+  subcommand, while `--format` is now after `krillta signer`. ([#1228])
+* Removed support for RTA in `krillc`. Support is currently still
+  present in the Krill server, though behind a (non-default) feature flag.
+  ([#1228])
+
 New
 
 Bug Fixes
@@ -16,6 +26,15 @@ Other changes
 
 [#1215]: https://github.com/NLnetLabs/krill/pull/1215
 [#1226]: https://github.com/NLnetLabs/krill/pull/1226
+[#1228]: https://github.com/NLnetLabs/krill/pull/1228
+
+
+## 0.14.5 ‘Who dis? New Phone’
+
+Released 2024-06-27.
+
+There were no changes since 0.14.5-rc1.
+
 
 ## 0.14.5-rc1
 
