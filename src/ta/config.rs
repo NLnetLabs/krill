@@ -155,7 +155,7 @@ impl Config {
         Self::parse_str(&v)
     }
 
-    fn parse_str(s: &str) -> Result<Self, ConfigError> {
+    pub fn parse_str(s: &str) -> Result<Self, ConfigError> {
         let mut config: Config = toml::from_str(s).map_err(|err| {
             ConfigError::Other(format!("Error parsing config file: {err}"))
         })?;
@@ -340,8 +340,7 @@ impl Config {
     }
 }
 
-//------------------------ ConfigError
-//------------------------ ------------------------------------------
+//------------ ConfigError ---------------------------------------------------
 
 #[derive(Clone, Debug)]
 pub enum ConfigError {
@@ -363,6 +362,12 @@ impl std::fmt::Display for ConfigError {
         }
     }
 }
+
+impl std::error::Error for ConfigError { }
+
+
+//============ Tests =========================================================
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,97 +1,67 @@
-//! Perform functional tests on a Krill instance, using the API
-use rpki::{
-    ca::provisioning::ResourceClassName, repository::resources::ResourceSet,
-};
-use std::str::FromStr;
+//! Tests running a CA under a remote parent and repo
 
-use krill::{
-    commons::api::{
-        ObjectName, ParentCaReq, RoaConfigurationUpdates, RoaPayload,
-    },
-    test::*,
-};
+use rpki::repository::resources::ResourceSet;
+use krill::commons::api::{ObjectName, ParentCaReq, RoaConfigurationUpdates};
+
+mod common;
+
+
+//------------ Test Function -------------------------------------------------
 
 #[tokio::test]
 async fn remote_parent_and_repo() {
-    let cleanup_logging = init_logging();
+    // Start two testbeds
+    let (server1, _tmp1) = common::KrillServer::start_with_testbed().await;
+    let (server2, _tmp2)
+        = common::KrillServer::start_second_with_testbed().await;
 
-    info("test running a CA under a remote parent and repo");
+    let testbed = common::ca_handle("testbed");
+    let ca1 = common::ca_handle("CA1");
+    let ca1_res = common::ipv4_resources("10.0.0.0/16");
+    let ca1_roa = common::roa_payload("10.0.0.0/16-16 => 65000");
+    let ca1_roa_name = ObjectName::from(&ca1_roa).to_string();
+    let rcn0 = common::rcn(0);
 
-    let cleanup_krill_storage =
-        start_krill_testbed_with_rrdp_interval(5).await;
-    let cleanup_second_krill_storage = start_second_krill().await;
+    // Wait for the *testbed* CA to get its certificate, this means
+    // that all CAs which are set up as part of krill_start under the
+    // testbed config have been set up.
+    assert!(
+        server1.wait_for_ca_resources(&testbed, &ResourceSet::all()).await
+    );
 
-    let testbed = ca_handle("testbed");
-    let ca1 = ca_handle("CA1");
-    let ca1_res = ipv4_resources("10.0.0.0/16");
-    let ca1_route_definition =
-        RoaPayload::from_str("10.0.0.0/16-16 => 65000").unwrap();
-    let rcn_0 = ResourceClassName::from(0);
+    eprintln!(">>>> Create up CA1 in second server.");
+    server2.client().ca_add(ca1.clone()).await.unwrap();
 
-    // Verify that the TA and testbed are ready
-    assert!(ca_contains_resources(&testbed, &ResourceSet::all()).await);
+    eprintln!(">>>> Set up CA1 as a child to testbed on first server.");
+    let req = server2.client().child_request(&ca1).await.unwrap();
+    let id_cert = req.validate().unwrap();
+    let response = server1.client().child_add(
+        &testbed, ca1.convert(), ca1_res.clone(), id_cert
+    ).await.unwrap();
+    server2.client().parent_add(
+        &ca1,
+        ParentCaReq::new(testbed.convert(), response)
+    ).await.unwrap();
 
-    // Create up CA1 in second server
-    {
-        init_ca_krill2(&ca1).await;
-    }
-
-    // Set up CA1 as a child to testbed
-    {
-        let req = request_krill2(&ca1).await;
-        let parent = {
-            let response = add_child_rfc6492(
-                testbed.convert(),
-                ca1.convert(),
-                req,
-                ca1_res.clone(),
-            )
-            .await;
-            ParentCaReq::new(testbed.convert(), response)
-        };
-        add_parent_to_ca_krill2(&ca1, parent).await;
-    }
-
-    // Set up CA1 as a publisher
-    {
-        let publisher_request = publisher_request_krill2(&ca1).await;
-        embedded_repo_add_publisher(publisher_request).await;
-
-        // Get a Repository Response for the CA
-        let response = embedded_repository_response(ca1.convert()).await;
-
-        // Update the repo for the child
-        repo_update_krill2(&ca1, response).await;
-    }
+    eprintln!(">>>> Set up CA1 as a publisher.");
+    let req = server2.client().repo_request(&ca1).await.unwrap();
+    let response = server1.client().publishers_add(req).await.unwrap();
+    server2.client().repo_update(&ca1, response).await.unwrap();
 
     // Wait a bit so that CA1 can request a certificate from testbed
-    assert!(ca_contains_resources_krill2(&ca1, &ca1_res).await);
+    assert!(server2.wait_for_ca_resources(&ca1, &ca1_res).await);
 
-    // Create a ROA for CA1
-    {
-        let mut updates = RoaConfigurationUpdates::empty();
-        updates.add(ca1_route_definition.into());
-        ca_route_authorizations_update_krill2(&ca1, updates).await;
-    }
+    eprintln!(">>>> Create a ROA for CA1.");
+    server2.client().roas_update(
+        &ca1,
+        RoaConfigurationUpdates::new(
+            vec![ca1_roa.into()], vec![]
+        )
+    ).await.unwrap();
 
-    // Verify that CA1 publishes
-    {
-        let mut expected_files =
-            expected_mft_and_crl_krill2(&ca1, &rcn_0).await;
-        expected_files
-            .push(ObjectName::from(&ca1_route_definition).to_string());
-
-        assert!(
-            will_publish_embedded(
-                "CA1 should publish manifest, crl and roa",
-                &ca1,
-                &expected_files
-            )
-            .await
-        );
-    }
-
-    cleanup_krill_storage();
-    cleanup_second_krill_storage();
-    cleanup_logging();
+    eprintln!(">>>> Verify that CA1 publishes.");
+    let mut files = server2.expected_objects(&ca1);
+    files.push_mft_and_crl(&rcn0).await;
+    files.push(ca1_roa_name.clone());
+    assert!(files.wait_for_published_at(&server1).await);
 }

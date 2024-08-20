@@ -1,985 +1,886 @@
-use std::{env, fmt};
+//! A client to talk to the Krill server.
 
-use serde::{de::DeserializeOwned, Serialize};
-
+use std::borrow::Cow;
+use percent_encoding::{CONTROLS, AsciiSet, utf8_percent_encode};
+use rpki::uri;
+use rpki::crypto::KeyIdentifier;
 use rpki::ca::idexchange;
-
-use crate::{
-    cli::{
-        options::{
-            BulkCaCommand, CaCommand, Command, KrillInitDetails, Options,
-            PubServerCommand,
-        },
-        report::{ApiResponse, ReportError},
-    },
-    commons::{
-        api::{
-            AllCertAuthIssues, ApiRepositoryContact, AspaDefinitionUpdates,
-            BgpSecDefinitionUpdates, CaRepoDetails, CertAuthIssues,
-            ChildCaInfo, ChildrenConnectionStats, ParentCaContact,
-            ParentStatuses, PublisherDetails, PublisherList, RepoStatus,
-            Token,
-        },
-        bgp::BgpAnalysisAdvice,
-        error::KrillIoError,
-        util::{file, httpclient},
-    },
-    constants::KRILL_CLI_API_ENV,
-    daemon::config::Config,
+use rpki::ca::csr::BgpsecCsr;
+use rpki::ca::idcert::IdCert;
+use rpki::ca::idexchange::{
+    CaHandle, ChildHandle, ParentHandle, PublisherHandle, ServiceUri
 };
+use rpki::repository::resources::{Asn, ResourceSet};
+use rpki::repository::x509::Time;
+use serde::de::DeserializeOwned;
+use serde::ser::Serialize;
+use crate::{pubd, ta};
+use crate::commons::{api, bgp};
+use crate::commons::api::{Success, Token};
+use crate::commons::util::httpclient;
+use crate::commons::util::httpclient::Error;
 
-#[cfg(feature = "multi-user")]
-use crate::{
-    cli::options::KrillUserDetails,
-    constants::{PW_HASH_LOG_N, PW_HASH_P, PW_HASH_R},
-};
 
-fn resolve_uri(server: &idexchange::ServiceUri, path: &str) -> String {
-    format!("{}{}", server, path)
-}
+//------------ KrillClient ---------------------------------------------------
 
-async fn get_json<T: DeserializeOwned>(
-    server: &idexchange::ServiceUri,
-    token: &Token,
-    path: &str,
-) -> Result<T, Error> {
-    let uri = resolve_uri(server, path);
-    httpclient::get_json(&uri, Some(token))
-        .await
-        .map_err(Error::HttpClientError)
-}
-
-async fn post_empty(
-    server: &idexchange::ServiceUri,
-    token: &Token,
-    path: &str,
-) -> Result<(), Error> {
-    let uri = resolve_uri(server, path);
-    httpclient::post_empty(&uri, Some(token))
-        .await
-        .map_err(Error::HttpClientError)
-}
-
-async fn post_json(
-    server: &idexchange::ServiceUri,
-    token: &Token,
-    path: &str,
-    data: impl Serialize,
-) -> Result<(), Error> {
-    let uri = resolve_uri(server, path);
-    httpclient::post_json(&uri, data, Some(token))
-        .await
-        .map_err(Error::HttpClientError)
-}
-
-async fn post_json_with_response<T: DeserializeOwned>(
-    server: &idexchange::ServiceUri,
-    token: &Token,
-    path: &str,
-    data: impl Serialize,
-) -> Result<T, Error> {
-    let uri = resolve_uri(server, path);
-    httpclient::post_json_with_response(&uri, data, Some(token))
-        .await
-        .map_err(Error::HttpClientError)
-}
-
-async fn post_json_with_opt_response<T: DeserializeOwned>(
-    server: &idexchange::ServiceUri,
-    token: &Token,
-    uri: &str,
-    data: impl Serialize,
-) -> Result<Option<T>, Error> {
-    let uri = resolve_uri(server, uri);
-    httpclient::post_json_with_opt_response(&uri, data, Some(token))
-        .await
-        .map_err(Error::HttpClientError)
-}
-
-async fn delete(
-    server: &idexchange::ServiceUri,
-    token: &Token,
-    uri: &str,
-) -> Result<(), Error> {
-    let uri = resolve_uri(server, uri);
-    httpclient::delete(&uri, Some(token))
-        .await
-        .map_err(Error::HttpClientError)
-}
-
-/// Command line tool for Krill admin tasks
+/// A client to talk to a Krill server.
+#[derive(Clone, Debug)]
 pub struct KrillClient {
-    server: idexchange::ServiceUri,
+    /// The base URI of the API server.
+    base_uri: ServiceUri,
+
+    /// The access token for the API.
     token: Token,
 }
 
+/// # Low-level commands
 impl KrillClient {
-    /// Delegates the options to be processed, and reports the response
-    /// back to the user. Note that error reporting is handled by CLI.
-    pub async fn report(options: Options) -> Result<(), Error> {
-        let format = options.format;
-        let res = Self::process(options).await?;
-
-        if let Some(string) = res.report(format)? {
-            println!("{}", string)
-        }
-        Ok(())
+    /// Creates a cient from a URI and token.
+    pub fn new(base_uri: ServiceUri, token: Token) -> Self {
+        Self { base_uri, token }
     }
 
-    /// Processes the options, and returns a response ready for formatting.
-    /// Note that this function is public to help integration testing the API
-    /// and client.
-    pub async fn process(options: Options) -> Result<ApiResponse, Error> {
-        let client = KrillClient {
-            server: options.server,
-            token: options.token,
-        };
-
-        if options.api {
-            // passing the api option in the env, so that the call
-            // to the back-end will just print and exit.
-            env::set_var(KRILL_CLI_API_ENV, "1")
-        }
-
-        trace!("Sending command: {:?}", options.command);
-
-        match options.command {
-            Command::Health => client.health().await,
-            Command::Info => client.info().await,
-            Command::Bulk(cmd) => client.bulk(cmd).await,
-            Command::CertAuth(cmd) => client.certauth(cmd).await,
-            Command::PubServer(cmd) => client.publishers(cmd).await,
-            Command::Init(details) => client.init_config(details),
-            #[cfg(feature = "multi-user")]
-            Command::User(cmd) => client.user(cmd),
-            Command::NotSet => Err(Error::MissingCommand),
-        }
+    /// Returns the base URI of the server.
+    pub fn base_uri(&self) -> &ServiceUri {
+        &self.base_uri
     }
 
-    async fn health(&self) -> Result<ApiResponse, Error> {
+    /// Returns the access token.
+    pub fn token(&self) -> &Token {
+        &self.token
+    }
+
+    /// Sets the access token.
+    pub fn set_token(&mut self, token: Token) {
+        self.token = token
+    }
+
+    /// Performs a GET request and checks that it gets a 200 OK back.
+    pub async fn get_ok<'a>(
+        &self, path: impl IntoIterator<Item = Cow<'a, str>>
+    ) -> Result<Success, Error> {
         httpclient::get_ok(
-            &resolve_uri(&self.server, "api/v1/authorized"),
-            Some(&self.token),
-        )
-        .await?;
-        Ok(ApiResponse::Health)
+            &self.create_uri(path), Some(&self.token)
+        ).await.map(|_| Success)
     }
 
-    async fn info(&self) -> Result<ApiResponse, Error> {
-        let info = httpclient::get_json(
-            &resolve_uri(&self.server, "stats/info"),
-            Some(&self.token),
-        )
-        .await?;
-        Ok(ApiResponse::Info(info))
+    /// Performs a GET request expecting a JSON response.
+    pub async fn get_json<'a, T: DeserializeOwned>(
+        &self, path: impl IntoIterator<Item = Cow<'a, str>>
+    ) -> Result<T, Error> {
+        httpclient::get_json(
+            &self.create_uri(path), Some(&self.token)
+        ).await
     }
 
-    async fn bulk(
+    /// Performs an empty POST request.
+    pub async fn post_empty<'a>(
+        &self, path: impl IntoIterator<Item = Cow<'a, str>>
+    ) -> Result<Success, Error> {
+        httpclient::post_empty(
+            &self.create_uri(path), Some(&self.token)
+        ).await.map(|_| Success)
+    }
+
+    /// Posts JSON-encoded data and expects a JSON-encoded response.
+    pub async fn post_empty_with_response<'a, T: DeserializeOwned>(
         &self,
-        command: BulkCaCommand,
-    ) -> Result<ApiResponse, Error> {
-        match command {
-            BulkCaCommand::Refresh => {
-                post_empty(
-                    &self.server,
-                    &self.token,
-                    "api/v1/bulk/cas/sync/parent",
-                )
-                .await?;
-            }
-            BulkCaCommand::Publish => {
-                post_empty(
-                    &self.server,
-                    &self.token,
-                    "api/v1/bulk/cas/publish",
-                )
-                .await?;
-            }
-            BulkCaCommand::ForcePublish => {
-                post_empty(
-                    &self.server,
-                    &self.token,
-                    "api/v1/bulk/cas/force_publish",
-                )
-                .await?;
-            }
-            BulkCaCommand::Sync => {
-                post_empty(
-                    &self.server,
-                    &self.token,
-                    "api/v1/bulk/cas/sync/repo",
-                )
-                .await?;
-            }
-            BulkCaCommand::Suspend => {
-                post_empty(
-                    &self.server,
-                    &self.token,
-                    "api/v1/bulk/cas/suspend",
-                )
-                .await?;
-            }
-            BulkCaCommand::Import(structure) => {
-                post_json(
-                    &self.server,
-                    &self.token,
-                    "api/v1/bulk/cas/import",
-                    structure,
-                )
-                .await?;
-            }
-        }
-        Ok(ApiResponse::Empty)
+        path: impl IntoIterator<Item = Cow<'a, str>>,
+    ) -> Result<T, Error> {
+        httpclient::post_empty_with_response(
+            &self.create_uri(path), Some(&self.token)
+        ).await
     }
 
-    #[allow(clippy::cognitive_complexity)]
-    async fn certauth(
+    /// Posts JSON-encoded data.
+    pub async fn post_json<'a>(
         &self,
-        command: CaCommand,
-    ) -> Result<ApiResponse, Error> {
-        match command {
-            CaCommand::Init(init) => {
-                post_json(&self.server, &self.token, "api/v1/cas", init)
-                    .await?;
-                Ok(ApiResponse::Empty)
-            }
-
-            CaCommand::Delete(ca) => {
-                let uri = format!("api/v1/cas/{}", ca);
-                delete(&self.server, &self.token, &uri).await?;
-                Ok(ApiResponse::Empty)
-            }
-
-            CaCommand::UpdateId(handle) => {
-                let uri = format!("api/v1/cas/{}/id", handle);
-                post_empty(&self.server, &self.token, &uri).await?;
-                Ok(ApiResponse::Empty)
-            }
-
-            CaCommand::ParentResponse(handle, child) => {
-                let uri = format!(
-                    "api/v1/cas/{}/children/{}/contact",
-                    handle, child
-                );
-                let response: idexchange::ParentResponse =
-                    get_json(&self.server, &self.token, &uri).await?;
-                Ok(ApiResponse::Rfc8183ParentResponse(response))
-            }
-
-            CaCommand::ChildRequest(handle) => {
-                let uri =
-                    format!("api/v1/cas/{}/id/child_request.json", handle);
-                let req = get_json(&self.server, &self.token, &uri).await?;
-                Ok(ApiResponse::Rfc8183ChildRequest(req))
-            }
-
-            CaCommand::RepoPublisherRequest(handle) => {
-                let uri = format!(
-                    "api/v1/cas/{}/id/publisher_request.json",
-                    handle
-                );
-                let req: idexchange::PublisherRequest =
-                    get_json(&self.server, &self.token, &uri).await?;
-                Ok(ApiResponse::Rfc8183PublisherRequest(req))
-            }
-
-            CaCommand::RepoDetails(handle) => {
-                let uri = format!("api/v1/cas/{}/repo", handle);
-                let details: CaRepoDetails =
-                    get_json(&self.server, &self.token, &uri).await?;
-                Ok(ApiResponse::RepoDetails(details))
-            }
-
-            CaCommand::RepoStatus(ca) => {
-                let uri = format!("api/v1/cas/{}/repo/status", ca);
-                let status: RepoStatus =
-                    get_json(&self.server, &self.token, &uri).await?;
-                Ok(ApiResponse::RepoStatus(status))
-            }
-
-            CaCommand::RepoUpdate(handle, update) => {
-                let uri = format!("api/v1/cas/{}/repo", handle);
-                let api_contact = ApiRepositoryContact::new(update);
-                post_json(&self.server, &self.token, &uri, api_contact)
-                    .await?;
-                Ok(ApiResponse::Empty)
-            }
-
-            CaCommand::AddParent(handle, parent_req) => {
-                let uri = format!("api/v1/cas/{}/parents", handle);
-                post_json(&self.server, &self.token, &uri, parent_req)
-                    .await?;
-                Ok(ApiResponse::Empty)
-            }
-
-            CaCommand::RemoveParent(handle, parent) => {
-                let uri = format!("api/v1/cas/{}/parents/{}", handle, parent);
-                delete(&self.server, &self.token, &uri).await?;
-                Ok(ApiResponse::Empty)
-            }
-
-            CaCommand::ParentStatuses(handle) => {
-                let uri = format!("api/v1/cas/{}/parents", handle);
-                let statuses: ParentStatuses =
-                    get_json(&self.server, &self.token, &uri).await?;
-                Ok(ApiResponse::ParentStatuses(statuses))
-            }
-
-            CaCommand::MyParentCaContact(handle, parent) => {
-                let uri = format!("api/v1/cas/{}/parents/{}", handle, parent);
-                let parent: ParentCaContact =
-                    get_json(&self.server, &self.token, &uri).await?;
-                Ok(ApiResponse::ParentCaContact(parent))
-            }
-
-            CaCommand::Refresh(handle) => {
-                let uri = format!("api/v1/cas/{}/sync/parents", handle);
-                post_empty(&self.server, &self.token, &uri).await?;
-                Ok(ApiResponse::Empty)
-            }
-
-            CaCommand::ChildInfo(handle, child) => {
-                let uri = format!("api/v1/cas/{}/children/{}", handle, child);
-                let info: ChildCaInfo =
-                    get_json(&self.server, &self.token, &uri).await?;
-                Ok(ApiResponse::ChildInfo(info))
-            }
-
-            CaCommand::ChildAdd(handle, req) => {
-                let uri = format!("api/v1/cas/{}/children", handle);
-                let response = post_json_with_response(
-                    &self.server,
-                    &self.token,
-                    &uri,
-                    req,
-                )
-                .await?;
-                Ok(ApiResponse::Rfc8183ParentResponse(response))
-            }
-            CaCommand::ChildUpdate(handle, child, req) => {
-                let uri = format!("api/v1/cas/{}/children/{}", handle, child);
-                post_json(&self.server, &self.token, &uri, req).await?;
-                Ok(ApiResponse::Empty)
-            }
-            CaCommand::ChildDelete(handle, child) => {
-                let uri = format!("api/v1/cas/{}/children/{}", handle, child);
-                delete(&self.server, &self.token, &uri).await?;
-                Ok(ApiResponse::Empty)
-            }
-            CaCommand::ChildExport(handle, child) => {
-                let uri = format!(
-                    "api/v1/cas/{}/children/{}/export",
-                    handle, child
-                );
-                let response =
-                    get_json(&self.server, &self.token, &uri).await?;
-                Ok(ApiResponse::ChildExported(response))
-            }
-            CaCommand::ChildImport(handle, child) => {
-                let uri = format!(
-                    "api/v1/cas/{}/children/{}/import",
-                    handle, child.name
-                );
-                post_json(&self.server, &self.token, &uri, child).await?;
-                Ok(ApiResponse::Empty)
-            }
-            CaCommand::ChildConnections(handle) => {
-                let uri = format!(
-                    "api/v1/cas/{}/stats/children/connections",
-                    handle
-                );
-                let stats: ChildrenConnectionStats =
-                    get_json(&self.server, &self.token, &uri).await?;
-                Ok(ApiResponse::ChildrenStats(stats))
-            }
-
-            CaCommand::KeyRollInit(handle) => {
-                let uri = format!("api/v1/cas/{}/keys/roll_init", handle);
-                post_empty(&self.server, &self.token, &uri).await?;
-                Ok(ApiResponse::Empty)
-            }
-            CaCommand::KeyRollActivate(handle) => {
-                let uri = format!("api/v1/cas/{}/keys/roll_activate", handle);
-                post_empty(&self.server, &self.token, &uri).await?;
-                Ok(ApiResponse::Empty)
-            }
-
-            CaCommand::RouteAuthorizationsList(handle) => {
-                let uri = format!("api/v1/cas/{}/routes", handle);
-                let roas = get_json(&self.server, &self.token, &uri).await?;
-                Ok(ApiResponse::RouteAuthorizations(roas))
-            }
-
-            CaCommand::RouteAuthorizationsUpdate(handle, updates) => {
-                let uri = format!("api/v1/cas/{}/routes", handle);
-                post_json(&self.server, &self.token, &uri, updates).await?;
-                Ok(ApiResponse::Empty)
-            }
-
-            CaCommand::RouteAuthorizationsTryUpdate(handle, updates) => {
-                let uri = format!("api/v1/cas/{}/routes/try", handle);
-                let advice_opt: Option<BgpAnalysisAdvice> =
-                    post_json_with_opt_response(
-                        &self.server,
-                        &self.token,
-                        &uri,
-                        updates,
-                    )
-                    .await?;
-                match advice_opt {
-                    None => Ok(ApiResponse::Empty),
-                    Some(advice) => {
-                        Ok(ApiResponse::BgpAnalysisAdvice(advice))
-                    }
-                }
-            }
-
-            CaCommand::RouteAuthorizationsDryRunUpdate(handle, updates) => {
-                let uri =
-                    format!("api/v1/cas/{}/routes/analysis/dryrun", handle);
-                let report = post_json_with_response(
-                    &self.server,
-                    &self.token,
-                    &uri,
-                    updates,
-                )
-                .await?;
-                Ok(ApiResponse::BgpAnalysisFull(report))
-            }
-
-            CaCommand::BgpAnalysisFull(handle) => {
-                let uri =
-                    format!("api/v1/cas/{}/routes/analysis/full", handle);
-                let report =
-                    get_json(&self.server, &self.token, &uri).await?;
-                Ok(ApiResponse::BgpAnalysisFull(report))
-            }
-
-            CaCommand::BgpAnalysisSuggest(handle, resources) => {
-                let uri =
-                    format!("api/v1/cas/{}/routes/analysis/suggest", handle);
-
-                let suggestions = if let Some(resources) = resources {
-                    post_json_with_response(
-                        &self.server,
-                        &self.token,
-                        &uri,
-                        resources,
-                    )
-                    .await?
-                } else {
-                    get_json(&self.server, &self.token, &uri).await?
-                };
-
-                Ok(ApiResponse::BgpAnalysisSuggestions(suggestions))
-            }
-
-            CaCommand::BgpSecList(handle) => {
-                let uri = format!("api/v1/cas/{}/bgpsec", handle);
-                let bgpsec_list =
-                    get_json(&self.server, &self.token, &uri).await?;
-                Ok(ApiResponse::BgpSecDefinitions(bgpsec_list))
-            }
-
-            CaCommand::BgpSecAdd(handle, addition) => {
-                let uri = format!("api/v1/cas/{}/bgpsec", handle);
-                let update =
-                    BgpSecDefinitionUpdates::new(vec![addition], vec![]);
-                post_json(&self.server, &self.token, &uri, update).await?;
-                Ok(ApiResponse::Empty)
-            }
-
-            CaCommand::BgpSecRemove(handle, removal) => {
-                let uri = format!("api/v1/cas/{}/bgpsec", handle);
-                let update =
-                    BgpSecDefinitionUpdates::new(vec![], vec![removal]);
-                post_json(&self.server, &self.token, &uri, update).await?;
-                Ok(ApiResponse::Empty)
-            }
-
-            CaCommand::AspasList(handle) => {
-                let uri = format!("api/v1/cas/{}/aspas", handle);
-                let aspas = get_json(&self.server, &self.token, &uri).await?;
-                Ok(ApiResponse::AspaDefinitions(aspas))
-            }
-
-            CaCommand::AspasAddOrReplace(handle, aspa) => {
-                let uri = format!("api/v1/cas/{}/aspas", handle);
-                let updates = AspaDefinitionUpdates::new(vec![aspa], vec![]);
-                post_json(&self.server, &self.token, &uri, updates).await?;
-                Ok(ApiResponse::Empty)
-            }
-
-            CaCommand::AspasRemove(handle, customer) => {
-                let uri = format!("api/v1/cas/{}/aspas", handle);
-                let updates =
-                    AspaDefinitionUpdates::new(vec![], vec![customer]);
-                post_json(&self.server, &self.token, &uri, updates).await?;
-                Ok(ApiResponse::Empty)
-            }
-
-            CaCommand::AspasUpdate(handle, customer, update) => {
-                let uri =
-                    format!("api/v1/cas/{}/aspas/as/{}", handle, customer);
-                post_json(&self.server, &self.token, &uri, update).await?;
-                Ok(ApiResponse::Empty)
-            }
-
-            CaCommand::Show(handle) => {
-                let uri = format!("api/v1/cas/{}", handle);
-                let ca_info =
-                    get_json(&self.server, &self.token, &uri).await?;
-
-                Ok(ApiResponse::CertAuthInfo(ca_info))
-            }
-
-            CaCommand::ShowHistoryCommands(handle, options) => {
-                let uri = format!(
-                    "api/v1/cas/{}/history/commands/{}",
-                    handle,
-                    options.url_path_parameters()
-                );
-                let history =
-                    get_json(&self.server, &self.token, &uri).await?;
-
-                Ok(ApiResponse::CertAuthHistory(history))
-            }
-
-            CaCommand::ShowHistoryDetails(handle, key) => {
-                let uri =
-                    format!("api/v1/cas/{}/history/details/{}", handle, key);
-                let action =
-                    get_json(&self.server, &self.token, &uri).await?;
-
-                Ok(ApiResponse::CertAuthAction(action))
-            }
-
-            CaCommand::Issues(ca_opt) => match ca_opt {
-                Some(ca) => {
-                    let uri = format!("api/v1/cas/{}/issues", ca);
-                    let issues: CertAuthIssues =
-                        get_json(&self.server, &self.token, &uri).await?;
-                    Ok(ApiResponse::CertAuthIssues(issues))
-                }
-                None => {
-                    let issues: AllCertAuthIssues = get_json(
-                        &self.server,
-                        &self.token,
-                        "api/v1/bulk/cas/issues",
-                    )
-                    .await?;
-                    Ok(ApiResponse::AllCertAuthIssues(issues))
-                }
-            },
-
-            CaCommand::RtaList(ca) => {
-                let uri = format!("api/v1/cas/{}/rta/", ca);
-                let list = get_json(&self.server, &self.token, &uri).await?;
-                Ok(ApiResponse::RtaList(list))
-            }
-
-            CaCommand::RtaShow(ca, name, out) => {
-                let uri = format!("api/v1/cas/{}/rta/{}", ca, name);
-                let rta = get_json(&self.server, &self.token, &uri).await?;
-
-                match out {
-                    None => Ok(ApiResponse::Rta(rta)),
-                    Some(out) => {
-                        file::save(rta.as_ref(), &out)?;
-                        Ok(ApiResponse::Empty)
-                    }
-                }
-            }
-
-            CaCommand::RtaSign(ca, name, request) => {
-                let uri = format!("api/v1/cas/{}/rta/{}/sign", ca, name);
-                post_json(&self.server, &self.token, &uri, request).await?;
-                Ok(ApiResponse::Empty)
-            }
-
-            CaCommand::RtaMultiPrep(ca, name, resources) => {
-                let uri =
-                    format!("api/v1/cas/{}/rta/{}/multi/prep", ca, name);
-                let response = post_json_with_response(
-                    &self.server,
-                    &self.token,
-                    &uri,
-                    resources,
-                )
-                .await?;
-                Ok(ApiResponse::RtaMultiPrep(response))
-            }
-
-            CaCommand::RtaMultiCoSign(ca, name, rta) => {
-                let uri =
-                    format!("api/v1/cas/{}/rta/{}/multi/cosign", ca, name);
-                post_json(&self.server, &self.token, &uri, rta).await?;
-                Ok(ApiResponse::Empty)
-            }
-
-            CaCommand::List => {
-                let cas =
-                    get_json(&self.server, &self.token, "api/v1/cas").await?;
-                Ok(ApiResponse::CertAuths(cas))
-            }
-        }
+        path: impl IntoIterator<Item = Cow<'a, str>>,
+        data: impl Serialize,
+    ) -> Result<Success, Error> {
+        httpclient::post_json(
+            &self.create_uri(path), data, Some(&self.token)
+        ).await.map(|_| Success)
     }
 
-    /// Processes the options, and returns a response ready for formatting.
-    /// Note that this function is public to help integration testing the API
-    /// and client.
-    pub async fn publishers(
+    /// Posts JSON-encoded data and expects a JSON-encoded response.
+    pub async fn post_json_with_response<'a, T: DeserializeOwned>(
         &self,
-        command: PubServerCommand,
-    ) -> Result<ApiResponse, Error> {
-        match command {
-            PubServerCommand::PublisherList => {
-                let list: PublisherList = get_json(
-                    &self.server,
-                    &self.token,
-                    "api/v1/pubd/publishers",
-                )
-                .await?;
-                Ok(ApiResponse::PublisherList(list))
-            }
-            PubServerCommand::StalePublishers(seconds) => {
-                let uri = format!("api/v1/pubd/stale/{}", seconds);
-                let stales =
-                    get_json(&self.server, &self.token, &uri).await?;
-                Ok(ApiResponse::PublisherList(stales))
-            }
-            PubServerCommand::RepositoryStats => {
-                let stats =
-                    get_json(&self.server, &self.token, "stats/repo").await?;
-                Ok(ApiResponse::RepoStats(stats))
-            }
-            PubServerCommand::RepositoryInit(uris) => {
-                let uri = "api/v1/pubd/init";
-                post_json(&self.server, &self.token, uri, uris).await?;
-                Ok(ApiResponse::Empty)
-            }
-            PubServerCommand::RepositoryClear => {
-                let uri = "api/v1/pubd/init";
-                delete(&self.server, &self.token, uri).await?;
-                Ok(ApiResponse::Empty)
-            }
-            PubServerCommand::RepositorySessionReset => {
-                let uri = "api/v1/pubd/session_reset";
-                post_empty(&self.server, &self.token, uri).await?;
-                Ok(ApiResponse::Empty)
-            }
-            PubServerCommand::AddPublisher(req) => {
-                let res = post_json_with_response(
-                    &self.server,
-                    &self.token,
-                    "api/v1/pubd/publishers",
-                    req,
-                )
-                .await?;
-                Ok(ApiResponse::Rfc8183RepositoryResponse(res))
-            }
-            PubServerCommand::RemovePublisher(handle) => {
-                let uri = format!("api/v1/pubd/publishers/{}", handle);
-                delete(&self.server, &self.token, &uri).await?;
-                Ok(ApiResponse::Empty)
-            }
-            PubServerCommand::DeleteFiles(criteria) => {
-                let uri = "api/v1/pubd/delete";
-                post_json(&self.server, &self.token, uri, criteria).await?;
-                Ok(ApiResponse::Empty)
-            }
-            PubServerCommand::ShowPublisher(handle) => {
-                let uri = format!("api/v1/pubd/publishers/{}", handle);
-                let details: PublisherDetails =
-                    get_json(&self.server, &self.token, &uri).await?;
-                Ok(ApiResponse::PublisherDetails(details))
-            }
-            PubServerCommand::RepositoryResponse(handle) => {
-                let uri = format!(
-                    "api/v1/pubd/publishers/{}/response.json",
-                    handle
-                );
-                let res = get_json(&self.server, &self.token, &uri).await?;
-                Ok(ApiResponse::Rfc8183RepositoryResponse(res))
-            }
-        }
+        path: impl IntoIterator<Item = Cow<'a, str>>,
+        data: impl Serialize,
+    ) -> Result<T, Error> {
+        httpclient::post_json_with_response(
+            &self.create_uri(path), data, Some(&self.token)
+        ).await
     }
 
-    #[allow(clippy::result_large_err)]
-    fn init_config(
+    /// Posts JSON-encoded data and expects an optional JSON-encoded response.
+    pub async fn post_json_with_opt_response<'a, T: DeserializeOwned>(
         &self,
-        details: KrillInitDetails,
-    ) -> Result<ApiResponse, Error> {
-        let defaults = include_str!("../../defaults/krill.conf");
-        let multi_add_on =
-            include_str!("../../defaults/krill-multi-user.conf");
-        let hsm_add_on = include_str!("../../defaults/krill-hsm.conf");
-
-        let mut config = defaults.to_string();
-        config = config.replace(
-            "### admin_token =",
-            &format!("admin_token = \"{}\"", self.token),
-        );
-
-        config = config.replace(
-            "### service_uri = \"https://localhost:3000/\"",
-            &format!("service_uri = \"{}\"", self.server),
-        );
-
-        if let Some(storage_uri) = details.data_dir() {
-            config = config.replace(
-                "### storage_uri = \"./data\"",
-                &format!("storage_uri = \"{}\"", storage_uri),
-            )
-        }
-
-        if let Some(log_file) = details.log_file() {
-            config = config.replace(
-                "### log_file = \"./krill.log\"",
-                &format!("log_file = \"{}\"", log_file),
-            )
-        }
-
-        if details.multi_user() {
-            config.push_str("\n\n\n");
-            config.push_str(multi_add_on);
-        }
-
-        if details.hsm() {
-            config.push_str("\n\n\n");
-            config.push_str(hsm_add_on);
-        }
-
-        let mut c: Config = toml::from_str(&config).map_err(Error::init)?;
-        c.process().map_err(Error::init)?;
-
-        Ok(ApiResponse::GenericBody(config))
+        path: impl IntoIterator<Item = Cow<'a, str>>,
+        data: impl Serialize,
+    ) -> Result<Option<T>, Error> {
+        httpclient::post_json_with_opt_response(
+            &self.create_uri(path), data, Some(&self.token)
+        ).await
     }
 
-    #[cfg(feature = "multi-user")]
-    #[allow(clippy::unnecessary_wraps, clippy::result_large_err)]
-    fn user(&self, details: KrillUserDetails) -> Result<ApiResponse, Error> {
-        let (password_hash, salt) = {
-            use scrypt::scrypt;
+    /// Sends a DELETE request.
+    pub async fn delete<'a>(
+        &self, path: impl IntoIterator<Item = Cow<'a, str>>
+    ) -> Result<Success, Error> {
+        httpclient::delete(
+            &self.create_uri(path), Some(&self.token)
+        ).await.map(|_| Success)
+    }
 
-            let password =
-                rpassword::prompt_password("Enter the password to hash: ")
-                    .unwrap();
+    /// Creates the full URI for the HTTP request.
+    fn create_uri<'a>(
+        &self, path: impl IntoIterator<Item = Cow<'a, str>>
+    ) -> String {
+        let mut res = String::from(self.base_uri.as_str());
+        for item in path {
+            if !res.ends_with('/') {
+                res.push('/');
+            }
+            res.push_str(&item);
+        }
+        res
+    }
+}
 
-            // The scrypt-js NPM documentation (https://www.npmjs.com/package/scrypt-js) says:
-            //   "TL;DR - either only allow ASCII characters in passwords, or
-            // use            String.prototype.normalize('NFKC')
-            // on any password" So in Lagosta we do the NFKC
-            // normalization and thus we need to do the same here.
-            use unicode_normalization::UnicodeNormalization;
 
-            let user_id = details.id().nfkc().collect::<String>();
-            let password = password.trim().nfkc().collect::<String>();
-            let params = scrypt::Params::new(
-                PW_HASH_LOG_N,
-                PW_HASH_R,
-                PW_HASH_P,
-                scrypt::Params::RECOMMENDED_LEN,
-            )
-            .unwrap();
+/// # High-level commands
+///
+impl KrillClient {
+    pub async fn authorized(&self) -> Result<api::Success, Error> {
+        self.get_ok(once("api/v1/authorized")).await
+    }
 
-            // hash twice with two different salts
-            // hash first with a salt the client browser knows how to
-            // construct based on the users id and a site specific
-            // string.
+    pub async fn info(&self) -> Result<api::ServerInfo, Error> {
+        self.get_json(once("stats/info")).await
+    }
 
-            let weak_salt = format!("krill-lagosta-{}", user_id);
-            let weak_salt = weak_salt.nfkc().collect::<String>();
+    pub async fn bulk_issues(&self) -> Result<api::AllCertAuthIssues, Error> {
+        self.get_json(once("api/v1/bulk/cas/issues")).await
+    }
 
-            let mut interim_hash: [u8; 32] = [0; 32];
-            scrypt(
-                password.as_bytes(),
-                weak_salt.as_bytes(),
-                &params,
-                &mut interim_hash,
-            )
-            .unwrap();
+    pub async fn bulk_sync_parents(&self) -> Result<api::Success, Error> {
+        self.post_empty(once("api/v1/bulk/cas/sync/parent")).await
+    }
 
-            // hash again using a strong random salt only known to the server
-            let mut strong_salt: [u8; 32] = [0; 32];
-            openssl::rand::rand_bytes(&mut strong_salt).unwrap();
-            let mut final_hash: [u8; 32] = [0; 32];
-            scrypt(&interim_hash, &strong_salt, &params, &mut final_hash)
-                .unwrap();
+    pub async fn bulk_sync_repo(&self) -> Result<api::Success, Error> {
+        self.post_empty(once("api/v1/bulk/cas/sync/repo")).await
+    }
 
-            (final_hash, strong_salt)
+    pub async fn bulk_publish(&self) -> Result<api::Success, Error> {
+        self.post_empty(once("api/v1/bulk/cas/publish")).await
+    }
+
+    pub async fn bulk_force_publish(&self) -> Result<api::Success, Error> {
+        self.post_empty(once("api/v1/bulk/cas/force_publish")).await
+    }
+
+    pub async fn bulk_suspend(&self) -> Result<api::Success, Error> {
+        self.post_empty(once("api/v1/bulk/cas/suspend")).await
+    }
+
+    pub async fn bulk_import(
+        &self, structure: api::import::Structure
+    ) -> Result<api::Success, Error> {
+        self.post_json(once("api/v1/bulk/cas/import"), structure).await
+    }
+
+    pub async fn cas_list(&self) -> Result<api::CertAuthList, Error> {
+        self.get_json(once("api/v1/cas")).await
+    }
+
+    pub async fn ca_add(&self, ca: CaHandle) -> Result<api::Success, Error> {
+        self.post_json(
+            once("api/v1/cas"),
+            api::CertAuthInit::new(ca)
+        ).await
+    }
+
+    pub async fn ca_details(
+        &self, ca: &CaHandle
+    ) -> Result<api::CertAuthInfo, Error> {
+        self.get_json(ca_path(ca)).await
+    }
+
+    pub async fn ca_delete(
+        &self, ca: &CaHandle
+    ) -> Result<api::Success, Error> {
+        self.delete(ca_path(ca)).await
+    }
+
+    pub async fn ca_issues(
+        &self, ca: &CaHandle
+    ) -> Result<api::CertAuthIssues, Error> {
+        self.get_json(ca_path(ca).into_iter().chain(once("issues"))).await
+    }
+
+    pub async fn ca_history_commands(
+        &self, ca: &CaHandle,
+        rows: Option<u64>, offset: Option<u64>,
+        after: Option<Time>, before: Option<Time>
+    ) -> Result<api::CommandHistory, Error> {
+        let path = {
+            if let Some(before) = before {
+                let after =
+                    after.map(|t| t.timestamp()).unwrap_or_else(|| 0);
+                format!(
+                    "{}/{}/{}/{}",
+                    rows.unwrap_or(100),
+                    offset.unwrap_or_default(),
+                    after,
+                    before.timestamp()
+                )
+            }
+            else if let Some(after) = after {
+                format!(
+                    "{}/{}/{}",
+                    rows.unwrap_or(100),
+                    offset.unwrap_or_default(),
+                    after.timestamp()
+                )
+            }
+            else if let Some(offset) = offset {
+                format!("{}/{}", rows.unwrap_or(100), offset)
+            }
+            else if let Some(rows) = rows {
+                format!("{}", rows)
+            }
+            else {
+                String::new()
+            }
         };
+        self.get_json(
+            ca_path(ca).into_iter().chain(
+                ["history/commands".into(), path.into()]
+            )
+        ).await
+    }
 
-        // Due to https://github.com/alexcrichton/toml-rs/issues/406 we cannot
-        // produce inline table style TOML by serializing from config structs
-        // to a string using the toml crate. Instead we build it up
-        // ourselves.
-        let attrs = details.attrs();
-        let attrs_fragment = match attrs.is_empty() {
-            false => format!(
-                "attributes={{ {} }}, ",
-                attrs
-                    .iter()
-                    // quote the key if needed
-                    .map(|(k, v)| match k.contains(' ') {
-                        true => (format!(r#""{}""#, k), v),
-                        false => (k.clone(), v),
-                    })
-                    // quote the value
-                    .map(|(k, v)| format!(r#"{}="{}""#, k, v))
-                    .collect::<Vec<String>>()
-                    .join(", ")
+    pub async fn ca_history_details(
+        &self, ca: &CaHandle, key: &str
+    ) -> Result<api::CaCommandDetails, Error> {
+        self.get_json(
+            ca_path(ca).into_iter().chain(
+                ["history/details".into(), encode(key)]
+            )
+        ).await
+    }
+
+    pub async fn ca_init_keyroll(
+        &self, ca: &CaHandle,
+    ) -> Result<api::Success, Error> {
+        self.post_empty(
+            ca_path(ca).into_iter().chain(once("keys/roll_init"))
+        ).await
+    }
+
+    pub async fn ca_activate_keyroll(
+        &self, ca: &CaHandle,
+    ) -> Result<api::Success, Error> {
+        self.post_empty(
+            ca_path(ca).into_iter().chain(once("keys/roll_activate"))
+        ).await
+    }
+
+    pub async fn ca_update_id(
+        &self, ca: &CaHandle,
+    ) -> Result<api::Success, Error> {
+        self.post_empty(
+            ca_path(ca).into_iter().chain(once("id"))
+        ).await
+    }
+
+    pub async fn ca_sync_parents(
+        &self, ca: &CaHandle,
+    ) -> Result<api::Success, Error> {
+        self.post_empty(
+            ca_path(ca).into_iter().chain(once("sync/parents"))
+        ).await
+    }
+
+
+    pub async fn child_connections(
+        &self, ca: &CaHandle
+    ) -> Result<api::ChildrenConnectionStats, Error> {
+        self.get_json(
+            ca_path(ca).into_iter().chain(once("stats/children/connections"))
+        ).await
+    }
+
+    pub async fn child_add(
+        &self,
+        ca: &CaHandle, child: ChildHandle,
+        resources: ResourceSet,
+        id_cert: IdCert
+    ) -> Result<idexchange::ParentResponse, Error> {
+        self.post_json_with_response(
+            ca_path(ca).into_iter().chain(once("children")),
+            api::AddChildRequest::new(
+                child,
+                resources,
+                id_cert
+            )
+        ).await
+    }
+
+    pub async fn child_import(
+        &self, ca: &CaHandle, import: api::import::ImportChild
+    ) -> Result<api::Success, Error> {
+        self.post_json(
+            ca_path(ca).into_iter().chain(
+                [
+                    "children".into(),
+                    encode(import.name.clone().as_str()),
+                    "import".into()
+                ]
             ),
-            true => String::new(),
-        };
-
-        let toml = format!(
-            r#"
-[auth_users]
-"{id}" = {{ {attrs}password_hash="{ph}", salt="{salt}" }}"#,
-            id = details.id(),
-            attrs = attrs_fragment,
-            ph = hex::encode(password_hash),
-            salt = hex::encode(salt),
-        );
-
-        Ok(ApiResponse::GenericBody(toml))
+            import
+        ).await
     }
-}
 
-//------------ Error ---------------------------------------------------------
+    pub async fn child_details(
+        &self, ca: &CaHandle, child: &ChildHandle,
+    ) -> Result<api::ChildCaInfo, Error> {
+        self.get_json(child_path(ca, child)).await
+    }
 
-#[derive(Debug)]
-#[allow(clippy::large_enum_variant)]
-pub enum Error {
-    MissingCommand,
-    ServerDown,
-    HttpClientError(httpclient::Error),
-    ReportError(ReportError),
-    IoError(KrillIoError),
-    EmptyResponse,
-    Rfc8183(idexchange::Error),
-    InitError(String),
-    InputError(String),
-}
+    pub async fn child_update(
+        &self,
+        ca: &CaHandle, child: &ChildHandle,
+        update: api::UpdateChildRequest
+    ) -> Result<api::Success, Error> {
+        self.post_json(child_path(ca, child), update).await
+    }
 
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Error::MissingCommand => {
-                write!(f, "No valid command given, see --help")
+    pub async fn child_contact(
+        &self, ca: &CaHandle, child: &ChildHandle,
+    ) -> Result<idexchange::ParentResponse, Error> {
+        self.get_json(
+            child_path(ca, child).into_iter().chain(once("contact"))
+        ).await
+    }
+
+    pub async fn child_export(
+        &self, ca: &CaHandle, child: &ChildHandle,
+    ) -> Result<api::import::ExportChild, Error> {
+        self.get_json(
+            child_path(ca, child).into_iter().chain(once("export"))
+        ).await
+    }
+
+    pub async fn child_delete(
+        &self, ca: &CaHandle, child: &ChildHandle,
+    ) -> Result<api::Success, Error> {
+        self.delete(child_path(ca, child)).await
+    }
+
+    pub async fn child_request(
+        &self, ca: &CaHandle
+    ) -> Result<idexchange::ChildRequest, Error> {
+        self.get_json(
+            ca_path(ca).into_iter().chain(once("id/child_request.json"))
+        ).await
+    }
+
+    pub async fn parent_list(
+        &self, ca: &CaHandle,
+    ) -> Result<api::ParentStatuses, Error> {
+        self.get_json(
+            ca_path(ca).into_iter().chain(once("parents")),
+        ).await
+    }
+
+    pub async fn parent_add(
+        &self, ca: &CaHandle, request: api::ParentCaReq,
+    ) -> Result<api::Success, Error> {
+        self.post_json(
+            ca_path(ca).into_iter().chain(once("parents")),
+            request,
+        ).await
+    }
+
+    pub async fn parent_details(
+        &self, ca: &CaHandle, parent: &ParentHandle
+    ) -> Result<api::ParentCaContact, Error> {
+        self.get_json(parent_path(ca, parent)).await
+    }
+
+    pub async fn parent_delete(
+        &self, ca: &CaHandle, parent: &ParentHandle
+    ) -> Result<api::Success, Error> {
+        self.delete(parent_path(ca, parent)).await
+
+    }
+
+    pub async fn repo_request(
+        &self, ca: &CaHandle,
+    ) -> Result<idexchange::PublisherRequest, Error> {
+        self.get_json(
+            ca_path(ca).into_iter().chain(once("id/publisher_request.json"))
+        ).await
+    }
+
+    pub async fn repo_details(
+        &self, ca: &CaHandle,
+    ) -> Result<api::CaRepoDetails, Error> {
+        self.get_json(ca_path(ca).into_iter().chain(once("repo"))).await
+    }
+
+    pub async fn repo_status(
+        &self, ca: &CaHandle,
+    ) -> Result<api::RepoStatus, Error> {
+        self.get_json(
+            ca_path(ca).into_iter().chain(once("repo/status"))
+        ).await
+    }
+
+    pub async fn repo_update(
+        &self, ca: &CaHandle, response: idexchange::RepositoryResponse,
+    ) -> Result<api::Success, Error> {
+        self.post_json(
+            ca_path(ca).into_iter().chain(once("repo")),
+            api::ApiRepositoryContact::new(response),
+        ).await
+    }
+
+    pub async fn roas_list(
+        &self, ca: &CaHandle
+    ) -> Result<api::ConfiguredRoas, Error> {
+        self.get_json(ca_path(ca).into_iter().chain(once("routes"))).await
+    }
+
+    pub async fn roas_update(
+        &self, ca: &CaHandle, updates: api::RoaConfigurationUpdates
+    ) -> Result<api::Success, Error> {
+        self.post_json(
+            ca_path(ca).into_iter().chain(once("routes")), updates
+        ).await
+    }
+
+    pub async fn roas_try_update(
+        &self, ca: &CaHandle, updates: api::RoaConfigurationUpdates
+    ) -> Result<Option<bgp::BgpAnalysisAdvice>, Error> {
+        self.post_json_with_opt_response(
+            ca_path(ca).into_iter().chain(once("routes/try")), updates
+        ).await
+    }
+
+    pub async fn roas_dryrun_update(
+        &self, ca: &CaHandle, updates: api::RoaConfigurationUpdates
+    ) -> Result<bgp::BgpAnalysisReport, Error> {
+        self.post_json_with_response(
+            ca_path(ca).into_iter().chain(
+                once("routes/analysis/dryrun")
+            ),
+            updates
+        ).await
+    }
+
+    pub async fn roas_analyze(
+        &self, ca: &CaHandle
+    ) -> Result<bgp::BgpAnalysisReport, Error> {
+        self.get_json(
+            ca_path(ca).into_iter().chain(once("routes/analysis/full"))
+        ).await
+    }
+
+    pub async fn roas_suggest(
+        &self, ca: &CaHandle, resources: Option<ResourceSet>
+    ) -> Result<bgp::BgpAnalysisSuggestion, Error> {
+        match resources {
+            Some(resources) => {
+                self.post_json_with_response(
+                    ca_path(ca).into_iter().chain(
+                        once("routes/analysis/suggest")
+                    ),
+                    resources,
+                ).await
             }
-            Error::ServerDown => write!(f, "Server is not available."),
-            Error::HttpClientError(e) => {
-                write!(f, "Http client error: {}", e)
+            None => {
+                self.get_json(
+                    ca_path(ca).into_iter().chain(
+                        once("routes/analysis/suggest")
+                    )
+                ).await
             }
-            Error::ReportError(e) => e.fmt(f),
-            Error::IoError(e) => write!(f, "I/O error: {}", e),
-            Error::EmptyResponse => {
-                write!(f, "Empty response received from server")
-            }
-            Error::Rfc8183(e) => e.fmt(f),
-            Error::InitError(s) => s.fmt(f),
-            Error::InputError(s) => s.fmt(f),
         }
     }
-}
 
-impl Error {
-    fn init(msg: impl fmt::Display) -> Self {
-        Error::InitError(msg.to_string())
+    pub async fn bgpsec_list(
+        &self, ca: &CaHandle
+    ) -> Result<api::BgpSecCsrInfoList, Error> {
+        self.get_json(ca_path(ca).into_iter().chain(once("bgpsec"))).await
+    }
+
+    pub async fn bgpsec_update(
+        &self, ca: &CaHandle, updates: api::BgpSecDefinitionUpdates
+    ) -> Result<api::Success, Error> {
+        self.post_json(
+            ca_path(ca).into_iter().chain(once("bgpsec")), updates, 
+        ).await
+    }
+
+    pub async fn bgpsec_add_single(
+        &self, ca: &CaHandle, asn: Asn, csr: BgpsecCsr,
+    ) -> Result<api::Success, Error> {
+        self.bgpsec_update(
+            ca,
+            api::BgpSecDefinitionUpdates::new(
+                vec![api::BgpSecDefinition::new(asn, csr) ], vec![]
+            )
+        ).await
+    }
+
+    pub async fn bgpsec_delete_single(
+        &self, ca: &CaHandle, asn: Asn, key: KeyIdentifier,
+    ) -> Result<api::Success, Error> {
+        self.bgpsec_update(
+            ca,
+            api::BgpSecDefinitionUpdates::new(
+                vec![], vec![api::BgpSecAsnKey::new(asn, key)]
+            )
+        ).await
+    }
+
+    pub async fn aspas_list(
+        &self, ca: &CaHandle
+    ) -> Result<api::AspaDefinitionList, Error> {
+        self.get_json(ca_path(ca).into_iter().chain(once("aspas"))).await
+    }
+
+    pub async fn aspas_update(
+        &self, ca: &CaHandle, updates: api::AspaDefinitionUpdates,
+    ) -> Result<api::Success, Error> {
+        self.post_json(
+            ca_path(ca).into_iter().chain(once("aspas")), updates
+        ).await
+    }
+
+    pub async fn aspas_add_single(
+        &self, ca: &CaHandle, aspa: api::AspaDefinition
+    ) -> Result<api::Success, Error> {
+        self.aspas_update(
+            ca, api::AspaDefinitionUpdates::new(vec![aspa], vec![])
+        ).await
+    }
+
+    pub async fn aspas_delete_single(
+        &self, ca: &CaHandle, customer: Asn,
+    ) -> Result<api::Success, Error> {
+        self.aspas_update(
+            ca, api::AspaDefinitionUpdates::new(vec![], vec![customer])
+        ).await
+    }
+
+    pub async fn aspas_update_single(
+        &self,
+        ca: &CaHandle, customer: Asn,
+        update: api::AspaProvidersUpdate
+    ) -> Result<api::Success, Error> {
+        self.post_json(
+            ca_path(ca).into_iter().chain(
+                [ "aspas".into(), "as".into(), customer.to_string().into()]),
+            update,
+        ).await
+    }
+
+    pub async fn publishers_list(
+        &self
+    ) -> Result<api::PublisherList, Error> {
+        self.get_json(once("api/v1/pubd/publishers")).await
+    }
+
+    pub async fn publishers_stale(
+        &self, seconds: u64,
+    ) -> Result<api::PublisherList, Error> {
+        self.get_json(
+            ["api/v1/pubd/stale".into(), seconds.to_string().into()]
+        ).await
+    }
+
+    pub async fn publishers_add(
+        &self, request: idexchange::PublisherRequest
+    ) -> Result<idexchange::RepositoryResponse, Error> {
+        self.post_json_with_response(
+            once("api/v1/pubd/publishers"),
+            request
+        ).await
+    }
+
+    pub async fn publisher_details(
+        &self, publisher: &PublisherHandle
+    ) -> Result<api::PublisherDetails, Error> {
+        self.get_json(publisher_path(publisher)).await
+    }
+
+    pub async fn publisher_response(
+        &self, publisher: &PublisherHandle
+    ) -> Result<idexchange::RepositoryResponse, Error> {
+        self.get_json(
+            publisher_path(publisher).into_iter().chain(
+                once("response.json")
+            )
+        ).await
+    }
+
+    pub async fn publisher_delete(
+        &self, publisher: &PublisherHandle
+    ) -> Result<api::Success, Error> {
+        self.delete(publisher_path(publisher)).await
+    }
+
+    pub async fn pubserver_init(
+        &self, rrdp: uri::Https, rsync: uri::Rsync
+    ) -> Result<api::Success, Error> {
+        self.post_json(
+            once("api/v1/pubd/init"),
+            api::PublicationServerUris::new(rrdp, rsync)
+        ).await
+    }
+
+    pub async fn pubserver_delete_files(
+        &self, base_uri: uri::Rsync
+    ) -> Result<api::Success, Error> {
+        self.post_json(
+            once("api/v1/pubd/delete"),
+            api::RepoFileDeleteCriteria::new(base_uri)
+        ).await
+    }
+
+    pub async fn pubserver_stats(&self) -> Result<pubd::RepoStats, Error> {
+        self.get_json(once("stats/repo")).await
+    }
+
+    pub async fn pubserver_session_reset(
+        &self
+    ) -> Result<api::Success, Error> {
+        self.post_empty(once("api/v1/pubd/session_reset")).await
+    }
+
+    pub async fn pubserver_clear(
+        &self
+    ) -> Result<api::Success, Error> {
+        self.delete(once("api/v1/pubd/init")).await
     }
 }
 
-impl From<httpclient::Error> for Error {
-    fn from(e: httpclient::Error) -> Self {
-        Error::HttpClientError(e)
+
+/// # Testbed commands
+impl KrillClient {
+    pub async fn testbed_enabled(&self) -> Result<Success, Error> {
+        httpclient::get_ok(
+            &self.create_uri(once("testbed/enabled")), None
+        ).await.map(|_| Success)
+    }
+
+    pub async fn testbed_child_add(
+        &self,
+        child: ChildHandle,
+        resources: ResourceSet,
+        id_cert: IdCert
+    ) -> Result<idexchange::ParentResponse, Error> {
+        httpclient::post_json_with_response(
+            &self.create_uri(once("testbed/children")),
+            api::AddChildRequest::new(child, resources, id_cert),
+            None,
+        ).await
+    }
+
+    pub async fn testbed_child_response(
+        &self, child: &ChildHandle,
+    ) -> Result<String, Error> {
+        httpclient::get_text(
+            &self.create_uri([
+                "testbed/children".into(),
+                encode(child.as_str()),
+                "parent_response.xml".into()
+            ]),
+            None,
+        ).await
+    }
+
+    pub async fn testbed_child_delete(
+        &self, ca: &CaHandle
+    ) -> Result<Success, Error> {
+        httpclient::delete(
+            &self.create_uri(
+                ["testbed/children".into(), encode(ca.as_str())]
+            ),
+            None,
+        ).await.map(|_| Success)
+    }
+
+    pub async fn testbed_publishers_add(
+        &self, request: idexchange::PublisherRequest
+    ) -> Result<idexchange::RepositoryResponse, Error> {
+        httpclient::post_json_with_response(
+            &self.create_uri(once("testbed/publishers")),
+            request,
+            None,
+        ).await
+    }
+
+    pub async fn testbed_publisher_delete(
+        &self, ca: &CaHandle
+    ) -> Result<Success, Error> {
+        httpclient::delete(
+            &self.create_uri(
+                ["testbed/publishers".into(), ca.as_str().into()]
+            ),
+            None,
+        ).await.map(|_| Success)
+    }
+
+    pub async fn testbed_tal(&self) -> Result<String, Error> {
+        httpclient::get_text(
+            &self.create_uri(once("ta/ta.tal")),
+            None
+        ).await
+    }
+
+    pub async fn testbed_renamed_tal(&self) -> Result<String, Error> {
+        httpclient::get_text(
+            &self.create_uri(once("testbed.tal")),
+            None
+        ).await
     }
 }
 
-impl From<KrillIoError> for Error {
-    fn from(e: KrillIoError) -> Self {
-        Error::IoError(e)
+/// # Trust Anchor Proxy commands
+impl KrillClient {
+    pub async fn ta_proxy_init(&self) -> Result<Success, Error> {
+        self.post_empty(once("api/v1/ta/proxy/init")).await
+    }
+
+    pub async fn ta_proxy_id(&self) -> Result<api::IdCertInfo, Error> {
+        self.get_json(once("api/v1/ta/proxy/id")).await
+    }
+
+    pub async fn ta_proxy_repo_request(
+        &self
+    ) -> Result<idexchange::PublisherRequest, Error> {
+        self.get_json(once("api/v1/ta/proxy/repo/request.json")).await
+    }
+
+    pub async fn ta_proxy_repo_contact(
+        &self
+    ) -> Result<api::RepositoryContact, Error>  {
+        self.get_json(once("api/v1/ta/proxy/repo")).await
+    }
+
+    pub async fn ta_proxy_repo_configure(
+        &self, response: idexchange::RepositoryResponse, 
+    ) -> Result<Success, Error> {
+        self.post_json(
+            once("api/v1/ta/proxy/repo"),
+            api::ApiRepositoryContact::new(response),
+        ).await
+    }
+
+    pub async fn ta_proxy_signer_add(
+        &self, info: ta::TrustAnchorSignerInfo
+    ) -> Result<Success, Error> {
+        self.post_json(once("api/v1/ta/proxy/signer/add"), info).await
+    }
+
+    pub async fn ta_proxy_signer_make_request(
+        &self
+    ) -> Result<ta::TrustAnchorSignedRequest, Error> {
+        self.post_empty_with_response(
+            once("api/v1/ta/proxy/signer/request")
+        ).await
+    }
+
+    pub async fn ta_proxy_signer_show_request(
+        &self
+    ) -> Result<ta::TrustAnchorSignedRequest, Error> {
+        self.get_json(once("api/v1/ta/proxy/signer/request")).await
+    }
+
+    pub async fn ta_proxy_signer_response(
+        &self, response: ta::TrustAnchorSignedResponse
+    ) -> Result<Success, Error> {
+        self.post_json(
+            once("api/v1/ta/proxy/signer/response"),
+            response,
+        ).await
+    }
+
+    pub async fn ta_proxy_children_add(
+        &self, child: api::AddChildRequest,
+    ) -> Result<idexchange::ParentResponse, Error> {
+        self.post_json_with_response(
+            once("api/v1/ta/proxy/children"),
+            child,
+        ).await
+    }
+
+    pub async fn ta_proxy_child_response(
+        &self, child: &ChildHandle
+    ) -> Result<idexchange::ParentResponse, Error> {
+        self.get_json([
+            "api/v1/ta/proxy/children".into(),
+            encode(child.as_str()),
+            "parent_response.json".into(),
+        ]).await
     }
 }
 
-impl From<ReportError> for Error {
-    fn from(e: ReportError) -> Self {
-        Error::ReportError(e)
-    }
+
+
+//------------ Path Helpers --------------------------------------------------
+
+fn ca_path(ca: &CaHandle) -> impl IntoIterator<Item = Cow<'_, str>> {
+    ["api/v1/cas".into(), encode(ca.as_str())]
 }
 
-impl From<idexchange::Error> for Error {
-    fn from(e: idexchange::Error) -> Error {
-        Error::Rfc8183(e)
-    }
+fn child_path<'s>(
+    ca: &'s CaHandle, child: &'s ChildHandle
+) -> impl IntoIterator<Item = Cow<'s, str>> {
+    ca_path(ca).into_iter().chain(["children".into(), encode(child.as_str())])
 }
 
-//------------ Tests ---------------------------------------------------------
-
-#[cfg(test)]
-mod tests {
-
-    use super::*;
-    use crate::cli::options::KrillInitDetails;
-    use crate::test;
-
-    #[test]
-    fn init_config_file() {
-        let mut details = KrillInitDetails::default();
-        details.with_data_dir("/var/lib/krill/data/");
-        details.with_log_file("/var/log/krill/krill.log");
-
-        let client = KrillClient {
-            server: test::service_uri("https://localhost:3001/"),
-            token: Token::from("secret"),
-        };
-
-        let res = client.init_config(details).unwrap();
-
-        match res {
-            ApiResponse::GenericBody(body) => {
-                // Use the following to regenerate the test config file in
-                // case of text - not LOGIC - changes.
-                // file::save(body.as_bytes(),
-                // &std::path::PathBuf::from(
-                //     "test-resources/krill-init.conf"
-                // )).unwrap();
-                let expected =
-                    include_str!("../../test-resources/krill-init.conf");
-                assert_eq!(expected, &body)
-            }
-            _ => panic!("Expected body"),
-        }
-    }
-
-    #[test]
-    fn init_multi_user_config_file() {
-        let mut details = KrillInitDetails::multi_user_dflt();
-        details.with_data_dir("/var/lib/krill/data/");
-        details.with_log_file("/var/log/krill/krill.log");
-
-        let client = KrillClient {
-            server: test::service_uri("https://localhost:3001/"),
-            token: Token::from("secret"),
-        };
-
-        let res = client.init_config(details).unwrap();
-
-        match res {
-            ApiResponse::GenericBody(body) => {
-                // Use the following to regenerate the test config file in
-                // case of text - not LOGIC - changes.
-                // file::save(body.as_bytes(),
-                // &std::path::PathBuf::from(
-                //     "test-resources/krill-init-multi-user.conf"
-                // )).unwrap();
-                let expected = include_str!(
-                    "../../test-resources/krill-init-multi-user.conf"
-                );
-                assert_eq!(expected, &body)
-            }
-            _ => panic!("Expected body"),
-        }
-    }
+fn parent_path<'s>(
+    ca: &'s CaHandle, parent: &'s ParentHandle
+) -> impl IntoIterator<Item = Cow<'s, str>> {
+    ca_path(ca).into_iter().chain(["parents".into(), encode(parent.as_str())])
 }
+
+fn publisher_path(
+    publisher: &PublisherHandle
+) -> impl IntoIterator<Item = Cow<'_, str>> {
+    ["api/v1/pubd/publishers".into(), encode(publisher.as_str())]
+}
+
+fn once(s: &str) -> impl Iterator<Item = Cow<'_, str>> {
+    std::iter::once(s.into())
+}
+
+/// The set of ASCII characters that needs percent encoding in a path.
+///
+/// RFC 3986 defines the characters that do _not_ need encoding:
+///
+/// ```text
+/// pchar         = unreserved / pct-encoded / sub-delims / ":" / "@"
+/// unreserved    = ALPHA / DIGIT / "-" / "." / "_" / "~"
+/// sub-delims    = "!" / "$" / "&" / "'" / "(" / ")"
+///                 / "*" / "+" / "," / ";" / "="
+/// ```
+///
+/// XXX Someone please double-check this.
+const PATH_ENCODE_SET: &AsciiSet =
+    &CONTROLS
+    .add(b' ').add(b'"').add(b'#').add(b'%').add(b'/').add(b'<').add(b'>')
+    .add(b'?').add(b'[').add(b'\\').add(b']').add(b'^').add(b'`').add(b'{')
+    .add(b'|').add(b'}').add(b'\x7f');
+
+fn encode(s: &str) -> Cow<'_, str> {
+    utf8_percent_encode(s, PATH_ENCODE_SET).into()
+}
+

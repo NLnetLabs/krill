@@ -741,6 +741,7 @@ impl From<RepoFileDeleteCriteria> for uri::Rsync {
     }
 }
 
+
 //------------ Tests ---------------------------------------------------------
 
 #[cfg(test)]

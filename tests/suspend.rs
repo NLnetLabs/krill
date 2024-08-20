@@ -1,119 +1,105 @@
 //! Test suspension and un-suspension logic.
-use krill::test::*;
 use rpki::ca::idexchange::CaHandle;
 use rpki::repository::resources::ResourceSet;
+use krill::commons::api::UpdateChildRequest;
 
+mod common;
+
+//------------ Test Function -------------------------------------------------
+
+/// Tests suspension and un-suspension.
+///
+/// Uses the following layout:
+/// ```test
+///     TA
+///      |
+///   testbed
+///      |
+///     CA
+/// ```
 #[tokio::test]
 async fn test_suspension() {
-    //  Uses the following lay-out:
-    //
-    //                  TA
-    //                   |
-    //                testbed
-    //                   |
-    //                  CA
+    let (config, _tmpdir) = common::TestConfig::mem_storage()
+        .enable_testbed().enable_suspend().finalize();
+    let server = common::KrillServer::start_with_config(config).await;
 
-    // Start krill with:
-    //  testbed enabled
-    //  ca_refresh disabled (we will trigger individual CA refreshes manually)
-    //  suspend enabled
-    let cleanup =
-        start_krill_with_default_test_config(true, false, true, false).await;
+    let testbed = common::ca_handle("testbed");
+    let ca = common::ca_handle("CA");
+    let ca_res = common::ipv4_resources("10.0.0.0/16");
 
-    let testbed = ca_handle("testbed");
-    let ca = ca_handle("CA");
-    let ca_res = ipv4_resources("10.0.0.0/16");
+    // Wait for the *testbed* CA to get its certificate, this means
+    // that all CAs which are set up as part of krill_start under the
+    // testbed config have been set up.
+    assert!(
+        server.wait_for_ca_resources(&testbed, &ResourceSet::all()).await
+    );
 
-    async fn expect_not_suspended(ca: &CaHandle, child: &CaHandle) {
-        let rcn_0 = rcn(0);
+    eprintln!(">>>> Set up CA under testbed and its cert is published.");
+    server.create_ca_with_repo(&ca).await;
+    server.register_ca_with_parent(&ca, &testbed, &ca_res).await;
+
+    eprintln!(">>>> Verify that testbed publishes the cert and it is active");
+    server.expect_not_suspended(&testbed, &ca).await;
+
+    eprintln!(">>>> Wait a bit.");
+    common::sleep_seconds(15).await;
+
+    eprintln!(">>>> Refresh testbed only, check that CA is suspended.");
+    // This happens because CA isn’t updating.
+    server.client().ca_sync_parents(&testbed).await.unwrap();
+    server.client().bulk_suspend().await.unwrap();
+    server.expect_suspended(&testbed, &ca).await;
+
+    eprintln!(">>>> Let CA refresh with testbed, this should un-suspend it.");
+    server.client().ca_sync_parents(&ca).await.unwrap();
+    server.client().bulk_suspend().await.unwrap();
+    server.expect_not_suspended(&testbed, &ca).await;
+
+    eprintln!(">>>> Explicitly suspend CA.");
+    server.client().child_update(
+        &testbed, &ca.convert(),
+        UpdateChildRequest::suspend()
+    ).await.unwrap();
+    server.expect_suspended(&testbed, &ca).await;
+
+    eprintln!(">>>> Explicitly un-suspend CA.");
+    server.client().child_update(
+        &testbed, &ca.convert(),
+        UpdateChildRequest::unsuspend()
+    ).await.unwrap();
+    server.expect_not_suspended(&testbed, &ca).await;
+}
+
+
+//------------ Extend KrillServer --------------------------------------------
+
+impl common::KrillServer {
+    async fn expect_not_suspended(&self, ca: &CaHandle, child: &CaHandle)  {
+        let rcn0 = common::rcn(0);
         let child_handle = child.convert();
 
-        let mut expected_files = expected_mft_and_crl(ca, &rcn_0).await;
-        expected_files
-            .push(expected_issued_cer(&child.convert(), &rcn_0).await);
-        assert!(
-            will_publish_embedded(
-                "CA should have mft, crl and cert for child",
-                ca,
-                &expected_files
-            )
-            .await
-        );
+        let mut files = self.expected_objects(ca);
+        files.push_mft_and_crl(&rcn0).await;
+        files.push_cer(child, &rcn0).await;
+        assert!(files.wait_for_published().await);
 
-        let ca_info = ca_details(ca).await;
+        let ca_info = self.client().ca_details(ca).await.unwrap();
         assert!(ca_info.children().contains(&child_handle));
         assert!(!ca_info.suspended_children().contains(&child_handle));
     }
 
-    async fn expect_suspended(ca: &CaHandle, child: &CaHandle) {
-        let rcn_0 = rcn(0);
+    async fn expect_suspended(&self, ca: &CaHandle, child: &CaHandle) {
+        let rcn0 = common::rcn(0);
         let child_handle = child.convert();
 
-        let expected_files = expected_mft_and_crl(ca, &rcn_0).await;
-        assert!(
-            will_publish_embedded(
-                "CA should have mft, crl only",
-                ca,
-                &expected_files
-            )
-            .await
-        );
-
-        let ca_info = ca_details(ca).await;
+        let mut files = self.expected_objects(ca);
+        files.push_mft_and_crl(&rcn0).await;
+        assert!(files.wait_for_published().await);
+        
+        let ca_info = self.client().ca_details(ca).await.unwrap();
         assert!(ca_info.children().contains(&child_handle));
         assert!(ca_info.suspended_children().contains(&child_handle));
     }
 
-    // Wait for testbed to come up
-    {
-        assert!(ca_contains_resources(&testbed, &ResourceSet::all()).await);
-    }
-
-    // Set up CA under testbed and verify that the certificate is published
-    {
-        set_up_ca_with_repo(&ca).await;
-        set_up_ca_under_parent_with_resources(&ca, &testbed, &ca_res).await;
-    }
-
-    // Verify that testbed published the certificate for CA, and that its
-    // state is 'active'
-    {
-        expect_not_suspended(&testbed, &ca).await;
-    }
-
-    // Wait a bit, and then refresh testbed only, it should find that
-    // the child 'CA' has not been updating, and will suspend it.
-    {
-        sleep_seconds(15).await;
-
-        cas_refresh_single(&testbed).await;
-
-        // schedule check suspension bg job to now
-        cas_suspend_all().await;
-        expect_suspended(&testbed, &ca).await;
-    }
-
-    // Let "CA" refresh with testbed, this should 'un-suspend' it.
-    {
-        cas_refresh_single(&ca).await;
-
-        // schedule check suspension bg job to now
-        cas_suspend_all().await;
-        expect_not_suspended(&testbed, &ca).await;
-    }
-
-    // CAs can also be suspended explicitly, regardless of their last known
-    // connection
-    {
-        ca_suspend_child(&testbed, &ca).await;
-        expect_suspended(&testbed, &ca).await;
-    }
-
-    // And they can be manually unsuspended as well
-    {
-        ca_unsuspend_child(&testbed, &ca).await;
-        expect_not_suspended(&testbed, &ca).await;
-    }
-
-    cleanup();
 }
+

@@ -6,7 +6,8 @@ use reqwest::{
     header::{HeaderMap, HeaderValue, CONTENT_TYPE, USER_AGENT},
     Response, StatusCode,
 };
-use serde::{de::DeserializeOwned, Serialize};
+use serde::de::DeserializeOwned;
+use serde::ser::Serialize;
 
 use crate::{
     commons::{
@@ -475,6 +476,7 @@ pub enum Error {
 
     Response(ErrorUri, ErrorMessage),
     Forbidden(ErrorUri),
+    ErrorResponse(ErrorUri, StatusCode),
     ErrorResponseWithBody(ErrorUri, StatusCode, String),
     ErrorResponseWithJson(ErrorUri, StatusCode, Box<ErrorResponse>),
 }
@@ -506,6 +508,14 @@ impl fmt::Display for Error {
             ),
             Error::Forbidden(uri) => {
                 write!(f, "Got 'Forbidden' response for URI: {}", uri)
+            }
+            Error::ErrorResponse(uri, code) => {
+                write!(
+                    f,
+                    "Issue processing response from URI: {}, \
+                     error: unexpected status code {}",
+                    uri, code
+                )
             }
             Error::ErrorResponseWithBody(uri, code, e) => {
                 write!(
@@ -554,12 +564,8 @@ impl Error {
         Error::Forbidden(uri.to_string())
     }
 
-    pub fn unexpected_status(status: StatusCode) -> String {
-        format!("unexpected status code {}", status)
-    }
-
     pub fn response_unexpected_status(uri: &str, status: StatusCode) -> Self {
-        Error::Response(uri.to_string(), Self::unexpected_status(status))
+        Error::ErrorResponse(uri.to_string(), status)
     }
 
     async fn from_res(uri: &str, res: Response) -> Error {
@@ -584,6 +590,21 @@ impl Error {
                 }
             }
             _ => Self::response_unexpected_status(uri, status),
+        }
+    }
+
+    /// Returns the HTTP status code if we got that far.
+    ///
+    /// Returns `None` if any other kind of error happened.
+    pub fn status_code(&self) -> Option<StatusCode> {
+        match self {
+            Self::ErrorResponse(_, code)
+                | Self::ErrorResponseWithBody(_, code, _)
+                | Self::ErrorResponseWithJson(_, code, _) =>
+            {
+                Some(*code)
+            }
+            _ => None
         }
     }
 }

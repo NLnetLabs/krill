@@ -846,7 +846,7 @@ impl RsyncdStore {
         })?;
 
         let mut new_dir = self.rsync_dir.clone();
-        new_dir.push(&format!("tmp-{}", serial));
+        new_dir.push(format!("tmp-{}", serial));
         fs::create_dir_all(&new_dir).map_err(|e| {
             KrillIoError::new(
                 format!(
