@@ -23,7 +23,7 @@ impl Serialize for Success {
     fn serialize<S: Serializer>(
         &self, serializer: S
     ) -> Result<S::Ok, S::Error> {
-        let mut serializer = serializer.serialize_struct( "UnitSuccess", 1)?;
+        let mut serializer = serializer.serialize_struct("Success", 1)?;
         serializer.serialize_field("status", "Ok")?;
         serializer.end()
     }

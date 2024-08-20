@@ -1,4 +1,4 @@
-//! Options relating the managing the Krill server.
+//! Options relating to managing the Krill server.
 
 use rpki::ca::idexchange::CaHandle;
 use crate::cli::client::KrillClient;

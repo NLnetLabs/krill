@@ -17,7 +17,7 @@ pub enum Command {
     /// Show current ASPAs
     List(List),
 
-    /// Add or replace an ASPA.
+    /// Add or replace an ASPA
     Add(Add),
 
     /// Remove the ASPA for a customer ASN
@@ -63,7 +63,7 @@ pub struct Add {
     #[command(flatten)]
     ca: ca::Handle,
 
-    /// the ASPA formatted like: 65000 => 65001, 65002, 65003
+    /// The ASPA formatted like: 65000 => 65001, 65002, 65003
     #[arg(long, value_name = "ASPA definition")]
     aspa: CleanAspaDefinition,
 }
@@ -116,11 +116,11 @@ pub struct Update {
     customer: Asn,
 
     /// Provider ASN to add
-    #[arg(long, value_name = "ASN")]
+    #[arg(long, value_name = "ASNn")]
     add: Vec<Asn>,
 
     /// Provider ASN to remove.
-    #[arg(long, value_name = "ASN")]
+    #[arg(long, value_name = "ASNn")]
     remove: Vec<Asn>,
 }
 
@@ -179,7 +179,7 @@ impl fmt::Display for CleanAspaDefinitionError {
         match self {
             Self::Format(err) => err.fmt(f),
             Self::CustomerAsProvider => {
-                f.write_str("Customer AS may not be used as provider.")
+                f.write_str("Customer ASN may not be used as provider.")
             }
             Self::EmptyProviders => {
                 f.write_str("At least one provider MUST be specified.")

@@ -67,7 +67,7 @@ pub struct Add {
     #[arg(long, short, value_name = "ASN")]
     asn: Asn,
 
-    /// Path to the DER-encoded certificate signing request.
+    /// Path to the DER-encoded certificate signing request
     #[arg(long, value_name = "path")]
     csr: BgpsecCsrFile,
 }

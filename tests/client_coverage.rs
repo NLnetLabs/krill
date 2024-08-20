@@ -121,6 +121,7 @@ async fn client_coverage() {
             include_bytes!("../test-resources/bgpsec/router-csr.der").as_ref()
         ).unwrap(),
     ).await.unwrap();
+    // bgpsec_delete_single boils down to the same API call, so not tested
     server.client().bgpsec_list(&child).await.unwrap();
 
     server.client().aspas_add_single(

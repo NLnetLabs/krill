@@ -192,7 +192,7 @@ pub enum Signer {
     /// Show existing request for the signer (fails if there is no request)
     ShowRequest(SignerShowRequest),
 
-    /// Process a response from the signer. Fails it not for the open request.
+    /// Process a response from the signer. Fails it not for the open request
     ProcessResponse(SignerProcessResponse),
 }
 

@@ -64,7 +64,7 @@ pub enum Subcommand {
     /// Show last response
     Last(Last),
 
-    /// Show full history of proxy signer exchanges.
+    /// Show full history of proxy signer exchanges
     Exchanges(Exchanges),
 }
 

@@ -1,4 +1,4 @@
-//! Trigger events for all CAs.
+//! Commands triggering events for all CAs.
 
 use crate::cli::client::KrillClient;
 use crate::cli::report::Report;

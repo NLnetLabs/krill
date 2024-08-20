@@ -1,3 +1,5 @@
+//! Options for creating Krill config.
+
 use std::fmt;
 use std::borrow::Cow;
 use serde::ser::{Serialize, Serializer, SerializeStruct};
@@ -32,18 +34,18 @@ impl Command {
 
 #[derive(clap::Parser)]
 pub struct Simple {
-    /// Override the default data directory of ./data.
+    /// Override the default data directory of ./data
     #[arg(short, long)]
     pub data: Option<String>,
 
-    /// Override the default log file path of ./krill.log.
+    /// Override the default log file path of ./krill.log
     #[arg(short, long)]
     pub logfile: Option<String>,
 
     /// Include config for multi-user feature
     pub multi_user: bool,
 
-    /// Include config for HSM.
+    /// Include config for HSM
     pub hsm: bool,
 }
 
@@ -126,11 +128,11 @@ impl Simple {
 #[cfg(feature = "multi-user")]
 #[derive(clap::Parser)]
 pub struct User {
-    /// ID (e.g., username, email) to generate configuration for.
+    /// ID (e.g., username, email) to generate configuration for
     #[arg(long, value_name = "id")]
     pub id: String,
 
-    /// Attributes for the user.
+    /// Attributes for the user
     #[arg(long, short, value_name="key=value")]
     pub attr: Vec<KeyValuePair>,
 }

@@ -40,10 +40,10 @@ pub enum Command {
     /// Show connections stats for children of a CA
     Connections(Connections),
 
-    /// Suspend a child CA: hide certificate(s) issued to child
+    /// Suspend a child CA: un-publish certificate(s) issued to child
     Suspend(Suspend),
 
-    /// Unsuspend a child CA
+    /// Unsuspend a child CA: publish certificate(s) issued to child
     Unsuspend(Unsuspend),
 }
 
