@@ -1,16 +1,14 @@
-use std::{
-    collections::HashMap,
-    sync::RwLock,
-    time::{Duration, SystemTime, UNIX_EPOCH},
-};
-
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
 use base64::engine::Engine as _;
+use crate::commons::api::Token;
+use crate::commons::error::Error;
+use crate::commons::KrillResult;
+use crate::daemon::auth::common::crypt;
+use crate::daemon::auth::common::crypt::{CryptState, NonceState};
 
-use crate::{
-    commons::{api::Token, error::Error, KrillResult},
-    daemon::auth::common::crypt::{self, CryptState, NonceState},
-};
 
 const MAX_CACHE_SECS: u64 = 30;
 
@@ -18,8 +16,7 @@ const MAX_CACHE_SECS: u64 = 30;
 pub struct ClientSession {
     pub start_time: u64,
     pub expires_in: Option<Duration>,
-    pub id: String,
-    pub attributes: HashMap<String, String>,
+    pub user_id: Arc<str>,
     pub secrets: HashMap<String, String>,
 }
 
@@ -49,8 +46,8 @@ impl ClientSession {
                     };
 
                     trace!(
-                        "Login session status check: id={}, status={:?}, max age={} secs, cur age={} secs",
-                        &self.id,
+                        "Login session status check: user_id={}, status={:?}, max age={} secs, cur age={} secs",
+                        &self.user_id,
                         &status,
                         max_age_secs,
                         cur_age_secs
@@ -190,8 +187,7 @@ impl LoginSessionCache {
 
     pub fn encode(
         &self,
-        id: &str,
-        attributes: &HashMap<String, String>,
+        user_id: Arc<str>,
         secrets: HashMap<String, String>,
         crypt_state: &CryptState,
         expires_in: Option<Duration>,
@@ -199,8 +195,7 @@ impl LoginSessionCache {
         let session = ClientSession {
             start_time: Self::time_now_secs_since_epoch()?,
             expires_in,
-            id: id.to_string(),
-            attributes: attributes.clone(),
+            user_id,
             secrets,
         };
 
@@ -233,7 +228,7 @@ impl LoginSessionCache {
         add_to_cache: bool,
     ) -> KrillResult<ClientSession> {
         if let Some(session) = self.lookup_session(&token) {
-            trace!("Session cache hit for session id {}", &session.id);
+            trace!("Session cache hit for session id {}", &session.user_id);
             return Ok(session);
         } else {
             trace!("Session cache miss, deserializing...");
@@ -264,7 +259,7 @@ impl LoginSessionCache {
 
         trace!(
             "Session cache miss, deserialized session id {}",
-            &session.id
+            &session.user_id
         );
 
         if add_to_cache {
@@ -341,13 +336,12 @@ mod tests {
 
         // Add an item to the cache and verify that the cache now has 1 item
         let item1_token = cache
-            .encode("some id", &HashMap::new(), HashMap::new(), &key, None)
+            .encode("some id".into(), HashMap::new(), &key, None)
             .unwrap();
         assert_eq!(cache.size(), 1);
 
         let item1 = cache.decode(item1_token, &key, true).unwrap();
-        assert_eq!(item1.id, "some id");
-        assert_eq!(item1.attributes, HashMap::new());
+        assert_eq!(item1.user_id.as_ref(), "some id");
         assert_eq!(item1.expires_in, None);
         assert_eq!(item1.secrets, HashMap::new());
 
@@ -358,12 +352,10 @@ mod tests {
         assert_eq!(cache.size(), 1);
 
         // Add another item to the cache
-        let some_attrs = one_attr_map("some attr key", "some attr val");
         let some_secrets = one_attr_map("some secret key", "some secret val");
         let item2_token = cache
             .encode(
-                "other id",
-                &some_attrs,
+                "other id".into(),
                 some_secrets,
                 &key,
                 Some(Duration::from_secs(10)),
@@ -383,11 +375,7 @@ mod tests {
         assert_eq!(cache.size(), 1);
 
         let item2 = cache.decode(item2_token, &key, true).unwrap();
-        assert_eq!(item2.id, "other id");
-        assert_eq!(
-            item2.attributes,
-            one_attr_map("some attr key", "some attr val")
-        );
+        assert_eq!(item2.user_id.as_ref(), "other id");
         assert_eq!(item2.expires_in, Some(Duration::from_secs(10)));
         assert_eq!(
             item2.secrets,

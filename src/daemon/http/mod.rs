@@ -1,24 +1,27 @@
-use std::{io, str::from_utf8, str::FromStr};
-
+use std::io;
+use std::str::FromStr;
+use std::str::from_utf8;
+use std::sync::Arc;
 use bytes::Bytes;
-use serde::{de::DeserializeOwned, Serialize};
-
 use http_body_util::{BodyExt, Either, Empty, Full, Limited};
 use hyper::body::Body;
 use hyper::header::USER_AGENT;
 use hyper::http::uri::PathAndQuery;
 use hyper::{HeaderMap, Method, StatusCode};
-
 use rpki::ca::{provisioning, publication};
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 
+use crate::daemon::auth::{AuthInfo, Handle, LoggedInUser};
+use crate::daemon::auth::policy::{AuthPolicy, Permission};
 use crate::{
     commons::{
-        actor::{Actor, ActorDef},
+        actor::Actor,
         error::Error,
         KrillResult,
     },
     constants::HTTP_USER_AGENT_TRUNCATE,
-    daemon::{auth::LoggedInUser, http::server::State},
+    daemon::http::server::State,
 };
 
 pub mod auth;
@@ -351,19 +354,22 @@ pub struct Request {
     request: HyperRequest,
     path: RequestPath,
     state: State,
-    actor: Actor,
+    auth: AuthInfo,
+    auth_policy: Arc<AuthPolicy>,
 }
 
 impl Request {
     pub async fn new(request: HyperRequest, state: State) -> Self {
         let path = RequestPath::from_request(&request);
-        let actor = state.actor_from_request(&request).await;
+        let auth = state.authenticate_request(&request).await;
+        let auth_policy = state.get_auth_policy(&auth.actor);
 
         Request {
             request,
             path,
             state,
-            actor,
+            auth,
+            auth_policy,
         }
     }
 
@@ -387,18 +393,35 @@ impl Request {
         }
     }
 
-    pub async fn upgrade_from_anonymous(&mut self, actor_def: ActorDef) {
-        if self.actor.is_anonymous() {
-            self.actor = self.state.actor_from_def(actor_def);
+    pub async fn upgrade_from_anonymous(&mut self, actor: Actor) {
+        if self.auth.actor.is_anonymous() {
+            self.auth.actor = actor.into();
             info!(
-                "Permitted anonymous actor to become actor '{}' for the duration of this request",
-                self.actor.name()
+                "Permitted anonymous actor to become actor '{}' \
+                 for the duration of this request",
+                self.auth.actor.name()
             );
         }
     }
 
+    pub fn is_allowed(
+        &self, 
+        permission: Permission,
+        resource: Option<&Handle>
+    ) -> bool {
+        self.state.is_allowed(&self.auth.actor, permission, resource)
+    }
+
     pub fn actor(&self) -> Actor {
-        self.actor.clone()
+        self.auth.actor.clone()
+    }
+
+    pub fn auth_policy(&self) -> &AuthPolicy {
+        &self.auth_policy
+    }
+
+    pub fn auth_info_mut(&mut self) -> &mut AuthInfo {
+        &mut self.auth
     }
 
     /// Returns the complete path.

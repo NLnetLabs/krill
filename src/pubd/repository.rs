@@ -43,7 +43,7 @@ use crate::{
         KrillResult,
     },
     constants::{
-        PUBSERVER_CONTENT_NS, PUBSERVER_DFLT, PUBSERVER_NS,
+        ACTOR_DEF_KRILL, PUBSERVER_CONTENT_NS, PUBSERVER_DFLT, PUBSERVER_NS,
         REPOSITORY_RRDP_ARCHIVE_DIR, REPOSITORY_RRDP_DIR,
         REPOSITORY_RSYNC_DIR, RRDP_FIRST_SERIAL,
     },
@@ -1882,7 +1882,7 @@ impl RepositoryAccessProxy {
         if self.initialized()? {
             Err(Error::RepositoryServerAlreadyInitialized)
         } else {
-            let actor = Actor::system_actor();
+            let actor = ACTOR_DEF_KRILL;
 
             let (rrdp_base_uri, rsync_jail) = uris.unpack();
 

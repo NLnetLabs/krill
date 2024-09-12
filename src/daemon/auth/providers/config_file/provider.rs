@@ -7,7 +7,7 @@ use unicode_normalization::UnicodeNormalization;
 use crate::daemon::http::{HttpResponse, HyperRequest};
 use crate::{
     commons::{
-        actor::ActorDef, api::Token, error::Error, util::httpclient,
+        api::Token, error::Error, util::httpclient,
         KrillResult,
     },
     constants::{PW_HASH_LOG_N, PW_HASH_P, PW_HASH_R},
@@ -17,7 +17,7 @@ use crate::{
             session::*,
         },
         auth::providers::config_file::config::ConfigUserDetails,
-        auth::{Auth, LoggedInUser},
+        auth::{Auth, AuthInfo, LoggedInUser},
         config::Config,
     },
 };
@@ -27,7 +27,6 @@ const UI_LOGIN_ROUTE_PATH: &str = "/login?withId=true";
 struct UserDetails {
     password_hash: Token,
     salt: String,
-    attributes: HashMap<String, String>,
 }
 
 fn get_checked_config_user(
@@ -59,7 +58,6 @@ fn get_checked_config_user(
     Ok(UserDetails {
         password_hash: Token::from(password_hash),
         salt,
-        attributes: user.attributes.clone(),
     })
 }
 
@@ -124,7 +122,7 @@ impl ConfigFileAuthProvider {
     pub fn authenticate(
         &self,
         request: &HyperRequest,
-    ) -> KrillResult<Option<ActorDef>> {
+    ) -> KrillResult<Option<AuthInfo>> {
         if log_enabled!(log::Level::Trace) {
             trace!("Attempting to authenticate the request..");
         }
@@ -139,13 +137,9 @@ impl ConfigFileAuthProvider {
                     true,
                 )?;
 
-                trace!(
-                    "id={}, attributes={:?}",
-                    &session.id,
-                    &session.attributes
-                );
+                trace!("user_id={}", session.user_id);
 
-                Ok(Some(ActorDef::user(session.id, session.attributes, None)))
+                Ok(Some(AuthInfo::user(session.user_id)))
             }
             _ => Ok(None),
         };
@@ -225,10 +219,9 @@ impl ConfigFileAuthProvider {
                 // and don't result in an obvious timing difference between
                 // the two scenarios which could potentially
                 // be used to discover user names.
-                if let Some(user) = self.users.get(&username) {
+                if let Some(_user) = self.users.get(username.as_str()) {
                     let api_token = self.session_cache.encode(
-                        &username,
-                        &user.attributes,
+                        username.clone().into(),
                         HashMap::new(),
                         &self.session_key,
                         None,
@@ -236,8 +229,7 @@ impl ConfigFileAuthProvider {
 
                     Ok(LoggedInUser {
                         token: api_token,
-                        id: username.to_string(),
-                        attributes: user.attributes.clone(),
+                        id: username.clone(),
                     })
                 } else {
                     trace!("Incorrect password for user {}", username);
@@ -267,8 +259,8 @@ impl ConfigFileAuthProvider {
             Some(token) => {
                 self.session_cache.remove(&token);
 
-                if let Ok(Some(actor)) = self.authenticate(request) {
-                    info!("User logged out: {}", actor.name.as_str());
+                if let Ok(Some(info)) = self.authenticate(request) {
+                    info!("User logged out: {}", info.actor.name());
                 }
             }
             _ => {

@@ -24,28 +24,10 @@ pub fn url_encode<S: AsRef<str>>(s: S) -> Result<String, Error> {
 
 #[cfg(feature = "multi-user")]
 fn build_auth_redirect_location(user: LoggedInUser) -> Result<String, Error> {
-    use std::collections::HashMap;
-
-    fn b64_encode_attributes_with_mapped_error(
-        a: &HashMap<String, String>,
-    ) -> Result<String, Error> {
-        use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
-        use base64::engine::Engine as _;
-
-        Ok(BASE64_ENGINE.encode(
-            serde_json::to_string(a)
-                .map_err(|err| Error::custom(err.to_string()))?,
-        ))
-    }
-
-    let attributes =
-        b64_encode_attributes_with_mapped_error(&user.attributes)?;
-
     Ok(format!(
-        "/ui/login?token={}&id={}&attributes={}",
+        "/ui/login?token={}&id={}",
         &url_encode(user.token)?,
-        &url_encode(user.id)?,
-        &url_encode(attributes)?
+        &url_encode(user.id.as_str())?,
     ))
 }
 

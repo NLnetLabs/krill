@@ -237,11 +237,7 @@ impl Scheduler {
         // to avoid a thundering herd. Note that the operator can always
         // choose to run bulk operations manually if they know that they
         // cannot wait.
-        let ca_list = self
-            .ca_manager
-            .ca_list(&self.system_actor)
-            .map_err(FatalError)?;
-        let cas = ca_list.cas();
+        let cas = self.ca_manager.ca_handles().map_err(FatalError)?;
         debug!("Adding missing tasks at start up");
 
         // If we have many CAs then we need to apply some jitter
@@ -250,10 +246,10 @@ impl Scheduler {
 
         let use_jitter = cas.len() >= SCHEDULER_USE_JITTER_CAS_THRESHOLD;
 
-        for summary in cas {
+        for handle in &cas {
             let ca = self
                 .ca_manager
-                .get_ca(summary.handle())
+                .get_ca(handle)
                 .await
                 .map_err(FatalError)?;
             let ca_handle = ca.handle();
