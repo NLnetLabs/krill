@@ -48,8 +48,8 @@ use crate::{
         CASERVER_NS, STATUS_NS, TA_PROXY_SERVER_NS, TA_SIGNER_SERVER_NS,
     },
     daemon::{
-        auth::common::permissions::Permission,
         auth::Handle,
+        auth::policy::{AuthPolicy, Permission},
         ca::{
             CaObjectsStore, CaStatus, CertAuth, CertAuthCommand,
             CertAuthCommandDetails, DeprecatedRepository,
@@ -611,19 +611,23 @@ impl CaManager {
         Ok(())
     }
 
-    /// Get the CAs that the given actor is permitted to see.
-    pub fn ca_list(&self, actor: &Actor) -> KrillResult<CertAuthList> {
+    /// Returns all known CA handles.
+    pub fn ca_handles(&self) -> KrillResult<Vec<CaHandle>> {
+        Ok(self.ca_store.list()?)
+    }
+
+    /// Gets the CAs that the given policy allows read access to.
+    pub fn ca_list(
+        &self, auth: &AuthPolicy
+    ) -> KrillResult<CertAuthList> {
         Ok(CertAuthList::new(
             self.ca_store
                 .list()?
                 .into_iter()
                 .filter(|handle| {
-                    matches!(
-                        actor.is_allowed(
-                            Permission::CA_READ,
-                            Handle::from(handle)
-                        ),
-                        Ok(true)
+                    auth.is_allowed(
+                        Permission::CA_READ,
+                        Some(&Handle::from(handle))
                     )
                 })
                 .map(CertAuthSummary::new)
@@ -2460,9 +2464,9 @@ impl CaManager {
     /// Schedule synchronizing all CAs with their repositories.
     pub fn cas_schedule_repo_sync_all(
         &self,
-        actor: &Actor,
+        auth: &AuthPolicy,
     ) -> KrillResult<()> {
-        for ca in self.ca_list(actor)?.cas() {
+        for ca in self.ca_list(auth)?.cas() {
             self.cas_schedule_repo_sync(ca.handle().clone())?;
         }
         Ok(())
@@ -3056,7 +3060,9 @@ impl CaManager {
     /// Note: this does not re-issue issued CA certificates, because child
     /// CAs are expected to note extended validity eligibility and request
     /// updated certificates themselves.
-    pub async fn renew_objects_all(&self, actor: &Actor) -> KrillResult<()> {
+    pub async fn renew_objects_all(
+        &self, actor: &Actor
+    ) -> KrillResult<()> {
         for ca in self.ca_store.list()? {
             let cmd = CertAuthCommand::new(
                 &ca,

@@ -28,10 +28,7 @@
 //! [openid-connect-rpinitiated-1_0]: https://openid.net/specs/openid-connect-rpinitiated-1_0.html
 
 use std::{
-    collections::{
-        hash_map::Entry::{Occupied, Vacant},
-        HashMap,
-    },
+    collections::HashMap,
     ops::Deref,
     sync::Arc, 
     time::Instant,
@@ -43,8 +40,6 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD as URL_BASE64_ENGINE;
 use base64::engine::Engine as _;
 use basic_cookies::Cookie;
 use hyper::header::{HeaderValue, SET_COOKIE};
-use jmespatch as jmespath;
-use jmespath::ToJmespath;
 
 use openidconnect::{
     core::{
@@ -63,7 +58,6 @@ use urlparse::{urlparse, GetQuery};
 use crate::daemon::http::{HttpResponse, HyperRequest};
 use crate::{
     commons::{
-        actor::ActorDef,
         api::Token,
         error::Error,
         util::{httpclient, sha256},
@@ -75,27 +69,24 @@ use crate::{
                 crypt::{self, CryptState},
                 session::*,
             },
-            providers::config_file::config::ConfigUserDetails,
             providers::openid_connect::{
-                config::{
-                    ConfigAuthOpenIDConnect, ConfigAuthOpenIDConnectClaim,
-                    ConfigAuthOpenIDConnectClaimSource as ClaimSource,
-                    ConfigAuthOpenIDConnectClaims,
-                },
+                config::ConfigAuthOpenIDConnect,
                 httpclient::logging_http_client,
-                jmespathext,
                 util::{
                     FlexibleClient, FlexibleIdTokenClaims,
                     FlexibleTokenResponse, FlexibleUserInfoClaims, LogOrFail,
                     WantedMeta,
                 },
             },
-            Auth, LoggedInUser,
+            Auth, AuthInfo, LoggedInUser,
         },
         config::Config,
         http::auth::{url_encode, AUTH_CALLBACK_ENDPOINT},
     },
 };
+
+
+//------------ Constants -----------------------------------------------------
 
 // On modern browsers (Chrome >= 51, Edge >= 16, Firefox >= 60 & Safari >= 12)
 // the "__Host" prefix is a defence-in-depth measure that causes the browser
@@ -104,6 +95,9 @@ use crate::{
 // with path "/" and WITHOUT a "domain" attribute. See: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie#cookie_prefixes
 const NONCE_COOKIE_NAME: &str = "__Host-krill_login_nonce";
 const CSRF_COOKIE_NAME: &str = "__Host-krill_login_csrf_hash";
+
+
+//------------ TokenKind -----------------------------------------------------
 
 #[allow(clippy::enum_variant_names)]
 enum TokenKind {
@@ -131,6 +125,10 @@ impl From<TokenKind> for &'static str {
         }
     }
 }
+
+
+//------------ LogoutMode ----------------------------------------------------
+
 enum LogoutMode {
     OAuth2TokenRevocation {
         revocation_url: String,
@@ -148,6 +146,9 @@ enum LogoutMode {
     },
 }
 
+
+//------------ ProivderConnectionProperties ----------------------------------
+
 pub struct ProviderConnectionProperties {
     client: FlexibleClient,
     email_scope_supported: bool,
@@ -155,6 +156,9 @@ pub struct ProviderConnectionProperties {
     time_established: Instant,
     logout_mode: LogoutMode,
 }
+
+
+//------------ OpenIdConnectAuthProvider -------------------------------------
 
 pub struct OpenIDConnectAuthProvider {
     config: Arc<Config>,
@@ -565,7 +569,7 @@ impl OpenIDConnectAuthProvider {
 
         trace!(
             "OpenID Connect: Revoking token for user: \"{}\"",
-            &session.id
+            &session.user_id
         );
         trace!("OpenID Connect: Submitting RFC-7009 section 2 Token Revocation request");
         let lock_guard = self.get_connection().await.map_err(|err| {
@@ -640,7 +644,7 @@ impl OpenIDConnectAuthProvider {
 
         debug!(
             "OpenID Connect: Refreshing token for user: \"{}\"",
-            &session.id
+            &session.user_id
         );
         trace!("OpenID Connect: Submitting RFC-6749 section 6 Access Token Refresh request");
 
@@ -660,8 +664,7 @@ impl OpenIDConnectAuthProvider {
         match token_response {
             Ok(token_response) => {
                 let new_token_res = self.session_cache.encode(
-                    &session.id,
-                    &session.attributes,
+                    session.user_id.clone(),
                     secrets_from_token_response(&token_response),
                     &self.session_key,
                     token_response.expires_in(),
@@ -732,10 +735,12 @@ impl OpenIDConnectAuthProvider {
 
     fn extract_claim(
         &self,
-        claim_conf: &ConfigAuthOpenIDConnectClaim,
-        id_token_claims: &FlexibleIdTokenClaims,
-        user_info_claims: Option<&FlexibleUserInfoClaims>,
+        //_claim_conf: &ConfigAuthOpenIDConnectClaim,
+        _id_token_claims: &FlexibleIdTokenClaims,
+        _user_info_claims: Option<&FlexibleUserInfoClaims>,
     ) -> KrillResult<Option<String>> {
+        unimplemented!()
+        /*
         let searchable_claims = match &claim_conf.source {
             Some(ClaimSource::ConfigFile) => return Ok(None),
             Some(ClaimSource::IdTokenStandardClaim) => {
@@ -878,6 +883,7 @@ impl OpenIDConnectAuthProvider {
         );
 
         Ok(None)
+        */
     }
 
     fn init_session_key(config: &Config) -> KrillResult<CryptState> {
@@ -1242,6 +1248,7 @@ impl OpenIDConnectAuthProvider {
         Ok(user_info_claims)
     }
 
+    /*
     fn resolve_claims(
         &self,
         claims_conf: HashMap<String, ConfigAuthOpenIDConnectClaim>,
@@ -1249,7 +1256,7 @@ impl OpenIDConnectAuthProvider {
         id_token_claims: &FlexibleIdTokenClaims,
         user_info_claims: Option<FlexibleUserInfoClaims>,
         id: &str,
-    ) -> KrillResult<HashMap<String, String>> {
+    ) -> KrillResult<String> {
         let mut attributes: HashMap<String, String> = HashMap::new();
         for (attr_name, claim_conf) in claims_conf {
             if attr_name == "id" {
@@ -1257,15 +1264,15 @@ impl OpenIDConnectAuthProvider {
             }
             let attr_value = match &claim_conf.source {
                 Some(ClaimSource::ConfigFile) if user.is_some() => {
-                    // Lookup the claim value in the auth_users config file
-                    // section
-                    user.unwrap()
-                        .attributes
-                        .get(&attr_name.to_string())
-                        .cloned()
+                    if attr_name == "role" {
+                        Some(user.unwrap().role.clone())
+                    }
+                    else {
+                        None
+                    }
                 }
                 _ => self.extract_claim(
-                    &claim_conf,
+                    //&claim_conf,
                     id_token_claims,
                     user_info_claims.as_ref(),
                 )?,
@@ -1315,8 +1322,18 @@ impl OpenIDConnectAuthProvider {
                 info!("No '{}' claim found for user: {}", &attr_name, &id);
             }
         }
-        Ok(attributes)
+
+        match attributes.get("role") {
+            Some(role) => Ok(role.clone()),
+            None => {
+                Err(OpenIDConnectAuthProvider::internal_error(
+                    "no role for user".into(),
+                    Some(format!("user ID: {}", id))
+                ))
+            }
+        }
     }
+    */
 }
 
 impl OpenIDConnectAuthProvider {
@@ -1334,7 +1351,7 @@ impl OpenIDConnectAuthProvider {
     pub async fn authenticate(
         &self,
         request: &HyperRequest,
-    ) -> KrillResult<Option<ActorDef>> {
+    ) -> KrillResult<Option<AuthInfo>> {
         trace!("Attempting to authenticate the request..");
 
         self.initialize_connection_if_needed().await.map_err(|err| {
@@ -1359,11 +1376,7 @@ impl OpenIDConnectAuthProvider {
                 // return
                 match status {
                     SessionStatus::Active => {
-                        return Ok(Some(ActorDef::user(
-                            session.id,
-                            session.attributes,
-                            None,
-                        )));
+                        return Ok(Some(AuthInfo::user(session.user_id)))
                     }
                     SessionStatus::NeedsRefresh => {
                         // If we have a refresh token try and extend the
@@ -1373,11 +1386,7 @@ impl OpenIDConnectAuthProvider {
                             .secrets
                             .contains_key(TokenKind::RefreshToken.into())
                         {
-                            return Ok(Some(ActorDef::user(
-                                session.id,
-                                session.attributes,
-                                None,
-                            )));
+                            return Ok(Some(AuthInfo::user(session.user_id)))
                         }
                     }
                     SessionStatus::Expired => {
@@ -1402,7 +1411,7 @@ impl OpenIDConnectAuthProvider {
                     Ok(auth) => {
                         trace!(
                             "OpenID Connect: Successfully refreshed token for user \"{}\"",
-                            &session.id
+                            session.user_id
                         );
                         auth
                     }
@@ -1410,7 +1419,7 @@ impl OpenIDConnectAuthProvider {
                         trace!("OpenID Connect: RFC 6749 5.2 Error response returned...");
                         debug!(
                             "OpenID Connect: Refreshing the token for user '{}' failed: {}",
-                            &session.id, &err
+                            session.user_id, err
                         );
                         match err {
                             // This is the Error returned by the OpenID
@@ -1483,11 +1492,7 @@ impl OpenIDConnectAuthProvider {
                     }
                 };
 
-                Ok(Some(ActorDef::user(
-                    session.id,
-                    session.attributes,
-                    Some(new_auth),
-                )))
+                Ok(Some(AuthInfo::with_new_auth(session.user_id, new_auth)))
             }
             _ => Ok(None),
         };
@@ -1874,20 +1879,9 @@ impl OpenIDConnectAuthProvider {
                 // configuration without the "id" key :-)
                 // ==========================================================================================
 
-                let claims_conf =
-                    with_default_claims(&self.oidc_conf()?.claims);
-
-                let id_claim_conf =
-                    claims_conf.get("id").ok_or_else(|| {
-                        OpenIDConnectAuthProvider::internal_error(
-                            "Missing 'id' claim configuration",
-                            None,
-                        )
-                    })?;
-
                 let id = self
                     .extract_claim(
-                        id_claim_conf,
+                        //id_claim_conf,
                         id_token_claims,
                         user_info_claims.as_ref(),
                     )?
@@ -1897,26 +1891,6 @@ impl OpenIDConnectAuthProvider {
                             None,
                         )
                     })?;
-
-                // Lookup the a user in the config file authentication
-                // provider configuration by the id value that
-                // we just obtained, if present. Any claim
-                // configurations that refer to attributes of
-                // users configured in the config file will be looked up on
-                // this user.
-                let user = self
-                    .config
-                    .auth_users
-                    .as_ref()
-                    .and_then(|users| users.get(&id));
-
-                let attributes = self.resolve_claims(
-                    claims_conf,
-                    user,
-                    id_token_claims,
-                    user_info_claims,
-                    &id,
-                )?;
 
                 // ==========================================================================================
                 // Step 5: Respond to the user: access granted, or access
@@ -1944,19 +1918,14 @@ impl OpenIDConnectAuthProvider {
                 // so attempting to refresh an access token
                 // after that much time would also fail.
                 // ==========================================================================================
-                let api_token = self.session_cache.encode(
-                    &id,
-                    &attributes,
+                let token = self.session_cache.encode(
+                    id.clone().into(),
                     secrets_from_token_response(&token_response),
                     &self.session_key,
                     token_response.expires_in(),
                 )?;
 
-                Ok(LoggedInUser {
-                    token: api_token,
-                    id,
-                    attributes,
-                })
+                Ok(LoggedInUser { token, id, })
             }
 
             _ => Err(Error::ApiInvalidCredentials(
@@ -2014,7 +1983,7 @@ impl OpenIDConnectAuthProvider {
         )?;
 
         // announce that the user requested to be logged out
-        info!("User logged out: {}", session.id);
+        info!("User logged out: {}", session.user_id);
 
         // perform the logout:
 
@@ -2046,7 +2015,7 @@ impl OpenIDConnectAuthProvider {
                     OpenIDConnectAuthProvider::internal_error(
                         format!(
                             "Error while revoking token for user '{}'",
-                            session.id
+                            session.user_id
                         ),
                         Some(err.to_string()),
                     );
@@ -2076,7 +2045,7 @@ impl OpenIDConnectAuthProvider {
                         OpenIDConnectAuthProvider::internal_error(
                             format!(
                                 "Error while building OpenID Connect RP-Initiated Logout URL for user '{}'",
-                                session.id
+                                session.user_id
                             ),
                             Some(stringify_cause_chain(err)),
                         );
@@ -2092,6 +2061,9 @@ impl OpenIDConnectAuthProvider {
         Ok(HttpResponse::text_no_cache(go_to_url.into()))
     }
 }
+
+
+//------------ Helper Functions ----------------------------------------------
 
 fn secrets_from_token_response(
     token_response: &FlexibleTokenResponse,
@@ -2117,6 +2089,7 @@ fn secrets_from_token_response(
     secrets
 }
 
+/*
 fn with_default_claims(
     claims: &Option<ConfigAuthOpenIDConnectClaims>,
 ) -> ConfigAuthOpenIDConnectClaims {
@@ -2143,6 +2116,7 @@ fn with_default_claims(
 
     claims
 }
+*/
 
 // Based on: https://github.com/ramosbugs/openidconnect-rs/blob/main/examples/google.rs#L38
 pub fn stringify_cause_chain<F: std::error::Error>(fail: F) -> String {
@@ -2158,3 +2132,4 @@ pub fn stringify_cause_chain<F: std::error::Error>(fail: F) -> String {
     }
     cause_chain
 }
+

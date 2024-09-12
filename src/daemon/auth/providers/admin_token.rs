@@ -3,11 +3,10 @@ use std::sync::Arc;
 use crate::daemon::http::{HttpResponse, HyperRequest};
 use crate::{
     commons::{
-        actor::ActorDef, api::Token, error::Error, util::httpclient,
+        api::Token, error::Error, util::httpclient,
         KrillResult,
     },
-    constants::ACTOR_DEF_ADMIN_TOKEN,
-    daemon::{auth::LoggedInUser, config::Config},
+    daemon::{auth::{AuthInfo, LoggedInUser}, config::Config},
 };
 
 // This is NOT an actual relative path to redirect to. Instead it is the path
@@ -19,12 +18,15 @@ const LAGOSTA_LOGIN_ROUTE_PATH: &str = "/login";
 
 pub struct AdminTokenAuthProvider {
     required_token: Token,
+    user_id: Arc<str>,
 }
 
 impl AdminTokenAuthProvider {
     pub fn new(config: Arc<Config>) -> Self {
         AdminTokenAuthProvider {
             required_token: config.admin_token.clone(),
+            // XXX Get from config.
+            user_id: "admin".into(),
         }
     }
 }
@@ -33,14 +35,14 @@ impl AdminTokenAuthProvider {
     pub fn authenticate(
         &self,
         request: &HyperRequest,
-    ) -> KrillResult<Option<ActorDef>> {
+    ) -> KrillResult<Option<AuthInfo>> {
         if log_enabled!(log::Level::Trace) {
             trace!("Attempting to authenticate the request..");
         }
 
         let res = match httpclient::get_bearer_token(request) {
             Some(token) if token == self.required_token => {
-                Ok(Some(ACTOR_DEF_ADMIN_TOKEN))
+                Ok(Some(AuthInfo::user(self.user_id.clone())))
             }
             Some(_) => Err(Error::ApiInvalidCredentials(
                 "Invalid bearer token".to_string(),
@@ -62,10 +64,9 @@ impl AdminTokenAuthProvider {
 
     pub fn login(&self, request: &HyperRequest) -> KrillResult<LoggedInUser> {
         match self.authenticate(request)? {
-            Some(actor_def) => Ok(LoggedInUser {
+            Some(_actor) => Ok(LoggedInUser {
                 token: self.required_token.clone(),
-                id: actor_def.name.as_str().to_string(),
-                attributes: actor_def.attributes.as_map(),
+                id: self.user_id.as_ref().into(),
             }),
             None => Err(Error::ApiInvalidCredentials(
                 "Missing bearer token".to_string(),
@@ -77,8 +78,8 @@ impl AdminTokenAuthProvider {
         &self,
         request: &HyperRequest,
     ) -> KrillResult<HttpResponse> {
-        if let Ok(Some(actor)) = self.authenticate(request) {
-            info!("User logged out: {}", actor.name.as_str());
+        if let Ok(Some(info)) = self.authenticate(request) {
+            info!("User logged out: {}", info.actor.name());
         }
 
         // Logout is complete, direct Lagosta to show the user the Lagosta

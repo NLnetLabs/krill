@@ -1,20 +1,22 @@
 //! Authorization for the API
 
-use std::{any::Any, collections::HashMap, fmt, str::FromStr, sync::Arc};
-
+use std::fmt;
+use std::any::Any;
+use std::str::FromStr;
+use std::sync::Arc;
 use rpki::ca::idexchange::{InvalidHandle, MyHandle};
+use crate::commons::actor::Actor;
+use crate::commons::error::ApiAuthError;
 
 use crate::{
     commons::{
-        actor::{Actor, ActorDef},
         api::Token,
         error::Error,
         KrillResult,
     },
-    constants::{ACTOR_DEF_ANON, NO_RESOURCE},
     daemon::{
         auth::{
-            common::permissions::Permission, policy::AuthPolicy,
+            policy::{AuthPolicy, AuthPolicyMap, Permission},
             providers::AdminTokenAuthProvider,
         },
         config::Config,
@@ -27,7 +29,7 @@ use crate::daemon::auth::providers::{
     ConfigFileAuthProvider, OpenIDConnectAuthProvider,
 };
 
-//------------ Authorizer ----------------------------------------------------
+//------------ AuthProvider --------------------------------------------------
 
 /// An AuthProvider authenticates and authorizes a given token.
 ///
@@ -77,7 +79,7 @@ impl AuthProvider {
     pub async fn authenticate(
         &self,
         request: &HyperRequest,
-    ) -> KrillResult<Option<ActorDef>> {
+    ) -> KrillResult<Option<AuthInfo>> {
         match &self {
             AuthProvider::Token(provider) => provider.authenticate(request),
             #[cfg(feature = "multi-user")]
@@ -134,13 +136,15 @@ impl AuthProvider {
     }
 }
 
+
+//------------ Authorizer ----------------------------------------------------
+
 /// This type is responsible for checking authorizations when the API is
 /// accessed.
 pub struct Authorizer {
     primary_provider: AuthProvider,
     legacy_provider: Option<AdminTokenAuthProvider>,
-    policy: AuthPolicy,
-    private_attributes: Vec<String>,
+    policy: AuthPolicyMap,
 }
 
 impl Authorizer {
@@ -178,58 +182,47 @@ impl Authorizer {
             Some(AdminTokenAuthProvider::new(config.clone()))
         };
 
-        #[cfg(feature = "multi-user")]
-        let private_attributes = config.auth_private_attributes.clone();
-        #[cfg(not(feature = "multi-user"))]
-        let private_attributes = vec!["role".to_string()];
-
         Ok(Authorizer {
             primary_provider,
             legacy_provider,
-            policy: AuthPolicy::new(config)?,
-            private_attributes,
+            policy: AuthPolicyMap::new(&config)?,
         })
     }
 
-    pub async fn actor_from_request(&self, request: &HyperRequest) -> Actor {
+    /// Authenticates an HTTP request.
+    pub async fn authenticate_request(
+        &self, request: &HyperRequest
+    ) -> AuthInfo {
         trace!("Determining actor for request {:?}", &request);
 
         // Try the legacy provider first, if any
-        let mut authenticate_res = match &self.legacy_provider {
+        let authenticate_res = match &self.legacy_provider {
             Some(provider) => provider.authenticate(request),
             None => Ok(None),
         };
 
         // Try the real provider if we did not already successfully
         // authenticate
-        authenticate_res = match authenticate_res {
+        let authenticate_res = match authenticate_res {
             Ok(Some(res)) => Ok(Some(res)),
             _ => self.primary_provider.authenticate(request).await,
         };
 
         // Create an actor based on the authentication result
-        let actor = match authenticate_res {
+        let res = match authenticate_res {
             // authentication success
-            Ok(Some(actor_def)) => self.actor_from_def(actor_def),
+            Ok(Some(res)) => res,
 
             // authentication failure
-            Ok(None) => self.actor_from_def(ACTOR_DEF_ANON),
+            Ok(None) => AuthInfo::anonymous(),
 
             // error during authentication
-            Err(err) => {
-                // receives a commons::error::Error, but we need an
-                // ApiAuthError
-                self.actor_from_def(ACTOR_DEF_ANON.with_auth_error(err))
-            }
+            Err(err) => AuthInfo::error(err),
         };
 
-        trace!("Actor determination result: {:?}", &actor);
+        trace!("Actor determination result: {:?}", res);
 
-        actor
-    }
-
-    pub fn actor_from_def(&self, def: ActorDef) -> Actor {
-        Actor::new(def, self.policy.clone())
+        res
     }
 
     /// Return the URL at which an end-user should be directed to login with
@@ -238,39 +231,30 @@ impl Authorizer {
         self.primary_provider.get_login_url().await
     }
 
-    /// Submit credentials directly to the configured provider to establish a
-    /// login session, if supported by the configured provider.
+    /// Establish an authenticated session from credentials in an HTTP request.
     pub async fn login(
-        &self,
-        request: &HyperRequest,
+        &self, request: &HyperRequest
     ) -> KrillResult<LoggedInUser> {
         let user = self.primary_provider.login(request).await?;
 
         // The user has passed authentication, but may still not be
         // authorized to login as that requires a check against the policy
         // which cannot be done by the AuthProvider. Check that now.
-        let actor_def =
-            ActorDef::user(user.id.clone(), user.attributes.clone(), None);
-        let actor = self.actor_from_def(actor_def);
-        if !actor.is_allowed(Permission::LOGIN, NO_RESOURCE)? {
-            let reason = format!("Login denied for user '{}': User is not permitted to 'LOGIN'", user.id);
+
+        if !self.policy.is_user_allowed(
+            &user.id, Permission::LOGIN, None
+        ) {
+            let reason = format!(
+                "Login denied for user '{}': \
+                 User is not permitted to 'LOGIN'",
+                 user.id
+            );
             warn!("{}", reason);
             return Err(Error::ApiInsufficientRights(reason));
         }
-
-        // Exclude private attributes before passing them to Lagosta to be
-        // shown in the web UI.
-        let visible_attributes = user
-            .attributes
-            .clone()
-            .into_iter()
-            .filter(|(k, _)| !self.private_attributes.contains(k))
-            .collect::<HashMap<_, _>>();
-
         let filtered_user = LoggedInUser {
             token: user.token,
             id: user.id,
-            attributes: visible_attributes,
         };
 
         if log_enabled!(log::Level::Trace) {
@@ -290,14 +274,92 @@ impl Authorizer {
     ) -> KrillResult<HttpResponse> {
         self.primary_provider.logout(request).await
     }
+
+    pub fn get_policy(&self, actor: &Actor) -> Arc<AuthPolicy> {
+        self.policy.get_policy(actor)
+    }
+
+    pub fn is_allowed(
+        &self,
+        actor: &Actor,
+        permission: Permission,
+        resource: Option<&Handle>
+    ) -> bool {
+        self.policy.is_allowed(actor, permission, resource)
+    }
 }
 
+
+//------------ LoggedInUser --------------------------------------------------
+
+/// Information to be returned to the caller after login.
+///
+/// This may be serialized into a JSON response.
 #[derive(Serialize, Debug)]
 pub struct LoggedInUser {
+    /// The API token to use in subsequent calls.
     pub token: Token,
+
+    /// The user ID.
+    //  XXX Swith to using Arc<str>. May require Serialize shenanigans.
     pub id: String,
-    pub attributes: HashMap<String, String>,
 }
+
+
+//------------ AuthInfo ------------------------------------------------------
+
+/// Information about the result of trying to authenticate a request.
+#[derive(Clone, Debug)]
+pub struct AuthInfo {
+    /// The actor for the authenticated user.
+    pub actor: Actor,
+
+    /// Optional error information if authentication failed.
+    pub auth_error: Option<ApiAuthError>,
+
+    /// Optional authentication information to be included in a response.
+    pub new_auth: Option<Auth>,
+}
+
+impl AuthInfo {
+    pub fn user(user_id: impl Into<Arc<str>>) -> Self {
+        Self {
+            actor: Actor::user(user_id),
+            auth_error: None,
+            new_auth: None,
+        }
+    }
+
+    fn anonymous() -> Self {
+        Self {
+            actor: Actor::anonymous(),
+            auth_error: None,
+            new_auth: None,
+        }
+    }
+
+    fn error(err: impl Into<ApiAuthError>) -> Self {
+        Self {
+            actor: Actor::anonymous(),
+            auth_error: Some(err.into()),
+            new_auth: None
+        }
+    }
+
+    pub fn with_new_auth(
+        user_id: impl Into<Arc<str>>,
+        new_auth: Auth
+    ) -> Self {
+        Self {
+            actor: Actor::user(user_id),
+            auth_error: None,
+            new_auth: Some(new_auth)
+        }
+    }
+}
+
+
+//------------ Auth ----------------------------------------------------------
 
 #[derive(Clone, Debug)]
 pub enum Auth {
@@ -376,17 +438,3 @@ impl AsRef<MyHandle> for Handle {
     }
 }
 
-#[cfg(feature = "multi-user")]
-impl oso::PolarClass for Handle {
-    fn get_polar_class() -> oso::Class {
-        Self::get_polar_class_builder()
-            .set_constructor(|name: String| Handle::from_str(&name).unwrap())
-            .set_equality_check(|left: &Handle, right: &Handle| left == right)
-            .add_attribute_getter("name", |instance| instance.to_string())
-            .build()
-    }
-
-    fn get_polar_class_builder() -> oso::ClassBuilder<Self> {
-        oso::Class::builder()
-    }
-}

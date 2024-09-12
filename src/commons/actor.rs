@@ -16,63 +16,138 @@
 //! to define the Actor that should be created without needing any knowledge
 //! of the Authorizer.
 
-#[cfg(feature = "multi-user")]
-use oso::ToPolar;
-#[cfg(feature = "multi-user")]
-use std::fmt::Display;
+use std::fmt;
+use std::sync::Arc;
 
-use std::{collections::HashMap, fmt, fmt::Debug};
+
+//------------ Actor ---------------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct Actor(ActorName);
+
+#[derive(Clone, Debug)]
+enum ActorName {
+    /// A system actor for the given component.
+    System(&'static str),
+
+    /// A user actor that has not been authenticated.
+    Anonymous,
+
+    /// A user actor with the provided user ID.
+    User(Arc<str>)
+}
+
+impl Actor {
+    /// Creates a system actor for the given component.
+    pub const fn system(component: &'static str) -> Self {
+        Self(ActorName::System(component))
+    }
+
+    /// Creates the anonymous actor.
+    pub const fn anonymous() -> Self {
+        Self(ActorName::Anonymous)
+    }
+
+    /// Creates a user actor with the given user ID.
+    pub fn user(user_id: impl Into<Arc<str>>) -> Self {
+        Self(ActorName::User(user_id.into()))
+    }
+
+    /// Returns whether the actor is a system actor.
+    pub fn is_system(&self) -> bool {
+        matches!(self.0, ActorName::System(_))
+    }
+
+    /// Returns whether the actor is the anonymous actor.
+    pub fn is_anonymous(&self) -> bool {
+        matches!(self.0, ActorName::Anonymous)
+    }
+
+    /// Returns whether the actor is a user actor.
+    pub fn is_user(&self) -> bool {
+        matches!(self.0, ActorName::User(_))
+    }
+
+    /// Returns the simple name of the actor.
+    ///
+    /// For system actors, this is the component name. For the anonymous
+    /// actor, this is the string `"anonymous"`. For user actors, it is their
+    /// user ID.
+    pub fn name(&self) -> &str {
+        match self.0 {
+            ActorName::System(ref component) => component,
+            ActorName::Anonymous => "anonymous",
+            ActorName::User(ref user_id) => user_id.as_ref(),
+        }
+    }
+
+    /// Returns the audit name of the actor.
+    ///
+    /// This is the name stored with each command. For system actors, this
+    /// is the component name. For the anonymous actor, this is the string
+    /// `"anonymous"`. For user actors, it is the user ID prefixed with
+    /// `user:`.
+    pub fn audit_name(&self) -> String {
+        match self.0 {
+            ActorName::System(ref component) => component.to_string(),
+            ActorName::Anonymous => "anonymous".to_string(),
+            ActorName::User(ref user_id) => {
+                format!("user:{}", user_id.as_ref())
+            }
+        }
+    }
+}
+
+impl fmt::Display for Actor {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
+
+
+
+/*
+use std::fmt;
+use std::sync::Arc;
 
 use crate::{
     commons::{
         error::{ApiAuthError, Error},
         KrillResult,
     },
-    constants::ACTOR_DEF_ANON,
-    daemon::auth::{policy::AuthPolicy, Auth},
+    daemon::auth::{policy::{AuthPolicy, Permission}, Auth, Handle},
 };
 
-#[derive(Clone, Eq, PartialEq, Debug)]
+#[derive(Clone, Deserialize, Eq, PartialEq, Debug, Serialize)]
 pub enum ActorName {
-    AsStaticStr(&'static str),
     AsString(String),
 }
 
 impl ActorName {
     pub fn as_str(&self) -> &str {
         match &self {
-            ActorName::AsStaticStr(s) => s,
             ActorName::AsString(s) => s,
         }
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum Attributes {
-    None,
-    RoleOnly(&'static str),
-    UserDefined(HashMap<String, String>),
-}
-
-impl Attributes {
-    pub fn as_map(&self) -> HashMap<String, String> {
-        match &self {
-            Attributes::UserDefined(map) => map.clone(),
-            Attributes::RoleOnly(role) => {
-                let mut map = HashMap::new();
-                map.insert("role".to_string(), role.to_string());
-                map
-            }
-            Attributes::None => HashMap::new(),
-        }
+impl From<String> for ActorName {
+    fn from(src: String) -> Self {
+        Self::AsString(src)
     }
 }
+
+impl fmt::Display for ActorName {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.as_str().fmt(f)
+    }
+}
+
 
 #[derive(Clone, Debug)]
 pub struct ActorDef {
     pub name: ActorName,
-    pub is_user: bool,
-    pub attributes: Attributes,
     pub new_auth: Option<Auth>,
     pub auth_error: Option<ApiAuthError>,
 }
@@ -81,32 +156,25 @@ impl ActorDef {
     pub const fn anonymous() -> ActorDef {
         ActorDef {
             name: ActorName::AsStaticStr("anonymous"),
-            is_user: false,
-            attributes: Attributes::None,
             new_auth: None,
             auth_error: None,
         }
     }
 
-    pub const fn system(name: &'static str, role: &'static str) -> ActorDef {
+    pub const fn system(name: &'static str) -> ActorDef {
         ActorDef {
             name: ActorName::AsStaticStr(name),
-            attributes: Attributes::RoleOnly(role),
-            is_user: false,
             new_auth: None,
             auth_error: None,
         }
     }
 
     pub fn user(
-        name: String,
-        attributes: HashMap<String, String>,
+        name: ActorName,
         new_auth: Option<Auth>,
     ) -> ActorDef {
         ActorDef {
-            name: ActorName::AsString(name),
-            is_user: true,
-            attributes: Attributes::UserDefined(attributes),
+            name,
             new_auth,
             auth_error: None,
         }
@@ -122,12 +190,8 @@ impl ActorDef {
 #[derive(Clone)]
 pub struct Actor {
     name: ActorName,
-    is_user: bool,
-    attributes: Attributes,
     new_auth: Option<Auth>,
-
-    #[cfg_attr(not(feature = "multi-user"), allow(dead_code))]
-    policy: Option<AuthPolicy>,
+    policy: Arc<AuthPolicy>,
 
     #[cfg_attr(not(feature = "multi-user"), allow(dead_code))]
     auth_error: Option<ApiAuthError>,
@@ -136,16 +200,12 @@ pub struct Actor {
 impl PartialEq for Actor {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name
-            && self.is_user == other.is_user
-            && self.attributes == other.attributes
     }
 }
 
 impl PartialEq<ActorDef> for Actor {
     fn eq(&self, other: &ActorDef) -> bool {
         self.name == other.name
-            && self.is_user == other.is_user
-            && self.attributes == other.attributes
     }
 }
 
@@ -169,17 +229,19 @@ impl Actor {
 
     /// Should only be used for system users, i.e. not for mapping
     /// logged in users.
-    pub fn actor_from_def(actor_def: ActorDef) -> Actor {
+    pub fn actor_from_def(_actor_def: ActorDef) -> Actor {
+        unimplemented!()
+        /*
         Actor {
             name: actor_def.name.clone(),
-            is_user: actor_def.is_user,
-            attributes: actor_def.attributes,
             new_auth: None,
             auth_error: None,
             policy: None,
         }
+        */
     }
 
+    /*
     /// Only for use in testing
     pub fn test_from_details(
         name: String,
@@ -194,132 +256,65 @@ impl Actor {
             policy: None,
         }
     }
+    */
 
-    pub fn new(actor_def: ActorDef, policy: AuthPolicy) -> Actor {
+    pub fn new(actor_def: ActorDef, policy: Arc<AuthPolicy>) -> Actor {
         Actor {
             name: actor_def.name.clone(),
-            is_user: actor_def.is_user,
-            attributes: actor_def.attributes.clone(),
             new_auth: actor_def.new_auth.clone(),
             auth_error: actor_def.auth_error,
-            policy: Some(policy),
+            policy,
         }
     }
 
     pub fn is_user(&self) -> bool {
-        self.is_user
+        unimplemented!()
     }
 
     pub fn is_anonymous(&self) -> bool {
-        self == &ACTOR_DEF_ANON
+        unimplemented!()
     }
 
     pub fn new_auth(&self) -> Option<Auth> {
         self.new_auth.clone()
     }
 
-    pub fn attributes(&self) -> HashMap<String, String> {
-        self.attributes.as_map()
-    }
-
-    pub fn attribute(&self, attr_name: String) -> Option<String> {
-        match &self.attributes {
-            Attributes::UserDefined(map) => map.get(&attr_name).cloned(),
-            Attributes::RoleOnly(role) if &attr_name == "role" => {
-                Some(role.to_string())
-            }
-            Attributes::RoleOnly(_) => None,
-            Attributes::None => None,
-        }
-    }
-
     pub fn name(&self) -> &str {
         self.name.as_str()
     }
 
-    #[cfg(not(feature = "multi-user"))]
-    pub fn is_allowed<A, R>(&self, _: A, _: R) -> KrillResult<bool> {
-        // When not in multi-user mode we only have two states: authenticated
-        // or not authenticated (aka anonymous). Only authenticated
-        // (i.e. not anonymous) actors are permitted to perform restricted
-        // actions, i.e. those for which this fn is invoked.
-        Ok(!self.is_anonymous())
-    }
-
-    #[cfg(feature = "multi-user")]
-    pub fn is_allowed<A, R>(
+    pub fn is_allowed(
         &self,
-        action: A,
-        resource: R,
-    ) -> KrillResult<bool>
-    where
-        A: ToPolar + Display + Debug + Clone,
-        R: ToPolar + Display + Debug + Clone,
-    {
-        if log_enabled!(log::Level::Trace) {
-            trace!(
-                "Access check: actor={}, action={}, resource={}",
-                self.name(),
-                &action,
-                &resource
-            );
-        }
+        permission: Permission,
+        resource: Option<&Handle>,
+    ) -> KrillResult<bool> {
+        trace!(
+            "Access check: actor={}, permission={}, resource={:?}",
+            self.name(), permission, resource
+        );
 
         if let Some(api_error) = &self.auth_error {
             trace!(
-                "Authentication denied: actor={}, action={}, resource={}: {}",
+                "Authentication denied: \
+                 actor={}, permission={}, resource={:?}: {}",
                 self.name(),
-                &action,
-                &resource,
-                &api_error
+                permission,
+                resource,
+                api_error
             );
             return Err(Error::from(api_error.clone()));
         }
 
-        match &self.policy {
-            Some(policy) => match policy.is_allowed(
-                self.clone(),
-                action.clone(),
-                resource.clone(),
-            ) {
-                Ok(allowed) => {
-                    if log_enabled!(log::Level::Trace) {
-                        trace!(
-                            "Access {}: actor={:?}, action={:?}, resource={:?}",
-                            if allowed { "granted" } else { "denied" },
-                            self,
-                            &action,
-                            &resource
-                        );
-                    }
-                    Ok(allowed)
-                }
-                Err(err) => {
-                    error!(
-                        "Access denied: actor={}, action={}, resource={}: {}",
-                        self.name(),
-                        &action,
-                        &resource,
-                        err
-                    );
-                    Ok(false)
-                }
-            },
-            None => {
-                // Auth policy is required, can only be omitted for use by
-                // test rules inside an Oso policy. We should
-                // never get here, but we don't want to crash
-                // Krill by calling unreachable!().
-                error!(
-                    "Unable to check access: actor={}, action={}, resource={}: {}",
-                    self.name(),
-                    &action,
-                    &resource,
-                    "Internal error: missing policy"
-                );
-                Ok(false)
-            }
-        }
+        let allowed = self.policy.is_allowed(permission, resource);
+        trace!(
+            "Access {}: actor={:?}, permission={:?}, \
+             resource={:?}",
+            if allowed { "granted" } else { "denied" },
+            self,
+            permission,
+            resource
+        );
+        Ok(allowed)
     }
 }
 
@@ -331,12 +326,7 @@ impl fmt::Display for Actor {
 
 impl fmt::Debug for Actor {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "Actor(name={:?}, is_user={}, attr={:?})",
-            self.name(),
-            self.is_user,
-            self.attributes
-        )
+        write!(f, "Actor(name={:?})", self.name())
     }
 }
+*/

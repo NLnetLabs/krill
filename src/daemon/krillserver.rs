@@ -1,9 +1,10 @@
 //! An RPKI publication protocol server.
-use std::{collections::HashMap, path::PathBuf, str::FromStr, sync::Arc};
-
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::str::FromStr;
+use std::sync::Arc;
 use bytes::Bytes;
 use chrono::Duration;
-
 use futures_util::future::try_join_all;
 
 use rpki::{
@@ -15,9 +16,11 @@ use rpki::{
     uri,
 };
 
+use crate::daemon::auth::{AuthInfo, Handle};
+use crate::daemon::auth::policy::{AuthPolicy, Permission};
 use crate::{
     commons::{
-        actor::{Actor, ActorDef},
+        actor::Actor,
         api::{
             self,
             import::{ExportChild, ImportChild},
@@ -158,7 +161,7 @@ impl KrillServer {
                 .into(),
             )?,
         };
-        let system_actor = authorizer.actor_from_def(ACTOR_DEF_KRILL);
+        let system_actor = ACTOR_DEF_KRILL;
 
         // Task queue Arc is shared between ca_manager, repo_manager and the
         // scheduler.
@@ -337,12 +340,10 @@ impl KrillServer {
         &self.system_actor
     }
 
-    pub async fn actor_from_request(&self, request: &HyperRequest) -> Actor {
-        self.authorizer.actor_from_request(request).await
-    }
-
-    pub fn actor_from_def(&self, actor_def: ActorDef) -> Actor {
-        self.authorizer.actor_from_def(actor_def)
+    pub async fn authenticate_request(
+        &self, request: &HyperRequest
+    ) -> AuthInfo {
+        self.authorizer.authenticate_request(request).await
     }
 
     pub async fn get_login_url(&self) -> KrillResult<HttpResponse> {
@@ -370,6 +371,19 @@ impl KrillServer {
     #[cfg(feature = "multi-user")]
     pub fn login_session_cache_size(&self) -> usize {
         self.login_session_cache.size()
+    }
+
+    pub fn get_auth_policy(&self, actor: &Actor) -> Arc<AuthPolicy> {
+        self.authorizer.get_policy(actor)
+    }
+
+    pub fn is_allowed(
+        &self,
+        actor: &Actor,
+        permission: Permission,
+        resource: Option<&Handle>
+    ) -> bool {
+        self.authorizer.is_allowed(actor, permission, resource)
     }
 }
 
@@ -708,9 +722,9 @@ impl KrillServer {
     ) -> KrillResult<HashMap<CaHandle, CertAuthStats>> {
         let mut res = HashMap::new();
 
-        for ca in self.ca_list(&self.system_actor)?.cas() {
+        for handle in self.ca_manager.ca_handles()? {
             // can't fail really, but to be sure
-            if let Ok(ca) = self.ca_manager.get_ca(ca.handle()).await {
+            if let Ok(ca) = self.ca_manager.get_ca(&handle).await {
                 let roas = ca.configured_roas();
                 let roa_count = roas.len();
                 let child_count = ca.children().count();
@@ -748,10 +762,10 @@ impl KrillServer {
         // We need to know which CAs already exist. They should not be
         // imported again, but can serve as parents.
         let mut existing_cas = HashMap::new();
-        for ca in self.ca_list(&actor)?.cas() {
-            let parent_handle = ca.handle().convert();
+        for handle in self.ca_manager.ca_handles()? {
+            let parent_handle = handle.convert();
             let resources =
-                self.ca_manager.get_ca(ca.handle()).await?.all_resources();
+                self.ca_manager.get_ca(&handle).await?.all_resources();
             existing_cas.insert(parent_handle, resources);
         }
         structure.validate_ca_hierarchy(existing_cas)?;
@@ -975,10 +989,10 @@ impl KrillServer {
 
     pub async fn all_ca_issues(
         &self,
-        actor: &Actor,
+        auth: &AuthPolicy,
     ) -> KrillResult<AllCertAuthIssues> {
         let mut all_issues = AllCertAuthIssues::default();
-        for ca in self.ca_list(actor)?.cas() {
+        for ca in self.ca_list(auth)?.cas() {
             let issues = self.ca_issues(ca.handle()).await?;
             if !issues.is_empty() {
                 all_issues.add(ca.handle().clone(), issues);
@@ -1023,8 +1037,8 @@ impl KrillServer {
     }
 
     /// Re-sync all CAs with their repositories
-    pub fn cas_repo_sync_all(&self, actor: &Actor) -> KrillEmptyResult {
-        self.ca_manager.cas_schedule_repo_sync_all(actor)
+    pub fn cas_repo_sync_all(&self, auth: &AuthPolicy) -> KrillEmptyResult {
+        self.ca_manager.cas_schedule_repo_sync_all(auth)
     }
 
     /// Re-sync a specific CA with its repository
@@ -1053,8 +1067,8 @@ impl KrillServer {
 
 /// # Admin CAS
 impl KrillServer {
-    pub fn ca_list(&self, actor: &Actor) -> KrillResult<CertAuthList> {
-        self.ca_manager.ca_list(actor)
+    pub fn ca_list(&self, auth: &AuthPolicy) -> KrillResult<CertAuthList> {
+        self.ca_manager.ca_list(auth)
     }
 
     /// Returns the public CA info for a CA, or NONE if the CA cannot be

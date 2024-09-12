@@ -1,8 +1,6 @@
 #[cfg(feature = "multi-user")]
 pub mod crypt;
 
-pub mod permissions;
-
 #[derive(Debug, Clone)]
 pub struct NoResourceType;
 impl std::fmt::Display for NoResourceType {

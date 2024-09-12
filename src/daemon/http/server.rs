@@ -41,11 +41,11 @@ use crate::{
     },
     constants::{
         KRILL_ENV_HTTP_LOG_INFO, KRILL_ENV_UPGRADE_ONLY, KRILL_VERSION_MAJOR,
-        KRILL_VERSION_MINOR, KRILL_VERSION_PATCH, NO_RESOURCE,
+        KRILL_VERSION_MINOR, KRILL_VERSION_PATCH,
     },
     daemon::{
-        auth::common::permissions::Permission,
         auth::{Auth, Handle},
+        auth::policy::Permission,
         ca::CaStatus,
         config::Config,
         http::{
@@ -346,11 +346,11 @@ async fn map_requests(
 ) -> Result<HyperResponse, Error> {
     let logger = RequestLogger::begin(&req);
 
-    let req = Request::new(req, state).await;
+    let mut req = Request::new(req, state).await;
 
     // Save any updated auth details, e.g. if an OpenID Connect token needed
     // refreshing.
-    let new_auth = req.actor().new_auth();
+    let new_auth = req.auth_info_mut().new_auth.take();
 
     // We used to use .or_else() here but that causes a large recursive call
     // tree due to these calls being to async functions, large enough with the
@@ -1197,43 +1197,38 @@ fn add_new_auth_to_response(
 // similar to how this macro is used in each function.
 macro_rules! aa {
     (no_warn $req:ident, $perm:expr, $action:expr) => {{
-        aa!($req, $perm, NO_RESOURCE, $action, true)
+        aa!($req, $perm, Option::<&Handle>::None, $action, true)
     }};
     ($req:ident, $perm:expr, $action:expr) => {{
-        aa!($req, $perm, NO_RESOURCE, $action, false)
+        aa!($req, $perm, Option::<&Handle>::None, $action, false)
     }};
     (no_warn $req:ident, $perm:expr, $resource:expr, $action:expr) => {{
-        aa!($req, $perm, $resource, $action, true)
+        aa!($req, $perm, Some(&$resource), $action, true)
     }};
     ($req:ident, $perm:expr, $resource:expr, $action:expr) => {{
-        aa!($req, $perm, $resource, $action, false)
+        aa!($req, $perm, Some(&$resource), $action, false)
     }};
     ($req:ident, $perm:expr, $resource:expr, $action:expr, $benign:expr) => {{
-        match $req.actor().is_allowed($perm, $resource) {
-            Ok(true) => $action,
-            Ok(false) => {
-                let msg = format!(
-                    "User '{}' does not have permission '{}' on resource '{}'",
-                    $req.actor().name(),
-                    $perm,
-                    $resource
-                );
-                Ok(HttpResponse::forbidden(msg).with_benign($benign))
-            }
-            Err(err) => {
-                // Avoid an extra round of error -> string -> error conversion
-                // which causes the error message to nest, e.g.
-                //   "Invalid credentials: Invalid credentials: Session expired"
-                match err {
-                    Error::ApiInvalidCredentials(_)
-                    | Error::ApiInsufficientRights(_)
-                    | Error::ApiAuthPermanentError(_)
-                    | Error::ApiAuthTransientError(_)
-                    | Error::ApiAuthSessionExpired(_)
-                    | Error::ApiLoginError(_) => Ok(HttpResponse::response_from_error(err).with_benign($benign)),
-                    _ => Ok(HttpResponse::forbidden(format!("{}", err)).with_benign($benign)),
+        if $req.is_allowed($perm, $resource) {
+            $action
+        }
+        else {
+            let msg = match $resource {
+                Some(res) => {
+                    format!(
+                        "User '{}' does not have permission '{}' \
+                         on resource '{}'",
+                        $req.actor().name(), $perm, res,
+                    )
+                },
+                None => {
+                    format!(
+                        "User '{}' does not have permission '{}'",
+                        $req.actor().name(), $perm,
+                    )
                 }
-            }
+            };
+            Ok(HttpResponse::forbidden(msg).with_benign($benign))
         }
     }};
 }
@@ -1773,8 +1768,9 @@ async fn api_cas_import(req: Request) -> RoutingResult {
 async fn api_all_ca_issues(req: Request) -> RoutingResult {
     match *req.method() {
         Method::GET => aa!(req, Permission::CA_READ, {
-            let actor = req.actor();
-            render_json_res(req.state().all_ca_issues(&actor).await)
+            render_json_res(
+                req.state().all_ca_issues(req.auth_policy()).await
+            )
         }),
         _ => render_unknown_method(),
     }
@@ -1795,8 +1791,7 @@ async fn api_ca_issues(req: Request, ca: CaHandle) -> RoutingResult {
 
 async fn api_cas_list(req: Request) -> RoutingResult {
     aa!(req, Permission::CA_LIST, {
-        let actor = req.actor();
-        render_json_res(req.state().ca_list(&actor))
+        render_json_res(req.state().ca_list(req.auth_policy()))
     })
 }
 
@@ -2536,8 +2531,11 @@ async fn api_republish_all(req: Request, force: bool) -> RoutingResult {
 async fn api_resync_all(req: Request) -> RoutingResult {
     match *req.method() {
         Method::POST => aa!(req, Permission::CA_ADMIN, {
-            let actor = req.actor();
-            render_empty_res(req.state().cas_repo_sync_all(&actor))
+            render_empty_res(
+                req.state().cas_repo_sync_all(
+                    req.auth_policy()
+                )
+            )
         }),
         _ => render_unknown_method(),
     }
@@ -2766,7 +2764,7 @@ async fn api_ta(req: Request, path: &mut RequestPath) -> RoutingResult {
                     Method::POST => {
                         let ta_handle = ta::ta_handle();
                         let server = req.state().clone();
-                        let actor = req.actor.clone();
+                        let actor = req.actor();
 
                         match req.api_bytes().await.map(|bytes| {
                             extract_repository_contact(&ta_handle, bytes)
@@ -2792,7 +2790,7 @@ async fn api_ta(req: Request, path: &mut RequestPath) -> RoutingResult {
             Some("signer") => match path.next() {
                 Some("add") => {
                     let server = req.state().clone();
-                    let actor = req.actor.clone();
+                    let actor = req.actor();
                     match req.json().await {
                         Ok(ta_signer_info) => render_empty_res(
                             server
@@ -2816,7 +2814,7 @@ async fn api_ta(req: Request, path: &mut RequestPath) -> RoutingResult {
                 Some("response") => match *req.method() {
                     Method::POST => {
                         let server = req.state().clone();
-                        let actor = req.actor.clone();
+                        let actor = req.actor();
 
                         match req.json().await {
                             Ok(response) => render_empty_res(
