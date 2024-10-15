@@ -2,7 +2,7 @@ use std::{collections::HashMap, ops::Range};
 
 use intervaltree::IntervalTree;
 
-use rpki::repository::resources::ResourceSet;
+use rpki::repository::resources::{Addr, AddressRange, ResourceSet};
 
 use crate::commons::api::TypedPrefix;
 
@@ -43,6 +43,20 @@ impl IpRange {
 
     pub fn is_contained_by(&self, other: &Range<u128>) -> bool {
         other.start <= self.0.start && other.end >= self.0.end
+    }
+
+    pub fn to_prefixes(&self) {
+        let mut start = self.0.start;
+        let end = self.0.end;
+
+        while start < end {    
+            let same_bits = (start ^ end).trailing_zeros();
+            let prefix = 128 - same_bits;
+            // turn the thing into a prefix again and add it to a list
+            start += 2.pow(same_bits);
+        }
+        
+        
     }
 }
 

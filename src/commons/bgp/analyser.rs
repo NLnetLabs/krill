@@ -13,71 +13,44 @@ use crate::{
             make_roa_tree, make_validated_announcement_tree, Announcement,
             AnnouncementValidity, Announcements, BgpAnalysisEntry,
             BgpAnalysisReport, BgpAnalysisState, BgpAnalysisSuggestion,
-            IpRange, RisDumpError, RisDumpLoader, ValidatedAnnouncement,
+            IpRange, ValidatedAnnouncement,
         },
-    },
-    constants::{test_announcements_enabled, BGP_RIS_REFRESH_MINUTES},
+    }
 };
 
 //------------ BgpAnalyser -------------------------------------------------
 
 /// This type helps analyse ROAs vs BGP and vice versa.
 pub struct BgpAnalyser {
-    dump_loader: Option<RisDumpLoader>,
-    seen: RwLock<Announcements>,
+    bgp_api_enabled: bool,
+    bgp_api_uri: String,
 }
 
 impl BgpAnalyser {
     pub fn new(
-        ris_enabled: bool,
-        ris_v4_uri: &str,
-        ris_v6_uri: &str,
+        bgp_api_enabled: bool,
+        bgp_api_uri: &str,
     ) -> Self {
-        if test_announcements_enabled() {
-            Self::with_test_announcements()
-        } else {
-            let dump_loader = if ris_enabled {
-                Some(RisDumpLoader::new(ris_v4_uri, ris_v6_uri))
-            } else {
-                None
-            };
-            BgpAnalyser {
-                dump_loader,
-                seen: RwLock::new(Announcements::default()),
-            }
+        BgpAnalyser {
+            bgp_api_enabled,
+            bgp_api_uri: String::from(bgp_api_uri),
         }
     }
 
-    pub async fn update(&self) -> Result<bool, BgpAnalyserError> {
-        let loader = match self.dump_loader.as_ref() {
-            Some(loader) => loader,
-            None => return Ok(false),
-        };
-        if let Some(last_time) = self.seen.read().await.last_checked() {
-            if (last_time + Duration::minutes(BGP_RIS_REFRESH_MINUTES))
-                > Time::now()
-            {
-                trace!(
-                    "Will not check BGP RIS dumps until the \
-                    refresh interval has passed"
-                );
-                return Ok(false); // no need to update yet
-            }
-        }
-        let announcements = loader.download_updates().await?;
-        let mut seen = self.seen.write().await;
-        if seen.equivalent(&announcements) {
-            debug!("BGP Ris Dumps unchanged");
-            seen.update_checked();
-            Ok(false)
-        } else {
-            info!(
-                "Updated announcements ({}) based on BGP Ris Dumps",
-                announcements.len()
-            );
-            seen.update(announcements);
-            Ok(true)
-        }
+    async fn retrieve(
+        &self,
+        block: IpRange,
+        use_test_set: bool,
+    ) -> Vec<&Announcement> {
+        let url = format!("{}/api/v1/prefix/{}/{}/search", self.bgp_api_uri, block., block);
+        let resp = reqwest::get(url)
+            .await?
+            .json::<serde_json::Value>()
+            .await?;
+
+        resp.as_object()["result"];
+
+        vec![]
     }
 
     pub async fn analyse(
@@ -86,7 +59,6 @@ impl BgpAnalyser {
         resources_held: &ResourceSet,
         limited_scope: Option<ResourceSet>,
     ) -> BgpAnalysisReport {
-        let seen = self.seen.read().await;
         let mut entries = vec![];
 
         let roas: Vec<ConfiguredRoa> = match &limited_scope {
@@ -109,13 +81,13 @@ impl BgpAnalyser {
             entries.push(BgpAnalysisEntry::roa_not_held(not_held));
         }
 
-        if seen.last_checked().is_none() {
-            // nothing to analyse, just push all ROAs as 'no announcement
-            // info'
-            for roa in roas_held {
-                entries.push(BgpAnalysisEntry::roa_no_announcement_info(roa));
-            }
-        } else {
+        // if seen.last_checked().is_none() {
+        //     // nothing to analyse, just push all ROAs as 'no announcement
+        //     // info'
+        //     for roa in roas_held {
+        //         entries.push(BgpAnalysisEntry::roa_no_announcement_info(roa));
+        //     }
+        // } else {
             let scope = match &limited_scope {
                 Some(limit) => limit,
                 None => resources_held,
@@ -123,7 +95,7 @@ impl BgpAnalyser {
 
             let (v4_scope, v6_scope) = IpRange::for_resource_set(scope);
 
-            let mut scoped_announcements = vec![];
+            let mut scoped_announcements: Vec<ValidatedAnnouncement> = vec![];
 
             for block in v4_scope.into_iter() {
                 scoped_announcements.append(&mut seen.contained_by(block));
@@ -299,7 +271,7 @@ impl BgpAnalyser {
                     }
                 }
             }
-        }
+        // }
         BgpAnalysisReport::new(entries)
     }
 
@@ -392,14 +364,14 @@ impl BgpAnalyser {
         }).collect()
     }
 
-    fn with_test_announcements() -> Self {
-        let mut announcements = Announcements::default();
-        announcements.update(Self::test_announcements());
-        BgpAnalyser {
-            dump_loader: None,
-            seen: RwLock::new(announcements),
-        }
-    }
+    // fn with_test_announcements() -> Self {
+    //     let mut announcements = Announcements::default();
+    //     announcements.update(Self::test_announcements());
+    //     BgpAnalyser {
+    //         dump_loader: None,
+    //         seen: RwLock::new(announcements),
+    //     }
+    // }
 }
 
 //------------ Error --------------------------------------------------------
