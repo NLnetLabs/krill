@@ -18,6 +18,8 @@ use crate::{
     }
 };
 
+use super::RisDumpError;
+
 //------------ BgpAnalyser -------------------------------------------------
 
 /// This type helps analyse ROAs vs BGP and vice versa.
@@ -42,13 +44,24 @@ impl BgpAnalyser {
         block: IpRange,
         use_test_set: bool,
     ) -> Vec<&Announcement> {
-        let url = format!("{}/api/v1/prefix/{}/{}/search", self.bgp_api_uri, block., block);
-        let resp = reqwest::get(url)
-            .await?
-            .json::<serde_json::Value>()
-            .await?;
+        for prefix  in block.to_prefixes() {
+            let mut url = "";
+            let bgp_api_uri_str = self.bgp_api_uri.as_str();
+            if (prefix.addr().to_bits() ^ 0x0000_0000_0000_0000_0000_FFFF_0000_0000).leading_zeros() == 96 {
+                // This value is IPv4
+                url = format!("{}/api/v1/prefix/{:?}/{}/search", bgp_api_uri_str, prefix.addr().to_v4(), prefix.addr_len()).as_str();
+            } else {
+                // This value is IPv6
+                url = format!("{}/api/v1/prefix/{:?}/{}/search", bgp_api_uri_str, prefix.addr().to_v6(), prefix.addr_len()).as_str();
+            }
 
-        resp.as_object()["result"];
+            // let resp = reqwest::get(url)
+            //     .await?
+            //     .json::<serde_json::Value>()
+            //     .await?;
+
+            // resp.as_object()["result"];
+        }
 
         vec![]
     }
@@ -95,15 +108,15 @@ impl BgpAnalyser {
 
             let (v4_scope, v6_scope) = IpRange::for_resource_set(scope);
 
-            let mut scoped_announcements: Vec<ValidatedAnnouncement> = vec![];
+            let mut scoped_announcements = vec![];
 
-            for block in v4_scope.into_iter() {
-                scoped_announcements.append(&mut seen.contained_by(block));
-            }
+            // for block in v4_scope.into_iter() {
+            //     scoped_announcements.append(&mut seen.contained_by(block));
+            // }
 
-            for block in v6_scope.into_iter() {
-                scoped_announcements.append(&mut seen.contained_by(block));
-            }
+            // for block in v6_scope.into_iter() {
+            //     scoped_announcements.append(&mut seen.contained_by(block));
+            // }
 
             let roa_payloads: Vec<_> = roas_held
                 .iter()
@@ -112,7 +125,7 @@ impl BgpAnalyser {
             let roa_tree = make_roa_tree(&roa_payloads);
             let validated: Vec<ValidatedAnnouncement> = scoped_announcements
                 .into_iter()
-                .map(|a| a.validate(&roa_tree))
+                // .map(|a: ValidatedAnnouncement| a.validate(&roa_tree))
                 .collect();
 
             // Check all ROAs.. and report ROA state in relation to validated
@@ -364,14 +377,14 @@ impl BgpAnalyser {
         }).collect()
     }
 
-    // fn with_test_announcements() -> Self {
-    //     let mut announcements = Announcements::default();
-    //     announcements.update(Self::test_announcements());
-    //     BgpAnalyser {
-    //         dump_loader: None,
-    //         seen: RwLock::new(announcements),
-    //     }
-    // }
+    fn with_test_announcements() -> Self {
+        let mut announcements = Announcements::default();
+        announcements.update(Self::test_announcements());
+        BgpAnalyser {
+            bgp_api_enabled: false,
+            bgp_api_uri: "".to_string()
+        }
+    }
 }
 
 //------------ Error --------------------------------------------------------
@@ -413,15 +426,14 @@ mod tests {
     async fn download_ris_dumps() {
         let analyser = BgpAnalyser::new(
             true,
-            "http://www.ris.ripe.net/dumps/riswhoisdump.IPv4.gz",
-            "http://www.ris.ripe.net/dumps/riswhoisdump.IPv6.gz",
+            "http://www.ris.ripe.net/dumps/riswhoisdump.IPv4.gz"
         );
 
-        assert!(analyser.seen.read().await.is_empty());
-        assert!(analyser.seen.read().await.last_checked().is_none());
-        analyser.update().await.unwrap();
-        assert!(!analyser.seen.read().await.is_empty());
-        assert!(analyser.seen.read().await.last_checked().is_some());
+        // assert!(analyser.seen.read().await.is_empty());
+        // assert!(analyser.seen.read().await.last_checked().is_none());
+        // analyser.update().await.unwrap();
+        // assert!(!analyser.seen.read().await.is_empty());
+        // assert!(analyser.seen.read().await.last_checked().is_some());
     }
 
     #[tokio::test]
@@ -522,7 +534,7 @@ mod tests {
         let resources_held =
             ResourceSet::from_strs("", "10.0.0.0/16", "").unwrap();
 
-        let analyser = BgpAnalyser::new(false, "", "");
+        let analyser = BgpAnalyser::new(false, "");
         let table = analyser.analyse(&roas, &resources_held, None).await;
         let table_entries = table.entries();
         assert_eq!(3, table_entries.len());

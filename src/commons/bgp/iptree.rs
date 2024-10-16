@@ -2,7 +2,7 @@ use std::{collections::HashMap, ops::Range};
 
 use intervaltree::IntervalTree;
 
-use rpki::repository::resources::{Addr, AddressRange, ResourceSet};
+use rpki::repository::resources::{Addr, Prefix, ResourceSet};
 
 use crate::commons::api::TypedPrefix;
 
@@ -45,18 +45,23 @@ impl IpRange {
         other.start <= self.0.start && other.end >= self.0.end
     }
 
-    pub fn to_prefixes(&self) {
+    pub fn to_prefixes(&self) -> Vec<Prefix> {
         let mut start = self.0.start;
         let end = self.0.end;
+        
+        let mut prefixes: Vec<Prefix> = vec![];
 
         while start < end {    
             let same_bits = (start ^ end).trailing_zeros();
-            let prefix = 128 - same_bits;
-            // turn the thing into a prefix again and add it to a list
-            start += 2.pow(same_bits);
+            let prefix_len: u8 = (128 - same_bits).try_into().unwrap();
+            let addr = Addr::from(start);
+            println!("{:32x}/{} {:?}", start, prefix_len, addr);
+            let prefix = Prefix::new(addr, prefix_len);
+            prefixes.push(prefix.clone());
+            start += 2_u128.pow(same_bits);
         }
         
-        
+        prefixes
     }
 }
 
@@ -242,5 +247,18 @@ mod tests {
         let (v4_ranges, v6_ranges) = IpRange::for_resource_set(&set);
         assert_eq!(2, v4_ranges.len());
         assert_eq!(2, v6_ranges.len());
+    }
+
+    #[test]
+    fn to_prefixes() {
+        let range = IpRange(Range { 
+            start: 0x0000_0000_0000_0000_0000_0000_0000_0001, 
+            end: 0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFE
+        });
+
+        let prefixes = range.to_prefixes();
+
+        println!("{:?}", prefixes);
+        assert_eq!(254, prefixes.len())
     }
 }
