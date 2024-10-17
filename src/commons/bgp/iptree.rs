@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ops::Range};
+use std::{cmp::min, collections::HashMap, ops::Range};
 
 use intervaltree::IntervalTree;
 
@@ -51,14 +51,28 @@ impl IpRange {
         
         let mut prefixes: Vec<Prefix> = vec![];
 
-        while start < end {    
-            let same_bits = (start ^ end).trailing_zeros();
-            let prefix_len: u8 = (128 - same_bits).try_into().unwrap();
-            let addr = Addr::from(start);
-            println!("{:32x}/{} {:?}", start, prefix_len, addr);
-            let prefix = Prefix::new(addr, prefix_len);
-            prefixes.push(prefix.clone());
-            start += 2_u128.pow(same_bits);
+        loop {
+            let addr_host_bits = start.trailing_zeros();
+            let mut max_allowed = 128 - (start ^ end).leading_zeros();
+            if end.trailing_ones() < max_allowed {
+                max_allowed -= 1;
+            }
+
+            let same_bits = min(addr_host_bits, max_allowed);
+            let prefix_len = 128 - same_bits;
+
+            assert!(prefix_len <= 128);
+            let prefix = Prefix::new(Addr::from(start), 
+                prefix_len.try_into().unwrap()); 
+            prefixes.push(prefix);
+
+            let new_start = start + 2_u128.pow(same_bits);
+
+            if new_start - 1 >= end {
+                break;
+            }
+
+            start = new_start;
         }
         
         prefixes
