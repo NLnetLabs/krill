@@ -240,4 +240,23 @@ mod tests {
         assert_eq!(2, v4_ranges.len());
         assert_eq!(2, v6_ranges.len());
     }
+
+    #[test]
+    fn to_prefixes() {
+        let ipv4s = "10.0.0.0/8, 192.168.0.0-192.168.2.255";
+        let ipv6s = "::1-::3, 2001:db8::/32";
+        let set = ResourceSet::from_strs("", ipv4s, ipv6s).unwrap();
+
+        let (v4_ranges, v6_ranges) = IpRange::for_resource_set(&set);
+        let ranges: Vec<Vec<Prefix>> = [v4_ranges, v6_ranges]
+            .concat()
+            .into_iter()
+            .map(|x| x.to_prefixes())
+            .collect();
+
+        assert_eq!(1, ranges[0].len());
+        assert_eq!(2, ranges[1].len());
+        assert_eq!(2, ranges[2].len());
+        assert_eq!(1, ranges[3].len());
+    }
 }
