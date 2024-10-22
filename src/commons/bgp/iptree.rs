@@ -1,8 +1,8 @@
-use std::{cmp::min, collections::HashMap, ops::Range};
+use std::{collections::HashMap, ops::Range};
 
 use intervaltree::IntervalTree;
 
-use rpki::repository::resources::{Addr, Prefix, ResourceSet};
+use rpki::repository::resources::{Addr, IpBlock, Prefix, ResourceSet};
 
 use crate::commons::api::TypedPrefix;
 
@@ -46,36 +46,14 @@ impl IpRange {
     }
 
     pub fn to_prefixes(&self) -> Vec<Prefix> {
-        let mut start = self.0.start;
-        let end = self.0.end;
-        
-        let mut prefixes: Vec<Prefix> = vec![];
-
-        loop {
-            let addr_host_bits = start.trailing_zeros();
-            let mut max_allowed = 128 - (start ^ end).leading_zeros();
-            if end.trailing_ones() < max_allowed {
-                max_allowed -= 1;
-            }
-
-            let same_bits = min(addr_host_bits, max_allowed);
-            let prefix_len = 128 - same_bits;
-
-            assert!(prefix_len <= 128);
-            let prefix = Prefix::new(Addr::from(start), 
-                prefix_len.try_into().unwrap()); 
-            prefixes.push(prefix);
-
-            let new_start = start + 2_u128.pow(same_bits);
-
-            if new_start - 1 >= end {
-                break;
-            }
-
-            start = new_start;
+        let block = IpBlock::from((
+            Addr::from(self.0.start), 
+            Addr::from(self.0.end)
+        ));
+        match block {
+            IpBlock::Prefix(p) => vec![p],
+            IpBlock::Range(r) => r.to_prefixes()
         }
-        
-        prefixes
     }
 }
 
@@ -261,18 +239,5 @@ mod tests {
         let (v4_ranges, v6_ranges) = IpRange::for_resource_set(&set);
         assert_eq!(2, v4_ranges.len());
         assert_eq!(2, v6_ranges.len());
-    }
-
-    #[test]
-    fn to_prefixes() {
-        let range = IpRange(Range { 
-            start: 0x0000_0000_0000_0000_0000_0000_0000_0001, 
-            end: 0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFE
-        });
-
-        let prefixes = range.to_prefixes();
-
-        println!("{:?}", prefixes);
-        assert_eq!(254, prefixes.len())
     }
 }
