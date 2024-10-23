@@ -2,9 +2,9 @@ use std::{collections::HashMap, ops::Range};
 
 use intervaltree::IntervalTree;
 
-use rpki::repository::resources::{Addr, IpBlock, Prefix, ResourceSet};
+use rpki::repository::resources::{Addr, AddressRange, IpBlock, Prefix, ResourceSet};
 
-use crate::commons::api::TypedPrefix;
+use crate::commons::api::{Ipv4Prefix, Ipv6Prefix, TypedPrefix};
 
 //------------ IpRange -----------------------------------------------------
 
@@ -45,14 +45,32 @@ impl IpRange {
         other.start <= self.0.start && other.end >= self.0.end
     }
 
-    pub fn to_prefixes(&self) -> Vec<Prefix> {
-        let block = IpBlock::from((
-            Addr::from(self.0.start), 
-            Addr::from(self.0.end)
+    pub fn to_prefixes(&self) -> Vec<TypedPrefix> {
+        let is_ipv4 = 
+            (self.0.start & 0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_0000_0000) == 
+                0x0000_0000_0000_0000_0000_FFFF_0000_0000;
+
+        let mut min = self.0.start;
+        let mut max = self.0.end;
+
+        if is_ipv4 {
+            // Krill stores IPv4 internally as an IPv4-mapped IPv6 address,
+            // rpki-rs stores IPv4 addresses in the top bytes, so that prefix
+            // handling works regardless of the IP type.
+            min = min << 96;
+            max = max << 96;
+        }
+
+        let range = AddressRange::from((
+            Addr::from_bits(min), 
+            Addr::from_bits(max)
         ));
-        match block {
-            IpBlock::Prefix(p) => vec![p],
-            IpBlock::Range(r) => r.to_prefixes()
+
+        match is_ipv4 {
+            true => range.to_v4_prefixes()
+                .map(|x| TypedPrefix::from(Ipv4Prefix::from(x))).collect(),
+            false => range.to_v6_prefixes()
+                .map(|x| TypedPrefix::from(Ipv6Prefix::from(x))).collect()
         }
     }
 }
@@ -248,7 +266,7 @@ mod tests {
         let set = ResourceSet::from_strs("", ipv4s, ipv6s).unwrap();
 
         let (v4_ranges, v6_ranges) = IpRange::for_resource_set(&set);
-        let ranges: Vec<Vec<Prefix>> = [v4_ranges, v6_ranges]
+        let ranges: Vec<Vec<TypedPrefix>> = [v4_ranges, v6_ranges]
             .concat()
             .into_iter()
             .map(|x| x.to_prefixes())
