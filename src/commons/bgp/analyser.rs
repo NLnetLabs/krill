@@ -4,19 +4,17 @@ use std::str::FromStr;
 use chrono::Duration;
 use tokio::sync::RwLock;
 
-use rpki::{repository::resources::ResourceSet, repository::x509::Time};
+use rpki::repository::{resources::{Prefix, ResourceSet}, x509::Time};
 
-use crate::{
-    commons::{
-        api::{AsNumber, ConfiguredRoa, RoaPayload},
+use crate::commons::{
+        api::{AsNumber, ConfiguredRoa, RoaPayload, TypedPrefix},
         bgp::{
             make_roa_tree, make_validated_announcement_tree, Announcement,
             AnnouncementValidity, Announcements, BgpAnalysisEntry,
             BgpAnalysisReport, BgpAnalysisState, BgpAnalysisSuggestion,
             IpRange, ValidatedAnnouncement,
         },
-    }
-};
+    };
 
 use super::RisDumpError;
 
@@ -39,31 +37,79 @@ impl BgpAnalyser {
         }
     }
 
+    pub fn format_url(&self, prefix: TypedPrefix) -> String {
+        let bgp_api_uri_str = self.bgp_api_uri.as_str();
+        match prefix {
+            TypedPrefix::V4(p) => format!("{}/api/v1/prefix/{:?}/{}/search", 
+                bgp_api_uri_str, 
+                p.as_ref().addr().to_v4(), 
+                p.as_ref().addr_len()
+            ),
+            TypedPrefix::V6(p) => format!("{}/api/v1/prefix/{:?}/{}/search", 
+                bgp_api_uri_str, 
+                p.as_ref().addr().to_v6(), 
+                p.as_ref().addr_len()
+            )
+        }
+    }
+
     async fn retrieve(
         &self,
         block: IpRange,
         use_test_set: bool,
-    ) -> Vec<&Announcement> {
+    ) -> Result<Vec<&Announcement>, BgpApiError> {
+        let client = reqwest::Client::new();
+
         for prefix  in block.to_prefixes() {
-            let mut url = "";
-            let bgp_api_uri_str = self.bgp_api_uri.as_str();
-            if (prefix.addr().to_bits() ^ 0x0000_0000_0000_0000_0000_FFFF_0000_0000).leading_zeros() == 96 {
-                // This value is IPv4
-                url = format!("{}/api/v1/prefix/{:?}/{}/search", bgp_api_uri_str, prefix.addr().to_v4(), prefix.addr_len()).as_str();
-            } else {
-                // This value is IPv6
-                url = format!("{}/api/v1/prefix/{:?}/{}/search", bgp_api_uri_str, prefix.addr().to_v6(), prefix.addr_len()).as_str();
+            let url = self.format_url(prefix);
+
+            let resp = client.get(url.as_str())
+                .send()
+                .await?
+                .json::<serde_json::Value>()
+                .await?;
+            
+            let relations = match resp["result"]["relations"].as_array() {
+                Some(r) => r,
+                None => return Err(BgpApiError::MalformedDataError)
+            };
+            for relation in relations {
+                match relation["type"].as_str() {
+                    Some("less-specific") => {
+                        let members = match relation["members"].as_array() {
+                            Some(m) => m,
+                            None => return Err(BgpApiError::MalformedDataError)
+                        };
+                        for member in members {
+                            let prefix = match member["prefix"].as_str() {
+                                Some(p) => p.to_string(),
+                                None => return Err(BgpApiError::MalformedDataError)
+                            };
+                            let mut origin_asns: Vec<String> = vec![];
+                            let metas = match member["meta"].as_array() {
+                                Some(m) => m,
+                                None => return Err(BgpApiError::MalformedDataError)
+                            };
+                            for meta in metas {
+                                for asn in meta["originASNs"].as_array().unwrap_or(&vec![]) {
+                                    match asn.as_str() {
+                                        Some(s) => origin_asns.push(s.to_string()),
+                                        None => {}
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    Some("more-specific") => {
+
+                    },
+                    Some(_) => {},
+                    None => {}
+                }
             }
-
-            // let resp = reqwest::get(url)
-            //     .await?
-            //     .json::<serde_json::Value>()
-            //     .await?;
-
-            // resp.as_object()["result"];
         }
 
-        vec![]
+        Ok(vec![])
     }
 
     pub async fn analyse(
@@ -390,6 +436,18 @@ impl BgpAnalyser {
 //------------ Error --------------------------------------------------------
 
 #[derive(Debug)]
+pub enum BgpApiError {
+    ReqwestError(reqwest::Error),
+    MalformedDataError
+}
+
+impl From<reqwest::Error> for BgpApiError {
+    fn from(e: reqwest::Error) -> BgpApiError {
+        BgpApiError::ReqwestError(e)
+    }
+}
+
+#[derive(Debug)]
 pub enum BgpAnalyserError {
     RisDump(RisDumpError),
 }
@@ -415,7 +473,7 @@ impl From<RisDumpError> for BgpAnalyserError {
 #[cfg(test)]
 mod tests {
     use crate::{
-        commons::{api::RoaConfigurationUpdates, bgp::BgpAnalysisState},
+        commons::{api::{Ipv4Prefix, Ipv6Prefix, RoaConfigurationUpdates}, bgp::{analyser, BgpAnalysisState}},
         test::{announcement, configured_roa},
     };
 
@@ -596,5 +654,14 @@ mod tests {
             .unwrap();
 
         assert_eq!(suggestion_all_roas_in_scope, expected);
+    }
+
+    #[test]
+    fn format_url() {
+        let analyser = BgpAnalyser::new(true, "https://rest.bgp-api.net");
+        assert_eq!("https://rest.bgp-api.net/api/v1/prefix/192.168.0.0/16/search", 
+            analyser.format_url(TypedPrefix::from(Ipv4Prefix::from(Prefix::from_str("192.168.0.0/16").unwrap()))));
+        assert_eq!("https://rest.bgp-api.net/api/v1/prefix/2001:db8::/32/search", 
+            analyser.format_url(TypedPrefix::from(Ipv6Prefix::from(Prefix::from_str("2001:db8::/32").unwrap()))));
     }
 }
