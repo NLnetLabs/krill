@@ -160,15 +160,19 @@ impl BgpAnalyser {
 
             let (v4_scope, v6_scope) = IpRange::for_resource_set(scope);
 
-            let mut scoped_announcements = vec![];
-
-            // for block in v4_scope.into_iter() {
-            //     scoped_announcements.append(&mut seen.contained_by(block));
-            // }
-
-            // for block in v6_scope.into_iter() {
-            //     scoped_announcements.append(&mut seen.contained_by(block));
-            // }
+            let mut scoped_announcements: Vec<Announcement> = vec![];
+            
+            for block in [v4_scope, v6_scope].concat().into_iter() {
+                let announcements = self.retrieve(block).await;
+                if announcements.is_ok() {
+                    scoped_announcements.append(announcements.unwrap().as_mut());
+                } else {
+                    for roa in roas_held {
+                        entries.push(BgpAnalysisEntry::roa_no_announcement_info(roa));
+                    }
+                    return BgpAnalysisReport::new(entries);
+                }
+            }
 
             let roa_payloads: Vec<_> = roas_held
                 .iter()
@@ -177,7 +181,7 @@ impl BgpAnalyser {
             let roa_tree = make_roa_tree(&roa_payloads);
             let validated: Vec<ValidatedAnnouncement> = scoped_announcements
                 .into_iter()
-                // .map(|a: ValidatedAnnouncement| a.validate(&roa_tree))
+                .map(|a| a.validate(&roa_tree))
                 .collect();
 
             // Check all ROAs.. and report ROA state in relation to validated
