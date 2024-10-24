@@ -2,7 +2,7 @@ use std::{collections::HashMap, ops::Range};
 
 use intervaltree::IntervalTree;
 
-use rpki::repository::resources::{Addr, AddressRange, IpBlock, Prefix, ResourceSet};
+use rpki::repository::resources::{Addr, AddressRange, ResourceSet};
 
 use crate::commons::api::{Ipv4Prefix, Ipv6Prefix, TypedPrefix};
 

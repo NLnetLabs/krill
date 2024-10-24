@@ -313,7 +313,6 @@ impl KrillServer {
             self.mq.clone(),
             self.ca_manager.clone(),
             self.repo_manager.clone(),
-            self.bgp_analyser.clone(),
             #[cfg(feature = "multi-user")]
             self.login_session_cache.clone(),
             self.config.clone(),

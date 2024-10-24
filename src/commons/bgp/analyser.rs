@@ -1,23 +1,21 @@
 use std::fmt;
 use std::str::FromStr;
 
-use chrono::Duration;
 use serde_json::Value;
-use tokio::sync::RwLock;
 
-use rpki::repository::{resources::{Prefix, ResourceSet}, x509::Time};
+use rpki::repository::resources::ResourceSet;
 
 use crate::commons::{
         api::{AsNumber, ConfiguredRoa, RoaPayload, TypedPrefix},
         bgp::{
             make_roa_tree, make_validated_announcement_tree, Announcement,
-            AnnouncementValidity, Announcements, BgpAnalysisEntry,
+            AnnouncementValidity, BgpAnalysisEntry,
             BgpAnalysisReport, BgpAnalysisState, BgpAnalysisSuggestion,
             IpRange, ValidatedAnnouncement,
         },
     };
 
-use super::{announcements, RisDumpError};
+use super::RisDumpError;
 
 //------------ BgpAnalyser -------------------------------------------------
 
@@ -146,13 +144,13 @@ impl BgpAnalyser {
             entries.push(BgpAnalysisEntry::roa_not_held(not_held));
         }
 
-        // if seen.last_checked().is_none() {
-        //     // nothing to analyse, just push all ROAs as 'no announcement
-        //     // info'
-        //     for roa in roas_held {
-        //         entries.push(BgpAnalysisEntry::roa_no_announcement_info(roa));
-        //     }
-        // } else {
+        if !self.bgp_api_enabled {
+            // nothing to analyse, just push all ROAs as 'no announcement
+            // info'
+            for roa in roas_held {
+                entries.push(BgpAnalysisEntry::roa_no_announcement_info(roa));
+            }
+        } else {
             let scope = match &limited_scope {
                 Some(limit) => limit,
                 None => resources_held,
@@ -162,15 +160,19 @@ impl BgpAnalyser {
 
             let mut scoped_announcements: Vec<Announcement> = vec![];
             
-            for block in [v4_scope, v6_scope].concat().into_iter() {
-                let announcements = self.retrieve(block).await;
-                if announcements.is_ok() {
-                    scoped_announcements.append(announcements.unwrap().as_mut());
-                } else {
-                    for roa in roas_held {
-                        entries.push(BgpAnalysisEntry::roa_no_announcement_info(roa));
+            if self.bgp_api_uri.starts_with("test") {
+                scoped_announcements.append(BgpAnalyser::test_announcements().as_mut());
+            } else {
+                for block in [v4_scope, v6_scope].concat().into_iter() {
+                    let announcements = self.retrieve(block).await;
+                    if announcements.is_ok() {
+                        scoped_announcements.append(announcements.unwrap().as_mut());
+                    } else {
+                        for roa in roas_held {
+                            entries.push(BgpAnalysisEntry::roa_no_announcement_info(roa));
+                        }
+                        return BgpAnalysisReport::new(entries);
                     }
-                    return BgpAnalysisReport::new(entries);
                 }
             }
 
@@ -340,7 +342,7 @@ impl BgpAnalyser {
                     }
                 }
             }
-        // }
+        }
         BgpAnalysisReport::new(entries)
     }
 
@@ -432,15 +434,6 @@ impl BgpAnalyser {
             Announcement::from(RoaPayload::from_str(s).unwrap())
         }).collect()
     }
-
-    fn with_test_announcements() -> Self {
-        let mut announcements = Announcements::default();
-        announcements.update(Self::test_announcements());
-        BgpAnalyser {
-            bgp_api_enabled: false,
-            bgp_api_uri: "".to_string()
-        }
-    }
 }
 
 //------------ Error --------------------------------------------------------
@@ -482,6 +475,8 @@ impl From<RisDumpError> for BgpAnalyserError {
 
 #[cfg(test)]
 mod tests {
+    use rpki::repository::resources::Prefix;
+
     use crate::{
         commons::{api::{Ipv4Prefix, Ipv6Prefix, RoaConfigurationUpdates}, bgp::{analyser, BgpAnalysisState}},
         test::{announcement, configured_roa},

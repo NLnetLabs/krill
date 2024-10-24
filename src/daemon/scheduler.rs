@@ -16,7 +16,6 @@ use crate::{
     commons::{
         actor::Actor,
         api::Timestamp,
-        bgp::BgpAnalyser,
         crypto::dispatch::signerinfo::SignerInfo,
         error::FatalError,
         eventsourcing::{Aggregate, AggregateStore, WalStore, WalSupport},
@@ -48,7 +47,6 @@ pub struct Scheduler {
     tasks: Arc<TaskQueue>,
     ca_manager: Arc<CaManager>,
     repo_manager: Arc<RepositoryManager>,
-    bgp_analyser: Arc<BgpAnalyser>,
     #[cfg(feature = "multi-user")]
     // Responsible for purging expired cached login tokens
     login_session_cache: Arc<LoginSessionCache>,
@@ -62,7 +60,6 @@ impl Scheduler {
         tasks: Arc<TaskQueue>,
         ca_manager: Arc<CaManager>,
         repo_manager: Arc<RepositoryManager>,
-        bgp_analyser: Arc<BgpAnalyser>,
         #[cfg(feature = "multi-user")] login_session_cache: Arc<
             LoginSessionCache,
         >,
@@ -73,7 +70,6 @@ impl Scheduler {
             tasks,
             ca_manager,
             repo_manager,
-            bgp_analyser,
             #[cfg(feature = "multi-user")]
             login_session_cache,
             config,
