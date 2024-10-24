@@ -15,7 +15,7 @@ use crate::commons::{
         },
     };
 
-use super::RisDumpError;
+use super::{Announcements, RisDumpError};
 
 //------------ BgpAnalyser -------------------------------------------------
 
@@ -434,6 +434,15 @@ impl BgpAnalyser {
             Announcement::from(RoaPayload::from_str(s).unwrap())
         }).collect()
     }
+    
+    fn with_test_announcements() -> Self {
+        let mut announcements = Announcements::default();
+        announcements.update(Self::test_announcements());
+        BgpAnalyser {
+            bgp_api_enabled: false,
+            bgp_api_uri: "".to_string()
+        }
+    }
 }
 
 //------------ Error --------------------------------------------------------
@@ -478,26 +487,11 @@ mod tests {
     use rpki::repository::resources::Prefix;
 
     use crate::{
-        commons::{api::{Ipv4Prefix, Ipv6Prefix, RoaConfigurationUpdates}, bgp::{analyser, BgpAnalysisState}},
+        commons::{api::{Ipv4Prefix, Ipv6Prefix, RoaConfigurationUpdates}, bgp::BgpAnalysisState},
         test::{announcement, configured_roa},
     };
 
     use super::*;
-
-    #[tokio::test]
-    #[ignore]
-    async fn download_ris_dumps() {
-        let analyser = BgpAnalyser::new(
-            true,
-            "http://www.ris.ripe.net/dumps/riswhoisdump.IPv4.gz"
-        );
-
-        // assert!(analyser.seen.read().await.is_empty());
-        // assert!(analyser.seen.read().await.last_checked().is_none());
-        // analyser.update().await.unwrap();
-        // assert!(!analyser.seen.read().await.is_empty());
-        // assert!(analyser.seen.read().await.last_checked().is_some());
-    }
 
     #[tokio::test]
     async fn analyse_bgp() {
