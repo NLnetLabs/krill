@@ -1,0 +1,121 @@
+{
+   "type": "longest-match",
+   "prefix": "2a04:b900::/29",
+   "result": {
+      "prefix": "2a04:b900::/29",
+      "meta": [
+         {
+            "sourceType": "rir-alloc",
+            "sourceID": "ripe"
+         }
+      ],
+      "relations": [
+         {
+            "type": "same-org",
+            "members": [
+               {
+                  "prefix": "185.49.140.0/22",
+                  "meta": [
+                     {
+                        "sourceType": "rir-alloc",
+                        "sourceID": "ripe"
+                     }
+                  ]
+               },
+               {
+                  "prefix": "2a04:b900::/29",
+                  "meta": [
+                     {
+                        "sourceType": "rir-alloc",
+                        "sourceID": "ripe"
+                     }
+                  ]
+               }
+            ]
+         },
+         {
+            "type": "less-specific",
+            "members": [
+
+            ]
+         },
+         {
+            "type": "more-specific",
+            "members": [
+               {
+                  "prefix": "2a04:b900::/30",
+                  "meta": [
+                     {
+                        "sourceType": "bgp",
+                        "sourceID": "riswhois",
+                        "originASNs": [
+                           "AS8587"
+                        ]
+                     }
+                  ]
+               },
+               {
+                  "prefix": "2a04:b904::/48",
+                  "meta": [
+                     {
+                        "sourceType": "bgp",
+                        "sourceID": "riswhois",
+                        "originASNs": [
+                           "AS211321"
+                        ]
+                     }
+                  ]
+               },
+               {
+                  "prefix": "2a04:b905::/48",
+                  "meta": [
+                     {
+                        "sourceType": "bgp",
+                        "sourceID": "riswhois",
+                        "originASNs": [
+                           "AS16509"
+                        ]
+                     }
+                  ]
+               },
+               {
+                  "prefix": "2a04:b906::/48",
+                  "meta": [
+                     {
+                        "sourceType": "bgp",
+                        "sourceID": "riswhois",
+                        "originASNs": [
+                           "AS211321"
+                        ]
+                     }
+                  ]
+               },
+               {
+                  "prefix": "2a04:b907::/47",
+                  "meta": [
+                     {
+                        "sourceType": "bgp",
+                        "sourceID": "riswhois",
+                        "originASNs": [
+                           "AS211321"
+                        ]
+                     }
+                  ]
+               },
+               {
+                  "prefix": "2a04:b907::/48",
+                  "meta": [
+                     {
+                        "sourceType": "bgp",
+                        "sourceID": "riswhois",
+                        "originASNs": [
+                           "AS211321"
+                        ]
+                     }
+                  ]
+               }
+            ]
+         }
+      ]
+   }
+}

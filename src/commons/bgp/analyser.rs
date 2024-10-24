@@ -54,6 +54,10 @@ impl BgpAnalyser {
         }
     }
 
+    // Obtain the announcements from the JSON tree.
+    // Every element in the tree is an Option, if an element cannot be found,
+    // we return None, indicating that something about the structure was
+    // malformed in some way.
     fn obtain_announcements(&self, json: Value) -> Option<Vec<Announcement>> {
         let mut anns: Vec<Announcement> = vec![];
         for relation in json["result"]["relations"].as_array()? {
@@ -64,6 +68,7 @@ impl BgpAnalyser {
                     let prefix_str = member["prefix"].as_str()?;
                     for meta in member["meta"].as_array()? {
                         for asn in meta["originASNs"].as_array()? {
+                            // Strip off "AS" prefix
                             let asn = AsNumber::from_str(&asn.as_str()?[2..]);
                             let prefix = TypedPrefix::from_str(prefix_str);
                             if asn.is_err() || prefix.is_err() {
@@ -92,15 +97,15 @@ impl BgpAnalyser {
         for prefix  in block.to_prefixes() {
             let url = self.format_url(prefix);
 
-            dbg!(&url);
-
-            let resp = client.get(url.as_str())
-                .send()
-                .await?
-                .json::<serde_json::Value>()
-                .await?;
-
-            dbg!(&resp);
+            let resp = match url.starts_with("test") {
+                true => serde_json::from_str(include_str!(
+                        "../../../test-resources/bgp/bgp-api-v6.json")).unwrap(),
+                false => client.get(url.as_str())
+                    .send()
+                    .await?
+                    .json::<serde_json::Value>()
+                    .await?
+            };
             
             let ann = self.obtain_announcements(resp);
 
@@ -670,16 +675,16 @@ mod tests {
 
     #[tokio::test]
     async fn retrieve() {
-        let analyser = BgpAnalyser::new(true, "https://rest.bgp-api.net");
+        let analyser = BgpAnalyser::new(true, "test");
 
         let ipv4s = "185.49.140.0/22";
         let ipv6s = "2a04:b900::/29";
         let set = ResourceSet::from_strs("", ipv4s, ipv6s).unwrap();
 
-        let (v4_ranges, v6_ranges) = IpRange::for_resource_set(&set);
+        let (_v4_ranges, v6_ranges) = IpRange::for_resource_set(&set);
 
-        for range in [v4_ranges, v6_ranges].concat() {
-            dbg!(analyser.retrieve(range).await.unwrap());
+        for range in v6_ranges {
+            assert_eq!(6, analyser.retrieve(range).await.unwrap().len());
         }
     }
 }
