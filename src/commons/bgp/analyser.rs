@@ -2,6 +2,7 @@ use std::fmt;
 use std::str::FromStr;
 
 use chrono::Duration;
+use serde_json::Value;
 use tokio::sync::RwLock;
 
 use rpki::repository::{resources::{Prefix, ResourceSet}, x509::Time};
@@ -16,7 +17,7 @@ use crate::commons::{
         },
     };
 
-use super::RisDumpError;
+use super::{announcements, RisDumpError};
 
 //------------ BgpAnalyser -------------------------------------------------
 
@@ -53,63 +54,63 @@ impl BgpAnalyser {
         }
     }
 
+    fn obtain_announcements(&self, json: Value) -> Option<Vec<Announcement>> {
+        let mut anns: Vec<Announcement> = vec![];
+        for relation in json["result"]["relations"].as_array()? {
+            if relation["type"].as_str()? == "less-specific" || 
+                relation["type"].as_str()? == "more-specific" {
+
+                for member in relation["members"].as_array()? {
+                    let prefix_str = member["prefix"].as_str()?;
+                    for meta in member["meta"].as_array()? {
+                        for asn in meta["originASNs"].as_array()? {
+                            let asn = AsNumber::from_str(&asn.as_str()?[2..]);
+                            let prefix = TypedPrefix::from_str(prefix_str);
+                            if asn.is_err() || prefix.is_err() {
+                                return None;
+                            }
+                            anns.push(Announcement::new(
+                                asn.unwrap(), 
+                                prefix.unwrap()
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        Some(anns)
+    }
+
     async fn retrieve(
         &self,
         block: IpRange,
-        use_test_set: bool,
-    ) -> Result<Vec<&Announcement>, BgpApiError> {
+    ) -> Result<Vec<Announcement>, BgpApiError> {
         let client = reqwest::Client::new();
+
+        let mut announcements: Vec<Announcement> = vec![];
 
         for prefix  in block.to_prefixes() {
             let url = self.format_url(prefix);
+
+            dbg!(&url);
 
             let resp = client.get(url.as_str())
                 .send()
                 .await?
                 .json::<serde_json::Value>()
                 .await?;
-            
-            let relations = match resp["result"]["relations"].as_array() {
-                Some(r) => r,
-                None => return Err(BgpApiError::MalformedDataError)
-            };
-            for relation in relations {
-                match relation["type"].as_str() {
-                    Some("less-specific") => {
-                        let members = match relation["members"].as_array() {
-                            Some(m) => m,
-                            None => return Err(BgpApiError::MalformedDataError)
-                        };
-                        for member in members {
-                            let prefix = match member["prefix"].as_str() {
-                                Some(p) => p.to_string(),
-                                None => return Err(BgpApiError::MalformedDataError)
-                            };
-                            let mut origin_asns: Vec<String> = vec![];
-                            let metas = match member["meta"].as_array() {
-                                Some(m) => m,
-                                None => return Err(BgpApiError::MalformedDataError)
-                            };
-                            for meta in metas {
-                                for asn in meta["originASNs"].as_array().unwrap_or(&vec![]) {
-                                    match asn.as_str() {
-                                        Some(s) => origin_asns.push(s.to_string()),
-                                        None => {}
-                                    }
-                                }
-                            }
-                        }
-                    },
-                    Some("more-specific") => {
 
-                    },
-                    Some(_) => {},
-                    None => {}
-                }
+            dbg!(&resp);
+            
+            let ann = self.obtain_announcements(resp);
+
+            if ann.is_none() {
+                return Err(BgpApiError::MalformedDataError)
             }
+            announcements.append(ann.unwrap().as_mut());
         }
 
-        Ok(vec![])
+        Ok(announcements)
     }
 
     pub async fn analyse(
@@ -660,8 +661,25 @@ mod tests {
     fn format_url() {
         let analyser = BgpAnalyser::new(true, "https://rest.bgp-api.net");
         assert_eq!("https://rest.bgp-api.net/api/v1/prefix/192.168.0.0/16/search", 
-            analyser.format_url(TypedPrefix::from(Ipv4Prefix::from(Prefix::from_str("192.168.0.0/16").unwrap()))));
+            analyser.format_url(TypedPrefix::from(Ipv4Prefix::from(
+                Prefix::from_str("192.168.0.0/16").unwrap()))));
         assert_eq!("https://rest.bgp-api.net/api/v1/prefix/2001:db8::/32/search", 
-            analyser.format_url(TypedPrefix::from(Ipv6Prefix::from(Prefix::from_str("2001:db8::/32").unwrap()))));
+            analyser.format_url(TypedPrefix::from(Ipv6Prefix::from(
+                Prefix::from_str("2001:db8::/32").unwrap()))));
+    }
+
+    #[tokio::test]
+    async fn retrieve() {
+        let analyser = BgpAnalyser::new(true, "https://rest.bgp-api.net");
+
+        let ipv4s = "185.49.140.0/22";
+        let ipv6s = "2a04:b900::/29";
+        let set = ResourceSet::from_strs("", ipv4s, ipv6s).unwrap();
+
+        let (v4_ranges, v6_ranges) = IpRange::for_resource_set(&set);
+
+        for range in [v4_ranges, v6_ranges].concat() {
+            dbg!(analyser.retrieve(range).await.unwrap());
+        }
     }
 }
