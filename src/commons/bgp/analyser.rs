@@ -53,15 +53,17 @@ impl BgpAnalyser {
     }
 
     fn parse_member(&self, member: &Value, anns: &mut Vec<Announcement>) 
-        -> Option<bool> {
+        -> Option<()> {
         let prefix_str = member["prefix"].as_str()?;
         for meta in member["meta"].as_array()? {
             for asn in meta["originASNs"].as_array()? {
                 // Strip off "AS" prefix
-                let Ok(asn) =  AsNumber::from_str(&asn.as_str()?.get(2..)?) else {
+                let Ok(asn) =  
+                    AsNumber::from_str(&asn.as_str()?.get(2..)?) else {
                     return None;
                 };
-                let Ok(prefix) = TypedPrefix::from_str(prefix_str) else {
+                let Ok(prefix) = 
+                    TypedPrefix::from_str(prefix_str) else {
                     return None;
                 };
                 anns.push(Announcement::new(
@@ -70,7 +72,7 @@ impl BgpAnalyser {
                 ));
             }
         }
-        Some(true)
+        Some(())
     }
 
     // Obtain the announcements from the JSON tree.
@@ -171,15 +173,19 @@ impl BgpAnalyser {
             let mut scoped_announcements: Vec<Announcement> = vec![];
             
             if self.bgp_api_uri.starts_with("test2") {
-                scoped_announcements.append(BgpAnalyser::test_announcements().as_mut());
+                scoped_announcements.append(
+                    BgpAnalyser::test_announcements().as_mut());
             } else {
                 for block in [v4_scope, v6_scope].concat().into_iter() {
                     let announcements = self.retrieve(block).await;
                     if announcements.is_ok() {
-                        scoped_announcements.append(announcements.unwrap().as_mut());
+                        scoped_announcements.append(
+                            announcements.unwrap().as_mut());
                     } else {
                         for roa in roas_held {
-                            entries.push(BgpAnalysisEntry::roa_no_announcement_info(roa));
+                            entries.push(
+                                BgpAnalysisEntry::roa_no_announcement_info(roa)
+                            );
                         }
                         return BgpAnalysisReport::new(entries);
                     }
@@ -450,7 +456,7 @@ impl BgpAnalyser {
         announcements.update(Self::test_announcements());
         BgpAnalyser {
             bgp_api_enabled: false,
-            bgp_api_uri: "".to_string()
+            bgp_api_uri: "test2".to_string()
         }
     }
 }
