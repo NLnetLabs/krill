@@ -58,14 +58,9 @@ impl BgpAnalyser {
         for meta in member["meta"].as_array()? {
             for asn in meta["originASNs"].as_array()? {
                 // Strip off "AS" prefix
-                let Ok(asn) =  
-                    AsNumber::from_str(&asn.as_str()?.get(2..)?) else {
-                    return None;
-                };
-                let Ok(prefix) = 
-                    TypedPrefix::from_str(prefix_str) else {
-                    return None;
-                };
+                let asn = AsNumber::from_str(&asn.as_str()?.get(2..)?).ok()?;
+                let prefix= TypedPrefix::from_str(prefix_str).ok()?;
+
                 anns.push(Announcement::new(
                     asn, 
                     prefix
@@ -87,9 +82,7 @@ impl BgpAnalyser {
                 relation["type"].as_str()? == "more-specific" {
 
                 for member in relation["members"].as_array()? {
-                    let Some(_) = self.parse_member(member, &mut anns) else {
-                        return None;
-                    };
+                    self.parse_member(member, &mut anns)?;
                 }
             }
         }
