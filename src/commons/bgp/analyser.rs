@@ -52,7 +52,29 @@ impl BgpAnalyser {
         }
     }
 
+    fn parse_member(&self, member: &Value, anns: &mut Vec<Announcement>) 
+        -> Option<bool> {
+        let prefix_str = member["prefix"].as_str()?;
+        for meta in member["meta"].as_array()? {
+            for asn in meta["originASNs"].as_array()? {
+                // Strip off "AS" prefix
+                let Ok(asn) =  AsNumber::from_str(&asn.as_str()?.get(2..)?) else {
+                    return None;
+                };
+                let Ok(prefix) = TypedPrefix::from_str(prefix_str) else {
+                    return None;
+                };
+                anns.push(Announcement::new(
+                    asn, 
+                    prefix
+                ));
+            }
+        }
+        Some(true)
+    }
+
     // Obtain the announcements from the JSON tree.
+    //
     // Every element in the tree is an Option, if an element cannot be found,
     // we return None, indicating that something about the structure was
     // malformed in some way.
@@ -63,21 +85,9 @@ impl BgpAnalyser {
                 relation["type"].as_str()? == "more-specific" {
 
                 for member in relation["members"].as_array()? {
-                    let prefix_str = member["prefix"].as_str()?;
-                    for meta in member["meta"].as_array()? {
-                        for asn in meta["originASNs"].as_array()? {
-                            // Strip off "AS" prefix
-                            let asn = AsNumber::from_str(&asn.as_str()?[2..]);
-                            let prefix = TypedPrefix::from_str(prefix_str);
-                            if asn.is_err() || prefix.is_err() {
-                                return None;
-                            }
-                            anns.push(Announcement::new(
-                                asn.unwrap(), 
-                                prefix.unwrap()
-                            ));
-                        }
-                    }
+                    let Some(_) = self.parse_member(member, &mut anns) else {
+                        return None;
+                    };
                 }
             }
         }
@@ -160,7 +170,7 @@ impl BgpAnalyser {
 
             let mut scoped_announcements: Vec<Announcement> = vec![];
             
-            if self.bgp_api_uri.starts_with("test") {
+            if self.bgp_api_uri.starts_with("test2") {
                 scoped_announcements.append(BgpAnalyser::test_announcements().as_mut());
             } else {
                 for block in [v4_scope, v6_scope].concat().into_iter() {
@@ -679,5 +689,64 @@ mod tests {
         for range in v6_ranges {
             assert_eq!(6, analyser.retrieve(range).await.unwrap().len());
         }
+    }
+
+    #[tokio::test]
+    async fn analyse() {
+        let analyser = BgpAnalyser::new(true, "test");
+
+        // let ipv4s = "185.49.140.0/22";
+        let ipv6s = "2a04:b900::/29";
+        let set = ResourceSet::from_strs("AS211321", "", ipv6s).unwrap();
+
+        // let (_v4_ranges, v6_ranges) = IpRange::for_resource_set(&set);
+
+        let roas = &[
+            configured_roa("2a04:b906::/48-48 => 0"),
+            configured_roa("2a04:b907::/48-48 => 0"),
+            // configured_roa("185.49.142.0/24-24 => 0"),
+            configured_roa("2a04:b900::/30-32 => 8587"),
+            // configured_roa("185.49.140.0/23-23 => 8587"),
+            configured_roa("2a04:b900::/30-30 => 8587"),
+            configured_roa("2a04:b905::/48-48 => 14618"),
+            configured_roa("2a04:b905::/48-48 => 16509"),
+            configured_roa("2a04:b902::/32-32 => 16509"),
+            configured_roa("2a04:b904::/48-48 => 211321"),
+            configured_roa("2a04:b907::/47-47 => 211321"),
+            // configured_roa("185.49.142.0/23-23 => 211321"),
+            configured_roa("2a04:b902::/48-48 => 211321"),
+            // configured_roa("185.49.143.0/24-24 => 211321"),
+        ];
+
+        let report = analyser.analyse(roas, &set, None).await;
+
+        dbg!(&report);
+
+        let entry_expect_roa = |x: &str, y| {
+            let x = x.to_string();
+            assert!(report.entries().into_iter().any(|s|
+                s.state() == y &&
+                s.configured_roa().to_string() == x 
+            ));       
+        };
+
+        let entry_expect_ann = |x: &str, y: u32, z: BgpAnalysisState| {
+            let x = x.to_string();
+            assert!(report.entries().into_iter().any(|s|
+                s.state() == z &&
+                s.announcement().asn().clone() == AsNumber::new(y) &&
+                s.announcement().prefix().to_string() == x
+            ));       
+        };
+
+        entry_expect_roa("2a04:b907::/48-48 => 0", BgpAnalysisState::RoaAs0Redundant);
+        // entry_expect_roa("185.49.142.0/24-24 => 0", BgpAnalysisState::RoaAs0Redundant);
+        entry_expect_roa("2a04:b900::/30-30 => 8587", BgpAnalysisState::RoaRedundant);
+        entry_expect_roa("2a04:b905::/48-48 => 14618", BgpAnalysisState::RoaUnseen);
+        entry_expect_roa("2a04:b902::/32-32 => 16509", BgpAnalysisState::RoaUnseen);
+        entry_expect_ann("2a04:b907::/48", 211321, BgpAnalysisState::AnnouncementInvalidLength);
+        // entry_expect_ann("185.49.142.0/24", 211321, BgpAnalysisState::AnnouncementInvalidLength);
+        entry_expect_roa("2a04:b902::/48-48 => 211321", BgpAnalysisState::RoaUnseen);
+        // entry_expect_roa("185.49.143.0/24-24 => 211321", BgpAnalysisState::RoaUnseen);
     }
 }
