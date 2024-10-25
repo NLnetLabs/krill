@@ -1,4 +1,3 @@
-use std::fmt;
 use std::str::FromStr;
 
 use serde_json::Value;
@@ -15,7 +14,8 @@ use crate::commons::{
         },
     };
 
-use super::{Announcements, RisDumpError};
+#[cfg(test)] 
+use super::Announcements;
 
 //------------ BgpAnalyser -------------------------------------------------
 
@@ -444,6 +444,7 @@ impl BgpAnalyser {
         }).collect()
     }
     
+    #[cfg(test)]
     fn with_test_announcements() -> Self {
         let mut announcements = Announcements::default();
         announcements.update(Self::test_announcements());
@@ -465,27 +466,6 @@ pub enum BgpApiError {
 impl From<reqwest::Error> for BgpApiError {
     fn from(e: reqwest::Error) -> BgpApiError {
         BgpApiError::ReqwestError(e)
-    }
-}
-
-#[derive(Debug)]
-pub enum BgpAnalyserError {
-    RisDump(RisDumpError),
-}
-
-impl fmt::Display for BgpAnalyserError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            BgpAnalyserError::RisDump(e) => {
-                write!(f, "BGP RIS update error: {}", e)
-            }
-        }
-    }
-}
-
-impl From<RisDumpError> for BgpAnalyserError {
-    fn from(e: RisDumpError) -> Self {
-        BgpAnalyserError::RisDump(e)
     }
 }
 
