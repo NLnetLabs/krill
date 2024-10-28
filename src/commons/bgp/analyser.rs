@@ -100,9 +100,14 @@ impl BgpAnalyser {
         for prefix  in block.to_prefixes() {
             let url = self.format_url(prefix);
 
-            let resp = match url.starts_with("test") {
-                true => serde_json::from_str(include_str!(
-                        "../../../test-resources/bgp/bgp-api-v6.json")).unwrap(),
+            let resp: Value = match url.starts_with("test") {
+                true => {
+                    // Use test responses predefined in the JSON
+                    let json: Value = serde_json::from_str(include_str!(
+                        "../../../test-resources/bgp/bgp-api.json"))?;
+                    let json_resp = json.get(url.as_str()).unwrap();
+                    json_resp.clone()
+                },
                 false => client.get(url.as_str())
                     .send()
                     .await?
@@ -460,12 +465,19 @@ impl BgpAnalyser {
 #[derive(Debug)]
 pub enum BgpApiError {
     ReqwestError(reqwest::Error),
+    SerdeError(serde_json::Error),
     MalformedDataError
 }
 
 impl From<reqwest::Error> for BgpApiError {
     fn from(e: reqwest::Error) -> BgpApiError {
         BgpApiError::ReqwestError(e)
+    }
+}
+
+impl From<serde_json::Error> for BgpApiError {
+    fn from(e: serde_json::Error) -> BgpApiError {
+        BgpApiError::SerdeError(e)
     }
 }
 
@@ -674,27 +686,25 @@ mod tests {
     async fn analyse() {
         let analyser = BgpAnalyser::new(true, "test");
 
-        // let ipv4s = "185.49.140.0/22";
+        let ipv4s = "185.49.140.0/22";
         let ipv6s = "2a04:b900::/29";
-        let set = ResourceSet::from_strs("AS211321", "", ipv6s).unwrap();
-
-        // let (_v4_ranges, v6_ranges) = IpRange::for_resource_set(&set);
+        let set = ResourceSet::from_strs("AS211321", ipv4s, ipv6s).unwrap();
 
         let roas = &[
             configured_roa("2a04:b906::/48-48 => 0"),
             configured_roa("2a04:b907::/48-48 => 0"),
-            // configured_roa("185.49.142.0/24-24 => 0"),
+            configured_roa("185.49.142.0/24-24 => 0"),
             configured_roa("2a04:b900::/30-32 => 8587"),
-            // configured_roa("185.49.140.0/23-23 => 8587"),
+            configured_roa("185.49.140.0/23-23 => 8587"),
             configured_roa("2a04:b900::/30-30 => 8587"),
             configured_roa("2a04:b905::/48-48 => 14618"),
             configured_roa("2a04:b905::/48-48 => 16509"),
             configured_roa("2a04:b902::/32-32 => 16509"),
             configured_roa("2a04:b904::/48-48 => 211321"),
             configured_roa("2a04:b907::/47-47 => 211321"),
-            // configured_roa("185.49.142.0/23-23 => 211321"),
+            configured_roa("185.49.142.0/23-23 => 211321"),
             configured_roa("2a04:b902::/48-48 => 211321"),
-            // configured_roa("185.49.143.0/24-24 => 211321"),
+            configured_roa("185.49.143.0/24-24 => 211321"),
         ];
 
         let report = analyser.analyse(roas, &set, None).await;
@@ -719,13 +729,13 @@ mod tests {
         };
 
         entry_expect_roa("2a04:b907::/48-48 => 0", BgpAnalysisState::RoaAs0Redundant);
-        // entry_expect_roa("185.49.142.0/24-24 => 0", BgpAnalysisState::RoaAs0Redundant);
+        entry_expect_roa("185.49.142.0/24-24 => 0", BgpAnalysisState::RoaAs0Redundant);
         entry_expect_roa("2a04:b900::/30-30 => 8587", BgpAnalysisState::RoaRedundant);
         entry_expect_roa("2a04:b905::/48-48 => 14618", BgpAnalysisState::RoaUnseen);
         entry_expect_roa("2a04:b902::/32-32 => 16509", BgpAnalysisState::RoaUnseen);
         entry_expect_ann("2a04:b907::/48", 211321, BgpAnalysisState::AnnouncementInvalidLength);
-        // entry_expect_ann("185.49.142.0/24", 211321, BgpAnalysisState::AnnouncementInvalidLength);
+        entry_expect_ann("185.49.142.0/24", 211321, BgpAnalysisState::AnnouncementInvalidLength);
         entry_expect_roa("2a04:b902::/48-48 => 211321", BgpAnalysisState::RoaUnseen);
-        // entry_expect_roa("185.49.143.0/24-24 => 211321", BgpAnalysisState::RoaUnseen);
+        entry_expect_roa("185.49.143.0/24-24 => 211321", BgpAnalysisState::RoaUnseen);
     }
 }
