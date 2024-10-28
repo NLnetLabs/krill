@@ -14,6 +14,7 @@ use crate::commons::{
         },
     };
 
+
 //------------ BgpAnalyser -------------------------------------------------
 
 /// This type helps analyse ROAs vs BGP and vice versa.
@@ -59,7 +60,7 @@ impl BgpAnalyser {
             for asn in meta["originASNs"].as_array()? {
                 // Strip off "AS" prefix
                 let asn = 
-                    AsNumber::from_str(&asn.as_str()?.get(2..)?).ok()?;
+                    AsNumber::from_str(asn.as_str()?.get(2..)?).ok()?;
                 let prefix = 
                     TypedPrefix::from_str(prefix_str).ok()?;
 
@@ -185,9 +186,9 @@ impl BgpAnalyser {
             
             for block in [v4_scope, v6_scope].concat().into_iter() {
                 let announcements = self.retrieve(block).await;
-                if announcements.is_ok() {
+                if let Ok(mut announcements) = announcements {
                     scoped_announcements.append(
-                        announcements.unwrap().as_mut());
+                        announcements.as_mut());
                 } else {
                     for roa in roas_held {
                         entries.push(

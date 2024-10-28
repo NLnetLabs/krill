@@ -57,8 +57,8 @@ impl IpRange {
             // Krill stores IPv4 internally as an IPv4-mapped IPv6 address,
             // rpki-rs stores IPv4 addresses in the top bytes, so that prefix
             // handling works regardless of the IP type.
-            min = min << 96;
-            max = max << 96;
+            min <<= 96;
+            max <<= 96;
         }
 
         let range = AddressRange::from((
