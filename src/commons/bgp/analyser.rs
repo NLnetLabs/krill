@@ -14,9 +14,6 @@ use crate::commons::{
         },
     };
 
-#[cfg(test)] 
-use super::Announcements;
-
 //------------ BgpAnalyser -------------------------------------------------
 
 /// This type helps analyse ROAs vs BGP and vice versa.
@@ -52,20 +49,34 @@ impl BgpAnalyser {
         }
     }
 
-    fn parse_member(&self, member: &Value, anns: &mut Vec<Announcement>) 
-        -> Option<()> {
-        let prefix_str = member["prefix"].as_str()?;
-        for meta in member["meta"].as_array()? {
+    fn parse_meta(
+        &self, 
+        meta: &Value, 
+        prefix_str: &str, 
+        anns: &mut Vec<Announcement>
+    ) -> Option<()> {
+        if meta["sourceType"].as_str()? == "bgp" {
             for asn in meta["originASNs"].as_array()? {
                 // Strip off "AS" prefix
-                let asn = AsNumber::from_str(&asn.as_str()?.get(2..)?).ok()?;
-                let prefix= TypedPrefix::from_str(prefix_str).ok()?;
+                let asn = 
+                    AsNumber::from_str(&asn.as_str()?.get(2..)?).ok()?;
+                let prefix = 
+                    TypedPrefix::from_str(prefix_str).ok()?;
 
                 anns.push(Announcement::new(
                     asn, 
                     prefix
                 ));
             }
+        }
+        Some(())
+    }
+
+    fn parse_member(&self, member: &Value, anns: &mut Vec<Announcement>) 
+        -> Option<()> {
+        let prefix_str = member["prefix"].as_str()?;
+        for meta in member["meta"].as_array()? {
+            self.parse_meta(meta, prefix_str, anns);
         }
         Some(())
     }
@@ -77,9 +88,12 @@ impl BgpAnalyser {
     // malformed in some way.
     fn obtain_announcements(&self, json: Value) -> Option<Vec<Announcement>> {
         let mut anns: Vec<Announcement> = vec![];
+        let prefix_str = json["result"]["prefix"].as_str()?;
+        for meta in json["result"]["meta"].as_array()? {
+            self.parse_meta(meta, prefix_str, &mut anns);
+        }
         for relation in json["result"]["relations"].as_array()? {
-            if relation["type"].as_str()? == "less-specific" || 
-                relation["type"].as_str()? == "more-specific" {
+            if relation["type"].as_str()? == "more-specific" {
 
                 for member in relation["members"].as_array()? {
                     self.parse_member(member, &mut anns)?;
@@ -170,23 +184,18 @@ impl BgpAnalyser {
 
             let mut scoped_announcements: Vec<Announcement> = vec![];
             
-            if self.bgp_api_uri.starts_with("test2") {
-                scoped_announcements.append(
-                    BgpAnalyser::test_announcements().as_mut());
-            } else {
-                for block in [v4_scope, v6_scope].concat().into_iter() {
-                    let announcements = self.retrieve(block).await;
-                    if announcements.is_ok() {
-                        scoped_announcements.append(
-                            announcements.unwrap().as_mut());
-                    } else {
-                        for roa in roas_held {
-                            entries.push(
-                                BgpAnalysisEntry::roa_no_announcement_info(roa)
-                            );
-                        }
-                        return BgpAnalysisReport::new(entries);
+            for block in [v4_scope, v6_scope].concat().into_iter() {
+                let announcements = self.retrieve(block).await;
+                if announcements.is_ok() {
+                    scoped_announcements.append(
+                        announcements.unwrap().as_mut());
+                } else {
+                    for roa in roas_held {
+                        entries.push(
+                            BgpAnalysisEntry::roa_no_announcement_info(roa)
+                        );
                     }
+                    return BgpAnalysisReport::new(entries);
                 }
             }
 
@@ -432,32 +441,6 @@ impl BgpAnalyser {
 
         suggestion
     }
-
-    fn test_announcements() -> Vec<Announcement> {
-        [
-            "10.0.0.0/22 => 64496",
-            "10.0.2.0/23 => 64496",
-            "10.0.0.0/24 => 64496",
-            "10.0.0.0/22 => 64497",
-            "10.0.0.0/21 => 64497",
-            "192.168.0.0/24 => 64497",
-            "192.168.0.0/24 => 64496",
-            "192.168.1.0/24 => 64497",
-            "2001:DB8::/32 => 64498",
-        ].into_iter().map(|s| {
-            Announcement::from(RoaPayload::from_str(s).unwrap())
-        }).collect()
-    }
-    
-    #[cfg(test)]
-    fn with_test_announcements() -> Self {
-        let mut announcements = Announcements::default();
-        announcements.update(Self::test_announcements());
-        BgpAnalyser {
-            bgp_api_enabled: false,
-            bgp_api_uri: "test2".to_string()
-        }
-    }
 }
 
 //------------ Error --------------------------------------------------------
@@ -512,7 +495,10 @@ mod tests {
                 .unwrap();
         let limit = None;
 
-        let analyser = BgpAnalyser::with_test_announcements();
+        let analyser = BgpAnalyser {
+            bgp_api_enabled: true,
+            bgp_api_uri: "test".to_string()
+        };
 
         let report = analyser
             .analyse(
@@ -543,7 +529,10 @@ mod tests {
         let roa = configured_roa("10.0.0.0/22 => 0");
 
         let roas = &[roa];
-        let analyser = BgpAnalyser::with_test_announcements();
+        let analyser = BgpAnalyser {
+            bgp_api_enabled: true,
+            bgp_api_uri: "test".to_string()
+        };
 
         let resources_held =
             ResourceSet::from_strs("", "10.0.0.0/8, 192.168.0.0/16", "")
@@ -627,7 +616,10 @@ mod tests {
             roa_as0_redundant,
         ];
 
-        let analyser = BgpAnalyser::with_test_announcements();
+        let analyser = BgpAnalyser {
+            bgp_api_enabled: true,
+            bgp_api_uri: "test".to_string()
+        };
 
         let resources_held =
             ResourceSet::from_strs("", "10.0.0.0/8, 192.168.0.0/16", "")
