@@ -455,5 +455,71 @@
             }
          ]
       }
+   },
+   "test/api/v1/prefix/1.1.1.1/32/search": "",
+   "test/api/v1/prefix/2.2.2.2/32/search": {
+      "type": "longest-match",
+      "prefix": "0.0.0.0/0",
+      "result": {
+         "prefix": null,
+         "type": "empty-match",
+         "meta": [],
+         "members": []
+      }
+   },
+   "test/api/v1/prefix/3.3.3.3/32/search": {
+      "type": "longest-match",
+      "prefix": "3.3.3.3/32",
+      "result": {
+         "prefix": "3.3.3.3/32",
+         "meta": [
+            {
+               "sourceType": "rir-alloc",
+               "sourceID": "ripe"
+            }
+         ],
+         "relations": [
+            {
+               "type": "more-specific",
+               "members": [
+                  {
+                     "prefix": "3.3.3.3/32",
+                     "meta": [
+                        {
+                           "sourceType": "bgp",
+                           "sourceID": "riswhois",
+                           "originASNs": [
+                              "64496",
+                              "banana"
+                           ]
+                        }
+                     ]
+                  }
+               ]
+            }
+         ]
+      }
+   },
+   "test/api/v1/prefix/4.4.4.4/32/search": {
+      "type": "longest-match",
+      "prefix": "4.4.4.4/32",
+      "result": {
+         "prefix": "4.4.4.512/32",
+         "meta": [
+            {
+               "sourceType": "rir-alloc",
+               "sourceID": "ripe"
+            },
+            {
+               "sourceType": "bgp",
+               "sourceID": "riswhois",
+               "originASNs": [
+                  "AS64496",
+                  "AS64497"
+               ],
+               "type": "exact-match"
+            }
+         ]
+      }
    }
 }

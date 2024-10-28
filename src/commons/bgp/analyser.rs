@@ -76,7 +76,7 @@ impl BgpAnalyser {
         -> Option<()> {
         let prefix_str = member["prefix"].as_str()?;
         for meta in member["meta"].as_array()? {
-            self.parse_meta(meta, prefix_str, anns);
+            self.parse_meta(meta, prefix_str, anns)?;
         }
         Some(())
     }
@@ -90,11 +90,10 @@ impl BgpAnalyser {
         let mut anns: Vec<Announcement> = vec![];
         let prefix_str = json["result"]["prefix"].as_str()?;
         for meta in json["result"]["meta"].as_array()? {
-            self.parse_meta(meta, prefix_str, &mut anns);
+            self.parse_meta(meta, prefix_str, &mut anns)?;
         }
         for relation in json["result"]["relations"].as_array()? {
             if relation["type"].as_str()? == "more-specific" {
-
                 for member in relation["members"].as_array()? {
                     self.parse_member(member, &mut anns)?;
                 }
@@ -660,22 +659,40 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn retrieve() {
+    async fn retrieve_announcements() {
         let analyser = BgpAnalyser::new(true, "test");
 
         let ipv4s = "185.49.140.0/22";
         let ipv6s = "2a04:b900::/29";
         let set = ResourceSet::from_strs("", ipv4s, ipv6s).unwrap();
 
-        let (_v4_ranges, v6_ranges) = IpRange::for_resource_set(&set);
+        let (v4_ranges, v6_ranges) = IpRange::for_resource_set(&set);
 
         for range in v6_ranges {
             assert_eq!(6, analyser.retrieve(range).await.unwrap().len());
         }
+
+        for range in v4_ranges {
+            assert_eq!(3, analyser.retrieve(range).await.unwrap().len());
+        }
     }
 
     #[tokio::test]
-    async fn analyse() {
+    async fn retrieve_broken_announcements() {
+        let analyser = BgpAnalyser::new(true, "test");
+
+        let ipv4s = "1.1.1.1/32, 2.2.2.2/32, 3.3.3.3/32, 4.4.4.4/32";
+        let set = ResourceSet::from_strs("", ipv4s, "").unwrap();
+        
+        let (v4_ranges, _) = IpRange::for_resource_set(&set);
+
+        for range in v4_ranges {
+            assert!(analyser.retrieve(range).await.is_err());
+        }
+    }
+
+    #[tokio::test]
+    async fn analyse_nlnet_labs_snapshot() {
         let analyser = BgpAnalyser::new(true, "test");
 
         let ipv4s = "185.49.140.0/22";
