@@ -179,16 +179,12 @@ impl ConfigDefaults {
         240 // 4 minutes by default should be plenty in most cases
     }
 
-    pub fn bgp_risdumps_enabled() -> bool {
+    pub fn bgp_api_enabled() -> bool {
         true
     }
 
-    pub fn bgp_risdumps_v4_uri() -> String {
-        "http://www.ris.ripe.net/dumps/riswhoisdump.IPv4.gz".to_string()
-    }
-
-    pub fn bgp_risdumps_v6_uri() -> String {
-        "http://www.ris.ripe.net/dumps/riswhoisdump.IPv6.gz".to_string()
+    pub fn bgp_api_uri() -> String {
+        "https://rest.bgp-api.net".to_string()
     }
 
     pub fn roa_aggregate_threshold() -> usize {
@@ -615,12 +611,10 @@ pub struct Config {
     pub rfc6492_log_dir: Option<PathBuf>,
 
     // RIS BGP
-    #[serde(default = "ConfigDefaults::bgp_risdumps_enabled")]
-    pub bgp_risdumps_enabled: bool,
-    #[serde(default = "ConfigDefaults::bgp_risdumps_v4_uri")]
-    pub bgp_risdumps_v4_uri: String,
-    #[serde(default = "ConfigDefaults::bgp_risdumps_v6_uri")]
-    pub bgp_risdumps_v6_uri: String,
+    #[serde(default = "ConfigDefaults::bgp_api_enabled")]
+    pub bgp_api_enabled: bool,
+    #[serde(default = "ConfigDefaults::bgp_api_uri")]
+    pub bgp_api_uri: String,
 
     // ROA Aggregation per ASN
     #[serde(default = "ConfigDefaults::roa_aggregate_threshold")]
@@ -1152,9 +1146,8 @@ impl Config {
         let post_protocol_msg_timeout_seconds =
             ConfigDefaults::post_protocol_msg_timeout_seconds();
 
-        let bgp_risdumps_enabled = false;
-        let bgp_risdumps_v4_uri = ConfigDefaults::bgp_risdumps_v4_uri();
-        let bgp_risdumps_v6_uri = ConfigDefaults::bgp_risdumps_v6_uri();
+        let bgp_api_enabled = false;
+        let bgp_api_uri = ConfigDefaults::bgp_api_uri();
 
         let roa_aggregate_threshold = 3;
         let roa_deaggregate_threshold = 2;
@@ -1267,9 +1260,8 @@ impl Config {
             post_limit_rfc6492,
             rfc6492_log_dir: None,
             post_protocol_msg_timeout_seconds,
-            bgp_risdumps_enabled,
-            bgp_risdumps_v4_uri,
-            bgp_risdumps_v6_uri,
+            bgp_api_enabled,
+            bgp_api_uri,
             roa_aggregate_threshold,
             roa_deaggregate_threshold,
             issuance_timing,
