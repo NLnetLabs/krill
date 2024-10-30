@@ -8,6 +8,6 @@ pub mod openid_connect;
 pub use admin_token::AdminTokenAuthProvider;
 
 #[cfg(feature = "multi-user")]
-pub use config_file::provider::ConfigFileAuthProvider;
+pub use config_file::ConfigFileAuthProvider;
 #[cfg(feature = "multi-user")]
 pub use openid_connect::provider::OpenIDConnectAuthProvider;

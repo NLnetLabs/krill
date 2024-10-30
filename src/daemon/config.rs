@@ -5,6 +5,7 @@ use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
     path::{Path, PathBuf},
     str::FromStr,
+    sync::Arc,
 };
 
 use chrono::Duration;
@@ -32,6 +33,7 @@ use crate::{
     },
     constants::*,
     daemon::{
+        auth::{Role, RoleMap},
         http::tls_keys::{self, HTTPS_SUB_DIR},
         mq::{in_seconds, Priority},
     },
@@ -40,7 +42,7 @@ use crate::{
 
 #[cfg(feature = "multi-user")]
 use crate::daemon::auth::providers::{
-    config_file::config::ConfigAuthUsers,
+    config_file::ConfigAuthUsers,
     openid_connect::ConfigAuthOpenIDConnect,
 };
 
@@ -117,6 +119,14 @@ impl ConfigDefaults {
 
     pub fn auth_type() -> AuthType {
         AuthType::AdminToken
+    }
+
+    pub fn auth_roles() -> Arc<RoleMap> {
+        let mut res = RoleMap::new();
+        res.add("admin", Role::admin());
+        res.add("readwrite", Role::readwrite());
+        res.add("readonly", Role::readonly());
+        res.into()
     }
 
     pub fn admin_token() -> Token {
@@ -567,6 +577,9 @@ pub struct Config {
 
     #[cfg(feature = "multi-user")]
     pub auth_openidconnect: Option<ConfigAuthOpenIDConnect>,
+
+    #[serde(default = "ConfigDefaults::auth_roles")]
+    pub auth_roles: Arc<RoleMap>,
 
     #[serde(default, deserialize_with = "deserialize_signer_ref")]
     pub default_signer: SignerReference,
@@ -1123,6 +1136,7 @@ impl Config {
         let auth_users = None;
         #[cfg(feature = "multi-user")]
         let auth_openidconnect = None;
+        let auth_roles = ConfigDefaults::auth_roles();
 
         let default_signer = SignerReference::default();
         let one_off_signer = SignerReference::default();
@@ -1252,6 +1266,7 @@ impl Config {
             auth_users,
             #[cfg(feature = "multi-user")]
             auth_openidconnect,
+            auth_roles,
             default_signer,
             one_off_signer,
             signers,

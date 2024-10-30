@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-
 use serde::Deserialize;
+use super::claims::{ClaimSource, MatchExpression, SubstExpression};
 
 pub struct ConfigDefaults {}
 
@@ -12,7 +12,8 @@ pub struct ConfigAuthOpenIDConnect {
 
     pub client_secret: String,
 
-    pub id_claim: String,
+    #[serde(default = "default_claims")]
+    pub claims: Vec<ConfigAuthOpenIDConnectClaim>,
 
     #[serde(default)]
     pub extra_login_scopes: Vec<String>,
@@ -31,7 +32,38 @@ pub struct ConfigAuthOpenIDConnect {
 }
 
 fn default_prompt_for_login() -> bool {
-    // On by default for backward compatability. See: https://github.com/NLnetLabs/krill/issues/614
+    // On by default for backward compatability.
+    // See: https://github.com/NLnetLabs/krill/issues/614
     true
+}
+
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct ConfigAuthOpenIDConnectClaim {
+    pub dest: String,
+    pub source: Option<ClaimSource>,
+    pub claim: String,
+    #[serde(rename = "match")]
+    pub match_expr: Option<MatchExpression>,
+    pub subst: Option<SubstExpression>,
+}
+
+fn default_claims() -> Vec<ConfigAuthOpenIDConnectClaim> {
+    vec![
+        ConfigAuthOpenIDConnectClaim {
+            dest: "id".into(),
+            source: None,
+            claim: "email".into(),
+            match_expr: None,
+            subst: None,
+        },
+        ConfigAuthOpenIDConnectClaim {
+            dest: "id".into(),
+            source: None,
+            claim: "role".into(),
+            match_expr: None,
+            subst: None,
+        },
+    ]
 }
 

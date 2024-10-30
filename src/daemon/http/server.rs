@@ -44,8 +44,7 @@ use crate::{
         KRILL_VERSION_MINOR, KRILL_VERSION_PATCH,
     },
     daemon::{
-        auth::{Auth, Handle},
-        auth::policy::Permission,
+        auth::{Auth, Handle, Permission},
         ca::CaStatus,
         config::Config,
         http::{
@@ -350,7 +349,7 @@ async fn map_requests(
 
     // Save any updated auth details, e.g. if an OpenID Connect token needed
     // refreshing.
-    let new_auth = req.auth_info_mut().new_auth.take();
+    let new_auth = req.auth_info_mut().take_new_auth();
 
     // We used to use .or_else() here but that causes a large recursive call
     // tree due to these calls being to async functions, large enough with the
@@ -1209,26 +1208,15 @@ macro_rules! aa {
         aa!($req, $perm, Some(&$resource), $action, false)
     }};
     ($req:ident, $perm:expr, $resource:expr, $action:expr, $benign:expr) => {{
-        if $req.is_allowed($perm, $resource) {
-            $action
-        }
-        else {
-            let msg = match $resource {
-                Some(res) => {
-                    format!(
-                        "User '{}' does not have permission '{}' \
-                         on resource '{}'",
-                        $req.actor().name(), $perm, res,
-                    )
-                },
-                None => {
-                    format!(
-                        "User '{}' does not have permission '{}'",
-                        $req.actor().name(), $perm,
-                    )
-                }
-            };
-            Ok(HttpResponse::forbidden(msg).with_benign($benign))
+        match $req.check_permission($perm, $resource) {
+            Ok(()) => { $action }
+            Err(err) => {
+                Ok(
+                    HttpResponse::forbidden(
+                        err.to_string()
+                    ).with_benign($benign)
+                )
+            }
         }
     }};
 }
@@ -1769,7 +1757,7 @@ async fn api_all_ca_issues(req: Request) -> RoutingResult {
     match *req.method() {
         Method::GET => aa!(req, Permission::CA_READ, {
             render_json_res(
-                req.state().all_ca_issues(req.auth_policy()).await
+                req.state().all_ca_issues(req.auth_info()).await
             )
         }),
         _ => render_unknown_method(),
@@ -1791,7 +1779,7 @@ async fn api_ca_issues(req: Request, ca: CaHandle) -> RoutingResult {
 
 async fn api_cas_list(req: Request) -> RoutingResult {
     aa!(req, Permission::CA_LIST, {
-        render_json_res(req.state().ca_list(req.auth_policy()))
+        render_json_res(req.state().ca_list(req.auth_info()))
     })
 }
 
@@ -2531,11 +2519,7 @@ async fn api_republish_all(req: Request, force: bool) -> RoutingResult {
 async fn api_resync_all(req: Request) -> RoutingResult {
     match *req.method() {
         Method::POST => aa!(req, Permission::CA_ADMIN, {
-            render_empty_res(
-                req.state().cas_repo_sync_all(
-                    req.auth_policy()
-                )
-            )
+            render_empty_res(req.state().cas_repo_sync_all(req.auth_info()))
         }),
         _ => render_unknown_method(),
     }

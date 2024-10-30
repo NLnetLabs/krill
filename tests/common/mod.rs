@@ -135,6 +135,7 @@ impl TestConfig {
         let auth_users = None;
         #[cfg(feature = "multi-user")]
         let auth_openidconnect = None;
+        let auth_roles = ConfigDefaults::auth_roles();
 
         let default_signer = SignerReference::default();
         let one_off_signer = SignerReference::default();
@@ -273,6 +274,7 @@ impl TestConfig {
             auth_users,
             #[cfg(feature = "multi-user")]
             auth_openidconnect,
+            auth_roles,
             default_signer,
             one_off_signer,
             signers,

@@ -16,8 +16,7 @@ use rpki::{
     uri,
 };
 
-use crate::daemon::auth::{AuthInfo, Handle};
-use crate::daemon::auth::policy::{AuthPolicy, Permission};
+use crate::daemon::auth::AuthInfo;
 use crate::{
     commons::{
         actor::Actor,
@@ -62,7 +61,6 @@ use crate::{
 
 #[cfg(feature = "multi-user")]
 use crate::daemon::auth::{
-    common::session::LoginSessionCache,
     providers::{ConfigFileAuthProvider, OpenIDConnectAuthProvider},
 };
 
@@ -75,7 +73,7 @@ pub struct KrillServer {
     service_uri: uri::Https,
 
     // Component responsible for API authorization checks
-    authorizer: Authorizer,
+    authorizer: Arc<Authorizer>,
 
     // Publication server, with configured publishers
     repo_manager: Arc<RepositoryManager>,
@@ -91,10 +89,6 @@ pub struct KrillServer {
 
     // Time this server was started
     started: Timestamp,
-
-    #[cfg(feature = "multi-user")]
-    // Global login session cache
-    login_session_cache: Arc<LoginSessionCache>,
 
     // System actor
     system_actor: Actor,
@@ -128,9 +122,6 @@ impl KrillServer {
         .build()?;
         let signer = Arc::new(signer);
 
-        #[cfg(feature = "multi-user")]
-        let login_session_cache = Arc::new(LoginSessionCache::new());
-
         // Construct the authorizer used to verify API access requests and to
         // tell Lagosta where to send end-users to login and logout.
         // TODO: remove the ugly duplication, however attempts to do so have
@@ -145,22 +136,14 @@ impl KrillServer {
             #[cfg(feature = "multi-user")]
             AuthType::ConfigFile => Authorizer::new(
                 config.clone(),
-                ConfigFileAuthProvider::new(
-                    config.clone(),
-                    login_session_cache.clone(),
-                )?
-                .into(),
+                ConfigFileAuthProvider::new(&config)?.into(),
             )?,
             #[cfg(feature = "multi-user")]
             AuthType::OpenIDConnect => Authorizer::new(
                 config.clone(),
-                OpenIDConnectAuthProvider::new(
-                    config.clone(),
-                    login_session_cache.clone(),
-                )?
-                .into(),
+                OpenIDConnectAuthProvider::new(config.clone())?.into(),
             )?,
-        };
+        }.into();
         let system_actor = ACTOR_DEF_KRILL;
 
         // Task queue Arc is shared between ca_manager, repo_manager and the
@@ -207,8 +190,6 @@ impl KrillServer {
             bgp_analyser,
             mq,
             started: Timestamp::now(),
-            #[cfg(feature = "multi-user")]
-            login_session_cache,
             system_actor,
             config: config.clone(),
         };
@@ -319,7 +300,7 @@ impl KrillServer {
             self.repo_manager.clone(),
             self.bgp_analyser.clone(),
             #[cfg(feature = "multi-user")]
-            self.login_session_cache.clone(),
+            self.authorizer.clone(),
             self.config.clone(),
             self.system_actor.clone(),
         )
@@ -370,20 +351,7 @@ impl KrillServer {
 
     #[cfg(feature = "multi-user")]
     pub fn login_session_cache_size(&self) -> usize {
-        self.login_session_cache.size()
-    }
-
-    pub fn get_auth_policy(&self, actor: &Actor) -> Arc<AuthPolicy> {
-        self.authorizer.get_policy(actor)
-    }
-
-    pub fn is_allowed(
-        &self,
-        actor: &Actor,
-        permission: Permission,
-        resource: Option<&Handle>
-    ) -> bool {
-        self.authorizer.is_allowed(actor, permission, resource)
+        self.authorizer.login_session_cache_size()
     }
 }
 
@@ -989,7 +957,7 @@ impl KrillServer {
 
     pub async fn all_ca_issues(
         &self,
-        auth: &AuthPolicy,
+        auth: &AuthInfo,
     ) -> KrillResult<AllCertAuthIssues> {
         let mut all_issues = AllCertAuthIssues::default();
         for ca in self.ca_list(auth)?.cas() {
@@ -1037,7 +1005,7 @@ impl KrillServer {
     }
 
     /// Re-sync all CAs with their repositories
-    pub fn cas_repo_sync_all(&self, auth: &AuthPolicy) -> KrillEmptyResult {
+    pub fn cas_repo_sync_all(&self, auth: &AuthInfo) -> KrillEmptyResult {
         self.ca_manager.cas_schedule_repo_sync_all(auth)
     }
 
@@ -1067,7 +1035,7 @@ impl KrillServer {
 
 /// # Admin CAS
 impl KrillServer {
-    pub fn ca_list(&self, auth: &AuthPolicy) -> KrillResult<CertAuthList> {
+    pub fn ca_list(&self, auth: &AuthInfo) -> KrillResult<CertAuthList> {
         self.ca_manager.ca_list(auth)
     }
 

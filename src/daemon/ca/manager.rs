@@ -48,8 +48,7 @@ use crate::{
         CASERVER_NS, STATUS_NS, TA_PROXY_SERVER_NS, TA_SIGNER_SERVER_NS,
     },
     daemon::{
-        auth::Handle,
-        auth::policy::{AuthPolicy, Permission},
+        auth::{AuthInfo, Handle, Permission},
         ca::{
             CaObjectsStore, CaStatus, CertAuth, CertAuthCommand,
             CertAuthCommandDetails, DeprecatedRepository,
@@ -618,17 +617,17 @@ impl CaManager {
 
     /// Gets the CAs that the given policy allows read access to.
     pub fn ca_list(
-        &self, auth: &AuthPolicy
+        &self, auth: &AuthInfo,
     ) -> KrillResult<CertAuthList> {
         Ok(CertAuthList::new(
             self.ca_store
                 .list()?
                 .into_iter()
                 .filter(|handle| {
-                    auth.is_allowed(
+                    auth.check_permission(
                         Permission::CA_READ,
                         Some(&Handle::from(handle))
-                    )
+                    ).is_ok()
                 })
                 .map(CertAuthSummary::new)
                 .collect(),
@@ -2464,7 +2463,7 @@ impl CaManager {
     /// Schedule synchronizing all CAs with their repositories.
     pub fn cas_schedule_repo_sync_all(
         &self,
-        auth: &AuthPolicy,
+        auth: &AuthInfo,
     ) -> KrillResult<()> {
         for ca in self.ca_list(auth)?.cas() {
             self.cas_schedule_repo_sync(ca.handle().clone())?;

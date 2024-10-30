@@ -1,8 +1,11 @@
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
 use base64::engine::Engine as _;
+use serde::{Deserialize, Serialize};
+use serde::de::DeserializeOwned;
 use crate::commons::api::Token;
 use crate::commons::error::Error;
 use crate::commons::KrillResult;
@@ -12,12 +15,12 @@ use crate::daemon::auth::common::crypt::{CryptState, NonceState};
 
 const MAX_CACHE_SECS: u64 = 30;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ClientSession {
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ClientSession<S> {
     pub start_time: u64,
     pub expires_in: Option<Duration>,
     pub user_id: Arc<str>,
-    pub secrets: HashMap<String, String>,
+    pub secrets: S,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -27,7 +30,18 @@ pub enum SessionStatus {
     Expired,
 }
 
-impl ClientSession {
+impl<S: Clone> Clone for ClientSession<S> {
+    fn clone(&self) -> Self {
+        Self {
+            start_time: self.start_time,
+            expires_in: self.expires_in,
+            user_id: self.user_id.clone(),
+            secrets: self.secrets.clone(),
+        }
+    }
+}
+
+impl<S> ClientSession<S> {
     pub fn status(&self) -> SessionStatus {
         if let Some(expires_in) = &self.expires_in {
             match SystemTime::now().duration_since(UNIX_EPOCH) {
@@ -66,15 +80,11 @@ impl ClientSession {
 
         SessionStatus::Active
     }
-
-    pub fn get_secret(&self, key: &str) -> Option<&String> {
-        self.secrets.get(key)
-    }
 }
 
-struct CachedSession {
+struct CachedSession<S> {
     pub evict_after: u64,
-    pub session: ClientSession,
+    pub session: ClientSession<S>,
 }
 
 pub type EncryptFn = fn(&[u8], &[u8], &NonceState) -> KrillResult<Vec<u8>>;
@@ -85,20 +95,20 @@ pub type DecryptFn = fn(&[u8], &[u8]) -> KrillResult<Vec<u8>>;
 /// the Lagosta UI client) while keeping potentially sensitive data in-memory
 /// for as short as possible. This cache is NOT responsible for enforcing
 /// token expiration, that is handled separately by the AuthProvider.
-pub struct LoginSessionCache {
-    cache: RwLock<HashMap<Token, CachedSession>>,
+pub struct LoginSessionCache<S> {
+    cache: RwLock<HashMap<Token, CachedSession<S>>>,
     encrypt_fn: EncryptFn,
     decrypt_fn: DecryptFn,
     ttl_secs: u64,
 }
 
-impl Default for LoginSessionCache {
+impl<S> Default for LoginSessionCache<S> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl LoginSessionCache {
+impl<S> LoginSessionCache<S> {
     pub fn new() -> Self {
         LoginSessionCache {
             cache: RwLock::new(HashMap::new()),
@@ -147,7 +157,8 @@ impl LoginSessionCache {
             .as_secs())
     }
 
-    fn lookup_session(&self, token: &Token) -> Option<ClientSession> {
+    fn lookup_session(&self, token: &Token) -> Option<ClientSession<S>>
+    where S: Clone {
         match self.cache.read() {
             Ok(readable_cache) => {
                 if let Some(cache_item) = readable_cache.get(token) {
@@ -160,7 +171,7 @@ impl LoginSessionCache {
         None
     }
 
-    fn cache_session(&self, token: &Token, session: &ClientSession) {
+    fn cache_session(&self, token: &Token, session: ClientSession<S>) {
         match self.cache.write() {
             Ok(mut writeable_cache) => {
                 match Self::time_now_secs_since_epoch() {
@@ -169,7 +180,7 @@ impl LoginSessionCache {
                             token.clone(),
                             CachedSession {
                                 evict_after: now + self.ttl_secs,
-                                session: session.clone(),
+                                session,
                             },
                         );
                     }
@@ -188,15 +199,16 @@ impl LoginSessionCache {
     pub fn encode(
         &self,
         user_id: Arc<str>,
-        secrets: HashMap<String, String>,
+        secrets: S,
         crypt_state: &CryptState,
         expires_in: Option<Duration>,
-    ) -> KrillResult<Token> {
+    ) -> KrillResult<Token>
+    where S: Debug + Serialize {
         let session = ClientSession {
             start_time: Self::time_now_secs_since_epoch()?,
             expires_in,
             user_id,
-            secrets,
+            secrets
         };
 
         debug!("Creating token for session: {:?}", &session);
@@ -217,7 +229,7 @@ impl LoginSessionCache {
         )?;
         let token = Token::from(BASE64_ENGINE.encode(encrypted_bytes));
 
-        self.cache_session(&token, &session);
+        self.cache_session(&token, session);
         Ok(token)
     }
 
@@ -226,7 +238,8 @@ impl LoginSessionCache {
         token: Token,
         key: &CryptState,
         add_to_cache: bool,
-    ) -> KrillResult<ClientSession> {
+    ) -> KrillResult<ClientSession<S>>
+    where S: Clone + DeserializeOwned {
         if let Some(session) = self.lookup_session(&token) {
             trace!("Session cache hit for session id {}", &session.user_id);
             return Ok(session);
@@ -246,7 +259,7 @@ impl LoginSessionCache {
         let unencrypted_bytes = (self.decrypt_fn)(&key.key, &bytes)?;
 
         let session =
-            serde_json::from_slice::<ClientSession>(&unencrypted_bytes)
+            serde_json::from_slice::<ClientSession<S>>(&unencrypted_bytes)
                 .map_err(|err| {
                     debug!(
                         "Invalid bearer token: cannot deserialize: {}",
@@ -263,7 +276,7 @@ impl LoginSessionCache {
         );
 
         if add_to_cache {
-            self.cache_session(&token, &session);
+            self.cache_session(&token, session.clone());
         }
 
         Ok(session)
@@ -312,6 +325,7 @@ impl LoginSessionCache {
         Ok(())
     }
 }
+
 
 mod tests {
     #[test]

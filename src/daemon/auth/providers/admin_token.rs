@@ -6,7 +6,7 @@ use crate::{
         api::Token, error::Error, util::httpclient,
         KrillResult,
     },
-    daemon::{auth::{AuthInfo, LoggedInUser}, config::Config},
+    daemon::{auth::{AuthInfo, LoggedInUser, Role}, config::Config},
 };
 
 // This is NOT an actual relative path to redirect to. Instead it is the path
@@ -19,6 +19,7 @@ const LAGOSTA_LOGIN_ROUTE_PATH: &str = "/login";
 pub struct AdminTokenAuthProvider {
     required_token: Token,
     user_id: Arc<str>,
+    role: Arc<Role>,
 }
 
 impl AdminTokenAuthProvider {
@@ -27,6 +28,7 @@ impl AdminTokenAuthProvider {
             required_token: config.admin_token.clone(),
             // XXX Get from config.
             user_id: "admin".into(),
+            role: Role::admin().into(),
         }
     }
 }
@@ -42,7 +44,9 @@ impl AdminTokenAuthProvider {
 
         let res = match httpclient::get_bearer_token(request) {
             Some(token) if token == self.required_token => {
-                Ok(Some(AuthInfo::user(self.user_id.clone())))
+                Ok(Some(AuthInfo::user(
+                    self.user_id.clone(), self.role.clone()
+                )))
             }
             Some(_) => Err(Error::ApiInvalidCredentials(
                 "Invalid bearer token".to_string(),
@@ -79,7 +83,7 @@ impl AdminTokenAuthProvider {
         request: &HyperRequest,
     ) -> KrillResult<HttpResponse> {
         if let Ok(Some(info)) = self.authenticate(request) {
-            info!("User logged out: {}", info.actor.name());
+            info!("User logged out: {}", info.actor().name());
         }
 
         // Logout is complete, direct Lagosta to show the user the Lagosta
@@ -87,3 +91,4 @@ impl AdminTokenAuthProvider {
         Ok(HttpResponse::text_no_cache(b"/".to_vec()))
     }
 }
+

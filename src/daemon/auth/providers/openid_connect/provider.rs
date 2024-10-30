@@ -28,7 +28,6 @@
 //! [openid-connect-rpinitiated-1_0]: https://openid.net/specs/openid-connect-rpinitiated-1_0.html
 
 use std::{
-    collections::HashMap,
     ops::Deref,
     sync::Arc, 
     time::Instant,
@@ -70,7 +69,6 @@ use crate::{
                 session::*,
             },
             providers::openid_connect::{
-                config::ConfigAuthOpenIDConnect,
                 httpclient::logging_http_client,
                 util::{
                     FlexibleClient, FlexibleIdTokenClaims,
@@ -78,12 +76,14 @@ use crate::{
                     WantedMeta,
                 },
             },
-            Auth, AuthInfo, LoggedInUser,
+            Auth, AuthInfo, LoggedInUser, Permission,
         },
         config::Config,
         http::auth::{url_encode, AUTH_CALLBACK_ENDPOINT},
     },
 };
+use super::claims::Claims;
+use super::config::ConfigAuthOpenIDConnect;
 
 
 //------------ Constants -----------------------------------------------------
@@ -95,36 +95,6 @@ use crate::{
 // with path "/" and WITHOUT a "domain" attribute. See: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie#cookie_prefixes
 const NONCE_COOKIE_NAME: &str = "__Host-krill_login_nonce";
 const CSRF_COOKIE_NAME: &str = "__Host-krill_login_csrf_hash";
-
-
-//------------ TokenKind -----------------------------------------------------
-
-#[allow(clippy::enum_variant_names)]
-enum TokenKind {
-    AccessToken,
-    RefreshToken,
-    IdToken,
-}
-
-impl From<TokenKind> for String {
-    fn from(token_kind: TokenKind) -> Self {
-        match token_kind {
-            TokenKind::AccessToken => String::from("access_token"),
-            TokenKind::RefreshToken => String::from("refresh_token"),
-            TokenKind::IdToken => String::from("id_token"),
-        }
-    }
-}
-
-impl From<TokenKind> for &'static str {
-    fn from(token_kind: TokenKind) -> Self {
-        match token_kind {
-            TokenKind::AccessToken => "access_token",
-            TokenKind::RefreshToken => "refresh_token",
-            TokenKind::IdToken => "id_token",
-        }
-    }
-}
 
 
 //------------ LogoutMode ----------------------------------------------------
@@ -158,11 +128,48 @@ pub struct ProviderConnectionProperties {
 }
 
 
+//------------ SessionSecrets ------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct SessionSecrets {
+    role: Arc<str>,
+    access_token: String,
+    refresh_token: Option<String>,
+    id_token: Option<String>
+}
+
+impl SessionSecrets {
+    fn new(
+        role: impl Into<Arc<str>>,
+        token_response: &FlexibleTokenResponse,
+    ) -> Self {
+        Self {
+            role: role.into(),
+            access_token: token_response.access_token().secret().clone(),
+            refresh_token: token_response.refresh_token().as_ref().map(|t| {
+                t.secret().clone()
+            }),
+            id_token: {
+                token_response.extra_fields().id_token().as_ref().map(|t| {
+                    t.to_string()
+                })
+            },
+        }
+    }
+}
+
+
+//------------ SessionCache --------------------------------------------------
+
+type SessionCache = LoginSessionCache<SessionSecrets>;
+type Session = ClientSession<SessionSecrets>;
+
+
 //------------ OpenIdConnectAuthProvider -------------------------------------
 
 pub struct OpenIDConnectAuthProvider {
     config: Arc<Config>,
-    session_cache: Arc<LoginSessionCache>,
+    session_cache: SessionCache,
     session_key: CryptState,
     conn: Arc<RwLock<Option<ProviderConnectionProperties>>>,
 }
@@ -170,13 +177,12 @@ pub struct OpenIDConnectAuthProvider {
 impl OpenIDConnectAuthProvider {
     pub fn new(
         config: Arc<Config>,
-        session_cache: Arc<LoginSessionCache>,
     ) -> KrillResult<Self> {
         let session_key = Self::init_session_key(&config)?;
 
         Ok(OpenIDConnectAuthProvider {
             config,
-            session_cache,
+            session_cache: SessionCache::new(),
             session_key,
             conn: Arc::new(RwLock::new(None)),
         })
@@ -545,7 +551,7 @@ impl OpenIDConnectAuthProvider {
 
     async fn try_revoke_token(
         &self,
-        session: &ClientSession,
+        session: &Session,
     ) -> Result<(), RevocationErrorResponseType> {
         // Connect to the OpenID Connect provider OAuth 2.0 token revocation
         // endpoint to terminate the provider session
@@ -554,17 +560,14 @@ impl OpenIDConnectAuthProvider {
         // and SHOULD support the    revocation of access tokens (see
         // Implementation Note)."
         let token_to_revoke = if let Some(token) =
-            session.get_secret(TokenKind::RefreshToken.into())
+            session.secrets.refresh_token.as_ref().cloned()
         {
             CoreRevocableToken::from(RefreshToken::new(token.clone()))
-        } else if let Some(token) =
-            session.get_secret(TokenKind::AccessToken.into())
-        {
-            CoreRevocableToken::from(AccessToken::new(token.clone()))
-        } else {
-            return Err(RevocationErrorResponseType::Basic(CoreErrorResponseType::Extension(
-                "Internal error: Token revocation attempted without a token".to_string(),
-            )));
+        }
+        else {
+            CoreRevocableToken::from(
+                AccessToken::new(session.secrets.access_token.clone())
+            )
         };
 
         trace!(
@@ -634,13 +637,15 @@ impl OpenIDConnectAuthProvider {
     /// logging and (optionally) retrying.
     async fn try_refresh_token(
         &self,
-        session: &ClientSession,
+        session: &Session,
     ) -> Result<Auth, CoreErrorResponseType> {
-        let refresh_token = &session.secrets.get(TokenKind::RefreshToken.into()).ok_or_else(|| {
-            CoreErrorResponseType::Extension(
-                "Internal error: Token refresh attempted without a refresh token".to_string(),
-            )
-        })?;
+        let refresh_token =
+            &session.secrets.refresh_token.as_ref().ok_or_else(|| {
+                CoreErrorResponseType::Extension(
+                    "Internal error: Token refresh attempted without \
+                     a refresh token".to_string(),
+                )
+            })?;
 
         debug!(
             "OpenID Connect: Refreshing token for user: \"{}\"",
@@ -665,7 +670,10 @@ impl OpenIDConnectAuthProvider {
             Ok(token_response) => {
                 let new_token_res = self.session_cache.encode(
                     session.user_id.clone(),
-                    secrets_from_token_response(&token_response),
+                    SessionSecrets::new(
+                        session.secrets.role.clone(),
+                        &token_response
+                    ),
                     &self.session_key,
                     token_response.expires_in(),
                 );
@@ -731,159 +739,6 @@ impl OpenIDConnectAuthProvider {
                 }
             }
         }
-    }
-
-    fn extract_claim(
-        &self,
-        //_claim_conf: &ConfigAuthOpenIDConnectClaim,
-        _id_token_claims: &FlexibleIdTokenClaims,
-        _user_info_claims: Option<&FlexibleUserInfoClaims>,
-    ) -> KrillResult<Option<String>> {
-        unimplemented!()
-        /*
-        let searchable_claims = match &claim_conf.source {
-            Some(ClaimSource::ConfigFile) => return Ok(None),
-            Some(ClaimSource::IdTokenStandardClaim) => {
-                Some(id_token_claims.to_jmespath())
-            }
-            Some(ClaimSource::IdTokenAdditionalClaim) => {
-                Some(id_token_claims.additional_claims().to_jmespath())
-            }
-            Some(ClaimSource::UserInfoStandardClaim)
-                if user_info_claims.is_some() =>
-            {
-                Some(user_info_claims.unwrap().to_jmespath())
-            }
-            Some(ClaimSource::UserInfoAdditionalClaim)
-                if user_info_claims.is_some() =>
-            {
-                Some(
-                    user_info_claims
-                        .unwrap()
-                        .additional_claims()
-                        .to_jmespath(),
-                )
-            }
-            _ => None,
-        };
-
-        // optional because it's not needed when looking up a value in the
-        // config file instead
-        let jmespath_string = claim_conf
-            .jmespath
-            .as_ref()
-            .ok_or_else(|| {
-                OpenIDConnectAuthProvider::internal_error(
-                    "Missing JMESPath configuration value for claim",
-                    None,
-                )
-            })?
-            .to_string();
-
-        // Create a new JMESPath Runtime. TODO: Somehow make this a single
-        // persistent runtime to which API request handling threads (such as
-        // ours) dispatch search commands to be compiled and executed and
-        // which can receive results back. Perhaps with a pair of
-        // channels, one to to send search requests and the other to
-        // receive search results?
-        let runtime = jmespathext::init_runtime();
-
-        // We don't precompile the JMESPath expression because the jmespath
-        // crate requires it to have a lifetime and storing that in our state
-        // struct would infect the entire struct with lifetimes, plus logins
-        // don't happen very often and are slow anyway (as the user has to
-        // visit the OpenID Connect providers own login form then be
-        // redirected back to us) so this doesn't have to be fast.
-        // Note to self: perhaps the lifetime issue could be worked
-        // around using a Box?
-        let expr = &runtime.compile(&jmespath_string).map_err(|e| {
-            OpenIDConnectAuthProvider::internal_error(
-                format!(
-                    "OpenID Connect: Unable to compile JMESPath expression '{}'",
-                    &jmespath_string
-                ),
-                Some(stringify_cause_chain(e)),
-            )
-        })?;
-
-        let claims_to_search = match searchable_claims {
-            Some(claim) => vec![(claim_conf.source.as_ref().unwrap(), claim)],
-            None => {
-                let mut claims = vec![
-                    (
-                        &ClaimSource::IdTokenStandardClaim,
-                        id_token_claims.to_jmespath(),
-                    ),
-                    (
-                        &ClaimSource::IdTokenAdditionalClaim,
-                        id_token_claims.additional_claims().to_jmespath(),
-                    ),
-                ];
-
-                if let Some(user_info_claims) = user_info_claims {
-                    claims.extend(vec![
-                        (
-                            &ClaimSource::UserInfoStandardClaim,
-                            user_info_claims.to_jmespath(),
-                        ),
-                        (
-                            &ClaimSource::UserInfoAdditionalClaim,
-                            user_info_claims
-                                .additional_claims()
-                                .to_jmespath(),
-                        ),
-                    ]);
-                }
-
-                claims
-            }
-        };
-
-        for (source, claims) in claims_to_search.clone() {
-            let claims = claims.map_err(|e| {
-                OpenIDConnectAuthProvider::internal_error(
-                    "OpenID Connect: Unable to prepare claims for parsing",
-                    Some(&stringify_cause_chain(e)),
-                )
-            })?;
-
-            debug!("Searching {:?} for \"{}\"..", source, &jmespath_string);
-
-            let result = expr.search(&claims).map_err(|e| {
-                OpenIDConnectAuthProvider::internal_error(
-                    "OpenID Connect: Error while searching claims",
-                    Some(&stringify_cause_chain(e)),
-                )
-            })?;
-            debug!("Search result in {:?}: '{:?}'", source, &result);
-
-            // Did the JMESPath search find a match?
-            if !matches!(*result, jmespath::Variable::Null) {
-                // Yes. Is it a JMESPath String type?
-                if let Some(result_str) = result.as_string() {
-                    // Yes. Is it non-empty after trimming leading and
-                    // trailing whitespace?
-                    if !result_str.trim().is_empty() {
-                        // Yes
-                        return Ok(Some(result_str.clone()));
-                    }
-                }
-            }
-        }
-
-        let err_msg_parts = &claims_to_search
-            .iter()
-            .map(|(source, claims)| format!("{} {:?}", source, claims))
-            .collect::<Vec<String>>()
-            .join(", ");
-
-        debug!(
-            "Claim \"{}\" not found in {}",
-            &jmespath_string, err_msg_parts
-        );
-
-        Ok(None)
-        */
     }
 
     fn init_session_key(config: &Config) -> KrillResult<CryptState> {
@@ -1248,92 +1103,14 @@ impl OpenIDConnectAuthProvider {
         Ok(user_info_claims)
     }
 
-    /*
-    fn resolve_claims(
-        &self,
-        claims_conf: HashMap<String, ConfigAuthOpenIDConnectClaim>,
-        user: Option<&ConfigUserDetails>,
-        id_token_claims: &FlexibleIdTokenClaims,
-        user_info_claims: Option<FlexibleUserInfoClaims>,
-        id: &str,
-    ) -> KrillResult<String> {
-        let mut attributes: HashMap<String, String> = HashMap::new();
-        for (attr_name, claim_conf) in claims_conf {
-            if attr_name == "id" {
-                continue;
-            }
-            let attr_value = match &claim_conf.source {
-                Some(ClaimSource::ConfigFile) if user.is_some() => {
-                    if attr_name == "role" {
-                        Some(user.unwrap().role.clone())
-                    }
-                    else {
-                        None
-                    }
-                }
-                _ => self.extract_claim(
-                    //&claim_conf,
-                    id_token_claims,
-                    user_info_claims.as_ref(),
-                )?,
-            };
-
-            if let Some(attr_value) = attr_value {
-                // Apply any defined destination mapping for this claim.
-                // A destination causes the created attribute to have a
-                // different name than the claim key in the
-                // configuration. With this we can handle situations
-                // such as the extracted role value not matching a valid
-                // role according to policy (by specifying the same
-                // source claim field multiple times but each time
-                // using a different JMESPath expression to extract (and
-                // optionally transform) a different value each time,
-                // but mapping all of them to the same final attribute,
-                // e.g. 'role'. A similar case this addresses is where
-                // different values for an attribute (e.g. 'role') are
-                // not present in a single claim field but instead may
-                // be present in one of several claims (e.g. use (part
-                // of) claim A to check for admins but use (part of)
-                // claim B to check for readonly users).
-                let final_attr_name = match claim_conf.dest {
-                    None => attr_name.to_string(),
-                    Some(alt_attr_name) => alt_attr_name.to_string(),
-                };
-                // Only use the first found value
-                match attributes.entry(final_attr_name.clone()) {
-                    Occupied(found) => {
-                        info!("Skipping found value '{}' for claim '{}' as attribute '{}': attribute already has a value: '{}'",
-                            attr_value, attr_name, final_attr_name, found.get());
-                    }
-                    Vacant(vacant) => {
-                        debug!(
-                            "Storing found value '{}' for claim '{}' as attribute '{}'",
-                            attr_value, attr_name, final_attr_name
-                        );
-                        vacant.insert(attr_value);
-                    }
-                }
-            } else {
-                // With Oso policy based configuration the absence of
-                // claim values isn't necessarily a problem, it's very
-                // client configuration dependent, but let's mention
-                // that we didn't find anything just to make it easier
-                // to spot configuration mistakes via the logs.
-                info!("No '{}' claim found for user: {}", &attr_name, &id);
-            }
-        }
-
-        match attributes.get("role") {
-            Some(role) => Ok(role.clone()),
-            None => {
-                Err(OpenIDConnectAuthProvider::internal_error(
-                    "no role for user".into(),
-                    Some(format!("user ID: {}", id))
-                ))
-            }
-        }
+    fn auth_from_session(
+        &self, session: &Session
+    ) -> KrillResult<AuthInfo> {
+        Ok(AuthInfo::user(
+            session.user_id.clone(),
+            self.config.auth_roles.get(&session.secrets.role)?
+        ))
     }
-    */
 }
 
 impl OpenIDConnectAuthProvider {
@@ -1376,17 +1153,14 @@ impl OpenIDConnectAuthProvider {
                 // return
                 match status {
                     SessionStatus::Active => {
-                        return Ok(Some(AuthInfo::user(session.user_id)))
+                        return Ok(Some(self.auth_from_session(&session)?))
                     }
                     SessionStatus::NeedsRefresh => {
                         // If we have a refresh token try and extend the
                         // session. Otherwise return the cached token
                         // and continue the login session until it expires.
-                        if !session
-                            .secrets
-                            .contains_key(TokenKind::RefreshToken.into())
-                        {
-                            return Ok(Some(AuthInfo::user(session.user_id)))
+                        if session.secrets.refresh_token.is_none() {
+                            return Ok(Some(self.auth_from_session(&session)?))
                         }
                     }
                     SessionStatus::Expired => {
@@ -1394,10 +1168,7 @@ impl OpenIDConnectAuthProvider {
                         // refresh token. Otherwise, return early
                         // with an error that indicates the user needs to
                         // login again.
-                        if !session
-                            .secrets
-                            .contains_key(TokenKind::RefreshToken.into())
-                        {
+                        if session.secrets.refresh_token.is_none() {
                             return Err(Error::ApiAuthSessionExpired(
                                 "No token to be refreshed".to_string(),
                             ));
@@ -1492,7 +1263,9 @@ impl OpenIDConnectAuthProvider {
                     }
                 };
 
-                Ok(Some(AuthInfo::with_new_auth(session.user_id, new_auth)))
+                let mut auth = self.auth_from_session(&session)?;
+                auth.set_new_auth(new_auth);
+                Ok(Some(auth))
             }
             _ => Ok(None),
         };
@@ -1879,18 +1652,25 @@ impl OpenIDConnectAuthProvider {
                 // configuration without the "id" key :-)
                 // ==========================================================================================
 
-                let id = self
-                    .extract_claim(
-                        //id_claim_conf,
-                        id_token_claims,
-                        user_info_claims.as_ref(),
-                    )?
-                    .ok_or_else(|| {
-                        OpenIDConnectAuthProvider::internal_error(
-                            "No value found for 'id' claim",
-                            None,
-                        )
-                    })?;
+                let mut claims = Claims::new(
+                    &self.oidc_conf()?.claims,
+                    id_token_claims, user_info_claims
+                );
+                let id = claims.extract_id()?;
+                let role_name = claims.extract_role()?;
+
+                let role = self.config.auth_roles.get(&role_name)?;
+
+                // Step 4 1/2: Check that the user is allowed to log in.
+                if !role.is_allowed(Permission::LOGIN, None) {
+                    let reason = format!(
+                        "Login denied for user '{}': \
+                         User is not permitted to 'LOGIN'",
+                         id,
+                    );
+                    warn!("{}", reason);
+                    return Err(Error::ApiInsufficientRights(reason));
+                }
 
                 // ==========================================================================================
                 // Step 5: Respond to the user: access granted, or access
@@ -1920,7 +1700,7 @@ impl OpenIDConnectAuthProvider {
                 // ==========================================================================================
                 let token = self.session_cache.encode(
                     id.clone().into(),
-                    secrets_from_token_response(&token_response),
+                    SessionSecrets::new(role_name, &token_response),
                     &self.session_key,
                     token_response.expires_in(),
                 )?;
@@ -2038,9 +1818,7 @@ impl OpenIDConnectAuthProvider {
             } => {
                 trace!("OpenID Connect: Directing user to RP-Initiated Logout 1.0 compliant logout endpoint");
 
-                let id_token = session.secrets.get(TokenKind::IdToken.into());
-
-                self.build_rpinitiated_logout_url(provider_url, post_logout_redirect_url, id_token)
+                self.build_rpinitiated_logout_url(provider_url, post_logout_redirect_url, session.secrets.id_token.as_ref())
                     .unwrap_or_else(|err| {
                         OpenIDConnectAuthProvider::internal_error(
                             format!(
@@ -2060,34 +1838,18 @@ impl OpenIDConnectAuthProvider {
         );
         Ok(HttpResponse::text_no_cache(go_to_url.into()))
     }
+
+    pub fn sweep(&self) -> KrillResult<()> {
+        self.session_cache.sweep()
+    }
+
+    pub fn cache_size(&self) -> usize {
+        self.session_cache.size()
+    }
 }
 
 
 //------------ Helper Functions ----------------------------------------------
-
-fn secrets_from_token_response(
-    token_response: &FlexibleTokenResponse,
-) -> HashMap<String, String> {
-    let mut secrets: HashMap<String, String> = HashMap::new();
-
-    secrets.insert(
-        TokenKind::AccessToken.into(),
-        token_response.access_token().secret().clone(),
-    );
-
-    if let Some(refresh_token) = token_response.refresh_token() {
-        secrets.insert(
-            TokenKind::RefreshToken.into(),
-            refresh_token.secret().clone(),
-        );
-    };
-
-    if let Some(id_token) = token_response.extra_fields().id_token() {
-        secrets.insert(TokenKind::IdToken.into(), id_token.to_string());
-    }
-
-    secrets
-}
 
 /*
 fn with_default_claims(

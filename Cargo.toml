@@ -41,7 +41,7 @@ kvx             = { version = "0.9.3", features = ["macros"] }
 libflate        = "2.1.0"
 log             = "0.4"
 once_cell       = { version = "1.7.2", optional = true }
-openidconnect   = { version = "2.0.0", optional = true, default-features = false }
+openidconnect   = { version = "3.5.0", optional = true, default-features = false }
 openssl         = { version = "0.10", features = ["v110"] }
 percent-encoding = "2.3.1"
 pin-project-lite = "0.2.4"

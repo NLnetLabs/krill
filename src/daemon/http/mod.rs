@@ -1,7 +1,6 @@
 use std::io;
 use std::str::FromStr;
 use std::str::from_utf8;
-use std::sync::Arc;
 use bytes::Bytes;
 use http_body_util::{BodyExt, Either, Empty, Full, Limited};
 use hyper::body::Body;
@@ -12,12 +11,11 @@ use rpki::ca::{provisioning, publication};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-use crate::daemon::auth::{AuthInfo, Handle, LoggedInUser};
-use crate::daemon::auth::policy::{AuthPolicy, Permission};
+use crate::daemon::auth::{AuthInfo, Handle, LoggedInUser, Permission};
 use crate::{
     commons::{
         actor::Actor,
-        error::Error,
+        error::{ApiAuthError, Error},
         KrillResult,
     },
     constants::HTTP_USER_AGENT_TRUNCATE,
@@ -343,8 +341,8 @@ impl HttpResponse {
         Self::response_from_error(Error::ApiInvalidCredentials(reason))
     }
 
-    pub fn forbidden(reason: String) -> Self {
-        Self::response_from_error(Error::ApiInsufficientRights(reason))
+    pub fn forbidden(err: String) -> Self {
+        Self::response_from_error(Error::ApiInsufficientRights(err))
     }
 }
 
@@ -355,21 +353,18 @@ pub struct Request {
     path: RequestPath,
     state: State,
     auth: AuthInfo,
-    auth_policy: Arc<AuthPolicy>,
 }
 
 impl Request {
     pub async fn new(request: HyperRequest, state: State) -> Self {
         let path = RequestPath::from_request(&request);
         let auth = state.authenticate_request(&request).await;
-        let auth_policy = state.get_auth_policy(&auth.actor);
 
         Request {
             request,
             path,
             state,
             auth,
-            auth_policy,
         }
     }
 
@@ -393,31 +388,31 @@ impl Request {
         }
     }
 
-    pub async fn upgrade_from_anonymous(&mut self, actor: Actor) {
-        if self.auth.actor.is_anonymous() {
-            self.auth.actor = actor.into();
+    pub async fn upgrade_from_anonymous(&mut self, auth: AuthInfo) {
+        if self.auth.actor().is_anonymous() {
+            self.auth = auth;
             info!(
                 "Permitted anonymous actor to become actor '{}' \
                  for the duration of this request",
-                self.auth.actor.name()
+                self.auth.actor().name()
             );
         }
     }
 
-    pub fn is_allowed(
+    pub fn check_permission(
         &self, 
         permission: Permission,
         resource: Option<&Handle>
-    ) -> bool {
-        self.state.is_allowed(&self.auth.actor, permission, resource)
+    ) -> Result<(), ApiAuthError> {
+        self.auth.check_permission(permission, resource)
     }
 
     pub fn actor(&self) -> Actor {
-        self.auth.actor.clone()
+        self.auth.actor().clone()
     }
 
-    pub fn auth_policy(&self) -> &AuthPolicy {
-        &self.auth_policy
+    pub fn auth_info(&self) -> &AuthInfo {
+        &self.auth
     }
 
     pub fn auth_info_mut(&mut self) -> &mut AuthInfo {

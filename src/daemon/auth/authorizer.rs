@@ -5,18 +5,18 @@ use std::any::Any;
 use std::str::FromStr;
 use std::sync::Arc;
 use rpki::ca::idexchange::{InvalidHandle, MyHandle};
+use serde::{Deserialize, Serialize};
 use crate::commons::actor::Actor;
 use crate::commons::error::ApiAuthError;
 
 use crate::{
     commons::{
         api::Token,
-        error::Error,
         KrillResult,
     },
     daemon::{
         auth::{
-            policy::{AuthPolicy, AuthPolicyMap, Permission},
+            Permission, Role,
             providers::AdminTokenAuthProvider,
         },
         config::Config,
@@ -134,6 +134,28 @@ impl AuthProvider {
             }
         }
     }
+
+    /// Sweeps out session information.
+    pub fn sweep(&self) -> KrillResult<()> {
+        match self {
+            AuthProvider::Token(_) => Ok(()),
+            #[cfg(feature = "multi-user")]
+            AuthProvider::ConfigFile(provider) => provider.sweep(),
+            #[cfg(feature = "multi-user")]
+            AuthProvider::OpenIdConnect(provider) => provider.sweep(),
+        }
+    }
+
+    /// Returns the size of the login session cache.
+    pub fn login_session_cache_size(&self) -> usize {
+        match self {
+            AuthProvider::Token(_) => 0,
+            #[cfg(feature = "multi-user")]
+            AuthProvider::ConfigFile(provider) => provider.cache_size(),
+            #[cfg(feature = "multi-user")]
+            AuthProvider::OpenIdConnect(provider) => provider.cache_size(),
+        }
+    }
 }
 
 
@@ -144,7 +166,6 @@ impl AuthProvider {
 pub struct Authorizer {
     primary_provider: AuthProvider,
     legacy_provider: Option<AdminTokenAuthProvider>,
-    policy: AuthPolicyMap,
 }
 
 impl Authorizer {
@@ -185,7 +206,6 @@ impl Authorizer {
         Ok(Authorizer {
             primary_provider,
             legacy_provider,
-            policy: AuthPolicyMap::new(&config)?,
         })
     }
 
@@ -237,33 +257,13 @@ impl Authorizer {
     ) -> KrillResult<LoggedInUser> {
         let user = self.primary_provider.login(request).await?;
 
-        // The user has passed authentication, but may still not be
-        // authorized to login as that requires a check against the policy
-        // which cannot be done by the AuthProvider. Check that now.
-
-        if !self.policy.is_user_allowed(
-            &user.id, Permission::LOGIN, None
-        ) {
-            let reason = format!(
-                "Login denied for user '{}': \
-                 User is not permitted to 'LOGIN'",
-                 user.id
-            );
-            warn!("{}", reason);
-            return Err(Error::ApiInsufficientRights(reason));
-        }
-        let filtered_user = LoggedInUser {
-            token: user.token,
-            id: user.id,
-        };
-
         if log_enabled!(log::Level::Trace) {
-            trace!("User logged in: {:?}", &filtered_user);
+            trace!("User logged in: {:?}", &user);
         } else {
-            info!("User logged in: {}", &filtered_user.id);
+            info!("User logged in: {}", &user.id);
         }
 
-        Ok(filtered_user)
+        Ok(user)
     }
 
     /// Return the URL at which an end-user should be directed to logout with
@@ -275,17 +275,14 @@ impl Authorizer {
         self.primary_provider.logout(request).await
     }
 
-    pub fn get_policy(&self, actor: &Actor) -> Arc<AuthPolicy> {
-        self.policy.get_policy(actor)
+    /// Sweeps out session information.
+    pub fn sweep(&self) -> KrillResult<()> {
+        self.primary_provider.sweep()
     }
 
-    pub fn is_allowed(
-        &self,
-        actor: &Actor,
-        permission: Permission,
-        resource: Option<&Handle>
-    ) -> bool {
-        self.policy.is_allowed(actor, permission, resource)
+    /// Returns the size of the login session cache.
+    pub fn login_session_cache_size(&self) -> usize {
+        self.primary_provider.login_session_cache_size()
     }
 }
 
@@ -312,48 +309,76 @@ pub struct LoggedInUser {
 #[derive(Clone, Debug)]
 pub struct AuthInfo {
     /// The actor for the authenticated user.
-    pub actor: Actor,
-
-    /// Optional error information if authentication failed.
-    pub auth_error: Option<ApiAuthError>,
+    actor: Actor,
 
     /// Optional authentication information to be included in a response.
-    pub new_auth: Option<Auth>,
+    new_auth: Option<Auth>,
+
+    /// Access permissions.
+    ///
+    /// This is either a role which we consult to determine access
+    /// permissions or an authentication error to return instead.
+    permissions: Result<Arc<Role>, ApiAuthError>,
 }
 
 impl AuthInfo {
-    pub fn user(user_id: impl Into<Arc<str>>) -> Self {
+    pub fn user(
+        user_id: impl Into<Arc<str>>,
+        role: Arc<Role>,
+    ) -> Self {
         Self {
             actor: Actor::user(user_id),
-            auth_error: None,
             new_auth: None,
+            permissions: Ok(role),
         }
+    }
+
+    pub fn testbed() -> Self {
+        Self::user("testbed", Role::testbed().into())
     }
 
     fn anonymous() -> Self {
         Self {
             actor: Actor::anonymous(),
-            auth_error: None,
             new_auth: None,
+            permissions: Ok(Role::anonymous().into()),
         }
     }
 
     fn error(err: impl Into<ApiAuthError>) -> Self {
         Self {
             actor: Actor::anonymous(),
-            auth_error: Some(err.into()),
-            new_auth: None
+            new_auth: None,
+            permissions: Err(err.into())
         }
     }
 
-    pub fn with_new_auth(
-        user_id: impl Into<Arc<str>>,
-        new_auth: Auth
-    ) -> Self {
-        Self {
-            actor: Actor::user(user_id),
-            auth_error: None,
-            new_auth: Some(new_auth)
+    pub fn set_new_auth(&mut self, new_auth: Auth) {
+        self.new_auth = Some(new_auth);
+    }
+
+    pub fn actor(&self) -> &Actor {
+        &self.actor
+    }
+
+    pub fn take_new_auth(&mut self) -> Option<Auth> {
+        self.new_auth.take()
+    }
+
+    pub fn check_permission(
+        &self,
+        permission: Permission,
+        resource: Option<&Handle>
+    ) -> Result<(), ApiAuthError> {
+        if self.permissions.as_ref().map_err(Clone::clone)?
+            .is_allowed(permission, resource)
+        {
+            Ok(())
+        }
+        else {
+            Err(ApiAuthError::insufficient_rights(
+                &self.actor, permission, resource
+            ))
         }
     }
 }
@@ -409,7 +434,7 @@ impl Auth {
 // is required when multi-user is enabled. We always need to pass the handle
 // into the authorization macro, even if multi-user is not enabled. So we need
 // this type even then.
-#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct Handle(MyHandle);
 
 impl fmt::Display for Handle {
