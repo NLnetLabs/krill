@@ -36,38 +36,10 @@ impl ConfigFileAuthProvider {
     pub fn new(
         config: &Config,
     ) -> KrillResult<Self> {
-        let auth_users = config.auth_users.as_ref().ok_or_else(|| {
+        let users = config.auth_users.as_ref().ok_or_else(|| {
             Error::ConfigError("Missing [auth_users] config section!".into())
-        })?;
-
+        })?.clone();
         let roles = config.auth_roles.clone();
-        let mut users = HashMap::new();
-        for (id, details) in auth_users {
-            let password_hash = details.password_hash.as_ref().ok_or_else(|| {
-                Error::ConfigError(format!(
-                    "Password hash missing for user '{}'", id
-                ))
-            })?.clone();
-            let salt = details.salt.as_ref().ok_or_else(|| {
-                Error::ConfigError(format!(
-                    "Password salt missing for user '{}'", id
-                ))
-            })?.clone();
-            if !roles.contains(&details.role) {
-                return Err(Error::ConfigError(format!(
-                    "Undefined role '{}' for user '{}'", details.role, id
-                )));
-            }
-            users.insert(
-                id.clone(),
-                UserDetails {
-                    password_hash: password_hash.into(),
-                    salt,
-                    role: details.role.clone().into(),
-                }
-            );
-        }
-
         let session_key = Self::init_session_key(config)?;
 
         Ok(Self {
@@ -299,31 +271,73 @@ impl ConfigFileAuthProvider {
 
 //------------ ConfigAuthUsers -----------------------------------------------
 
-pub type ConfigAuthUsers = HashMap<String, ConfigUserDetails>;
+pub type ConfigAuthUsers = HashMap<String, UserDetails>;
 
 
-//------------ ConfigUserDetails ---------------------------------------------
+//------------ LegacyUserDetails ---------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct ConfigUserDetails {
-    #[serde(default)]
-    pub role: String,
-
-    // optional so that OpenIDConnectAuthProvider can also use config file
-    // user defined attributes without requiring a dummy password hash
-    // and salt
-    pub password_hash: Option<String>,
-
-    pub salt: Option<String>,
+/// The actual user details type used in the config file.
+///
+/// Previous versions of Krill used a concept of user-defined attributes. This
+/// has now been simplified to just a singled attribute “role.” In order to
+/// allow tranistioning from the old world to the new, we allow the role name
+/// to be in an “attributes” hash map or its own field. In the former case,
+/// we will accept the config file but warn. We will also accept additional
+/// attributes but warn about those, too.
+///
+/// However, the password-related fields are now mandatory since we are not
+/// using this configuration for the OpenID Connect provider any more.
+///
+/// This is all implemented by using the `try_from` Serde container attribute.
+#[derive(Clone, Debug, Deserialize)]
+struct LegacyUserDetails {
+    password_hash: String,
+    salt: String,
+    role: Option<String>,
+    attributes: Option<HashMap<String, String>>,
 }
 
 
 //------------ UserDetails ---------------------------------------------------
 
-struct UserDetails {
+#[derive(Clone, Debug, Deserialize)]
+#[serde(try_from = "LegacyUserDetails")]
+pub struct UserDetails {
     password_hash: Token,
     salt: String,
     role: Arc<str>,
+}
+
+impl TryFrom<LegacyUserDetails> for UserDetails {
+    type Error = String;
+
+    fn try_from(src: LegacyUserDetails) -> Result<Self, Self::Error> {
+        let role = if let Some(mut attributes) = src.attributes {
+            warn!(
+                "The 'attributes' auth_user field is deprecated. \
+                Please use the 'role' field directly."
+            );
+            match attributes.remove("role") {
+                Some(role) => role,
+                None => {
+                    return Err("missing 'role' attribute".into());
+                }
+            }
+        }
+        else {
+            match src.role {
+                Some(role) => role,
+                None => {
+                    return Err("missing 'role' field".into());
+                }
+            }
+        };
+        Ok(Self {
+            password_hash: src.password_hash.into(),
+            salt: src.salt,
+            role: role.into()
+        })
+    }
 }
 
 
