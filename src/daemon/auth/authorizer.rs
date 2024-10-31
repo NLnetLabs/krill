@@ -1,33 +1,20 @@
 //! Authorization for the API
 
 use std::fmt;
-use std::any::Any;
 use std::str::FromStr;
 use std::sync::Arc;
 use rpki::ca::idexchange::{InvalidHandle, MyHandle};
 use serde::{Deserialize, Serialize};
+use crate::commons::KrillResult;
 use crate::commons::actor::Actor;
+use crate::commons::api::Token;
 use crate::commons::error::ApiAuthError;
-
-use crate::{
-    commons::{
-        api::Token,
-        KrillResult,
-    },
-    daemon::{
-        auth::{
-            Permission, Role,
-            providers::AdminTokenAuthProvider,
-        },
-        config::Config,
-        http::{HttpResponse, HyperRequest},
-    },
-};
-
+use crate::daemon::config::{AuthType, Config};
+use crate::daemon::http::{HttpResponse, HyperRequest};
+use super::{Permission, Role};
+use super::providers::admin_token;
 #[cfg(feature = "multi-user")]
-use crate::daemon::auth::providers::{
-    ConfigFileAuthProvider, OpenIDConnectAuthProvider,
-};
+use super::providers::{config_file, openid_connect};
 
 //------------ AuthProvider --------------------------------------------------
 
@@ -46,31 +33,31 @@ use crate::daemon::auth::providers::{
 ///    to login and logout?
 ///  * introspection  - who is the currently "logged in" user?
 pub enum AuthProvider {
-    Token(AdminTokenAuthProvider),
+    Token(admin_token::AuthProvider),
 
     #[cfg(feature = "multi-user")]
-    ConfigFile(ConfigFileAuthProvider),
+    ConfigFile(config_file::AuthProvider),
 
     #[cfg(feature = "multi-user")]
-    OpenIdConnect(OpenIDConnectAuthProvider),
+    OpenIdConnect(openid_connect::AuthProvider),
 }
 
-impl From<AdminTokenAuthProvider> for AuthProvider {
-    fn from(provider: AdminTokenAuthProvider) -> Self {
+impl From<admin_token::AuthProvider> for AuthProvider {
+    fn from(provider: admin_token::AuthProvider) -> Self {
         AuthProvider::Token(provider)
     }
 }
 
 #[cfg(feature = "multi-user")]
-impl From<ConfigFileAuthProvider> for AuthProvider {
-    fn from(provider: ConfigFileAuthProvider) -> Self {
+impl From<config_file::AuthProvider> for AuthProvider {
+    fn from(provider: config_file::AuthProvider) -> Self {
         AuthProvider::ConfigFile(provider)
     }
 }
 
 #[cfg(feature = "multi-user")]
-impl From<OpenIDConnectAuthProvider> for AuthProvider {
-    fn from(provider: OpenIDConnectAuthProvider) -> Self {
+impl From<openid_connect::AuthProvider> for AuthProvider {
+    fn from(provider: openid_connect::AuthProvider) -> Self {
         AuthProvider::OpenIdConnect(provider)
     }
 }
@@ -165,7 +152,7 @@ impl AuthProvider {
 /// accessed.
 pub struct Authorizer {
     primary_provider: AuthProvider,
-    legacy_provider: Option<AdminTokenAuthProvider>,
+    legacy_provider: Option<admin_token::AuthProvider>,
 }
 
 impl Authorizer {
@@ -178,29 +165,32 @@ impl Authorizer {
     ///
     /// # Legacy support for krillc
     ///
-    /// As krillc only supports [AdminTokenAuthProvider] based authentication,
-    /// if `P` an instance of some other provider, an instance of
-    /// [AdminTokenAuthProvider] will also be created. This will be used as a
-    /// fallback when Lagosta is configured to use some other [AuthProvider].
+    /// As krillc only supports [admin_token::AuthProvider]
+    /// based authentication, if `P` an instance of some other provider, an
+    /// instance of [admin_token::AuthProvider] will also be created. This
+    /// will be used as a fallback when Lagosta is configured to use some
+    /// other authentication provider.
     pub fn new(
         config: Arc<Config>,
-        primary_provider: AuthProvider,
     ) -> KrillResult<Self> {
-        let value_any = &primary_provider as &dyn Any;
-        let is_admin_token_provider =
-            value_any.downcast_ref::<AdminTokenAuthProvider>().is_some();
-
-        let legacy_provider = if is_admin_token_provider {
-            // the configured provider is the admin token provider so no
-            // admin token provider is needed for backward compatibility
-            None
-        } else {
-            // the configured provider is not the admin token provider so we
-            // also need an instance of the admin token provider in order to
-            // provider backward compatibility for krillc and other API
-            // clients that only understand the original, legacy,
-            // admin token based authentication.
-            Some(AdminTokenAuthProvider::new(config.clone()))
+        let (primary_provider, legacy_provider) = match config.auth_type {
+            AuthType::AdminToken => {
+                (admin_token::AuthProvider::new(config).into(), None)
+            }
+            #[cfg(feature = "multi-user")]
+            AuthType::ConfigFile => {
+                (
+                    config_file::AuthProvider::new(&config)?.into(),
+                    Some(admin_token::AuthProvider::new(config))
+                )
+            }
+            #[cfg(feature = "multi-user")]
+            AuthType::OpenIDConnect => {
+                (
+                    openid_connect::AuthProvider::new(config.clone())?.into(),
+                    Some(admin_token::AuthProvider::new(config))
+                )
+            }
         };
 
         Ok(Authorizer {

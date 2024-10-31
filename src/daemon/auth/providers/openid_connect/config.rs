@@ -2,8 +2,6 @@ use std::collections::HashMap;
 use serde::Deserialize;
 use super::claims::{ClaimSource, MatchExpression, SubstExpression};
 
-pub struct ConfigDefaults {}
-
 #[derive(Clone, Debug, Deserialize)]
 pub struct ConfigAuthOpenIDConnect {
     pub issuer_url: String,

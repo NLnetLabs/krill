@@ -42,12 +42,12 @@ use crate::{
     },
     constants::*,
     daemon::{
-        auth::{providers::AdminTokenAuthProvider, Authorizer, LoggedInUser},
+        auth::{Authorizer, LoggedInUser},
         ca::{
             self, testbed_ca_handle, CaManager, CaStatus,
             ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest,
         },
-        config::{AuthType, Config},
+        config::Config,
         http::{HttpResponse, HyperRequest},
         mq::{now, Task, TaskQueue},
         scheduler::Scheduler,
@@ -57,11 +57,6 @@ use crate::{
         ta_handle, TaCertDetails, TrustAnchorSignedRequest,
         TrustAnchorSignedResponse, TrustAnchorSignerInfo, TA_NAME,
     },
-};
-
-#[cfg(feature = "multi-user")]
-use crate::daemon::auth::{
-    providers::{ConfigFileAuthProvider, OpenIDConnectAuthProvider},
 };
 
 //------------ KrillServer ---------------------------------------------------
@@ -122,28 +117,7 @@ impl KrillServer {
         .build()?;
         let signer = Arc::new(signer);
 
-        // Construct the authorizer used to verify API access requests and to
-        // tell Lagosta where to send end-users to login and logout.
-        // TODO: remove the ugly duplication, however attempts to do so have
-        // so far failed due to incompatible match arm types, or
-        // unknown size of dyn AuthProvider, or concrete type needs to
-        // be known in async fn, etc.
-        let authorizer = match config.auth_type {
-            AuthType::AdminToken => Authorizer::new(
-                config.clone(),
-                AdminTokenAuthProvider::new(config.clone()).into(),
-            )?,
-            #[cfg(feature = "multi-user")]
-            AuthType::ConfigFile => Authorizer::new(
-                config.clone(),
-                ConfigFileAuthProvider::new(&config)?.into(),
-            )?,
-            #[cfg(feature = "multi-user")]
-            AuthType::OpenIDConnect => Authorizer::new(
-                config.clone(),
-                OpenIDConnectAuthProvider::new(config.clone())?.into(),
-            )?,
-        }.into();
+        let authorizer = Authorizer::new(config.clone())?.into();
         let system_actor = ACTOR_DEF_KRILL;
 
         // Task queue Arc is shared between ca_manager, repo_manager and the

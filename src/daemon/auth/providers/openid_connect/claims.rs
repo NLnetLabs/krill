@@ -337,6 +337,7 @@ impl<'de> Deserialize<'de> for SubstExpression {
 //------------ ClaimSource ---------------------------------------------------
 
 #[derive(Clone, Copy, Debug)]
+#[allow(clippy::enum_variant_names)]
 pub enum ClaimSource {
     IdTokenStandardClaim,
     IdTokenAdditionalClaim,

@@ -21,9 +21,9 @@ use crate::daemon::http::{HttpResponse, HyperRequest};
 const UI_LOGIN_ROUTE_PATH: &str = "/login?withId=true";
 
 
-//------------ ConfigFileAuthProvider ----------------------------------------
+//------------ AuthProvider --------------------------------------------------
 
-pub struct ConfigFileAuthProvider {
+pub struct AuthProvider {
     users: HashMap<String, UserDetails>,
     roles: Arc<RoleMap>,
     session_key: crypt::CryptState,
@@ -32,7 +32,7 @@ pub struct ConfigFileAuthProvider {
     fake_salt: String,
 }
 
-impl ConfigFileAuthProvider {
+impl AuthProvider {
     pub fn new(
         config: &Config,
     ) -> KrillResult<Self> {
@@ -81,7 +81,7 @@ impl ConfigFileAuthProvider {
     }
 }
 
-impl ConfigFileAuthProvider {
+impl AuthProvider {
     pub fn authenticate(
         &self,
         request: &HyperRequest,

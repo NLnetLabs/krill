@@ -16,15 +16,15 @@ use crate::{
 // Lagosta could change this path without requiring that we update to match.
 const LAGOSTA_LOGIN_ROUTE_PATH: &str = "/login";
 
-pub struct AdminTokenAuthProvider {
+pub struct AuthProvider {
     required_token: Token,
     user_id: Arc<str>,
     role: Arc<Role>,
 }
 
-impl AdminTokenAuthProvider {
+impl AuthProvider {
     pub fn new(config: Arc<Config>) -> Self {
-        AdminTokenAuthProvider {
+        AuthProvider {
             required_token: config.admin_token.clone(),
             // XXX Get from config.
             user_id: "admin".into(),
@@ -33,7 +33,7 @@ impl AdminTokenAuthProvider {
     }
 }
 
-impl AdminTokenAuthProvider {
+impl AuthProvider {
     pub fn authenticate(
         &self,
         request: &HyperRequest,

@@ -165,22 +165,22 @@ type SessionCache = LoginSessionCache<SessionSecrets>;
 type Session = ClientSession<SessionSecrets>;
 
 
-//------------ OpenIdConnectAuthProvider -------------------------------------
+//------------ AuthProvider --------------------------------------------------
 
-pub struct OpenIDConnectAuthProvider {
+pub struct AuthProvider {
     config: Arc<Config>,
     session_cache: SessionCache,
     session_key: CryptState,
     conn: Arc<RwLock<Option<ProviderConnectionProperties>>>,
 }
 
-impl OpenIDConnectAuthProvider {
+impl AuthProvider {
     pub fn new(
         config: Arc<Config>,
     ) -> KrillResult<Self> {
         let session_key = Self::init_session_key(&config)?;
 
-        Ok(OpenIDConnectAuthProvider {
+        Ok(Self {
             config,
             session_cache: SessionCache::new(),
             session_key,
@@ -866,7 +866,7 @@ impl OpenIDConnectAuthProvider {
         let conn_guard = self.conn.read().await;
 
         conn_guard.as_ref().ok_or_else(|| {
-            OpenIDConnectAuthProvider::internal_error(
+            Self::internal_error(
                 "Connection to provider not yet established",
                 None,
             )
@@ -982,7 +982,7 @@ impl OpenIDConnectAuthProvider {
                     None => cause_chain_str,
                 };
 
-                OpenIDConnectAuthProvider::internal_error(
+                Self::internal_error(
                     format!("OpenID Connect: Code exchange failed: {}", msg),
                     Some(additional_info),
                 )
@@ -1016,14 +1016,14 @@ impl OpenIDConnectAuthProvider {
             .extra_fields()
             .id_token()
             .ok_or_else(|| {
-                OpenIDConnectAuthProvider::internal_error(
+                Self::internal_error(
                     "OpenID Connect: ID token is missing, does the provider support OpenID Connect?",
                     None,
                 )
             })? // happens if the server only supports OAuth2
             .claims(&id_token_verifier, &nonce_hash)
             .map_err(|e| {
-                OpenIDConnectAuthProvider::internal_error(
+                Self::internal_error(
                     format!("OpenID Connect: ID token verification failed: {}", e),
                     Some(stringify_cause_chain(e)),
                 )
@@ -1055,7 +1055,7 @@ impl OpenIDConnectAuthProvider {
                 conn.client
                     .user_info(token_response.access_token().clone(), None)
                     .map_err(|e| {
-                        OpenIDConnectAuthProvider::internal_error(
+                        Self::internal_error(
                             "OpenID Connect: Provider has no user info endpoint",
                             Some(&stringify_cause_chain(e)),
                         )
@@ -1090,7 +1090,7 @@ impl OpenIDConnectAuthProvider {
                             _ => "Unknown error".to_string(),
                         };
 
-                        OpenIDConnectAuthProvider::internal_error(
+                        Self::internal_error(
                             format!("OpenID Connect: UserInfo request failed: {}", msg),
                             Some(stringify_cause_chain(e)),
                         )
@@ -1113,7 +1113,7 @@ impl OpenIDConnectAuthProvider {
     }
 }
 
-impl OpenIDConnectAuthProvider {
+impl AuthProvider {
     // Connect Core 1.0 section 3.1.26 Authentication Error Response
     // OAuth 2.0 RFC-674 4.1.2.1 (Authorization Request Errors) & 5.2 (Access
     // Token Request Errors)
@@ -1132,7 +1132,7 @@ impl OpenIDConnectAuthProvider {
         trace!("Attempting to authenticate the request..");
 
         self.initialize_connection_if_needed().await.map_err(|err| {
-            OpenIDConnectAuthProvider::internal_error(
+            Self::internal_error(
                 "OpenID Connect: Cannot authenticate request: Failed to connect to provider",
                 Some(&stringify_cause_chain(err)),
             )
@@ -1303,7 +1303,7 @@ impl OpenIDConnectAuthProvider {
         //    parties"
 
         self.initialize_connection_if_needed().await.map_err(|err| {
-            OpenIDConnectAuthProvider::internal_error(
+            Self::internal_error(
                 "OpenID Connect: Cannot get login URL: Failed to connect to provider",
                 Some(&stringify_cause_chain(err)),
             )
@@ -1489,7 +1489,7 @@ impl OpenIDConnectAuthProvider {
                 cookie_name, cookie_value
             );
             HeaderValue::from_str(&cookie_str).map_err(|err| {
-                OpenIDConnectAuthProvider::internal_error(
+                AuthProvider::internal_error(
                     format!(
                         "Unable to construct HTTP cookie '{}' with value '{}'",
                         cookie_name, cookie_value
@@ -1519,7 +1519,7 @@ impl OpenIDConnectAuthProvider {
         request: &HyperRequest,
     ) -> KrillResult<LoggedInUser> {
         self.initialize_connection_if_needed().await.map_err(|err| {
-            OpenIDConnectAuthProvider::internal_error(
+            Self::internal_error(
                 "OpenID Connect: Cannot login user: Failed to connect to provider",
                 Some(&stringify_cause_chain(err)),
             )
@@ -1775,7 +1775,7 @@ impl OpenIDConnectAuthProvider {
         //    there's no point trying to log the token out of the provider if
         //    we know there's a problem with the provider
         self.initialize_connection_if_needed().await.map_err(|err| {
-            OpenIDConnectAuthProvider::internal_error(
+            Self::internal_error(
                 "OpenID Connect: Cannot logout with provider: Failed to connect to provider",
                 Some(&stringify_cause_chain(err)),
             )
@@ -1792,7 +1792,7 @@ impl OpenIDConnectAuthProvider {
                 ..
             } => {
                 if let Err(err) = self.try_revoke_token(&session).await {
-                    OpenIDConnectAuthProvider::internal_error(
+                    Self::internal_error(
                         format!(
                             "Error while revoking token for user '{}'",
                             session.user_id
@@ -1820,7 +1820,7 @@ impl OpenIDConnectAuthProvider {
 
                 self.build_rpinitiated_logout_url(provider_url, post_logout_redirect_url, session.secrets.id_token.as_ref())
                     .unwrap_or_else(|err| {
-                        OpenIDConnectAuthProvider::internal_error(
+                        Self::internal_error(
                             format!(
                                 "Error while building OpenID Connect RP-Initiated Logout URL for user '{}'",
                                 session.user_id
