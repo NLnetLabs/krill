@@ -9,8 +9,8 @@ use serde::de::DeserializeOwned;
 use crate::commons::KrillResult;
 use crate::commons::api::Token;
 use crate::commons::error::{ApiAuthError, Error};
-use crate::daemon::auth::common::crypt;
-use crate::daemon::auth::common::crypt::{CryptState, NonceState};
+use crate::daemon::auth::crypt;
+use crate::daemon::auth::crypt::{CryptState, NonceState};
 
 
 const MAX_CACHE_SECS: u64 = 30;
@@ -115,33 +115,6 @@ impl<S> LoginSessionCache<S> {
             encrypt_fn: crypt::encrypt,
             decrypt_fn: crypt::decrypt,
             ttl_secs: MAX_CACHE_SECS,
-        }
-    }
-
-    pub fn with_ttl(self, ttl_secs: u64) -> Self {
-        LoginSessionCache {
-            cache: self.cache,
-            encrypt_fn: self.encrypt_fn,
-            decrypt_fn: self.decrypt_fn,
-            ttl_secs,
-        }
-    }
-
-    pub fn with_encrypter(self, encrypt_fn: EncryptFn) -> Self {
-        LoginSessionCache {
-            cache: self.cache,
-            encrypt_fn,
-            decrypt_fn: self.decrypt_fn,
-            ttl_secs: self.ttl_secs,
-        }
-    }
-
-    pub fn with_decrypter(self, decrypt_fn: DecryptFn) -> Self {
-        LoginSessionCache {
-            cache: self.cache,
-            encrypt_fn: self.encrypt_fn,
-            decrypt_fn,
-            ttl_secs: self.ttl_secs,
         }
     }
 

@@ -98,17 +98,6 @@ impl CryptState {
             nonce: NonceState::new()?,
         })
     }
-
-    pub fn from_key_vec(key_vec: Vec<u8>) -> KrillResult<CryptState> {
-        let boxed_array: Box<[u8; CHACHA20_KEY_BYTE_LEN]> =
-            key_vec.into_boxed_slice().try_into().map_err(|_| {
-                Error::custom(
-                    "Unable to process session encryption key".to_string(),
-                )
-            })?;
-
-        Self::from_key_bytes(*boxed_array)
-    }
 }
 
 // Returns nonce + tag + cipher text, or an error.

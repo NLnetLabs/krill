@@ -64,10 +64,7 @@ use crate::{
     },
     daemon::{
         auth::{
-            common::{
-                crypt::{self, CryptState},
-                session::*,
-            },
+            crypt::{self, CryptState},
             providers::openid_connect::{
                 httpclient::logging_http_client,
                 util::{
@@ -76,6 +73,7 @@ use crate::{
                     WantedMeta,
                 },
             },
+            session::*,
             AuthInfo, LoggedInUser, Permission,
         },
         config::Config,

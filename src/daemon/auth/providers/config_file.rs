@@ -8,9 +8,9 @@ use crate::commons::api::Token;
 use crate::commons::error::{ApiAuthError, Error};
 use crate::commons::util::httpclient;
 use crate::constants::{PW_HASH_LOG_N, PW_HASH_P, PW_HASH_R};
+use crate::daemon::auth::crypt;
 use crate::daemon::auth::{AuthInfo, LoggedInUser, Permission, RoleMap};
-use crate::daemon::auth::common::crypt;
-use crate::daemon::auth::common::session::{ClientSession, LoginSessionCache};
+use crate::daemon::auth::session::{ClientSession, LoginSessionCache};
 use crate::daemon::config::Config;
 use crate::daemon::http::{HttpResponse, HyperRequest};
 
