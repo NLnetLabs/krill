@@ -6,7 +6,9 @@ use hyper::StatusCode;
 
 use rpki::{
     ca::{
-        idexchange::{CaHandle, ChildHandle, ParentHandle, PublisherHandle},
+        idexchange::{
+            CaHandle, ChildHandle, MyHandle, ParentHandle, PublisherHandle
+        },
         provisioning,
         provisioning::ResourceClassName,
         publication,
@@ -28,7 +30,7 @@ use crate::{
         util::httpclient,
     },
     daemon::{ca::RoaPayloadJsonMapKey, http::tls_keys},
-    daemon::auth::{Handle, Permission},
+    daemon::auth::Permission,
     ta,
     upgrades::UpgradeError,
 };
@@ -131,7 +133,7 @@ pub enum ApiAuthError {
 
 impl ApiAuthError {
     pub fn insufficient_rights(
-        actor: &Actor, perm: Permission, resource: Option<&Handle>
+        actor: &Actor, perm: Permission, resource: Option<&MyHandle>
     ) -> Self {
         Self::ApiInsufficientRights(
             match resource {

@@ -18,7 +18,7 @@ use hyper::Method;
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use rpki::ca::idexchange;
 use rpki::ca::idexchange::{
-    CaHandle, ChildHandle, ParentHandle, PublisherHandle,
+    CaHandle, ChildHandle, MyHandle, ParentHandle, PublisherHandle,
 };
 use rpki::repository::resources::Asn;
 use serde::Serialize;
@@ -44,7 +44,7 @@ use crate::{
         KRILL_VERSION_MINOR, KRILL_VERSION_PATCH,
     },
     daemon::{
-        auth::{Handle, Permission},
+        auth::Permission,
         ca::CaStatus,
         config::Config,
         http::{
@@ -1021,7 +1021,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
 
 //------------ Publication ---------------------------------------------------
 
-/// Handle RFC8181 queries and return the appropriate response.
+/// MyHandle RFC8181 queries and return the appropriate response.
 pub async fn rfc8181(req: Request) -> RoutingResult {
     if req.path().segment() == "rfc8181" {
         let mut path = req.path().clone();
@@ -1196,10 +1196,10 @@ fn add_new_token_to_response(
 // similar to how this macro is used in each function.
 macro_rules! aa {
     (no_warn $req:ident, $perm:expr, $action:expr) => {{
-        aa!($req, $perm, Option::<&Handle>::None, $action, true)
+        aa!($req, $perm, Option::<&MyHandle>::None, $action, true)
     }};
     ($req:ident, $perm:expr, $action:expr) => {{
-        aa!($req, $perm, Option::<&Handle>::None, $action, false)
+        aa!($req, $perm, Option::<&MyHandle>::None, $action, false)
     }};
     (no_warn $req:ident, $perm:expr, $resource:expr, $action:expr) => {{
         aa!($req, $perm, Some(&$resource), $action, true)
@@ -1288,7 +1288,7 @@ async fn api_bulk(req: Request, path: &mut RequestPath) -> RoutingResult {
 
 async fn api_cas(req: Request, path: &mut RequestPath) -> RoutingResult {
     match path.path_arg::<CaHandle>() {
-        Some(ca) => aa!(req, Permission::CaRead, Handle::from(&ca), {
+        Some(ca) => aa!(req, Permission::CaRead, ca, {
             match path.next() {
                 None => match *req.method() {
                     Method::GET => api_ca_info(req, ca).await,
@@ -1417,7 +1417,7 @@ async fn api_ca_sync(
     path: &mut RequestPath,
     ca: CaHandle,
 ) -> RoutingResult {
-    aa!(req, Permission::CaUpdate, Handle::from(&ca), {
+    aa!(req, Permission::CaUpdate, ca, {
         if req.is_post() {
             match path.next() {
                 Some("parents") => {
@@ -1615,7 +1615,7 @@ async fn repository_response(
 }
 
 pub async fn api_ca_add_child(req: Request, ca: CaHandle) -> RoutingResult {
-    aa!(req, Permission::CaUpdate, Handle::from(&ca), {
+    aa!(req, Permission::CaUpdate, ca, {
         let actor = req.actor();
         let server = req.state().clone();
         match req.json().await {
@@ -1632,7 +1632,7 @@ async fn api_ca_child_update(
     ca: CaHandle,
     child: ChildHandle,
 ) -> RoutingResult {
-    aa!(req, Permission::CaUpdate, Handle::from(&ca), {
+    aa!(req, Permission::CaUpdate, ca, {
         let actor = req.actor();
         let server = req.state().clone();
         match req.json().await {
@@ -1649,7 +1649,7 @@ pub async fn api_ca_child_remove(
     ca: CaHandle,
     child: ChildHandle,
 ) -> RoutingResult {
-    aa!(req, Permission::CaUpdate, Handle::from(&ca), {
+    aa!(req, Permission::CaUpdate, ca, {
         let actor = req.actor();
         render_empty_res(
             req.state().ca_child_remove(&ca, child, &actor).await,
@@ -1665,7 +1665,7 @@ async fn api_ca_child_show(
     aa!(
         req,
         Permission::CaRead,
-        Handle::from(&ca),
+        ca,
         render_json_res(req.state().ca_child_show(&ca, &child).await)
     )
 }
@@ -1678,13 +1678,13 @@ async fn api_ca_child_export(
     aa!(
         req,
         Permission::CaRead,
-        Handle::from(&ca),
+        ca,
         render_json_res(req.state().api_ca_child_export(&ca, &child).await)
     )
 }
 
 async fn api_ca_child_import(req: Request, ca: CaHandle) -> RoutingResult {
-    aa!(req, Permission::CaAdmin, Handle::from(&ca), {
+    aa!(req, Permission::CaAdmin, ca, {
         let actor = req.actor();
         let server = req.state().clone();
         match req.json().await {
@@ -1703,7 +1703,7 @@ async fn api_ca_stats_child_connections(
     aa!(
         req,
         Permission::CaRead,
-        Handle::from(&ca),
+        ca,
         render_json_res(req.state().ca_stats_child_connections(&ca).await)
     )
 }
@@ -1716,7 +1716,7 @@ async fn api_ca_parent_res_json(
     aa!(
         req,
         Permission::CaRead,
-        Handle::from(&ca),
+        ca,
         render_json_res(
             req.state().ca_parent_response(&ca, child.clone()).await
         )
@@ -1728,7 +1728,7 @@ pub async fn api_ca_parent_res_xml(
     ca: CaHandle,
     child: ChildHandle,
 ) -> RoutingResult {
-    aa!(req, Permission::CaRead, Handle::from(&ca), {
+    aa!(req, Permission::CaRead, ca, {
         match req.state().ca_parent_response(&ca, child.clone()).await {
             Ok(res) => Ok(HttpResponse::xml(res.to_xml_vec())),
             Err(e) => render_error(e),
@@ -1770,7 +1770,7 @@ async fn api_ca_issues(req: Request, ca: CaHandle) -> RoutingResult {
         Method::GET => aa!(
             req,
             Permission::CaRead,
-            Handle::from(&ca),
+            ca,
             render_json_res(req.state().ca_issues(&ca).await)
         ),
         _ => render_unknown_method(),
@@ -1800,7 +1800,7 @@ async fn api_ca_id(
     ca: CaHandle,
 ) -> RoutingResult {
     match *req.method() {
-        Method::POST => aa!(req, Permission::CaUpdate, Handle::from(&ca), {
+        Method::POST => aa!(req, Permission::CaUpdate, ca, {
             let actor = req.actor();
             render_empty_res(req.state().ca_update_id(ca, &actor).await)
         }),
@@ -1825,7 +1825,7 @@ async fn api_ca_info(req: Request, handle: CaHandle) -> RoutingResult {
     aa!(
         req,
         Permission::CaRead,
-        Handle::from(&handle),
+        handle,
         render_json_res(req.state().ca_info(&handle).await)
     )
 }
@@ -1835,7 +1835,7 @@ async fn api_ca_delete(req: Request, handle: CaHandle) -> RoutingResult {
     aa!(
         req,
         Permission::CaDelete,
-        Handle::from(&handle),
+        handle,
         render_json_res(req.state().ca_delete(&handle, &actor).await)
     )
 }
@@ -1848,7 +1848,7 @@ async fn api_ca_my_parent_contact(
     aa!(
         req,
         Permission::CaRead,
-        Handle::from(&ca),
+        ca,
         render_json_res(req.state().ca_my_parent_contact(&ca, &parent).await)
     )
 }
@@ -1860,7 +1860,7 @@ async fn api_ca_my_parent_statuses(
     aa!(
         req,
         Permission::CaRead,
-        Handle::from(&ca),
+        ca,
         render_json_res(
             req.state()
                 .ca_status(&ca)
@@ -1930,7 +1930,7 @@ async fn api_ca_bgpsec_definitions_show(
     req: Request,
     ca: CaHandle,
 ) -> RoutingResult {
-    aa!(req, Permission::BgpsecRead, Handle::from(&ca), {
+    aa!(req, Permission::BgpsecRead, ca, {
         render_json_res(req.state().ca_bgpsec_definitions_show(ca).await)
     })
 }
@@ -1939,7 +1939,7 @@ async fn api_ca_bgpsec_definitions_update(
     req: Request,
     ca: CaHandle,
 ) -> RoutingResult {
-    aa!(req, Permission::BgpsecUpdate, Handle::from(&ca), {
+    aa!(req, Permission::BgpsecUpdate, ca, {
         let actor = req.actor();
         let server = req.state().clone();
         match req.json().await {
@@ -1990,7 +1990,7 @@ async fn api_ca_history_commands(
 ) -> RoutingResult {
     match *req.method() {
         Method::GET => {
-            aa!(req, Permission::CaRead, Handle::from(&handle), {
+            aa!(req, Permission::CaRead, handle, {
                 // /api/v1/cas/{ca}/history/commands
                 // /<rows>/<offset>/<after>/<before>
                 let mut crit = CommandHistoryCriteria::default();
@@ -2042,7 +2042,7 @@ async fn api_ca_command_details(
     match path.path_arg() {
         Some(key) => match *req.method() {
             Method::GET => {
-                aa!(req, Permission::CaRead, Handle::from(&ca), {
+                aa!(req, Permission::CaRead, ca, {
                     match req.state().ca_command_details(&ca, key) {
                         Ok(details) => render_json(details),
                         Err(e) => match e {
@@ -2065,7 +2065,7 @@ async fn api_ca_child_req_xml(req: Request, ca: CaHandle) -> RoutingResult {
         Method::GET => aa!(
             req,
             Permission::CaRead,
-            Handle::from(&ca),
+            ca,
             match ca_child_req(&req, &ca).await {
                 Ok(child_request) =>
                     Ok(HttpResponse::xml(child_request.to_xml_vec())),
@@ -2081,7 +2081,7 @@ async fn api_ca_child_req_json(req: Request, ca: CaHandle) -> RoutingResult {
         Method::GET => aa!(
             req,
             Permission::CaRead,
-            Handle::from(&ca),
+            ca,
             match ca_child_req(&req, &ca).await {
                 Ok(req) => render_json(req),
                 Err(e) => render_error(e),
@@ -2106,7 +2106,7 @@ async fn api_ca_publisher_req_json(
         Method::GET => aa!(
             req,
             Permission::CaRead,
-            Handle::from(&ca),
+            ca,
             render_json_res(req.state().ca_publisher_req(&ca).await)
         ),
         _ => render_unknown_method(),
@@ -2121,7 +2121,7 @@ async fn api_ca_publisher_req_xml(
         Method::GET => aa!(
             req,
             Permission::CaRead,
-            Handle::from(&ca),
+            ca,
             match req.state().ca_publisher_req(&ca).await {
                 Ok(publisher_request) =>
                     Ok(HttpResponse::xml(publisher_request.to_xml_vec())),
@@ -2136,7 +2136,7 @@ async fn api_ca_repo_details(req: Request, ca: CaHandle) -> RoutingResult {
     aa!(
         req,
         Permission::CaRead,
-        Handle::from(&ca),
+        ca,
         render_json_res(req.state().ca_repo_details(&ca).await)
     )
 }
@@ -2146,7 +2146,7 @@ async fn api_ca_repo_status(req: Request, ca: CaHandle) -> RoutingResult {
         Method::GET => aa!(
             req,
             Permission::CaRead,
-            Handle::from(&ca),
+            ca,
             render_json_res(
                 req.state()
                     .ca_status(&ca)
@@ -2193,7 +2193,7 @@ fn extract_repository_contact(
 }
 
 async fn api_ca_repo_update(req: Request, ca: CaHandle) -> RoutingResult {
-    aa!(req, Permission::CaUpdate, Handle::from(&ca), {
+    aa!(req, Permission::CaUpdate, ca, {
         let actor = req.actor();
         let server = req.state().clone();
 
@@ -2215,7 +2215,7 @@ async fn api_ca_parent_add_or_update(
     ca: CaHandle,
     parent_override: Option<ParentHandle>,
 ) -> RoutingResult {
-    aa!(req, Permission::CaUpdate, Handle::from(&ca), {
+    aa!(req, Permission::CaUpdate, ca, {
         let actor = req.actor();
         let server = req.state().clone();
 
@@ -2284,7 +2284,7 @@ async fn api_ca_remove_parent(
     ca: CaHandle,
     parent: ParentHandle,
 ) -> RoutingResult {
-    aa!(req, Permission::CaUpdate, Handle::from(&ca), {
+    aa!(req, Permission::CaUpdate, ca, {
         let actor = req.actor();
         render_empty_res(
             req.state().ca_parent_remove(ca, parent, &actor).await,
@@ -2294,7 +2294,7 @@ async fn api_ca_remove_parent(
 
 /// Force a key roll for a CA, i.e. use a max key age of 0 seconds.
 async fn api_ca_kr_init(req: Request, ca: CaHandle) -> RoutingResult {
-    aa!(req, Permission::CaUpdate, Handle::from(&ca), {
+    aa!(req, Permission::CaUpdate, ca, {
         let actor = req.actor();
         render_empty_res(req.state().ca_keyroll_init(ca, &actor).await)
     })
@@ -2303,7 +2303,7 @@ async fn api_ca_kr_init(req: Request, ca: CaHandle) -> RoutingResult {
 /// Force key activation for all new keys, i.e. use a staging period of 0
 /// seconds.
 async fn api_ca_kr_activate(req: Request, ca: CaHandle) -> RoutingResult {
-    aa!(req, Permission::CaUpdate, Handle::from(&ca), {
+    aa!(req, Permission::CaUpdate, ca, {
         let actor = req.actor();
         render_empty_res(req.state().ca_keyroll_activate(ca, &actor).await)
     })
@@ -2316,7 +2316,7 @@ async fn api_ca_aspas_definitions_show(
     req: Request,
     ca: CaHandle,
 ) -> RoutingResult {
-    aa!(req, Permission::AspasRead, Handle::from(&ca), {
+    aa!(req, Permission::AspasRead, ca, {
         let state = req.state().clone();
         render_json_res(state.ca_aspas_definitions_show(ca).await)
     })
@@ -2327,7 +2327,7 @@ async fn api_ca_aspas_definitions_update(
     req: Request,
     ca: CaHandle,
 ) -> RoutingResult {
-    aa!(req, Permission::AspasUpdate, Handle::from(&ca), {
+    aa!(req, Permission::AspasUpdate, ca, {
         let actor = req.actor();
         let state = req.state().clone();
 
@@ -2347,7 +2347,7 @@ async fn api_ca_aspas_update_aspa(
     ca: CaHandle,
     customer: Asn,
 ) -> RoutingResult {
-    aa!(req, Permission::AspasUpdate, Handle::from(&ca), {
+    aa!(req, Permission::AspasUpdate, ca, {
         let actor = req.actor();
         let state = req.state().clone();
 
@@ -2368,7 +2368,7 @@ async fn api_ca_aspas_delete(
     ca: CaHandle,
     customer: Asn,
 ) -> RoutingResult {
-    aa!(req, Permission::AspasUpdate, Handle::from(&ca), {
+    aa!(req, Permission::AspasUpdate, ca, {
         let actor = req.actor();
         let state = req.state().clone();
 
@@ -2381,7 +2381,7 @@ async fn api_ca_aspas_delete(
 
 /// Update the route authorizations for this CA
 async fn api_ca_routes_update(req: Request, ca: CaHandle) -> RoutingResult {
-    aa!(req, Permission::RoutesUpdate, Handle::from(&ca), {
+    aa!(req, Permission::RoutesUpdate, ca, {
         let actor = req.actor();
         let state = req.state().clone();
 
@@ -2401,7 +2401,7 @@ async fn api_ca_routes_try_update(
     req: Request,
     ca: CaHandle,
 ) -> RoutingResult {
-    aa!(req, Permission::RoutesUpdate, Handle::from(&ca), {
+    aa!(req, Permission::RoutesUpdate, ca, {
         let actor = req.actor();
         let state = req.state().clone();
 
@@ -2452,7 +2452,7 @@ async fn api_ca_routes_try_update(
 
 /// show the route authorizations for this CA
 async fn api_ca_routes_show(req: Request, ca: CaHandle) -> RoutingResult {
-    aa!(req, Permission::RoutesRead, Handle::from(&ca), {
+    aa!(req, Permission::RoutesRead, ca, {
         match req.state().ca_routes_show(&ca).await {
             Ok(roas) => render_json(roas),
             Err(_) => render_unknown_resource(),
@@ -2466,7 +2466,7 @@ async fn api_ca_routes_analysis(
     path: &mut RequestPath,
     ca: CaHandle,
 ) -> RoutingResult {
-    aa!(req, Permission::RoutesAnalysis, Handle::from(&ca), {
+    aa!(req, Permission::RoutesAnalysis, ca, {
         match path.next() {
             Some("full") => {
                 render_json_res(req.state().ca_routes_bgp_analysis(&ca).await)
@@ -2619,7 +2619,7 @@ async fn api_ca_rta_list(req: Request, ca: CaHandle) -> RoutingResult {
     aa!(
         req,
         Permission::RtaList,
-        Handle::from(&ca),
+        ca,
         render_json_res(req.state().rta_list(ca).await)
     )
 }
@@ -2632,7 +2632,7 @@ async fn api_ca_rta_show(
     aa!(
         req,
         Permission::RtaRead,
-        Handle::from(&ca),
+        ca,
         render_json_res(req.state().rta_show(ca, name).await)
     )
 }
@@ -2642,7 +2642,7 @@ async fn api_ca_rta_sign(
     ca: CaHandle,
     name: RtaName,
 ) -> RoutingResult {
-    aa!(req, Permission::RtaUpdate, Handle::from(&ca), {
+    aa!(req, Permission::RtaUpdate, ca, {
         let actor = req.actor();
         let state = req.state().clone();
         match req.json().await {
@@ -2659,7 +2659,7 @@ async fn api_ca_rta_multi_prep(
     ca: CaHandle,
     name: RtaName,
 ) -> RoutingResult {
-    aa!(req, Permission::RtaUpdate, Handle::from(&ca), {
+    aa!(req, Permission::RtaUpdate, ca, {
         let actor = req.actor();
         let state = req.state().clone();
 
@@ -2677,7 +2677,7 @@ async fn api_ca_rta_multi_sign(
     ca: CaHandle,
     name: RtaName,
 ) -> RoutingResult {
-    aa!(req, Permission::RtaUpdate, Handle::from(&ca), {
+    aa!(req, Permission::RtaUpdate, ca, {
         let actor = req.actor();
         let state = req.state().clone();
         match req.json().await {

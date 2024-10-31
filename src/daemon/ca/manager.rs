@@ -48,7 +48,7 @@ use crate::{
         CASERVER_NS, STATUS_NS, TA_PROXY_SERVER_NS, TA_SIGNER_SERVER_NS,
     },
     daemon::{
-        auth::{AuthInfo, Handle, Permission},
+        auth::{AuthInfo, Permission},
         ca::{
             CaObjectsStore, CaStatus, CertAuth, CertAuthCommand,
             CertAuthCommandDetails, DeprecatedRepository,
@@ -625,8 +625,7 @@ impl CaManager {
                 .into_iter()
                 .filter(|handle| {
                     auth.check_permission(
-                        Permission::CaRead,
-                        Some(&Handle::from(handle))
+                        Permission::CaRead, Some(handle)
                     ).is_ok()
                 })
                 .map(CertAuthSummary::new)

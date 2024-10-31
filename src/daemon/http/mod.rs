@@ -8,10 +8,11 @@ use hyper::header::USER_AGENT;
 use hyper::http::uri::PathAndQuery;
 use hyper::{HeaderMap, Method, StatusCode};
 use rpki::ca::{provisioning, publication};
+use rpki::ca::idexchange::MyHandle;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-use crate::daemon::auth::{AuthInfo, Handle, LoggedInUser, Permission};
+use crate::daemon::auth::{AuthInfo, LoggedInUser, Permission};
 use crate::{
     commons::{
         actor::Actor,
@@ -402,7 +403,7 @@ impl Request {
     pub fn check_permission(
         &self, 
         permission: Permission,
-        resource: Option<&Handle>
+        resource: Option<&MyHandle>
     ) -> Result<(), ApiAuthError> {
         self.auth.check_permission(permission, resource)
     }

@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use rpki::ca::idexchange::MyHandle;
 use serde::Deserialize;
 use crate::commons::error::ApiAuthError;
-use super::{Handle, Permission, PermissionSet};
+use super::{Permission, PermissionSet};
 
 
 //------------ Role ----------------------------------------------------------
@@ -23,7 +24,7 @@ pub struct Role {
     any: PermissionSet,
 
     /// Permissions for specific resources.
-    resources: HashMap<Handle, PermissionSet>,
+    resources: HashMap<MyHandle, PermissionSet>,
 }
 
 impl Role {
@@ -57,7 +58,7 @@ impl Role {
 
     pub fn with_resources(
         permissions: PermissionSet,
-        resources: impl IntoIterator<Item = Handle>
+        resources: impl IntoIterator<Item = MyHandle>
     ) -> Self {
         Self {
             none: permissions,
@@ -71,7 +72,7 @@ impl Role {
     pub fn complex(
         none: PermissionSet,
         any: PermissionSet,
-        resources: HashMap<Handle, PermissionSet>
+        resources: HashMap<MyHandle, PermissionSet>
     ) -> Self {
         Self { none, any, resources }
     }
@@ -79,7 +80,7 @@ impl Role {
     pub fn is_allowed(
         &self,
         permission: Permission,
-        resource: Option<&Handle>
+        resource: Option<&MyHandle>
     ) -> bool {
         match resource {
             Some(resource) => {
@@ -115,7 +116,7 @@ impl From<RoleConf> for Role {
 struct RoleConf {
     permissions: PermissionSet,
 
-    cas: Option<Vec<Handle>>,
+    cas: Option<Vec<MyHandle>>,
 }
 
 

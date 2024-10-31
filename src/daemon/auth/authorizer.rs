@@ -1,10 +1,8 @@
 //! Authorization for the API
 
-use std::fmt;
-use std::str::FromStr;
 use std::sync::Arc;
-use rpki::ca::idexchange::{InvalidHandle, MyHandle};
-use serde::{Deserialize, Serialize};
+use rpki::ca::idexchange::MyHandle;
+use serde::Serialize;
 use crate::commons::KrillResult;
 use crate::commons::actor::Actor;
 use crate::commons::api::Token;
@@ -400,7 +398,7 @@ impl AuthInfo {
     pub fn check_permission(
         &self,
         permission: Permission,
-        resource: Option<&Handle>
+        resource: Option<&MyHandle>
     ) -> Result<(), ApiAuthError> {
         if self.permissions.as_ref().map_err(Clone::clone)?
             .is_allowed(permission, resource)
@@ -415,6 +413,7 @@ impl AuthInfo {
     }
 }
 
+/*
 
 //------------ Handle --------------------------------------------------------
 
@@ -452,3 +451,4 @@ impl AsRef<MyHandle> for Handle {
     }
 }
 
+*/
