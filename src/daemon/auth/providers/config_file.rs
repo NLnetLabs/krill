@@ -210,10 +210,10 @@ impl ConfigFileAuthProvider {
         // Check that the user is allowed to log in.
         let role = self.roles.get(&user.role)?;
 
-        if !role.is_allowed(Permission::LOGIN, None) {
+        if !role.is_allowed(Permission::Login, None) {
             let reason = format!(
                 "Login denied for user '{}': \
-                 User is not permitted to 'LOGIN'",
+                 User is not permitted to 'login'",
                  username,
             );
             warn!("{}", reason);

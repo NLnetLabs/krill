@@ -1,20 +1,22 @@
-use std::fmt;
+use std::{fmt, str};
 use serde::{Deserialize, Serialize};
 
 
 //------------ Permission ----------------------------------------------------
 
 macro_rules! define_permission {
-    ( $( $variant:ident, )* ) => {
+    ( $( ($variant:ident, $text:expr), )* ) => {
         /// The set of available permissions.
         ///
         /// Each API request requires for the actor to have exactly one of these
         /// permissions.
         #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
-        #[allow(non_camel_case_types)] // XXX Fix this
         #[repr(u32)]
         pub enum Permission {
-            $( $variant, )*
+            $(
+                #[serde(rename = $text)]
+                $variant,
+            )*
         }
 
         impl Permission {
@@ -23,12 +25,23 @@ macro_rules! define_permission {
             }
         }
 
+        impl str::FromStr for Permission {
+            type Err = &'static str;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                match s {
+                    $( $text => Ok(Self::$variant), )*
+                    _ => Err("unknown permission")
+                }
+            }
+        }
+
         impl fmt::Display for Permission {
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 f.write_str(
                     match *self {
                         $(
-                            Self::$variant => stringify!($variant),
+                            Self::$variant => ($text),
                         )*
                     }
                 )
@@ -42,29 +55,29 @@ macro_rules! define_permission {
 }
 
 define_permission! {
-    LOGIN,
-    PUB_ADMIN,
-    PUB_LIST,
-    PUB_READ,
-    PUB_CREATE,
-    PUB_DELETE,
-    CA_LIST,
-    CA_READ,
-    CA_CREATE,
-    CA_UPDATE,
-    CA_ADMIN,
-    CA_DELETE,
-    ROUTES_READ,
-    ROUTES_UPDATE,
-    ROUTES_ANALYSIS,
-    ASPAS_READ,
-    ASPAS_UPDATE,
-    ASPAS_ANALYSIS,
-    BGPSEC_READ,
-    BGPSEC_UPDATE,
-    RTA_LIST,
-    RTA_READ,
-    RTA_UPDATE,
+    (Login, "login"),
+    (PubAdmin, "pub-admin"),
+    (PubList, "pub-list"),
+    (PubRead, "pub-read"),
+    (PubCreate, "pub-create"),
+    (PubDelete, "pub-delete"),
+    (CaList, "ca-list"),
+    (CaRead, "ca-read"),
+    (CaCreate, "ca-create"),
+    (CaUpdate, "ca-update"),
+    (CaAdmin, "ca-admin"),
+    (CaDelete, "ca-delete"),
+    (RoutesRead, "routes-read"),
+    (RoutesUpdate, "routes-update"),
+    (RoutesAnalysis, "routes-analysis"),
+    (AspasRead, "aspas-read"),
+    (AspasUpdate, "aspas-update"),
+    (AspasAnalysis, "aspas-analyisis"),
+    (BgpsecRead, "bgpsec-read"),
+    (BgpsecUpdate, "bgpsec-update"),
+    (RtaList, "rta-list"),
+    (RtaRead, "rta-read"),
+    (RtaUpdate, "rta-update"),
 }
 
 
@@ -134,48 +147,48 @@ mod policy {
         pub const NONE: Self = Self(0);
 
         pub const READONLY: Self = Self::from_permissions(&[
-            CA_LIST,
-            CA_READ,
-            PUB_LIST,
-            PUB_READ,
-            ROUTES_READ,
-            ROUTES_ANALYSIS,
-            ASPAS_READ,
-            ASPAS_ANALYSIS,
-            BGPSEC_READ,
-            RTA_LIST,
-            RTA_READ
+            CaList,
+            CaRead,
+            PubList,
+            PubRead,
+            RoutesRead,
+            RoutesAnalysis,
+            AspasRead,
+            AspasAnalysis,
+            BgpsecRead,
+            RtaList,
+            RtaRead
         ]);
 
         pub const READWRITE: Self = Self::from_permissions(&[
-            CA_LIST,
-            CA_READ,
-            CA_CREATE,
-            CA_UPDATE,
-            PUB_LIST,
-            PUB_READ,
-            PUB_CREATE,
-            PUB_DELETE,
-            ROUTES_READ,
-            ROUTES_ANALYSIS,
-            ROUTES_UPDATE,
-            ASPAS_READ,
-            ASPAS_UPDATE,
-            ASPAS_ANALYSIS,
-            BGPSEC_READ,
-            BGPSEC_UPDATE,
-            RTA_LIST,
-            RTA_READ,
-            RTA_UPDATE
+            CaList,
+            CaRead,
+            CaCreate,
+            CaUpdate,
+            PubList,
+            PubRead,
+            PubCreate,
+            PubDelete,
+            RoutesRead,
+            RoutesAnalysis,
+            RoutesUpdate,
+            AspasRead,
+            AspasUpdate,
+            AspasAnalysis,
+            BgpsecRead,
+            BgpsecUpdate,
+            RtaList,
+            RtaRead,
+            RtaUpdate
         ]);
 
         pub const TESTBED: Self = Self::from_permissions(&[
-            CA_READ,
-            CA_UPDATE,
-            PUB_READ,
-            PUB_CREATE,
-            PUB_DELETE,
-            PUB_ADMIN
+            CaRead,
+            CaUpdate,
+            PubRead,
+            PubCreate,
+            PubDelete,
+            PubAdmin
         ]);
     }
 }

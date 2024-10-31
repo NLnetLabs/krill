@@ -1662,10 +1662,10 @@ impl OpenIDConnectAuthProvider {
                 let role = self.config.auth_roles.get(&role_name)?;
 
                 // Step 4 1/2: Check that the user is allowed to log in.
-                if !role.is_allowed(Permission::LOGIN, None) {
+                if !role.is_allowed(Permission::Login, None) {
                     let reason = format!(
                         "Login denied for user '{}': \
-                         User is not permitted to 'LOGIN'",
+                         User is not permitted to 'login'",
                          id,
                     );
                     warn!("{}", reason);

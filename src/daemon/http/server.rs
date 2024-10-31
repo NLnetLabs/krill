@@ -1234,18 +1234,18 @@ async fn api(req: Request) -> RoutingResult {
             Some("authorized") => api_authorized(req).await,
             restricted_endpoint => {
                 // Make sure access is allowed
-                aa!(req, Permission::LOGIN, {
+                aa!(req, Permission::Login, {
                     match restricted_endpoint {
                         Some("bulk") => api_bulk(req, &mut path).await,
                         Some("cas") => api_cas(req, &mut path).await,
                         Some("pubd") => aa!(
                             req,
-                            Permission::PUB_ADMIN,
+                            Permission::PubAdmin,
                             api_publication_server(req, &mut path).await
                         ),
                         Some("ta") => aa!(
                             req,
-                            Permission::CA_ADMIN,
+                            Permission::CaAdmin,
                             api_ta(req, &mut path).await
                         ),
                         _ => render_unknown_method(),
@@ -1263,7 +1263,7 @@ async fn api_authorized(req: Request) -> RoutingResult {
     // triggers Lagosta to show a login form, not something to warn about!
     aa!(no_warn
         req,
-        Permission::LOGIN,
+        Permission::Login,
         match *req.method() {
             Method::GET => render_ok(),
             _ => render_unknown_method(),
@@ -1288,7 +1288,7 @@ async fn api_bulk(req: Request, path: &mut RequestPath) -> RoutingResult {
 
 async fn api_cas(req: Request, path: &mut RequestPath) -> RoutingResult {
     match path.path_arg::<CaHandle>() {
-        Some(ca) => aa!(req, Permission::CA_READ, Handle::from(&ca), {
+        Some(ca) => aa!(req, Permission::CaRead, Handle::from(&ca), {
             match path.next() {
                 None => match *req.method() {
                     Method::GET => api_ca_info(req, ca).await,
@@ -1417,7 +1417,7 @@ async fn api_ca_sync(
     path: &mut RequestPath,
     ca: CaHandle,
 ) -> RoutingResult {
-    aa!(req, Permission::CA_UPDATE, Handle::from(&ca), {
+    aa!(req, Permission::CaUpdate, Handle::from(&ca), {
         if req.is_post() {
             match path.next() {
                 Some("parents") => {
@@ -1514,7 +1514,7 @@ pub async fn api_stale_publishers(
     req: Request,
     seconds: Option<&str>,
 ) -> RoutingResult {
-    aa!(req, Permission::PUB_LIST, {
+    aa!(req, Permission::PubList, {
         let seconds = seconds.unwrap_or("");
         match i64::from_str(seconds) {
             Ok(seconds) => {
@@ -1529,7 +1529,7 @@ pub async fn api_stale_publishers(
 
 /// Returns a json structure with all publishers in it.
 pub async fn api_list_pbl(req: Request) -> RoutingResult {
-    aa!(req, Permission::PUB_LIST, {
+    aa!(req, Permission::PubList, {
         render_json_res(
             req.state()
                 .publishers()
@@ -1540,7 +1540,7 @@ pub async fn api_list_pbl(req: Request) -> RoutingResult {
 
 /// Adds a publisher
 pub async fn api_add_pbl(req: Request) -> RoutingResult {
-    aa!(req, Permission::PUB_CREATE, {
+    aa!(req, Permission::PubCreate, {
         let actor = req.actor();
         let server = req.state().clone();
         match req.json().await {
@@ -1557,7 +1557,7 @@ pub async fn api_remove_pbl(
     req: Request,
     publisher: PublisherHandle,
 ) -> RoutingResult {
-    aa!(req, Permission::PUB_DELETE, {
+    aa!(req, Permission::PubDelete, {
         let actor = req.actor();
         render_empty_res(req.state().remove_publisher(publisher, &actor))
     })
@@ -1571,7 +1571,7 @@ pub async fn api_show_pbl(
 ) -> RoutingResult {
     aa!(
         req,
-        Permission::PUB_READ,
+        Permission::PubRead,
         render_json_res(req.state().get_publisher(&publisher))
     )
 }
@@ -1584,7 +1584,7 @@ pub async fn api_repository_response_xml(
     req: Request,
     publisher: PublisherHandle,
 ) -> RoutingResult {
-    aa!(req, Permission::PUB_READ, {
+    aa!(req, Permission::PubRead, {
         match repository_response(&req, &publisher).await {
             Ok(repository_response) => {
                 Ok(HttpResponse::xml(repository_response.to_xml_vec()))
@@ -1599,7 +1599,7 @@ pub async fn api_repository_response_json(
     req: Request,
     publisher: PublisherHandle,
 ) -> RoutingResult {
-    aa!(req, Permission::PUB_READ, {
+    aa!(req, Permission::PubRead, {
         match repository_response(&req, &publisher).await {
             Ok(res) => render_json(res),
             Err(e) => render_error(e),
@@ -1615,7 +1615,7 @@ async fn repository_response(
 }
 
 pub async fn api_ca_add_child(req: Request, ca: CaHandle) -> RoutingResult {
-    aa!(req, Permission::CA_UPDATE, Handle::from(&ca), {
+    aa!(req, Permission::CaUpdate, Handle::from(&ca), {
         let actor = req.actor();
         let server = req.state().clone();
         match req.json().await {
@@ -1632,7 +1632,7 @@ async fn api_ca_child_update(
     ca: CaHandle,
     child: ChildHandle,
 ) -> RoutingResult {
-    aa!(req, Permission::CA_UPDATE, Handle::from(&ca), {
+    aa!(req, Permission::CaUpdate, Handle::from(&ca), {
         let actor = req.actor();
         let server = req.state().clone();
         match req.json().await {
@@ -1649,7 +1649,7 @@ pub async fn api_ca_child_remove(
     ca: CaHandle,
     child: ChildHandle,
 ) -> RoutingResult {
-    aa!(req, Permission::CA_UPDATE, Handle::from(&ca), {
+    aa!(req, Permission::CaUpdate, Handle::from(&ca), {
         let actor = req.actor();
         render_empty_res(
             req.state().ca_child_remove(&ca, child, &actor).await,
@@ -1664,7 +1664,7 @@ async fn api_ca_child_show(
 ) -> RoutingResult {
     aa!(
         req,
-        Permission::CA_READ,
+        Permission::CaRead,
         Handle::from(&ca),
         render_json_res(req.state().ca_child_show(&ca, &child).await)
     )
@@ -1677,14 +1677,14 @@ async fn api_ca_child_export(
 ) -> RoutingResult {
     aa!(
         req,
-        Permission::CA_READ,
+        Permission::CaRead,
         Handle::from(&ca),
         render_json_res(req.state().api_ca_child_export(&ca, &child).await)
     )
 }
 
 async fn api_ca_child_import(req: Request, ca: CaHandle) -> RoutingResult {
-    aa!(req, Permission::CA_ADMIN, Handle::from(&ca), {
+    aa!(req, Permission::CaAdmin, Handle::from(&ca), {
         let actor = req.actor();
         let server = req.state().clone();
         match req.json().await {
@@ -1702,7 +1702,7 @@ async fn api_ca_stats_child_connections(
 ) -> RoutingResult {
     aa!(
         req,
-        Permission::CA_READ,
+        Permission::CaRead,
         Handle::from(&ca),
         render_json_res(req.state().ca_stats_child_connections(&ca).await)
     )
@@ -1715,7 +1715,7 @@ async fn api_ca_parent_res_json(
 ) -> RoutingResult {
     aa!(
         req,
-        Permission::CA_READ,
+        Permission::CaRead,
         Handle::from(&ca),
         render_json_res(
             req.state().ca_parent_response(&ca, child.clone()).await
@@ -1728,7 +1728,7 @@ pub async fn api_ca_parent_res_xml(
     ca: CaHandle,
     child: ChildHandle,
 ) -> RoutingResult {
-    aa!(req, Permission::CA_READ, Handle::from(&ca), {
+    aa!(req, Permission::CaRead, Handle::from(&ca), {
         match req.state().ca_parent_response(&ca, child.clone()).await {
             Ok(res) => Ok(HttpResponse::xml(res.to_xml_vec())),
             Err(e) => render_error(e),
@@ -1740,7 +1740,7 @@ pub async fn api_ca_parent_res_xml(
 
 async fn api_cas_import(req: Request) -> RoutingResult {
     match *req.method() {
-        Method::POST => aa!(req, Permission::CA_ADMIN, {
+        Method::POST => aa!(req, Permission::CaAdmin, {
             let server = req.state().clone();
             match req.json().await {
                 Ok(structure) => {
@@ -1755,7 +1755,7 @@ async fn api_cas_import(req: Request) -> RoutingResult {
 
 async fn api_all_ca_issues(req: Request) -> RoutingResult {
     match *req.method() {
-        Method::GET => aa!(req, Permission::CA_READ, {
+        Method::GET => aa!(req, Permission::CaRead, {
             render_json_res(
                 req.state().all_ca_issues(req.auth_info()).await
             )
@@ -1769,7 +1769,7 @@ async fn api_ca_issues(req: Request, ca: CaHandle) -> RoutingResult {
     match *req.method() {
         Method::GET => aa!(
             req,
-            Permission::CA_READ,
+            Permission::CaRead,
             Handle::from(&ca),
             render_json_res(req.state().ca_issues(&ca).await)
         ),
@@ -1778,13 +1778,13 @@ async fn api_ca_issues(req: Request, ca: CaHandle) -> RoutingResult {
 }
 
 async fn api_cas_list(req: Request) -> RoutingResult {
-    aa!(req, Permission::CA_LIST, {
+    aa!(req, Permission::CaList, {
         render_json_res(req.state().ca_list(req.auth_info()))
     })
 }
 
 pub async fn api_ca_init(req: Request) -> RoutingResult {
-    aa!(req, Permission::CA_CREATE, {
+    aa!(req, Permission::CaCreate, {
         let state = req.state().clone();
 
         match req.json().await {
@@ -1800,7 +1800,7 @@ async fn api_ca_id(
     ca: CaHandle,
 ) -> RoutingResult {
     match *req.method() {
-        Method::POST => aa!(req, Permission::CA_UPDATE, Handle::from(&ca), {
+        Method::POST => aa!(req, Permission::CaUpdate, Handle::from(&ca), {
             let actor = req.actor();
             render_empty_res(req.state().ca_update_id(ca, &actor).await)
         }),
@@ -1824,7 +1824,7 @@ async fn api_ca_id(
 async fn api_ca_info(req: Request, handle: CaHandle) -> RoutingResult {
     aa!(
         req,
-        Permission::CA_READ,
+        Permission::CaRead,
         Handle::from(&handle),
         render_json_res(req.state().ca_info(&handle).await)
     )
@@ -1834,7 +1834,7 @@ async fn api_ca_delete(req: Request, handle: CaHandle) -> RoutingResult {
     let actor = req.actor();
     aa!(
         req,
-        Permission::CA_DELETE,
+        Permission::CaDelete,
         Handle::from(&handle),
         render_json_res(req.state().ca_delete(&handle, &actor).await)
     )
@@ -1847,7 +1847,7 @@ async fn api_ca_my_parent_contact(
 ) -> RoutingResult {
     aa!(
         req,
-        Permission::CA_READ,
+        Permission::CaRead,
         Handle::from(&ca),
         render_json_res(req.state().ca_my_parent_contact(&ca, &parent).await)
     )
@@ -1859,7 +1859,7 @@ async fn api_ca_my_parent_statuses(
 ) -> RoutingResult {
     aa!(
         req,
-        Permission::CA_READ,
+        Permission::CaRead,
         Handle::from(&ca),
         render_json_res(
             req.state()
@@ -1930,7 +1930,7 @@ async fn api_ca_bgpsec_definitions_show(
     req: Request,
     ca: CaHandle,
 ) -> RoutingResult {
-    aa!(req, Permission::BGPSEC_READ, Handle::from(&ca), {
+    aa!(req, Permission::BgpsecRead, Handle::from(&ca), {
         render_json_res(req.state().ca_bgpsec_definitions_show(ca).await)
     })
 }
@@ -1939,7 +1939,7 @@ async fn api_ca_bgpsec_definitions_update(
     req: Request,
     ca: CaHandle,
 ) -> RoutingResult {
-    aa!(req, Permission::BGPSEC_UPDATE, Handle::from(&ca), {
+    aa!(req, Permission::BgpsecUpdate, Handle::from(&ca), {
         let actor = req.actor();
         let server = req.state().clone();
         match req.json().await {
@@ -1990,7 +1990,7 @@ async fn api_ca_history_commands(
 ) -> RoutingResult {
     match *req.method() {
         Method::GET => {
-            aa!(req, Permission::CA_READ, Handle::from(&handle), {
+            aa!(req, Permission::CaRead, Handle::from(&handle), {
                 // /api/v1/cas/{ca}/history/commands
                 // /<rows>/<offset>/<after>/<before>
                 let mut crit = CommandHistoryCriteria::default();
@@ -2042,7 +2042,7 @@ async fn api_ca_command_details(
     match path.path_arg() {
         Some(key) => match *req.method() {
             Method::GET => {
-                aa!(req, Permission::CA_READ, Handle::from(&ca), {
+                aa!(req, Permission::CaRead, Handle::from(&ca), {
                     match req.state().ca_command_details(&ca, key) {
                         Ok(details) => render_json(details),
                         Err(e) => match e {
@@ -2064,7 +2064,7 @@ async fn api_ca_child_req_xml(req: Request, ca: CaHandle) -> RoutingResult {
     match *req.method() {
         Method::GET => aa!(
             req,
-            Permission::CA_READ,
+            Permission::CaRead,
             Handle::from(&ca),
             match ca_child_req(&req, &ca).await {
                 Ok(child_request) =>
@@ -2080,7 +2080,7 @@ async fn api_ca_child_req_json(req: Request, ca: CaHandle) -> RoutingResult {
     match *req.method() {
         Method::GET => aa!(
             req,
-            Permission::CA_READ,
+            Permission::CaRead,
             Handle::from(&ca),
             match ca_child_req(&req, &ca).await {
                 Ok(req) => render_json(req),
@@ -2105,7 +2105,7 @@ async fn api_ca_publisher_req_json(
     match *req.method() {
         Method::GET => aa!(
             req,
-            Permission::CA_READ,
+            Permission::CaRead,
             Handle::from(&ca),
             render_json_res(req.state().ca_publisher_req(&ca).await)
         ),
@@ -2120,7 +2120,7 @@ async fn api_ca_publisher_req_xml(
     match *req.method() {
         Method::GET => aa!(
             req,
-            Permission::CA_READ,
+            Permission::CaRead,
             Handle::from(&ca),
             match req.state().ca_publisher_req(&ca).await {
                 Ok(publisher_request) =>
@@ -2135,7 +2135,7 @@ async fn api_ca_publisher_req_xml(
 async fn api_ca_repo_details(req: Request, ca: CaHandle) -> RoutingResult {
     aa!(
         req,
-        Permission::CA_READ,
+        Permission::CaRead,
         Handle::from(&ca),
         render_json_res(req.state().ca_repo_details(&ca).await)
     )
@@ -2145,7 +2145,7 @@ async fn api_ca_repo_status(req: Request, ca: CaHandle) -> RoutingResult {
     match *req.method() {
         Method::GET => aa!(
             req,
-            Permission::CA_READ,
+            Permission::CaRead,
             Handle::from(&ca),
             render_json_res(
                 req.state()
@@ -2193,7 +2193,7 @@ fn extract_repository_contact(
 }
 
 async fn api_ca_repo_update(req: Request, ca: CaHandle) -> RoutingResult {
-    aa!(req, Permission::CA_UPDATE, Handle::from(&ca), {
+    aa!(req, Permission::CaUpdate, Handle::from(&ca), {
         let actor = req.actor();
         let server = req.state().clone();
 
@@ -2215,7 +2215,7 @@ async fn api_ca_parent_add_or_update(
     ca: CaHandle,
     parent_override: Option<ParentHandle>,
 ) -> RoutingResult {
-    aa!(req, Permission::CA_UPDATE, Handle::from(&ca), {
+    aa!(req, Permission::CaUpdate, Handle::from(&ca), {
         let actor = req.actor();
         let server = req.state().clone();
 
@@ -2284,7 +2284,7 @@ async fn api_ca_remove_parent(
     ca: CaHandle,
     parent: ParentHandle,
 ) -> RoutingResult {
-    aa!(req, Permission::CA_UPDATE, Handle::from(&ca), {
+    aa!(req, Permission::CaUpdate, Handle::from(&ca), {
         let actor = req.actor();
         render_empty_res(
             req.state().ca_parent_remove(ca, parent, &actor).await,
@@ -2294,7 +2294,7 @@ async fn api_ca_remove_parent(
 
 /// Force a key roll for a CA, i.e. use a max key age of 0 seconds.
 async fn api_ca_kr_init(req: Request, ca: CaHandle) -> RoutingResult {
-    aa!(req, Permission::CA_UPDATE, Handle::from(&ca), {
+    aa!(req, Permission::CaUpdate, Handle::from(&ca), {
         let actor = req.actor();
         render_empty_res(req.state().ca_keyroll_init(ca, &actor).await)
     })
@@ -2303,7 +2303,7 @@ async fn api_ca_kr_init(req: Request, ca: CaHandle) -> RoutingResult {
 /// Force key activation for all new keys, i.e. use a staging period of 0
 /// seconds.
 async fn api_ca_kr_activate(req: Request, ca: CaHandle) -> RoutingResult {
-    aa!(req, Permission::CA_UPDATE, Handle::from(&ca), {
+    aa!(req, Permission::CaUpdate, Handle::from(&ca), {
         let actor = req.actor();
         render_empty_res(req.state().ca_keyroll_activate(ca, &actor).await)
     })
@@ -2316,7 +2316,7 @@ async fn api_ca_aspas_definitions_show(
     req: Request,
     ca: CaHandle,
 ) -> RoutingResult {
-    aa!(req, Permission::ASPAS_READ, Handle::from(&ca), {
+    aa!(req, Permission::AspasRead, Handle::from(&ca), {
         let state = req.state().clone();
         render_json_res(state.ca_aspas_definitions_show(ca).await)
     })
@@ -2327,7 +2327,7 @@ async fn api_ca_aspas_definitions_update(
     req: Request,
     ca: CaHandle,
 ) -> RoutingResult {
-    aa!(req, Permission::ASPAS_UPDATE, Handle::from(&ca), {
+    aa!(req, Permission::AspasUpdate, Handle::from(&ca), {
         let actor = req.actor();
         let state = req.state().clone();
 
@@ -2347,7 +2347,7 @@ async fn api_ca_aspas_update_aspa(
     ca: CaHandle,
     customer: Asn,
 ) -> RoutingResult {
-    aa!(req, Permission::ASPAS_UPDATE, Handle::from(&ca), {
+    aa!(req, Permission::AspasUpdate, Handle::from(&ca), {
         let actor = req.actor();
         let state = req.state().clone();
 
@@ -2368,7 +2368,7 @@ async fn api_ca_aspas_delete(
     ca: CaHandle,
     customer: Asn,
 ) -> RoutingResult {
-    aa!(req, Permission::ASPAS_UPDATE, Handle::from(&ca), {
+    aa!(req, Permission::AspasUpdate, Handle::from(&ca), {
         let actor = req.actor();
         let state = req.state().clone();
 
@@ -2381,7 +2381,7 @@ async fn api_ca_aspas_delete(
 
 /// Update the route authorizations for this CA
 async fn api_ca_routes_update(req: Request, ca: CaHandle) -> RoutingResult {
-    aa!(req, Permission::ROUTES_UPDATE, Handle::from(&ca), {
+    aa!(req, Permission::RoutesUpdate, Handle::from(&ca), {
         let actor = req.actor();
         let state = req.state().clone();
 
@@ -2401,7 +2401,7 @@ async fn api_ca_routes_try_update(
     req: Request,
     ca: CaHandle,
 ) -> RoutingResult {
-    aa!(req, Permission::ROUTES_UPDATE, Handle::from(&ca), {
+    aa!(req, Permission::RoutesUpdate, Handle::from(&ca), {
         let actor = req.actor();
         let state = req.state().clone();
 
@@ -2452,7 +2452,7 @@ async fn api_ca_routes_try_update(
 
 /// show the route authorizations for this CA
 async fn api_ca_routes_show(req: Request, ca: CaHandle) -> RoutingResult {
-    aa!(req, Permission::ROUTES_READ, Handle::from(&ca), {
+    aa!(req, Permission::RoutesRead, Handle::from(&ca), {
         match req.state().ca_routes_show(&ca).await {
             Ok(roas) => render_json(roas),
             Err(_) => render_unknown_resource(),
@@ -2466,7 +2466,7 @@ async fn api_ca_routes_analysis(
     path: &mut RequestPath,
     ca: CaHandle,
 ) -> RoutingResult {
-    aa!(req, Permission::ROUTES_ANALYSIS, Handle::from(&ca), {
+    aa!(req, Permission::RoutesAnalysis, Handle::from(&ca), {
         match path.next() {
             Some("full") => {
                 render_json_res(req.state().ca_routes_bgp_analysis(&ca).await)
@@ -2509,7 +2509,7 @@ async fn api_ca_routes_analysis(
 
 async fn api_republish_all(req: Request, force: bool) -> RoutingResult {
     match *req.method() {
-        Method::POST => aa!(req, Permission::CA_ADMIN, {
+        Method::POST => aa!(req, Permission::CaAdmin, {
             render_empty_res(req.state().republish_all(force).await)
         }),
         _ => render_unknown_method(),
@@ -2518,7 +2518,7 @@ async fn api_republish_all(req: Request, force: bool) -> RoutingResult {
 
 async fn api_resync_all(req: Request) -> RoutingResult {
     match *req.method() {
-        Method::POST => aa!(req, Permission::CA_ADMIN, {
+        Method::POST => aa!(req, Permission::CaAdmin, {
             render_empty_res(req.state().cas_repo_sync_all(req.auth_info()))
         }),
         _ => render_unknown_method(),
@@ -2528,7 +2528,7 @@ async fn api_resync_all(req: Request) -> RoutingResult {
 /// Refresh all CAs
 async fn api_refresh_all(req: Request) -> RoutingResult {
     match *req.method() {
-        Method::POST => aa!(req, Permission::CA_ADMIN, {
+        Method::POST => aa!(req, Permission::CaAdmin, {
             render_empty_res(req.state().cas_refresh_all().await)
         }),
         _ => render_unknown_method(),
@@ -2538,7 +2538,7 @@ async fn api_refresh_all(req: Request) -> RoutingResult {
 /// Schedule check suspend for all CAs
 async fn api_suspend_all(req: Request) -> RoutingResult {
     match *req.method() {
-        Method::POST => aa!(req, Permission::CA_ADMIN, {
+        Method::POST => aa!(req, Permission::CaAdmin, {
             render_empty_res(req.state().cas_schedule_suspend_all())
         }),
         _ => render_unknown_method(),
@@ -2618,7 +2618,7 @@ async fn api_ca_rta(
 async fn api_ca_rta_list(req: Request, ca: CaHandle) -> RoutingResult {
     aa!(
         req,
-        Permission::RTA_LIST,
+        Permission::RtaList,
         Handle::from(&ca),
         render_json_res(req.state().rta_list(ca).await)
     )
@@ -2631,7 +2631,7 @@ async fn api_ca_rta_show(
 ) -> RoutingResult {
     aa!(
         req,
-        Permission::RTA_READ,
+        Permission::RtaRead,
         Handle::from(&ca),
         render_json_res(req.state().rta_show(ca, name).await)
     )
@@ -2642,7 +2642,7 @@ async fn api_ca_rta_sign(
     ca: CaHandle,
     name: RtaName,
 ) -> RoutingResult {
-    aa!(req, Permission::RTA_UPDATE, Handle::from(&ca), {
+    aa!(req, Permission::RtaUpdate, Handle::from(&ca), {
         let actor = req.actor();
         let state = req.state().clone();
         match req.json().await {
@@ -2659,7 +2659,7 @@ async fn api_ca_rta_multi_prep(
     ca: CaHandle,
     name: RtaName,
 ) -> RoutingResult {
-    aa!(req, Permission::RTA_UPDATE, Handle::from(&ca), {
+    aa!(req, Permission::RtaUpdate, Handle::from(&ca), {
         let actor = req.actor();
         let state = req.state().clone();
 
@@ -2677,7 +2677,7 @@ async fn api_ca_rta_multi_sign(
     ca: CaHandle,
     name: RtaName,
 ) -> RoutingResult {
-    aa!(req, Permission::RTA_UPDATE, Handle::from(&ca), {
+    aa!(req, Permission::RtaUpdate, Handle::from(&ca), {
         let actor = req.actor();
         let state = req.state().clone();
         match req.json().await {

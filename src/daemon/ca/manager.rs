@@ -625,7 +625,7 @@ impl CaManager {
                 .into_iter()
                 .filter(|handle| {
                     auth.check_permission(
-                        Permission::CA_READ,
+                        Permission::CaRead,
                         Some(&Handle::from(handle))
                     ).is_ok()
                 })
