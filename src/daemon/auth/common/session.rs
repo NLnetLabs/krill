@@ -6,9 +6,9 @@ use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
 use base64::engine::Engine as _;
 use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
-use crate::commons::api::Token;
-use crate::commons::error::Error;
 use crate::commons::KrillResult;
+use crate::commons::api::Token;
+use crate::commons::error::{ApiAuthError, Error};
 use crate::daemon::auth::common::crypt;
 use crate::daemon::auth::common::crypt::{CryptState, NonceState};
 
@@ -88,7 +88,7 @@ struct CachedSession<S> {
 }
 
 pub type EncryptFn = fn(&[u8], &[u8], &NonceState) -> KrillResult<Vec<u8>>;
-pub type DecryptFn = fn(&[u8], &[u8]) -> KrillResult<Vec<u8>>;
+pub type DecryptFn = fn(&[u8], &[u8]) -> Result<Vec<u8>, ApiAuthError>;
 
 /// A short term cache to reduce the impact of session token decryption and
 /// deserialization (e.g. for multiple requests in a short space of time by
@@ -238,7 +238,7 @@ impl<S> LoginSessionCache<S> {
         token: Token,
         key: &CryptState,
         add_to_cache: bool,
-    ) -> KrillResult<ClientSession<S>>
+    ) -> Result<ClientSession<S>, ApiAuthError>
     where S: Clone + DeserializeOwned {
         if let Some(session) = self.lookup_session(&token) {
             trace!("Session cache hit for session id {}", &session.user_id);
@@ -250,7 +250,7 @@ impl<S> LoginSessionCache<S> {
         let bytes = BASE64_ENGINE.decode(token.as_ref().as_bytes()).map_err(
             |err| {
                 debug!("Invalid bearer token: cannot decode: {}", err);
-                Error::ApiInvalidCredentials(
+                ApiAuthError::ApiInvalidCredentials(
                     "Invalid bearer token".to_string(),
                 )
             },
@@ -265,7 +265,7 @@ impl<S> LoginSessionCache<S> {
                         "Invalid bearer token: cannot deserialize: {}",
                         err
                     );
-                    Error::ApiInvalidCredentials(
+                    ApiAuthError::ApiInvalidCredentials(
                         "Invalid bearer token".to_string(),
                     )
                 })?;

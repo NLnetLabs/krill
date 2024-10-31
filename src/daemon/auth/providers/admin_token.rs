@@ -1,13 +1,11 @@
 use std::sync::Arc;
-
+use crate::commons::KrillResult;
+use crate::commons::api::Token;
+use crate::commons::error::{ApiAuthError, Error};
+use crate::commons::util::httpclient;
+use crate::daemon::auth::{AuthInfo, LoggedInUser, Role};
+use crate::daemon::config::Config;
 use crate::daemon::http::{HttpResponse, HyperRequest};
-use crate::{
-    commons::{
-        api::Token, error::Error, util::httpclient,
-        KrillResult,
-    },
-    daemon::{auth::{AuthInfo, LoggedInUser, Role}, config::Config},
-};
 
 // This is NOT an actual relative path to redirect to. Instead it is the path
 // string of an entry in the Vue router routes table to "route" to (in the
@@ -37,7 +35,7 @@ impl AuthProvider {
     pub fn authenticate(
         &self,
         request: &HyperRequest,
-    ) -> KrillResult<Option<AuthInfo>> {
+    ) -> Result<Option<AuthInfo>, ApiAuthError> {
         if log_enabled!(log::Level::Trace) {
             trace!("Attempting to authenticate the request..");
         }
@@ -48,7 +46,7 @@ impl AuthProvider {
                     self.user_id.clone(), self.role.clone()
                 )))
             }
-            Some(_) => Err(Error::ApiInvalidCredentials(
+            Some(_) => Err(ApiAuthError::ApiInvalidCredentials(
                 "Invalid bearer token".to_string(),
             )),
             None => Ok(None),

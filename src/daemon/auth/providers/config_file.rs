@@ -4,11 +4,11 @@ use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
 use base64::engine::Engine as _;
 use unicode_normalization::UnicodeNormalization;
 use crate::commons::KrillResult;
-use crate::commons::util::httpclient;
 use crate::commons::api::Token;
 use crate::commons::error::{ApiAuthError, Error};
+use crate::commons::util::httpclient;
 use crate::constants::{PW_HASH_LOG_N, PW_HASH_P, PW_HASH_R};
-use crate::daemon::auth::{Auth, AuthInfo, LoggedInUser, Permission, RoleMap};
+use crate::daemon::auth::{AuthInfo, LoggedInUser, Permission, RoleMap};
 use crate::daemon::auth::common::crypt;
 use crate::daemon::auth::common::session::{ClientSession, LoginSessionCache};
 use crate::daemon::config::Config;
@@ -66,7 +66,7 @@ impl AuthProvider {
         let auth = String::from_utf8(auth).ok()?;
         let (username, password) = auth.split_once(':')?;
 
-        Some(Auth::UsernameAndPassword {
+        Some(Auth {
             username: username.to_string(),
             password: password.to_string(),
         })
@@ -85,7 +85,7 @@ impl AuthProvider {
     pub fn authenticate(
         &self,
         request: &HyperRequest,
-    ) -> KrillResult<Option<AuthInfo>> {
+    ) -> Result<Option<AuthInfo>, ApiAuthError> {
         if log_enabled!(log::Level::Trace) {
             trace!("Attempting to authenticate the request..");
         }
@@ -122,12 +122,10 @@ impl AuthProvider {
     pub fn login(&self, request: &HyperRequest) -> KrillResult<LoggedInUser> {
         use scrypt::scrypt;
 
-        let (username, password) = match self.get_auth(request) {
-            Some(Auth::UsernameAndPassword { username, password }) => {
-                (username, password)
-            }
-            _ => {
-                trace!("Missing pr incomplete credentials for login attempt");
+        let auth = match self.get_auth(request) {
+            Some(auth) => auth,
+            None => {
+                trace!("Missing or incomplete credentials for login attempt");
                 return Err(Error::ApiInvalidCredentials(
                     "Missing credentials".to_string(),
                 ))
@@ -139,7 +137,7 @@ impl AuthProvider {
         // compared to the known user path and timing differences can aid
         // attackers.
         let (user_password_hash, user_salt) =
-            match self.users.get(&username) {
+            match self.users.get(&auth.username) {
                 Some(user) => {
                     (user.password_hash.to_string(), user.salt.clone())
                 }
@@ -149,8 +147,8 @@ impl AuthProvider {
                 ),
             };
 
-        let username = username.trim().nfkc().collect::<String>();
-        let password = password.trim().nfkc().collect::<String>();
+        let username = auth.username.trim().nfkc().collect::<String>();
+        let password = auth.password.trim().nfkc().collect::<String>();
 
         // hash twice with two different salts
         // legacy hashing strategy to be compatible with lagosta
@@ -351,3 +349,10 @@ struct SessionSecret {
 type SessionCache = LoginSessionCache<SessionSecret>;
 type Session = ClientSession<SessionSecret>;
 
+
+//------------ Auth ----------------------------------------------------------
+
+struct Auth {
+    username: String,
+    password: String,
+}

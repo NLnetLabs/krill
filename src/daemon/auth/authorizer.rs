@@ -16,12 +16,13 @@ use super::providers::admin_token;
 #[cfg(feature = "multi-user")]
 use super::providers::{config_file, openid_connect};
 
+
 //------------ AuthProvider --------------------------------------------------
 
 /// An AuthProvider authenticates and authorizes a given token.
 ///
 /// An AuthProvider is expected to configure itself using the global Krill
-/// [`CONFIG`] object. This avoids propagation of potentially many provider
+/// from configuration. This avoids propagation of potentially many provider
 /// specific configuration values from the calling code to the provider
 /// implementation.
 ///
@@ -32,7 +33,10 @@ use super::providers::{config_file, openid_connect};
 ///  * discovery      - as an interactive client where should I send my users
 ///    to login and logout?
 ///  * introspection  - who is the currently "logged in" user?
-pub enum AuthProvider {
+///
+/// This type is a wrapper around the available backend specific auth
+/// providers that can be found in the [super::providers] module.
+enum AuthProvider {
     Token(admin_token::AuthProvider),
 
     #[cfg(feature = "multi-user")]
@@ -63,10 +67,19 @@ impl From<openid_connect::AuthProvider> for AuthProvider {
 }
 
 impl AuthProvider {
+    /// Authenticate a user from information included in an HTTP request.
+    ///
+    /// Returns `Ok(None)` to indicate that no authentication information
+    /// was present in the request and the request should thus be treated
+    /// as not anonymous.
+    ///
+    /// If authentication succeeded, returns the auth info. If it failed,
+    /// it either returns an auth info created via [`AuthInfo::error`] or
+    /// just a plain error which the caller needs to convert.
     pub async fn authenticate(
         &self,
         request: &HyperRequest,
-    ) -> KrillResult<Option<AuthInfo>> {
+    ) -> Result<Option<AuthInfo>, ApiAuthError> {
         match &self {
             AuthProvider::Token(provider) => provider.authenticate(request),
             #[cfg(feature = "multi-user")]
@@ -80,6 +93,7 @@ impl AuthProvider {
         }
     }
 
+    /// Returns an HTTP text response with the login URL.
     pub async fn get_login_url(&self) -> KrillResult<HttpResponse> {
         match &self {
             AuthProvider::Token(provider) => provider.get_login_url(),
@@ -92,6 +106,7 @@ impl AuthProvider {
         }
     }
 
+    /// Establishes a client session from credentials in an HTTP request.
     pub async fn login(
         &self,
         request: &HyperRequest,
@@ -107,6 +122,7 @@ impl AuthProvider {
         }
     }
 
+    /// Returns an HTTP text response with the logout URL.
     pub async fn logout(
         &self,
         request: &HyperRequest,
@@ -122,7 +138,10 @@ impl AuthProvider {
         }
     }
 
-    /// Sweeps out session information.
+    /// Sweeps out client session information.
+    ///
+    /// This method should be called regularly to remove expired sessions
+    /// from the cache.
     pub fn sweep(&self) -> KrillResult<()> {
         match self {
             AuthProvider::Token(_) => Ok(()),
@@ -148,28 +167,23 @@ impl AuthProvider {
 
 //------------ Authorizer ----------------------------------------------------
 
-/// This type is responsible for checking authorizations when the API is
-/// accessed.
+/// Checks authorizations when the API is accessed.
 pub struct Authorizer {
+    /// The auth provider configured by the user.
     primary_provider: AuthProvider,
+
+    /// A fallback token auth provider when it isn’t the primary provider.
+    ///
+    /// This is necessary to support the command line client which only
+    /// supports admin token authentication.
     legacy_provider: Option<admin_token::AuthProvider>,
 }
 
 impl Authorizer {
     /// Creates an instance of the Authorizer.
     ///
-    /// The given [AuthProvider] will be used to verify API access requests,
-    /// to handle direct login attempts (if supported) and to determine
-    /// the URLs to pass on to clients (e.g. Lagosta) that want to know
-    /// where to direct end-users to login and logout.
-    ///
-    /// # Legacy support for krillc
-    ///
-    /// As krillc only supports [admin_token::AuthProvider]
-    /// based authentication, if `P` an instance of some other provider, an
-    /// instance of [admin_token::AuthProvider] will also be created. This
-    /// will be used as a fallback when Lagosta is configured to use some
-    /// other authentication provider.
+    /// The authorizer will be created according to information provided via
+    /// `config`.
     pub fn new(
         config: Arc<Config>,
     ) -> KrillResult<Self> {
@@ -200,19 +214,30 @@ impl Authorizer {
     }
 
     /// Authenticates an HTTP request.
+    ///
+    /// The method will always return authentication information.
+    ///
+    /// If there was no authentiation information in the request, the returned
+    /// auth info will indicate an anonymous user which will fail all
+    /// permission checks with “insufficient permissions.”
+    ///
+    /// If authentication failed, the returned auth info will also indicate
+    /// an anonymous user but it will fail permission checks with appropriate 
+    /// error information.
     pub async fn authenticate_request(
         &self, request: &HyperRequest
     ) -> AuthInfo {
         trace!("Determining actor for request {:?}", &request);
 
-        // Try the legacy provider first, if any
+        // Try the legacy provider first, if any.
         let authenticate_res = match &self.legacy_provider {
             Some(provider) => provider.authenticate(request),
             None => Ok(None),
         };
 
         // Try the real provider if we did not already successfully
-        // authenticate
+        // authenticate. This ignores any possible errors thrown by the
+        // legacy provider.
         let authenticate_res = match authenticate_res {
             Ok(Some(res)) => Ok(Some(res)),
             _ => self.primary_provider.authenticate(request).await,
@@ -235,13 +260,12 @@ impl Authorizer {
         res
     }
 
-    /// Return the URL at which an end-user should be directed to login with
-    /// the configured provider.
+    /// Returns an HTTP text response with the login URL.
     pub async fn get_login_url(&self) -> KrillResult<HttpResponse> {
         self.primary_provider.get_login_url().await
     }
 
-    /// Establish an authenticated session from credentials in an HTTP request.
+    /// Establishes a client session from credentials in an HTTP request.
     pub async fn login(
         &self, request: &HyperRequest
     ) -> KrillResult<LoggedInUser> {
@@ -256,8 +280,7 @@ impl Authorizer {
         Ok(user)
     }
 
-    /// Return the URL at which an end-user should be directed to logout with
-    /// the configured provider.
+    /// Returns an HTTP text response with the logout URL.
     pub async fn logout(
         &self,
         request: &HyperRequest,
@@ -266,6 +289,9 @@ impl Authorizer {
     }
 
     /// Sweeps out session information.
+    ///
+    /// This method should be called regularly to remove expired sessions
+    /// from the cache.
     pub fn sweep(&self) -> KrillResult<()> {
         self.primary_provider.sweep()
     }
@@ -301,8 +327,8 @@ pub struct AuthInfo {
     /// The actor for the authenticated user.
     actor: Actor,
 
-    /// Optional authentication information to be included in a response.
-    new_auth: Option<Auth>,
+    /// Optional updated bearer token.
+    new_token: Option<Token>,
 
     /// Access permissions.
     ///
@@ -312,49 +338,65 @@ pub struct AuthInfo {
 }
 
 impl AuthInfo {
+    /// Creates auth info for the given user ID and role.
     pub fn user(
         user_id: impl Into<Arc<str>>,
         role: Arc<Role>,
     ) -> Self {
         Self {
             actor: Actor::user(user_id),
-            new_auth: None,
+            new_token: None,
             permissions: Ok(role),
         }
     }
 
+    /// Creates auth info for the testbed actor.
     pub fn testbed() -> Self {
         Self::user("testbed", Role::testbed().into())
     }
 
+    /// Creates auth info for the anonymous actor.
+    ///
+    /// This actor fails all permission checks with insufficient permissions.
     fn anonymous() -> Self {
         Self {
             actor: Actor::anonymous(),
-            new_auth: None,
+            new_token: None,
             permissions: Ok(Role::anonymous().into()),
         }
     }
 
-    fn error(err: impl Into<ApiAuthError>) -> Self {
+    /// Creates auth info for an authentication failure.
+    fn error(err: ApiAuthError) -> Self {
         Self {
             actor: Actor::anonymous(),
-            new_auth: None,
-            permissions: Err(err.into())
+            new_token: None,
+            permissions: Err(err)
         }
     }
 
-    pub fn set_new_auth(&mut self, new_auth: Auth) {
-        self.new_auth = Some(new_auth);
+    /// Sets the updated bearer token.
+    ///
+    /// If set, this new token needs to be included in an HTTP response.
+    pub fn set_new_token(&mut self, new_token: Token) {
+        self.new_token = Some(new_token);
     }
 
+    /// Takes out an updated bearer token if presnet
+    pub fn take_new_token(&mut self) -> Option<Token> {
+        self.new_token.take()
+    }
+
+    /// Returns a reference to the actor.
     pub fn actor(&self) -> &Actor {
         &self.actor
     }
 
-    pub fn take_new_auth(&mut self) -> Option<Auth> {
-        self.new_auth.take()
-    }
-
+    /// Checks permissions for an operation.
+    ///
+    /// Returns an authentication error if either the request was not
+    /// authenticated or it was but the authenticated user does not have
+    /// sufficient permissions.
     pub fn check_permission(
         &self,
         permission: Permission,
@@ -373,49 +415,6 @@ impl AuthInfo {
     }
 }
 
-
-//------------ Auth ----------------------------------------------------------
-
-#[derive(Clone, Debug)]
-pub enum Auth {
-    Bearer(Token),
-    AuthorizationCode {
-        code: Token,
-        state: String,
-        nonce: String,
-        csrf_token_hash: String,
-    },
-    UsernameAndPassword {
-        username: String,
-        password: String,
-    },
-}
-
-impl Auth {
-    pub fn bearer(token: Token) -> Self {
-        Auth::Bearer(token)
-    }
-    pub fn authorization_code(
-        code: Token,
-        state: String,
-        nonce: String,
-        csrf_token_hash: String,
-    ) -> Self {
-        Auth::AuthorizationCode {
-            code,
-            state,
-            nonce,
-            csrf_token_hash,
-        }
-    }
-
-    pub fn username_and_password_hash(
-        username: String,
-        password: String,
-    ) -> Self {
-        Auth::UsernameAndPassword { username, password }
-    }
-}
 
 //------------ Handle --------------------------------------------------------
 

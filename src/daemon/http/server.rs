@@ -44,7 +44,7 @@ use crate::{
         KRILL_VERSION_MINOR, KRILL_VERSION_PATCH,
     },
     daemon::{
-        auth::{Auth, Handle, Permission},
+        auth::{Handle, Permission},
         ca::CaStatus,
         config::Config,
         http::{
@@ -349,7 +349,7 @@ async fn map_requests(
 
     // Save any updated auth details, e.g. if an OpenID Connect token needed
     // refreshing.
-    let new_auth = req.auth_info_mut().take_new_auth();
+    let new_token = req.auth_info_mut().take_new_token();
 
     // We used to use .or_else() here but that causes a large recursive call
     // tree due to these calls being to async functions, large enough with the
@@ -401,7 +401,7 @@ async fn map_requests(
 
     // Augment the response with any updated auth details that were determined
     // above.
-    let res = add_new_auth_to_response(res, new_auth);
+    let res = add_new_token_to_response(res, new_token);
 
     // Log the request and the response.
     logger.end(res.as_ref());
@@ -1170,11 +1170,11 @@ fn add_authorization_headers_to_response(
     }
 }
 
-fn add_new_auth_to_response(
+fn add_new_token_to_response(
     res: Result<HttpResponse, Error>,
-    opt_auth: Option<Auth>,
+    opt_token: Option<Token>,
 ) -> Result<HttpResponse, Error> {
-    if let Some(Auth::Bearer(token)) = opt_auth {
+    if let Some(token) = opt_token {
         res.map(|ok_res| add_authorization_headers_to_response(ok_res, token))
     } else {
         res

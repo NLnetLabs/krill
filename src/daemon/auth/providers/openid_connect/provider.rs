@@ -58,7 +58,7 @@ use crate::daemon::http::{HttpResponse, HyperRequest};
 use crate::{
     commons::{
         api::Token,
-        error::Error,
+        error::{ApiAuthError, Error},
         util::{httpclient, sha256},
         KrillResult,
     },
@@ -76,7 +76,7 @@ use crate::{
                     WantedMeta,
                 },
             },
-            Auth, AuthInfo, LoggedInUser, Permission,
+            AuthInfo, LoggedInUser, Permission,
         },
         config::Config,
         http::auth::{url_encode, AUTH_CALLBACK_ENDPOINT},
@@ -638,7 +638,7 @@ impl AuthProvider {
     async fn try_refresh_token(
         &self,
         session: &Session,
-    ) -> Result<Auth, CoreErrorResponseType> {
+    ) -> Result<Token, CoreErrorResponseType> {
         let refresh_token =
             &session.secrets.refresh_token.as_ref().ok_or_else(|| {
                 CoreErrorResponseType::Extension(
@@ -682,7 +682,7 @@ impl AuthProvider {
                     Ok(new_token) => {
                         // The new token was successfully acquired from the OpenID Connect Provider,
                         // and early returned.
-                        Ok(Auth::Bearer(new_token))
+                        Ok(new_token)
                     }
                     Err(err) => Err(CoreErrorResponseType::Extension(format!(
                         "Internal error: Error while encoding the refreshed token {}",
@@ -838,12 +838,12 @@ impl AuthProvider {
                             self.extract_cookie(request, CSRF_COOKIE_NAME)
                         {
                             trace!("OpenID Connect: Detected RFC-6749 section 4.1.2 redirected Authorization Response");
-                            return Some(Auth::authorization_code(
-                                Token::from(code),
+                            return Some(Auth {
+                                code: Token::from(code),
                                 state,
                                 nonce,
                                 csrf_token_hash,
-                            ));
+                            });
                         } else {
                             debug!("OpenID Connect: Ignoring potential RFC-6749 section 4.1.2 redirected Authorization Response due to missing CSRF token hash cookie.");
                         }
@@ -1128,7 +1128,7 @@ impl AuthProvider {
     pub async fn authenticate(
         &self,
         request: &HyperRequest,
-    ) -> KrillResult<Option<AuthInfo>> {
+    ) -> Result<Option<AuthInfo>, ApiAuthError> {
         trace!("Attempting to authenticate the request..");
 
         self.initialize_connection_if_needed().await.map_err(|err| {
@@ -1169,7 +1169,7 @@ impl AuthProvider {
                         // with an error that indicates the user needs to
                         // login again.
                         if session.secrets.refresh_token.is_none() {
-                            return Err(Error::ApiAuthSessionExpired(
+                            return Err(ApiAuthError::ApiAuthSessionExpired(
                                 "No token to be refreshed".to_string(),
                             ));
                         }
@@ -1178,13 +1178,13 @@ impl AuthProvider {
 
                 // Token needs refresh and we have a refresh token, try to
                 // refresh
-                let new_auth = match self.try_refresh_token(&session).await {
-                    Ok(auth) => {
+                let new_token = match self.try_refresh_token(&session).await {
+                    Ok(token) => {
                         trace!(
                             "OpenID Connect: Successfully refreshed token for user \"{}\"",
                             session.user_id
                         );
-                        auth
+                        token
                     }
                     Err(err) => {
                         trace!("OpenID Connect: RFC 6749 5.2 Error response returned...");
@@ -1202,7 +1202,7 @@ impl AuthProvider {
                                     "OpenID Connect: invalid_grant {:?}",
                                     err
                                 );
-                                return Err(Error::ApiInvalidCredentials(
+                                return Err(ApiAuthError::ApiInvalidCredentials(
                                     "Unable to extend login session: your session has been terminated.".to_string(),
                                 ));
                             }
@@ -1212,7 +1212,7 @@ impl AuthProvider {
                                     "OpenID Connect: RFC 6749 5.2 {:?}",
                                     err
                                 );
-                                return Err(Error::ApiAuthPermanentError(
+                                return Err(ApiAuthError::ApiAuthPermanentError(
                                     "Unable to extend login session: the provider rejected the request.".to_string(),
                                 ));
                             }
@@ -1228,7 +1228,7 @@ impl AuthProvider {
                                     "OpenID Connect: RFC 6749 5.2 {:?}",
                                     err
                                 );
-                                return Err(Error::ApiInsufficientRights(
+                                return Err(ApiAuthError::ApiInsufficientRights(
                                     "Unable to extend login session: the authorization was revoked for this user, client or action.".to_string(),
                                 ));
                             }
@@ -1247,13 +1247,13 @@ impl AuthProvider {
                                     "temporarily_unavailable"
                                     | "server_error" => {
                                         warn!("OpenID Connect: RFC 6749 5.2 {:?}", err);
-                                        return Err(Error::ApiAuthTransientError(
+                                        return Err(ApiAuthError::ApiAuthTransientError(
                                         "Unable to extend login session: could not contact the provider".to_string(),
                                     ));
                                     }
                                     _ => {
                                         warn!("OpenID Connect: RFC 6749 5.2 unknown error {:?}", err);
-                                        return Err(Error::ApiAuthTransientError(
+                                        return Err(ApiAuthError::ApiAuthTransientError(
                                         "Unable to extend login session: unknown error".to_string(),
                                     ));
                                     }
@@ -1264,7 +1264,7 @@ impl AuthProvider {
                 };
 
                 let mut auth = self.auth_from_session(&session)?;
-                auth.set_new_auth(new_auth);
+                auth.set_new_token(new_token);
                 Ok(Some(auth))
             }
             _ => Ok(None),
@@ -1529,7 +1529,7 @@ impl AuthProvider {
             // OpenID Connect Authorization Code Flow
             // See: https://tools.ietf.org/html/rfc6749#section-4.1
             //      https://openid.net/specs/openid-connect-core-1_0.html#CodeFlowSteps
-            Some(Auth::AuthorizationCode {
+            Some(Auth {
                 code,
                 state,
                 nonce,
@@ -1708,7 +1708,7 @@ impl AuthProvider {
                 Ok(LoggedInUser { token, id, })
             }
 
-            _ => Err(Error::ApiInvalidCredentials(
+            None => Err(Error::ApiInvalidCredentials(
                 "Request is not RFC-6749 section 4.1.2 compliant".to_string(),
             )),
         }
@@ -1849,36 +1849,18 @@ impl AuthProvider {
 }
 
 
-//------------ Helper Functions ----------------------------------------------
+//------------ Auth ----------------------------------------------------------
 
-/*
-fn with_default_claims(
-    claims: &Option<ConfigAuthOpenIDConnectClaims>,
-) -> ConfigAuthOpenIDConnectClaims {
-    let mut claims = match claims {
-        Some(claims) => claims.clone(),
-        None => ConfigAuthOpenIDConnectClaims::new(),
-    };
-
-    claims
-        .entry("id".into())
-        .or_insert(ConfigAuthOpenIDConnectClaim {
-            source: None,
-            jmespath: Some("email".to_string()),
-            dest: None,
-        });
-
-    claims
-        .entry("role".into())
-        .or_insert(ConfigAuthOpenIDConnectClaim {
-            source: None,
-            jmespath: Some("role".to_string()),
-            dest: None,
-        });
-
-    claims
+#[derive(Clone, Debug)]
+struct Auth {
+    code: Token,
+    state: String,
+    nonce: String,
+    csrf_token_hash: String,
 }
-*/
+
+
+//------------ Helper Functions ----------------------------------------------
 
 // Based on: https://github.com/ramosbugs/openidconnect-rs/blob/main/examples/google.rs#L38
 pub fn stringify_cause_chain<F: std::error::Error>(fail: F) -> String {
