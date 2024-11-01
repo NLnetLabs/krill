@@ -316,10 +316,11 @@ mod tests {
 
         // Create a new cache whose items are elligible for eviction after one
         // second and which does no actual encryption or decryption.
-        let cache = LoginSessionCache::new()
-            .with_ttl(1)
-            .with_encrypter(|_, v, _| Ok(v.to_vec()))
-            .with_decrypter(|_, v| Ok(v.to_vec()));
+        let mut cache = LoginSessionCache::new();
+        cache.ttl_secs = 1;
+        cache.encrypt_fn = |_, v, _| Ok(v.to_vec());
+        cache.decrypt_fn = |_, v| Ok(v.to_vec());
+        let cache = cache;
 
         // Add an item to the cache and verify that the cache now has 1 item
         let item1_token = cache

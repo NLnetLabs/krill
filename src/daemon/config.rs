@@ -142,16 +142,6 @@ impl ConfigDefaults {
         }
     }
 
-    #[cfg(feature = "multi-user")]
-    pub fn auth_policies() -> Vec<PathBuf> {
-        vec![]
-    }
-
-    #[cfg(feature = "multi-user")]
-    pub fn auth_private_attributes() -> Vec<String> {
-        vec![]
-    }
-
     pub fn ca_refresh_seconds() -> u32 {
         24 * 3600 // 24 hours
     }
@@ -563,14 +553,6 @@ pub struct Config {
 
     #[serde(default = "ConfigDefaults::auth_type")]
     pub auth_type: AuthType,
-
-    #[cfg(feature = "multi-user")]
-    #[serde(default = "ConfigDefaults::auth_policies")]
-    pub auth_policies: Vec<PathBuf>,
-
-    #[cfg(feature = "multi-user")]
-    #[serde(default = "ConfigDefaults::auth_private_attributes")]
-    pub auth_private_attributes: Vec<String>,
 
     #[cfg(feature = "multi-user")]
     pub auth_users: Option<ConfigAuthUsers>,
@@ -1129,10 +1111,6 @@ impl Config {
         let auth_type = AuthType::AdminToken;
         let admin_token = Token::from("secret");
         #[cfg(feature = "multi-user")]
-        let auth_policies = vec![];
-        #[cfg(feature = "multi-user")]
-        let auth_private_attributes = vec![];
-        #[cfg(feature = "multi-user")]
         let auth_users = None;
         #[cfg(feature = "multi-user")]
         let auth_openidconnect = None;
@@ -1258,10 +1236,6 @@ impl Config {
             syslog_facility,
             admin_token,
             auth_type,
-            #[cfg(feature = "multi-user")]
-            auth_policies,
-            #[cfg(feature = "multi-user")]
-            auth_private_attributes,
             #[cfg(feature = "multi-user")]
             auth_users,
             #[cfg(feature = "multi-user")]
