@@ -1106,7 +1106,15 @@ impl AuthProvider {
     ) -> KrillResult<AuthInfo> {
         Ok(AuthInfo::user(
             session.user_id.clone(),
-            self.config.auth_roles.get(&session.secrets.role)?
+            self.config.auth_roles.get(&session.secrets.role).ok_or_else(|| {
+                ApiAuthError::ApiAuthPermanentError(
+                    format!(
+                        "user '{}' with undefined role '{}' \
+                        not caught during login",
+                        session.user_id, session.secrets.role,
+                    )
+                )
+            })?
         ))
     }
 }
@@ -1657,7 +1665,17 @@ impl AuthProvider {
                 let id = claims.extract_id()?;
                 let role_name = claims.extract_role()?;
 
-                let role = self.config.auth_roles.get(&role_name)?;
+                let role = self.config.auth_roles.get(
+                    &role_name
+                ).ok_or_else(|| {
+                    let reason = format!(
+                        "Login denied for user '{}': \
+                         user is assigned undefined role '{}'.",
+                         id, role_name
+                    );
+                    warn!("{}", reason);
+                    Error::ApiInsufficientRights(reason)
+                })?;
 
                 // Step 4 1/2: Check that the user is allowed to log in.
                 if !role.is_allowed(Permission::Login, None) {

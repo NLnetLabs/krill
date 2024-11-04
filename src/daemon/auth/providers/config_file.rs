@@ -1,3 +1,5 @@
+//! Auth provider using user information from the configuration.
+
 use std::collections::HashMap;
 use std::sync::Arc;
 use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
@@ -20,19 +22,35 @@ use crate::daemon::http::{HttpResponse, HyperRequest};
 /// The location of the login page in Krill UI.
 const UI_LOGIN_ROUTE_PATH: &str = "/login?withId=true";
 
+/// A password hash used to prolong operation when a user doesn’t exist.
+const FAKE_PASSWORD_HASH: &str = "66616B652070617373776F72642068617368";
+
+/// A salt value used to prolong operation when a user doesn’t exist.
+const FAKE_SALT: &str = "66616B652073616C74";
+
 
 //------------ AuthProvider --------------------------------------------------
 
+/// The config file auth provider.
+///
+/// This auth provider uses user and role information provided via the Krill
+/// config and authenticates requests using HTTP Basic Authorization headers.
 pub struct AuthProvider {
+    /// The user directory.
     users: HashMap<String, UserDetails>,
+
+    /// The role directory.
     roles: Arc<RoleMap>,
+
+    /// The session key for encrypting client session information.
     session_key: crypt::CryptState,
+
+    /// The client session cache.
     session_cache: SessionCache,
-    fake_password_hash: String,
-    fake_salt: String,
 }
 
 impl AuthProvider {
+    /// Creates an auth provider from the given config.
     pub fn new(
         config: &Config,
     ) -> KrillResult<Self> {
@@ -47,8 +65,6 @@ impl AuthProvider {
             roles,
             session_key,
             session_cache: SessionCache::new(),
-            fake_password_hash: hex::encode("fake password hash"),
-            fake_salt: hex::encode("fake salt"),
         })
     }
 
@@ -77,6 +93,14 @@ impl AuthProvider {
     ) -> Result<AuthInfo, ApiAuthError> {
         self.roles.get(&session.secrets.role).map(|role| {
             AuthInfo::user(session.user_id.clone(), role)
+        }).ok_or_else(|| {
+            ApiAuthError::ApiAuthPermanentError(
+                format!(
+                    "user '{}' with undefined role '{}' \
+                    not caught by config check",
+                    session.user_id, session.secrets.role
+                )
+            )
         })
     }
 }
@@ -139,12 +163,9 @@ impl AuthProvider {
         let (user_password_hash, user_salt) =
             match self.users.get(&auth.username) {
                 Some(user) => {
-                    (user.password_hash.to_string(), user.salt.clone())
+                    (user.password_hash.as_ref(), user.salt.as_ref())
                 }
-                None => (
-                    self.fake_password_hash.clone(),
-                    self.fake_salt.clone(),
-                ),
+                None => (FAKE_PASSWORD_HASH, FAKE_SALT),
             };
 
         let username = auth.username.trim().nfkc().collect::<String>();
@@ -206,7 +227,15 @@ impl AuthProvider {
         };
 
         // Check that the user is allowed to log in.
-        let role = self.roles.get(&user.role)?;
+        let role = self.roles.get(&user.role).ok_or_else(|| {
+            ApiAuthError::ApiAuthPermanentError(
+                format!(
+                    "user '{}' with undefined role '{}' \
+                    not caught by config check",
+                    username, user.role,
+                )
+            )
+        })?;
 
         if !role.is_allowed(Permission::Login, None) {
             let reason = format!(

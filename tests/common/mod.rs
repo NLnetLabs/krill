@@ -128,10 +128,6 @@ impl TestConfig {
         let auth_type = AuthType::AdminToken;
         let admin_token = Token::from("secret");
         #[cfg(feature = "multi-user")]
-        let auth_policies = vec![];
-        #[cfg(feature = "multi-user")]
-        let auth_private_attributes = vec![];
-        #[cfg(feature = "multi-user")]
         let auth_users = None;
         #[cfg(feature = "multi-user")]
         let auth_openidconnect = None;
@@ -266,10 +262,6 @@ impl TestConfig {
             syslog_facility,
             admin_token,
             auth_type,
-            #[cfg(feature = "multi-user")]
-            auth_policies,
-            #[cfg(feature = "multi-user")]
-            auth_private_attributes,
             #[cfg(feature = "multi-user")]
             auth_users,
             #[cfg(feature = "multi-user")]

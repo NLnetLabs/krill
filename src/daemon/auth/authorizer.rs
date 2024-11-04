@@ -65,7 +65,7 @@ impl From<openid_connect::AuthProvider> for AuthProvider {
 }
 
 impl AuthProvider {
-    /// Authenticate a user from information included in an HTTP request.
+    /// Authenticates a user from information included in an HTTP request.
     ///
     /// Returns `Ok(None)` to indicate that no authentication information
     /// was present in the request and the request should thus be treated
