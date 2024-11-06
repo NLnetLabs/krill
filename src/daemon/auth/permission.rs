@@ -96,7 +96,7 @@ define_permission! {
 #[serde(try_from = "&str")]
 pub enum ConfPermission {
     Single(Permission),
-    Any
+    Any,
     Read,
     Update,
 }
@@ -110,7 +110,6 @@ impl ConfPermission {
             Self::Any => PermissionSet::ANY,
             Self::Read => PermissionSet::CONF_READ,
             Self::Update => PermissionSet::CONF_UPDATE,
-            Self::Delete => PermissionSet::CONF_DELETE,
         };
         set.add_set(self_set)
     }
