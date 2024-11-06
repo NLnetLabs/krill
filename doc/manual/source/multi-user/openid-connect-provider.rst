@@ -56,7 +56,8 @@ From the `OpenID Connect FAQ <https://openid.net/connect/faq/>`_:
   users’ accounts for their own gain.*
 
 OpenID Connect takes the lessons learned from earlier identity protocols
-and improves on them. It is `widely implemented <https://openid.net/developers/certified/>`_
+and improves on them. It is
+`widely implemented <https://openid.net/developers/certified/>`_
 and deployed, and for situations where the primary identity provider does
 not implement OpenID Connect there are OpenID Connect providers that can
 act as a bridge to systems that implement other identity protocols.
@@ -89,8 +90,8 @@ these topics).
 The user experience
 """""""""""""""""""
 
-When an end user visits the Krill website in their browser they will be
-redirected to the login page of the OpenID Connect provider. This is
+When an end user visits the Krill user interface in their browser they will
+be redirected to the login page of the OpenID Connect provider. This is
 **NOT** part of Krill.
 
 For example, when logging in to a Krill instance connected to the OpenID
@@ -130,13 +131,15 @@ What the user doesn't see, except perhaps if their network connection is
 very slow, is that there are "hidden" intermediate steps occuring in the
 login flow, between the browser and Krill and between Krill and the OpenID
 Connect provider. These steps implement the OpenID Connect `"Authorizaton
-Code Flow" <https://openid.net/specs/openid-connect-core-1_0.html#CodeFlowAuth>`_.
+Code Flow"
+<https://openid.net/specs/openid-connect-core-1_0.html#CodeFlowAuth>`_.
 
 If the user logged in correctly at the OpenID Connect provider login page
 and Krill was correctly registered with the provider and the provider was
 correctly setup for Krill, then Krill will receive a temporary Authorization
-Code which it exchanges for an OAuth 2.0 `Access Token <https://www.oauth.com/oauth2-servers/access-tokens/>`_
-(and maybe also an OAuth 2.0 Refresh Token) and an OpenID Connect ID Token.
+Code which it exchanges for an OAuth 2.0 `Access Token
+<https://www.oauth.com/oauth2-servers/access-tokens/>`_ (and maybe also an
+OAuth 2.0 Refresh Token) and an OpenID Connect ID Token.
 
 The ID Token includes so-called OAuth 2.0 **claims**, metadata about the
 user logging in. These claims are the key to whether or not Krill is able
@@ -146,29 +149,41 @@ to login.
 Known limitations
 -----------------
 
-OpenID Connect Users avoid the problems with :ref:`Config File Users <doc_krill_multi_user_config_file_provider>`
+OpenID Connect Users avoid the problems with :ref:`Config File Users
+<doc_krill_multi_user_config_file_provider>`
 but require more effort to setup and maintain:
 
 - Requires operating another service or using a 3rd party service.
 - Confguring Krill and the OpenID Connect provider is more involved than
-  setting up :ref:`Config File Users <doc_krill_multi_user_config_file_provider>`.
+  setting up :ref:`Config File Users
+  <doc_krill_multi_user_config_file_provider>`.
 - If Krill cannot contact the OpenID Connect provider, users will be
   unable to login to Krill with their OpenID Connect credentials. It will
   however still be possible to authenticate with Krill using its secret
   token.
 
-.. warning:: If you encounter HTTP 502 Bad Gateway errors from your HTTP proxy
-             in front of Krill when logging in, or login loops where you are taken
-             back to the OpenID Connect provider login page but the Krill logs show
-             a successful login, you may need to increase the HTTP request and/or
-             response header buffer sizes used by your proxy.
+.. warning:: If you encounter HTTP 502 Bad Gateway errors from your HTTP
+             proxy in front of Krill when logging in, or login loops where
+             you are taken back to the OpenID Connect provider login page but
+             the Krill logs show a successful login, you may need to increase
+             the HTTP request and/or response header buffer sizes used by
+             your proxy.
              
-             With NGINX this can be done by increasing settings such as `proxy_buffer_size <http://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_buffer_size>`_, 
-             `proxy_buffers <http://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_buffers>`_, `large_client_header_buffers <http://nginx.org/en/docs/http/ngx_http_core_module.html#large_client_header_buffers>`_ (or `http2_max_field_size <https://nginx.org/en/docs/http/ngx_http_v2_module.html#http2_max_field_size>`_ and 
-             `http2_max_header_size <https://nginx.org/en/docs/http/ngx_http_v2_module.html#http2_max_header_size>`_
-             before NGINX v1.19.7). Thanks to GitHub user `racompton <https://github.com/racompton>`_ for the ``large_client_header_buffers`` tip!
-             If using Kubernetes use the equivalent NGINX ingress controller ConfigMap
-             settings, e.g. `http2-max-field-size <https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap/#http2-max-field-size>`_. Thanks to GitHub user `TheEnbyperor <https://github.com/TheEnbyperor>`_ for the HTTP/2 and Kubernetes tips!
+             With NGINX this can be done by increasing settings such as
+             `proxy_buffer_size <http://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_buffer_size>`_,
+             `proxy_buffers <http://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_buffers>`_,
+             `large_client_header_buffers <http://nginx.org/en/docs/http/ngx_http_core_module.html#large_client_header_buffers>`_
+             (or `http2_max_field_size <https://nginx.org/en/docs/http/ngx_http_v2_module.html#http2_max_field_size>`_
+             and `http2_max_header_size <https://nginx.org/en/docs/http/ngx_http_v2_module.html#http2_max_header_size>`_
+             before NGINX v1.19.7). Thanks to GitHub user
+             `racompton <https://github.com/racompton>`_ for the
+             ``large_client_header_buffers`` tip!
+             If using Kubernetes use the equivalent NGINX ingress controller
+             ConfigMap settings, e.g.
+             `http2-max-field-size <https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap/#http2-max-field-size>`_.
+             Thanks to GitHub user
+             `TheEnbyperor <https://github.com/TheEnbyperor>`_ for the HTTP/2
+             and Kubernetes tips!
 
              These issues occur because the size of the HTTP request &
              response headers on login to Krill when using OpenID Connect
@@ -183,19 +198,30 @@ online services that you can create an account with.
 
 Any OpenID Connect provider that you choose must implement the following standards:
 
-- `OpenID Connect Core 1.0 <https://openid.net/specs/openid-connect-core-1_0.html>`_
-- `OpenID Connect Discovery 1.0 <https://openid.net/specs/openid-connect-discovery-1_0.html>`_
-- `OpenID Connect RP-Initiated Logout 1.0 <https://openid.net/specs/openid-connect-rpinitiated-1_0.html>`_ *(optional)*
-- `RFC 7009 OAuth 2.0 Token Revocation <https://tools.ietf.org/html/rfc7009>`_ *(optional)*
+- `OpenID Connect Core 1.0
+  <https://openid.net/specs/openid-connect-core-1_0.html>`_
+- `OpenID Connect Discovery 1.0
+  <https://openid.net/specs/openid-connect-discovery-1_0.html>`_
+- `OpenID Connect RP-Initiated Logout 1.0
+  <https://openid.net/specs/openid-connect-rpinitiated-1_0.html>`_
+  *(optional)*
+- `RFC 7009 OAuth 2.0 Token Revocation
+  <https://tools.ietf.org/html/rfc7009>`_ *(optional)*
 
-Krill has been tested with the following OpenID Connect providers (in alphabetical order):
+Krill has been tested with the following OpenID Connect providers (in
+alphabetical order):
 
-- `Amazon Cognito <https://docs.aws.amazon.com/cognito/latest/developerguide/open-id.html>`_
-- `Keycloak <https://www.keycloak.org/docs/latest/server_admin/index.html#oidc-clients>`_
-- `Microsoft Azure Active Directory <https://docs.microsoft.com/en-us/azure/active-directory/fundamentals/auth-oidc>`_
-- `Micro Focus NetIQ Access Manager 4.5 <https://www.netiq.com/documentation/access-manager-45-developer-documentation/administration-rest-api-guide/data/oauth-openid-connect-api.html>`_
+- `Amazon Cognito
+  <https://docs.aws.amazon.com/cognito/latest/developerguide/open-id.html>`_
+- `Keycloak
+  <https://www.keycloak.org/docs/latest/server_admin/index.html#oidc-clients>`_
+- `Microsoft Azure Active Directory
+  <https://docs.microsoft.com/en-us/azure/active-directory/fundamentals/auth-oidc>`_
+- `Micro Focus NetIQ Access Manager 4.5
+  <https://www.netiq.com/documentation/access-manager-45-developer-documentation/administration-rest-api-guide/data/oauth-openid-connect-api.html>`_
 
-.. warning:: Krill has been verified to be able to login and logout with `Google Cloud <https://developers.google.com/identity/protocols/oauth2/openid-connect>`_
+.. warning:: Krill has been verified to be able to login and logout with
+             `Google Cloud <https://developers.google.com/identity/protocols/oauth2/openid-connect>`_
              accounts. However, it is not advisable to grant access to
              Google accounts in general. Instead you should use a
              Google product that permits you to manage your own pool of
@@ -246,7 +272,8 @@ steps must be taken:
 
        \
 
-     - Is this property available by default as part of the `standard claims <https://openid.net/specs/openid-connect-core-1_0.html#StandardClaims>`_
+     - Is this property available by default as part of the `standard claims
+       <https://openid.net/specs/openid-connect-core-1_0.html#StandardClaims>`_
        sent by the provider to the client, or is it a provider
        specific claim or will it need to be configured in the provider
        as a custom claim? [1]_
@@ -257,10 +284,6 @@ steps must be taken:
               and `here <https://docs.microsoft.com/en-us/azure/active-directory/hybrid/how-to-connect-fed-group-claims>`__),
               Amazon Cognito (`here <https://docs.aws.amazon.com/cognito/latest/developerguide/amazon-cognito-user-pools-using-tokens-with-identity-providers.html>`_)
 
-     - If no suitable claim values can be arranged with the provider,
-       consider using :ref:`hybrid mode <hybrid-mode>` instead.
-
-     \
 
 2. **Gain access to the provider**
 
@@ -294,7 +317,8 @@ steps must be taken:
       requests to other locations.
    
    .. [3] A correct URL will either end in /.well-known/openid-configuration
-      or should have that appended to it, e.g. the Google issuer URL is: https://accounts.google.com/.well-known/openid-configuration
+      or should have that appended to it, e.g. the Google issuer URL is:
+      https://accounts.google.com/.well-known/openid-configuration
 
 4. **Create users, groups and/or claims in the provider**
    
@@ -352,7 +376,8 @@ steps must be taken:
 Using Keycloak
 """"""""""""""
 
-In this section you will see how to setup `Keycloak <https://www.keycloak.org/>`__
+In this section you will see how to setup
+`Keycloak <https://www.keycloak.org/>`__
 as an OpenID Connect provider for Krill.
 
 The following steps are required to use OpenID Connect Users in your Krill setup.
@@ -374,9 +399,9 @@ sally             sally@example.com wdGypnx5  readonly
 dave_the_octopus  dave@example.com  qnky8Zuj  readwrite
 ================= ================= ========= =========
 
-And let's assume that we are going to use a local Docker `Keycloak <https://www.keycloak.org/>`__
-container as our OpenID Connect provider which will be running at
-https://localhost:8443/.
+And let's assume that we are going to use a local Docker
+`Keycloak <https://www.keycloak.org/>`__ container as our OpenID Connect
+provider which will be running at https://localhost:8443/.
 
 ----
 
@@ -445,7 +470,7 @@ Create a realm
   ===================  ======================================
   Field                Value
   ===================  ======================================
-  Name                 `krill`
+  Name                 ``krill``
   ===================  ======================================
 
 Create a client application
@@ -461,7 +486,7 @@ Continuing in the KeyCloak web UI with realm set to `krill`:
   ===================  ======================================
   Field                Value
   ===================  ======================================
-  Client ID            `krill`
+  Client ID            ``krill``
   ===================  ======================================
 
 - On the `Settings` tab that is shown next set the field values as
@@ -471,7 +496,7 @@ Continuing in the KeyCloak web UI with realm set to `krill`:
   Field                Value
   ===================  ======================================
   Access Type          `confidential` [4]_
-  Valid Redirect URIs  `https://localhost:3000/*` [5]_
+  Valid Redirect URIs  ``https://localhost:3000/*`` [5]_
   ===================  ======================================
 
 - Generate credentials for Krill to use:
@@ -644,16 +669,30 @@ data. The resulting claims look something like this:
 
      Source: https://openid.net/specs/openid-connect-core-1_0.html#id_tokenExample
 
-Thus if you were to configure Krill to use the "given_name" claim
-as the ID of the user in Krill, like so:
+Krill uses claims to determine two things: the user ID – which is both
+shown in the UI and logged in the Krill audit logs –, and the
+:ref:`roll <doc_krill_multi_user_roles>` which determines access
+permissions.
+
+For each rules can be defined in their own section,
+``[[auth_openidconnect.id_claims]]`` for the user ID and
+``[[auth_openidconnect.role_claims]]`` for the role.
+
+For instance, if you want to configure Krill to use the "given_name" claim
+as the ID of the user in Krill, you can do this like so:
 
 .. code-block:: none
 
-   [auth_openidconnect.claims]
-   id = { jmespath="given_name" }
+   [[auth_openidconnect.id_claims]]
+   claim = "given_name"
 
-Then in this example Krill would use the value "Jane" as the ID of the
+Given the example claims above, would use the value "Jane" as the ID of the
 user logged in to Krill.
+
+By default, Krill uses the value of the “email” claim as the user ID and
+the value the “role” for the role. Given that the example claims above don’t
+contain a “role” claim, Krill would reject a login with the defaults since
+it doesn’t know what role to use.
 
 Matching claims by name
 ~~~~~~~~~~~~~~~~~~~~~~~
@@ -667,26 +706,13 @@ This can be achieved using a config section that looks like this in
 
 .. code-block:: none
 
-   [auth_openidconnect.claims]
-   id = { jmespath="name" }
+   [[auth_openidconnect.id_claims]]
+   claim = "name"
 
 This tells Krill to search all of the claim data it receives for a field
 called `name` and use that as the ID for the user in Krill. This ID will
 also be logged in the Krill event history as the actor responsible for
-any events that they caused.h
-
-What is JMESPath? According to `https://jmespath.org/ <https://jmespath.org/>`_:
-
-  *"JMESPath is a query language for JSON."*
-
-JSON is the format that OpenID Connect claim data is provided in by the
-provider. JMESPath can therefore be used to tell Krill which particular
-part from within the JSON it should use.
-
-This is a very trivial example of the power of JMESPath. You can find
-out more about it at the `https://jmespath.org/ <https://jmespath.org/>`_
-website and in ``krill.conf``. Krill comes with a couple of extensions
-to JMESPath syntax which are also documented in ``krill.conf``.
+any events that they caused.
 
 Matching claims by value
 ~~~~~~~~~~~~~~~~~~~~~~~~
@@ -701,139 +727,73 @@ How do you tell Krill which users should have readonly access and which
 users should be have readwrite access?
 
 This is actually a real situation you can encounter with Azure Active
-Directory. JMESPath can also be used to handle this scenario, albeit
-with a much more complicated expression:
+Directory. The rules in this case are a little more complicated:
+
 
 .. code-block:: none
 
-   [auth_openidconnect.claims]
-   ro_role = { jmespath="resub(groups[?@ == 'gggggggg-gggg-gggg-gggg-gggggggggggg'] | [0], '^.+$', 'readonly')", dest="role" }
-   rw_role = { jmespath="resub(groups[?@ == 'hhhhhhhh-hhhh-hhhh-hhhh-hhhhhhhhhhhh'] | [0], '^.+$', 'readwrite')", dest="role" }
+   [[auth_openidconnect.role_claims]]
+   claim = "groups"
+   match = "^gggggggg-gggg-gggg-gggg-gggggggggggg$"
+   subst = "readonly"
 
-Let's break the `ro_role` claim mapping rule down:
+   [[auth_openidconnect.role_claims]]
+   claim = "groups"
+   match = "^hhhhhhhh-hhhh-hhhh-hhhh-hhhhhhhhhhhh$"
+   subst = "readwrite"
 
-  - `gggg` and `hhhh` values represent the UUIDs of the groups to find in a
-    claim array called `groups`.
-  - The `resub` JMESPath function is a Krill extension to JMESPath that performs
-    regular expression based substitution.
-  - `groups[?@ == '...']` finds all entries in the `groups` array that match the
-    specified UUID.
-  - We then assume that there is only ever zero or one matches and just use the
-    first match `| [0]` found.
-  - Then we instruct Krill to take the entire value with `^.+$`.
-  - And to replace it with the value `readonly`.
-  - Finally, instead of assigning the value `readonly` to the user attribute
-    `ro_role`, `dest` is used to instead store `readonly` in a user attribute
-    called `role`.
+We define two rules for the role claims. These are processed in order and
+the first matching rule is used. Let’s break them down:
 
-As `role` is the user attribute that the Krill authorization policy engine looks
-at by default this will cause the user to be assigned the readonly role if their
-user is a member of the group with the UUID value that represents the "readonly"
-group!
+  - The ``claim`` field is the name of the claim to look for. In both cases
+    we are looking at the ``"groups"`` claim.
+  - The ``match`` field contains a regular expression matching the UUIDs of
+    the groups. Because regular expressions happily match partially, we need
+    the hat and dollar symbols to force a match of a complete value.
+  - The ``subst`` field contains a value to substitute the match with. While
+    you can refer to match groups in the regular expression, we don’t need
+    this here and just want to replace the value with the names of the roles.
 
-If we had only one rule we could write `role` on the left, but as we have two
-rules that both try to provide a value for the same user attribute and the keys
-on the left of the `=` must be unique, we use the `dest` trick to map any value
-found to the `role` user attribute.
+The ``"groups"`` claim is an array with multiple groups. Each rule will go
+over all the values in the array and try and match them. Only if that doesn’t
+succeed is the next rule tried. Thus, if a user has both the “g” group and
+the “h” group, the first rule will apply and the user will be assigned the
+``"readonly"`` role. It is important to keep this ordering in mind when
+writing the configuration.
 
 Matching claims by partial value
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Now imagine that the group membership is instead expressed not as array elements
-that each exactly match some group name or UUID that we can look for, but that
-each array element is a long string composed of `key=value` comma separated pairs.
+Now imagine that the group membership is instead expressed not as array
+elements that each exactly match some group name or UUID that we can look
+for, but that each array element is a long string composed of `key=value`
+comma separated pairs.
 
-This can happen when the identity provider expresses group memberships in LDAP
-X.500 format (see `RFC 2253 Lightweight Directory Access Protocol (v3):
+This can happen when the identity provider expresses group memberships in
+LDAP X.500 format (see `RFC 2253 Lightweight Directory Access Protocol (v3):
 UTF-8 String Representation of Distinguished Names <https://www.ietf.org/rfc/rfc2253.txt>`_).
 
-For example you might see something like ``CN=Joe Bloggs,OU=NetworkTeam-Admins,DC=mycorp.com``,
+For example you might see something like
+``CN=Joe Bloggs,OU=NetworkTeam-Admins,DC=mycorp.com``,
 representing a user called Joe who is in the administrators group of the
 networking team of a company called mycorp.com.
 
-Hopefully you'll only need simple rules but also equally hopefully if you need
-more powerful matching Krill will be up to the task. For example, here's a more
-complicated rule:
+Hopefully you'll only need simple rules but also equally hopefully if you
+need more powerful matching Krill will be up to the task. For example, here's
+a more complicated rule:
 
 .. code-block:: none
 
-   dynamic_role = { jmespath="resub(memberof[?starts_with(@, 'CN=DL-Krill-')] | [0], '^CN=DL-Krill-(?P<role>[^-,]+).+', '$role')" }
+   [[auth_openidconnect.role_claims]]
+   claim = "memberof"
+   match = "^CN=DL-Krill-(?P<role>[^-,]+).+"
+   subst = "$role"
 
-This rule will match elements of an array called `memberof` whose value starts
-with ``CN=DL-Krill-``, and wlll then extract just the part after that upto a
-comma or dash, and will use that captured value as the Krill ``role`` user
-attribute!
+This rule will match elements of an array called ``"memberof"`` whose value
+starts with ``CN=DL-Krill-``, and wlll then extract just the part after that
+upto a comma or dash, and will use that captured value as the role for the
+user.
 
-.. _hybrid-mode:
-
-Matching claims to config values (aka 'hybrid' mode)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Usually when defining a claim mapping there is no need to define the source of
-the claim. Krill will search all of the different OpenID Connect provider
-claim sources that it supports (standard and additional claims in both the ID
-Token and User Info responses) for a matching claim.
-
-However, if needed you can specify the claim source explicitly on a per claim
-basis. Possible uses for this include:
-
-  - Selecting the right claim when the same claim name exists in more than one
-    claim source but with different values.
-  
-  - Defining user attributes in the Krill configuration when the claim values
-    cannot be configured in the provider (perhaps due to lack of support by or
-    access to the provider). This is known as hybrid mode because it causes
-    Krill to use a hybrid of OpenID Connect provider for authentication and
-    config file defined user attributes for authorization.
-
-When defining a claim mapping we have so far seen ``jmespath`` and ``dest``
-settings, but there is also a ``source`` setting. The source can be set to one
-of the following values:
-
-  - ``config-file``
-  - ``id-token-standard-claim``
-  - ``id-token-additional-claim``
-  - ``user-info-standard-claim``
-  - ``user-info-additional-claim``
-
-The first one is the really interesting one. The rest should hopefully never
-be needed as by default Krill searches all of the possible OpenID Connect
-provider claim sources that it supports.
-
-When using the ``config-file`` source there are two changes in the way that
-Krill looks up the claim value:
-
-  1. The ``jmespath`` setting is not used. Instead an attribute with the
-     same name as the TOML key of the claim mapping is looked for on the
-     user.
-
-  2. The user attributes are taken from a config file entry with the ``id``
-     of the current user is looked up in the ``[auth_users]`` config file
-     section.
-
-Note that the ``id`` of the current user is still determined by a normal
-OpenID Connect claim lookup, i.e. by default the ``email`` value reported
-by the provider for the user is used unless you define a claim mapping for
-``id`` explicitly.
-
-For example, to identify users by the given name reported by the OpenID
-Connect provider, and to set their role using entries in ``krill.conf``
-instead of basing the role on provider claim values, you could do something
-like this:
-
-.. code-block:: none
-
-   [auth_users]
-   "Joe Bloggs"  = { attributes={ role="admin" } }
-   "Sally Alley" = { attributes={ role="readonly" } }
-
-   [auth_openidconnect.claims]
-   id   = { jmespath="given_name" }
-   role = { source="config-file" }
-
-This will cause a user that logs in via the OpenID Connect provider who
-has a ``given_name`` claim value of ``Joe Bloggs`` to be granted the
-``admin`` role in Krill.
 
 Requesting missing claims
 ~~~~~~~~~~~~~~~~~~~~~~~~~
