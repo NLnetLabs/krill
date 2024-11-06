@@ -1659,11 +1659,14 @@ impl AuthProvider {
                 // ==========================================================================================
 
                 let mut claims = Claims::new(
-                    &self.oidc_conf()?.claims,
                     id_token_claims, user_info_claims
                 );
-                let id = claims.extract_id()?;
-                let role_name = claims.extract_role()?;
+                let id = claims.extract_claims(
+                    "id", &self.oidc_conf()?.id_claims
+                )?;
+                let role_name = claims.extract_claims(
+                    "role", &self.oidc_conf()?.role_claims
+                )?;
 
                 let role = self.config.auth_roles.get(
                     &role_name

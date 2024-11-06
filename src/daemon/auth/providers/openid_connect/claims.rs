@@ -1,19 +1,16 @@
 //! Processing OpenID Connect claims.
 
-use std::sync::Arc;
 use regex::{Regex, Replacer};
 use serde::de::{Deserialize, Deserializer, Error as _};
 use serde_json::{Number as JsonNumber, Value as JsonValue};
 use crate::commons::KrillResult;
 use crate::commons::error::Error;
 use super::util::{FlexibleIdTokenClaims, FlexibleUserInfoClaims};
-use super::config::ConfigAuthOpenIDConnectClaim;
 
 
 //------------ Claims --------------------------------------------------------
 
 pub struct Claims<'a> {
-    claims_conf: &'a [ConfigAuthOpenIDConnectClaim],
     id_token_claims: &'a FlexibleIdTokenClaims,
     user_info_claims: Option<FlexibleUserInfoClaims>,
 
@@ -25,30 +22,27 @@ pub struct Claims<'a> {
 
 impl<'a> Claims<'a> {
     pub fn new(
-        claims_conf: &'a [ConfigAuthOpenIDConnectClaim],
         id_token_claims: &'a FlexibleIdTokenClaims,
         user_info_claims: Option<FlexibleUserInfoClaims>,
     ) -> Self {
         Self {
-            claims_conf,
             id_token_claims, user_info_claims,
             id_standard: None, id_additional: None,
             user_standard: None, user_additional: None,
         }
     }
 
-    pub fn extract_id(&mut self) -> KrillResult<String> {
-        self.extract_claim("id")
-    }
-
-    pub fn extract_role(&mut self) -> KrillResult<Arc<str>> {
-        self.extract_claim("role").map(Into::into)
-    }
-
-    fn extract_claim(&mut self, dest: &str) -> KrillResult<String> {
-        for conf in self.claims_conf.iter().filter(|conf| conf.dest == dest) {
-            if let Some(res) = self.process_claim_conf(conf)? {
-                return Ok(res)
+    pub fn extract_claims(
+        &mut self, dest: &str, conf: &[TransformationRule],
+    ) -> KrillResult<String> {
+        for rule in conf {
+            match rule {
+                TransformationRule::Fixed(subst) => return Ok(subst.clone()),
+                TransformationRule::Match(rule) => {
+                    if let Some(res) = self.process_match_rule(rule)? {
+                        return Ok(res)
+                    }
+                }
             }
         }
 
@@ -58,8 +52,8 @@ impl<'a> Claims<'a> {
         ))
     }
 
-    fn process_claim_conf(
-        &mut self, conf: &ConfigAuthOpenIDConnectClaim
+    fn process_match_rule(
+        &mut self, conf: &MatchRule,
     ) -> KrillResult<Option<String>> {
         use self::ClaimSource::*;
 
@@ -174,7 +168,7 @@ impl<'a> Claims<'a> {
     }
 
     fn process_claim_json(
-        conf: &ConfigAuthOpenIDConnectClaim,
+        conf: &MatchRule,
         json: &JsonValue,
     ) -> KrillResult<Option<String>> {
         let object = match json {
@@ -196,7 +190,7 @@ impl<'a> Claims<'a> {
     }
 
     fn process_claim_array(
-        conf: &ConfigAuthOpenIDConnectClaim,
+        conf: &MatchRule,
         array: &[JsonValue],
     ) -> KrillResult<Option<String>> {
         for item in array {
@@ -223,14 +217,14 @@ impl<'a> Claims<'a> {
     }
 
     fn process_claim_number(
-        conf: &ConfigAuthOpenIDConnectClaim,
+        conf: &MatchRule,
         num: &JsonNumber
     ) -> KrillResult<Option<String>> {
         Self::process_claim_str(conf, &num.to_string())
     }
 
     fn process_claim_str(
-        conf: &ConfigAuthOpenIDConnectClaim,
+        conf: &MatchRule,
         s: &str,
     ) -> KrillResult<Option<String>> {
         if let Some(expr) = conf.match_expr.as_ref() {
@@ -299,6 +293,87 @@ impl<'a> Claims<'a> {
 }
 
 
+//------------ TransformationRule --------------------------------------------
+
+/// Transformation rule for a claim.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(try_from = "TransformationRuleConf")]
+pub enum TransformationRule {
+    /// Fixed rule.
+    ///
+    /// This rule matches always and returns the provided string.
+    Fixed(String),
+
+    /// Matching rule.
+    ///
+    /// This rule tries to match the provided claim and optionally replaces
+    /// the value with the given subst expression.
+    ///
+    /// The rule matches string values, number and boolean values with their
+    /// JSON representation. It also matches arrays item by item with the
+    /// first match being used.
+    Match(MatchRule),
+}
+
+
+//------------ MatchRule -----------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct MatchRule {
+    pub source: Option<ClaimSource>,
+    pub claim: String,
+    pub match_expr: Option<MatchExpression>,
+    pub subst: Option<SubstExpression>,
+}
+
+
+//------------ TransformationRuleConf ----------------------------------------
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct TransformationRuleConf {
+    pub source: Option<ClaimSource>,
+    pub claim: Option<String>,
+    #[serde(rename = "match")]
+    pub match_expr: Option<MatchExpression>,
+    pub subst: Option<String>,
+}
+
+impl TryFrom<TransformationRuleConf> for TransformationRule {
+    type Error = String;
+
+    fn try_from(src: TransformationRuleConf) -> Result<Self, Self::Error> {
+        if let Some(claim) = src.claim {
+            Ok(TransformationRule::Match(MatchRule {
+                source: src.source,
+                claim,
+                match_expr: src.match_expr,
+                subst: src.subst.map(Into::into)
+            }))
+        }
+        else {
+            let subst = match src.subst {
+                Some(subst) => subst,
+                None => {
+                    return Err(
+                        "'subst' is mandatory if 'claim' is missing".into()
+                    )
+                }
+            };
+
+            // Complain if we have 'match' to avoid possible errors. All
+            // the other things are probably fine.
+            if src.match_expr.is_some() {
+                return Err(
+                    "'claim' is mandatory if 'match' is present".into()
+                )
+            }
+
+            Ok(TransformationRule::Fixed(subst))
+        }
+    }
+}
+
+
 //------------ MatchExpression -----------------------------------------------
 
 #[derive(Clone, Debug)]
@@ -323,13 +398,10 @@ pub struct SubstExpression {
     no_expansion: bool,
 }
 
-impl<'de> Deserialize<'de> for SubstExpression {
-    fn deserialize<D: Deserializer<'de>>(
-        deserializer: D
-    ) -> Result<Self, D::Error> {
-        let mut expr = String::deserialize(deserializer)?;
+impl From<String> for SubstExpression {
+    fn from(mut expr: String) -> Self {
         let no_expansion = expr.no_expansion().is_some();
-        Ok(Self { expr, no_expansion })
+        Self { expr, no_expansion }
     }
 }
 

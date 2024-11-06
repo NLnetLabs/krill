@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use serde::Deserialize;
-use super::claims::{ClaimSource, MatchExpression, SubstExpression};
+use super::claims::{MatchRule, TransformationRule};
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct ConfigAuthOpenIDConnect {
@@ -10,8 +10,11 @@ pub struct ConfigAuthOpenIDConnect {
 
     pub client_secret: String,
 
-    #[serde(default = "default_claims")]
-    pub claims: Vec<ConfigAuthOpenIDConnectClaim>,
+    #[serde(default = "default_id_claims")]
+    pub id_claims: Vec<TransformationRule>,
+
+    #[serde(default = "default_role_claims")]
+    pub role_claims: Vec<TransformationRule>,
 
     #[serde(default)]
     pub extra_login_scopes: Vec<String>,
@@ -35,33 +38,25 @@ fn default_prompt_for_login() -> bool {
     true
 }
 
-
-#[derive(Clone, Debug, Deserialize)]
-pub struct ConfigAuthOpenIDConnectClaim {
-    pub dest: String,
-    pub source: Option<ClaimSource>,
-    pub claim: String,
-    #[serde(rename = "match")]
-    pub match_expr: Option<MatchExpression>,
-    pub subst: Option<SubstExpression>,
-}
-
-fn default_claims() -> Vec<ConfigAuthOpenIDConnectClaim> {
+fn default_id_claims() -> Vec<TransformationRule> {
     vec![
-        ConfigAuthOpenIDConnectClaim {
-            dest: "id".into(),
+        TransformationRule::Match(MatchRule {
             source: None,
             claim: "email".into(),
             match_expr: None,
             subst: None,
-        },
-        ConfigAuthOpenIDConnectClaim {
-            dest: "id".into(),
+        }),
+    ]
+}
+
+fn default_role_claims() -> Vec<TransformationRule> {
+    vec![
+        TransformationRule::Match(MatchRule {
             source: None,
             claim: "role".into(),
             match_expr: None,
             subst: None,
-        },
+        }),
     ]
 }
 
