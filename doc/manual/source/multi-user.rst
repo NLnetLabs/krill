@@ -31,10 +31,9 @@ Further reading:
   :maxdepth: 1
   :name: toc-multi-user
 
-  multi-user/authorization
+  multi-user/roles
   multi-user/config-file-provider
   multi-user/openid-connect-provider
-  multi-user/customization
 
 .. history
 .. authors

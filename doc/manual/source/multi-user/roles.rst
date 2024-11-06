@@ -1,4 +1,4 @@
-.. _doc_krill_multi_user_access_control:
+.. _doc_krill_multi_user_roles:
 
 Roles, Permissions and Resources
 ================================
@@ -111,11 +111,12 @@ Currently, the following permissions are defined:
     ``bgpsec-update``
         required to update the BGPsec router keys configured for a CA.
 
-In addition, there two shortcuts that can be used to specify multiple
-permission at ones:
+In addition, there are two shortcuts that can be used to specify multiple
+permission at once:
 
 .. Glossary::
-    ``any`
+
+    ``any``
         grants all permissions,
 
     ``read``
