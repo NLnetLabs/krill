@@ -23,7 +23,7 @@ const LAGOSTA_LOGIN_ROUTE_PATH: &str = "/login";
 /// This auth provider takes a single token from the configuration and
 /// only allows requests that carry this token as a bearer token.
 ///
-/// Currently, the this provider is hard-coded to translate this token into
+/// Currently, this provider is hard-coded to translate this token into
 /// a user named “admin” having the admin special role which allows
 /// everything everywhere all at once.
 pub struct AuthProvider {

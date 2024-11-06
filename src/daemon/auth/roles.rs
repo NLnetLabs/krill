@@ -1,3 +1,7 @@
+//! Roles and related types.
+//!
+//! This is a private module. Its public items are re-exported by the parent.
+
 use std::collections::HashMap;
 use std::sync::Arc;
 use rpki::ca::idexchange::MyHandle;

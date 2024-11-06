@@ -1,4 +1,9 @@
+//! Permissions and permission sets.
+//!
+//! This is a private module. Its public items are re-exported by the parent.
+
 use std::{fmt, str};
+use std::str::FromStr;
 use serde::{Deserialize, Serialize};
 
 
@@ -72,7 +77,6 @@ define_permission! {
     (RoutesAnalysis, "routes-analysis"),
     (AspasRead, "aspas-read"),
     (AspasUpdate, "aspas-update"),
-    (AspasAnalysis, "aspas-analyisis"),
     (BgpsecRead, "bgpsec-read"),
     (BgpsecUpdate, "bgpsec-update"),
     (RtaList, "rta-list"),
@@ -81,11 +85,60 @@ define_permission! {
 }
 
 
+//------------ ConfPermission ------------------------------------------------
+
+/// A named permission as given in the config file.
+///
+/// This includes all the permissions themselves plus the three “glob”
+/// permissions `"list"`, `"read"`, `"create"`, `"delete"`, and `"admin"`
+/// which include all the respective permissions for all components.
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(try_from = "&str")]
+pub enum ConfPermission {
+    Single(Permission),
+    Any
+    Read,
+    Update,
+}
+
+impl ConfPermission {
+    fn add(self, set: PermissionSet) -> PermissionSet {
+        let self_set = match self {
+            Self::Single(perm) => {
+                return set.add(perm)
+            }
+            Self::Any => PermissionSet::ANY,
+            Self::Read => PermissionSet::CONF_READ,
+            Self::Update => PermissionSet::CONF_UPDATE,
+            Self::Delete => PermissionSet::CONF_DELETE,
+        };
+        set.add_set(self_set)
+    }
+}
+
+impl<'a> TryFrom<&'a str> for ConfPermission {
+    type Error = String;
+
+    fn try_from(src: &'a str) -> Result<Self, Self::Error> {
+        if let Ok(res) = Permission::from_str(src) {
+            return Ok(Self::Single(res))
+        }
+
+        match src {
+            "any" => Ok(Self::Any),
+            "read" => Ok(Self::Read),
+            "update" => Ok(Self::Update),
+            _ => Err(format!("unknown permission {src}"))
+        }
+    }
+}
+
+
 //------------ PermissionSet -------------------------------------------------
 
 /// A set of permissions.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(from = "Vec<Permission>", into = "Vec<Permission>")]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(from = "Vec<ConfPermission>")]
 pub struct PermissionSet(u32);
 
 impl PermissionSet {
@@ -96,6 +149,10 @@ impl PermissionSet {
 
     pub const fn add(self, permission: Permission) -> Self {
         Self(self.0 | Self::mask(permission))
+    }
+
+    pub const fn add_set(self, other: PermissionSet) -> Self {
+        Self(self.0 | other.0)
     }
 
     pub const fn remove(self, permission: Permission) -> Self {
@@ -120,19 +177,13 @@ impl PermissionSet {
     }
 }
 
-impl From<Vec<Permission>> for PermissionSet {
-    fn from(src: Vec<Permission>) -> Self {
+impl From<Vec<ConfPermission>> for PermissionSet {
+    fn from(src: Vec<ConfPermission>) -> Self {
         let mut res = Self(0);
         for item in src {
-            res = res.add(item)
+            res = item.add(res)
         }
         res
-    }
-}
-
-impl From<PermissionSet> for Vec<Permission> {
-    fn from(src: PermissionSet) -> Self {
-        src.iter().collect()
     }
 }
 
@@ -154,7 +205,6 @@ mod policy {
             RoutesRead,
             RoutesAnalysis,
             AspasRead,
-            AspasAnalysis,
             BgpsecRead,
             RtaList,
             RtaRead
@@ -174,7 +224,6 @@ mod policy {
             RoutesUpdate,
             AspasRead,
             AspasUpdate,
-            AspasAnalysis,
             BgpsecRead,
             BgpsecUpdate,
             RtaList,
@@ -189,6 +238,22 @@ mod policy {
             PubCreate,
             PubDelete,
             PubAdmin
+        ]);
+
+        pub const CONF_READ: Self = Self::from_permissions(&[
+            CaRead, RoutesRead, AspasRead, BgpsecRead, RtaRead,
+        ]);
+
+        pub const CONF_CREATE: Self = Self::from_permissions(&[
+            CaCreate,
+        ]);
+
+        pub const CONF_UPDATE: Self = Self::from_permissions(&[
+            RoutesUpdate, BgpsecUpdate, RtaUpdate,
+        ]);
+
+        pub const CONF_DELETE: Self = Self::from_permissions(&[
+            PubDelete, CaDelete,
         ]);
     }
 }
