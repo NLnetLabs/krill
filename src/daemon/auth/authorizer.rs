@@ -309,11 +309,41 @@ impl Authorizer {
 #[derive(Serialize, Debug)]
 pub struct LoggedInUser {
     /// The API token to use in subsequent calls.
-    pub token: Token,
+    token: Token,
 
     /// The user ID.
-    //  XXX Swith to using Arc<str>. May require Serialize shenanigans.
-    pub id: String,
+    id: Arc<str>,
+
+    /// The user attributes.
+    ///
+    /// This used to be a hash map with values decided upon by the auth
+    /// provider but we now only and always have a role attribute. However,
+    /// in order to serialize into the JSON expected by the UI, this still
+    /// needs to be a struct.
+    attributes: LoggedInUserAttributes,
+}
+
+#[derive(Serialize, Debug)]
+pub struct LoggedInUserAttributes {
+    role: Arc<str>,
+}
+
+impl LoggedInUser {
+    pub fn new(token: Token, id: Arc<str>, role: Arc<str>) -> Self {
+        LoggedInUser {
+            token,
+            id,
+            attributes: LoggedInUserAttributes { role }
+        }
+    }
+
+    pub fn token(&self) -> &Token {
+        &self.token
+    }
+
+    pub fn id(&self) -> &str {
+        &self.id
+    }
 }
 
 

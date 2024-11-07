@@ -87,10 +87,11 @@ impl AuthProvider {
     /// Establishes a client session from credentials in an HTTP request.
     pub fn login(&self, request: &HyperRequest) -> KrillResult<LoggedInUser> {
         match self.authenticate(request)? {
-            Some(_actor) => Ok(LoggedInUser {
-                token: self.required_token.clone(),
-                id: self.user_id.as_ref().into(),
-            }),
+            Some(_actor) => Ok(LoggedInUser::new(
+                self.required_token.clone(),
+                self.user_id.as_ref().into(),
+                "admin".into(),
+            )),
             None => Err(Error::ApiInvalidCredentials(
                 "Missing bearer token".to_string(),
             )),

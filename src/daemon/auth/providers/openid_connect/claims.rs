@@ -1,5 +1,6 @@
 //! Processing OpenID Connect claims.
 
+use std::sync::Arc;
 use regex::{Regex, Replacer};
 use serde::de::{Deserialize, Deserializer, Error as _};
 use serde_json::{Number as JsonNumber, Value as JsonValue};
@@ -34,7 +35,7 @@ impl<'a> Claims<'a> {
 
     pub fn extract_claims(
         &mut self, dest: &str, conf: &[TransformationRule],
-    ) -> KrillResult<String> {
+    ) -> KrillResult<Arc<str>> {
         for rule in conf {
             match rule {
                 TransformationRule::Fixed(subst) => return Ok(subst.clone()),
@@ -54,7 +55,7 @@ impl<'a> Claims<'a> {
 
     fn process_match_rule(
         &mut self, conf: &MatchRule,
-    ) -> KrillResult<Option<String>> {
+    ) -> KrillResult<Option<Arc<str>>> {
         use self::ClaimSource::*;
 
         match conf.source {
@@ -170,7 +171,7 @@ impl<'a> Claims<'a> {
     fn process_claim_json(
         conf: &MatchRule,
         json: &JsonValue,
-    ) -> KrillResult<Option<String>> {
+    ) -> KrillResult<Option<Arc<str>>> {
         let object = match json {
             JsonValue::Object(object) => object,
             _ => return Ok(None)
@@ -192,7 +193,7 @@ impl<'a> Claims<'a> {
     fn process_claim_array(
         conf: &MatchRule,
         array: &[JsonValue],
-    ) -> KrillResult<Option<String>> {
+    ) -> KrillResult<Option<Arc<str>>> {
         for item in array {
             let res = match item {
                 JsonValue::Bool(true) => {
@@ -219,14 +220,14 @@ impl<'a> Claims<'a> {
     fn process_claim_number(
         conf: &MatchRule,
         num: &JsonNumber
-    ) -> KrillResult<Option<String>> {
+    ) -> KrillResult<Option<Arc<str>>> {
         Self::process_claim_str(conf, &num.to_string())
     }
 
     fn process_claim_str(
         conf: &MatchRule,
         s: &str,
-    ) -> KrillResult<Option<String>> {
+    ) -> KrillResult<Option<Arc<str>>> {
         if let Some(expr) = conf.match_expr.as_ref() {
             match conf.subst.as_ref() {
                 Some(subst) => {
@@ -237,7 +238,7 @@ impl<'a> Claims<'a> {
                                 res.push_str(&s[..m.start()]);
                                 res.push_str(&subst.expr);
                                 res.push_str(&s[m.end()..]);
-                                Ok(Some(res))
+                                Ok(Some(res.into()))
                             }
                             None => Ok(None)
                         }
@@ -249,7 +250,7 @@ impl<'a> Claims<'a> {
                                     subst.expr.len()
                                 );
                                 c.expand(&subst.expr, &mut res);
-                                Ok(Some(res))
+                                Ok(Some(res.into()))
                             }
                             None => Ok(None)
                         }
@@ -302,7 +303,7 @@ pub enum TransformationRule {
     /// Fixed rule.
     ///
     /// This rule matches always and returns the provided string.
-    Fixed(String),
+    Fixed(Arc<str>),
 
     /// Matching rule.
     ///
@@ -368,7 +369,7 @@ impl TryFrom<TransformationRuleConf> for TransformationRule {
                 )
             }
 
-            Ok(TransformationRule::Fixed(subst))
+            Ok(TransformationRule::Fixed(subst.into()))
         }
     }
 }

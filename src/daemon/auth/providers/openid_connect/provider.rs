@@ -1719,12 +1719,12 @@ impl AuthProvider {
                 // ==========================================================================================
                 let token = self.session_cache.encode(
                     id.clone().into(),
-                    SessionSecrets::new(role_name, &token_response),
+                    SessionSecrets::new(role_name.clone(), &token_response),
                     &self.session_key,
                     token_response.expires_in(),
                 )?;
 
-                Ok(LoggedInUser { token, id, })
+                Ok(LoggedInUser::new(token, id, role_name))
             }
 
             None => Err(Error::ApiInvalidCredentials(

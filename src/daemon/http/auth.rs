@@ -26,8 +26,8 @@ pub fn url_encode<S: AsRef<str>>(s: S) -> Result<String, Error> {
 fn build_auth_redirect_location(user: LoggedInUser) -> Result<String, Error> {
     Ok(format!(
         "/ui/login?token={}&id={}",
-        &url_encode(user.token)?,
-        &url_encode(user.id.as_str())?,
+        &url_encode(user.token())?,
+        &url_encode(user.id())?,
     ))
 }
 

@@ -83,7 +83,7 @@ impl AuthProvider {
         let (username, password) = auth.split_once(':')?;
 
         Some(Auth {
-            username: username.to_string(),
+            username: username.to_string().into(),
             password: password.to_string(),
         })
     }
@@ -247,18 +247,17 @@ impl AuthProvider {
             return Err(Error::ApiInsufficientRights(reason));
         }
 
+        let username = Arc::<str>::from(username);
+
         // All good: create a token and return.
         let api_token = self.session_cache.encode(
-            username.clone().into(),
+            username.clone(),
             SessionSecret { role: user.role.clone() },
             &self.session_key,
             None,
         )?;
 
-        Ok(LoggedInUser {
-            token: api_token,
-            id: username,
-        })
+        Ok(LoggedInUser::new(api_token, username, user.role.clone()))
     }
 
     pub fn logout(
