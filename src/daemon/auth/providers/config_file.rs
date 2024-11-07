@@ -83,7 +83,7 @@ impl AuthProvider {
         let (username, password) = auth.split_once(':')?;
 
         Some(Auth {
-            username: username.to_string().into(),
+            username: username.to_string(),
             password: password.to_string(),
         })
     }

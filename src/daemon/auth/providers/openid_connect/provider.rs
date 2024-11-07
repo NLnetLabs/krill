@@ -1718,7 +1718,7 @@ impl AuthProvider {
                 // after that much time would also fail.
                 // ==========================================================================================
                 let token = self.session_cache.encode(
-                    id.clone().into(),
+                    id.clone(),
                     SessionSecrets::new(role_name.clone(), &token_response),
                     &self.session_key,
                     token_response.expires_in(),
