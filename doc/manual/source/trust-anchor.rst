@@ -222,11 +222,7 @@ The configuration file must at least contain a setting for the data
 directory. Other settings are optional - you only need to change them
 if you want to change the default logging and/or use an HSM.
 
-.. NOTE:: At this moment "timing" parameters for the TA are hard coded. Child
-   CA certificates are signed (and re-signed) with a validity of 52 weeks.
-   The CRL and MFT next update and MFT EE certificate not after time are
-   set to 12 weeks after the moment of signing. We may add support for
-   overriding these values if desired.
+.. NOTE::
 
 Example configuration file:
 
@@ -284,6 +280,55 @@ Example configuration file:
   # key rolls can be used to start using a different signer, there is no key roll
   # support for the TA. This may be implemented in future in which case we would
   # also support RPKI Signed TALs for this process.
+
+  ######################################################################################
+  #                                                                                    #
+  #                                      TIMING                                          #
+  #                                                                                    #
+  ######################################################################################
+
+  #
+  # Include the following section '[timing_config]' if the default TA
+  # timing settings need to be changed.
+  #
+  #            !!!!!IMPORTANT!!!!!!
+  #
+  # If you include this, make sure that both the TA signer and your Krill
+  # server where the TA Proxy lives use the same configuration.
+  #
+  [timing_config]
+
+  # The number of years the TA certificate is valid for. The TA certificate
+  # is only generated once, so set this value before initialising the TA.
+  #
+  ### certificate_validity_years = 100,
+
+  # The validity time in weeks for certificates issued under the TA. Note
+  # that these certifcates get re-issued by request of the child before
+  # they would expire.
+  #
+  ### issued_certificate_validity_weeks = 52
+
+  # The threshold in weeks before expiry of a current issued certificate
+  # used to determine when a new certificate should be requested.
+  # The hardcoded minimum is 10% more than the current expiration.
+  #
+  ### issued_certificate_reissue_weeks_before = 26
+
+  # The time before the manifest and CRL expire for objects published by
+  # the TA. This determines the minimal re-signing frequency needed.
+  #
+  ### mft_next_update_weeks = 12
+
+  # The validity time for signed messages between the online and offline
+  # TA components (TA Proxy and TA Signer). This determines how fast messages
+  # need to exchanged between the components.
+  #
+  # Note that there is replay protection in addition to this constraint, meaning
+  # that a message that has been previously processed cannot be applied again,
+  # even if it's still cryptographically valid.
+  #
+  ### signed_message_validity_days = 14
 
 
 Initialise the TA Signer
