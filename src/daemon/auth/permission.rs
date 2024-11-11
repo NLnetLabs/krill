@@ -197,6 +197,7 @@ mod policy {
         pub const NONE: Self = Self(0);
 
         pub const READONLY: Self = Self::from_permissions(&[
+            Login,
             CaList,
             CaRead,
             PubList,
@@ -210,6 +211,7 @@ mod policy {
         ]);
 
         pub const READWRITE: Self = Self::from_permissions(&[
+            Login,
             CaList,
             CaRead,
             CaCreate,

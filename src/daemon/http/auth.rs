@@ -8,7 +8,8 @@ use crate::{
 #[cfg(feature = "multi-user")]
 use {
     crate::daemon::{
-        auth::LoggedInUser, http::server::render_error_redirect,
+        auth::LoggedInUser,
+        http::server::render_error_redirect,
     },
     urlparse::quote,
 };
@@ -24,10 +25,27 @@ pub fn url_encode<S: AsRef<str>>(s: S) -> Result<String, Error> {
 
 #[cfg(feature = "multi-user")]
 fn build_auth_redirect_location(user: LoggedInUser) -> Result<String, Error> {
+    fn b64_encode_attributes_with_mapped_error(
+        a: &impl serde::Serialize,
+    ) -> Result<String, Error> {
+        use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
+        use base64::engine::Engine as _;
+
+        Ok(BASE64_ENGINE.encode(
+            serde_json::to_string(a)
+                .map_err(|err| Error::custom(err.to_string()))?,
+        ))
+    }
+
+    let attributes = b64_encode_attributes_with_mapped_error(
+        user.attributes()
+    )?;
+
     Ok(format!(
-        "/ui/login?token={}&id={}",
+        "/ui/login?token={}&id={}&attributes={}",
         &url_encode(user.token())?,
         &url_encode(user.id())?,
+        &url_encode(attributes)?,
     ))
 }
 

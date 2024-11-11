@@ -272,7 +272,7 @@ impl Authorizer {
         if log_enabled!(log::Level::Trace) {
             trace!("User logged in: {:?}", &user);
         } else {
-            info!("User logged in: {}", &user.id);
+            info!("User logged in: {}, role: {}", user.id(), user.role());
         }
 
         Ok(user)
@@ -343,6 +343,14 @@ impl LoggedInUser {
 
     pub fn id(&self) -> &str {
         &self.id
+    }
+
+    pub fn role(&self) -> &str {
+        self.attributes.role.as_ref()
+    }
+
+    pub fn attributes(&self) -> &impl Serialize {
+        &self.attributes
     }
 }
 
