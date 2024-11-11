@@ -130,6 +130,20 @@ any other set up that you need to do:
 Then run Krill as usual so that it can accessed by ``krillc``, ``krillta``
 and the UI.
 
+Optionally, timings can be adjusted by including the following snippet at
+the end of your ``krill.conf``:
+
+.. code-block:: text
+  [ta_timing]
+  certificate_validity_years = 100
+  issued_certificate_validity_weeks = 52
+  issued_certificate_reissue_weeks_before = 26
+  mft_next_update_weeks = 12
+  signed_message_validity_days = 14
+
+Make sure that these timings match the ones in the configuration for your
+signer, as otherwise unexpected behaviour may occur.
+
 Initialise TA Proxy
 -------------------
 
@@ -284,13 +298,13 @@ Step 1: Get the proxy ID
 
 .. code-block:: bash
 
-  krillta proxy id --format json > ./proxy-id.json
+  krillta proxy --format json id > ./proxy-id.json
 
 Step 2: Get the proxy repo contact
 
 .. code-block:: bash
 
-  krillta proxy repo contact --format json  >./proxy-repo.json
+  krillta proxy --format json repo contact  >./proxy-repo.json
 
 Step 3: Initialise
 
@@ -313,10 +327,10 @@ endpoints for the TA certificate.
 
 .. code-block:: bash
 
-  krillta signer init --proxy_id ./proxy-id.json \
-                      --proxy_repository_contact ./proxy-repo.json \
-                      --tal_https <HTTPS URI for TA cert on TAL> \
-                      --tal_rsync <RSYNC URI for TA cert on TAL>
+  krillta signer init --proxy-id ./proxy-id.json \
+                      --proxy-repository-contact ./proxy-repo.json \
+                      --tal-https <HTTPS URI for TA cert on TAL> \
+                      --tal-rsync <RSYNC URI for TA cert on TAL>
 
 
 Associate the TA Signer with the Proxy
@@ -421,12 +435,18 @@ Make a TA Proxy Request
 *Note that the ``krillta`` subcommand combination ``proxy signer`` is
 used for actions for the ``proxy`` relating to its associated ``signer``.
 
+It might be worth to force all CAs to ask their parents for updated
+certificates first. This can be done using:
+
+.. code-block:: bash
+  krillc bulk refresh
+
 Download the TA Proxy Request
 -----------------------------
 
 .. code-block:: bash
 
-  krillta proxy signer show-request --format json > ./request.json
+  krillta proxy --format json signer show-request > ./request.json
 
 .. Note:: the request JSON includes both a readable representation of the
     request that is made by the ``proxy`` for the ``signer``, and a
