@@ -471,6 +471,10 @@ impl CaManager {
         &self,
         actor: &Actor,
     ) -> KrillResult<TrustAnchorSignedRequest> {
+        self.ca_schedule_sync_ta_child().await?;
+        
+        // TODO: Wait until sync is done...
+        
         let cmd =
             TrustAnchorProxyCommand::make_signer_request(&ta_handle(), actor);
         let proxy = self.send_ta_proxy_command(cmd).await?;
@@ -1477,6 +1481,26 @@ impl CaManager {
                 }
             }
         }
+    }
+
+    async fn ca_schedule_sync_ta_child(&self) -> KrillResult<()> {
+        if let Ok(cas) = self.ca_store.list() {
+            for ca_handle in cas {
+                if let Ok(ca) = self.get_ca(&ca_handle).await {
+                    for parent in ca.parents() {
+                        if parent.as_str() == TA_NAME {
+                            let task = Task::SyncParent {
+                                ca_handle: ca_handle.clone(),
+                                ca_version: 0,
+                                parent: parent.clone(),
+                            };
+                            self.tasks.schedule(task, now())?;
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Synchronizes a CA with its parents - up to the configures batch size.
