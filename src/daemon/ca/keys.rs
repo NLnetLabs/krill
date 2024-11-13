@@ -185,14 +185,21 @@ impl CertifiedKey {
             );
             true
         } else {
-            debug!(
-                "Will not request new certificate for CA '{}' under RC '{}'. Remaining not after time changed by less than 10%. From: {} To: {}",
-                handle,
-                rcn,
-                not_after.to_rfc3339(),
-                new_not_after.to_rfc3339()
-            );
-            false
+            if self.incoming_cert().resources().contains(&ResourceSet::all()) {
+                debug!(
+                    "It is technically too early for a new update, but request one anyway since it's the ta"
+                );
+                true
+            } else {
+                debug!(
+                    "Will not request new certificate for CA '{}' under RC '{}'. Remaining not after time changed by less than 10%. From: {} To: {}",
+                    handle,
+                    rcn,
+                    not_after.to_rfc3339(),
+                    new_not_after.to_rfc3339()
+                );
+                false
+            }
         }
     }
 }
