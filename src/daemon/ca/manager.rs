@@ -471,14 +471,21 @@ impl CaManager {
         &self,
         actor: &Actor,
     ) -> KrillResult<TrustAnchorSignedRequest> {
-        self.ca_schedule_sync_ta_child().await?;
+        let cas = self.ta_obtain_children().await;
+
+        if let Ok(cas) = cas {
+            for (ca, parent) in cas {
+                self.ca_sync_parent(&ca, 0, &parent, actor).await?;
+            }
+        }
         
-        // TODO: Wait until sync is done...
-        
+        // This is a very ugly solution to ensure that the sync parent
+        // finishes first.
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
         let cmd =
             TrustAnchorProxyCommand::make_signer_request(&ta_handle(), actor);
         let proxy = self.send_ta_proxy_command(cmd).await?;
-
         proxy.get_signer_request(self.config.ta_timing, &self.signer)
     }
 
@@ -1147,7 +1154,7 @@ impl CaManager {
                     ResourceClassListResponse::new(vec![entitlements])
                 })
         }?;
-
+        
         Ok(provisioning::Message::list_response(
             ca_handle.convert(),
             child.convert(),
@@ -1292,6 +1299,7 @@ impl CaManager {
                 request,
                 actor,
             );
+         
             self.send_ta_proxy_command(cmd).await?;
 
             provisioning::Message::not_performed_response(
@@ -1483,24 +1491,22 @@ impl CaManager {
         }
     }
 
-    async fn ca_schedule_sync_ta_child(&self) -> KrillResult<()> {
+    async fn ta_obtain_children(
+        &self
+    ) -> KrillResult<Vec<(CaHandle, ParentHandle)>> {
+        let mut children = vec![];
         if let Ok(cas) = self.ca_store.list() {
             for ca_handle in cas {
                 if let Ok(ca) = self.get_ca(&ca_handle).await {
                     for parent in ca.parents() {
                         if parent.as_str() == TA_NAME {
-                            let task = Task::SyncParent {
-                                ca_handle: ca_handle.clone(),
-                                ca_version: 0,
-                                parent: parent.clone(),
-                            };
-                            self.tasks.schedule(task, now())?;
+                            children.push((ca_handle.clone(), parent.clone()));
                         }
                     }
                 }
             }
         }
-        Ok(())
+        Ok(children)
     }
 
     /// Synchronizes a CA with its parents - up to the configures batch size.
