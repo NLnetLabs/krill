@@ -115,7 +115,7 @@ impl ConfPermission {
     }
 }
 
-impl<'a> TryFrom<String> for ConfPermission {
+impl TryFrom<String> for ConfPermission {
     type Error = String;
 
     fn try_from(src: String) -> Result<Self, Self::Error> {
@@ -249,16 +249,8 @@ mod policy {
             RtaRead,
         ]);
 
-        pub const CONF_CREATE: Self = Self::from_permissions(&[
-            CaCreate,
-        ]);
-
         pub const CONF_UPDATE: Self = Self::from_permissions(&[
             RoutesUpdate, BgpsecUpdate, RtaUpdate,
-        ]);
-
-        pub const CONF_DELETE: Self = Self::from_permissions(&[
-            PubDelete, CaDelete,
         ]);
     }
 }
