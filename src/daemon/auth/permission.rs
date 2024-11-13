@@ -93,7 +93,7 @@ define_permission! {
 /// permissions `"list"`, `"read"`, `"create"`, `"delete"`, and `"admin"`
 /// which include all the respective permissions for all components.
 #[derive(Clone, Copy, Debug, Deserialize)]
-#[serde(try_from = "&str")]
+#[serde(try_from = "String")]
 pub enum ConfPermission {
     Single(Permission),
     Any,
@@ -115,15 +115,15 @@ impl ConfPermission {
     }
 }
 
-impl<'a> TryFrom<&'a str> for ConfPermission {
+impl<'a> TryFrom<String> for ConfPermission {
     type Error = String;
 
-    fn try_from(src: &'a str) -> Result<Self, Self::Error> {
-        if let Ok(res) = Permission::from_str(src) {
+    fn try_from(src: String) -> Result<Self, Self::Error> {
+        if let Ok(res) = Permission::from_str(&src) {
             return Ok(Self::Single(res))
         }
 
-        match src {
+        match src.as_str() {
             "any" => Ok(Self::Any),
             "read" => Ok(Self::Read),
             "update" => Ok(Self::Update),
@@ -242,7 +242,11 @@ mod policy {
         ]);
 
         pub const CONF_READ: Self = Self::from_permissions(&[
-            CaRead, RoutesRead, AspasRead, BgpsecRead, RtaRead,
+            CaRead,
+            RoutesRead, RoutesAnalysis,
+            AspasRead,
+            BgpsecRead,
+            RtaRead,
         ]);
 
         pub const CONF_CREATE: Self = Self::from_permissions(&[
