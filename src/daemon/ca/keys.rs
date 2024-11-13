@@ -176,6 +176,8 @@ impl CertifiedKey {
             || (remaining_seconds_on_eligible as f64
                 / remaining_seconds_on_current as f64)
                 > 1.1_f64
+            || (remaining_seconds_on_eligible
+                - remaining_seconds_on_current >= 604_800)
         {
             info!(
                 "Will request new certificate for CA '{}' under RC '{}'. Not after time increased to: {}",
