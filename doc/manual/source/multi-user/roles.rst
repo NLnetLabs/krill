@@ -50,7 +50,8 @@ Currently, the following permissions are defined:
 .. Glossary::
 
     ``login``
-        required for logging into the Krill UI,
+        required for logging into the Krill UI and for accessing any
+        resources,
 
     ``pub-admin``
         required for access to the built-in publication server,
@@ -151,7 +152,7 @@ role that only allows read access to the ``"example"`` CA.
 
     [auth_roles]
     "admin" = { permissions = [ "any" ] }
-    "readwrite" = { permissions = [ "pub-list", "pub-read", "pub-create", "pub-delete", "ca-list", "ca-create", "ca-delete", "read", "update" ] }
-    "readonly" = { permissions = [ "pub-read", "ca-list", "read" ] }
-    "read-example" = { permissions = [ "read" ], cas = [ "example" ] }
+    "readwrite" = { permissions = [ "login", "pub-list", "pub-read", "pub-create", "pub-delete", "ca-list", "ca-create", "ca-delete", "read", "update" ] }
+    "readonly" = { permissions = [ "login", "pub-read", "ca-list", "read" ] }
+    "read-example" = { permissions = [ "login", "read" ], cas = [ "example" ] }
 

@@ -11,6 +11,7 @@ use super::util::{FlexibleIdTokenClaims, FlexibleUserInfoClaims};
 
 //------------ Claims --------------------------------------------------------
 
+#[derive(Debug)]
 pub struct Claims<'a> {
     id_token_claims: &'a FlexibleIdTokenClaims,
     user_info_claims: Option<FlexibleUserInfoClaims>,

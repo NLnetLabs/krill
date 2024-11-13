@@ -146,7 +146,7 @@ to ``krill.conf``. The end result should look something like this:
    auth_type = "config-file"
 
    [auth_users]
-   "joe@example.com"  = { role"admin", password_hash="521e....0529", salt="d539....115e" }
+   "joe@example.com"  = { role="admin", password_hash="521e....0529", salt="d539....115e" }
    "sally"            = { role="readonly", password_hash="...", salt="..." }
    "dave_the_octopus" = { role="readwrite", password_hash="...", salt="..." }
 
