@@ -1,101 +1,58 @@
-use std::{fmt, str::FromStr};
+//! The publicly exposed key-value store.
 
-use serde::{de::DeserializeOwned, Serialize};
+use std::fmt;
+use std::str::FromStr;
+use serde::de::DeserializeOwned;
+use serde::ser::Serialize;
 use url::Url;
 
 use crate::commons::storage;
-use crate::commons::error::KrillIoError;
 use crate::commons::storage::{
-    Key, Namespace, NamespaceBuf, Scope, Segment, SegmentBuf, Transaction,
+    Backend, Key, Namespace, NamespaceBuf, Scope, Transaction,
 };
 
-pub trait SegmentExt {
-    fn parse_lossy(value: &str) -> SegmentBuf;
-    fn concat(
-        lhs: impl Into<SegmentBuf>,
-        rhs: impl Into<SegmentBuf>,
-    ) -> SegmentBuf;
-}
 
-impl SegmentExt for Segment {
-    fn parse_lossy(value: &str) -> SegmentBuf {
-        match Segment::parse(value) {
-            Ok(segment) => segment.to_owned(),
-            Err(error) => {
-                let sanitized = value.trim().replace(Segment::SEPARATOR, "+");
-                let nonempty = sanitized
-                    .is_empty()
-                    .then(|| "EMPTY".to_owned())
-                    .unwrap_or(sanitized);
-                let segment = Segment::parse(&nonempty).unwrap(); // cannot panic as all checks are performed above
-                warn!("{value} is not a valid Segment: {error}\nusing {segment} instead");
-                segment.to_owned()
-            }
-        }
-    }
+//------------ KeyValueStore -------------------------------------------------
 
-    fn concat(
-        lhs: impl Into<SegmentBuf>,
-        rhs: impl Into<SegmentBuf>,
-    ) -> SegmentBuf {
-        Segment::parse(&format!("{}{}", lhs.into(), rhs.into()))
-            .unwrap()
-            .to_owned()
-    }
-}
-
+/// A key-value store.
 #[derive(Debug)]
 pub struct KeyValueStore {
-    inner: storage::KeyValueStore,
+    inner: Backend,
 }
 
-// # Construct and high level functions.
 impl KeyValueStore {
-    /// Creates a new KeyValueStore.
+    /// Creates a new store.
     pub fn create(
         storage_uri: &Url,
         namespace: &Namespace,
     ) -> Result<Self, KeyValueError> {
         Ok(Self {
-            inner: storage::KeyValueStore::new(storage_uri, namespace)?
+            inner: Backend::new(storage_uri, namespace)?.ok_or_else(|| {
+                KeyValueError::UnknownScheme(storage_uri.scheme().into())
+            })?
         })
     }
 
-    /// Returns true if this KeyValueStore (with this namespace) has any
-    /// entries.
+    /// Returns whether the store has no entries.
     pub fn is_empty(&self) -> Result<bool, KeyValueError> {
-        // NOTE: this is done using `self.execute` as this would result in a
-        // lockfile       to be created for disk based inner stores,
-        // and that would make them       appear as not empty.
+        // NOTE: this is not done using `self.execute` as this would result
+        // in a lockfile to be created for disk based inner stores, and that
+        // would make them appear as not empty.
         self.inner.is_empty().map_err(KeyValueError::Inner)
     }
 
-    /// Wipe the complete store. Needless to say perhaps.. use with care..
+    /// Wipes the complete store.
     pub fn wipe(&self) -> Result<(), KeyValueError> {
         self.execute(&Scope::global(), |kv| kv.clear())
     }
 
-    /// Execute one or more `storage::KeyValueStoreBackend` operations
-    /// within a transaction or scope lock context inside the given
-    /// closure.
-    ///
-    /// The closure needs to return a Result<T, storage::Error>. This
-    /// allows the caller to simply use the ? operator on any storage
-    /// calls that could result in an error within the closure. The
-    /// storage::Error is mapped to a KeyValueError to avoid that the
-    /// caller needs to have any specific knowledge about the storage::Error
-    /// type.
-    ///
-    /// T can be () if no return value is needed. If anything can
-    /// fail in the closure, other than storage calls, then T can be
-    /// a Result<X,Y>.
     pub fn execute<F, T>(
         &self,
         scope: &Scope,
         op: F,
     ) -> Result<T, KeyValueError>
     where
-        F: Fn(Transaction) -> Result<T, storage::Error>,
+        F: Fn(&mut Transaction) -> Result<T, storage::Error>,
     {
         self.inner.execute(scope, op).map_err(KeyValueError::Inner)
     }
@@ -208,11 +165,10 @@ impl KeyValueStore {
         storage_uri: &Url,
         namespace: &Namespace,
     ) -> Result<Self, KeyValueError> {
-        let namespace = Self::prefixed_namespace(namespace, "upgrade")?;
-
-        Ok(Self {
-            inner: storage::KeyValueStore::new(storage_uri, &namespace)?
-        })
+        Self::create(
+            storage_uri,
+            &Self::prefixed_namespace(namespace, "upgrade")?
+        )
     }
 
     fn prefixed_namespace(
@@ -295,24 +251,9 @@ impl KeyValueStore {
 #[derive(Debug)]
 pub enum KeyValueError {
     UnknownScheme(String),
-    IoError(KrillIoError),
-    JsonError(serde_json::Error),
-    UnknownKey(Key),
     DuplicateKey(Key),
     Inner(storage::Error),
     Other(String),
-}
-
-impl From<KrillIoError> for KeyValueError {
-    fn from(e: KrillIoError) -> Self {
-        KeyValueError::IoError(e)
-    }
-}
-
-impl From<serde_json::Error> for KeyValueError {
-    fn from(e: serde_json::Error) -> Self {
-        KeyValueError::JsonError(e)
-    }
 }
 
 impl From<storage::Error> for KeyValueError {
@@ -321,29 +262,11 @@ impl From<storage::Error> for KeyValueError {
     }
 }
 
-impl From<storage::StoreNewError> for KeyValueError {
-    fn from(e: storage::StoreNewError) -> Self {
-        match e {
-            storage::StoreNewError::UnknownStorageScheme(scheme) => {
-                Self::UnknownScheme(scheme)
-            }
-            storage::StoreNewError::Store(err) => {
-                Self::Inner(err)
-            }
-        }
-    }
-}
-
 impl fmt::Display for KeyValueError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             KeyValueError::UnknownScheme(e) => {
                 write!(f, "Unknown Scheme: {}", e)
-            }
-            KeyValueError::IoError(e) => write!(f, "I/O error: {}", e),
-            KeyValueError::JsonError(e) => write!(f, "JSON error: {}", e),
-            KeyValueError::UnknownKey(key) => {
-                write!(f, "Unknown key: {}", key)
             }
             KeyValueError::DuplicateKey(key) => {
                 write!(f, "Duplicate key: {}", key)
@@ -358,10 +281,10 @@ impl fmt::Display for KeyValueError {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::env;
-
     use rand::{distributions::Alphanumeric, Rng};
+    use crate::commons::storage::{Segment, SegmentBuf};
+    use super::*;
 
     fn random_segment() -> SegmentBuf {
         rand::thread_rng()

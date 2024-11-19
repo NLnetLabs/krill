@@ -1,6 +1,5 @@
-use kvx::Namespace;
+use crate::commons::storage::Namespace;
 use crate::commons::actor::Actor;
-use crate::commons::eventsourcing::namespace;
 
 pub const KRILL_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const KRILL_VERSION_MAJOR: &str = env!("CARGO_PKG_VERSION_MAJOR");
@@ -44,17 +43,17 @@ pub fn test_announcements_enabled() -> bool {
 // until const fn's are more versatile for str's, we need to use lazy_static
 // to be able to expand the segment macro at compile time, while running the
 // expanded code, which actually makes it a Segment, at runtime
-pub const TASK_QUEUE_NS: &Namespace = namespace!("tasks");
-pub const CASERVER_NS: &Namespace = namespace!("cas");
-pub const CA_OBJECTS_NS: &Namespace = namespace!("ca_objects");
-pub const KEYS_NS: &Namespace = namespace!("keys");
-pub const PUBSERVER_CONTENT_NS: &Namespace = namespace!("pubd_objects");
-pub const PUBSERVER_NS: &Namespace = namespace!("pubd");
-pub const PROPERTIES_NS: &Namespace = namespace!("properties");
-pub const SIGNERS_NS: &Namespace = namespace!("signers");
-pub const STATUS_NS: &Namespace = namespace!("status");
-pub const TA_PROXY_SERVER_NS: &Namespace = namespace!("ta_proxy");
-pub const TA_SIGNER_SERVER_NS: &Namespace = namespace!("ta_signer");
+pub const TASK_QUEUE_NS: &Namespace = Namespace::make("tasks");
+pub const CASERVER_NS: &Namespace = Namespace::make("cas");
+pub const CA_OBJECTS_NS: &Namespace = Namespace::make("ca_objects");
+pub const KEYS_NS: &Namespace = Namespace::make("keys");
+pub const PUBSERVER_CONTENT_NS: &Namespace = Namespace::make("pubd_objects");
+pub const PUBSERVER_NS: &Namespace = Namespace::make("pubd");
+pub const PROPERTIES_NS: &Namespace = Namespace::make("properties");
+pub const SIGNERS_NS: &Namespace = Namespace::make("signers");
+pub const STATUS_NS: &Namespace = Namespace::make("status");
+pub const TA_PROXY_SERVER_NS: &Namespace = Namespace::make("ta_proxy");
+pub const TA_SIGNER_SERVER_NS: &Namespace = Namespace::make("ta_signer");
 
 pub const PROPERTIES_DFLT_NAME: &str = "main";
 

@@ -2,7 +2,6 @@
 
 use std::{str::FromStr, sync::Arc};
 
-use kvx::{Namespace, Scope};
 use rpki::crypto::KeyIdentifier;
 use url::Url;
 
@@ -13,8 +12,9 @@ use crate::{
             OpenSslSigner,
         },
         eventsourcing::{
-            Aggregate, AggregateStore, KeyValueStore, WalStore, WalSupport,
+            Aggregate, AggregateStore, WalStore, WalSupport,
         },
+        storage::{KeyValueStore, Namespace, Scope},
     },
     constants::{
         CASERVER_NS, KEYS_NS, PROPERTIES_NS, PUBSERVER_CONTENT_NS,
