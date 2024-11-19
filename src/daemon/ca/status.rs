@@ -1,6 +1,5 @@
 use std::{collections::HashMap, str::FromStr, sync::RwLock};
 
-use kvx::Namespace;
 use rpki::ca::{
     idexchange::{CaHandle, ChildHandle, ParentHandle, ServiceUri},
     provisioning::ResourceClassListResponse as Entitlements,
@@ -14,15 +13,14 @@ use crate::commons::{
         ErrorResponse, ParentStatus, ParentStatuses, RepoStatus,
     },
     error::Error,
-    eventsourcing::{
-        segment, Key, KeyValueStore, Scope, Segment, SegmentExt,
-    },
+    eventsourcing::{KeyValueStore, SegmentExt},
+    storage::{Key, Namespace, Scope, Segment},
     util::httpclient,
     KrillResult,
 };
 
-const PARENTS_PREFIX: &Segment = segment!("parents-");
-const CHILDREN_PREFIX: &Segment = segment!("children-");
+const PARENTS_PREFIX: &Segment = Segment::make("parents-");
+const CHILDREN_PREFIX: &Segment = Segment::make("children-");
 const JSON_SUFFIX: &str = ".json";
 
 //------------ CaStatus ------------------------------------------------------
@@ -203,7 +201,7 @@ impl StatusStore {
     ) -> KrillResult<()> {
         let key = Key::new_scoped(
             Scope::from_segment(Segment::parse_lossy(ca.as_str())),
-            segment!("status.json"),
+            const { Segment::make("status.json") },
         ); // ca should always be a valid Segment
 
         let status = self.store.get::<CaStatus>(&key).ok().flatten();
@@ -238,7 +236,7 @@ impl StatusStore {
         // we may need to support multiple repos in future
         Key::new_scoped(
             Scope::from_segment(Segment::parse_lossy(ca.as_str())), /* ca should always be a valid Segment */
-            segment!("repos-main.json"),
+            const { Segment::make("repos-main.json") },
         )
     }
 
@@ -544,7 +542,7 @@ mod tests {
         // using the copied the data - that will be done next and start
         // a migration.
         let testbed_status_key = Key::new_scoped(
-            Scope::from_segment(segment!("testbed")),
+            Scope::from_segment(const { Segment::make("testbed") }),
             Segment::parse("status.json").unwrap(),
         );
         let status_testbed_before_migration: CaStatus =

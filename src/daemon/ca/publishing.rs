@@ -29,9 +29,9 @@ use crate::{
         crypto::KrillSigner,
         error::Error,
         eventsourcing::{
-            Key, KeyValueStore, PreSaveEventListener, Scope, Segment,
-            SegmentExt,
+            KeyValueStore, PreSaveEventListener, SegmentExt,
         },
+        storage::{Key, Scope, Segment},
         KrillResult,
     },
     constants::CA_OBJECTS_NS,
@@ -263,36 +263,32 @@ impl CaObjectsStore {
     /// Perform an action (closure) on a mutable instance of the CaObjects for
     /// a CA. If the CA did not have any CaObjects yet, one will be
     /// created. The closure is executed within a write lock.
-    pub fn with_ca_objects<F>(
+    pub fn with_ca_objects<F, T>(
         &self,
         ca: &CaHandle,
-        mut op: F,
-    ) -> KrillResult<()>
+        op: F,
+    ) -> KrillResult<T>
     where
-        F: FnMut(&mut CaObjects) -> KrillResult<()>,
+        F: Fn(&mut CaObjects) -> KrillResult<T>,
     {
-        self.store
-            .execute(&Scope::global(), |kv| {
-                let key = Self::key(ca);
+        self.store.execute(&Scope::global(), |kv| {
+            let key = Self::key(ca);
 
-                let mut objects: CaObjects = if let Some(value) =
-                    kv.get(&key)?
-                {
-                    serde_json::from_value(value)?
-                } else {
+            let mut objects: CaObjects = match kv.get(&key)? {
+                Some(value) => value,
+                None => {
                     CaObjects::new(ca.clone(), None, HashMap::new(), vec![])
-                };
-
-                match op(&mut objects) {
-                    Err(e) => Ok(Err(e)),
-                    Ok(()) => {
-                        let value = serde_json::to_value(&objects)?;
-                        kv.store(&key, value)?;
-                        Ok(Ok(()))
-                    }
                 }
-            })
-            .map_err(Error::KeyValueError)?
+            };
+
+            match op(&mut objects) {
+                Err(e) => Ok(Err(e)),
+                Ok(t) => {
+                    kv.store(&key, &objects)?;
+                    Ok(Ok(t))
+                }
+            }
+        }).map_err(Error::KeyValueError)?
     }
 
     // Re-issue MFT and CRL for all CAs *if needed*, returns all CAs which
@@ -303,16 +299,13 @@ impl CaObjectsStore {
         ca_handle: &CaHandle,
     ) -> KrillResult<bool> {
         debug!("Re-issue for CA {} using force: {}", ca_handle, force);
-        let mut re_issued = false;
         self.with_ca_objects(ca_handle, |objects| {
-            re_issued = objects.re_issue(
+            Ok(objects.re_issue(
                 force,
                 &self.issuance_timing,
                 &self.signer,
-            )?;
-            Ok(())
-        })?;
-        Ok(re_issued)
+            )?)
+        })
     }
 }
 

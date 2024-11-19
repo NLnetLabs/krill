@@ -23,12 +23,11 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use kvx::{namespace, segment, Key, Namespace, Segment};
-
 use crate::{
     commons::{error::Error, util::ext_serde, KrillResult},
     daemon::config::Config,
 };
+use crate::commons::storage::{Key, Namespace, Segment};
 
 const CHACHA20_KEY_BIT_LEN: usize = 256;
 const CHACHA20_KEY_BYTE_LEN: usize = CHACHA20_KEY_BIT_LEN / 8;
@@ -40,8 +39,8 @@ const CLEARTEXT_PREFIX_LEN: usize =
     CHACHA20_NONCE_BYTE_LEN + POLY1305_TAG_BYTE_LEN;
 const UNUSED_AAD: [u8; 0] = [0; 0];
 
-const CRYPT_STATE_NS: &Namespace = namespace!("login_sessions");
-const CRYPT_STATE_KEY: &Segment = segment!("main_key");
+const CRYPT_STATE_NS: &Namespace = Namespace::make("login_sessions");
+const CRYPT_STATE_KEY: &Segment = Segment::make("main_key");
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct NonceState {

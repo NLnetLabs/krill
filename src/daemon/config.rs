@@ -8,7 +8,6 @@ use std::{
 };
 
 use chrono::Duration;
-use kvx::Namespace;
 use log::{error, LevelFilter};
 use rpki::{
     ca::idexchange::PublisherHandle,
@@ -27,6 +26,7 @@ use crate::{
         crypto::{OpenSslSignerConfig, SignSupport},
         error::{Error, KrillIoError},
         eventsourcing::KeyValueStore,
+        storage::Namespace,
         util::ext_serde,
         KrillResult,
     },

@@ -12,8 +12,9 @@ use crate::{
     commons::{
         api::CertAuthStorableCommand,
         eventsourcing::{
-            AggregateStore, Key, KeyValueStore, Segment, SegmentExt,
+            AggregateStore, KeyValueStore, SegmentExt,
         },
+        storage::{Key, Segment},
     },
     constants::{CASERVER_NS, CA_OBJECTS_NS},
     daemon::{
@@ -65,7 +66,7 @@ impl CaObjectsMigration {
             let converted: CaObjects = old_objects.try_into()?;
             self.new_store.store(&key, &converted)?;
             debug!(
-                "Stored updated objects for CA {} in {}",
+                "Stored updated objects for CA {} in {:?}",
                 ca, self.new_store
             );
         }

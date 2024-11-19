@@ -5,7 +5,6 @@ use std::{
     sync::{Arc, Mutex, RwLock},
 };
 
-use kvx::Namespace;
 use rpki::{ca::idexchange::MyHandle, repository::x509::Time};
 use serde::{de::DeserializeOwned, Serialize};
 use url::Url;
@@ -14,10 +13,11 @@ use crate::commons::{
     api::{CommandHistory, CommandHistoryCriteria, CommandHistoryRecord},
     error::KrillIoError,
     eventsourcing::{
-        cmd::Command, segment, Aggregate, Key, KeyValueError, KeyValueStore,
-        PostSaveEventListener, PreSaveEventListener, Scope, Segment,
+        cmd::Command, Aggregate, KeyValueError, KeyValueStore,
+        PostSaveEventListener, PreSaveEventListener,
         SegmentExt, StoredCommand, StoredCommandBuilder,
     },
+    storage::{Key, Namespace, Scope, Segment},
 };
 
 use super::InitCommand;
@@ -56,7 +56,7 @@ impl<A: Aggregate> AggregateStore<A> {
         use_history_cache: bool,
     ) -> StoreResult<Self> {
         let kv = KeyValueStore::create(storage_uri, namespace)?;
-        Self::create_from_kv(kv, use_history_cache)
+        Ok(Self::create_from_kv(kv, use_history_cache))
     }
 
     /// Creates an AggregateStore for upgrades using the given storage url
@@ -67,13 +67,13 @@ impl<A: Aggregate> AggregateStore<A> {
     ) -> StoreResult<Self> {
         let kv =
             KeyValueStore::create_upgrade_store(storage_uri, name_space)?;
-        Self::create_from_kv(kv, use_history_cache)
+        Ok(Self::create_from_kv(kv, use_history_cache))
     }
 
     fn create_from_kv(
         kv: KeyValueStore,
         use_history_cache: bool,
-    ) -> StoreResult<Self> {
+    ) -> Self {
         let cache = RwLock::new(HashMap::new());
         let history_cache = if !use_history_cache {
             None
@@ -91,7 +91,7 @@ impl<A: Aggregate> AggregateStore<A> {
             post_save_listeners,
         };
 
-        Ok(store)
+        store
     }
 
     /// Warms up the cache, to be used after startup. Will fail if any
@@ -195,9 +195,7 @@ where
                             let processed_command = processed_command_builder
                                 .finish_with_init_event(init_event);
 
-                            let json =
-                                serde_json::to_value(&processed_command)?;
-                            kv.store(&init_command_key, json)?;
+                            kv.store(&init_command_key, &processed_command)?;
 
                             let arc = Arc::new(aggregate);
 
@@ -279,18 +277,15 @@ where
 
                         let snapshot_key = Self::key_for_snapshot(handle);
                         match kv.get(&snapshot_key)? {
-                            Some(value) => {
+                            Some(agg) => {
                                 trace!("found snapshot for {handle}");
-                                let agg: A = serde_json::from_value(value)?;
                                 Ok(Arc::new(agg))
                             }
                             None => {
                                 let init_key = Self::key_for_command(handle, 0);
-                                match kv.get(&init_key)? {
-                                    Some(value) => {
+                                match kv.get::<StoredCommand<A>>(&init_key)? {
+                                    Some(init_command) => {
                                         trace!("found init command for {handle}");
-                                        let init_command: StoredCommand<A> = serde_json::from_value(value)?;
-
                                         match init_command.into_init() {
                                             Some(init_event) => {
                                                 let agg = A::init(handle.clone(), init_event);
@@ -332,11 +327,10 @@ where
 
                         let key = Self::key_for_command(handle, version);
 
-                        match kv.get(&key)? {
+                        match kv.get::<StoredCommand<A>>(&key)? {
                             None => break,
-                            Some(value) => {
+                            Some(command) => {
                                 trace!("found next command found for {handle}: {}", key);
-                                let command: StoredCommand<A> = serde_json::from_value(value)?;
                                 aggregate.apply_command(command);
                                 changed_from_cached = true;
                             }
@@ -380,11 +374,10 @@ where
                             // Store the processed command with the error.
                             let processed_command = processed_command_builder.finish_with_error(&e);
 
-                            let json = serde_json::to_value(&processed_command)?;
-                            aggregate.apply_command(processed_command);
+                            aggregate.apply_command(processed_command.clone());
 
                             changed_from_cached = true;
-                            kv.store(&command_key, json)?;
+                            kv.store(&command_key, &processed_command)?;
 
                             Err(e)
                         }
@@ -421,8 +414,7 @@ where
                                     Err(e)
                                 } else {
                                     // Save the latest command.
-                                    let json = serde_json::to_value(&processed_command)?;
-                                    kv.store(&command_key, json)?;
+                                    kv.store(&command_key, &processed_command)?;
 
                                     // Now send the events to the 'post-save' listeners.
                                     if let Some(events) = processed_command.events() {
@@ -448,8 +440,7 @@ where
 
                 if save_snapshot {
                     let key = Self::key_for_snapshot(handle);
-                    let value = serde_json::to_value(agg.as_ref())?;
-                    kv.store(&key, value)?;
+                    kv.store(&key, agg.as_ref())?;
                 }
 
                 if let Err(e) = res {
@@ -587,7 +578,10 @@ where
     }
 
     fn key_for_snapshot(agg: &MyHandle) -> Key {
-        Key::new_scoped(Self::scope_for_agg(agg), segment!("snapshot.json"))
+        Key::new_scoped(
+            Self::scope_for_agg(agg),
+            const { Segment::make("snapshot.json") }
+        )
     }
 
     fn key_for_command(agg: &MyHandle, version: u64) -> Key {

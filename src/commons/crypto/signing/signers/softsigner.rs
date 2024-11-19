@@ -27,7 +27,8 @@ use crate::{
             dispatch::signerinfo::SignerMapper, signers::error::SignerError,
             SignerHandle,
         },
-        eventsourcing::{Key, KeyValueStore, Segment, SegmentExt},
+        eventsourcing::{KeyValueStore, SegmentExt},
+        storage::{Key, Segment},
     },
     constants::KEYS_NS,
 };

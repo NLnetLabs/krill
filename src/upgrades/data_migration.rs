@@ -2,7 +2,6 @@
 
 use std::{str::FromStr, sync::Arc};
 
-use kvx::{Namespace, Scope};
 use rpki::crypto::KeyIdentifier;
 use url::Url;
 
@@ -15,6 +14,7 @@ use crate::{
         eventsourcing::{
             Aggregate, AggregateStore, KeyValueStore, WalStore, WalSupport,
         },
+        storage::{Namespace, Scope},
     },
     constants::{
         CASERVER_NS, KEYS_NS, PROPERTIES_NS, PUBSERVER_CONTENT_NS,

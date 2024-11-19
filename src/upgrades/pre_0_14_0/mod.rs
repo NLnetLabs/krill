@@ -1,6 +1,5 @@
 use std::{fmt, str::FromStr};
 
-use kvx::Namespace;
 use rpki::{
     ca::{idexchange::MyHandle, publication::Base64},
     repository::{
@@ -22,6 +21,7 @@ use crate::{
             Aggregate, AggregateStore, KeyValueStore, Storable,
             StoredCommand, StoredCommandBuilder, WithStorableDetails,
         },
+        storage::Namespace,
     },
     daemon::{
         ca::{CertAuthEvent, CertAuthInitEvent},

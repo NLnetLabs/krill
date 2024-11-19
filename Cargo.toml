@@ -28,9 +28,9 @@ bytes           = "1"
 chrono          = { version = "0.4", features = ["serde"] }
 clap            = { version = "4.5.7", features = ["cargo", "derive", "env",  "wrap_help"]}
 cryptoki        = { version = "0.7", optional = true }
+fd-lock         = "4.0.1"
 fern            = { version = "0.6.2", features = ["syslog-6"] }
 futures-util    = "0.3"
-fslock          = "0.2.1"
 hex             = "0.4"
 http-body-util  = "0.1"
 hyper           = { version = "1.3.1", features = ["server"] }
@@ -38,7 +38,7 @@ hyper-util      = { version = "0.1", features = [ "server" ] }
 intervaltree    = "0.2.6"
 jmespatch       = { version = "0.3", features = ["sync"], optional = true }
 kmip            = { version = "0.4.2", package = "kmip-protocol", features = [ "tls-with-openssl" ], optional = true }
-kvx             = { version = "0.9.3", features = ["macros"] }
+lazy_static 	= "1.4"
 libflate        = "2.1.0"
 log             = "0.4"
 once_cell       = { version = "1.7.2", optional = true }
@@ -47,6 +47,9 @@ openssl         = { version = "0.10", features = ["v110"] }
 oso             = { version = "0.12", optional = true, default-features = false }
 percent-encoding = "2.3.1"
 pin-project-lite = "0.2.4"
+postgres        = { version = "0.19", features = ["with-serde_json-1"], optional = true }
+postgres-types  = { version = "0.2", features = ["derive"], optional = true }
+r2d2_postgres   = { version = "0.18", optional = true }
 r2d2            = { version = "0.8.9", optional = true }
 rand            = "0.8"
 regex           = { version = "1.5.5", optional = true, default-features = false, features = [ "std" ] }
@@ -58,6 +61,7 @@ scrypt          = { version = "0.11", optional = true, default-features = false 
 secrecy         = { version = "0.8", features = ["serde"] }
 serde           = { version = "1.0", features = ["derive", "rc"] }
 serde_json      = "1.0"
+tempfile        = "3.14.0"
 tokio           = { version = "1", features = [ "macros", "rt", "rt-multi-thread", "signal", "time" ] }
 tokio-rustls    = { version = "0.26", default-features = false, features = [ "ring", "logging", "tls12" ] }
 toml            = "0.8.14"
@@ -77,7 +81,7 @@ uuid            = { version = "1.1", features = ["v4"] }
 syslog = "6.1.1"
 
 [features]
-default = ["multi-user", "hsm"]
+default = ["multi-user", "hsm", "postgres"]
 hsm = ["backoff", "kmip", "once_cell", "cryptoki", "r2d2"]
 multi-user = [
     "basic-cookies",
@@ -90,6 +94,7 @@ multi-user = [
     "unicode-normalization",
     "urlparse",
 ]
+postgres = ["dep:postgres", "dep:r2d2_postgres", "dep:postgres-types"]
 static-openssl = ["openssl/vendored"]
 
 # Preview features - not ready for production use
