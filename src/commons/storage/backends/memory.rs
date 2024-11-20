@@ -41,7 +41,7 @@ impl Store {
 
     pub fn execute<F, T>(&self, scope: &Scope, op: F) -> Result<T, SuperError>
     where
-        F: for<'a> Fn(SuperTransaction<'a>) -> Result<T, SuperError>
+        F: for<'a> Fn(&mut SuperTransaction<'a>) -> Result<T, SuperError>
     {
         let wait = Duration::from_millis(10);
         let tries = 1000;
@@ -59,7 +59,7 @@ impl Store {
             thread::sleep(wait);
         }
 
-        let res = op(SuperTransaction::from(self));
+        let res = op(&mut SuperTransaction::from(self));
 
         self.namespace.locks().remove(scope);
 

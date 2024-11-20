@@ -10,6 +10,10 @@ use super::segment::{ParseSegmentError, Segment, SegmentBuf};
 ///
 /// A scope consists of a sequence of zero or more segments.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[cfg_attr(
+    feature = "postgres",
+    derive(postgres::types::ToSql, postgres::types::FromSql)
+)]
 pub struct Scope {
     segments: Vec<SegmentBuf>,
 }
@@ -27,6 +31,11 @@ impl Scope {
     /// Create a scope from a single segment.
     pub fn from_segment(segment: impl Into<SegmentBuf>) -> Self {
         Scope::new(vec![segment.into()])
+    }
+
+    /// Returns a reference of the slice of segments.
+    pub fn as_slice(&self) -> &[SegmentBuf] {
+        self.segments.as_slice()
     }
 
     /// Returns whether the scope is the global scope, ie., empty.

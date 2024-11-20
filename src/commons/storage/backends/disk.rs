@@ -77,11 +77,11 @@ impl Store {
 
     pub fn execute<F, T>(&self, scope: &Scope, op: F) -> Result<T, SuperError>
     where
-        F: for<'a> Fn(SuperTransaction<'a>) -> Result<T, SuperError>
+        F: for<'a> Fn(&mut SuperTransaction<'a>) -> Result<T, SuperError>
     {
         let mut file_lock = FileLock::create(self.scope_lock_path(scope))?;
         let _write_lock = file_lock.write()?;
-        op(SuperTransaction::from(self))
+        op(&mut SuperTransaction::from(self))
     }
 
     /// Returns the path for the given key.

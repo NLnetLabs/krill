@@ -44,7 +44,7 @@ macro_rules! store {
                 &self, scope: &Scope, op: F
             ) -> Result<T, Error>
             where
-                F: for<'a> Fn(Transaction<'a>) -> Result<T, Error>
+                F: for<'a> Fn(&mut Transaction<'a>) -> Result<T, Error>
             {
                 match &self.0 {
                     $(
@@ -122,12 +122,26 @@ macro_rules! store {
                     Self(TransactionInner::$variant(src))
                 }
             }
+
+            impl<'a> TryFrom<Transaction<'a>>
+            for super::backends::$module::Transaction<'a> {
+                type Error = ();
+
+                fn try_from(
+                    src: Transaction<'a>
+                ) -> Result<Self, Self::Error> {
+                    match src.0 {
+                        TransactionInner::$variant(inner) => Ok(inner),
+                        _ => Err(())
+                    }
+                }
+            }
         )*
 
         /// # Reading
         impl<'a> Transaction<'a> {
-            pub fn has(&self, key: &Key) -> Result<bool, Error> {
-                match &self.0 {
+            pub fn has(&mut self, key: &Key) -> Result<bool, Error> {
+                match &mut self.0 {
                     $(
                         TransactionInner::$variant(inner) => {
                             Ok(inner.has(key)?)
@@ -136,8 +150,8 @@ macro_rules! store {
                 }
             }
 
-            pub fn has_scope(&self, scope: &Scope) -> Result<bool, Error> {
-                match &self.0 {
+            pub fn has_scope(&mut self, scope: &Scope) -> Result<bool, Error> {
+                match &mut self.0 {
                     $(
                         TransactionInner::$variant(inner) => {
                             Ok(inner.has_scope(scope)?)
@@ -147,9 +161,9 @@ macro_rules! store {
             }
 
             pub fn get<T: DeserializeOwned>(
-                &self, key: &Key
+                &mut self, key: &Key
             ) -> Result<Option<T>, Error> {
-                match &self.0 {
+                match &mut self.0 {
                     $(
                         TransactionInner::$variant(inner) => {
                             Ok(inner.get(key)?)
@@ -159,9 +173,9 @@ macro_rules! store {
             }
 
             pub fn list_keys(
-                &self, scope: &Scope
+                &mut self, scope: &Scope
             ) -> Result<Vec<Key>, Error> {
-                match &self.0 {
+                match &mut self.0 {
                     $(
                         TransactionInner::$variant(inner) => {
                             Ok(inner.list_keys(scope)?)
@@ -170,8 +184,8 @@ macro_rules! store {
                 }
             }
 
-            pub fn list_scopes(&self) -> Result<Vec<Scope>, Error> {
-                match &self.0 {
+            pub fn list_scopes(&mut self) -> Result<Vec<Scope>, Error> {
+                match &mut self.0 {
                     $(
                         TransactionInner::$variant(inner) => {
                             Ok(inner.list_scopes()?)
@@ -185,9 +199,9 @@ macro_rules! store {
         /// # Writing
         impl<'a> Transaction<'a> {
             pub fn store<T: Serialize>(
-                &self, key: &Key, value: &T
+                &mut self, key: &Key, value: &T
             ) -> Result<(), Error> {
-                match &self.0 {
+                match &mut self.0 {
                     $(
                         TransactionInner::$variant(inner) => {
                             Ok(inner.store(key, value)?)
@@ -197,9 +211,9 @@ macro_rules! store {
             }
 
             pub fn move_value(
-                &self, from: &Key, to: &Key
+                &mut self, from: &Key, to: &Key
             ) -> Result<(), Error> {
-                match &self.0 {
+                match &mut self.0 {
                     $(
                         TransactionInner::$variant(inner) => {
                             Ok(inner.move_value(from, to)?)
@@ -209,9 +223,9 @@ macro_rules! store {
             }
 
             pub fn move_scope(
-                &self, from: &Scope, to: &Scope
+                &mut self, from: &Scope, to: &Scope
             ) -> Result<(), Error> {
-                match &self.0 {
+                match &mut self.0 {
                     $(
                         TransactionInner::$variant(inner) => {
                             Ok(inner.move_scope(from, to)?)
@@ -220,8 +234,8 @@ macro_rules! store {
                 }
             }
 
-            pub fn delete(&self, key: &Key) -> Result<(), Error> {
-                match &self.0 {
+            pub fn delete(&mut self, key: &Key) -> Result<(), Error> {
+                match &mut self.0 {
                     $(
                         TransactionInner::$variant(inner) => {
                             Ok(inner.delete(key)?)
@@ -230,8 +244,8 @@ macro_rules! store {
                 }
             }
 
-            pub fn delete_scope(&self, scope: &Scope) -> Result<(), Error> {
-                match &self.0 {
+            pub fn delete_scope(&mut self, scope: &Scope) -> Result<(), Error> {
+                match &mut self.0 {
                     $(
                         TransactionInner::$variant(inner) => {
                             Ok(inner.delete_scope(scope)?)
@@ -240,8 +254,8 @@ macro_rules! store {
                 }
             }
 
-            pub fn clear(&self) -> Result<(), Error> {
-                match &self.0 {
+            pub fn clear(&mut self) -> Result<(), Error> {
+                match &mut self.0 {
                     $(
                         TransactionInner::$variant(inner) => {
                             Ok(inner.clear()?)
@@ -323,9 +337,16 @@ macro_rules! store {
     }
 }
 
-
+#[cfg(not(feature = "postgres"))]
 store! {
     (Disk, disk)
     (Memory, memory)
+}
+
+#[cfg(feature = "postgres")]
+store! {
+    (Disk, disk)
+    (Memory, memory)
+    (Postgres, postgres)
 }
 

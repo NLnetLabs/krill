@@ -95,7 +95,7 @@ impl KeyValueStore {
         op: F,
     ) -> Result<T, KeyValueError>
     where
-        F: Fn(Transaction) -> Result<T, storage::Error>,
+        F: Fn(&mut Transaction) -> Result<T, storage::Error>,
     {
         self.inner.execute(scope, op).map_err(KeyValueError::Inner)
     }
