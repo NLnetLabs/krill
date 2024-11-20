@@ -3,11 +3,8 @@ use rpki::{ca::idexchange::MyHandle, repository::x509::Time};
 use crate::{
     commons::{
         api::StorableRepositoryCommand,
-        eventsourcing::{
-            AggregateStore, KeyValueStore, 
-            StoredCommandBuilder,
-        },
-        storage::{Scope, Segment},
+        eventsourcing::{AggregateStore, StoredCommandBuilder},
+        storage::{KeyValueStore, Scope, Segment},
         util::KrillVersion,
     },
     constants::PUBSERVER_NS,

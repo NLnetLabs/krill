@@ -11,7 +11,8 @@ use crate::upgrades::{
 use crate::{
     commons::{
         api::CertAuthStorableCommand,
-        eventsourcing::{AggregateStore, KeyValueStore},
+        eventsourcing::AggregateStore,
+        storage::KeyValueStore,
     },
     constants::CASERVER_NS,
     daemon::{

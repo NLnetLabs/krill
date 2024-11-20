@@ -18,10 +18,10 @@ use crate::{
             SignerInfo, SignerInfoEvent, SignerInfoInitEvent,
         },
         eventsourcing::{
-            Aggregate, AggregateStore, KeyValueStore, Storable,
+            Aggregate, AggregateStore, Storable,
             StoredCommand, StoredCommandBuilder, WithStorableDetails,
         },
-        storage::Namespace,
+        storage::{KeyValueStore, Namespace},
     },
     daemon::{
         ca::{CertAuthEvent, CertAuthInitEvent},

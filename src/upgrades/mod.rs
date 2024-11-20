@@ -22,11 +22,10 @@ use crate::{
         error::KrillIoError,
         eventsourcing::{
             Aggregate, AggregateStore, AggregateStoreError,
-            KeyValueError, KeyValueStore, SegmentExt,
             Storable, StoredCommand, WalStore, WalStoreError,
             WithStorableDetails,
         },
-        storage::{Key, Scope, Segment},
+        storage::{Key, KeyValueError, KeyValueStore, Scope, Segment},
         util::KrillVersion,
         KrillResult,
     },

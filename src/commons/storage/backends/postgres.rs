@@ -15,7 +15,7 @@ use url::Url;
 use crate::commons::storage::{
     Key, Namespace, NamespaceBuf, Scope, Segment, SegmentBuf,
 };
-use crate::commons::storage::store::{
+use super::{
     Error as SuperError,
     Transaction as SuperTransaction
 };

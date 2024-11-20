@@ -13,8 +13,7 @@ use crate::commons::{
         ErrorResponse, ParentStatus, ParentStatuses, RepoStatus,
     },
     error::Error,
-    eventsourcing::{KeyValueStore, SegmentExt},
-    storage::{Key, Namespace, Scope, Segment},
+    storage::{Key, KeyValueStore, Namespace, Scope, Segment},
     util::httpclient,
     KrillResult,
 };

@@ -23,10 +23,10 @@ use crate::{
             RoaPayload,
         },
         crypto::SignerError,
-        eventsourcing::{AggregateStoreError, KeyValueError},
+        eventsourcing::AggregateStoreError,
         queue,
         storage,
-        storage::StoreNewError,
+        storage::KeyValueError,
         util::httpclient,
     },
     daemon::{ca::RoaPayloadJsonMapKey, http::tls_keys},
@@ -195,7 +195,6 @@ pub enum Error {
     // System Issues
     //-----------------------------------------------------------------
     IoError(KrillIoError),
-    StoreNewError(StoreNewError),
     KeyValueError(KeyValueError),
     QueueError(queue::Error),
     AggregateStoreError(AggregateStoreError),
@@ -375,7 +374,6 @@ impl fmt::Display for Error {
             // System Issues
             //-----------------------------------------------------------------
             Error::IoError(e) => write!(f, "I/O error: {}", e),
-            Error::StoreNewError(e) => write!(f, "Store creation error: {e}"),
             Error::KeyValueError(e) => write!(f, "Key/Value error: {}", e),
             Error::QueueError(e) => write!(f, "Queue error: {}", e),
             Error::AggregateStoreError(e) => write!(f, "Persistence (aggregate store) error: {}", e),
@@ -574,12 +572,6 @@ impl From<KrillIoError> for Error {
     }
 }
 
-impl From<StoreNewError> for Error {
-    fn from(e: StoreNewError) -> Self {
-        Error::StoreNewError(e)
-    }
-}
-
 impl From<KeyValueError> for Error {
     fn from(e: KeyValueError) -> Self {
         Error::KeyValueError(e)
@@ -749,11 +741,6 @@ impl Error {
             // internal server error
             Error::IoError(e) => {
                 ErrorResponse::new("sys-io", self).with_cause(e)
-            }
-
-            // internal server error
-            Error::StoreNewError(e) => {
-                ErrorResponse::new("sys-kv", self).with_cause(e)
             }
 
             // internal server error

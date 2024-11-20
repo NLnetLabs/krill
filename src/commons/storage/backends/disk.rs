@@ -12,7 +12,7 @@ use url::Url;
 use crate::commons::storage::types::{
     Key, Namespace, Segment, SegmentBuf, Scope
 };
-use crate::commons::storage::store::{
+use super::{
     Error as SuperError,
     Transaction as SuperTransaction
 };
@@ -20,8 +20,15 @@ use crate::commons::storage::store::{
 
 //------------ Constants -----------------------------------------------------
 
+/// The directory under the root that contains temporary files.
+const TMP_FILE_DIR: &str = ".tmp";
+
+/// The directory under the root that contains the lock files.
+const LOCK_FILE_DIR: &str = ".locks";
+
+/// The name of the lock file for a scope.
 pub const LOCK_FILE_NAME: &str = "lockfile.lock";
-const LOCK_FILE_DIR: &Segment = Segment::make(".locks");
+
 
 
 //------------ Store ---------------------------------------------------------
@@ -35,17 +42,38 @@ const LOCK_FILE_DIR: &Segment = Segment::make(".locks");
 /// into a file name with the extension `.json`. Values are stored in this
 /// file as JSON objects.
 ///
-/// A locking strategy based on the presence of files is employed as well.
+/// In addition, the backend employes a locking strategy as a transaction
+/// replacement. When executing on a given scope, a lock file is created
+/// in a directory under `.locks/$(namespace)/$(scope)` with an advisory
+/// lock on it.
 ///
-/// # Note
+/// # Notes
 ///
-/// The use of `.tmp` is a change from earlier versions which used `tmp`.
-/// However, since this is a valid namespace, using this directory may lead
-/// to surprises.
+/// * The use of `.tmp` is a change from earlier versions which used `tmp`.
+///   However, since this is a valid namespace, using this directory may
+///   lead to surprises.
+/// * The lock directory used to be under the namespace directory. This has
+///   now been moved to a directory under the base directory so that there
+///   is no collision with an actual scope starting with `.locks`.
 #[derive(Debug)]
 pub struct Store {
+    /// The root path for the store.
+    ///
+    /// This will be a directory with the namespace name under the base
+    /// directory.
     root: PathBuf,
+
+    /// The path for temporary files within the store.
+    ///
+    /// This will be directly under the base directory and shared between
+    /// namespaces.
     tmp: PathBuf,
+
+    /// The path for lock files for this namespace.
+    ///
+    /// This will be a directory with the namespace name under the locks
+    /// directory under the base_name.
+    locks: PathBuf,
 }
 
 impl Store {
@@ -60,7 +88,9 @@ impl Store {
             "{}{}", uri.host_str().unwrap_or_default(), uri.path()
         ));
         let root = path.join(namespace.as_str());
-        let tmp = path.join(".tmp");
+        let tmp = path.join(TMP_FILE_DIR);
+        let mut locks = path.join(LOCK_FILE_DIR);
+        locks.push(namespace.as_str());
 
         fs::create_dir_all(&tmp).map_err(|err| {
             Error::io(
@@ -72,7 +102,7 @@ impl Store {
             )
         })?;
 
-        Ok(Some(Self { root, tmp }))
+        Ok(Some(Self { root, tmp, locks }))
     }
 
     pub fn execute<F, T>(&self, scope: &Scope, op: F) -> Result<T, SuperError>
@@ -102,7 +132,7 @@ impl Store {
 
     /// Returns the lock file path for the given scope.
     fn scope_lock_path(&self, scope: &Scope) -> PathBuf {
-        let mut path = self.root.join(LOCK_FILE_DIR.as_str());
+        let mut path = self.locks.clone();
         for segment in scope {
             path.push(segment.as_str());
         }
@@ -358,10 +388,6 @@ impl Store {
         &self, key: &Key, value: &T
     ) -> Result<(), Error> {
         let path = self.key_path(key);
-
-        if key.scope().first_segment() == Some(LOCK_FILE_DIR) {
-            return Err(Error::invalid_key(key.clone()));
-        }
 
         Self::create_dirs(path.parent())?;
 
@@ -640,7 +666,6 @@ pub enum Error {
         key: Key,
         err: String,
     },
-    InvalidKey(Key),
     Other(String),
 }
 
@@ -655,10 +680,6 @@ impl Error {
 
     fn serialize(key: Key, err: impl fmt::Display) -> Self {
         Error::Serialize { key, err: err.to_string() }
-    }
-
-    fn invalid_key(key: Key) -> Self {
-        Error::InvalidKey(key)
     }
 
     fn other(info: impl Into<String>) -> Self {
@@ -683,9 +704,6 @@ impl fmt::Display for Error {
                     "failed to serialize value for key '{}': {}",
                     key, err
                 )
-            }
-            Error::InvalidKey(key) => {
-                write!(f, "invalid key '{}'", key)
             }
             Error::Other(s) => f.write_str(s)
         }

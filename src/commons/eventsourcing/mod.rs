@@ -18,11 +18,6 @@ pub use self::store::*;
 mod listener;
 pub use self::listener::*;
 
-mod kv;
-pub use self::kv::{
-    KeyValueError, KeyValueStore, SegmentExt,
-};
-
 //------------ Tests ---------------------------------------------------------
 
 #[cfg(test)]

@@ -125,6 +125,34 @@ impl Segment {
         Ok(unsafe { Self::from_str_unchecked(value) })
     }
 
+    /// Parses a string and converts into a valid segment.
+    ///
+    /// Any occurences of `'/'` are replaced with `'+'` and an empty slice
+    /// is replaced by `EMPTY`.
+    ///
+    /// Because this leads to potential name collisions, use of this function
+    /// is strongly discouraged.
+    //
+    //  XXX Remove this function. This needs some migration code, though.
+    pub fn parse_lossy(value: &str) -> SegmentBuf {
+        match Segment::parse(value) {
+            Ok(segment) => segment.to_owned(),
+            Err(error) => {
+                let sanitized = value.trim().replace(Segment::SEPARATOR, "+");
+                let nonempty = sanitized
+                    .is_empty()
+                    .then(|| "EMPTY".to_owned())
+                    .unwrap_or(sanitized);
+                let segment = SegmentBuf(nonempty);
+                warn!(
+                    "{value} is not a valid Segment: {error}\n\
+                     using {segment} instead"
+                );
+                segment
+            }
+        }
+    }
+
     /// Creates a segment from the given slice or panics.
     ///
     /// This function should be used to create segment constants.

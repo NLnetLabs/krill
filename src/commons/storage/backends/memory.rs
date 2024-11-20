@@ -13,7 +13,7 @@ use url::Url;
 use crate::commons::storage::{
     Key, Namespace, NamespaceBuf, SegmentBuf, Scope
 };
-use crate::commons::storage::store::{
+use super::{
     Error as SuperError,
     Transaction as SuperTransaction
 };

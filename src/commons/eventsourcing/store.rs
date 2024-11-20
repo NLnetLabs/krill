@@ -13,11 +13,11 @@ use crate::commons::{
     api::{CommandHistory, CommandHistoryCriteria, CommandHistoryRecord},
     error::KrillIoError,
     eventsourcing::{
-        cmd::Command, Aggregate, KeyValueError, KeyValueStore,
+        cmd::Command, Aggregate,
         PostSaveEventListener, PreSaveEventListener,
-        SegmentExt, StoredCommand, StoredCommandBuilder,
+        StoredCommand, StoredCommandBuilder,
     },
-    storage::{Key, Namespace, Scope, Segment},
+    storage::{Key, KeyValueError, KeyValueStore, Namespace, Segment, Scope},
 };
 
 use super::InitCommand;

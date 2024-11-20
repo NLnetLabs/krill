@@ -28,10 +28,8 @@ use crate::{
         },
         crypto::KrillSigner,
         error::Error,
-        eventsourcing::{
-            KeyValueStore, PreSaveEventListener, SegmentExt,
-        },
-        storage::{Key, Scope, Segment},
+        eventsourcing::{PreSaveEventListener},
+        storage::{Key, KeyValueStore, Scope, Segment},
         KrillResult,
     },
     constants::CA_OBJECTS_NS,

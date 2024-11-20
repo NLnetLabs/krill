@@ -1,22 +1,304 @@
+//! A task queue on top of a key-value store.
+
 use std::{error, fmt};
-use std::{
-    borrow::Cow,
-    fmt::{Display, Formatter},
-    str::FromStr,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+use std::borrow::Cow;
+use std::str::FromStr;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use url::Url;
+use crate::commons::storage::{
+    Key, KeyValueError, KeyValueStore, Namespace, Scope, Segment, SegmentBuf,
 };
 
-use crate::commons::storage;
-use crate::commons::storage::{Key, KeyValueStore, Scope, Segment, SegmentBuf};
 
-const SEPARATOR: char = '-';
+//------------ Queue ---------------------------------------------------------
 
-fn now() -> u128 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("time-travel is not supported")
-        .as_millis()
+#[derive(Debug)]
+pub struct Queue {
+    store: KeyValueStore,
 }
+
+impl Queue {
+    const RESCHEDULE_AFTER: Duration = Duration::from_secs(15 * 60);
+
+    fn lock_scope() -> Scope {
+        Scope::global()
+    }
+
+    fn pending_scope() -> Scope {
+        Scope::from_segment(PendingTask::SEGMENT)
+    }
+
+    fn running_scope() -> Scope {
+        Scope::from_segment(RunningTask::SEGMENT)
+    }
+}
+
+impl Queue {
+    /// Creates a new queue.
+    pub fn create(
+        storage_uri: &Url,
+        namespace: &Namespace,
+    ) -> Result<Self, Error> {
+        Ok(Queue {
+            store: KeyValueStore::create(storage_uri, namespace)?,
+        })
+    }
+
+    /// Returns the number of pending tasks remaining
+    pub fn pending_tasks_remaining(&self) -> Result<usize, Error> {
+        Ok(self.store.execute(&Self::lock_scope(), |kv| {
+            kv.list_keys(&Self::pending_scope()).map(|list| list.len())
+        })?)
+    }
+
+    /// Returns the number of running tasks
+    pub fn running_tasks_remaining(&self) -> Result<usize, Error> {
+        Ok(self.store.execute(&Self::lock_scope(), |kv| {
+            kv.list_keys(&Self::running_scope()).map(|list| list.len())
+        })?)
+    }
+
+    /// Returns the currently running tasks
+    pub fn running_tasks_keys(&self) -> Result<Vec<Key>, Error> {
+        Ok(self.store.execute(&Self::lock_scope(), |kv| {
+            kv.list_keys(&Self::running_scope())
+        })?)
+    }
+
+    /// Schedule a task.
+    pub fn schedule_task(
+        &self,
+        name: SegmentBuf,
+        value: serde_json::Value,
+        timestamp_millis: Option<u128>,
+        mode: ScheduleMode,
+    ) -> Result<(), Error> {
+        Ok(self.store.execute(
+            &Self::lock_scope(),
+            |s| {
+                let mut new_task = PendingTask {
+                    name: name.as_ref(),
+                    timestamp_millis: timestamp_millis.unwrap_or(now()),
+                    value: &value,
+                };
+                let new_task_key = Key::from(new_task);
+
+                let running_key_opt = s
+                    .list_keys(&Self::running_scope())?
+                    .into_iter()
+                    .filter_map(|k| TaskKey::try_from(&k).ok())
+                    .find(|running| running.name.as_ref() == new_task.name)
+                    .map(|tk| tk.running_key());
+
+                let pending_key_opt = s
+                    .list_keys(&Self::pending_scope())?
+                    .into_iter()
+                    .filter_map(|k| TaskKey::try_from(&k).ok())
+                    .find(|p| p.name.as_ref() == new_task.name)
+                    .map(|tk| tk.pending_key());
+
+                match mode {
+                    ScheduleMode::IfMissing => {
+                        if pending_key_opt.is_some()
+                            || running_key_opt.is_some()
+                        {
+                            // nothing to do, there is something
+                            Ok(())
+                        }
+                        else {
+                            // no pending or running task exists, just add
+                            // the new task
+                            s.store(&new_task_key, new_task.value)
+                        }
+                    }
+                    ScheduleMode::ReplaceExisting => {
+                        if let Some(pending) = pending_key_opt {
+                            s.delete(&pending)?;
+                        }
+                        s.store(&new_task_key, new_task.value)
+                    }
+                    ScheduleMode::ReplaceExistingSoonest => {
+                        if let Some(pending) = pending_key_opt {
+                            if let Ok(tk) = TaskKey::try_from(&pending) {
+                                new_task.timestamp_millis =
+                                    new_task.timestamp_millis.min(
+                                        tk.timestamp_millis
+                                    );
+                            }
+                            s.delete(&pending)?;
+                        }
+
+                        let new_task_key = Key::from(new_task);
+                        s.store(&new_task_key, new_task.value)
+                    }
+                    ScheduleMode::FinishOrReplaceExisting => {
+                        if let Some(running) = running_key_opt {
+                            s.delete(&running)?;
+                        }
+                        if let Some(pending) = pending_key_opt {
+                            s.delete(&pending)?;
+                        }
+                        s.store(&new_task_key, new_task.value)
+                    }
+                    ScheduleMode::FinishOrReplaceExistingSoonest => {
+                        if let Some(running) = running_key_opt {
+                            s.delete(&running)?;
+                        }
+
+                        if let Some(pending) = pending_key_opt {
+                            if let Ok(tk) = TaskKey::try_from(&pending) {
+                                new_task.timestamp_millis =
+                                    new_task.timestamp_millis.min(
+                                        tk.timestamp_millis
+                                    );
+                            }
+                            s.delete(&pending)?;
+                        }
+
+                        let new_task_key = Key::from(new_task);
+                        s.store(&new_task_key, new_task.value)
+                    }
+                }
+            },
+        )?)
+    }
+
+    /// Returns the scheduled timestamp in ms for the named task, if any.
+    pub fn pending_task_scheduled(
+        &self, name: &Segment
+    ) -> Result<Option<u128>, Error> {
+        Ok(self.store.execute(&Self::lock_scope(), |kv| {
+            kv.list_keys(&Self::pending_scope()).map(|keys| {
+                keys.into_iter()
+                    .filter_map(|k| TaskKey::try_from(&k).ok())
+                    .find(|p| p.name.as_ref() == name)
+                    .map(|p| p.timestamp_millis)
+            })
+        })?)
+    }
+
+    /// Marks a running task as finished. Fails if the task is not running.
+    pub fn finish_running_task(
+        &self, running_key: &Key
+    ) -> Result<(), Error> {
+        self.store.execute(&Self::lock_scope(), |kv| {
+            if kv.has(running_key)? {
+                kv.delete(running_key)?;
+                Ok(Ok(()))
+            } else {
+                Ok(Err(Error::other(format!(
+                    "Cannot finish task {}. It is not running.",
+                    running_key
+                ))))
+            }
+        })?
+    }
+
+    /// Reschedules a running task as pending. Fails if the task is not running.
+    pub fn reschedule_running_task(
+        &self, running: &Key, timestamp_millis: Option<u128>
+    ) -> Result<(), Error> {
+        let pending_key = {
+            let mut task_key = TaskKey::try_from(running)?;
+            task_key.timestamp_millis = timestamp_millis.unwrap_or_else(now);
+
+            task_key.pending_key()
+        };
+
+        Ok(self.store.execute(&Self::lock_scope(), |kv| {
+            kv.move_value(running, &pending_key)
+        })?)
+    }
+
+    /// Claims the next scheduled pending task, if any.
+    pub fn claim_scheduled_pending_task(
+        &self
+    ) -> Result<Option<RunningTask>, Error> {
+        Ok(self.store.execute(&Self::lock_scope(), |kv| {
+            let tasks_before = now();
+
+            if let Some(pending) = kv
+                .list_keys(&Self::pending_scope())?
+                .into_iter()
+                .filter_map(|k| TaskKey::try_from(&k).ok())
+                .filter(|tk| tk.timestamp_millis <= tasks_before)
+                .min_by_key(|tk| tk.timestamp_millis)
+            {
+                let pending_key = pending.pending_key();
+
+                if let Some(value) = kv.get(&pending_key)? {
+                    let mut running_task = RunningTask {
+                        name: pending.name.into_owned(),
+                        timestamp_millis: tasks_before,
+                        value,
+                    };
+                    let mut running_key = Key::from(&running_task);
+
+                    if kv.has(&running_key)? {
+                        // It's not pretty to sleep blocking, even if it's
+                        // for 1 ms, but if we don't then get a name collision
+                        // with an existing running task.
+                        std::thread::sleep(Duration::from_millis(1));
+                        running_task.timestamp_millis = now();
+                        running_key = Key::from(&running_task);
+                    }
+
+                    kv.move_value(&pending_key, &running_key)?;
+
+                    Ok(Some(running_task))
+                } else {
+                    Ok(None)
+                }
+            } else {
+                Ok(None)
+            }
+        })?)
+    }
+
+    /// Reschedules running tasks that have timed out.
+    pub fn reschedule_long_running_tasks(
+        &self, reschedule_after: Option<&Duration>
+    ) -> Result<(), Error> {
+        let now = now();
+
+        let reschedule_after = reschedule_after.unwrap_or(
+            &Self::RESCHEDULE_AFTER
+        );
+        let reschedule_timeout = now - reschedule_after.as_millis();
+
+        Ok(self.store.execute(
+            &Self::lock_scope(),
+            |s| {
+                s.list_keys(&Self::running_scope())?
+                    .into_iter()
+                    .filter_map(|k| {
+                        let task = TaskKey::try_from(&k).ok()?;
+                        if task.timestamp_millis <= reschedule_timeout {
+                            Some(task)
+                        } else {
+                            None
+                        }
+                    })
+                    .for_each(|tk| {
+                        let running_key = tk.running_key();
+
+                        let pending_key = TaskKey {
+                            name: Cow::Borrowed(&tk.name),
+                            timestamp_millis: now,
+                        }
+                        .pending_key();
+
+                        let _ = s.move_value(&running_key, &pending_key);
+                    });
+
+                Ok(())
+            },
+        )?)
+    }
+}
+
+
+//------------ TaskKey -------------------------------------------------------
 
 struct TaskKey<'a> {
     pub name: Cow<'a, Segment>,
@@ -79,6 +361,9 @@ impl<'a> From<&'a RunningTask> for Key {
     }
 }
 
+
+//------------ PendingTask ---------------------------------------------------
+
 #[derive(Clone, Copy, Debug)]
 pub struct PendingTask<'a> {
     pub name: &'a Segment,
@@ -100,8 +385,8 @@ impl<'a, 'b> PartialEq<PendingTask<'b>> for PendingTask<'a> {
     }
 }
 
-impl<'a> Display for PendingTask<'a> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+impl<'a> fmt::Display for PendingTask<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "{}{}{}",
@@ -111,6 +396,9 @@ impl<'a> Display for PendingTask<'a> {
         )
     }
 }
+
+
+//------------ RunningTask ---------------------------------------------------
 
 #[derive(Clone, Debug)]
 pub struct RunningTask {
@@ -123,8 +411,8 @@ impl RunningTask {
     const SEGMENT: &'static Segment = Segment::make("running");
 }
 
-impl Display for RunningTask {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for RunningTask {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "{}{}{}",
@@ -165,280 +453,21 @@ pub enum ScheduleMode {
     IfMissing,
 }
 
-pub trait Queue {
-    const RESCHEDULE_AFTER: Duration = Duration::from_secs(15 * 60);
 
-    fn lock_scope() -> Scope {
-        Scope::global()
-    }
+//------------ Helpers -------------------------------------------------------
 
-    fn pending_scope() -> Scope {
-        Scope::from_segment(PendingTask::SEGMENT)
-    }
 
-    fn running_scope() -> Scope {
-        Scope::from_segment(RunningTask::SEGMENT)
-    }
+const SEPARATOR: char = '-';
 
-    /// Returns the number of pending tasks remaining
-    fn pending_tasks_remaining(&self) -> Result<usize, Error>;
-
-    /// Returns the number of running tasks
-    fn running_tasks_remaining(&self) -> Result<usize, Error>;
-
-    /// Returns the currently running tasks
-    fn running_tasks_keys(&self) -> Result<Vec<Key>, Error>;
-
-    /// Schedule a task.
-    fn schedule_task(
-        &self,
-        name: SegmentBuf,
-        value: serde_json::Value,
-        timestamp_millis: Option<u128>,
-        existing: ScheduleMode,
-    ) -> Result<(), Error>;
-
-    /// Returns the scheduled timestamp in ms for the named task, if any.
-    fn pending_task_scheduled(&self, name: &Segment) -> Result<Option<u128>, Error>;
-
-    /// Marks a running task as finished. Fails if the task is not running.
-    fn finish_running_task(&self, running: &Key) -> Result<(), Error>;
-
-    /// Reschedules a running task as pending. Fails if the task is not running.
-    fn reschedule_running_task(&self, running: &Key, timestamp_millis: Option<u128>) -> Result<(), Error>;
-
-    /// Claims the next scheduled pending task, if any.
-    fn claim_scheduled_pending_task(&self) -> Result<Option<RunningTask>, Error>;
-
-    /// Reschedules running tasks that have timed out.
-    fn reschedule_long_running_tasks(&self, reschedule_after: Option<&Duration>) -> Result<(), Error>;
+fn now() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("time-travel is not supported")
+        .as_millis()
 }
 
-impl Queue for KeyValueStore {
-    fn pending_tasks_remaining(&self) -> Result<usize, Error> {
-        Ok(self.execute(&Self::lock_scope(), |kv| {
-            kv.list_keys(&Self::pending_scope()).map(|list| list.len())
-        })?)
-    }
 
-    fn running_tasks_remaining(&self) -> Result<usize, Error> {
-        Ok(self.execute(&Self::lock_scope(), |kv| {
-            kv.list_keys(&Self::running_scope()).map(|list| list.len())
-        })?)
-    }
-
-    fn running_tasks_keys(&self) -> Result<Vec<Key>, Error> {
-        Ok(self.execute(&Self::lock_scope(), |kv| {
-            kv.list_keys(&Self::running_scope())
-        })?)
-    }
-
-    fn schedule_task(
-        &self,
-        name: SegmentBuf,
-        value: serde_json::Value,
-        timestamp_millis: Option<u128>,
-        mode: ScheduleMode,
-    ) -> Result<(), Error> {
-        Ok(self.execute(
-            &Self::lock_scope(),
-            |s| {
-                let mut new_task = PendingTask {
-                    name: name.as_ref(),
-                    timestamp_millis: timestamp_millis.unwrap_or(now()),
-                    value: &value,
-                };
-                let new_task_key = Key::from(new_task);
-
-                let running_key_opt = s
-                    .list_keys(&Self::running_scope())?
-                    .into_iter()
-                    .filter_map(|k| TaskKey::try_from(&k).ok())
-                    .find(|running| running.name.as_ref() == new_task.name)
-                    .map(|tk| tk.running_key());
-
-                let pending_key_opt = s
-                    .list_keys(&Self::pending_scope())?
-                    .into_iter()
-                    .filter_map(|k| TaskKey::try_from(&k).ok())
-                    .find(|p| p.name.as_ref() == new_task.name)
-                    .map(|tk| tk.pending_key());
-
-                match mode {
-                    ScheduleMode::IfMissing => {
-                        if pending_key_opt.is_some() || running_key_opt.is_some() {
-                            // nothing to do, there is something
-                            Ok(())
-                        } else {
-                            // no pending or running task exists, just add the new task
-                            s.store(&new_task_key, new_task.value)
-                        }
-                    }
-                    ScheduleMode::ReplaceExisting => {
-                        if let Some(pending) = pending_key_opt {
-                            s.delete(&pending)?;
-                        }
-                        s.store(&new_task_key, new_task.value)
-                    }
-                    ScheduleMode::ReplaceExistingSoonest => {
-                        if let Some(pending) = pending_key_opt {
-                            if let Ok(tk) = TaskKey::try_from(&pending) {
-                                new_task.timestamp_millis =
-                                    new_task.timestamp_millis.min(tk.timestamp_millis);
-                            }
-                            s.delete(&pending)?;
-                        }
-
-                        let new_task_key = Key::from(new_task);
-                        s.store(&new_task_key, new_task.value)
-                    }
-                    ScheduleMode::FinishOrReplaceExisting => {
-                        if let Some(running) = running_key_opt {
-                            s.delete(&running)?;
-                        }
-                        if let Some(pending) = pending_key_opt {
-                            s.delete(&pending)?;
-                        }
-                        s.store(&new_task_key, new_task.value)
-                    }
-                    ScheduleMode::FinishOrReplaceExistingSoonest => {
-                        if let Some(running) = running_key_opt {
-                            s.delete(&running)?;
-                        }
-
-                        if let Some(pending) = pending_key_opt {
-                            if let Ok(tk) = TaskKey::try_from(&pending) {
-                                new_task.timestamp_millis =
-                                    new_task.timestamp_millis.min(tk.timestamp_millis);
-                            }
-                            s.delete(&pending)?;
-                        }
-
-                        let new_task_key = Key::from(new_task);
-                        s.store(&new_task_key, new_task.value)
-                    }
-                }
-            },
-        )?)
-    }
-
-    fn finish_running_task(&self, running_key: &Key) -> Result<(), Error> {
-        self.execute(&Self::lock_scope(), |kv| {
-            if kv.has(running_key)? {
-                kv.delete(running_key)?;
-                Ok(Ok(()))
-            } else {
-                Ok(Err(Error::other(format!(
-                    "Cannot finish task {}. It is not running.",
-                    running_key
-                ))))
-            }
-        })?
-    }
-
-    fn reschedule_running_task(&self, running: &Key, timestamp_millis: Option<u128>) -> Result<(), Error> {
-        let pending_key = {
-            let mut task_key = TaskKey::try_from(running)?;
-            task_key.timestamp_millis = timestamp_millis.unwrap_or_else(now);
-
-            task_key.pending_key()
-        };
-
-        Ok(self.execute(&Self::lock_scope(), |kv| {
-            kv.move_value(running, &pending_key)
-        })?)
-    }
-
-    fn claim_scheduled_pending_task(&self) -> Result<Option<RunningTask>, Error> {
-        Ok(self.execute(&Self::lock_scope(), |kv| {
-            let tasks_before = now();
-
-            if let Some(pending) = kv
-                .list_keys(&Self::pending_scope())?
-                .into_iter()
-                .filter_map(|k| TaskKey::try_from(&k).ok())
-                .filter(|tk| tk.timestamp_millis <= tasks_before)
-                .min_by_key(|tk| tk.timestamp_millis)
-            {
-                let pending_key = pending.pending_key();
-
-                if let Some(value) = kv.get(&pending_key)? {
-                    let mut running_task = RunningTask {
-                        name: pending.name.into_owned(),
-                        timestamp_millis: tasks_before,
-                        value,
-                    };
-                    let mut running_key = Key::from(&running_task);
-
-                    if kv.has(&running_key)? {
-                        // It's not pretty to sleep blocking, even if it's
-                        // for 1 ms, but if we don't then get a name collision
-                        // with an existing running task.
-                        std::thread::sleep(Duration::from_millis(1));
-                        running_task.timestamp_millis = now();
-                        running_key = Key::from(&running_task);
-                    }
-
-                    kv.move_value(&pending_key, &running_key)?;
-
-                    Ok(Some(running_task))
-                } else {
-                    Ok(None)
-                }
-            } else {
-                Ok(None)
-            }
-        })?)
-    }
-
-    fn reschedule_long_running_tasks(&self, reschedule_after: Option<&Duration>) -> Result<(), Error> {
-        let now = now();
-
-        let reschedule_after = reschedule_after.unwrap_or(&KeyValueStore::RESCHEDULE_AFTER);
-        let reschedule_timeout = now - reschedule_after.as_millis();
-
-        Ok(self.execute(
-            &Self::lock_scope(),
-            |s| {
-                s.list_keys(&Self::running_scope())?
-                    .into_iter()
-                    .filter_map(|k| {
-                        let task = TaskKey::try_from(&k).ok()?;
-                        if task.timestamp_millis <= reschedule_timeout {
-                            Some(task)
-                        } else {
-                            None
-                        }
-                    })
-                    .for_each(|tk| {
-                        let running_key = tk.running_key();
-
-                        let pending_key = TaskKey {
-                            name: Cow::Borrowed(&tk.name),
-                            timestamp_millis: now,
-                        }
-                        .pending_key();
-
-                        let _ = s.move_value(&running_key, &pending_key);
-                    });
-
-                Ok(())
-            },
-        )?)
-    }
-
-    fn pending_task_scheduled(&self, name: &Segment) -> Result<Option<u128>, Error> {
-        Ok(self.execute(&Self::lock_scope(), |kv| {
-            kv.list_keys(&Self::pending_scope()).map(|keys| {
-                keys.into_iter()
-                    .filter_map(|k| TaskKey::try_from(&k).ok())
-                    .find(|p| p.name.as_ref() == name)
-                    .map(|p| p.timestamp_millis)
-            })
-        })?)
-    }
-}
-
+//============ Errors Types ==================================================
 
 //------------ InvalidKey ----------------------------------------------------
 
@@ -461,7 +490,7 @@ pub struct Error(ErrorInner);
 
 #[derive(Debug)]
 enum ErrorInner {
-    Store(storage::Error),
+    Store(KeyValueError),
     InvalidKey,
     Other(String),
 }
@@ -472,8 +501,8 @@ impl Error {
     }
 }
 
-impl From<storage::Error> for Error {
-    fn from(src: storage::Error) -> Self {
+impl From<KeyValueError> for Error {
+    fn from(src: KeyValueError) -> Self {
         Self(ErrorInner::Store(src))
     }
 }
@@ -511,13 +540,13 @@ mod tests {
     use super::{PendingTask, Queue};
     use crate::{
         queue::{now, ScheduleMode},
-        KeyValueStore, Namespace, ReadStore, Scope, Segment,
+        Backend, Namespace, ReadStore, Scope, Segment,
     };
 
-    fn queue_store(ns: &str) -> KeyValueStore {
+    fn queue_store(ns: &str) -> Backend {
         let storage_url = Url::parse("local://data").unwrap();
 
-        KeyValueStore::new(&storage_url, Namespace::parse(ns).unwrap()).unwrap()
+        Backend::new(&storage_url, Namespace::parse(ns).unwrap()).unwrap()
     }
 
     #[test]

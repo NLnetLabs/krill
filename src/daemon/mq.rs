@@ -9,7 +9,7 @@ use rpki::ca::idexchange::{CaHandle, ParentHandle};
 use rpki::ca::provisioning::{ResourceClassName, RevocationRequest};
 use rpki::repository::x509::Time;
 use url::Url;
-use crate::commons::{eventsourcing, storage};
+use crate::commons::eventsourcing;
 use crate::commons::{Error, KrillResult};
 use crate::commons::api::Timestamp;
 use crate::commons::eventsourcing::Aggregate;
@@ -228,16 +228,17 @@ pub enum TaskResult {
 
 #[derive(Debug)]
 pub struct TaskQueue {
-    q: storage::KeyValueStore,
+    q: Queue,
 }
 
 impl TaskQueue {
     pub fn new(storage_uri: &Url) -> KrillResult<Self> {
-        storage::KeyValueStore::new(storage_uri, TASK_QUEUE_NS)
-            .map(|q| TaskQueue { q })
-            .map_err(Error::from)
+        Ok(TaskQueue {
+            q: Queue::create(storage_uri, TASK_QUEUE_NS)?,
+        })
     }
 }
+
 impl TaskQueue {
     pub fn pop(&self) -> Option<RunningTask> {
         trace!("Try to get a task off the queue");
