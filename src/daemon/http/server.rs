@@ -7,7 +7,6 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::{env, process};
-
 use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
 use base64::engine::Engine as _;
 use bytes::Bytes;
@@ -29,25 +28,30 @@ use tokio::sync::oneshot;
 
 use crate::{
     commons::{
+        actor::{Actor, ActorDef},
         api::{
             ApiRepositoryContact, AspaDefinitionUpdates, BgpStats,
             CommandHistoryCriteria, ParentCaReq, PublisherList,
-            RepositoryContact, RoaConfigurationUpdates, RtaName, Token,
+            RepositoryContact, RoaConfigurationUpdates, RtaName,
+            ServerInfo, Timestamp, Token,
         },
         bgp::BgpAnalysisAdvice,
         error::Error,
         eventsourcing::AggregateStoreError,
         util::file,
+        KrillResult,
     },
     constants::{
-        KRILL_ENV_HTTP_LOG_INFO, KRILL_ENV_UPGRADE_ONLY, KRILL_VERSION_MAJOR,
-        KRILL_VERSION_MINOR, KRILL_VERSION_PATCH, NO_RESOURCE,
+        KRILL_ENV_HTTP_LOG_INFO, KRILL_ENV_UPGRADE_ONLY, KRILL_VERSION,
+        KRILL_VERSION_MAJOR, KRILL_VERSION_MINOR, KRILL_VERSION_PATCH,
+        NO_RESOURCE,
     },
     daemon::{
         auth::common::permissions::Permission,
-        auth::{Auth, Handle},
+        auth::{Authorizer, Auth, Handle, LoggedInUser},
+        auth::providers::AdminTokenAuthProvider,
         ca::CaStatus,
-        config::Config,
+        config::{AuthType, Config},
         http::{
             auth::auth, statics::statics, testbed::testbed, tls, tls_keys,
             HttpResponse, HyperRequest, HyperResponse, Request, RequestPath,
@@ -63,9 +67,154 @@ use crate::{
     },
 };
 
-//------------ State -----------------------------------------------------
+#[cfg(feature = "multi-user")]
+use crate::daemon::auth::{
+    common::session::LoginSessionCache,
+    providers::{ConfigFileAuthProvider, OpenIDConnectAuthProvider},
+};
+//------------ State ---------------------------------------------------------
 
-pub type State = Arc<KrillServer>;
+#[derive(Clone)]
+pub struct State(Arc<StateInner>);
+
+struct StateInner {
+    /// A copy of the configuration.
+    ///
+    /// TODO: only keep the things we actually need.
+    config: Arc<Config>,
+
+    /// All the “business logic.”
+    server: KrillServer,
+
+    /// User authentication.
+    authorizer: Authorizer,
+
+    #[cfg(feature = "multi-user")]
+    /// Global login session cache.
+    login_session_cache: Arc<LoginSessionCache>,
+
+    // Time this server was started
+    started: Timestamp,
+}
+
+impl State {
+    pub fn config(&self) -> &Config {
+        &self.0.config
+    }
+
+    pub fn rrdp_base_path(&self) -> PathBuf {
+        let mut path = self.config().repo_dir().to_path_buf();
+        path.push("rrdp");
+        path.to_path_buf()
+    }
+
+    pub fn server_info(&self) -> ServerInfo {
+        ServerInfo::new(KRILL_VERSION, self.0.started)
+    }
+
+    pub fn testbed_enabled(&self) -> bool {
+        self.config().testbed().is_some()
+    }
+}
+
+impl State {
+    pub fn new(config: Arc<Config>) -> KrillResult<Self> {
+        let server = KrillServer::build(config.clone())?;
+
+        #[cfg(feature = "multi-user")]
+        let login_session_cache = Arc::new(LoginSessionCache::new());
+
+        // Construct the authorizer used to verify API access requests and to
+        // tell Lagosta where to send end-users to login and logout.
+        // TODO: remove the ugly duplication, however attempts to do so have
+        // so far failed due to incompatible match arm types, or
+        // unknown size of dyn AuthProvider, or concrete type needs to
+        // be known in async fn, etc.
+        let authorizer = match config.auth_type {
+            AuthType::AdminToken => Authorizer::new(
+                config.clone(),
+                AdminTokenAuthProvider::new(config.clone()).into(),
+            )?,
+            #[cfg(feature = "multi-user")]
+            AuthType::ConfigFile => Authorizer::new(
+                config.clone(),
+                ConfigFileAuthProvider::new(
+                    config.clone(),
+                    login_session_cache.clone(),
+                )?
+                .into(),
+            )?,
+            #[cfg(feature = "multi-user")]
+            AuthType::OpenIDConnect => Authorizer::new(
+                config.clone(),
+                OpenIDConnectAuthProvider::new(
+                    config.clone(),
+                    login_session_cache.clone(),
+                )?
+                .into(),
+            )?,
+        };
+
+        Ok(Self(
+            StateInner {
+                config,
+                server,
+                authorizer,
+                #[cfg(feature = "multi-user")]
+                login_session_cache,
+                started: Timestamp::now(),
+            }.into()
+        ))
+    }
+
+    pub async fn process<F, T>(&self, op: F) -> Result<T, Error>
+    where
+        F: FnOnce(&KrillServer) -> Result<T, Error> + Send + 'static,
+        T: Send + 'static
+    {
+        let state = self.clone();
+        tokio::task::spawn_blocking(move || {
+            op(&state.0.server)
+        }).await.map_err(|err| Error::Custom(err.to_string()))?
+    }
+}
+
+/// # Authentication and Access
+impl State {
+    pub async fn actor_from_request(&self, request: &HyperRequest) -> Actor {
+        self.0.authorizer.actor_from_request(request).await
+    }
+
+    pub fn actor_from_def(&self, actor_def: ActorDef) -> Actor {
+        self.0.authorizer.actor_from_def(actor_def)
+    }
+
+    pub async fn get_login_url(&self) -> KrillResult<HttpResponse> {
+        self.0.authorizer.get_login_url().await
+    }
+
+    pub async fn login(
+        &self,
+        request: &HyperRequest,
+    ) -> KrillResult<LoggedInUser> {
+        self.0.authorizer.login(request).await
+    }
+
+    pub async fn logout(
+        &self,
+        request: &HyperRequest,
+    ) -> KrillResult<HttpResponse> {
+        self.0.authorizer.logout(request).await
+    }
+
+    #[cfg(feature = "multi-user")]
+    pub fn login_session_cache_size(&self) -> usize {
+        self.0.login_session_cache.size()
+    }
+}
+
+
+//----------------------------------------------------------------------------
 
 fn print_write_error_hint_and_die(error_msg: String) {
     eprintln!("{}", error_msg);
@@ -119,7 +268,7 @@ fn test_data_dirs_or_die(config: &Config) {
     }
 }
 
-pub async fn start_krill_daemon(
+pub fn start_krill_daemon(
     config: Arc<Config>,
     mut signal_running: Option<oneshot::Sender<()>>,
 ) -> Result<(), Error> {
@@ -157,13 +306,13 @@ pub async fn start_krill_daemon(
 
     // Create the server, this will create the necessary data sub-directories
     // if needed
-    let krill_server = KrillServer::build(config.clone()).await?;
+    let state = State::new(config.clone())?;
 
     // Call post-start upgrades to trigger any upgrade related runtime
     // actions, such as re-issuing ROAs because subject name strategy has
     // changed.
     if let Some(report) = upgrade_report {
-        post_start_upgrade(report, &krill_server).await?;
+        post_start_upgrade(report, &state.0.server)?;
     }
 
     // If the operator wanted to do the upgrade only, now is a good time to
@@ -175,11 +324,10 @@ pub async fn start_krill_daemon(
 
     // Build the scheduler which will be responsible for executing
     // planned/triggered tasks
-    let scheduler = krill_server.build_scheduler();
-    let scheduler_future = scheduler.run();
-
-    // Start creating the server.
-    let krill_server = Arc::new(krill_server);
+    let scheduler = state.0.server.build_scheduler(
+        #[cfg(feature = "multi-user")]
+        state.0.login_session_cache.clone(),
+    );
 
     // Create self-signed HTTPS cert if configured and not generated earlier.
     if config.https_mode().is_generate_https_cert() {
@@ -187,29 +335,39 @@ pub async fn start_krill_daemon(
             .map_err(|e| Error::HttpsSetup(format!("{}", e)))?;
     }
 
-    // Start a hyper server for the configured socket.
-    let server_futures = futures_util::future::select_all(
-        config.socket_addresses().into_iter().map(|socket_addr| {
-            tokio::spawn(single_http_listener(
-                krill_server.clone(),
-                socket_addr,
-                config.clone(),
-                signal_running.take(),
-            ))
-        }),
-    );
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all().build()
+        .map_err(|err| Error::custom(err.to_string()))?;
 
-    select!(
-        _ = server_futures => error!("http server stopped unexpectedly"),
-        _ = scheduler_future => error!("scheduler stopped unexpectedly"),
-    );
+    runtime.block_on(async {
+        let scheduler_future = tokio::task::spawn_blocking(move || {
+            scheduler.run()
+        });
+
+        // Start a hyper server for the configured sockets.
+        let server_futures = futures_util::future::select_all(
+            config.socket_addresses().into_iter().map(|socket_addr| {
+                tokio::spawn(single_http_listener(
+                    state.clone(),
+                    socket_addr,
+                    config.clone(),
+                    signal_running.take(),
+                ))
+            }),
+        );
+
+        select!(
+            _ = server_futures => error!("http server stopped unexpectedly"),
+            _ = scheduler_future => error!("scheduler stopped unexpectedly"),
+        );
+    });
 
     Err(Error::custom("stopping krill process"))
 }
 
 /// Runs an HTTP listener on a single socket.
 async fn single_http_listener(
-    krill_server: Arc<KrillServer>,
+    state: State,
     addr: SocketAddr,
     config: Arc<Config>,
     signal_running: Option<oneshot::Sender<()>>,
@@ -251,7 +409,7 @@ async fn single_http_listener(
                 return;
             }
         };
-        let server = krill_server.clone();
+        let state = state.clone();
         tokio::task::spawn(async move {
             let _ = hyper_util::server::conn::auto::Builder::new(
                 TokioExecutor::new(),
@@ -259,8 +417,8 @@ async fn single_http_listener(
             .serve_connection(
                 TokioIo::new(stream),
                 service_fn(move |req| {
-                    let server = server.clone();
-                    async move { map_requests(req, server).await }
+                    let state = state.clone();
+                    async move { map_requests(req, state).await }
                 }),
             )
             .await;
@@ -489,536 +647,550 @@ pub async fn health(req: Request) -> RoutingResult {
 #[allow(clippy::format_push_string)]
 pub async fn metrics(req: Request) -> RoutingResult {
     if req.is_get() && req.path().segment().starts_with("metrics") {
-        let server = req.state();
-
-        struct AllBgpStats {
-            announcements_valid: HashMap<CaHandle, usize>,
-            announcements_invalid_asn: HashMap<CaHandle, usize>,
-            announcements_invalid_length: HashMap<CaHandle, usize>,
-            announcements_not_found: HashMap<CaHandle, usize>,
-            roas_too_permissive: HashMap<CaHandle, usize>,
-            roas_redundant: HashMap<CaHandle, usize>,
-            roas_stale: HashMap<CaHandle, usize>,
-            roas_total: HashMap<CaHandle, usize>,
+        let info = req.state().server_info();
+        let size = req.state().login_session_cache_size();
+        match req.state().process(move |server| {
+            Ok(metrics_sync(server, info, size))
+        }).await {
+            Ok(res) => Ok(res),
+            Err(err) => render_error(err),
         }
+    }
+    else {
+        Err(req)
+    }
+}
 
-        impl AllBgpStats {
-            fn add_ca(&mut self, ca: &CaHandle, stats: &BgpStats) {
-                self.announcements_valid
-                    .insert(ca.clone(), stats.announcements_valid);
-                self.announcements_invalid_asn
-                    .insert(ca.clone(), stats.announcements_invalid_asn);
-                self.announcements_invalid_length
-                    .insert(ca.clone(), stats.announcements_invalid_length);
-                self.announcements_not_found
-                    .insert(ca.clone(), stats.announcements_not_found);
-                self.roas_too_permissive
-                    .insert(ca.clone(), stats.roas_too_permissive);
-                self.roas_redundant.insert(ca.clone(), stats.roas_redundant);
-                self.roas_stale.insert(ca.clone(), stats.roas_stale);
-                self.roas_total.insert(ca.clone(), stats.roas_total);
+fn metrics_sync(
+    server: &KrillServer,
+    info: ServerInfo,
+    login_session_cache_size: usize,
+) -> HttpResponse {
+    struct AllBgpStats {
+        announcements_valid: HashMap<CaHandle, usize>,
+        announcements_invalid_asn: HashMap<CaHandle, usize>,
+        announcements_invalid_length: HashMap<CaHandle, usize>,
+        announcements_not_found: HashMap<CaHandle, usize>,
+        roas_too_permissive: HashMap<CaHandle, usize>,
+        roas_redundant: HashMap<CaHandle, usize>,
+        roas_stale: HashMap<CaHandle, usize>,
+        roas_total: HashMap<CaHandle, usize>,
+    }
+
+    impl AllBgpStats {
+        fn add_ca(&mut self, ca: &CaHandle, stats: &BgpStats) {
+            self.announcements_valid
+                .insert(ca.clone(), stats.announcements_valid);
+            self.announcements_invalid_asn
+                .insert(ca.clone(), stats.announcements_invalid_asn);
+            self.announcements_invalid_length
+                .insert(ca.clone(), stats.announcements_invalid_length);
+            self.announcements_not_found
+                .insert(ca.clone(), stats.announcements_not_found);
+            self.roas_too_permissive
+                .insert(ca.clone(), stats.roas_too_permissive);
+            self.roas_redundant.insert(ca.clone(), stats.roas_redundant);
+            self.roas_stale.insert(ca.clone(), stats.roas_stale);
+            self.roas_total.insert(ca.clone(), stats.roas_total);
+        }
+    }
+
+    let mut res = String::new();
+
+    res.push_str("# HELP krill_server_start unix timestamp in seconds of last krill server start\n");
+    res.push_str("# TYPE krill_server_start gauge\n");
+    res.push_str(&format!("krill_server_start {}\n", info.started()));
+    res.push('\n');
+
+    res.push_str(
+        "# HELP krill_version_major krill server major version number\n",
+    );
+    res.push_str("# TYPE krill_version_major gauge\n");
+    res.push_str(&format!(
+        "krill_version_major {}\n",
+        KRILL_VERSION_MAJOR
+    ));
+    res.push('\n');
+
+    res.push_str(
+        "# HELP krill_version_minor krill server minor version number\n",
+    );
+    res.push_str("# TYPE krill_version_minor gauge\n");
+    res.push_str(&format!(
+        "krill_version_minor {}\n",
+        KRILL_VERSION_MINOR
+    ));
+    res.push('\n');
+
+    res.push_str(
+        "# HELP krill_version_patch krill server patch version number\n",
+    );
+    res.push_str("# TYPE krill_version_patch gauge\n");
+    res.push_str(&format!(
+        "krill_version_patch {}\n",
+        KRILL_VERSION_PATCH
+    ));
+
+    #[cfg(feature = "multi-user")]
+    {
+        res.push('\n');
+        res.push_str("# HELP krill_auth_session_cache_size total number of cached login session tokens\n");
+        res.push_str("# TYPE krill_auth_session_cache_size gauge\n");
+        res.push_str(&format!(
+            "krill_auth_session_cache_size {}\n",
+            login_session_cache_size
+        ));
+    }
+
+    if let Ok(cas_stats) = server.cas_stats() {
+        let number_cas = cas_stats.len();
+
+        res.push('\n');
+        res.push_str("# HELP krill_cas number of cas in krill\n");
+        res.push_str("# TYPE krill_cas gauge\n");
+        res.push_str(&format!("krill_cas {}\n", number_cas));
+
+        if !server.config.metrics.metrics_hide_ca_details {
+            // Show per CA details
+
+            let mut ca_status_map: HashMap<CaHandle, CaStatus> =
+                HashMap::new();
+
+            for ca in cas_stats.keys() {
+                if let Ok(ca_status) = server.ca_status(ca) {
+                    ca_status_map.insert(ca.clone(), ca_status);
+                }
             }
-        }
 
-        let mut res = String::new();
+            {
+                // CA -> Parent metrics
 
-        let info = server.server_info();
-        res.push_str("# HELP krill_server_start unix timestamp in seconds of last krill server start\n");
-        res.push_str("# TYPE krill_server_start gauge\n");
-        res.push_str(&format!("krill_server_start {}\n", info.started()));
-        res.push('\n');
+                // krill_ca_parent_success{{ca="ca", parent="parent"}} 1
+                // krill_ca_parent_last_success_time{{ca="ca",
+                // parent="parent"}} 1630921599 // timestamp
 
-        res.push_str(
-            "# HELP krill_version_major krill server major version number\n",
-        );
-        res.push_str("# TYPE krill_version_major gauge\n");
-        res.push_str(&format!(
-            "krill_version_major {}\n",
-            KRILL_VERSION_MAJOR
-        ));
-        res.push('\n');
-
-        res.push_str(
-            "# HELP krill_version_minor krill server minor version number\n",
-        );
-        res.push_str("# TYPE krill_version_minor gauge\n");
-        res.push_str(&format!(
-            "krill_version_minor {}\n",
-            KRILL_VERSION_MINOR
-        ));
-        res.push('\n');
-
-        res.push_str(
-            "# HELP krill_version_patch krill server patch version number\n",
-        );
-        res.push_str("# TYPE krill_version_patch gauge\n");
-        res.push_str(&format!(
-            "krill_version_patch {}\n",
-            KRILL_VERSION_PATCH
-        ));
-
-        #[cfg(feature = "multi-user")]
-        {
-            res.push('\n');
-            res.push_str("# HELP krill_auth_session_cache_size total number of cached login session tokens\n");
-            res.push_str("# TYPE krill_auth_session_cache_size gauge\n");
-            res.push_str(&format!(
-                "krill_auth_session_cache_size {}\n",
-                server.login_session_cache_size()
-            ));
-        }
-
-        if let Ok(cas_stats) = server.cas_stats().await {
-            let number_cas = cas_stats.len();
-
-            res.push('\n');
-            res.push_str("# HELP krill_cas number of cas in krill\n");
-            res.push_str("# TYPE krill_cas gauge\n");
-            res.push_str(&format!("krill_cas {}\n", number_cas));
-
-            if !server.config.metrics.metrics_hide_ca_details {
-                // Show per CA details
-
-                let mut ca_status_map: HashMap<CaHandle, CaStatus> =
-                    HashMap::new();
-
-                for ca in cas_stats.keys() {
-                    if let Ok(ca_status) = server.ca_status(ca).await {
-                        ca_status_map.insert(ca.clone(), ca_status);
-                    }
-                }
-
-                {
-                    // CA -> Parent metrics
-
-                    // krill_ca_parent_success{{ca="ca", parent="parent"}} 1
-                    // krill_ca_parent_last_success_time{{ca="ca",
-                    // parent="parent"}} 1630921599 // timestamp
-
-                    res.push('\n');
-                    res.push_str(
-                        "# HELP krill_ca_parent_success status of last CA to parent connection (0=issue, 1=success)\n",
-                    );
-                    res.push_str("# TYPE krill_ca_parent_success gauge\n");
-                    for (ca, status) in ca_status_map.iter() {
-                        if ca.as_str() != TA_NAME {
-                            for (parent, status) in status.parents().iter() {
-                                // skip the ones for which we have no status
-                                // yet, i.e it was really only just added
-                                // and no attempt to connect has yet been
-                                // made.
-                                if let Some(exchange) = status.last_exchange()
-                                {
-                                    res.push_str(&format!(
-                                        "krill_ca_parent_success{{ca=\"{}\", parent=\"{}\"}} {}\n",
-                                        ca,
-                                        parent,
-                                        i32::from(exchange.was_success())
-                                    ));
-                                }
-                            }
-                        }
-                    }
-
-                    res.push('\n');
-                    res.push_str(
-                    "# HELP krill_ca_parent_last_success_time unix timestamp in seconds of last successful CA to parent connection\n",
+                res.push('\n');
+                res.push_str(
+                    "# HELP krill_ca_parent_success status of last CA to parent connection (0=issue, 1=success)\n",
                 );
-                    res.push_str(
-                        "# TYPE krill_ca_parent_last_success_time gauge\n",
-                    );
-
-                    for (ca, status) in ca_status_map.iter() {
-                        if ca.as_str() != TA_NAME {
-                            for (parent, status) in status.parents().iter() {
-                                // skip the ones for which we have no
-                                // successful connection at all. Most likely
-                                // they were just added (in which case it will
-                                // come) - or were never successful
-                                // in which case the metric above will say
-                                // that the status is 0
-                                if let Some(last_success) =
-                                    status.last_success()
-                                {
-                                    res.push_str(&format!(
-                                        "krill_ca_parent_last_success_time{{ca=\"{}\", parent=\"{}\"}} {}\n",
-                                        ca, parent, last_success
-                                    ));
-                                }
-                            }
-                        }
-                    }
-                }
-
-                {
-                    // CA -> Publication Server status
-
-                    // krill_ca_repo_success{{ca="ca"}} 1
-                    // krill_ca_repo_last_success_time{{ca="ca"}} 1630921599
-                    // krill_ca_repo_next_before_time{{ca="ca"}} 1630921599
-
-                    res.push('\n');
-                    res.push_str("# HELP krill_ca_ps_success status of last CA to Publication Server connection (0=issue, 1=success)\n");
-                    res.push_str("# TYPE krill_ca_ps_success gauge\n");
-                    for (ca, status) in ca_status_map.iter() {
-                        // skip the ones for which we have no status yet, i.e
-                        // it was really only just added
-                        // and no attempt to connect has yet been made.
-                        if let Some(exchange) = status.repo().last_exchange()
-                        {
-                            res.push_str(&format!(
-                                "krill_ca_ps_success{{ca=\"{}\"}} {}\n",
-                                ca,
-                                i32::from(exchange.was_success())
-                            ));
-                        }
-                    }
-
-                    res.push('\n');
-                    res.push_str("# HELP krill_ca_ps_last_success_time unix timestamp in seconds of last successful CA to Publication Server connection\n");
-                    res.push_str(
-                        "# TYPE krill_ca_ps_last_success_time gauge\n",
-                    );
-                    for (ca, status) in ca_status_map.iter() {
-                        // skip the ones for which we have no status yet, i.e
-                        // it was really only just added
-                        // and no attempt to connect has yet been made.
-                        if let Some(last_success) =
-                            status.repo().last_success()
-                        {
-                            res.push_str(&format!(
-                                "krill_ca_ps_last_success_time{{ca=\"{}\"}} {}\n",
-                                ca, last_success
-                            ));
-                        }
-                    }
-                }
-
-                // Do not show child metrics if none of the CAs has any
-                // children.. Many users do not delegate so,
-                // showing these metrics would just be confusing.
-                let any_children =
-                    cas_stats.values().any(|ca| ca.child_count() > 0);
-
-                if any_children
-                    && !server.config.metrics.metrics_hide_child_details
-                {
-                    // CA -> Children
-
-                    // krill_cas_children{ca="parent"} 11 // nr of children
-                    // krill_ca_child_success{ca="parent", child="child"} 1
-                    // krill_ca_child_state{ca="parent", child="child"} 1
-                    // krill_ca_child_last_connection{ca="parent",
-                    // child="child"} 1630921599
-                    // krill_ca_child_last_success{ca="parent", child="child"}
-                    // 1630921599
-                    // krill_ca_child_agent_total{ca="parent",
-                    // ua="krill/0.9.2"} 11
-
-                    res.push('\n');
-                    res.push_str("# HELP krill_cas_children number of children for CA\n");
-                    res.push_str("# TYPE krill_cas_children gauge\n");
-                    for (ca, status) in cas_stats.iter() {
-                        res.push_str(&format!(
-                            "krill_cas_children{{ca=\"{}\"}} {}\n",
-                            ca,
-                            status.child_count()
-                        ));
-                    }
-
-                    res.push('\n');
-                    res.push_str(
-                        "# HELP krill_ca_child_success status of last child to CA connection (0=issue, 1=success)\n",
-                    );
-                    res.push_str("# TYPE krill_ca_child_success gauge\n");
-                    for (ca, status) in ca_status_map.iter() {
-                        // skip the ones for which we have no status yet, i.e
-                        // it was really only just added
-                        // and no attempt to connect has yet been made.
-                        for (child, status) in status.children().iter() {
-                            if let Some(exchange) = status.last_exchange() {
+                res.push_str("# TYPE krill_ca_parent_success gauge\n");
+                for (ca, status) in ca_status_map.iter() {
+                    if ca.as_str() != TA_NAME {
+                        for (parent, status) in status.parents().iter() {
+                            // skip the ones for which we have no status
+                            // yet, i.e it was really only just added
+                            // and no attempt to connect has yet been
+                            // made.
+                            if let Some(exchange) = status.last_exchange()
+                            {
                                 res.push_str(&format!(
-                                    "krill_ca_child_success{{ca=\"{}\", child=\"{}\"}} {}\n",
+                                    "krill_ca_parent_success{{ca=\"{}\", parent=\"{}\"}} {}\n",
                                     ca,
-                                    child,
+                                    parent,
                                     i32::from(exchange.was_success())
                                 ));
                             }
                         }
                     }
+                }
 
-                    res.push('\n');
-                    res.push_str(
-                        "# HELP krill_ca_child_state child state (see 'suspend_child_after_inactive_hours' config) (0=suspended, 1=active)\n",
-                    );
-                    res.push_str("# TYPE krill_ca_child_state gauge\n");
-                    for (ca, status) in ca_status_map.iter() {
-                        for (child, status) in status.children().iter() {
-                            res.push_str(&format!(
-                                "krill_ca_child_state{{ca=\"{}\", child=\"{}\"}} {}\n",
-                                ca,
-                                child,
-                                i32::from(status.suspended().is_none())
-                            ));
-                        }
-                    }
+                res.push('\n');
+                res.push_str(
+                "# HELP krill_ca_parent_last_success_time unix timestamp in seconds of last successful CA to parent connection\n",
+            );
+                res.push_str(
+                    "# TYPE krill_ca_parent_last_success_time gauge\n",
+                );
 
-                    res.push('\n');
-                    res.push_str("# HELP krill_ca_child_last_connection unix timestamp in seconds of last child to CA connection\n");
-                    res.push_str(
-                        "# TYPE krill_ca_child_last_connection gauge\n",
-                    );
-                    for (ca, status) in ca_status_map.iter() {
-                        // skip the ones for which we have no status yet, i.e
-                        // it was really only just added
-                        // and no attempt to connect has yet been made.
-                        for (child, status) in status.children().iter() {
-                            if let Some(exchange) = status.last_exchange() {
-                                let timestamp = exchange.timestamp();
+                for (ca, status) in ca_status_map.iter() {
+                    if ca.as_str() != TA_NAME {
+                        for (parent, status) in status.parents().iter() {
+                            // skip the ones for which we have no
+                            // successful connection at all. Most likely
+                            // they were just added (in which case it will
+                            // come) - or were never successful
+                            // in which case the metric above will say
+                            // that the status is 0
+                            if let Some(last_success) =
+                                status.last_success()
+                            {
                                 res.push_str(&format!(
-                                    "krill_ca_child_last_connection{{ca=\"{}\", child=\"{}\"}} {}\n",
-                                    ca, child, timestamp
+                                    "krill_ca_parent_last_success_time{{ca=\"{}\", parent=\"{}\"}} {}\n",
+                                    ca, parent, last_success
                                 ));
                             }
-                        }
-                    }
-
-                    res.push('\n');
-                    res.push_str(
-                    "# HELP krill_ca_child_last_success unix timestamp in seconds of last successful child to CA connection\n",
-                );
-                    res.push_str(
-                        "# TYPE krill_ca_child_last_success gauge\n",
-                    );
-                    for (ca, status) in ca_status_map.iter() {
-                        // skip the ones for which we have no status yet, i.e
-                        // it was really only just added
-                        // and no attempt to connect has yet been made.
-                        for (child, status) in status.children().iter() {
-                            if let Some(time) = status.last_success() {
-                                res.push_str(&format!(
-                                    "krill_ca_child_last_success{{ca=\"{}\", child=\"{}\"}} {}\n",
-                                    ca, child, time
-                                ));
-                            }
-                        }
-                    }
-
-                    res.push('\n');
-                    res.push_str(
-                    "# HELP krill_ca_child_agent_total total children per user agent based on their last connection\n",
-                );
-                    res.push_str("# TYPE krill_ca_child_agent_total gauge\n");
-                    for (ca, status) in ca_status_map.iter() {
-                        // skip the ones for which we have no status yet, i.e
-                        // it was really only just added
-                        // and no attempt to connect has yet been made.
-
-                        let mut user_agent_totals: HashMap<String, usize> =
-                            HashMap::new();
-                        for status in status.children().values() {
-                            if let Some(exchange) = status.last_exchange() {
-                                let agent = exchange
-                                    .user_agent()
-                                    .cloned()
-                                    .unwrap_or_else(|| "<none>".to_string());
-                                *user_agent_totals
-                                    .entry(agent)
-                                    .or_insert(0) += 1;
-                            }
-                        }
-
-                        for (ua, total) in user_agent_totals.iter() {
-                            res.push_str(&format!(
-                                "krill_ca_child_agent_total{{ca=\"{}\", user_agent=\"{}\"}} {}\n",
-                                ca, ua, total
-                            ));
                         }
                     }
                 }
+            }
 
-                if !server.config.metrics.metrics_hide_roa_details {
-                    // BGP Announcement metrics
+            {
+                // CA -> Publication Server status
 
-                    // Aggregate ROA vs BGP stats per status
-                    let mut all_bgp_stats = AllBgpStats {
-                        announcements_valid: HashMap::new(),
-                        announcements_invalid_asn: HashMap::new(),
-                        announcements_invalid_length: HashMap::new(),
-                        announcements_not_found: HashMap::new(),
-                        roas_too_permissive: HashMap::new(),
-                        roas_redundant: HashMap::new(),
-                        roas_stale: HashMap::new(),
-                        roas_total: HashMap::new(),
-                    };
+                // krill_ca_repo_success{{ca="ca"}} 1
+                // krill_ca_repo_last_success_time{{ca="ca"}} 1630921599
+                // krill_ca_repo_next_before_time{{ca="ca"}} 1630921599
 
-                    for (ca, ca_stats) in cas_stats.iter() {
-                        all_bgp_stats.add_ca(ca, ca_stats.bgp_stats());
-                    }
-
-                    res.push('\n');
-                    res.push_str("# HELP krill_cas_bgp_announcements_valid number of announcements seen for CA resources with RPKI state VALID\n");
-                    res.push_str(
-                        "# TYPE krill_cas_bgp_announcements_valid gauge\n",
-                    );
-                    for (ca, nr) in all_bgp_stats.announcements_valid.iter() {
-                        res.push_str(&format!("krill_cas_bgp_announcements_valid{{ca=\"{}\"}} {}\n", ca, nr));
-                    }
-
-                    res.push('\n');
-                    res.push_str("# HELP krill_cas_bgp_announcements_invalid_asn number of announcements seen for CA resources with RPKI state INVALID (ASN mismatch)\n");
-                    res.push_str("# TYPE krill_cas_bgp_announcements_invalid_asn gauge\n");
-                    for (ca, nr) in
-                        all_bgp_stats.announcements_invalid_asn.iter()
+                res.push('\n');
+                res.push_str("# HELP krill_ca_ps_success status of last CA to Publication Server connection (0=issue, 1=success)\n");
+                res.push_str("# TYPE krill_ca_ps_success gauge\n");
+                for (ca, status) in ca_status_map.iter() {
+                    // skip the ones for which we have no status yet, i.e
+                    // it was really only just added
+                    // and no attempt to connect has yet been made.
+                    if let Some(exchange) = status.repo().last_exchange()
                     {
                         res.push_str(&format!(
-                            "krill_cas_bgp_announcements_invalid_asn{{ca=\"{}\"}} {}\n",
-                            ca, nr
+                            "krill_ca_ps_success{{ca=\"{}\"}} {}\n",
+                            ca,
+                            i32::from(exchange.was_success())
                         ));
                     }
+                }
 
-                    res.push('\n');
-                    res.push_str("# HELP krill_cas_bgp_announcements_invalid_length number of announcements seen for CA resources with RPKI state INVALID (prefix exceeds max length)\n");
-                    res.push_str("# TYPE krill_cas_bgp_announcements_invalid_length gauge\n");
-                    for (ca, nr) in
-                        all_bgp_stats.announcements_invalid_length.iter()
+                res.push('\n');
+                res.push_str("# HELP krill_ca_ps_last_success_time unix timestamp in seconds of last successful CA to Publication Server connection\n");
+                res.push_str(
+                    "# TYPE krill_ca_ps_last_success_time gauge\n",
+                );
+                for (ca, status) in ca_status_map.iter() {
+                    // skip the ones for which we have no status yet, i.e
+                    // it was really only just added
+                    // and no attempt to connect has yet been made.
+                    if let Some(last_success) =
+                        status.repo().last_success()
                     {
                         res.push_str(&format!(
-                            "krill_cas_bgp_announcements_invalid_length{{ca=\"{}\"}} {}\n",
-                            ca, nr
-                        ));
-                    }
-
-                    res.push('\n');
-                    res.push_str("# HELP krill_cas_bgp_announcements_not_found number of announcements seen for CA resources with RPKI state NOT FOUND (none of the CA's ROAs cover this)\n");
-                    res.push_str("# TYPE krill_cas_bgp_announcements_not_found gauge\n");
-                    for (ca, nr) in
-                        all_bgp_stats.announcements_not_found.iter()
-                    {
-                        res.push_str(&format!(
-                            "krill_cas_bgp_announcements_not_found{{ca=\"{}\"}} {}\n",
-                            ca, nr
-                        ));
-                    }
-
-                    res.push('\n');
-                    res.push_str("# HELP krill_cas_bgp_roas_too_permissive number of ROAs for this CA which allow excess announcements (0 may also indicate that no BGP info is available)\n");
-                    res.push_str(
-                        "# TYPE krill_cas_bgp_roas_too_permissive gauge\n",
-                    );
-                    for (ca, nr) in all_bgp_stats.roas_too_permissive.iter() {
-                        res.push_str(&format!("krill_cas_bgp_roas_too_permissive{{ca=\"{}\"}} {}\n", ca, nr));
-                    }
-
-                    res.push('\n');
-                    res.push_str("# HELP krill_cas_bgp_roas_redundant number of ROAs for this CA which are redundant (0 may also indicate that no BGP info is available)\n");
-                    res.push_str(
-                        "# TYPE krill_cas_bgp_roas_redundant gauge\n",
-                    );
-                    for (ca, nr) in all_bgp_stats.roas_redundant.iter() {
-                        res.push_str(&format!(
-                            "krill_cas_bgp_roas_redundant{{ca=\"{}\"}} {}\n",
-                            ca, nr
-                        ));
-                    }
-
-                    res.push('\n');
-                    res.push_str("# HELP krill_cas_bgp_roas_stale number of ROAs for this CA for which no announcements are seen (0 may also indicate that no BGP info is available)\n");
-                    res.push_str("# TYPE krill_cas_bgp_roas_stale gauge\n");
-                    for (ca, nr) in all_bgp_stats.roas_stale.iter() {
-                        res.push_str(&format!(
-                            "krill_cas_bgp_roas_stale{{ca=\"{}\"}} {}\n",
-                            ca, nr
-                        ));
-                    }
-
-                    res.push('\n');
-                    res.push_str("# HELP krill_cas_bgp_roas_total total number of ROAs for this CA\n");
-                    res.push_str("# TYPE krill_cas_bgp_roas_total gauge\n");
-                    for (ca, nr) in all_bgp_stats.roas_total.iter() {
-                        res.push_str(&format!(
-                            "krill_cas_bgp_roas_total{{ca=\"{}\"}} {}\n",
-                            ca, nr
+                            "krill_ca_ps_last_success_time{{ca=\"{}\"}} {}\n",
+                            ca, last_success
                         ));
                     }
                 }
             }
-        }
 
-        if let Ok(stats) = server.repo_stats() {
-            let publishers = stats.get_publishers();
+            // Do not show child metrics if none of the CAs has any
+            // children.. Many users do not delegate so,
+            // showing these metrics would just be confusing.
+            let any_children =
+                cas_stats.values().any(|ca| ca.child_count() > 0);
 
-            res.push('\n');
-            res.push_str("# HELP krill_repo_publisher number of publishers in repository\n");
-            res.push_str("# TYPE krill_repo_publisher gauge\n");
-            res.push_str(&format!(
-                "krill_repo_publisher {}\n",
-                publishers.len()
-            ));
+            if any_children
+                && !server.config.metrics.metrics_hide_child_details
+            {
+                // CA -> Children
 
-            if let Some(last_update) = stats.last_update() {
+                // krill_cas_children{ca="parent"} 11 // nr of children
+                // krill_ca_child_success{ca="parent", child="child"} 1
+                // krill_ca_child_state{ca="parent", child="child"} 1
+                // krill_ca_child_last_connection{ca="parent",
+                // child="child"} 1630921599
+                // krill_ca_child_last_success{ca="parent", child="child"}
+                // 1630921599
+                // krill_ca_child_agent_total{ca="parent",
+                // ua="krill/0.9.2"} 11
+
+                res.push('\n');
+                res.push_str("# HELP krill_cas_children number of children for CA\n");
+                res.push_str("# TYPE krill_cas_children gauge\n");
+                for (ca, status) in cas_stats.iter() {
+                    res.push_str(&format!(
+                        "krill_cas_children{{ca=\"{}\"}} {}\n",
+                        ca,
+                        status.child_count()
+                    ));
+                }
+
                 res.push('\n');
                 res.push_str(
-                    "# HELP krill_repo_rrdp_last_update unix timestamp in seconds of last update by any publisher\n",
+                    "# HELP krill_ca_child_success status of last child to CA connection (0=issue, 1=success)\n",
                 );
-                res.push_str("# TYPE krill_repo_rrdp_last_update gauge\n");
+                res.push_str("# TYPE krill_ca_child_success gauge\n");
+                for (ca, status) in ca_status_map.iter() {
+                    // skip the ones for which we have no status yet, i.e
+                    // it was really only just added
+                    // and no attempt to connect has yet been made.
+                    for (child, status) in status.children().iter() {
+                        if let Some(exchange) = status.last_exchange() {
+                            res.push_str(&format!(
+                                "krill_ca_child_success{{ca=\"{}\", child=\"{}\"}} {}\n",
+                                ca,
+                                child,
+                                i32::from(exchange.was_success())
+                            ));
+                        }
+                    }
+                }
+
+                res.push('\n');
+                res.push_str(
+                    "# HELP krill_ca_child_state child state (see 'suspend_child_after_inactive_hours' config) (0=suspended, 1=active)\n",
+                );
+                res.push_str("# TYPE krill_ca_child_state gauge\n");
+                for (ca, status) in ca_status_map.iter() {
+                    for (child, status) in status.children().iter() {
+                        res.push_str(&format!(
+                            "krill_ca_child_state{{ca=\"{}\", child=\"{}\"}} {}\n",
+                            ca,
+                            child,
+                            i32::from(status.suspended().is_none())
+                        ));
+                    }
+                }
+
+                res.push('\n');
+                res.push_str("# HELP krill_ca_child_last_connection unix timestamp in seconds of last child to CA connection\n");
+                res.push_str(
+                    "# TYPE krill_ca_child_last_connection gauge\n",
+                );
+                for (ca, status) in ca_status_map.iter() {
+                    // skip the ones for which we have no status yet, i.e
+                    // it was really only just added
+                    // and no attempt to connect has yet been made.
+                    for (child, status) in status.children().iter() {
+                        if let Some(exchange) = status.last_exchange() {
+                            let timestamp = exchange.timestamp();
+                            res.push_str(&format!(
+                                "krill_ca_child_last_connection{{ca=\"{}\", child=\"{}\"}} {}\n",
+                                ca, child, timestamp
+                            ));
+                        }
+                    }
+                }
+
+                res.push('\n');
+                res.push_str(
+                "# HELP krill_ca_child_last_success unix timestamp in seconds of last successful child to CA connection\n",
+            );
+                res.push_str(
+                    "# TYPE krill_ca_child_last_success gauge\n",
+                );
+                for (ca, status) in ca_status_map.iter() {
+                    // skip the ones for which we have no status yet, i.e
+                    // it was really only just added
+                    // and no attempt to connect has yet been made.
+                    for (child, status) in status.children().iter() {
+                        if let Some(time) = status.last_success() {
+                            res.push_str(&format!(
+                                "krill_ca_child_last_success{{ca=\"{}\", child=\"{}\"}} {}\n",
+                                ca, child, time
+                            ));
+                        }
+                    }
+                }
+
+                res.push('\n');
+                res.push_str(
+                "# HELP krill_ca_child_agent_total total children per user agent based on their last connection\n",
+            );
+                res.push_str("# TYPE krill_ca_child_agent_total gauge\n");
+                for (ca, status) in ca_status_map.iter() {
+                    // skip the ones for which we have no status yet, i.e
+                    // it was really only just added
+                    // and no attempt to connect has yet been made.
+
+                    let mut user_agent_totals: HashMap<String, usize> =
+                        HashMap::new();
+                    for status in status.children().values() {
+                        if let Some(exchange) = status.last_exchange() {
+                            let agent = exchange
+                                .user_agent()
+                                .cloned()
+                                .unwrap_or_else(|| "<none>".to_string());
+                            *user_agent_totals
+                                .entry(agent)
+                                .or_insert(0) += 1;
+                        }
+                    }
+
+                    for (ua, total) in user_agent_totals.iter() {
+                        res.push_str(&format!(
+                            "krill_ca_child_agent_total{{ca=\"{}\", user_agent=\"{}\"}} {}\n",
+                            ca, ua, total
+                        ));
+                    }
+                }
+            }
+
+            if !server.config.metrics.metrics_hide_roa_details {
+                // BGP Announcement metrics
+
+                // Aggregate ROA vs BGP stats per status
+                let mut all_bgp_stats = AllBgpStats {
+                    announcements_valid: HashMap::new(),
+                    announcements_invalid_asn: HashMap::new(),
+                    announcements_invalid_length: HashMap::new(),
+                    announcements_not_found: HashMap::new(),
+                    roas_too_permissive: HashMap::new(),
+                    roas_redundant: HashMap::new(),
+                    roas_stale: HashMap::new(),
+                    roas_total: HashMap::new(),
+                };
+
+                for (ca, ca_stats) in cas_stats.iter() {
+                    all_bgp_stats.add_ca(ca, ca_stats.bgp_stats());
+                }
+
+                res.push('\n');
+                res.push_str("# HELP krill_cas_bgp_announcements_valid number of announcements seen for CA resources with RPKI state VALID\n");
+                res.push_str(
+                    "# TYPE krill_cas_bgp_announcements_valid gauge\n",
+                );
+                for (ca, nr) in all_bgp_stats.announcements_valid.iter() {
+                    res.push_str(&format!("krill_cas_bgp_announcements_valid{{ca=\"{}\"}} {}\n", ca, nr));
+                }
+
+                res.push('\n');
+                res.push_str("# HELP krill_cas_bgp_announcements_invalid_asn number of announcements seen for CA resources with RPKI state INVALID (ASN mismatch)\n");
+                res.push_str("# TYPE krill_cas_bgp_announcements_invalid_asn gauge\n");
+                for (ca, nr) in
+                    all_bgp_stats.announcements_invalid_asn.iter()
+                {
+                    res.push_str(&format!(
+                        "krill_cas_bgp_announcements_invalid_asn{{ca=\"{}\"}} {}\n",
+                        ca, nr
+                    ));
+                }
+
+                res.push('\n');
+                res.push_str("# HELP krill_cas_bgp_announcements_invalid_length number of announcements seen for CA resources with RPKI state INVALID (prefix exceeds max length)\n");
+                res.push_str("# TYPE krill_cas_bgp_announcements_invalid_length gauge\n");
+                for (ca, nr) in
+                    all_bgp_stats.announcements_invalid_length.iter()
+                {
+                    res.push_str(&format!(
+                        "krill_cas_bgp_announcements_invalid_length{{ca=\"{}\"}} {}\n",
+                        ca, nr
+                    ));
+                }
+
+                res.push('\n');
+                res.push_str("# HELP krill_cas_bgp_announcements_not_found number of announcements seen for CA resources with RPKI state NOT FOUND (none of the CA's ROAs cover this)\n");
+                res.push_str("# TYPE krill_cas_bgp_announcements_not_found gauge\n");
+                for (ca, nr) in
+                    all_bgp_stats.announcements_not_found.iter()
+                {
+                    res.push_str(&format!(
+                        "krill_cas_bgp_announcements_not_found{{ca=\"{}\"}} {}\n",
+                        ca, nr
+                    ));
+                }
+
+                res.push('\n');
+                res.push_str("# HELP krill_cas_bgp_roas_too_permissive number of ROAs for this CA which allow excess announcements (0 may also indicate that no BGP info is available)\n");
+                res.push_str(
+                    "# TYPE krill_cas_bgp_roas_too_permissive gauge\n",
+                );
+                for (ca, nr) in all_bgp_stats.roas_too_permissive.iter() {
+                    res.push_str(&format!("krill_cas_bgp_roas_too_permissive{{ca=\"{}\"}} {}\n", ca, nr));
+                }
+
+                res.push('\n');
+                res.push_str("# HELP krill_cas_bgp_roas_redundant number of ROAs for this CA which are redundant (0 may also indicate that no BGP info is available)\n");
+                res.push_str(
+                    "# TYPE krill_cas_bgp_roas_redundant gauge\n",
+                );
+                for (ca, nr) in all_bgp_stats.roas_redundant.iter() {
+                    res.push_str(&format!(
+                        "krill_cas_bgp_roas_redundant{{ca=\"{}\"}} {}\n",
+                        ca, nr
+                    ));
+                }
+
+                res.push('\n');
+                res.push_str("# HELP krill_cas_bgp_roas_stale number of ROAs for this CA for which no announcements are seen (0 may also indicate that no BGP info is available)\n");
+                res.push_str("# TYPE krill_cas_bgp_roas_stale gauge\n");
+                for (ca, nr) in all_bgp_stats.roas_stale.iter() {
+                    res.push_str(&format!(
+                        "krill_cas_bgp_roas_stale{{ca=\"{}\"}} {}\n",
+                        ca, nr
+                    ));
+                }
+
+                res.push('\n');
+                res.push_str("# HELP krill_cas_bgp_roas_total total number of ROAs for this CA\n");
+                res.push_str("# TYPE krill_cas_bgp_roas_total gauge\n");
+                for (ca, nr) in all_bgp_stats.roas_total.iter() {
+                    res.push_str(&format!(
+                        "krill_cas_bgp_roas_total{{ca=\"{}\"}} {}\n",
+                        ca, nr
+                    ));
+                }
+            }
+        }
+    }
+
+    if let Ok(stats) = server.repo_stats() {
+        let publishers = stats.get_publishers();
+
+        res.push('\n');
+        res.push_str("# HELP krill_repo_publisher number of publishers in repository\n");
+        res.push_str("# TYPE krill_repo_publisher gauge\n");
+        res.push_str(&format!(
+            "krill_repo_publisher {}\n",
+            publishers.len()
+        ));
+
+        if let Some(last_update) = stats.last_update() {
+            res.push('\n');
+            res.push_str(
+                "# HELP krill_repo_rrdp_last_update unix timestamp in seconds of last update by any publisher\n",
+            );
+            res.push_str("# TYPE krill_repo_rrdp_last_update gauge\n");
+            res.push_str(&format!(
+                "krill_repo_rrdp_last_update {}\n",
+                last_update.timestamp()
+            ));
+        }
+
+        res.push('\n');
+        res.push_str("# HELP krill_repo_rrdp_serial RRDP serial\n");
+        res.push_str("# TYPE krill_repo_rrdp_serial counter\n");
+        res.push_str(&format!(
+            "krill_repo_rrdp_serial {}\n",
+            stats.serial()
+        ));
+
+        if !server.config.metrics.metrics_hide_publisher_details {
+            res.push('\n');
+            res.push_str("# HELP krill_repo_objects number of objects in repository for publisher\n");
+            res.push_str("# TYPE krill_repo_objects gauge\n");
+            for (publisher, stats) in publishers {
                 res.push_str(&format!(
-                    "krill_repo_rrdp_last_update {}\n",
-                    last_update.timestamp()
+                    "krill_repo_objects{{publisher=\"{}\"}} {}\n",
+                    publisher,
+                    stats.objects()
                 ));
             }
 
             res.push('\n');
-            res.push_str("# HELP krill_repo_rrdp_serial RRDP serial\n");
-            res.push_str("# TYPE krill_repo_rrdp_serial counter\n");
-            res.push_str(&format!(
-                "krill_repo_rrdp_serial {}\n",
-                stats.serial()
-            ));
+            res.push_str("# HELP krill_repo_size size of objects in bytes in repository for publisher\n");
+            res.push_str("# TYPE krill_repo_size gauge\n");
+            for (publisher, stats) in publishers {
+                res.push_str(&format!(
+                    "krill_repo_size{{publisher=\"{}\"}} {}\n",
+                    publisher,
+                    stats.size()
+                ));
+            }
 
-            if !server.config.metrics.metrics_hide_publisher_details {
-                res.push('\n');
-                res.push_str("# HELP krill_repo_objects number of objects in repository for publisher\n");
-                res.push_str("# TYPE krill_repo_objects gauge\n");
-                for (publisher, stats) in publishers {
+            res.push('\n');
+            res.push_str("# HELP krill_repo_last_update unix timestamp in seconds of last update for publisher\n");
+            res.push_str("# TYPE krill_repo_last_update gauge\n");
+            for (publisher, stats) in publishers {
+                if let Some(last_update) = stats.last_update() {
                     res.push_str(&format!(
-                        "krill_repo_objects{{publisher=\"{}\"}} {}\n",
+                        "krill_repo_last_update{{publisher=\"{}\"}} {}\n",
                         publisher,
-                        stats.objects()
+                        last_update.timestamp()
                     ));
-                }
-
-                res.push('\n');
-                res.push_str("# HELP krill_repo_size size of objects in bytes in repository for publisher\n");
-                res.push_str("# TYPE krill_repo_size gauge\n");
-                for (publisher, stats) in publishers {
-                    res.push_str(&format!(
-                        "krill_repo_size{{publisher=\"{}\"}} {}\n",
-                        publisher,
-                        stats.size()
-                    ));
-                }
-
-                res.push('\n');
-                res.push_str("# HELP krill_repo_last_update unix timestamp in seconds of last update for publisher\n");
-                res.push_str("# TYPE krill_repo_last_update gauge\n");
-                for (publisher, stats) in publishers {
-                    if let Some(last_update) = stats.last_update() {
-                        res.push_str(&format!(
-                            "krill_repo_last_update{{publisher=\"{}\"}} {}\n",
-                            publisher,
-                            last_update.timestamp()
-                        ));
-                    }
                 }
             }
         }
-
-        Ok(HttpResponse::text(res.into_bytes()))
-    } else {
-        Err(req)
     }
+
+    HttpResponse::text(res.into_bytes())
 }
+
 
 //------------ Publication ---------------------------------------------------
 
@@ -1038,7 +1210,9 @@ pub async fn rfc8181(req: Request) -> RoutingResult {
             Err(e) => return render_error(e),
         };
 
-        match state.rfc8181(publisher, bytes) {
+        match state.process(move |server| {
+            server.rfc8181(publisher, bytes)
+        }).await {
             Ok(bytes) => Ok(HttpResponse::rfc8181(bytes.to_vec())),
             Err(e) => render_error(e),
         }
@@ -1047,7 +1221,9 @@ pub async fn rfc8181(req: Request) -> RoutingResult {
     }
 }
 
+
 //------------ Embedded TA  --------------------------------------------------
+
 async fn ta(req: Request) -> RoutingResult {
     match *req.method() {
         Method::GET => match req.path.full() {
@@ -1061,7 +1237,9 @@ async fn ta(req: Request) -> RoutingResult {
 }
 
 pub async fn tal(req: Request) -> RoutingResult {
-    match req.state().ta_cert_details().await {
+    match req.state().process(|server| {
+        server.ta_cert_details()
+    }).await {
         Ok(ta) => {
             Ok(HttpResponse::text(format!("{}", ta.tal()).into_bytes()))
         }
@@ -1070,11 +1248,15 @@ pub async fn tal(req: Request) -> RoutingResult {
 }
 
 pub async fn ta_cer(req: Request) -> RoutingResult {
-    match req.state().trust_anchor_cert().await {
-        Some(cert) => Ok(HttpResponse::cert(cert.to_bytes().to_vec())),
-        None => render_unknown_resource(),
+    match req.state().process(|server| {
+        Ok(server.trust_anchor_cert())
+    }).await {
+        Ok(Some(cert)) => Ok(HttpResponse::cert(cert.to_bytes().to_vec())),
+        Ok(None) => render_unknown_resource(),
+        Err(err) => render_error(err),
     }
 }
+
 
 //------------ Provisioning (RFC6492) ----------------------------------------
 
@@ -1095,8 +1277,9 @@ pub async fn rfc6492(req: Request) -> RoutingResult {
             Ok(bytes) => bytes,
             Err(e) => return render_error(e),
         };
-        let krill_server = state;
-        match krill_server.rfc6492(ca, bytes, user_agent, &actor).await {
+        match state.process(move |server| {
+            server.rfc6492(ca, bytes, user_agent, &actor)
+        }).await {
             Ok(bytes) => Ok(HttpResponse::rfc6492(bytes.to_vec())),
             Err(e) => render_error(e),
         }
@@ -1109,9 +1292,19 @@ pub async fn rfc6492(req: Request) -> RoutingResult {
 async fn stats(req: Request) -> RoutingResult {
     match *req.method() {
         Method::GET => match req.path().full() {
-            "/stats/info" => render_json(req.state().server_info()),
-            "/stats/repo" => render_json_res(req.state().repo_stats()),
-            "/stats/cas" => render_json_res(req.state().cas_stats().await),
+            "/stats/info" => {
+                render_json(req.state().server_info())
+            }
+            "/stats/repo" => {
+                render_json_res(req.state().process(|server| {
+                    server.repo_stats()
+                }).await)
+            }
+            "/stats/cas" => {
+                render_json_res(req.state().process(|server| {
+                    server.cas_stats()
+                }).await)
+            }
             _ => Err(req),
         },
         _ => Err(req),
@@ -1438,10 +1631,14 @@ async fn api_ca_sync(
         if req.is_post() {
             match path.next() {
                 Some("parents") => {
-                    render_empty_res(req.state().cas_refresh_single(ca).await)
+                    render_empty_res(req.state().process(move |server| {
+                        server.cas_refresh_single(ca)
+                    }).await)
                 }
                 Some("repo") => {
-                    render_empty_res(req.state().cas_repo_sync_single(&ca))
+                    render_empty_res(req.state().process(move |server| {
+                        server.cas_repo_sync_single(&ca)
+                    }).await)
                 }
                 _ => render_unknown_method(),
             }
@@ -1462,9 +1659,11 @@ async fn api_publication_server(
                 let state = req.state.clone();
 
                 match req.json().await {
-                    Ok(criteria) => render_empty_res(
-                        state.delete_matching_files(criteria),
-                    ),
+                    Ok(criteria) => {
+                        render_empty_res(state.process(move |server| {
+                            server.delete_matching_files(criteria)
+                        }).await)
+                    }
                     Err(e) => render_error(e),
                 }
             }
@@ -1475,16 +1674,26 @@ async fn api_publication_server(
             Method::POST => {
                 let state = req.state.clone();
                 match req.json().await {
-                    Ok(uris) => render_empty_res(state.repository_init(uris)),
+                    Ok(uris) => {
+                        render_empty_res(state.process(move |server| {
+                            server.repository_init(uris)
+                        }).await)
+                    }
                     Err(e) => render_error(e),
                 }
             }
-            Method::DELETE => render_empty_res(req.state.repository_clear()),
+            Method::DELETE => {
+                render_empty_res(req.state().process(|server| {
+                    server.repository_clear()
+                }).await)
+            }
             _ => render_unknown_method(),
         },
         Some("session_reset") => match *req.method() {
             Method::POST => {
-                render_empty_res(req.state().repository_session_reset())
+                render_empty_res(req.state().process(|server| {
+                    server.repository_session_reset()
+                }).await)
             }
             _ => render_unknown_method(),
         },
@@ -1523,6 +1732,7 @@ async fn api_publishers(
     }
 }
 
+
 //------------ Admin: Publishers ---------------------------------------------
 
 /// Returns a list of publisher which have not updated for more
@@ -1535,9 +1745,11 @@ pub async fn api_stale_publishers(
         let seconds = seconds.unwrap_or("");
         match i64::from_str(seconds) {
             Ok(seconds) => {
-                render_json_res(req.state().repo_stats().map(|stats| {
-                    PublisherList::build(&stats.stale_publishers(seconds))
-                }))
+                render_json_res(req.state().process(move |server| {
+                    server.repo_stats().map(|stats| {
+                        PublisherList::build(&stats.stale_publishers(seconds))
+                    })
+                }).await)
             }
             Err(_) => render_error(Error::ApiInvalidSeconds),
         }
@@ -1547,11 +1759,11 @@ pub async fn api_stale_publishers(
 /// Returns a json structure with all publishers in it.
 pub async fn api_list_pbl(req: Request) -> RoutingResult {
     aa!(req, Permission::PUB_LIST, {
-        render_json_res(
-            req.state()
-                .publishers()
-                .map(|publishers| PublisherList::build(&publishers)),
-        )
+        render_json_res(req.state().process(|server| {
+            server.publishers().map(|publishers| {
+                PublisherList::build(&publishers)
+            })
+        }).await)
     })
 }
 
@@ -1559,9 +1771,13 @@ pub async fn api_list_pbl(req: Request) -> RoutingResult {
 pub async fn api_add_pbl(req: Request) -> RoutingResult {
     aa!(req, Permission::PUB_CREATE, {
         let actor = req.actor();
-        let server = req.state().clone();
+        let state = req.state().clone();
         match req.json().await {
-            Ok(pbl) => render_json_res(server.add_publisher(pbl, &actor)),
+            Ok(pbl) => {
+                render_json_res(state.process(move |server| {
+                    server.add_publisher(pbl, &actor)
+                }).await)
+            }
             Err(e) => render_error(e),
         }
     })
@@ -1576,7 +1792,9 @@ pub async fn api_remove_pbl(
 ) -> RoutingResult {
     aa!(req, Permission::PUB_DELETE, {
         let actor = req.actor();
-        render_empty_res(req.state().remove_publisher(publisher, &actor))
+        render_empty_res(req.state().process(move |server| {
+            server.remove_publisher(publisher, &actor)
+        }).await)
     })
 }
 
@@ -1589,12 +1807,14 @@ pub async fn api_show_pbl(
     aa!(
         req,
         Permission::PUB_READ,
-        render_json_res(req.state().get_publisher(&publisher))
+        render_json_res(req.state().process(move |server| {
+            server.get_publisher(&publisher)
+        }).await)
     )
 }
 
-//------------ repository_response
-//------------ ---------------------------------------------
+
+//------------ repository_response -------------------------------------------
 
 #[allow(clippy::redundant_clone)] // false positive
 pub async fn api_repository_response_xml(
@@ -1602,7 +1822,7 @@ pub async fn api_repository_response_xml(
     publisher: PublisherHandle,
 ) -> RoutingResult {
     aa!(req, Permission::PUB_READ, {
-        match repository_response(&req, &publisher).await {
+        match repository_response(&req, publisher).await {
             Ok(repository_response) => {
                 Ok(HttpResponse::xml(repository_response.to_xml_vec()))
             }
@@ -1617,7 +1837,7 @@ pub async fn api_repository_response_json(
     publisher: PublisherHandle,
 ) -> RoutingResult {
     aa!(req, Permission::PUB_READ, {
-        match repository_response(&req, &publisher).await {
+        match repository_response(&req, publisher).await {
             Ok(res) => render_json(res),
             Err(e) => render_error(e),
         }
@@ -1626,19 +1846,23 @@ pub async fn api_repository_response_json(
 
 async fn repository_response(
     req: &Request,
-    publisher: &PublisherHandle,
+    publisher: PublisherHandle,
 ) -> Result<idexchange::RepositoryResponse, Error> {
-    req.state().repository_response(publisher)
+    req.state().process(move |server| {
+        server.repository_response(&publisher)
+    }).await
 }
 
 pub async fn api_ca_add_child(req: Request, ca: CaHandle) -> RoutingResult {
     aa!(req, Permission::CA_UPDATE, Handle::from(&ca), {
         let actor = req.actor();
-        let server = req.state().clone();
+        let state = req.state().clone();
         match req.json().await {
-            Ok(child_req) => render_json_res(
-                server.ca_add_child(&ca, child_req, &actor).await,
-            ),
+            Ok(child_req) => {
+                render_json_res(state.process(move |server| {
+                    server.ca_add_child(&ca, child_req, &actor)
+                }).await)
+            }
             Err(e) => render_error(e),
         }
     })
@@ -1651,11 +1875,13 @@ async fn api_ca_child_update(
 ) -> RoutingResult {
     aa!(req, Permission::CA_UPDATE, Handle::from(&ca), {
         let actor = req.actor();
-        let server = req.state().clone();
+        let state = req.state().clone();
         match req.json().await {
-            Ok(child_req) => render_empty_res(
-                server.ca_child_update(&ca, child, child_req, &actor).await,
-            ),
+            Ok(child_req) => {
+                render_empty_res(state.process(move |server| {
+                    server.ca_child_update(&ca, child, child_req, &actor)
+                }).await)
+            }
             Err(e) => render_error(e),
         }
     })
@@ -1668,9 +1894,9 @@ pub async fn api_ca_child_remove(
 ) -> RoutingResult {
     aa!(req, Permission::CA_UPDATE, Handle::from(&ca), {
         let actor = req.actor();
-        render_empty_res(
-            req.state().ca_child_remove(&ca, child, &actor).await,
-        )
+        render_empty_res(req.state().process(move |server| {
+            server.ca_child_remove(&ca, child, &actor)
+        }).await)
     })
 }
 
@@ -1683,7 +1909,9 @@ async fn api_ca_child_show(
         req,
         Permission::CA_READ,
         Handle::from(&ca),
-        render_json_res(req.state().ca_child_show(&ca, &child).await)
+        render_json_res(req.state().process(move |server| {
+            server.ca_child_show(&ca, &child)
+        }).await)
     )
 }
 
@@ -1696,18 +1924,22 @@ async fn api_ca_child_export(
         req,
         Permission::CA_READ,
         Handle::from(&ca),
-        render_json_res(req.state().api_ca_child_export(&ca, &child).await)
+        render_json_res(req.state().process(move |server| {
+            server.api_ca_child_export(&ca, &child)
+        }).await)
     )
 }
 
 async fn api_ca_child_import(req: Request, ca: CaHandle) -> RoutingResult {
     aa!(req, Permission::CA_ADMIN, Handle::from(&ca), {
         let actor = req.actor();
-        let server = req.state().clone();
+        let state = req.state().clone();
         match req.json().await {
-            Ok(import_child) => render_empty_res(
-                server.api_ca_child_import(&ca, import_child, &actor).await,
-            ),
+            Ok(import_child) => {
+                render_empty_res(state.process(move |server| {
+                    server.api_ca_child_import(&ca, import_child, &actor)
+                }).await)
+            }
             Err(e) => render_error(e),
         }
     })
@@ -1721,7 +1953,9 @@ async fn api_ca_stats_child_connections(
         req,
         Permission::CA_READ,
         Handle::from(&ca),
-        render_json_res(req.state().ca_stats_child_connections(&ca).await)
+        render_json_res(req.state().process(move |server| {
+            server.ca_stats_child_connections(&ca)
+        }).await)
     )
 }
 
@@ -1734,9 +1968,9 @@ async fn api_ca_parent_res_json(
         req,
         Permission::CA_READ,
         Handle::from(&ca),
-        render_json_res(
-            req.state().ca_parent_response(&ca, child.clone()).await
-        )
+        render_json_res(req.state().process(move |server| {
+            server.ca_parent_response(&ca, child.clone())
+        }).await)
     )
 }
 
@@ -1746,7 +1980,9 @@ pub async fn api_ca_parent_res_xml(
     child: ChildHandle,
 ) -> RoutingResult {
     aa!(req, Permission::CA_READ, Handle::from(&ca), {
-        match req.state().ca_parent_response(&ca, child.clone()).await {
+        match req.state().process(move |server| {
+            server.ca_parent_response(&ca, child.clone())
+        }).await {
             Ok(res) => Ok(HttpResponse::xml(res.to_xml_vec())),
             Err(e) => render_error(e),
         }
@@ -1758,10 +1994,14 @@ pub async fn api_ca_parent_res_xml(
 async fn api_cas_import(req: Request) -> RoutingResult {
     match *req.method() {
         Method::POST => aa!(req, Permission::CA_ADMIN, {
-            let server = req.state().clone();
+            let state = req.state().clone();
             match req.json().await {
                 Ok(structure) => {
-                    render_empty_res(server.cas_import(structure).await)
+                    render_empty_res(
+                        state.process(|server| {
+                            server.cas_import(structure)
+                        }).await
+                    )
                 }
                 Err(e) => render_error(e),
             }
@@ -1774,7 +2014,9 @@ async fn api_all_ca_issues(req: Request) -> RoutingResult {
     match *req.method() {
         Method::GET => aa!(req, Permission::CA_READ, {
             let actor = req.actor();
-            render_json_res(req.state().all_ca_issues(&actor).await)
+            render_json_res(req.state().process(move |server| {
+                server.all_ca_issues(&actor)
+            }).await)
         }),
         _ => render_unknown_method(),
     }
@@ -1787,7 +2029,9 @@ async fn api_ca_issues(req: Request, ca: CaHandle) -> RoutingResult {
             req,
             Permission::CA_READ,
             Handle::from(&ca),
-            render_json_res(req.state().ca_issues(&ca).await)
+            render_json_res(req.state().process(move |server| {
+                server.ca_issues(&ca)
+            }).await)
         ),
         _ => render_unknown_method(),
     }
@@ -1796,7 +2040,9 @@ async fn api_ca_issues(req: Request, ca: CaHandle) -> RoutingResult {
 async fn api_cas_list(req: Request) -> RoutingResult {
     aa!(req, Permission::CA_LIST, {
         let actor = req.actor();
-        render_json_res(req.state().ca_list(&actor))
+        render_json_res(req.state().process(move |server| {
+            server.ca_list(&actor)
+        }).await)
     })
 }
 
@@ -1805,7 +2051,11 @@ pub async fn api_ca_init(req: Request) -> RoutingResult {
         let state = req.state().clone();
 
         match req.json().await {
-            Ok(ca_init) => render_empty_res(state.ca_init(ca_init)),
+            Ok(ca_init) => {
+                render_empty_res(state.process(move |server| {
+                    server.ca_init(ca_init)
+                }).await)
+            }
             Err(e) => render_error(e),
         }
     })
@@ -1819,7 +2069,9 @@ async fn api_ca_id(
     match *req.method() {
         Method::POST => aa!(req, Permission::CA_UPDATE, Handle::from(&ca), {
             let actor = req.actor();
-            render_empty_res(req.state().ca_update_id(ca, &actor).await)
+            render_empty_res(req.state().process(move |server| {
+                server.ca_update_id(ca, &actor)
+            }).await)
         }),
         Method::GET => match path.next() {
             Some("child_request.xml") => api_ca_child_req_xml(req, ca).await,
@@ -1843,7 +2095,9 @@ async fn api_ca_info(req: Request, handle: CaHandle) -> RoutingResult {
         req,
         Permission::CA_READ,
         Handle::from(&handle),
-        render_json_res(req.state().ca_info(&handle).await)
+        render_json_res(req.state().process(move |server| {
+            server.ca_info(&handle)
+        }).await)
     )
 }
 
@@ -1853,7 +2107,9 @@ async fn api_ca_delete(req: Request, handle: CaHandle) -> RoutingResult {
         req,
         Permission::CA_DELETE,
         Handle::from(&handle),
-        render_json_res(req.state().ca_delete(&handle, &actor).await)
+        render_json_res(req.state().process(move |server| {
+            server.ca_delete(&handle, &actor)
+        }).await)
     )
 }
 
@@ -1866,7 +2122,9 @@ async fn api_ca_my_parent_contact(
         req,
         Permission::CA_READ,
         Handle::from(&ca),
-        render_json_res(req.state().ca_my_parent_contact(&ca, &parent).await)
+        render_json_res(req.state().process(move |server| {
+            server.ca_my_parent_contact(&ca, &parent)
+        }).await)
     )
 }
 
@@ -1878,12 +2136,9 @@ async fn api_ca_my_parent_statuses(
         req,
         Permission::CA_READ,
         Handle::from(&ca),
-        render_json_res(
-            req.state()
-                .ca_status(&ca)
-                .await
-                .map(|s| s.parents().clone())
-        )
+        render_json_res(req.state().process(move |server| {
+            server.ca_status(&ca)
+        }).await.map(|s| s.parents().clone()))
     )
 }
 
@@ -1948,7 +2203,9 @@ async fn api_ca_bgpsec_definitions_show(
     ca: CaHandle,
 ) -> RoutingResult {
     aa!(req, Permission::BGPSEC_READ, Handle::from(&ca), {
-        render_json_res(req.state().ca_bgpsec_definitions_show(ca).await)
+        render_json_res(req.state().process(move |server| {
+            server.ca_bgpsec_definitions_show(ca)
+        }).await)
     })
 }
 
@@ -1958,13 +2215,13 @@ async fn api_ca_bgpsec_definitions_update(
 ) -> RoutingResult {
     aa!(req, Permission::BGPSEC_UPDATE, Handle::from(&ca), {
         let actor = req.actor();
-        let server = req.state().clone();
+        let state = req.state().clone();
         match req.json().await {
-            Ok(updates) => render_empty_res(
-                server
-                    .ca_bgpsec_definitions_update(ca, updates, &actor)
-                    .await,
-            ),
+            Ok(updates) => {
+                render_empty_res(state.process(move |server| {
+                    server.ca_bgpsec_definitions_update(ca, updates, &actor)
+                }).await)
+            }
             Err(e) => render_error(e),
         }
     })
@@ -2027,7 +2284,9 @@ async fn api_ca_history_commands(
                 if let Some(before) = path.path_arg() {
                     crit.set_before(before);
                 }
-                match req.state().ca_history(&handle, crit).await {
+                match req.state().process(move |server| {
+                    server.ca_history(&handle, crit)
+                }).await {
                     Ok(history) => render_json(history),
                     Err(e) => render_error(e),
                 }
@@ -2060,7 +2319,9 @@ async fn api_ca_command_details(
         Some(key) => match *req.method() {
             Method::GET => {
                 aa!(req, Permission::CA_READ, Handle::from(&ca), {
-                    match req.state().ca_command_details(&ca, key) {
+                    match req.state().process(move |server| {
+                        server.ca_command_details(&ca, key)
+                    }).await {
                         Ok(details) => render_json(details),
                         Err(e) => match e {
                             Error::AggregateStoreError(
@@ -2083,7 +2344,7 @@ async fn api_ca_child_req_xml(req: Request, ca: CaHandle) -> RoutingResult {
             req,
             Permission::CA_READ,
             Handle::from(&ca),
-            match ca_child_req(&req, &ca).await {
+            match ca_child_req(&req, ca).await {
                 Ok(child_request) =>
                     Ok(HttpResponse::xml(child_request.to_xml_vec())),
                 Err(e) => render_error(e),
@@ -2099,7 +2360,7 @@ async fn api_ca_child_req_json(req: Request, ca: CaHandle) -> RoutingResult {
             req,
             Permission::CA_READ,
             Handle::from(&ca),
-            match ca_child_req(&req, &ca).await {
+            match ca_child_req(&req, ca).await {
                 Ok(req) => render_json(req),
                 Err(e) => render_error(e),
             }
@@ -2109,10 +2370,9 @@ async fn api_ca_child_req_json(req: Request, ca: CaHandle) -> RoutingResult {
 }
 
 async fn ca_child_req(
-    req: &Request,
-    ca: &CaHandle,
+    req: &Request, ca: CaHandle,
 ) -> Result<idexchange::ChildRequest, Error> {
-    req.state().ca_child_req(ca).await
+    req.state().process(move |server| server.ca_child_req(&ca)).await
 }
 
 async fn api_ca_publisher_req_json(
@@ -2124,7 +2384,9 @@ async fn api_ca_publisher_req_json(
             req,
             Permission::CA_READ,
             Handle::from(&ca),
-            render_json_res(req.state().ca_publisher_req(&ca).await)
+            render_json_res(req.state().process(move |server| {
+                server.ca_publisher_req(&ca)
+            }).await)
         ),
         _ => render_unknown_method(),
     }
@@ -2139,7 +2401,9 @@ async fn api_ca_publisher_req_xml(
             req,
             Permission::CA_READ,
             Handle::from(&ca),
-            match req.state().ca_publisher_req(&ca).await {
+            match req.state().process(move |server| {
+                server.ca_publisher_req(&ca)
+            }).await {
                 Ok(publisher_request) =>
                     Ok(HttpResponse::xml(publisher_request.to_xml_vec())),
                 Err(e) => render_error(e),
@@ -2154,7 +2418,9 @@ async fn api_ca_repo_details(req: Request, ca: CaHandle) -> RoutingResult {
         req,
         Permission::CA_READ,
         Handle::from(&ca),
-        render_json_res(req.state().ca_repo_details(&ca).await)
+        render_json_res(req.state().process(move |server| {
+            server.ca_repo_details(&ca)
+        }).await)
     )
 }
 
@@ -2165,10 +2431,9 @@ async fn api_ca_repo_status(req: Request, ca: CaHandle) -> RoutingResult {
             Permission::CA_READ,
             Handle::from(&ca),
             render_json_res(
-                req.state()
-                    .ca_status(&ca)
-                    .await
-                    .map(|status| status.repo().clone())
+                req.state().process(move |server| {
+                    server.ca_status(&ca)
+                }).await.map(|status| status.repo().clone())
             )
         ),
         _ => render_unknown_method(),
@@ -2212,16 +2477,18 @@ fn extract_repository_contact(
 async fn api_ca_repo_update(req: Request, ca: CaHandle) -> RoutingResult {
     aa!(req, Permission::CA_UPDATE, Handle::from(&ca), {
         let actor = req.actor();
-        let server = req.state().clone();
+        let state = req.state().clone();
 
         match req
             .api_bytes()
             .await
             .map(|bytes| extract_repository_contact(&ca, bytes))
         {
-            Ok(Ok(update)) => render_empty_res(
-                server.ca_repo_update(ca, update, &actor).await,
-            ),
+            Ok(Ok(update)) => {
+                render_empty_res(state.process(move |server| {
+                    server.ca_repo_update(ca, update, &actor)
+                }).await)
+            }
             Ok(Err(e)) | Err(e) => render_error(e),
         }
     })
@@ -2234,7 +2501,7 @@ async fn api_ca_parent_add_or_update(
 ) -> RoutingResult {
     aa!(req, Permission::CA_UPDATE, Handle::from(&ca), {
         let actor = req.actor();
-        let server = req.state().clone();
+        let state = req.state().clone();
 
         let bytes = match req.api_bytes().await {
             Ok(bytes) => bytes,
@@ -2242,9 +2509,11 @@ async fn api_ca_parent_add_or_update(
         };
 
         match extract_parent_ca_req(&ca, bytes, parent_override) {
-            Ok(parent_req) => render_empty_res(
-                server.ca_parent_add_or_update(ca, parent_req, &actor).await,
-            ),
+            Ok(parent_req) => {
+                render_empty_res(state.process(move |server| {
+                    server.ca_parent_add_or_update(ca, parent_req, &actor)
+                }).await)
+            }
             Err(e) => render_error(e),
         }
     })
@@ -2303,9 +2572,9 @@ async fn api_ca_remove_parent(
 ) -> RoutingResult {
     aa!(req, Permission::CA_UPDATE, Handle::from(&ca), {
         let actor = req.actor();
-        render_empty_res(
-            req.state().ca_parent_remove(ca, parent, &actor).await,
-        )
+        render_empty_res(req.state().process(move |server| {
+            server.ca_parent_remove(ca, parent, &actor)
+        }).await)
     })
 }
 
@@ -2313,7 +2582,9 @@ async fn api_ca_remove_parent(
 async fn api_ca_kr_init(req: Request, ca: CaHandle) -> RoutingResult {
     aa!(req, Permission::CA_UPDATE, Handle::from(&ca), {
         let actor = req.actor();
-        render_empty_res(req.state().ca_keyroll_init(ca, &actor).await)
+        render_empty_res(req.state().process(move |server| {
+            server.ca_keyroll_init(ca, &actor)
+        }).await)
     })
 }
 
@@ -2322,7 +2593,9 @@ async fn api_ca_kr_init(req: Request, ca: CaHandle) -> RoutingResult {
 async fn api_ca_kr_activate(req: Request, ca: CaHandle) -> RoutingResult {
     aa!(req, Permission::CA_UPDATE, Handle::from(&ca), {
         let actor = req.actor();
-        render_empty_res(req.state().ca_keyroll_activate(ca, &actor).await)
+        render_empty_res(req.state().process(move |server| {
+            server.ca_keyroll_activate(ca, &actor)
+        }).await)
     })
 }
 
@@ -2334,8 +2607,9 @@ async fn api_ca_aspas_definitions_show(
     ca: CaHandle,
 ) -> RoutingResult {
     aa!(req, Permission::ASPAS_READ, Handle::from(&ca), {
-        let state = req.state().clone();
-        render_json_res(state.ca_aspas_definitions_show(ca).await)
+        render_json_res(req.state().process(move |server| {
+            server.ca_aspas_definitions_show(ca)
+        }).await)
     })
 }
 
@@ -2350,9 +2624,11 @@ async fn api_ca_aspas_definitions_update(
 
         match req.json().await {
             Err(e) => render_error(e),
-            Ok(updates) => render_empty_res(
-                state.ca_aspas_definitions_update(ca, updates, &actor).await,
-            ),
+            Ok(updates) => {
+                render_empty_res(state.process(move |server| {
+                    server.ca_aspas_definitions_update(ca, updates, &actor)
+                }).await)
+            }
         }
     })
 }
@@ -2370,11 +2646,11 @@ async fn api_ca_aspas_update_aspa(
 
         match req.json().await {
             Err(e) => render_error(e),
-            Ok(update) => render_empty_res(
-                state
-                    .ca_aspas_update_aspa(ca, customer, update, &actor)
-                    .await,
-            ),
+            Ok(update) => {
+                render_empty_res(state.process(move |server| {
+                    server.ca_aspas_update_aspa(ca, customer, update, &actor)
+                }).await)
+            }
         }
     })
 }
@@ -2390,9 +2666,9 @@ async fn api_ca_aspas_delete(
         let state = req.state().clone();
 
         let updates = AspaDefinitionUpdates::new(vec![], vec![customer]);
-        render_empty_res(
-            state.ca_aspas_definitions_update(ca, updates, &actor).await,
-        )
+        render_empty_res(state.process(move |server| {
+            server.ca_aspas_definitions_update(ca, updates, &actor)
+        }).await)
     })
 }
 
@@ -2404,9 +2680,11 @@ async fn api_ca_routes_update(req: Request, ca: CaHandle) -> RoutingResult {
 
         match req.json().await {
             Err(e) => render_error(e),
-            Ok(updates) => render_empty_res(
-                state.ca_routes_update(ca, updates, &actor).await,
-            ),
+            Ok(updates) => {
+                render_empty_res(state.process(move |server| {
+                    server.ca_routes_update(ca, updates, &actor)
+                }).await)
+            }
         }
     })
 }
@@ -2425,9 +2703,11 @@ async fn api_ca_routes_try_update(
         match req.json::<RoaConfigurationUpdates>().await {
             Err(e) => render_error(e),
             Ok(updates) => {
-                let server = state;
-                match server.ca_routes_bgp_dry_run(&ca, updates.clone()).await
-                {
+                let ca_copy = ca.clone();
+                let updates_copy = updates.clone(); // XXX Wasteful clone here
+                match state.process(move |server| {
+                    server.ca_routes_bgp_dry_run(&ca_copy, updates_copy)
+                }).await {
                     Err(e) => {
                         // update was rejected, return error
                         render_error(e)
@@ -2435,19 +2715,20 @@ async fn api_ca_routes_try_update(
                     Ok(effect) => {
                         if !effect.contains_invalids() {
                             // no issues found, apply
-                            render_empty_res(
-                                server
-                                    .ca_routes_update(ca, updates, &actor)
-                                    .await,
-                            )
-                        } else {
+                            render_empty_res(state.process(move |server| {
+                                server.ca_routes_update(ca, updates, &actor)
+                            }).await)
+                        } 
+                        else {
                             // remaining invalids exist, advise user
                             let updates = updates.into_explicit_max_length();
                             let resources = updates.affected_prefixes();
 
-                            match server
-                                .ca_routes_bgp_suggest(&ca, Some(resources))
-                                .await
+                            match state.process(move |server| {
+                                server.ca_routes_bgp_suggest(
+                                    &ca, Some(resources)
+                                )
+                            }).await
                             {
                                 Err(e) => render_error(e), /* should not */
                                 // fail after
@@ -2470,7 +2751,9 @@ async fn api_ca_routes_try_update(
 /// show the route authorizations for this CA
 async fn api_ca_routes_show(req: Request, ca: CaHandle) -> RoutingResult {
     aa!(req, Permission::ROUTES_READ, Handle::from(&ca), {
-        match req.state().ca_routes_show(&ca).await {
+        match req.state().process(move |server| {
+            server.ca_routes_show(&ca)
+        }).await {
             Ok(roas) => render_json(roas),
             Err(_) => render_unknown_resource(),
         }
@@ -2486,33 +2769,43 @@ async fn api_ca_routes_analysis(
     aa!(req, Permission::ROUTES_ANALYSIS, Handle::from(&ca), {
         match path.next() {
             Some("full") => {
-                render_json_res(req.state().ca_routes_bgp_analysis(&ca).await)
+                render_json_res(req.state().process(move |server| {
+                    server.ca_routes_bgp_analysis(&ca)
+                }).await)
             }
             Some("dryrun") => match *req.method() {
                 Method::POST => {
                     let state = req.state.clone();
                     match req.json().await {
                         Err(e) => render_error(e),
-                        Ok(updates) => render_json_res(
-                            state.ca_routes_bgp_dry_run(&ca, updates).await,
-                        ),
+                        Ok(updates) => {
+                            render_json_res(state.process(move |server| {
+                                server.ca_routes_bgp_dry_run(
+                                    &ca, updates
+                                )
+                            }).await)
+                        }
                     }
                 }
                 _ => render_unknown_method(),
             },
             Some("suggest") => match *req.method() {
-                Method::GET => render_json_res(
-                    req.state().ca_routes_bgp_suggest(&ca, None).await,
-                ),
+                Method::GET => {
+                    render_json_res(req.state().process(move |server| {
+                        server.ca_routes_bgp_suggest(&ca, None)
+                    }).await)
+                }
                 Method::POST => {
-                    let server = req.state().clone();
+                    let state = req.state().clone();
                     match req.json().await {
                         Err(e) => render_error(e),
-                        Ok(resources) => render_json_res(
-                            server
-                                .ca_routes_bgp_suggest(&ca, Some(resources))
-                                .await,
-                        ),
+                        Ok(resources) => {
+                            render_json_res(state.process(move |server| {
+                                server.ca_routes_bgp_suggest(
+                                    &ca, Some(resources)
+                                )
+                            }).await)
+                        }
                     }
                 }
                 _ => render_unknown_method(),
@@ -2527,7 +2820,9 @@ async fn api_ca_routes_analysis(
 async fn api_republish_all(req: Request, force: bool) -> RoutingResult {
     match *req.method() {
         Method::POST => aa!(req, Permission::CA_ADMIN, {
-            render_empty_res(req.state().republish_all(force).await)
+            render_empty_res(req.state().process(move |server| {
+                server.republish_all(force)
+            }).await)
         }),
         _ => render_unknown_method(),
     }
@@ -2537,7 +2832,9 @@ async fn api_resync_all(req: Request) -> RoutingResult {
     match *req.method() {
         Method::POST => aa!(req, Permission::CA_ADMIN, {
             let actor = req.actor();
-            render_empty_res(req.state().cas_repo_sync_all(&actor))
+            render_empty_res(req.state().process(move |server| {
+                server.cas_repo_sync_all(&actor)
+            }).await)
         }),
         _ => render_unknown_method(),
     }
@@ -2547,7 +2844,9 @@ async fn api_resync_all(req: Request) -> RoutingResult {
 async fn api_refresh_all(req: Request) -> RoutingResult {
     match *req.method() {
         Method::POST => aa!(req, Permission::CA_ADMIN, {
-            render_empty_res(req.state().cas_refresh_all().await)
+            render_empty_res(req.state().process(|server| {
+                server.cas_refresh_all()
+            }).await)
         }),
         _ => render_unknown_method(),
     }
@@ -2557,7 +2856,9 @@ async fn api_refresh_all(req: Request) -> RoutingResult {
 async fn api_suspend_all(req: Request) -> RoutingResult {
     match *req.method() {
         Method::POST => aa!(req, Permission::CA_ADMIN, {
-            render_empty_res(req.state().cas_schedule_suspend_all())
+            render_empty_res(req.state().process(|server| {
+                server.cas_schedule_suspend_all()
+            }).await)
         }),
         _ => render_unknown_method(),
     }
@@ -2569,7 +2870,7 @@ async fn rrdp(req: Request) -> RoutingResult {
     if !req.path().full().starts_with("/rrdp/") {
         Err(req) // Not for us
     } else {
-        let mut full_path: PathBuf = req.state.rrdp_base_path();
+        let mut full_path: PathBuf = req.state().rrdp_base_path();
         let (_, path) = req.path.remaining().split_at(1);
         let cache_seconds = if path.ends_with("notification.xml") {
             60
@@ -2638,7 +2939,9 @@ async fn api_ca_rta_list(req: Request, ca: CaHandle) -> RoutingResult {
         req,
         Permission::RTA_LIST,
         Handle::from(&ca),
-        render_json_res(req.state().rta_list(ca).await)
+        render_json_res(req.state().process(move |server| {
+            server.rta_list(ca)
+        }).await)
     )
 }
 
@@ -2651,7 +2954,9 @@ async fn api_ca_rta_show(
         req,
         Permission::RTA_READ,
         Handle::from(&ca),
-        render_json_res(req.state().rta_show(ca, name).await)
+        render_json_res(req.state().process(move |server| {
+            server.rta_show(ca, name)
+        }).await)
     )
 }
 
@@ -2665,9 +2970,11 @@ async fn api_ca_rta_sign(
         let state = req.state().clone();
         match req.json().await {
             Err(e) => render_error(e),
-            Ok(request) => render_empty_res(
-                state.rta_sign(ca, name, request, &actor).await,
-            ),
+            Ok(request) => {
+                render_empty_res(state.process(move |server| {
+                    server.rta_sign(ca, name, request, &actor)
+                }).await)
+            }
         }
     })
 }
@@ -2682,9 +2989,11 @@ async fn api_ca_rta_multi_prep(
         let state = req.state().clone();
 
         match req.json().await {
-            Ok(resources) => render_json_res(
-                state.rta_multi_prep(ca, name, resources, &actor).await,
-            ),
+            Ok(resources) => {
+                render_json_res(state.process(move |server| {
+                    server.rta_multi_prep(ca, name, resources, &actor)
+                }).await)
+            }
             Err(e) => render_error(e),
         }
     })
@@ -2699,9 +3008,11 @@ async fn api_ca_rta_multi_sign(
         let actor = req.actor();
         let state = req.state().clone();
         match req.json().await {
-            Ok(rta) => render_empty_res(
-                state.rta_multi_cosign(ca, name, rta, &actor).await,
-            ),
+            Ok(rta) => {
+                render_empty_res(state.process(move |server| {
+                    server.rta_multi_cosign(ca, name, rta, &actor)
+                }).await)
+            }
             Err(_) => render_error(Error::custom(
                 "Cannot decode RTA for co-signing",
             )),
@@ -2709,7 +3020,9 @@ async fn api_ca_rta_multi_sign(
     })
 }
 
-//-------------------------------- API TA --------------------------------------------------
+
+//------------ API TA --------------------------------------------------------
+
 async fn api_ta(req: Request, path: &mut RequestPath) -> RoutingResult {
     //
     // krillta proxy --server .. --token ..
@@ -2749,41 +3062,53 @@ async fn api_ta(req: Request, path: &mut RequestPath) -> RoutingResult {
     match path.next() {
         Some("proxy") => match path.next() {
             Some("init") => {
-                render_empty_res(req.state().ta_proxy_init().await)
+                render_empty_res(req.state().process(|server| {
+                    server.ta_proxy_init()
+                }).await)
             }
-            Some("id") => render_json_res(req.state().ta_proxy_id().await),
+            Some("id") => {
+                render_json_res(req.state().process(|server| {
+                    server.ta_proxy_id()
+                }).await)
+            }
             Some("repo") => match path.next() {
                 Some("request.xml") => {
-                    match req.state().ta_proxy_publisher_request().await {
+                    match req.state().process(|server| {
+                        server.ta_proxy_publisher_request()
+                    }).await {
                         Ok(req) => Ok(HttpResponse::xml(req.to_xml_vec())),
                         Err(e) => render_error(e),
                     }
                 }
-                Some("request.json") => render_json_res(
-                    req.state().ta_proxy_publisher_request().await,
-                ),
+                Some("request.json") => {
+                    render_json_res(req.state().process(|server| {
+                        server.ta_proxy_publisher_request()
+                    }).await)
+                }
                 None => match *req.method() {
                     Method::POST => {
                         let ta_handle = ta::ta_handle();
-                        let server = req.state().clone();
+                        let state = req.state().clone();
                         let actor = req.actor.clone();
 
                         match req.api_bytes().await.map(|bytes| {
                             extract_repository_contact(&ta_handle, bytes)
                         }) {
-                            Ok(Ok(contact)) => render_empty_res(
-                                server
-                                    .ta_proxy_repository_update(
+                            Ok(Ok(contact)) => {
+                                render_empty_res(state.process(move |server| {
+                                    server.ta_proxy_repository_update(
                                         contact, &actor,
                                     )
-                                    .await,
-                            ),
+                                }).await)
+                            }
                             Ok(Err(e)) | Err(e) => render_error(e),
                         }
                     }
-                    Method::GET => render_json_res(
-                        req.state().ta_proxy_repository_contact().await,
-                    ),
+                    Method::GET => {
+                        render_json_res(req.state().process(|server| {
+                            server.ta_proxy_repository_contact()
+                        }).await)
+                    }
                     _ => render_unknown_method(),
                 },
 
@@ -2791,41 +3116,46 @@ async fn api_ta(req: Request, path: &mut RequestPath) -> RoutingResult {
             },
             Some("signer") => match path.next() {
                 Some("add") => {
-                    let server = req.state().clone();
+                    let state = req.state().clone();
                     let actor = req.actor.clone();
                     match req.json().await {
-                        Ok(ta_signer_info) => render_empty_res(
-                            server
-                                .ta_proxy_signer_add(ta_signer_info, &actor)
-                                .await,
-                        ),
+                        Ok(ta_signer_info) => {
+                            render_empty_res(state.process(move |server| {
+                                server.ta_proxy_signer_add(
+                                    ta_signer_info, &actor
+                                )
+                            }).await)
+                        }
                         Err(e) => render_error(e),
                     }
                 }
                 Some("request") => match *req.method() {
-                    Method::POST => render_json_res(
-                        req.state()
-                            .ta_proxy_signer_make_request(&req.actor())
-                            .await,
-                    ),
-                    Method::GET => render_json_res(
-                        req.state().ta_proxy_signer_get_request().await,
-                    ),
+                    Method::POST => {
+                        let state = req.state().clone();
+                        render_json_res(state.process(move |server| {
+                            server.ta_proxy_signer_make_request(&req.actor())
+                        }).await)
+                    }
+                    Method::GET => {
+                        render_json_res(req.state().process(|server| {
+                            server.ta_proxy_signer_get_request()
+                        }).await)
+                    }
                     _ => render_unknown_method(),
                 },
                 Some("response") => match *req.method() {
                     Method::POST => {
-                        let server = req.state().clone();
+                        let state = req.state().clone();
                         let actor = req.actor.clone();
 
                         match req.json().await {
-                            Ok(response) => render_empty_res(
-                                server
-                                    .ta_proxy_signer_process_response(
+                            Ok(response) => {
+                                render_empty_res(state.process(move |server| {
+                                    server.ta_proxy_signer_process_response(
                                         response, &actor,
                                     )
-                                    .await,
-                            ),
+                                }).await)
+                            }
                             Err(e) => render_error(e),
                         }
                     }
@@ -2835,16 +3165,15 @@ async fn api_ta(req: Request, path: &mut RequestPath) -> RoutingResult {
             },
             Some("children") => match path.path_arg::<ChildHandle>() {
                 Some(child) => match path.next() {
-                    Some("parent_response.json") => render_json_res(
-                        req.state()
-                            .ca_parent_response(&ta::ta_handle(), child)
-                            .await,
-                    ),
+                    Some("parent_response.json") => {
+                        render_json_res(req.state().process(move |server| {
+                            server.ca_parent_response(&ta::ta_handle(), child)
+                        }).await)
+                    }
                     Some("parent_response.xml") => {
-                        match req
-                            .state()
-                            .ca_parent_response(&ta::ta_handle(), child)
-                            .await
+                        match req.state().process(move |server| {
+                            server.ca_parent_response(&ta::ta_handle(), child)
+                        }).await
                         {
                             Ok(parent_response) => Ok(HttpResponse::xml(
                                 parent_response.to_xml_vec(),
@@ -2866,13 +3195,15 @@ async fn api_ta(req: Request, path: &mut RequestPath) -> RoutingResult {
                 None => match *req.method() {
                     Method::POST => {
                         let actor = req.actor();
-                        let server = req.state().clone();
+                        let state = req.state().clone();
                         match req.json().await {
-                            Ok(child_req) => render_json_res(
-                                server
-                                    .ta_proxy_children_add(child_req, &actor)
-                                    .await,
-                            ),
+                            Ok(child_req) => {
+                                render_json_res(state.process(move |server| {
+                                    server.ta_proxy_children_add(
+                                        child_req, &actor
+                                    )
+                                }).await)
+                            }
                             Err(e) => render_error(e),
                         }
                     }
@@ -2888,31 +3219,3 @@ async fn api_ta(req: Request, path: &mut RequestPath) -> RoutingResult {
     }
 }
 
-/* XXX The server is extensively tested in the integration tests so I don’t
- *     think we need it to start it here.
- *
-//------------ Tests ---------------------------------------------------------
-#[cfg(test)]
-mod tests {
-    // NOTE: This is extensively tested through the functional and e2e tests
-    // found under       the $project/tests dir
-    use crate::test;
-
-    #[tokio::test]
-    async fn start_krill_daemon() {
-        let cleanup = test::start_krill_with_default_test_config(
-            false, false, false, false,
-        )
-        .await;
-
-        cleanup();
-    }
-
-    #[tokio::test]
-    async fn start_krill_pubd_daemon() {
-        let cleanup = test::start_krill_pubd(0).await;
-
-        cleanup();
-    }
-}
-*/

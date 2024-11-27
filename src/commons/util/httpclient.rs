@@ -254,13 +254,15 @@ async fn do_empty_post(
         .map_err(|e| Error::execute(uri, e))
 }
 
+// TODO todo make this reuse the reqwest client!
+
 /// Posts binary data, and expects a binary response. Includes the full krill
 /// version as the user agent. Intended for sending RFC 6492 (provisioning)
 /// and 8181 (publication) to the trusted parent or publication server.
 ///
 /// Note: Bytes may be empty if the post was successful, but the response was
 /// empty.
-pub async fn post_binary_with_full_ua(
+pub fn post_binary_with_full_ua(
     uri: &str,
     data: &Bytes,
     content_type: &str,
@@ -279,7 +281,7 @@ pub async fn post_binary_with_full_ua(
     headers.insert(USER_AGENT, user_agent_value);
     headers.insert(CONTENT_TYPE, content_type_value);
 
-    let client = reqwest::ClientBuilder::new()
+    let client = reqwest::blocking::ClientBuilder::new()
         .timeout(Duration::from_secs(timeout))
         .danger_accept_invalid_certs(true)
         .build()
@@ -290,17 +292,16 @@ pub async fn post_binary_with_full_ua(
         .headers(headers)
         .body(body)
         .send()
-        .await
         .map_err(|e| Error::execute(uri, e))?;
 
     match res.status() {
         StatusCode::OK => {
-            let bytes = res.bytes().await.map_err(|e| {
+            let bytes = res.bytes().map_err(|e| {
                 Error::response(uri, format!("cannot get body: {}", e))
             })?;
             Ok(bytes)
         }
-        _ => Err(Error::from_res(uri, res).await),
+        _ => Err(Error::from_blocking_res(uri, res)),
     }
 }
 
@@ -571,6 +572,31 @@ impl Error {
     async fn from_res(uri: &str, res: Response) -> Error {
         let status = res.status();
         match res.text().await {
+            Ok(body) => {
+                if body.is_empty() {
+                    Self::response_unexpected_status(uri, status)
+                } else {
+                    match serde_json::from_str::<ErrorResponse>(&body) {
+                        Ok(res) => Error::ErrorResponseWithJson(
+                            uri.to_string(),
+                            status,
+                            Box::new(res),
+                        ),
+                        Err(_) => Error::ErrorResponseWithBody(
+                            uri.to_string(),
+                            status,
+                            body,
+                        ),
+                    }
+                }
+            }
+            _ => Self::response_unexpected_status(uri, status),
+        }
+    }
+
+    fn from_blocking_res(uri: &str, res: reqwest::blocking::Response) -> Error {
+        let status = res.status();
+        match res.text() {
             Ok(body) => {
                 if body.is_empty() {
                     Self::response_unexpected_status(uri, status)

@@ -2,8 +2,7 @@
 //! event that occurred, or planned (e.g. re-publishing).
 
 use std::{collections::HashMap, sync::Arc, time::Duration};
-
-use tokio::time::sleep;
+use std::thread::sleep;
 
 use rpki::ca::{
     idexchange::{CaHandle, ParentHandle},
@@ -84,7 +83,7 @@ impl Scheduler {
 
     /// Run the scheduler in the background. It will sweep the message queue
     /// for tasks and re-schedule new tasks as needed.
-    pub async fn run(&self) {
+    pub fn run(&self) {
         loop {
             while let Some(running_task) = self.tasks.pop() {
                 // remember the key so we can finish or re-schedule the task.
@@ -106,7 +105,7 @@ impl Scheduler {
                         error!("Fatal error parsing task: {}. Krill will now stop! This may be because this task is not for this Krill version ({}). If this issue persists, then try deleting this task from storage, it will appear in the 'tasks' dir if you use disk storage. The error was {}", task_key, KrillVersion::code_version(), e);
                         std::process::exit(1);
                     }
-                    Ok(task) => match self.process_task(task).await {
+                    Ok(task) => match self.process_task(task) {
                         Ok(result) => {
                             if let Err(e) = match result {
                                 TaskResult::Done => {
@@ -133,7 +132,7 @@ impl Scheduler {
                 }
             }
 
-            sleep(Duration::from_millis(500)).await;
+            sleep(Duration::from_millis(500));
         }
     }
 
@@ -142,42 +141,42 @@ impl Scheduler {
     /// May only return fatal errors. Temporary, or suspected temporary,
     /// issues such as not being able to contact a parent CA should result
     /// in an Ok(TaskResult::Reschedule) instead.
-    async fn process_task(
+    fn process_task(
         &self,
         task: Task,
     ) -> Result<TaskResult, FatalError> {
         match task {
-            Task::QueueStartTasks => self.queue_start_tasks().await, /* return error and stop server on failure */
+            Task::QueueStartTasks => self.queue_start_tasks(), /* return error and stop server on failure */
 
             Task::SyncRepo {
                 ca_handle: ca,
                 ca_version,
-            } => self.sync_repo(ca, ca_version).await,
+            } => self.sync_repo(ca, ca_version),
 
             Task::SyncParent {
                 ca_handle: ca,
                 ca_version,
                 parent,
-            } => self.sync_parent(ca, ca_version, parent).await,
+            } => self.sync_parent(ca, ca_version, parent),
 
-            Task::RenewTestbedTa => self.renew_testbed_ta().await,
+            Task::RenewTestbedTa => self.renew_testbed_ta(),
 
             Task::SyncTrustAnchorProxySignerIfPossible => {
-                self.sync_ta_proxy_signer_if_possible().await
+                self.sync_ta_proxy_signer_if_possible()
             }
 
             Task::SuspendChildrenIfNeeded { ca_handle: ca } => {
-                self.suspend_children_if_needed(ca).await
+                self.suspend_children_if_needed(ca)
             }
 
-            Task::RepublishIfNeeded => self.republish_if_needed().await,
+            Task::RepublishIfNeeded => self.republish_if_needed(),
 
             Task::RenewObjectsIfNeeded => {
-                self.renew_objects_if_needed().await
+                self.renew_objects_if_needed()
             }
 
             Task::RefreshAnnouncementsInfo => {
-                self.announcements_refresh().await
+                self.announcements_refresh()
             }
 
             #[cfg(feature = "multi-user")]
@@ -201,7 +200,6 @@ impl Scheduler {
                     rcn,
                     revocation_requests,
                 )
-                .await
             }
 
             Task::UnexpectedKey {
@@ -211,13 +209,12 @@ impl Scheduler {
                 revocation_request,
             } => {
                 self.unexpected_key(ca, ca_version, rcn, revocation_request)
-                    .await
             }
         }
     }
 
     /// Queues missing tasks for background jobs when the server is started
-    async fn queue_start_tasks(&self) -> Result<TaskResult, FatalError> {
+    fn queue_start_tasks(&self) -> Result<TaskResult, FatalError> {
         // The task queue is persistent starting with Krill 0.14.0
         //
         // Tasks should not disappear. But.. to make sure that:
@@ -254,7 +251,6 @@ impl Scheduler {
             let ca = self
                 .ca_manager
                 .get_ca(summary.handle())
-                .await
                 .map_err(FatalError)?;
             let ca_handle = ca.handle();
             let ca_version = ca.version();
@@ -352,7 +348,7 @@ impl Scheduler {
         Ok(TaskResult::Done)
     }
 
-    async fn sync_repo(
+    fn sync_repo(
         &self,
         ca: CaHandle,
         version: u64,
@@ -362,7 +358,6 @@ impl Scheduler {
         match self
             .ca_manager
             .cas_repo_sync_single(self.repo_manager.as_ref(), &ca, version)
-            .await
         {
             Err(e) => {
                 let next = self.config.requeue_remote_failed();
@@ -385,7 +380,7 @@ impl Scheduler {
 
     /// Try to synchronize a CA with a specific parent, reschedule if this
     /// fails
-    async fn sync_parent(
+    fn sync_parent(
         &self,
         ca: CaHandle,
         ca_version: u64,
@@ -396,7 +391,6 @@ impl Scheduler {
             match self
                 .ca_manager
                 .ca_sync_parent(&ca, ca_version, &parent, &self.system_actor)
-                .await
             {
                 Err(e) => {
                     let next = self.config.requeue_remote_failed();
@@ -437,8 +431,8 @@ impl Scheduler {
     }
 
     /// Resync the testbed TA signer and proxy
-    async fn renew_testbed_ta(&self) -> Result<TaskResult, FatalError> {
-        if let Err(e) = self.ca_manager.ta_renew_testbed_ta().await {
+    fn renew_testbed_ta(&self) -> Result<TaskResult, FatalError> {
+        if let Err(e) = self.ca_manager.ta_renew_testbed_ta() {
             error!("There was an issue renewing the testbed TA: {}", e);
         }
         let weeks_to_resync = self.config.ta_timing.mft_next_update_weeks / 2;
@@ -450,12 +444,12 @@ impl Scheduler {
 
     /// Try to synchronise the Trust Anchor Proxy with the *local* Signer - if
     /// it exists in this server.
-    async fn sync_ta_proxy_signer_if_possible(
+    fn sync_ta_proxy_signer_if_possible(
         &self,
     ) -> Result<TaskResult, FatalError> {
         debug!("Synchronise Trust Anchor Proxy with Signer - if Signer is local.");
         if let Err(e) =
-            self.ca_manager.sync_ta_proxy_signer_if_possible().await
+            self.ca_manager.sync_ta_proxy_signer_if_possible()
         {
             error!("There was an issue synchronising the TA Proxy and Signer: {}", e);
         }
@@ -463,7 +457,7 @@ impl Scheduler {
     }
 
     /// Try to suspend children for a CA
-    async fn suspend_children_if_needed(
+    fn suspend_children_if_needed(
         &self,
         ca_handle: CaHandle,
     ) -> Result<TaskResult, FatalError> {
@@ -477,8 +471,7 @@ impl Scheduler {
                     &ca_handle,
                     self.started,
                     &self.system_actor,
-                )
-                .await;
+                );
 
             Ok(TaskResult::FollowUp(
                 Task::SuspendChildrenIfNeeded { ca_handle },
@@ -493,7 +486,7 @@ impl Scheduler {
     }
 
     /// Let CAs that need it republish their CRL/MFT
-    async fn republish_if_needed(&self) -> Result<TaskResult, FatalError> {
+    fn republish_if_needed(&self) -> Result<TaskResult, FatalError> {
         // Note that CRL/MFT re-issuance is handled by the `CaObjects`
         // companion struct, rather than the event-sourced `CertAuth`.
         // Meaning... that we do not get to see an event in case there
@@ -505,7 +498,6 @@ impl Scheduler {
         let cas = self
             .ca_manager
             .republish_all(false)
-            .await
             .map_err(FatalError)?;
 
         for ca_handle in cas {
@@ -533,8 +525,8 @@ impl Scheduler {
     }
 
     /// Update announcement info
-    async fn announcements_refresh(&self) -> Result<TaskResult, FatalError> {
-        if let Err(e) = self.bgp_analyser.update().await {
+    fn announcements_refresh(&self) -> Result<TaskResult, FatalError> {
+        if let Err(e) = self.bgp_analyser.update() {
             error!("Failed to update BGP announcements: {}", e)
         }
 
@@ -548,12 +540,11 @@ impl Scheduler {
     }
 
     /// Let CAs that need it re-issue signed objects
-    async fn renew_objects_if_needed(
+    fn renew_objects_if_needed(
         &self,
     ) -> Result<TaskResult, FatalError> {
         self.ca_manager
             .renew_objects_all(&self.system_actor)
-            .await
             .map_err(FatalError)?;
 
         // check again in a short while.. note that this is usually a cheap
@@ -683,7 +674,7 @@ impl Scheduler {
         }
     }
 
-    async fn resource_class_removed(
+    fn resource_class_removed(
         &self,
         ca_handle: CaHandle,
         ca_version: u64,
@@ -702,7 +693,6 @@ impl Scheduler {
             let ca = self
                 .ca_manager
                 .get_ca(&ca_handle)
-                .await
                 .map_err(FatalError)?;
             if ca.version() < ca_version {
                 // premature, we need to wait for the CA to be committed.
@@ -710,7 +700,6 @@ impl Scheduler {
             } else if self
                 .ca_manager
                 .send_revoke_requests(&ca_handle, &parent, requests)
-                .await
                 .is_err()
             {
                 debug!("Could not revoke key for resource class removed by parent - most likely already revoked.");
@@ -728,7 +717,7 @@ impl Scheduler {
         }
     }
 
-    async fn unexpected_key(
+    fn unexpected_key(
         &self,
         ca_handle: CaHandle,
         ca_version: u64,
@@ -744,7 +733,6 @@ impl Scheduler {
             let ca = self
                 .ca_manager
                 .get_ca(&ca_handle)
-                .await
                 .map_err(FatalError)?;
 
             if ca.version() < ca_version {
@@ -759,7 +747,6 @@ impl Scheduler {
                         rcn,
                         revocation_request,
                     )
-                    .await
                 {
                     warn!(
                         "Could not revoke surplus key, most likely already revoked by parent. Error was: {}",

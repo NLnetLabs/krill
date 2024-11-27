@@ -1231,13 +1231,13 @@ fn record_preexisting_openssl_keys_in_signer_mapper(
 
 /// Should be called after the KrillServer is started, but before the web
 /// server is started and operators can make changes.
-pub async fn post_start_upgrade(
+pub fn post_start_upgrade(
     report: UpgradeReport,
     server: &KrillServer,
 ) -> KrillResult<()> {
     if report.versions().from() < &KrillVersion::candidate(0, 9, 3, 2) {
         info!("Reissue ROAs on upgrade to force short EE certificate subjects in the objects");
-        server.force_renew_roas().await?;
+        server.force_renew_roas()?;
     }
 
     for (ca, configs) in report.into_aspa_configs().into_iter() {
@@ -1248,8 +1248,7 @@ pub async fn post_start_upgrade(
                 ca,
                 aspa_updates,
                 server.system_actor(),
-            )
-            .await?;
+            )?;
     }
 
     Ok(())

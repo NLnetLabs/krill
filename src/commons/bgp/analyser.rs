@@ -48,12 +48,15 @@ impl BgpAnalyser {
         }
     }
 
-    pub async fn update(&self) -> Result<bool, BgpAnalyserError> {
+    pub fn update(&self) -> Result<bool, BgpAnalyserError> {
+        // XXX This will be replaced all go away soon (see #1233), so we keep
+        //     it in its current state even if it should probably run in its
+        //     own thread and somehow synchronize an accidental re-start.
         let loader = match self.dump_loader.as_ref() {
             Some(loader) => loader,
             None => return Ok(false),
         };
-        if let Some(last_time) = self.seen.read().await.last_checked() {
+        if let Some(last_time) = self.seen.blocking_read().last_checked() {
             if (last_time + Duration::minutes(BGP_RIS_REFRESH_MINUTES))
                 > Time::now()
             {
@@ -64,8 +67,8 @@ impl BgpAnalyser {
                 return Ok(false); // no need to update yet
             }
         }
-        let announcements = loader.download_updates().await?;
-        let mut seen = self.seen.write().await;
+        let announcements = loader.download_updates()?;
+        let mut seen = self.seen.blocking_write();
         if seen.equivalent(&announcements) {
             debug!("BGP Ris Dumps unchanged");
             seen.update_checked();
@@ -80,13 +83,13 @@ impl BgpAnalyser {
         }
     }
 
-    pub async fn analyse(
+    pub fn analyse(
         &self,
         roas: &[ConfiguredRoa],
         resources_held: &ResourceSet,
         limited_scope: Option<ResourceSet>,
     ) -> BgpAnalysisReport {
-        let seen = self.seen.read().await;
+        let seen = self.seen.blocking_read();
         let mut entries = vec![];
 
         let roas: Vec<ConfiguredRoa> = match &limited_scope {
@@ -303,7 +306,7 @@ impl BgpAnalyser {
         BgpAnalysisReport::new(entries)
     }
 
-    pub async fn suggest(
+    pub fn suggest(
         &self,
         roas: &[ConfiguredRoa],
         resources_held: &ResourceSet,
@@ -314,7 +317,6 @@ impl BgpAnalyser {
         // perform analysis
         let entries = self
             .analyse(roas, resources_held, limited_scope)
-            .await
             .into_entries();
         for entry in &entries {
             match entry.state() {
