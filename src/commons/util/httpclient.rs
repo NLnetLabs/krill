@@ -2,10 +2,9 @@
 use std::{env, fmt, path::PathBuf, str::FromStr, time::Duration};
 
 use bytes::Bytes;
-use reqwest::{
-    header::{HeaderMap, HeaderValue, CONTENT_TYPE, USER_AGENT},
-    Response, StatusCode,
-};
+use reqwest::StatusCode;
+use reqwest::blocking::{Client, ClientBuilder, Response};
+use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE, USER_AGENT};
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
 
@@ -91,7 +90,7 @@ pub fn get_bearer_token(
 /// Performs a GET request that expects a json response that can be
 /// deserialized into the an owned value of the expected type. Returns an
 /// error if nothing is returned.
-pub async fn get_json<T: DeserializeOwned>(
+pub fn get_json<T: DeserializeOwned>(
     uri: &str,
     token: Option<&Token>,
 ) -> Result<T, Error> {
@@ -105,15 +104,14 @@ pub async fn get_json<T: DeserializeOwned>(
         .get(uri)
         .headers(headers)
         .send()
-        .await
         .map_err(|e| Error::execute(uri, e))?;
 
-    process_json_response(uri, res).await
+    process_json_response(uri, res)
 }
 
 /// Performs a get request and expects a response that can be turned
 /// into a string (in particular, not a binary response).
-pub async fn get_text(
+pub fn get_text(
     uri: &str,
     token: Option<&Token>,
 ) -> Result<String, Error> {
@@ -126,15 +124,14 @@ pub async fn get_text(
         .get(uri)
         .headers(headers)
         .send()
-        .await
         .map_err(|e| Error::execute(uri, e))?;
 
-    text_response(uri, res).await
+    text_response(uri, res)
 }
 
 /// Checks that there is a 200 OK response at the given URI. Discards the
 /// response body.
-pub async fn get_ok(uri: &str, token: Option<&Token>) -> Result<(), Error> {
+pub fn get_ok(uri: &str, token: Option<&Token>) -> Result<(), Error> {
     if env::var(KRILL_CLI_API_ENV).is_ok() {
         report_get_and_exit(uri, token);
     }
@@ -144,16 +141,15 @@ pub async fn get_ok(uri: &str, token: Option<&Token>) -> Result<(), Error> {
         .get(uri)
         .headers(headers)
         .send()
-        .await
         .map_err(|e| Error::execute(uri, e))?;
 
-    opt_text_response(uri, res).await?; // Will return nice errors with possible body.
+    opt_text_response(uri, res)?; // Will return nice errors with possible body.
     Ok(())
 }
 
 /// Performs a POST of data that can be serialized into json, and expects
 /// a 200 OK response, without a body.
-pub async fn post_json(
+pub fn post_json(
     uri: &str,
     data: impl Serialize,
     token: Option<&Token>,
@@ -171,21 +167,20 @@ pub async fn post_json(
         .headers(headers)
         .body(body)
         .send()
-        .await
         .map_err(|e| Error::execute(uri, e))?;
 
-    empty_response(uri, res).await
+    empty_response(uri, res)
 }
 
 /// Performs a POST of data that can be serialized into json, and expects
 /// a json response that can be deserialized into the an owned value of the
 /// expected type.
-pub async fn post_json_with_response<T: DeserializeOwned>(
+pub fn post_json_with_response<T: DeserializeOwned>(
     uri: &str,
     data: impl Serialize,
     token: Option<&Token>,
 ) -> Result<T, Error> {
-    match post_json_with_opt_response(uri, data, token).await? {
+    match post_json_with_opt_response(uri, data, token)? {
         None => Err(Error::response(uri, "expected JSON response")),
         Some(res) => Ok(res),
     }
@@ -194,7 +189,7 @@ pub async fn post_json_with_response<T: DeserializeOwned>(
 /// Performs a POST of data that can be serialized into json, and expects
 /// an optional json response that can be deserialized into the an owned
 /// value of the expected type.
-pub async fn post_json_with_opt_response<T: DeserializeOwned>(
+pub fn post_json_with_opt_response<T: DeserializeOwned>(
     uri: &str,
     data: impl Serialize,
     token: Option<&Token>,
@@ -212,32 +207,31 @@ pub async fn post_json_with_opt_response<T: DeserializeOwned>(
         .headers(headers)
         .body(body)
         .send()
-        .await
         .map_err(|e| Error::execute(uri, e))?;
 
-    process_opt_json_response(uri, res).await
+    process_opt_json_response(uri, res)
 }
 
 /// Performs a POST with no data to the given URI and expects and empty 200 OK
 /// response.
-pub async fn post_empty(
+pub fn post_empty(
     uri: &str,
     token: Option<&Token>,
 ) -> Result<(), Error> {
-    let res = do_empty_post(uri, token).await?;
-    empty_response(uri, res).await
+    let res = do_empty_post(uri, token)?;
+    empty_response(uri, res)
 }
 
 /// Performs a POST with no data to the given URI and expects a response.
-pub async fn post_empty_with_response<T: DeserializeOwned>(
+pub fn post_empty_with_response<T: DeserializeOwned>(
     uri: &str,
     token: Option<&Token>,
 ) -> Result<T, Error> {
-    let res = do_empty_post(uri, token).await?;
-    process_json_response(uri, res).await
+    let res = do_empty_post(uri, token)?;
+    process_json_response(uri, res)
 }
 
-async fn do_empty_post(
+fn do_empty_post(
     uri: &str,
     token: Option<&Token>,
 ) -> Result<Response, Error> {
@@ -250,7 +244,6 @@ async fn do_empty_post(
         .post(uri)
         .headers(headers)
         .send()
-        .await
         .map_err(|e| Error::execute(uri, e))
 }
 
@@ -281,7 +274,7 @@ pub fn post_binary_with_full_ua(
     headers.insert(USER_AGENT, user_agent_value);
     headers.insert(CONTENT_TYPE, content_type_value);
 
-    let client = reqwest::blocking::ClientBuilder::new()
+    let client = ClientBuilder::new()
         .timeout(Duration::from_secs(timeout))
         .danger_accept_invalid_certs(true)
         .build()
@@ -306,7 +299,7 @@ pub fn post_binary_with_full_ua(
 }
 
 /// Sends a delete request to the specified url.
-pub async fn delete(uri: &str, token: Option<&Token>) -> Result<(), Error> {
+pub fn delete(uri: &str, token: Option<&Token>) -> Result<(), Error> {
     report_delete(uri, None, token);
 
     let headers = headers(uri, None, token)?;
@@ -314,17 +307,16 @@ pub async fn delete(uri: &str, token: Option<&Token>) -> Result<(), Error> {
         .delete(uri)
         .headers(headers)
         .send()
-        .await
         .map_err(|e| Error::execute(uri, e))?;
 
     match res.status() {
         StatusCode::OK => Ok(()),
-        _ => Err(Error::from_res(uri, res).await),
+        _ => Err(Error::from_res(uri, res)),
     }
 }
 
 #[allow(clippy::result_large_err)]
-fn load_root_cert(path_str: &str) -> Result<reqwest::Certificate, Error> {
+pub fn load_root_cert(path_str: &str) -> Result<reqwest::Certificate, Error> {
     let path = PathBuf::from_str(path_str)
         .map_err(|e| Error::request_build_https_cert(path_str, e))?;
     let file = file::read(&path)
@@ -335,7 +327,7 @@ fn load_root_cert(path_str: &str) -> Result<reqwest::Certificate, Error> {
 
 /// Default client for Krill use cases.
 #[allow(clippy::result_large_err)]
-pub fn client(uri: &str) -> Result<reqwest::Client, Error> {
+pub fn client(uri: &str) -> Result<Client, Error> {
     client_with_tweaks(
         uri,
         Duration::from_secs(HTTP_CLIENT_TIMEOUT_SECS),
@@ -349,8 +341,8 @@ pub fn client_with_tweaks(
     uri: &str,
     timeout: Duration,
     allow_redirects: bool,
-) -> Result<reqwest::Client, Error> {
-    let mut builder = reqwest::ClientBuilder::new().timeout(timeout);
+) -> Result<Client, Error> {
+    let mut builder = ClientBuilder::new().timeout(timeout);
 
     if !allow_redirects {
         builder = builder.redirect(reqwest::redirect::Policy::none());
@@ -399,21 +391,21 @@ fn headers(
     Ok(headers)
 }
 
-async fn process_json_response<T: DeserializeOwned>(
+fn process_json_response<T: DeserializeOwned>(
     uri: &str,
     res: Response,
 ) -> Result<T, Error> {
-    match process_opt_json_response(uri, res).await? {
+    match process_opt_json_response(uri, res)? {
         None => Err(Error::response(uri, "got empty response body")),
         Some(res) => Ok(res),
     }
 }
 
-async fn process_opt_json_response<T: DeserializeOwned>(
+fn process_opt_json_response<T: DeserializeOwned>(
     uri: &str,
     res: Response,
 ) -> Result<Option<T>, Error> {
-    match opt_text_response(uri, res).await? {
+    match opt_text_response(uri, res)? {
         None => Ok(None),
         Some(s) => {
             let res: T = serde_json::from_str(&s).map_err(|e| {
@@ -427,26 +419,26 @@ async fn process_opt_json_response<T: DeserializeOwned>(
     }
 }
 
-async fn empty_response(uri: &str, res: Response) -> Result<(), Error> {
-    match opt_text_response(uri, res).await? {
+fn empty_response(uri: &str, res: Response) -> Result<(), Error> {
+    match opt_text_response(uri, res)? {
         None => Ok(()),
         Some(_) => Err(Error::response(uri, "expected empty response")),
     }
 }
 
-async fn text_response(uri: &str, res: Response) -> Result<String, Error> {
-    match opt_text_response(uri, res).await? {
+fn text_response(uri: &str, res: Response) -> Result<String, Error> {
+    match opt_text_response(uri, res)? {
         None => Err(Error::response(uri, "expected response body")),
         Some(s) => Ok(s),
     }
 }
 
-async fn opt_text_response(
+fn opt_text_response(
     uri: &str,
     res: Response,
 ) -> Result<Option<String>, Error> {
     match res.status() {
-        StatusCode::OK => match res.text().await.ok() {
+        StatusCode::OK => match res.text().ok() {
             None => Ok(None),
             Some(s) => {
                 if s.is_empty() {
@@ -457,7 +449,7 @@ async fn opt_text_response(
             }
         },
         StatusCode::FORBIDDEN => Err(Error::Forbidden(uri.to_string())),
-        _ => Err(Error::from_res(uri, res).await),
+        _ => Err(Error::from_res(uri, res)),
     }
 }
 
@@ -569,9 +561,9 @@ impl Error {
         Error::ErrorResponse(uri.to_string(), status)
     }
 
-    async fn from_res(uri: &str, res: Response) -> Error {
+    fn from_res(uri: &str, res: Response) -> Error {
         let status = res.status();
-        match res.text().await {
+        match res.text() {
             Ok(body) => {
                 if body.is_empty() {
                     Self::response_unexpected_status(uri, status)

@@ -28,12 +28,12 @@ pub enum Command {
 }
 
 impl Command {
-    pub async fn run(self, client: &KrillClient) -> Report {
+    pub fn run(self, client: &KrillClient) -> Report {
         match self {
-            Self::List(cmd) => cmd.run(client).await.into(),
-            Self::Add(cmd) => cmd.run(client).await.into(),
-            Self::Remove(cmd) => cmd.run(client).await.into(),
-            Self::Update(cmd) => cmd.run(client).await.into(),
+            Self::List(cmd) => cmd.run(client).into(),
+            Self::Add(cmd) => cmd.run(client).into(),
+            Self::Remove(cmd) => cmd.run(client).into(),
+            Self::Update(cmd) => cmd.run(client).into(),
         }
     }
 }
@@ -48,10 +48,10 @@ pub struct List {
 }
 
 impl List {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<api::AspaDefinitionList, httpclient::Error> {
-        client.aspas_list(&self.ca.ca).await
+        client.aspas_list(&self.ca.ca)
     }
 }
 
@@ -69,13 +69,13 @@ pub struct Add {
 }
 
 impl Add {
-    async fn run(
+    fn run(
         self, client: &KrillClient
     ) -> Result<api::Success, httpclient::Error> {
         client.aspas_update(
             &self.ca.ca,
             api::AspaDefinitionUpdates::new(vec![self.aspa.0], vec![])
-        ).await
+        )
     }
 }
 
@@ -93,13 +93,13 @@ pub struct Remove {
 }
 
 impl Remove {
-    async fn run(
+    fn run(
         self, client: &KrillClient
     ) -> Result<api::Success, httpclient::Error> {
         client.aspas_update(
             &self.ca.ca,
             api::AspaDefinitionUpdates::new(vec![], vec![self.customer])
-        ).await
+        )
     }
 }
 
@@ -125,13 +125,13 @@ pub struct Update {
 }
 
 impl Update {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<api::Success, httpclient::Error> {
         client.aspas_update_single(
             &self.ca.ca, self.customer,
             api::AspaProvidersUpdate::new(self.add, self.remove)
-        ).await
+        )
     }
 }
 

@@ -30,12 +30,12 @@ pub enum Command {
 }
 
 impl Command {
-    pub async fn run(self, client: &KrillClient) -> Report {
+    pub fn run(self, client: &KrillClient) -> Report {
         match self {
-            Self::Request(cmd) => cmd.run(client).await.into(),
-            Self::Show(cmd) => cmd.run(client).await.into(),
-            Self::Status(cmd) => cmd.run(client).await.into(),
-            Self::Configure(cmd) => cmd.run(client).await.into(),
+            Self::Request(cmd) => cmd.run(client).into(),
+            Self::Show(cmd) => cmd.run(client).into(),
+            Self::Status(cmd) => cmd.run(client).into(),
+            Self::Configure(cmd) => cmd.run(client).into(),
         }
     }
 }
@@ -50,10 +50,10 @@ pub struct Request {
 }
 
 impl Request {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<idexchange::PublisherRequest, httpclient::Error> {
-        client.repo_request(&self.ca.ca).await
+        client.repo_request(&self.ca.ca)
     }
 }
 
@@ -67,10 +67,10 @@ pub struct Show {
 }
 
 impl Show {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<api::CaRepoDetails, httpclient::Error> {
-        client.repo_details(&self.ca.ca).await
+        client.repo_details(&self.ca.ca)
     }
 }
 
@@ -84,10 +84,10 @@ pub struct Status {
 }
 
 impl Status {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<api::RepoStatus, httpclient::Error> {
-        client.repo_status(&self.ca.ca).await
+        client.repo_status(&self.ca.ca)
     }
 }
 
@@ -105,10 +105,10 @@ pub struct Configure {
 }
 
 impl Configure {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<api::Success, httpclient::Error> {
-        client.repo_update(&self.ca.ca, self.response.0).await
+        client.repo_update(&self.ca.ca, self.response.0)
     }
 }
 

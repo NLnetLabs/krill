@@ -48,16 +48,16 @@ pub enum Command {
 }
 
 impl Command {
-    pub async fn run(self, client: &KrillClient) -> Report {
+    pub fn run(self, client: &KrillClient) -> Report {
         match self {
-            Self::Add(cmd) => cmd.run(client).await.into(),
-            Self::Update(cmd) => cmd.run(client).await.into(),
-            Self::Info(cmd) => cmd.run(client).await.into(),
-            Self::Remove(cmd) => cmd.run(client).await.into(),
-            Self::Response(cmd) => cmd.run(client).await.into(),
-            Self::Connections(cmd) => cmd.run(client).await.into(),
-            Self::Suspend(cmd) => cmd.run(client).await.into(),
-            Self::Unsuspend(cmd) => cmd.run(client).await.into(),
+            Self::Add(cmd) => cmd.run(client).into(),
+            Self::Update(cmd) => cmd.run(client).into(),
+            Self::Info(cmd) => cmd.run(client).into(),
+            Self::Remove(cmd) => cmd.run(client).into(),
+            Self::Response(cmd) => cmd.run(client).into(),
+            Self::Connections(cmd) => cmd.run(client).into(),
+            Self::Suspend(cmd) => cmd.run(client).into(),
+            Self::Unsuspend(cmd) => cmd.run(client).into(),
         }
     }
 }
@@ -93,13 +93,13 @@ pub struct Add {
 }
 
 impl Add {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<ParentResponse, httpclient::Error> {
         client.child_add(
             &self.handle.ca, self.handle.child,
             self.resources.into(), self.request.0
-        ).await
+        )
     }
 }
 
@@ -113,10 +113,10 @@ pub struct Info {
 }
 
 impl Info {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<api::ChildCaInfo, httpclient::Error> {
-        client.child_details(&self.handle.ca, &self.handle.child).await
+        client.child_details(&self.handle.ca, &self.handle.child)
     }
 }
 
@@ -137,14 +137,14 @@ pub struct Update {
 }
 
 impl Update {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<api::Success, httpclient::Error> {
         client.child_update(&self.handle.ca, &self.handle.child,
             api::UpdateChildRequest::new(
                 self.request.map(|x| x.0), self.resources.into(), None
             )
-        ).await
+        )
     }
 }
 
@@ -158,10 +158,10 @@ pub struct Response {
 }
 
 impl Response {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<idexchange::ParentResponse, httpclient::Error> {
-        client.child_contact(&self.handle.ca, &self.handle.child).await
+        client.child_contact(&self.handle.ca, &self.handle.child)
     }
 }
 
@@ -175,13 +175,13 @@ pub struct Suspend {
 }
 
 impl Suspend {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<api::Success, httpclient::Error> {
         client.child_update(
             &self.handle.ca, &self.handle.child,
             api::UpdateChildRequest::suspend(),
-        ).await
+        )
     }
 }
 
@@ -195,13 +195,13 @@ pub struct Unsuspend {
 }
 
 impl Unsuspend {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<api::Success, httpclient::Error> {
         client.child_update(
             &self.handle.ca, &self.handle.child,
             api::UpdateChildRequest::unsuspend(),
-        ).await
+        )
     }
 }
 
@@ -215,10 +215,10 @@ pub struct Remove {
 }
 
 impl Remove {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<api::Success, httpclient::Error> {
-        client.child_delete(&self.handle.ca, &self.handle.child).await
+        client.child_delete(&self.handle.ca, &self.handle.child)
     }
 }
 
@@ -272,10 +272,10 @@ pub struct Connections {
 }
 
 impl Connections {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<api::ChildrenConnectionStats, httpclient::Error> {
-        client.child_connections(&self.ca).await
+        client.child_connections(&self.ca)
     }
 }
 

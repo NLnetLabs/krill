@@ -29,11 +29,11 @@ pub enum Command {
 }
 
 impl Command {
-    pub async fn run(self, client: &KrillClient) -> Report {
+    pub fn run(self, client: &KrillClient) -> Report {
         match self {
-            Self::List(cmd) => cmd.run(client).await.into(),
-            Self::Add(cmd) => cmd.run(client).await.into(),
-            Self::Remove(cmd) => cmd.run(client).await.into(),
+            Self::List(cmd) => cmd.run(client).into(),
+            Self::Add(cmd) => cmd.run(client).into(),
+            Self::Remove(cmd) => cmd.run(client).into(),
         }
     }
 }
@@ -48,10 +48,10 @@ pub struct List {
 }
 
 impl List {
-    async fn run(
+    fn run(
         self, client: &KrillClient
     ) -> Result<api::BgpSecCsrInfoList, httpclient::Error> {
-        client.bgpsec_list(&self.ca.ca).await
+        client.bgpsec_list(&self.ca.ca)
     }
 }
 
@@ -73,7 +73,7 @@ pub struct Add {
 }
 
 impl Add {
-    async fn run(
+    fn run(
         self, client: &KrillClient
     ) -> Result<api::Success, httpclient::Error> {
         client.bgpsec_update(
@@ -82,7 +82,7 @@ impl Add {
                 vec![api::BgpSecDefinition::new(self.asn, self.csr.0)],
                 vec![]
             )
-        ).await
+        )
     }
 }
 
@@ -104,7 +104,7 @@ pub struct Remove {
 }
 
 impl Remove {
-    async fn run(
+    fn run(
         self, client: &KrillClient
     ) -> Result<api::Success, httpclient::Error> {
         client.bgpsec_update(
@@ -113,7 +113,7 @@ impl Remove {
                 vec![],
                 vec![api::BgpSecAsnKey::new(self.asn, self.key)]
             )
-        ).await
+        )
     }
 }
 

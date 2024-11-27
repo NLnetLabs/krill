@@ -155,26 +155,26 @@ pub enum Command {
 }
 
 impl Command {
-    pub async fn run(self, client: &KrillClient) -> Report {
+    pub fn run(self, client: &KrillClient) -> Report {
         match self {
-            Self::Config(cmd) => cmd.run(client).await,
-            Self::Health(cmd) => cmd.run(client).await.into(),
-            Self::Info(cmd) => cmd.run(client).await.into(),
-            Self::List(cmd) => cmd.run(client).await.into(),
-            Self::Show(cmd) => cmd.run(client).await.into(),
-            Self::History(cmd) => cmd.run(client).await,
-            Self::Add(cmd) => cmd.run(client).await.into(),
-            Self::Delete(cmd) => cmd.run(client).await.into(),
-            Self::Issues(cmd) => cmd.run(client).await,
-            Self::Children(cmd) => cmd.run(client).await,
-            Self::Parents(cmd) => cmd.run(client).await,
-            Self::Keyroll(cmd) => cmd.run(client).await,
-            Self::Repo(cmd) => cmd.run(client).await,
-            Self::Roas(cmd) => cmd.run(client).await,
-            Self::Bgpsec(cmd) => cmd.run(client).await,
-            Self::Aspas(cmd) => cmd.run(client).await,
-            Self::Pubserver(cmd) => cmd.run(client).await,
-            Self::Bulk(cmd) => cmd.run(client).await,
+            Self::Config(cmd) => cmd.run(client),
+            Self::Health(cmd) => cmd.run(client).into(),
+            Self::Info(cmd) => cmd.run(client).into(),
+            Self::List(cmd) => cmd.run(client).into(),
+            Self::Show(cmd) => cmd.run(client).into(),
+            Self::History(cmd) => cmd.run(client),
+            Self::Add(cmd) => cmd.run(client).into(),
+            Self::Delete(cmd) => cmd.run(client).into(),
+            Self::Issues(cmd) => cmd.run(client),
+            Self::Children(cmd) => cmd.run(client),
+            Self::Parents(cmd) => cmd.run(client),
+            Self::Keyroll(cmd) => cmd.run(client),
+            Self::Repo(cmd) => cmd.run(client),
+            Self::Roas(cmd) => cmd.run(client),
+            Self::Bgpsec(cmd) => cmd.run(client),
+            Self::Aspas(cmd) => cmd.run(client),
+            Self::Pubserver(cmd) => cmd.run(client),
+            Self::Bulk(cmd) => cmd.run(client),
         }
     }
 }

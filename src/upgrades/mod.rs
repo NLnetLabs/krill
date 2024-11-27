@@ -1321,13 +1321,10 @@ fn upgrade_versions(
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
-
-    use kvx::Namespace;
     use log::LevelFilter;
     use url::Url;
-
+    use crate::commons::storage::Namespace;
     use crate::test;
-
     use super::*;
 
     fn test_upgrade(base_dir: &str, namespaces: &[&str]) {

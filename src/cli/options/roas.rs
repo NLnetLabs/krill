@@ -28,11 +28,11 @@ pub enum Command {
 }
 
 impl Command {
-    pub async fn run(self, client: &KrillClient) -> Report {
+    pub fn run(self, client: &KrillClient) -> Report {
         match self {
-            Self::List(cmd) => cmd.run(client).await.into(),
-            Self::Update(cmd) => cmd.run(client).await,
-            Self::Bgp(cmd) => cmd.run(client).await,
+            Self::List(cmd) => cmd.run(client).into(),
+            Self::Update(cmd) => cmd.run(client),
+            Self::Bgp(cmd) => cmd.run(client),
         }
     }
 }
@@ -47,10 +47,10 @@ pub struct List {
 }
 
 impl List {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<api::ConfiguredRoas, httpclient::Error> {
-        client.roas_list(&self.ca.ca).await
+        client.roas_list(&self.ca.ca)
     }
 }
 
@@ -84,7 +84,7 @@ pub struct Update{
 }
 
 impl Update{
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Report {
         let updates = match self.delta {
@@ -93,15 +93,15 @@ impl Update{
         };
 
         if self.dryrun {
-            client.roas_dryrun_update(&self.ca.ca, updates).await.into()
+            client.roas_dryrun_update(&self.ca.ca, updates).into()
         }
         else if self.try_update {
             Report::from_opt_result(
-                client.roas_try_update(&self.ca.ca, updates).await
+                client.roas_try_update(&self.ca.ca, updates)
             )
         }
         else {
-            client.roas_update(&self.ca.ca, updates).await.into()
+            client.roas_update(&self.ca.ca, updates).into()
         }
     }
 }
@@ -119,10 +119,10 @@ pub enum BgpCommand {
 }
 
 impl BgpCommand {
-    pub async fn run(self, client: &KrillClient) -> Report {
+    pub fn run(self, client: &KrillClient) -> Report {
         match self {
-            Self::Analyze(cmd) => cmd.run(client).await.into(),
-            Self::Suggest(cmd) => cmd.run(client).await.into(),
+            Self::Analyze(cmd) => cmd.run(client).into(),
+            Self::Suggest(cmd) => cmd.run(client).into(),
         }
     }
 }
@@ -137,10 +137,10 @@ pub struct Analyze {
 }
 
 impl Analyze {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<bgp::BgpAnalysisReport, httpclient::Error> {
-        client.roas_analyze(&self.ca.ca).await
+        client.roas_analyze(&self.ca.ca)
     }
 }
 
@@ -162,7 +162,7 @@ pub struct Suggest {
 }
 
 impl Suggest {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<bgp::BgpAnalysisSuggestion, httpclient::Error> {
         client.roas_suggest(
@@ -177,7 +177,7 @@ impl Suggest {
             else {
                 None
             }
-        ).await
+        )
     }
 }
 

@@ -530,23 +530,15 @@ impl error::Error for Error { }
 
 #[cfg(test)]
 mod tests {
-    use std::{thread, time::Duration};
-
-    use kvx_macros::segment;
-    use kvx_types::{Key, SegmentBuf};
+    use std::thread;
+    use std::time::Duration;
     use serde_json::Value;
     use url::Url;
+    use super::*;
 
-    use super::{PendingTask, Queue};
-    use crate::{
-        queue::{now, ScheduleMode},
-        Backend, Namespace, ReadStore, Scope, Segment,
-    };
-
-    fn queue_store(ns: &str) -> Backend {
-        let storage_url = Url::parse("local://data").unwrap();
-
-        Backend::new(&storage_url, Namespace::parse(ns).unwrap()).unwrap()
+    fn queue_store(ns: &str) -> Queue {
+        let storage_url = Url::parse("memory://").unwrap();
+        Queue::create(&storage_url, Namespace::parse(ns).unwrap()).unwrap()
     }
 
     #[test]
@@ -706,7 +698,7 @@ mod tests {
         let queue = queue_store("test_schedule_with_existing_task");
         queue.inner.clear().unwrap();
 
-        let name: SegmentBuf = segment!("task").into();
+        let name: SegmentBuf = const { Segment::make("task") }.into();
         let value_1 = Value::from("value_1");
         let value_2 = Value::from("value_2");
 

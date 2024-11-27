@@ -21,27 +21,22 @@ pub use self::listener::*;
 //------------ Tests ---------------------------------------------------------
 
 #[cfg(test)]
-mod tests {
+mod test {
 
     //! Example implementation using the eventsourcing module.
     //!
     //! Goal is two-fold: document using a simple domain, and test the module.
 
-    use std::{fmt, str::FromStr, sync::Arc};
-
+    use std::fmt;
+    use std::str::FromStr;
+    use std::sync::Arc;
     use serde::Serialize;
-
     use rpki::ca::idexchange::MyHandle;
-
-    use crate::{
-        commons::{
-            actor::Actor,
-            api::{CommandHistoryCriteria, CommandSummary},
-        },
-        constants::ACTOR_DEF_TEST,
-        test::mem_storage,
-    };
-
+    use crate::commons::actor::Actor;
+    use crate::commons::api::{CommandHistoryCriteria, CommandSummary};
+    use crate::commons::storage::Namespace;
+    use crate::constants::ACTOR_DEF_TEST;
+    use crate::test::mem_storage;
     use super::*;
 
     //------------ PersonInitEvent
@@ -383,7 +378,7 @@ mod tests {
 
         let mut manager = AggregateStore::<Person>::create(
             &storage_uri,
-            namespace!("person"),
+            const { Namespace::make("person") },
             false,
         )
         .unwrap();
@@ -427,7 +422,7 @@ mod tests {
         // mapping.
         let manager = AggregateStore::<Person>::create(
             &storage_uri,
-            namespace!("person"),
+            const { Namespace::make("person") },
             false,
         )
         .unwrap();

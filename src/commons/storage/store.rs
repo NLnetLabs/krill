@@ -281,10 +281,10 @@ impl fmt::Display for KeyValueError {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::env;
-
     use rand::{distributions::Alphanumeric, Rng};
+    use crate::commons::storage::{Segment, SegmentBuf};
+    use super::*;
 
     fn random_segment() -> SegmentBuf {
         rand::thread_rng()
