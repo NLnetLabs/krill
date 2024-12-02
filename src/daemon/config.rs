@@ -447,7 +447,7 @@ pub enum OneOrMany<'a, T> {
     _LifeTimeMarker(std::marker::PhantomData<&'a u32>),
 }
 
-impl<'a, T> From<OneOrMany<'a, T>> for Vec<T> {
+impl<T> From<OneOrMany<'_, T>> for Vec<T> {
     fn from(one_or_many: OneOrMany<T>) -> Self {
         match one_or_many {
             OneOrMany::One(t) => vec![t],

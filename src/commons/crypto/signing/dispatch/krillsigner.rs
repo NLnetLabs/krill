@@ -79,7 +79,6 @@ use crate::commons::crypto::{
 /// struct AND implement management of signers and dispatch to the correct
 /// signer all in one place, and that quickly becomes harder to read,
 /// understand and maintain.
-
 type SignerBuilderFn = fn(
     &SignerType,
     SignerFlags,
