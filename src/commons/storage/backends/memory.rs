@@ -35,7 +35,10 @@ impl Store {
         }
     
         Ok(Some(Store {
-            namespace: MEMORY.get_namespace(namespace)
+            namespace: MEMORY.get_namespace(
+                uri.host_str().unwrap_or_default().into(),
+                namespace.into()
+            )
         }))
     }
 
@@ -225,8 +228,9 @@ impl Store {
             return Err(Error::PendingLocks);
         }
         let mut namespaces = MEMORY.namespaces.lock().expect("poisoned lock");
-        let new = namespaces.entry(target.into()).or_insert_with(|| {
-            MemoryNamespace::new(target.into()).into()
+        let new_key = (self.namespace.ns_key.0.clone(), target.into());
+        let new = namespaces.entry(new_key.clone()).or_insert_with(|| {
+            MemoryNamespace::new(new_key).into()
         }).clone();
 
         // Check that new is empty.
@@ -239,7 +243,7 @@ impl Store {
         mem::swap(new_values.deref_mut(), self.namespace.values().deref_mut());
 
         // Delete our namespace
-        namespaces.remove(&self.namespace.name);
+        namespaces.remove(&self.namespace.ns_key);
 
         self.namespace = new.clone();
         Ok(())
@@ -261,15 +265,15 @@ type MemoryValues = HashMap<Scope, HashMap<SegmentBuf, Value>>;
 
 #[derive(Debug)]
 struct MemoryNamespace {
-    name: NamespaceBuf,
+    ns_key: NsKey,
     values: Mutex<MemoryValues>,
     locks: Mutex<HashSet<Scope>>,
 }
 
 impl MemoryNamespace {
-    fn new(name: NamespaceBuf) -> Self {
+    fn new(ns_key: NsKey) -> Self {
         Self {
-            name,
+            ns_key,
             values: Default::default(),
             locks: Default::default(),
         }
@@ -285,19 +289,29 @@ impl MemoryNamespace {
 }
 
 
-//------------ MemoryInstance ------------------------------------------------
+//------------ NsKey ---------------------------------------------------------
+
+type NsKey = (String, NamespaceBuf);
+
+
+//------------ Memory --------------------------------------------------------
 
 /// The place where data is actually stored.
 #[derive(Debug, Default)]
-struct MemoryInstance {
-    namespaces: Mutex<HashMap<NamespaceBuf, Arc<MemoryNamespace>>>,
+struct Memory {
+    namespaces: Mutex<HashMap<NsKey, Arc<MemoryNamespace>>>,
 }
 
-impl MemoryInstance {
-    fn get_namespace(&self, namespace: &Namespace) -> Arc<MemoryNamespace> {
+impl Memory {
+    fn get_namespace(
+        &self,
+        prefix: String,
+        namespace: NamespaceBuf,
+    ) -> Arc<MemoryNamespace> {
+        let ns_key = (prefix, namespace);
         let mut namespaces = self.namespaces.lock().expect("poisoned lock");
-        namespaces.entry(namespace.into()).or_insert_with(|| {
-            MemoryNamespace::new(namespace.into()).into()
+        namespaces.entry(ns_key.clone()).or_insert_with(|| {
+            MemoryNamespace::new(ns_key).into()
         }).clone()
     }
 }
@@ -306,7 +320,7 @@ impl MemoryInstance {
 //------------ MEMORY --------------------------------------------------------
 
 lazy_static! {
-    static ref MEMORY: HashMap<String, MemoryInstance> = Default::default();
+    static ref MEMORY: Memory = Memory::default();
 }
 
 
