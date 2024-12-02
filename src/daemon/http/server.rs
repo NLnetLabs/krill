@@ -658,9 +658,17 @@ pub async fn health(req: Request) -> RoutingResult {
 pub async fn metrics(req: Request) -> RoutingResult {
     if req.is_get() && req.path().segment().starts_with("metrics") {
         let info = req.state().server_info();
+
+        #[cfg(feature = "multi-user")]
         let size = req.state().login_session_cache_size();
+
         match req.state().process(move |server| {
-            Ok(metrics_sync(server, info, size))
+            Ok(metrics_sync(
+                server, info,
+                
+                #[cfg(feature = "multi-user")]
+                size
+            ))
         }).await {
             Ok(res) => Ok(res),
             Err(err) => render_error(err),
@@ -674,6 +682,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
 fn metrics_sync(
     server: &KrillServer,
     info: ServerInfo,
+    #[cfg(feature = "multi-user")]
     login_session_cache_size: usize,
 ) -> HttpResponse {
     struct AllBgpStats {
