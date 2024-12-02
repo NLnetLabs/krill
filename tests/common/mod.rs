@@ -453,7 +453,7 @@ impl KrillServer {
     /// Returns an expected files check object.
     pub fn expected_objects<'s>(
         &'s self, ca: &'s CaHandle
-    ) -> ExpectedObjects {
+    ) -> ExpectedObjects<'s> {
         ExpectedObjects::new(self, ca)
     }
 }
