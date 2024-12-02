@@ -1,7 +1,10 @@
 //! Deal with asynchronous scheduled processes, either triggered by an
 //! event that occurred, or planned (e.g. re-publishing).
 
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 use std::thread::sleep;
 
 use rpki::ca::{
@@ -81,10 +84,12 @@ impl Scheduler {
         }
     }
 
-    /// Run the scheduler in the background. It will sweep the message queue
-    /// for tasks and re-schedule new tasks as needed.
-    pub fn run(&self) {
-        loop {
+    /// Run the scheduler.
+    ///
+    /// This method will block the current thread until either a fatal error
+    /// happens (which will be logged), or `cancel` is set to `true`.
+    pub fn run(&self, cancel: Arc<AtomicBool>,) {
+        while !cancel.load(Ordering::Relaxed) {
             while let Some(running_task) = self.tasks.pop() {
                 // remember the key so we can finish or re-schedule the task.
                 let task_key = Key::from(&running_task);

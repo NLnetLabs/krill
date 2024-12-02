@@ -1,22 +1,17 @@
 //! Some helper functions for HTTP calls
-use std::{env, fmt, path::PathBuf, str::FromStr, time::Duration};
 
+use std::{env, fmt, path::PathBuf, str::FromStr, time::Duration};
 use bytes::Bytes;
 use reqwest::StatusCode;
 use reqwest::blocking::{Client, ClientBuilder, Response};
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE, USER_AGENT};
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
-
-use crate::{
-    commons::{
-        api::{ErrorResponse, Token},
-        util::file,
-    },
-    constants::{
-        HTTP_CLIENT_TIMEOUT_SECS, KRILL_CLI_API_ENV,
-        KRILL_HTTPS_ROOT_CERTS_ENV, KRILL_VERSION,
-    },
+use crate::commons::api::{ErrorResponse, Token};
+use crate::commons::util::file;
+use crate::constants::{
+    HTTP_CLIENT_TIMEOUT_SECS, KRILL_CLI_API_ENV, KRILL_HTTPS_ROOT_CERTS_ENV,
+    KRILL_VERSION,
 };
 
 const JSON_CONTENT: &str = "application/json";
@@ -142,6 +137,26 @@ pub fn get_ok(uri: &str, token: Option<&Token>) -> Result<(), Error> {
         .headers(headers)
         .send()
         .map_err(|e| Error::execute(uri, e))?;
+
+    opt_text_response(uri, res)?; // Will return nice errors with possible body.
+    Ok(())
+}
+
+/// Checks that there is a 200 OK response at the given URI. Discards the
+/// response body.
+pub fn get_ok_quickly(uri: &str, token: Option<&Token>) -> Result<(), Error> {
+    if env::var(KRILL_CLI_API_ENV).is_ok() {
+        report_get_and_exit(uri, token);
+    }
+
+    let headers = headers(uri, None, token)?;
+    let res = client_with_tweaks(
+        uri,
+        Duration::from_secs(1),
+        true
+    )?.get(uri).headers(headers).send().map_err(|e| {
+        Error::execute(uri, e)
+    })?;
 
     opt_text_response(uri, res)?; // Will return nice errors with possible body.
     Ok(())

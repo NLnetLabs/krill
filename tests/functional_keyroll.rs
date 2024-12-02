@@ -32,9 +32,9 @@ mod common;
 ///  * CAs can activate the new key:
 ///      * republish all objects under the new key
 ///      * revoke and retire old key, mft and crl
-#[tokio::test]
-async fn functional_keyroll() {
-    let (server, _tempdir) = common::KrillServer::start_with_testbed().await;
+#[test]
+fn functional_keyroll() {
+    let (server, _tempdir) = common::KrillServer::start_with_testbed();
 
     let testbed = common::ca_handle("testbed");
     let ca = common::ca_handle("CA");
@@ -62,127 +62,127 @@ async fn functional_keyroll() {
     // that all CAs which are set up as part of krill_start under the
     // testbed config have been set up.
     assert!(
-        server.wait_for_ca_resources(&testbed, &ResourceSet::all()).await
+        server.wait_for_ca_resources(&testbed, &ResourceSet::all())
     );
 
     eprintln!(">>>> Verify that the Testbed publishes a new empty key set.");
-    assert!(server.wait_manifest_number_current_key(&testbed, 1).await);
+    assert!(server.wait_manifest_number_current_key(&testbed, 1));
     let mut files = server.expected_objects(&testbed);
-    files.push_mft_and_crl(&rc0).await;
-    assert!(files.wait_for_manifest_current_key().await);
+    files.push_mft_and_crl(&rc0);
+    assert!(files.wait_for_manifest_current_key());
 
     eprintln!(">>>> Set up CA under testbed.");
-    server.create_ca_with_repo(&ca).await;
-    server.register_ca_with_parent(&ca, &testbed, &ca_resources).await;
+    server.create_ca_with_repo(&ca);
+    server.register_ca_with_parent(&ca, &testbed, &ca_resources);
 
     eprintln!(">>>> Verify that the testbed published the expected objects");
-    files.push_cer(&ca, &rc0).await;
-    assert!(files.wait_for_published().await);
-    assert!(files.wait_for_manifest_current_key().await);
+    files.push_cer(&ca, &rc0);
+    assert!(files.wait_for_published());
+    assert!(files.wait_for_manifest_current_key());
 
     eprintln!(">>>> Set up ROAs, ASPA and BGPSec under testbed.");
     server.client().roas_update(
         &testbed,
         RoaConfigurationUpdates::new(vec![roa_conf], vec![])
-    ).await.unwrap();
-    assert!(server.wait_manifest_number_current_key(&testbed, 3).await);
+    ).unwrap();
+    assert!(server.wait_manifest_number_current_key(&testbed, 3));
     server.client().aspas_add_single(
         &testbed, aspa_def.clone()
-    ).await.unwrap();
-    assert!(server.wait_manifest_number_current_key(&testbed, 4).await);
+    ).unwrap();
+    assert!(server.wait_manifest_number_current_key(&testbed, 4));
     server.client().bgpsec_add_single(
         &testbed, bgpsec_asn, bgpsec_csr
-    ).await.unwrap();
-    assert!(server.wait_manifest_number_current_key(&testbed, 5).await);
+    ).unwrap();
+    assert!(server.wait_manifest_number_current_key(&testbed, 5));
 
     eprintln!(">>>> Check that everything is published.");
     files.push(roa_file.clone());
     files.push(aspa_file.clone());
     files.push(bgpsec_file.clone());
-    assert!(files.wait_for_published().await);
-    assert!(files.wait_for_manifest_current_key().await);
+    assert!(files.wait_for_published());
+    assert!(files.wait_for_manifest_current_key());
 
     eprintln!(">>>> Initiate new key for testbed.");
-    server.client().ca_init_keyroll(&testbed).await.unwrap();
-    assert!(server.wait_for_state_new_key(&testbed).await);
+    server.client().ca_init_keyroll(&testbed).unwrap();
+    assert!(server.wait_for_state_new_key(&testbed));
 
     // Objects are still published under the current key.
-    assert!(files.wait_for_manifest_current_key().await);
+    assert!(files.wait_for_manifest_current_key());
 
     // A manifest and CRL are present under the new key.
     let mut new_files = server.expected_objects(&testbed);
-    new_files.push_mft_and_crl(&rc0).await;
-    assert!(new_files.wait_for_manifest_new_key().await);
+    new_files.push_mft_and_crl(&rc0);
+    assert!(new_files.wait_for_manifest_new_key());
 
     // Old objects and new manifest and CRL are all published under the
     // current key.
     files.extend(new_files.files.iter().cloned());
-    assert!(files.wait_for_published().await);
+    assert!(files.wait_for_published());
 
     // The testbed CA should issue an empty mft for the new key, with
     // serial 1
-    assert!(server.wait_manifest_number_new_key(&testbed, 1).await);
+    assert!(server.wait_manifest_number_new_key(&testbed, 1));
 
     // The manifest for the current key isn’t updated when the new key is
     // added.
-    assert!(server.wait_manifest_number_current_key(&testbed, 5).await);
+    assert!(server.wait_manifest_number_current_key(&testbed, 5));
 
     eprintln!(">>>> Renewing MFT/CRL should update both keys.");
-    server.client().bulk_force_publish().await.unwrap();
-    assert!(server.wait_manifest_number_current_key(&testbed, 6).await);
-    assert!(server.wait_manifest_number_new_key(&testbed, 2).await);
+    server.client().bulk_force_publish().unwrap();
+    assert!(server.wait_manifest_number_current_key(&testbed, 6));
+    assert!(server.wait_manifest_number_new_key(&testbed, 2));
 
     eprintln!(">>>> Activate new key for testbed.");
-    server.client().ca_activate_keyroll(&testbed).await.unwrap();
+    server.client().ca_activate_keyroll(&testbed).unwrap();
 
     // We now expect that the new key has become the current key and its
     // mft, crl and all objects are published as a single update.
     //
     // The old key will be revoked and its mft and crl will no longer be
     // published.
-    assert!(server.wait_for_state_active(&testbed).await);
+    assert!(server.wait_for_state_active(&testbed));
 
     // Testbed should now publish MFT and CRL for the activated key only,
     // and the certificate for CA
     let mut files = server.expected_objects(&testbed);
-    files.push_mft_and_crl(&rc0).await;
-    files.push_cer(&ca, &rc0).await;
+    files.push_mft_and_crl(&rc0);
+    files.push_cer(&ca, &rc0);
     files.push(roa_file.clone());
     files.push(aspa_file.clone());
     files.push(bgpsec_file.clone());
-    assert!(files.wait_for_published().await);
-    assert!(files.wait_for_manifest_current_key().await);
-    assert!(server.wait_manifest_number_current_key(&testbed, 3).await);
+    assert!(files.wait_for_published());
+    assert!(files.wait_for_manifest_current_key());
+    assert!(server.wait_manifest_number_current_key(&testbed, 3));
 }
 
 
 //------------ Extend KrillServer --------------------------------------------
 
 impl common::KrillServer {
-    pub async fn wait_manifest_number_current_key(
+    pub fn wait_manifest_number_current_key(
         &self, ca: &CaHandle, nr: u64
     ) -> bool {
-        let current_key = self.ca_key_for_rcn(ca, &common::rcn(0)).await;
+        let current_key = self.ca_key_for_rcn(ca, &common::rcn(0));
         self.wait_manifest_number_key(
             ca, current_key.incoming_cert(), nr
-        ).await
+        )
     }
 
-    pub async fn wait_manifest_number_new_key(
+    pub fn wait_manifest_number_new_key(
         &self, ca: &CaHandle, nr: u64
     ) -> bool {
-        let new_key = self.ca_new_key_for_rcn(ca, &common::rcn(0)).await;
-        self.wait_manifest_number_key(ca, new_key.incoming_cert(), nr).await
+        let new_key = self.ca_new_key_for_rcn(ca, &common::rcn(0));
+        self.wait_manifest_number_key(ca, new_key.incoming_cert(), nr)
     }
 
-    async fn wait_manifest_number_key(
+    fn wait_manifest_number_key(
         &self, ca: &CaHandle, incoming: &ReceivedCert, nr: u64,
     ) -> bool {
         let mut number_found = Serial::from(0_u64); // will be overwritten
         for _ in 0..10 {
             let published = self.client().publisher_details(
                 &ca.convert()
-            ).await.unwrap();
+            ).unwrap();
             if let Some(mft) = published
                 .current_files()
                 .iter()
@@ -198,7 +198,7 @@ impl common::KrillServer {
                 }
             }
 
-            common::sleep_millis(500).await;
+            common::sleep_millis(500);
         }
 
         eprintln!("Expected serial: {}, found: {}", nr, number_found);
@@ -210,24 +210,24 @@ impl common::KrillServer {
 //------------ Extend ExpectedObjects ----------------------------------------
 
 impl<'a> common::ExpectedObjects<'a> {
-    pub async fn wait_for_manifest_current_key(&self) -> bool {
+    pub fn wait_for_manifest_current_key(&self) -> bool {
         let current_key = self.server.ca_key_for_rcn(
             self.ca, &common::rcn(0)
-        ).await;
-        self.wait_manifest_files_key(current_key.incoming_cert()) .await
+        );
+        self.wait_manifest_files_key(current_key.incoming_cert()) 
     }
 
-    pub async fn wait_for_manifest_new_key(&self) -> bool {
+    pub fn wait_for_manifest_new_key(&self) -> bool {
         let new_key = self.server.ca_new_key_for_rcn(
             self.ca, &common::rcn(0)
-        ).await;
-        self.wait_manifest_files_key(new_key.incoming_cert()).await
+        );
+        self.wait_manifest_files_key(new_key.incoming_cert())
     }
 
     // Will ignore any .mft files on the expected files - to make it easier
     // to use the same expected list for files published (which includes the
     // mft) and mft entries
-    async fn wait_manifest_files_key(
+    fn wait_manifest_files_key(
         &self,
         incoming: &ReceivedCert,
     ) -> bool {
@@ -235,7 +235,7 @@ impl<'a> common::ExpectedObjects<'a> {
         for _ in 0..10 {
             let published = self.server.client().publisher_details(
                 &self.ca.convert()
-            ).await.unwrap();
+            ).unwrap();
             if let Some(mft) = published
                 .current_files()
                 .iter()
@@ -269,7 +269,7 @@ impl<'a> common::ExpectedObjects<'a> {
                 }
             }
 
-            common::sleep_millis(500).await;
+            common::sleep_millis(500);
         }
 
         eprintln!(

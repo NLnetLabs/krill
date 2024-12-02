@@ -19,9 +19,9 @@ mod common;
 ///
 /// The test is _not_ intended to check that the server processes these
 /// commands correctly. This happens in other tests.
-#[tokio::test]
-async fn client_coverage() {
-    let (server, _tempdir) = common::KrillServer::start_with_testbed().await;
+#[test]
+fn client_coverage() {
+    let (server, _tempdir) = common::KrillServer::start_with_testbed();
 
     let ta = common::ca_handle("ta");
     let testbed = common::ca_handle("testbed");
@@ -33,64 +33,64 @@ async fn client_coverage() {
     // Wait for the *testbed* CA to get its certificate, then set up two
     // CAs, “parent” directly under “testbed” and “child” under “parent.”
     assert!(
-        server.wait_for_ca_resources(&testbed, &ResourceSet::all()).await
+        server.wait_for_ca_resources(&testbed, &ResourceSet::all())
     );
-    server.create_ca_with_repo(&parent).await;
-    server.create_ca_with_repo(&child).await;
-    server.register_ca_with_parent(&parent, &testbed, &ca_res).await;
-    server.register_ca_with_parent(&child, &parent, &ca_res).await;
+    server.create_ca_with_repo(&parent);
+    server.create_ca_with_repo(&child);
+    server.register_ca_with_parent(&parent, &testbed, &ca_res);
+    server.register_ca_with_parent(&child, &parent, &ca_res);
 
-    server.client().authorized().await.unwrap();
-    server.client().info().await.unwrap();
-    server.client().bulk_issues().await.unwrap();
-    server.client().bulk_sync_parents().await.unwrap();
-    server.client().bulk_sync_repo().await.unwrap();
-    server.client().bulk_publish().await.unwrap();
-    server.client().bulk_force_publish().await.unwrap();
-    server.client().bulk_suspend().await.unwrap();
+    server.client().authorized().unwrap();
+    server.client().info().unwrap();
+    server.client().bulk_issues().unwrap();
+    server.client().bulk_sync_parents().unwrap();
+    server.client().bulk_sync_repo().unwrap();
+    server.client().bulk_publish().unwrap();
+    server.client().bulk_force_publish().unwrap();
+    server.client().bulk_suspend().unwrap();
     // bulk_import tested in functional_ca_import
 
-    server.client().cas_list().await.unwrap();
-    server.client().ca_add(surplus.clone()).await.unwrap();
-    server.client().ca_details(&surplus).await.unwrap();
-    server.client().ca_delete(&surplus).await.unwrap();
-    server.client().ca_issues(&child).await.unwrap();
+    server.client().cas_list().unwrap();
+    server.client().ca_add(surplus.clone()).unwrap();
+    server.client().ca_details(&surplus).unwrap();
+    server.client().ca_delete(&surplus).unwrap();
+    server.client().ca_issues(&child).unwrap();
     server.client().ca_history_commands(
         &parent, None, None, None, None
-    ).await.unwrap();
+    ).unwrap();
     server.client().ca_history_commands(
         &parent, None, None, None, Some(Time::now())
-    ).await.unwrap();
+    ).unwrap();
     server.client().ca_history_commands(
         &parent, None, None, Some(Time::now()), Some(Time::now())
-    ).await.unwrap();
+    ).unwrap();
     server.client().ca_history_details(
         &parent, "0"
-    ).await.unwrap();
+    ).unwrap();
     // ca_init_keyroll and ca_activate_keyroll tested in functional_keyroll
-    server.client().ca_update_id(&parent).await.unwrap();
-    server.client().ca_sync_parents(&child).await.unwrap();
+    server.client().ca_update_id(&parent).unwrap();
+    server.client().ca_sync_parents(&child).unwrap();
 
-    server.client().child_connections(&parent).await.unwrap();
+    server.client().child_connections(&parent).unwrap();
     // child_add tested above
     // child_import tested in functional_delegated_ca_import
-    server.client().child_details(&parent, &child.convert()).await.unwrap();
+    server.client().child_details(&parent, &child.convert()).unwrap();
     server.client().child_update(
         &parent, &child.convert(), api::UpdateChildRequest::unsuspend()
-    ).await.unwrap();
-    server.client().child_contact(&parent, &child.convert()).await.unwrap();
+    ).unwrap();
+    server.client().child_contact(&parent, &child.convert()).unwrap();
     // child_export tested in functional_delegated_ca_import
     // child_delete tested in functional_parent_child
-    server.client().child_request(&child).await.unwrap();
+    server.client().child_request(&child).unwrap();
 
-    server.client().parent_list(&parent).await.unwrap();
+    server.client().parent_list(&parent).unwrap();
     // parent_add tested above
-    server.client().parent_details(&parent, &testbed.convert()).await.unwrap();
+    server.client().parent_details(&parent, &testbed.convert()).unwrap();
     // parent_delete tested in functional_parent_child
 
-    server.client().repo_request(&parent).await.unwrap();
-    server.client().repo_details(&parent).await.unwrap();
-    server.client().repo_status(&parent).await.unwrap();
+    server.client().repo_request(&parent).unwrap();
+    server.client().repo_details(&parent).unwrap();
+    server.client().repo_status(&parent).unwrap();
     // repo_update tested variously
 
     let _ = server.client().roas_update(
@@ -99,61 +99,61 @@ async fn client_coverage() {
             vec![common::roa_conf("10.0.0.0/16-16 => 64496")],
             vec![]
         )
-    ).await.unwrap();
-    server.client().roas_list(&child).await.unwrap();
+    ).unwrap();
+    server.client().roas_list(&child).unwrap();
     let update = api::RoaConfigurationUpdates::new(
         vec![common::roa_conf("10.1.0.0/16-16 => 64496")],
         vec![]
     );
     server.client().roas_dryrun_update(
         &child, update.clone()
-    ).await.unwrap();
+    ).unwrap();
     server.client().roas_try_update(
         &child, update.clone()
-    ).await.unwrap();
-    server.client().roas_analyze(&child).await.unwrap();
-    server.client().roas_suggest(&child, None).await.unwrap();
-    server.client().roas_suggest(&child, Some(ca_res.clone())).await.unwrap();
+    ).unwrap();
+    server.client().roas_analyze(&child).unwrap();
+    server.client().roas_suggest(&child, None).unwrap();
+    server.client().roas_suggest(&child, Some(ca_res.clone())).unwrap();
 
     server.client().bgpsec_add_single(
         &child, common::asn("AS65000"),
         rpki::ca::csr::BgpsecCsr::decode(
             include_bytes!("../test-resources/bgpsec/router-csr.der").as_ref()
         ).unwrap(),
-    ).await.unwrap();
+    ).unwrap();
     // bgpsec_delete_single boils down to the same API call, so not tested
-    server.client().bgpsec_list(&child).await.unwrap();
+    server.client().bgpsec_list(&child).unwrap();
 
     server.client().aspas_add_single(
         &child,
         api::AspaDefinition::new(
             common::asn("AS65000"), vec![common::asn("AS64496")]
         )
-    ).await.unwrap();
-    server.client().aspas_list(&child).await.unwrap();
+    ).unwrap();
+    server.client().aspas_list(&child).unwrap();
     server.client().aspas_update_single(
         &child, common::asn("AS65000"),
         api::AspaProvidersUpdate::new(vec![common::asn("AS64497")], vec![])
-    ).await.unwrap();
+    ).unwrap();
 
-    server.client().publishers_list().await.unwrap();
-    server.client().publishers_stale(30).await.unwrap();
+    server.client().publishers_list().unwrap();
+    server.client().publishers_stale(30).unwrap();
     // publishers_add called above in create_ca_with_repo
-    server.client().publisher_details(&child.convert()).await.unwrap();
-    server.client().publisher_response(&child.convert()).await.unwrap();
+    server.client().publisher_details(&child.convert()).unwrap();
+    server.client().publisher_response(&child.convert()).unwrap();
     // publisher_delete tested in testbed
 
     // pubserver_init tested in functional_ta
     server.client().pubserver_delete_files(
         uri::Rsync::from_str("rsync://localhost/testbed/bla").unwrap()
-    ).await.unwrap();
-    server.client().pubserver_stats().await.unwrap();
-    server.client().pubserver_session_reset().await.unwrap();
-    server.client().publisher_delete(&ta.convert()).await.unwrap();
-    server.client().publisher_delete(&testbed.convert()).await.unwrap();
-    server.client().publisher_delete(&parent.convert()).await.unwrap();
-    server.client().publisher_delete(&child.convert()).await.unwrap();
-    server.client().pubserver_clear().await.unwrap();
+    ).unwrap();
+    server.client().pubserver_stats().unwrap();
+    server.client().pubserver_session_reset().unwrap();
+    server.client().publisher_delete(&ta.convert()).unwrap();
+    server.client().publisher_delete(&testbed.convert()).unwrap();
+    server.client().publisher_delete(&parent.convert()).unwrap();
+    server.client().publisher_delete(&child.convert()).unwrap();
+    server.client().pubserver_clear().unwrap();
 
     // testbed commands tested in testbed
     // ta_proxy commands tests in functional_ta

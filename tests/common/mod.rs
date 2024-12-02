@@ -1,7 +1,8 @@
 #![allow(dead_code)] // Different tests use different parts.
 
-use std::env;
+use std::{env, thread};
 use std::str::FromStr;
+use std::thread::sleep;
 use std::time::Duration;
 use url::Url;
 use log::LevelFilter;
@@ -15,8 +16,6 @@ use rpki::ca::provisioning::ResourceClassName;
 use rpki::repository::resources::{Asn, ResourceSet};
 use tempfile::TempDir;
 use tokio::sync::oneshot;
-use tokio::task::JoinHandle;
-use tokio::time::{sleep, timeout};
 use krill::commons::api;
 use krill::commons::api::Token;
 use krill::commons::crypto::OpenSslSignerConfig;
@@ -311,8 +310,9 @@ impl TestConfig {
 
 /// A test Krill server.
 pub struct KrillServer {
-    join: JoinHandle<()>,
+    join: thread::JoinHandle<()>,
     running: Option<oneshot::Receiver<()>>,
+    cancel: oneshot::Sender<()>,
     client: KrillClient,
 }
 
@@ -321,57 +321,57 @@ impl KrillServer {
     ///
     /// The server will use memory storage. The function will start the
     /// server and wait for it to become ready.
-    pub async fn start() -> (Self, TempDir) {
+    pub fn start() -> (Self, TempDir) {
         let (config, data_dir) = TestConfig::mem_storage().finalize();
-        (Self::start_with_config(config).await, data_dir)
+        (Self::start_with_config(config), data_dir)
     }
 
     /// Starts a test server with testbed enabled.
     ///
     /// The server will use memory storage. The function will start the
     /// server and wait for it to become ready.
-    pub async fn start_with_testbed() -> (Self, TempDir) {
+    pub fn start_with_testbed() -> (Self, TempDir) {
         let (config, data_dir)
             = TestConfig::mem_storage().enable_testbed().finalize();
-        (Self::start_with_config(config).await, data_dir)
+        (Self::start_with_config(config), data_dir)
     }
 
     /// Starts a test server with testbed enabled and a modified config.
-    pub async fn start_with_config_testbed(
+    pub fn start_with_config_testbed(
         op: impl FnOnce(&mut Config)
     ) -> (Self, TempDir) {
         let (mut config, data_dir)
             = TestConfig::mem_storage().enable_testbed().finalize();
         op(&mut config);
-        (Self::start_with_config(config).await, data_dir)
+        (Self::start_with_config(config), data_dir)
     }
 
     /// Starts a test server with file storage with testbed enabled.
     ///
     /// The server will use memory storage. The function will start the
     /// server and wait for it to become ready.
-    pub async fn start_with_file_storage_and_testbed() -> (Self, TempDir) {
+    pub fn start_with_file_storage_and_testbed() -> (Self, TempDir) {
         let (config, data_dir)
             = TestConfig::file_storage().enable_testbed().finalize();
-        (Self::start_with_config(config).await, data_dir)
+        (Self::start_with_config(config), data_dir)
     }
 
     /// Starts a second test server with testbed enabled.
     ///
     /// The server will use memory storage. The function will start the
     /// server and wait for it to become ready.
-    pub async fn start_second_with_testbed() -> (Self, TempDir) {
+    pub fn start_second_with_testbed() -> (Self, TempDir) {
         let (config, data_dir) = TestConfig::mem_storage()
             .alternative_port().enable_testbed().enable_second_signer()
             .finalize();
-        (Self::start_with_config(config).await, data_dir)
+        (Self::start_with_config(config), data_dir)
     }
 
     /// Starts a publication daemon.
     ///
     /// The server will use the given interval in seconds for its RRDP
     /// udpates.
-    pub async fn start_pubd(
+    pub fn start_pubd(
         rrdp_delta_min_interval_seconds: u32
     ) -> (Self, TempDir) {
         let (mut config, data_dir) = TestConfig::mem_storage()
@@ -381,15 +381,15 @@ impl KrillServer {
         config.rrdp_updates_config.rrdp_delta_interval_min_seconds =
             rrdp_delta_min_interval_seconds;
         let port = config.port;
-        let server = Self::start_with_config(config).await;
-        server.pubserver_init(port).await;
+        let server = Self::start_with_config(config);
+        server.pubserver_init(port);
         (server, data_dir)
     }
 
     /// Starts a test server with the given config.
     ///
     /// This will start the server and wait for it to become ready.
-    pub async fn start_with_config(config: Config) -> Self {
+    pub fn start_with_config(config: Config) -> Self {
         let uri = ServiceUri::from_str(
             &format!(
                 "https://{}:{}/",
@@ -397,38 +397,41 @@ impl KrillServer {
             )
         ).unwrap();
         let client = KrillClient::new(uri, config.admin_token.clone());
-        let (tx, running) = oneshot::channel();
+        let (running_tx, running) = oneshot::channel();
+        let (cancel, cancel_rx) = oneshot::channel();
         let mut res = Self {
-            join: tokio::spawn(async {
+            join: thread::spawn(move || {
                 if let Err(err) = server::start_krill_daemon(
-                    config.into(), Some(tx)
-                ).await {
+                    config.into(), Some(running_tx), cancel_rx,
+                ) {
                     error!("Krill failed to start: {}", err);
                 }
             }),
             running: Some(running),
+            cancel,
             client,
         };
-        res.ready().await;
+        res.ready();
         res
     }
 
-    async fn ready(&mut self) {
+    fn ready(&mut self) {
         let running = match self.running.take() {
             Some(running) => running,
             None => return
         };
-        assert!(running.await.is_ok());
-        match timeout(
-            Duration::from_secs(1),
-            self.client.authorized(),
-        ).await {
-            Ok(Ok(_)) => { debug!("health check succeded") },
-            err => panic!("health check failed: {:?}", err),
+        running.blocking_recv().unwrap();
+        match self.client.check_running() {
+            Ok(_) => {
+                debug!("health check succeded")
+            }
+            Err(err) => {
+                panic!("health check failed: {err}");
+            }
         }
     }
 
-    pub async fn pubserver_init(&self, port: u16) {
+    pub fn pubserver_init(&self, port: u16) {
         self.client().pubserver_init(
             uri::Https::from_str(
                 &format!("https://localhost:{}/test-rrdp/", port)
@@ -436,13 +439,13 @@ impl KrillServer {
             uri::Rsync::from_str(
                 "rsync://localhost/dedicated-repo/"
             ).unwrap(),
-        ).await.unwrap();
+        ).unwrap();
     }
 
     /// Aborts the server and waits for it to conclude cleanup.
-    pub async fn abort(self) {
-        self.join.abort();
-        let _ = self.join.await;
+    pub fn abort(self) {
+        self.cancel.send(()).unwrap();
+        self.join.join().unwrap();
     }
 
     /// Returns a Krill client for this server.
@@ -461,39 +464,39 @@ impl KrillServer {
 
 impl KrillServer {
     /// Creates a CA publishing in the built-in publisher.
-    pub async fn create_ca_with_repo(&self, ca: &CaHandle) {
+    pub fn create_ca_with_repo(&self, ca: &CaHandle) {
         // Create the CA
-        self.client.ca_add(ca.clone()).await.unwrap();
+        self.client.ca_add(ca.clone()).unwrap();
 
         // Add the CA as a publisher
-        let request = self.client().repo_request(ca).await.unwrap();
-        self.client().publishers_add(request).await.unwrap();
+        let request = self.client().repo_request(ca).unwrap();
+        self.client().publishers_add(request).unwrap();
 
         // Get a Repository Response for the CA.
         let response = self.client().publisher_response(
             &ca.convert()
-        ).await.unwrap();
+        ).unwrap();
 
         // Update the repo for the CA.
-        self.client().repo_update(ca, response).await.unwrap();
+        self.client().repo_update(ca, response).unwrap();
     }
 
     /// Registers a CA with a parent managed by the same server.
-    pub async fn register_ca_with_parent(
+    pub fn register_ca_with_parent(
         &self, ca: &CaHandle, parent: &CaHandle, resources: &ResourceSet
     ) {
-        let request = self.client().child_request(ca).await.unwrap();
+        let request = self.client().child_request(ca).unwrap();
         let response = self.add_child(
             parent, ca.convert(), request, resources.clone()
-        ).await;
+        );
         self.client.parent_add(
             ca, api::ParentCaReq::new(parent.convert(), response)
-        ).await.unwrap();
-        assert!(self.wait_for_ca_resources(ca, resources).await);
+        ).unwrap();
+        assert!(self.wait_for_ca_resources(ca, resources));
     }
 
     /// Add a child to the CA.
-    pub async fn add_child(
+    pub fn add_child(
         &self,
         ca: &CaHandle,
         child: ChildHandle,
@@ -501,27 +504,27 @@ impl KrillServer {
         resources: ResourceSet,
     ) -> ParentResponse {
         let id_cert = child_request.validate().unwrap();
-        self.client.child_add(ca, child, resources, id_cert).await.unwrap()
+        self.client.child_add(ca, child, resources, id_cert).unwrap()
     }
 
-    pub async fn ca_key_for_rcn(
+    pub fn ca_key_for_rcn(
         &self, ca: &CaHandle, rcn: &ResourceClassName
     ) -> api::CertifiedKeyInfo {
-        self.client.ca_details(ca).await.unwrap()
+        self.client.ca_details(ca).unwrap()
             .resource_classes().get(rcn).unwrap()
             .current_key().unwrap().clone()
     }
 
-    pub async fn ca_new_key_for_rcn(
+    pub fn ca_new_key_for_rcn(
         &self, ca: &CaHandle, rcn: &ResourceClassName,
     ) -> api::CertifiedKeyInfo {
-        self.client.ca_details(ca).await.unwrap()
+        self.client.ca_details(ca).unwrap()
             .resource_classes().get(rcn).unwrap()
             .new_key().unwrap().clone()
     }
 
-    pub async fn current_ca_resources(&self, ca: &CaHandle) -> ResourceSet {
-        let details = self.client().ca_details(ca).await.unwrap();
+    pub fn current_ca_resources(&self, ca: &CaHandle) -> ResourceSet {
+        let details = self.client().ca_details(ca).unwrap();
 
         let mut res = ResourceSet::default();
         for rc in details.resource_classes().values() {
@@ -532,10 +535,10 @@ impl KrillServer {
         res
     }
 
-    pub async fn check_configured_roas(
+    pub fn check_configured_roas(
         &self, ca: &CaHandle, expected: &[api::RoaConfiguration]
     ) -> bool {
-        let roas = self.client().roas_list(ca).await.unwrap().unpack();
+        let roas = self.client().roas_list(ca).unwrap().unpack();
         assert_eq!(roas.len(), expected.len());
 
         // Copy the expected configs, but convert them to an explicit max-len
@@ -561,21 +564,21 @@ impl KrillServer {
         true
     }
 
-    pub async fn wait_for_ca_resources(
+    pub fn wait_for_ca_resources(
         &self, ca: &CaHandle, resources: &ResourceSet
     ) -> bool {
         for _ in 0..300 {
-            sleep_millis(100).await;
-            if self.current_ca_resources(ca).await.contains(resources) {
+            sleep_millis(100);
+            if self.current_ca_resources(ca).contains(resources) {
                 return true
             }
         }
         false
     }
 
-    pub async fn wait_for_state_new_key(&self, ca: &CaHandle) -> bool {
+    pub fn wait_for_state_new_key(&self, ca: &CaHandle) -> bool {
         for _ in 0..300 {
-            let ca = self.client().ca_details(ca).await.unwrap();
+            let ca = self.client().ca_details(ca).unwrap();
 
             // wait for ALL RCs to become state new key
             let rc_map = ca.resource_classes();
@@ -593,14 +596,14 @@ impl KrillServer {
                 return true;
             }
 
-            sleep_millis(100).await
+            sleep_millis(100)
         }
         false
     }
 
-    pub async fn wait_for_state_active(&self, ca: &CaHandle) -> bool {
+    pub fn wait_for_state_active(&self, ca: &CaHandle) -> bool {
         for _ in 0..300 {
-            let ca = self.client().ca_details(ca).await.unwrap();
+            let ca = self.client().ca_details(ca).unwrap();
 
             // wait for ALL RCs to become state active key
             let rc_map = ca.resource_classes();
@@ -618,27 +621,27 @@ impl KrillServer {
                 return true;
             }
 
-            sleep_millis(100).await
+            sleep_millis(100)
         }
         false
     }
 
-    pub async fn http_get(
+    pub fn http_get(
         &self, rel_url: &str
     ) -> Result<String, httpclient::Error> {
         httpclient::get_text(
             &format!("{}{}", self.client().base_uri(), rel_url),
             None
-        ).await
+        )
     }
 
-    pub async fn http_get_404(
+    pub fn http_get_404(
         &self, rel_url: &str
     ) -> bool {
         match httpclient::get_text(
             &format!("{}{}", self.client().base_uri(), rel_url),
             None
-        ).await {
+        ) {
             Ok(_) => false,
             Err(err) if err.status_code() == Some(StatusCode::NOT_FOUND) => {
                 true
@@ -669,20 +672,20 @@ impl<'a> ExpectedObjects<'a> {
         self.files.push(file);
     }
 
-    pub async fn push_mft_and_crl(&mut self, rcn: &ResourceClassName) {
-        let rc_key = self.server.ca_key_for_rcn(self.ca, rcn).await;
+    pub fn push_mft_and_crl(&mut self, rcn: &ResourceClassName) {
+        let rc_key = self.server.ca_key_for_rcn(self.ca, rcn);
         self.push(rc_key.incoming_cert().mft_name().to_string());
         self.push(rc_key.incoming_cert().crl_name().to_string());
     }
 
-    pub async fn push_new_key_mft_and_crl(&mut self, rcn: &ResourceClassName) {
-        let rc_key = self.server.ca_new_key_for_rcn(self.ca, rcn).await;
+    pub fn push_new_key_mft_and_crl(&mut self, rcn: &ResourceClassName) {
+        let rc_key = self.server.ca_new_key_for_rcn(self.ca, rcn);
         self.push(rc_key.incoming_cert().mft_name().to_string());
         self.push(rc_key.incoming_cert().crl_name().to_string());
     }
 
-    pub async fn push_cer(&mut self, ca: &CaHandle, rcn: &ResourceClassName) {
-        let rc_key = self.server.ca_key_for_rcn(ca, rcn).await;
+    pub fn push_cer(&mut self, ca: &CaHandle, rcn: &ResourceClassName) {
+        let rc_key = self.server.ca_key_for_rcn(ca, rcn);
         self.push(api::ObjectName::new(rc_key.key_id(), "cer").to_string())
     }
 
@@ -696,18 +699,18 @@ impl<'a> ExpectedObjects<'a> {
         }))
     }
 
-    pub async fn wait_for_published(&self) -> bool {
-        self.wait_for_published_at(self.server).await
+    pub fn wait_for_published(&self) -> bool {
+        self.wait_for_published_at(self.server)
     }
 
-    pub async fn wait_for_published_at(&self, server: &KrillServer) -> bool {
+    pub fn wait_for_published_at(&self, server: &KrillServer) -> bool {
         let publisher = self.ca.convert();
 
         for _ in 0..600 {
-            sleep_millis(100).await;
+            sleep_millis(100);
             let details = server.client.publisher_details(
                 &publisher
-            ).await.unwrap();
+            ).unwrap();
             let current_files = details.current_files();
             if current_files.len() == self.files.len() {
                 let current_files: Vec<_> =
@@ -726,7 +729,7 @@ impl<'a> ExpectedObjects<'a> {
 
         let details = server.client.publisher_details(
             &publisher
-        ).await.unwrap();
+        ).unwrap();
 
         eprintln!("Published files didn’t match for {}", self.ca);
         eprintln!("Found:");
@@ -783,12 +786,12 @@ pub fn aspa_def(s: &str) -> api::AspaDefinition {
     api::AspaDefinition::from_str(s).unwrap()
 }
 
-pub async fn sleep_seconds(secs: u64) {
-    sleep(Duration::from_secs(secs)).await
+pub fn sleep_seconds(secs: u64) {
+    sleep(Duration::from_secs(secs))
 }
 
-pub async fn sleep_millis(secs: u64) {
-    sleep(Duration::from_millis(secs)).await
+pub fn sleep_millis(secs: u64) {
+    sleep(Duration::from_millis(secs))
 }
 
 /// Checks if a result has certain non-200 HTTP status code.

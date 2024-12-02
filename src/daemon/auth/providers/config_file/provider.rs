@@ -7,13 +7,14 @@ use unicode_normalization::UnicodeNormalization;
 use crate::daemon::http::{HttpResponse, HyperRequest};
 use crate::{
     commons::{
-        actor::ActorDef, api::Token, error::Error, util::httpclient,
+        actor::ActorDef, api::Token, error::Error,
         KrillResult,
     },
     constants::{PW_HASH_LOG_N, PW_HASH_P, PW_HASH_R},
     daemon::{
         auth::common::{
             crypt::{self, CryptState},
+            http::get_bearer_token,
             session::*,
         },
         auth::providers::config_file::config::ConfigUserDetails,
@@ -129,7 +130,7 @@ impl ConfigFileAuthProvider {
             trace!("Attempting to authenticate the request..");
         }
 
-        let res = match httpclient::get_bearer_token(request) {
+        let res = match get_bearer_token(request) {
             Some(token) => {
                 // see if we can decode, decrypt and deserialize the users
                 // token into a login session structure
@@ -263,7 +264,7 @@ impl ConfigFileAuthProvider {
         &self,
         request: &HyperRequest,
     ) -> KrillResult<HttpResponse> {
-        match httpclient::get_bearer_token(request) {
+        match get_bearer_token(request) {
             Some(token) => {
                 self.session_cache.remove(&token);
 

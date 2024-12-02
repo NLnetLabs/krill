@@ -6,6 +6,7 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::{env, process};
 use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
 use base64::engine::Engine as _;
@@ -271,6 +272,7 @@ fn test_data_dirs_or_die(config: &Config) {
 pub fn start_krill_daemon(
     config: Arc<Config>,
     mut signal_running: Option<oneshot::Sender<()>>,
+    cancel: oneshot::Receiver<()>,
 ) -> Result<(), Error> {
     write_pid_file_or_die(&config);
     test_data_dirs_or_die(&config);
@@ -340,8 +342,10 @@ pub fn start_krill_daemon(
         .map_err(|err| Error::custom(err.to_string()))?;
 
     runtime.block_on(async {
-        let scheduler_future = tokio::task::spawn_blocking(move || {
-            scheduler.run()
+        let scheduler_cancel = Arc::new(AtomicBool::new(false));
+        let scheduler_cancel_clone = scheduler_cancel.clone();
+        let mut scheduler_future = tokio::task::spawn_blocking(move || {
+            scheduler.run(scheduler_cancel_clone)
         });
 
         // Start a hyper server for the configured sockets.
@@ -358,8 +362,14 @@ pub fn start_krill_daemon(
 
         select!(
             _ = server_futures => error!("http server stopped unexpectedly"),
-            _ = scheduler_future => error!("scheduler stopped unexpectedly"),
+            _ = &mut scheduler_future => error!("scheduler stopped unexpectedly"),
+            _ = cancel => { }
         );
+
+        scheduler_cancel.store(true, Ordering::Relaxed);
+        if !scheduler_future.is_finished() {
+            let _ = scheduler_future.await;
+        }
     });
 
     Err(Error::custom("stopping krill process"))

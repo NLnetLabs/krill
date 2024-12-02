@@ -172,9 +172,9 @@ impl From<KrillIoError> for RisDumpError {
 mod tests {
     use super::*;
 
-    #[tokio::test]
+    #[test]
     #[ignore]
-    async fn download_bgp_ris_dumps() {
+    fn download_bgp_ris_dumps() {
         let bgp_ris_dump_v4_uri =
             "http://www.ris.ripe.net/dumps/riswhoisdump.IPv4.gz";
         let bgp_ris_dump_v6_uri =
@@ -182,7 +182,7 @@ mod tests {
 
         let loader =
             RisDumpLoader::new(bgp_ris_dump_v4_uri, bgp_ris_dump_v6_uri);
-        let announcements = loader.download_updates().await.unwrap();
+        let announcements = loader.download_updates().unwrap();
 
         assert!(!announcements.is_empty())
     }

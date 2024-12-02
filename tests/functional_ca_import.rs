@@ -6,12 +6,12 @@ mod common;
 //------------ Test Function -------------------------------------------------
 
 #[cfg(not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11")))]
-#[tokio::test]
-async fn functional_ca_import() {
+#[test]
+fn functional_ca_import() {
     let (mut config, _tempdir) = common::TestConfig::mem_storage().finalize();
     config.ta_support_enabled = true;
     config.ta_signer_enabled = true;
-    let server = common::KrillServer::start_with_config(config).await;
+    let server = common::KrillServer::start_with_config(config);
 
     eprintln!(">>>> Import CA structure.");
     // We expect:
@@ -59,47 +59,47 @@ async fn functional_ca_import() {
         common::roa_conf("10.0.0.0/24 => 65001"),
     ];
 
-    server.client().bulk_import(ca_imports).await.unwrap();
+    server.client().bulk_import(ca_imports).unwrap();
 
 
     eprintln!(">>>> Check 'parent'.");
-    assert!(server.wait_for_ca_resources(&parent, &parent_resources).await);
+    assert!(server.wait_for_ca_resources(&parent, &parent_resources));
 
     eprintln!(">>>> Check 'child1'.");
     // resources
-    assert!(server.wait_for_ca_resources(&child1, &child1_resources).await);
+    assert!(server.wait_for_ca_resources(&child1, &child1_resources));
     // ROAs
-    assert!(server.check_configured_roas(&child1, &child1_roas).await);
+    assert!(server.check_configured_roas(&child1, &child1_roas));
     // Published objects, including cer for grandchild.
     let mut files = server.expected_objects(&child1);
-    files.push_mft_and_crl(&rc0).await;
-    files.push_cer(&grandchild, &rc0).await;
+    files.push_mft_and_crl(&rc0);
+    files.push_cer(&grandchild, &rc0);
     files.push_roas(&child1_roas);
-    assert!(files.wait_for_published().await);
+    assert!(files.wait_for_published());
 
     eprintln!(">>>> Check 'child2'.");
     // resources
-    assert!(server.wait_for_ca_resources(&child2, &child2_resources).await);
+    assert!(server.wait_for_ca_resources(&child2, &child2_resources));
     // no ROAs
     // Published objects, including cer for grandchild in RC1.
     let mut files = server.expected_objects(&child2);
-    files.push_mft_and_crl(&rc0).await;
-    files.push_cer(&grandchild, &rc1).await;
-    assert!(files.wait_for_published().await);
+    files.push_mft_and_crl(&rc0);
+    files.push_cer(&grandchild, &rc1);
+    assert!(files.wait_for_published());
 
     eprintln!(">>>> Check 'grandchild'.");
     // resources
     assert!(
-        server.wait_for_ca_resources(&grandchild, &grandchild_resources).await
+        server.wait_for_ca_resources(&grandchild, &grandchild_resources)
     );
     // configured ROAs
-    assert!(server.check_configured_roas(&grandchild, &grandchild_roas).await);
+    assert!(server.check_configured_roas(&grandchild, &grandchild_roas));
     // publish objects in rc0 under parent child1
     // publish objects in rc1 under parent child2
     let mut files = server.expected_objects(&grandchild);
-    files.push_mft_and_crl(&rc0).await;
-    files.push_mft_and_crl(&rc1).await;
+    files.push_mft_and_crl(&rc0);
+    files.push_mft_and_crl(&rc1);
     files.push_roas(&grandchild_roas);
-    assert!(files.wait_for_published().await);
+    assert!(files.wait_for_published());
 }
 

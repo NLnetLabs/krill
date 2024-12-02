@@ -285,15 +285,15 @@ impl MemoryNamespace {
 }
 
 
-//------------ Memory --------------------------------------------------------
+//------------ MemoryInstance ------------------------------------------------
 
 /// The place where data is actually stored.
 #[derive(Debug, Default)]
-struct Memory {
+struct MemoryInstance {
     namespaces: Mutex<HashMap<NamespaceBuf, Arc<MemoryNamespace>>>,
 }
 
-impl Memory {
+impl MemoryInstance {
     fn get_namespace(&self, namespace: &Namespace) -> Arc<MemoryNamespace> {
         let mut namespaces = self.namespaces.lock().expect("poisoned lock");
         namespaces.entry(namespace.into()).or_insert_with(|| {
@@ -306,7 +306,7 @@ impl Memory {
 //------------ MEMORY --------------------------------------------------------
 
 lazy_static! {
-    static ref MEMORY: Memory = Memory::default();
+    static ref MEMORY: HashMap<String, MemoryInstance> = Default::default();
 }
 
 

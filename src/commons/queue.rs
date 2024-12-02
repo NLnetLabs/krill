@@ -544,7 +544,7 @@ mod tests {
     #[test]
     fn queue_thread_workers() {
         let queue = queue_store("queue_thread_workers");
-        queue.inner.clear().unwrap();
+        queue.store.wipe().unwrap();
 
         thread::scope(|s| {
             let create = s.spawn(|| {
@@ -568,9 +568,11 @@ mod tests {
             });
 
             create.join().unwrap();
-            let keys = queue
-                .list_keys(&Scope::from_segment(PendingTask::SEGMENT))
-                .unwrap();
+            let keys = queue.store.execute(&Scope::global(), |tran| {
+                tran.list_keys(
+                    &Scope::from_segment(PendingTask::SEGMENT)
+                )
+            }).unwrap();
             assert_eq!(keys.len(), 10);
 
             for _i in 1..=10 {
@@ -600,7 +602,7 @@ mod tests {
     #[test]
     fn test_reschedule_long_running() {
         let queue = queue_store("test_reschedule_long_running");
-        queue.inner.clear().unwrap();
+        queue.store.wipe().unwrap();
 
         let name = "job";
         let segment = Segment::parse(name).unwrap();
@@ -644,7 +646,7 @@ mod tests {
     #[test]
     fn test_reschedule_finished_task() {
         let queue = queue_store("test_reschedule_finished_task");
-        queue.inner.clear().unwrap();
+        queue.store.wipe().unwrap();
 
         let name = "task";
         let segment = Segment::parse(name).unwrap();
@@ -696,7 +698,7 @@ mod tests {
     #[test]
     fn test_schedule_with_existing_task() {
         let queue = queue_store("test_schedule_with_existing_task");
-        queue.inner.clear().unwrap();
+        queue.store.wipe().unwrap();
 
         let name: SegmentBuf = const { Segment::make("task") }.into();
         let value_1 = Value::from("value_1");

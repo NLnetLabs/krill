@@ -64,6 +64,15 @@ impl KrillClient {
         ).map(|_| Success)
     }
 
+    /// Performs a GET request and checks that it gets a 200 OK back.
+    pub fn get_ok_quickly<'a>(
+        &self, path: impl IntoIterator<Item = Cow<'a, str>>
+    ) -> Result<Success, Error> {
+        httpclient::get_ok(
+            &self.create_uri(path), Some(&self.token)
+        ).map(|_| Success)
+    }
+
     /// Performs a GET request expecting a JSON response.
     pub fn get_json<'a, T: DeserializeOwned>(
         &self, path: impl IntoIterator<Item = Cow<'a, str>>
@@ -153,6 +162,10 @@ impl KrillClient {
 /// # High-level commands
 ///
 impl KrillClient {
+    pub fn check_running(&self) -> Result<api::Success, Error> {
+        self.get_ok_quickly(once("api/v1/authorized"))
+    }
+
     pub fn authorized(&self) -> Result<api::Success, Error> {
         self.get_ok(once("api/v1/authorized"))
     }

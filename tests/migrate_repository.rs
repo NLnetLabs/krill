@@ -10,8 +10,8 @@ mod common;
 
 //------------ Test Function -------------------------------------------------
 
-#[tokio::test]
-async fn migrate_repository() {
+#[test]
+fn migrate_repository() {
     let testbed = common::ca_handle("testbed");
 
     let ca1 = common::ca_handle("CA1");
@@ -29,21 +29,21 @@ async fn migrate_repository() {
         |config| {
             config.rrdp_updates_config.rrdp_delta_interval_min_seconds = 5
         }
-    ).await;
+    );
 
     eprintln!(">>>> Start a secondary publication server.");
-    let (pubd, _pubtmp) = common::KrillServer::start_pubd(5).await;
+    let (pubd, _pubtmp) = common::KrillServer::start_pubd(5);
 
     // Wait for the *testbed* CA to get its certificate, this means
     // that all CAs which are set up as part of krill_start under the
     // testbed config have been set up.
     assert!(
-        server.wait_for_ca_resources(&testbed, &ResourceSet::all()).await
+        server.wait_for_ca_resources(&testbed, &ResourceSet::all())
     );
 
     eprintln!(">>>> Set up CA1 under testbed.");
-    server.create_ca_with_repo(&ca1).await;
-    server.register_ca_with_parent(&ca1, &testbed, &ca1_res).await;
+    server.create_ca_with_repo(&ca1);
+    server.register_ca_with_parent(&ca1, &testbed, &ca1_res);
 
     eprintln!(">>>> Create a ROA for CA1.");
     server.client().roas_update(
@@ -51,19 +51,19 @@ async fn migrate_repository() {
         api::RoaConfigurationUpdates::new(
             vec![ca1_roa.into()], vec![]
         )
-    ).await.unwrap();
+    ).unwrap();
 
     eprintln!(">>>> Verify that the testbed published the expected objects");
     let mut files = server.expected_objects(&testbed);
-    files.push_mft_and_crl(&rcn0).await;
-    files.push_cer(&ca1, &rcn0).await;
-    assert!(files.wait_for_published().await);
+    files.push_mft_and_crl(&rcn0);
+    files.push_cer(&ca1, &rcn0);
+    assert!(files.wait_for_published());
 
     eprintln!(">>>> Verify that CA1 publishes in the embedded repo.");
     let mut files = server.expected_objects(&ca1);
-    files.push_mft_and_crl(&rcn0).await;
+    files.push_mft_and_crl(&rcn0);
     files.push(ca1_roa_name.clone());
-    assert!(files.wait_for_published().await);
+    assert!(files.wait_for_published());
 
     eprintln!(">>>> Sanity check the operation of the RRDP endpoint.");
     // Verify that actual RRDP operation is roughly working as expected
@@ -73,24 +73,24 @@ async fn migrate_repository() {
 
     // Verify that requesting rrdp/ on a publishing instance of Krill
     // results in a 404 Not Found error rather than a panic.
-    assert!(server.http_get_404("rrdp/").await);
+    assert!(server.http_get_404("rrdp/"));
 
     // Verify that requesting garbage file and directory URLs results in
     // an error rather than a panic.
-    assert!(server.http_get_404("rrdp/i/dont/exist").await);
-    assert!(server.http_get_404("rrdp/i/dont/exist/").await);
+    assert!(server.http_get_404("rrdp/i/dont/exist"));
+    assert!(server.http_get_404("rrdp/i/dont/exist/"));
 
     // Verify that we can fetch the notification XML.
     let notify = rrdp::NotificationFile::parse(
         server.http_get(
             "rrdp/notification.xml"
-        ).await.unwrap().as_bytes()
+        ).unwrap().as_bytes()
     ).unwrap();
 
     // Verify that we can fetch the snapshot XML.
     let snapshot = httpclient::get_text(
         notify.snapshot().uri().as_str(), None
-    ).await.unwrap();
+    ).unwrap();
     let _ = rrdp::Snapshot::parse(snapshot.as_bytes()).unwrap();
 
     // Verify that attempting to fetch a valid subdirectory results in an
@@ -98,14 +98,14 @@ async fn migrate_repository() {
     assert!(common::check_not_found(
         httpclient::get_text(
             notify.snapshot().uri().parent().unwrap().as_str(), None
-        ).await
+        )
     ));
     assert!(common::check_not_found(
         httpclient::get_text(
             notify.snapshot().uri().parent().unwrap()
                 .as_str().strip_suffix('/').unwrap(),
             None
-        ).await
+        )
     ));
 
     eprintln!(">>>> Migrate a Repository for CA1 (using a keyroll).");
@@ -123,46 +123,46 @@ async fn migrate_repository() {
     //    - nothing published for CA1 in the embedded repo
 
     // Add CA1 to dedicated repo
-    let request = server.client().repo_request(&ca1).await.unwrap();
-    let response = pubd.client().publishers_add(request).await.unwrap();
+    let request = server.client().repo_request(&ca1).unwrap();
+    let response = pubd.client().publishers_add(request).unwrap();
     assert_eq!(
         response,
-        pubd.client().publisher_response(&ca1.convert()).await.unwrap()
+        pubd.client().publisher_response(&ca1.convert()).unwrap()
     );
 
     // Wait a tiny bit.. when we add a new repo we check that it's
     // available or it will be rejected.
-    common::sleep_seconds(1).await;
+    common::sleep_seconds(1);
 
     // Update CA1 to use dedicated repo
-    server.client().repo_update(&ca1, response).await.unwrap();
+    server.client().repo_update(&ca1, response).unwrap();
 
     // This should result in a key roll and content published in both repos
-    assert!(server.wait_for_state_new_key(&ca1).await);
+    assert!(server.wait_for_state_new_key(&ca1));
 
     // Expect that CA1 still publishes two current keys in the embedded repo
     let mut files = server.expected_objects(&ca1);
-    files.push_mft_and_crl(&rcn0).await;
+    files.push_mft_and_crl(&rcn0);
     files.push(ca1_roa_name.clone());
-    assert!(files.wait_for_published().await);
+    assert!(files.wait_for_published());
 
     // Expect that CA1 publishes two new keys in the dedicated repo
     let mut files = server.expected_objects(&ca1);
-    files.push_new_key_mft_and_crl(&rcn0).await;
-    assert!(files.wait_for_published_at(&pubd).await);
+    files.push_new_key_mft_and_crl(&rcn0);
+    assert!(files.wait_for_published_at(&pubd));
 
     // Complete the keyroll, this should remove the content in the
     // embedded repo
-    server.client().ca_activate_keyroll(&ca1).await.unwrap();
-    assert!(server.wait_for_state_active(&ca1).await);
+    server.client().ca_activate_keyroll(&ca1).unwrap();
+    assert!(server.wait_for_state_active(&ca1));
 
     // Expect that CA1 publishes two current keys in the dedicated repo
     let mut files = server.expected_objects(&ca1);
-    files.push_mft_and_crl(&rcn0).await;
+    files.push_mft_and_crl(&rcn0);
     files.push(ca1_roa_name.clone());
-    assert!(files.wait_for_published_at(&pubd).await);
+    assert!(files.wait_for_published_at(&pubd));
 
     // Expect that CA1 publishes nothing in the embedded repo
-    assert!(server.expected_objects(&ca1).wait_for_published().await);
+    assert!(server.expected_objects(&ca1).wait_for_published());
 }
 

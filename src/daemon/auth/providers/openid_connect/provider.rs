@@ -66,13 +66,14 @@ use crate::{
         actor::ActorDef,
         api::Token,
         error::Error,
-        util::{httpclient, sha256},
+        util::sha256,
         KrillResult,
     },
     daemon::{
         auth::{
             common::{
                 crypt::{self, CryptState},
+                http::get_bearer_token,
                 session::*,
             },
             providers::config_file::config::ConfigUserDetails,
@@ -1344,7 +1345,7 @@ impl OpenIDConnectAuthProvider {
             )
         })?;
 
-        let res = match httpclient::get_bearer_token(request) {
+        let res = match get_bearer_token(request) {
             Some(token) => {
                 // see if we can decode, decrypt and deserialize the users
                 // token into a login session structure
@@ -1999,7 +2000,7 @@ impl OpenIDConnectAuthProvider {
     ) -> KrillResult<HttpResponse> {
         // verify the bearer token indeed represents a logged-in Krill OpenID
         // Connect provider session
-        let token = httpclient::get_bearer_token(request).ok_or_else(|| {
+        let token = get_bearer_token(request).ok_or_else(|| {
             warn!("Unexpectedly received a logout request without a session token.");
             Error::ApiInvalidCredentials("Invalid session token".to_string())
         })?;

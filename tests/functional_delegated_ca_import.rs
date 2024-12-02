@@ -12,12 +12,12 @@ mod common;
 
 //------------ Test Function -------------------------------------------------
 
-#[tokio::test]
-async fn functional_delegated_ca_import() {
+#[test]
+fn functional_delegated_ca_import() {
     // Start two testbeds
-    let (server1, _tmp1) = common::KrillServer::start_with_testbed().await;
+    let (server1, _tmp1) = common::KrillServer::start_with_testbed();
     let (server2, _tmp2)
-        = common::KrillServer::start_second_with_testbed().await;
+        = common::KrillServer::start_second_with_testbed();
 
     let testbed = common::ca_handle("testbed");
     let parent_1 = common::ca_handle("parent_1");
@@ -33,58 +33,58 @@ async fn functional_delegated_ca_import() {
     let child_rcn = ResourceClassName::from("custom");
 
     eprintln!(">>>> Add parent1 under testbed in server 1.");
-    server1.add_ca_under_parent(&parent_1, &testbed, &parent_res, None).await;
+    server1.add_ca_under_parent(&parent_1, &testbed, &parent_res, None);
 
     eprintln!(">>>> Add child under parent1 in server 1.");
     server1.add_ca_under_parent(
         &child, &parent_1, &child_res, Some(&child_rcn)
-    ).await;
+    );
 
     eprintln!(">>>> Export the child.");
     let exported = server1.client().child_export(
         &parent_1, &child.convert(),
-    ).await.unwrap();
+    ).unwrap();
 
     eprintln!(">>>> Add parent2 under testbed in server 2.");
-    server2.add_ca_under_parent(&parent_2, &testbed, &parent_res, None).await;
+    server2.add_ca_under_parent(&parent_2, &testbed, &parent_res, None);
 
     eprintln!(">>>> Import child under parent2.");
-    server2.client().child_import(&parent_2, exported).await.unwrap();
+    server2.client().child_import(&parent_2, exported).unwrap();
 
     eprintln!(">>>> Add parent2 as the parent of child.");
     let response = server2.client().child_contact(
         &parent_2, &child.convert()
-    ).await.unwrap();
+    ).unwrap();
     server1.client().parent_add(
         &child, api::ParentCaReq::new(parent_2.convert(), response)
-    ).await.unwrap();
+    ).unwrap();
 
     eprintln!(">>>> Remove the child from the original parent.");
-    server1.client().child_delete(&parent_1, &child.convert()).await.unwrap();
+    server1.client().child_delete(&parent_1, &child.convert()).unwrap();
 
     eprintln!(">>>> Update the resources for the child in parent2.");
     server2.client().child_update(
         &parent_2, &child.convert(),
         api::UpdateChildRequest::resources(child_res_2.clone())
-    ).await.unwrap();
+    ).unwrap();
 
     eprintln!(">>>> Verify that the resources are received.");
-    assert!(server1.wait_for_ca_resources(&child, &child_res_2).await);
+    assert!(server1.wait_for_ca_resources(&child, &child_res_2));
 }
 
 
 //------------ Extend KrillServer --------------------------------------------
 
 impl common::KrillServer {
-    async fn add_ca_under_parent(
+    fn add_ca_under_parent(
         &self, ca: &CaHandle, parent: &CaHandle, resources: &ResourceSet,
         child_rcn: Option<&ResourceClassName>,
     ) {
-        self.create_ca_with_repo(ca).await;
-        let request = self.client().child_request(ca).await.unwrap();
+        self.create_ca_with_repo(ca);
+        let request = self.client().child_request(ca).unwrap();
         let response = self.add_child(
             parent, ca.convert(), request, resources.clone()
-        ).await;
+        );
 
         if let Some(rcn) = child_rcn {
             self.client().child_update(
@@ -95,13 +95,13 @@ impl common::KrillServer {
                         name_for_child: rcn.clone(),
                     }
                 )
-            ).await.unwrap();
+            ).unwrap();
         }
 
         self.client().parent_add(
             ca, api::ParentCaReq::new(parent.convert(), response)
-        ).await.unwrap();
-        assert!(self.wait_for_ca_resources(ca, resources).await);
+        ).unwrap();
+        assert!(self.wait_for_ca_resources(ca, resources));
     }
 }
 
