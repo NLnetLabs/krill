@@ -456,7 +456,7 @@ impl KrillServer {
     /// Returns an expected files check object.
     pub fn expected_objects<'s>(
         &'s self, ca: &'s CaHandle
-    ) -> ExpectedObjects {
+    ) -> ExpectedObjects<'s> {
         ExpectedObjects::new(self, ca)
     }
 }
@@ -745,7 +745,7 @@ impl<'a> ExpectedObjects<'a> {
     }
 }
 
-impl<'a> std::iter::Extend<String> for ExpectedObjects<'a> {
+impl std::iter::Extend<String> for ExpectedObjects<'_> {
     fn extend<T: IntoIterator<Item = String>>(&mut self, iter: T) {
         self.files.extend(iter)
     }

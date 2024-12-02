@@ -844,7 +844,7 @@ mod tests {
         let session_after = stats_after.session();
 
         let snapshot_after_session_reset = find_in_session_and_serial_dir(
-            &data_dir.path(),
+            data_dir.path(),
             &session_after,
             RRDP_FIRST_SERIAL,
             "snapshot.xml",

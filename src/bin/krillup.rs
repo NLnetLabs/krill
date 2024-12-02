@@ -114,6 +114,7 @@ fn main() {
 
 /// The command line options for the krillup command.
 #[derive(clap::Parser)]
+#[command(version)]
 pub struct Options {
     /// Path to the Krill config file
     #[arg(
