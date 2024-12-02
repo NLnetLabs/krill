@@ -1601,7 +1601,7 @@ where
 {
     struct UintOrString(PhantomData<fn() -> SlotIdOrLabel>);
 
-    impl<'de> Visitor<'de> for UintOrString {
+    impl Visitor<'_> for UintOrString {
         type Value = SlotIdOrLabel;
 
         fn expecting(
