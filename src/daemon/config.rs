@@ -642,7 +642,10 @@ pub struct Config {
 
     pub benchmark: Option<Benchmark>,
 
-    #[serde(default)]
+    #[serde(
+        default,
+        alias="timing_config"
+    )]
     pub ta_timing: TaTimingConfig,
 }
 
