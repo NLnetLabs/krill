@@ -5,11 +5,9 @@ pkg:
   - "krillup"
   - "krillta"
 image:
-  - "ubuntu:xenial" # ubuntu/16.04
-  - "ubuntu:bionic" # ubuntu/18.04
   - "ubuntu:focal" # ubuntu/20.04
   - "ubuntu:jammy" # ubuntu/22.04
-  - "debian:stretch" # debian/9
+  - "ubuntu:noble" # ubuntu/24.04
   - "debian:buster" # debian/10
   - "debian:bullseye" # debian/11
   - "debian:bookworm" # debian/12
@@ -70,14 +68,14 @@ include:
     image: "debian:buster"
     target: "aarch64-unknown-linux-gnu"
 
-# Exclude upgrade testing on Debian Bookworm as no prior released versions exist to upgrade from.
+# Exclude upgrade testing on Ubuntu Noble as no prior released versions exist to upgrade from.
 exclude:
   - pkg: "krill"
-    image: "debian:bookworm"
+    image: "ubuntu:noble"
     mode: "upgrade-from-published"
   - pkg: "krillta"
-    image: "debian:bookworm"
+    image: "ubuntu:noble"
     mode: "upgrade-from-published"
   - pkg: "krillup"
-    image: "debian:bookworm"
+    image: "ubuntu:noble"
     mode: "upgrade-from-published"
