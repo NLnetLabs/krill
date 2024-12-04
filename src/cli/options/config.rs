@@ -20,7 +20,7 @@ pub enum Command {
 }
 
 impl Command {
-    pub async fn run(self, client: &KrillClient) -> Report {
+    pub fn run(self, client: &KrillClient) -> Report {
         match self {
             Self::Simple(cmd) => cmd.run(client).into(),
             

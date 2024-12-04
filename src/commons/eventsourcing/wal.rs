@@ -5,14 +5,13 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use kvx::Namespace;
 use rpki::ca::idexchange::MyHandle;
 use serde::Serialize;
 use url::Url;
 
-use crate::commons::eventsourcing::{
-    segment, Key, KeyValueError, KeyValueStore, Scope, Segment, SegmentExt,
-    Storable,
+use crate::commons::eventsourcing::Storable;
+use crate::commons::storage::{
+    Key, KeyValueError, KeyValueStore,Namespace, Scope, Segment
 };
 
 //------------ WalSupport ----------------------------------------------------
@@ -166,8 +165,7 @@ impl<T: WalSupport> WalStore<T> {
         self.kv
             .execute(&scope, |kv| {
                 let key = Self::key_for_snapshot(handle);
-                let json = serde_json::to_value(instance.as_ref())?;
-                kv.store(&key, json)?;
+                kv.store(&key, instance.as_ref())?;
 
                 self.cache_update(handle, instance.clone());
 
@@ -266,8 +264,7 @@ impl<T: WalSupport> WalStore<T> {
                         match kv.get(&key)? {
                             Some(value) => {
                                 trace!("Deserializing stored instance for '{handle}'");
-                                let latest: T = serde_json::from_value(value)?;
-                                Some(Arc::new(latest))
+                                Some(Arc::new(value))
                             }
                             None => {
                                 trace!("No instance found instance for '{handle}'");
@@ -300,9 +297,8 @@ impl<T: WalSupport> WalStore<T> {
                         let key = Self::key_for_wal_set(handle, revision);
 
                         if let Some(value) = kv.get(&key)? {
-                            let set: WalSet<T> = serde_json::from_value(value)?;
                             trace!("applying revision '{revision}' to '{handle}'");
-                            latest_inner.apply(set);
+                            latest_inner.apply(value);
                             changed_from_cached = true;
                         } else {
                             break;
@@ -351,11 +347,9 @@ impl<T: WalSupport> WalStore<T> {
                                         std::process::exit(1);
                                     }
 
-                                    let json = serde_json::to_value(&set)?;
+                                    latest_inner.apply(set.clone());
 
-                                    latest_inner.apply(set);
-
-                                    kv.store(&key_for_wal_set, json)?;
+                                    kv.store(&key_for_wal_set, &set)?;
                                 }
                             }
                         }
@@ -369,8 +363,7 @@ impl<T: WalSupport> WalStore<T> {
                 if save_snapshot {
                     // Save the latest version as snapshot
                     let key = Self::key_for_snapshot(handle);
-                    let value = serde_json::to_value(latest.as_ref())?;
-                    kv.store(&key, value)?;
+                    kv.store(&key, latest.as_ref())?;
 
                     // Delete all wal sets (changes), since we are doing
                     // this inside a transaction or locked scope we can
@@ -424,7 +417,7 @@ impl<T: WalSupport> WalStore<T> {
     fn key_for_snapshot(handle: &MyHandle) -> Key {
         Key::new_scoped(
             Self::scope_for_handle(handle),
-            segment!("snapshot.json"),
+            const { Segment::make("snapshot.json") },
         )
     }
 

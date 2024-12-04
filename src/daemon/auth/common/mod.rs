@@ -1,6 +1,7 @@
 #[cfg(feature = "multi-user")]
 pub mod crypt;
 
+pub mod http;
 pub mod permissions;
 
 #[derive(Debug, Clone)]

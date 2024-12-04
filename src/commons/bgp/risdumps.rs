@@ -31,22 +31,20 @@ impl RisDumpLoader {
         }
     }
 
-    pub async fn download_updates(
+    pub fn download_updates(
         &self,
     ) -> Result<Vec<Announcement>, RisDumpError> {
-        let v4_bytes: Bytes = reqwest::get(&self.bgp_risdumps_v4_uri)
-            .await?
-            .bytes()
-            .await?;
+        let v4_bytes: Bytes = reqwest::blocking::get(
+            &self.bgp_risdumps_v4_uri
+        )?.bytes()?;
 
         let v4_bytes = Self::gunzip(v4_bytes)?;
 
         let mut res = Self::parse_dump(v4_bytes.as_slice())?;
 
-        let v6_bytes: Bytes = reqwest::get(&self.bgp_risdumps_v6_uri)
-            .await?
-            .bytes()
-            .await?;
+        let v6_bytes: Bytes = reqwest::blocking::get(
+            &self.bgp_risdumps_v6_uri
+        )?.bytes()?;
 
         let v6_bytes = Self::gunzip(v6_bytes)?;
 
@@ -174,9 +172,9 @@ impl From<KrillIoError> for RisDumpError {
 mod tests {
     use super::*;
 
-    #[tokio::test]
+    #[test]
     #[ignore]
-    async fn download_bgp_ris_dumps() {
+    fn download_bgp_ris_dumps() {
         let bgp_ris_dump_v4_uri =
             "http://www.ris.ripe.net/dumps/riswhoisdump.IPv4.gz";
         let bgp_ris_dump_v6_uri =
@@ -184,7 +182,7 @@ mod tests {
 
         let loader =
             RisDumpLoader::new(bgp_ris_dump_v4_uri, bgp_ris_dump_v6_uri);
-        let announcements = loader.download_updates().await.unwrap();
+        let announcements = loader.download_updates().unwrap();
 
         assert!(!announcements.is_empty())
     }

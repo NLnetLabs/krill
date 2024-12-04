@@ -23,7 +23,10 @@ use crate::{
             RoaPayload,
         },
         crypto::SignerError,
-        eventsourcing::{AggregateStoreError, KeyValueError},
+        eventsourcing::AggregateStoreError,
+        queue,
+        storage,
+        storage::KeyValueError,
         util::httpclient,
     },
     daemon::{ca::RoaPayloadJsonMapKey, http::tls_keys},
@@ -193,6 +196,7 @@ pub enum Error {
     //-----------------------------------------------------------------
     IoError(KrillIoError),
     KeyValueError(KeyValueError),
+    QueueError(queue::Error),
     AggregateStoreError(AggregateStoreError),
     WalStoreError(WalStoreError),
     SignerError(String),
@@ -371,6 +375,7 @@ impl fmt::Display for Error {
             //-----------------------------------------------------------------
             Error::IoError(e) => write!(f, "I/O error: {}", e),
             Error::KeyValueError(e) => write!(f, "Key/Value error: {}", e),
+            Error::QueueError(e) => write!(f, "Queue error: {}", e),
             Error::AggregateStoreError(e) => write!(f, "Persistence (aggregate store) error: {}", e),
             Error::WalStoreError(e) => write!(f, "Persistence (wal store) error: {}", e),
             Error::SignerError(e) => write!(f, "Signing issue: {}", e),
@@ -573,8 +578,8 @@ impl From<KeyValueError> for Error {
     }
 }
 
-impl From<kvx::Error> for Error {
-    fn from(e: kvx::Error) -> Self {
+impl From<storage::Error> for Error {
+    fn from(e: storage::Error) -> Self {
         Error::KeyValueError(KeyValueError::Inner(e))
     }
 }
@@ -582,6 +587,12 @@ impl From<kvx::Error> for Error {
 impl From<AggregateStoreError> for Error {
     fn from(e: AggregateStoreError) -> Self {
         Error::AggregateStoreError(e)
+    }
+}
+
+impl From<queue::Error> for Error {
+    fn from(e: queue::Error) -> Self {
+        Error::QueueError(e)
     }
 }
 
@@ -739,6 +750,11 @@ impl Error {
 
             // internal server error
             Error::AggregateStoreError(e) => {
+                ErrorResponse::new("sys-store", self).with_cause(e)
+            }
+
+            // internal server error
+            Error::QueueError(e) => {
                 ErrorResponse::new("sys-store", self).with_cause(e)
             }
 

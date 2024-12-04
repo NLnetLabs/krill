@@ -26,15 +26,15 @@ struct Args {
 
 //------------ main ----------------------------------------------------------
 
-#[tokio::main]
-async fn main() {
+fn main() {
     let args = Args::parse();
+    let (_, cancel) = tokio::sync::oneshot::channel();
 
     match Config::create(&args.config, false) {
         Ok(config) => {
             if let Err(e) = server::start_krill_daemon(
-                Arc::new(config), None
-            ).await {
+                Arc::new(config), None, cancel
+            ) {
                 error!("Krill failed to start: {}", e);
                 ::std::process::exit(1);
             }

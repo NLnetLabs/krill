@@ -15,6 +15,7 @@ pub use self::signer::*;
 
 pub const TA_NAME: &str = "ta"; // reserved for TA
 
+
 //------------ TrustAnchor Handle Types -------------------------------------
 
 pub type TrustAnchorHandle = CaHandle;
@@ -28,24 +29,21 @@ fn ta_resource_class_name() -> rpki::ca::provisioning::ResourceClassName {
     "default".into()
 }
 
-//----------------- TESTS ----------------------------------------------------
+
+//================= Tests ====================================================
+
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+    use std::time::Duration;
     use rpki::ca::idexchange::{RepoInfo, ServiceUri};
-
+    use crate::commons::api::{PublicationServerInfo, RepositoryContact};
+    use crate::commons::crypto::KrillSignerBuilder;
+    use crate::commons::eventsourcing::AggregateStore;
+    use crate::commons::storage::Namespace;
+    use crate::daemon::config::ConfigDefaults;
+    use crate::test;
     use super::*;
-
-    use std::{sync::Arc, time::Duration};
-
-    use crate::{
-        commons::{
-            api::{PublicationServerInfo, RepositoryContact},
-            crypto::KrillSignerBuilder,
-            eventsourcing::{namespace, AggregateStore, Namespace},
-        },
-        daemon::config::ConfigDefaults,
-        test,
-    };
 
     #[test]
     fn init_ta() {
@@ -57,14 +55,14 @@ mod tests {
             let ta_signer_store: AggregateStore<TrustAnchorSigner> =
                 AggregateStore::create(
                     storage_uri,
-                    namespace!("ta_signer"),
+                    const { Namespace::make("ta_signer") },
                     false,
                 )
                 .unwrap();
             let ta_proxy_store: AggregateStore<TrustAnchorProxy> =
                 AggregateStore::create(
                     storage_uri,
-                    namespace!("ta_proxy"),
+                    const { Namespace::make("ta_proxy") },
                     false,
                 )
                 .unwrap();
