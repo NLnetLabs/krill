@@ -215,7 +215,7 @@ impl KeyValueStore {
             )))
         } else {
             self.inner
-                .migrate_namespace(namespace.into())
+                .migrate_namespace(namespace)
                 .map_err(KeyValueError::Inner)
         }
     }

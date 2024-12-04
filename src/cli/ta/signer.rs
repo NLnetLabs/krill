@@ -111,8 +111,7 @@ impl TrustAnchorSignerManager {
             &config.storage_uri,
             const { Namespace::make("signer") },
             config.use_history_cache,
-        )
-        .map_err(|err| SignerClientError::other(err))?;
+        ).map_err(SignerClientError::other)?;
         let ta_handle = TrustAnchorHandle::new("ta".into());
         let signer = config.signer()?;
         let actor = Actor::krillta();

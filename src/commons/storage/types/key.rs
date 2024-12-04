@@ -97,7 +97,7 @@ impl str::FromStr for Key {
 
 impl fmt::Display for Key {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if self.scope.is_global() {
+        if self.scope.is_empty() {
             write!(f, "{}", self.name)
         } else {
             write!(f, "{}{}{}", self.scope, Segment::SEPARATOR, self.name)

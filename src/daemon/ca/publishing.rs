@@ -298,11 +298,7 @@ impl CaObjectsStore {
     ) -> KrillResult<bool> {
         debug!("Re-issue for CA {} using force: {}", ca_handle, force);
         self.with_ca_objects(ca_handle, |objects| {
-            Ok(objects.re_issue(
-                force,
-                &self.issuance_timing,
-                &self.signer,
-            )?)
+            objects.re_issue(force, &self.issuance_timing, &self.signer)
         })
     }
 }

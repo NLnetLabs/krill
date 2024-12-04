@@ -305,7 +305,7 @@ struct TaskKey<'a> {
     pub timestamp_millis: u128,
 }
 
-impl<'a> TaskKey<'a> {
+impl TaskKey<'_> {
     fn key(&self) -> Key {
         Key::from_str(&format!(
             "{}{}{}",
@@ -375,17 +375,14 @@ impl PendingTask<'static> {
     const SEGMENT: &'static Segment = Segment::make("pending");
 }
 
-impl<'a> PendingTask<'a> {
 
-}
-
-impl<'a, 'b> PartialEq<PendingTask<'b>> for PendingTask<'a> {
-    fn eq(&self, other: &PendingTask<'b>) -> bool {
+impl<'a> PartialEq<PendingTask<'a>> for PendingTask<'_> {
+    fn eq(&self, other: &PendingTask<'a>) -> bool {
         self.name == other.name
     }
 }
 
-impl<'a> fmt::Display for PendingTask<'a> {
+impl fmt::Display for PendingTask<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -632,7 +629,7 @@ mod tests {
             .reschedule_long_running_tasks(Some(&Duration::from_secs(0)))
             .unwrap();
 
-        let existing = queue.pending_task_scheduled(segment.into()).unwrap();
+        let existing = queue.pending_task_scheduled(segment).unwrap();
 
         assert!(existing.is_some());
         assert_eq!(queue.pending_tasks_remaining().unwrap(), 1);

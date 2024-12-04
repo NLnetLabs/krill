@@ -54,10 +54,8 @@ impl Store {
                 // The scope was not yet present. We’ve won and can go on.
                 break
             }
-            else {
-                if i >= tries {
-                    return Err(Error::ScopeLocked(scope.clone()).into())
-                }
+            else if i >= tries {
+                return Err(Error::ScopeLocked(scope.clone()).into())
             }
             thread::sleep(wait);
         }

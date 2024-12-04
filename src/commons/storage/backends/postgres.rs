@@ -178,7 +178,7 @@ pub struct Transaction<'a> {
 
 /// # Reading
 ///
-impl<'a> Transaction<'a> {
+impl Transaction<'_> {
     pub fn has(&mut self, key: &Key) -> Result<bool, Error> {
         Ok(
             self.transaction.query_opt(
@@ -259,7 +259,7 @@ impl<'a> Transaction<'a> {
 
 
 /// # Writing
-impl<'a> Transaction<'a> {
+impl Transaction<'_> {
     pub fn store<T: Serialize>(
         &mut self, key: &Key, value: &T
     ) -> Result<(), Error> {
@@ -337,7 +337,7 @@ impl<'a> Transaction<'a> {
 
 //--- Debug
 
-impl<'a> fmt::Debug for Transaction<'a> {
+impl fmt::Debug for Transaction<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("Transaction")
             .field("namespace", &self.namespace)

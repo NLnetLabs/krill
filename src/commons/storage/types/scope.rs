@@ -39,7 +39,7 @@ impl Scope {
     }
 
     /// Returns whether the scope is the global scope, ie., empty.
-    pub fn is_global(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.segments.is_empty()
     }
 

@@ -177,22 +177,22 @@ impl Store {
 
     /// Returns whether the store contains the given key.
     pub fn has(&self, key: &Key) -> Result<bool, Error> {
-        Ok(self.key_path(key).try_exists().map_err(|err| {
+        self.key_path(key).try_exists().map_err(|err| {
             Error::io(
                 format!("failed to check existance of key '{}'", key),
                 err
             )
-        })?)
+        })
     }
 
     /// Returns whether the store contains the given scope.
     pub fn has_scope(&self, scope: &Scope) -> Result<bool, Error> {
-        Ok(self.scope_path(scope).try_exists().map_err(|err| {
+        self.scope_path(scope).try_exists().map_err(|err| {
             Error::io(
                 format!("failed to check existance of scope '{}'", scope),
                 err
             )
-        })?)
+        })
     }
 
     /// Returns the contents of the stored value with the given key.
@@ -256,7 +256,7 @@ impl Store {
     fn list_dir_keys(
         &self, path: &Path, res: &mut Vec<Key>
     ) -> Result<(), Error> {
-        let dir = match fs::read_dir(&path) {
+        let dir = match fs::read_dir(path) {
             Ok(dir) => dir,
             Err(err) if err.kind() == io::ErrorKind::NotFound => {
                 return Ok(());
@@ -328,7 +328,7 @@ impl Store {
     fn list_dir_scopes(
         &self, path: &Path, res: &mut Vec<Scope>
     ) -> Result<(), Error> {
-        let dir = match fs::read_dir(&path) {
+        let dir = match fs::read_dir(path) {
             Ok(dir) => dir,
             Err(err) if err.kind() == io::ErrorKind::NotFound => {
                 return Ok(());

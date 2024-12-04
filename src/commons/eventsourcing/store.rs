@@ -83,15 +83,13 @@ impl<A: Aggregate> AggregateStore<A> {
         let pre_save_listeners = vec![];
         let post_save_listeners = vec![];
 
-        let store = AggregateStore {
+        AggregateStore {
             kv,
             cache,
             history_cache,
             pre_save_listeners,
             post_save_listeners,
-        };
-
-        store
+        }
     }
 
     /// Warms up the cache, to be used after startup. Will fail if any
