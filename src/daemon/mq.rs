@@ -346,6 +346,16 @@ impl TaskQueue {
         self.q.finish_running_task(task).map_err(Error::from)
     }
 
+    /// Check whether a task still exists in execution
+    pub fn finished(&self, task_name: &str) -> KrillResult<bool> {
+        for key in self.q.running_tasks_keys()? {
+            if key.name().as_str().ends_with(task_name) {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
     /// Reschedule a running task, without finishing it.
     pub fn reschedule(
         &self,
