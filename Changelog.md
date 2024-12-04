@@ -29,9 +29,13 @@ Bug Fixes
 
 Other changes
 
+* Added packaging support for Ubuntu Noble; removed packaging support for
+  Ubuntu Xenial and Bionic, and Debian Stretch. ([#1239])
+
 [#1215]: https://github.com/NLnetLabs/krill/pull/1215
 [#1226]: https://github.com/NLnetLabs/krill/pull/1226
 [#1228]: https://github.com/NLnetLabs/krill/pull/1228
+[#1239]: https://github.com/NLnetLabs/krill/pull/1239
 [#1241]: https://github.com/NLnetLabs/krill/pull/1241
 
 
