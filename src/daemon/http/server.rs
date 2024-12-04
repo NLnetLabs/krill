@@ -1021,7 +1021,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
 
 //------------ Publication ---------------------------------------------------
 
-/// MyHandle RFC8181 queries and return the appropriate response.
+/// Handle RFC8181 queries and return the appropriate response.
 pub async fn rfc8181(req: Request) -> RoutingResult {
     if req.path().segment() == "rfc8181" {
         let mut path = req.path().clone();

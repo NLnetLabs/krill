@@ -1662,12 +1662,23 @@ impl AuthProvider {
                     id_token_claims, user_info_claims
                 );
                 let id = claims.extract_claims(
-                    "id", &self.oidc_conf()?.id_claims
-                )?;
+                    &self.oidc_conf()?.id_claims
+                )?.ok_or_else(|| {
+                    Self::internal_error(
+                        format!("OpenID Connect: cannot determine user ID."),
+                        None
+                    )
+                })?;
                 let role_name = claims.extract_claims(
-                    "role", &self.oidc_conf()?.role_claims
-                )?;
-
+                    &self.oidc_conf()?.role_claims
+                )?.ok_or_else(|| {
+                    Self::internal_error(
+                        format!(
+                            "OpenID Connect: cannot determine user's role."
+                        ),
+                        None
+                    )
+                })?;
                 let role = self.config.auth_roles.get(
                     &role_name
                 ).ok_or_else(|| {

@@ -35,23 +35,22 @@ impl<'a> Claims<'a> {
     }
 
     pub fn extract_claims(
-        &mut self, dest: &str, conf: &[TransformationRule],
-    ) -> KrillResult<Arc<str>> {
+        &mut self, conf: &[TransformationRule],
+    ) -> KrillResult<Option<Arc<str>>> {
         for rule in conf {
             match rule {
-                TransformationRule::Fixed(subst) => return Ok(subst.clone()),
+                TransformationRule::Fixed(subst) => {
+                    return Ok(Some(subst.clone()))
+                }
                 TransformationRule::Match(rule) => {
                     if let Some(res) = self.process_match_rule(rule)? {
-                        return Ok(res)
+                        return Ok(Some(res))
                     }
                 }
             }
         }
 
-        Err(Self::internal_error(
-            format!("OpenID Connect: no value found for '{}' claim.", dest),
-            None
-        ))
+        Ok(None)
     }
 
     fn process_match_rule(
