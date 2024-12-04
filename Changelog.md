@@ -4,7 +4,15 @@
 
 Bug fixes
 
+* Fixed the naming of the trust anchor timing configuration. It was
+  expected to be `timing_config` for the config used by Krill and
+  `ta_timing` if used by the Krill TA signer. It is now `ta_timing` in
+  both cases while `timing_config` is accepted as an alias in both cases.
+  ([#1242])
+
 Other changes
+
+[#1242]: https://github.com/NLnetLabs/krill/pull/1242
 
 
 ## 0.14.5 ‘Who dis? New Phone’
