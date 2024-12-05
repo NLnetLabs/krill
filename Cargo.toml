@@ -256,6 +256,9 @@ depends = "$auto, passwd"
 [package.metadata.deb.variants.debian-bookworm]
 depends = "$auto, passwd, libssl3"
 
+[package.metadata.deb.variants.ubuntu-noble]
+depends = "$auto, passwd, libssl3"
+
 # Cross compilation variants:
 # Note: we have to specifiy dependencies manually because we don't run cargo-deb
 # on the target platform and so it cannot determine the dependencies correctly

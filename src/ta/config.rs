@@ -130,8 +130,11 @@ pub struct Config {
     #[serde(default = "crate::daemon::config::ConfigDefaults::signers")]
     pub signers: Vec<SignerConfig>,
 
-    #[serde(default)]
-    pub timing_config: TaTimingConfig,
+    #[serde(
+        default,
+        alias="timing_config"
+    )]
+    pub ta_timing: TaTimingConfig,
 }
 
 impl Config {
