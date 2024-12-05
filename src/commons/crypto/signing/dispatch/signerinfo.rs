@@ -11,7 +11,6 @@ use url::Url;
 
 use crate::{
     commons::{
-        actor::Actor,
         api::CommandSummary,
         crypto::SignerHandle,
         error::Error,
@@ -237,8 +236,7 @@ impl SignerInfoCommand {
             *key_id,
             internal_key_id.to_string(),
         );
-        let actor = Actor::actor_from_def(ACTOR_DEF_KRILL);
-        Self::new(id, version, details, &actor)
+        Self::new(id, version, details, &ACTOR_DEF_KRILL)
     }
 
     pub fn remove_key(
@@ -247,8 +245,7 @@ impl SignerInfoCommand {
         key_id: &KeyIdentifier,
     ) -> Self {
         let details = SignerInfoCommandDetails::RemoveKey(*key_id);
-        let actor = Actor::actor_from_def(ACTOR_DEF_KRILL);
-        Self::new(id, version, details, &actor)
+        Self::new(id, version, details, &ACTOR_DEF_KRILL)
     }
 
     pub fn change_signer_name(
@@ -259,8 +256,7 @@ impl SignerInfoCommand {
         let details = SignerInfoCommandDetails::ChangeSignerName(
             signer_name.to_string(),
         );
-        let actor = Actor::actor_from_def(ACTOR_DEF_KRILL);
-        Self::new(id, version, details, &actor)
+        Self::new(id, version, details, &ACTOR_DEF_KRILL)
     }
 
     pub fn change_signer_info(
@@ -271,8 +267,7 @@ impl SignerInfoCommand {
         let details = SignerInfoCommandDetails::ChangeSignerInfo(
             signer_info.to_string(),
         );
-        let actor = Actor::actor_from_def(ACTOR_DEF_KRILL);
-        Self::new(id, version, details, &actor)
+        Self::new(id, version, details, &ACTOR_DEF_KRILL)
     }
 }
 
@@ -494,7 +489,6 @@ impl SignerMapper {
                     ))
                 })?;
 
-        let actor = Actor::system_actor();
         let cmd = SignerInfoInitCommand::new(
             &signer_handle,
             SignerInfoInitCommandDetails {
@@ -504,7 +498,7 @@ impl SignerMapper {
                 public_key: public_key.clone(),
                 private_key_internal_id: private_key_internal_id.to_string(),
             },
-            &actor,
+            &ACTOR_DEF_KRILL,
         );
 
         self.store.add(cmd)?;

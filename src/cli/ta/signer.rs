@@ -116,7 +116,7 @@ impl TrustAnchorSignerManager {
         .map_err(KrillError::AggregateStoreError)?;
         let ta_handle = TrustAnchorHandle::new("ta".into());
         let signer = config.signer()?;
-        let actor = Actor::krillta();
+        let actor = crate::constants::ACTOR_DEF_KRILLTA;
 
         Ok(TrustAnchorSignerManager {
             store,

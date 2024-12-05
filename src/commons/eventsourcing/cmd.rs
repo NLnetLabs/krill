@@ -183,17 +183,11 @@ impl<C: CommandDetails> SentCommand<C> {
         details: C,
         actor: &Actor,
     ) -> Self {
-        let actor_name = if actor.is_user() {
-            format!("user:{}", actor.name())
-        } else {
-            actor.name().to_string()
-        };
-
         SentCommand {
             handle: id.clone(),
             version,
             details,
-            actor: actor_name,
+            actor: actor.audit_name(),
         }
     }
 

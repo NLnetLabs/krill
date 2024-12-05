@@ -1,48 +1,71 @@
+//! Auth provider using a pre-defined token.
+
 use std::sync::Arc;
-
+use crate::commons::KrillResult;
+use crate::commons::api::Token;
+use crate::commons::error::{ApiAuthError, Error};
+use crate::commons::util::httpclient;
+use crate::daemon::auth::{AuthInfo, LoggedInUser, Role};
+use crate::daemon::config::Config;
 use crate::daemon::http::{HttpResponse, HyperRequest};
-use crate::{
-    commons::{
-        actor::ActorDef, api::Token, error::Error, util::httpclient,
-        KrillResult,
-    },
-    constants::ACTOR_DEF_ADMIN_TOKEN,
-    daemon::{auth::LoggedInUser, config::Config},
-};
 
-// This is NOT an actual relative path to redirect to. Instead it is the path
-// string of an entry in the Vue router routes table to "route" to (in the
-// Lagosta single page application). See the routes array in router.js of the
-// Lagosta source code. Ideally we could instead return a route name and then
-// Lagosta could change this path without requiring that we update to match.
+
+//------------ Constants -----------------------------------------------------
+
+/// The path defined in Krill UI for the login view.
 const LAGOSTA_LOGIN_ROUTE_PATH: &str = "/login";
 
-pub struct AdminTokenAuthProvider {
+
+//------------ AuthProvider --------------------------------------------------
+
+/// The admin token auth provider.
+///
+/// This auth provider takes a single token from the configuration and
+/// only allows requests that carry this token as a bearer token.
+///
+/// Currently, this provider is hard-coded to translate this token into
+/// a user named “admin” having the admin special role which allows
+/// everything everywhere all at once.
+pub struct AuthProvider {
+    /// The configured token to compare with.
     required_token: Token,
+
+    /// The user name of the actor if authentication succeeds.
+    user_id: Arc<str>,
+
+    /// The role to use if authentication succeeds.
+    role: Arc<Role>,
 }
 
-impl AdminTokenAuthProvider {
+impl AuthProvider {
+    /// Creates a new admin token auth provider from the given config.
     pub fn new(config: Arc<Config>) -> Self {
-        AdminTokenAuthProvider {
+        AuthProvider {
             required_token: config.admin_token.clone(),
+            user_id: "admin-token".into(),
+            role: Role::admin().into(),
         }
     }
-}
-
-impl AdminTokenAuthProvider {
+    
+    /// Authenticates a user from information included in an HTTP request.
+    ///
+    /// If there request has a bearer token, returns `Ok(Some(_))` if it
+    /// matches the configured token or `Err(_)` otherwise. If there is no
+    /// bearer token, returns `Ok(None)`.
     pub fn authenticate(
-        &self,
-        request: &HyperRequest,
-    ) -> KrillResult<Option<ActorDef>> {
+        &self, request: &HyperRequest,
+    ) -> Result<Option<AuthInfo>, ApiAuthError> {
         if log_enabled!(log::Level::Trace) {
             trace!("Attempting to authenticate the request..");
         }
 
         let res = match httpclient::get_bearer_token(request) {
             Some(token) if token == self.required_token => {
-                Ok(Some(ACTOR_DEF_ADMIN_TOKEN))
+                Ok(Some(AuthInfo::user(
+                    self.user_id.clone(), self.role.clone()
+                )))
             }
-            Some(_) => Err(Error::ApiInvalidCredentials(
+            Some(_) => Err(ApiAuthError::ApiInvalidCredentials(
                 "Invalid bearer token".to_string(),
             )),
             None => Ok(None),
@@ -55,30 +78,33 @@ impl AdminTokenAuthProvider {
         res
     }
 
+    /// Returns an HTTP text response with the login URL.
     pub fn get_login_url(&self) -> KrillResult<HttpResponse> {
         // Direct Lagosta to show the user the Lagosta API token login form
         Ok(HttpResponse::text_no_cache(LAGOSTA_LOGIN_ROUTE_PATH.into()))
     }
 
+    /// Establishes a client session from credentials in an HTTP request.
     pub fn login(&self, request: &HyperRequest) -> KrillResult<LoggedInUser> {
         match self.authenticate(request)? {
-            Some(actor_def) => Ok(LoggedInUser {
-                token: self.required_token.clone(),
-                id: actor_def.name.as_str().to_string(),
-                attributes: actor_def.attributes.as_map(),
-            }),
+            Some(_actor) => Ok(LoggedInUser::new(
+                self.required_token.clone(),
+                self.user_id.as_ref().into(),
+                "admin".into(),
+            )),
             None => Err(Error::ApiInvalidCredentials(
                 "Missing bearer token".to_string(),
             )),
         }
     }
 
+    /// Returns an HTTP text response with the logout URL.
     pub fn logout(
         &self,
         request: &HyperRequest,
     ) -> KrillResult<HttpResponse> {
-        if let Ok(Some(actor)) = self.authenticate(request) {
-            info!("User logged out: {}", actor.name.as_str());
+        if let Ok(Some(info)) = self.authenticate(request) {
+            info!("User logged out: {}", info.actor().name());
         }
 
         // Logout is complete, direct Lagosta to show the user the Lagosta
@@ -86,3 +112,4 @@ impl AdminTokenAuthProvider {
         Ok(HttpResponse::text_no_cache(b"/".to_vec()))
     }
 }
+

@@ -22,13 +22,11 @@
 // 4: https://github.com/NLnetLabs/krill/issues/382
 
 use std::sync::atomic::{AtomicU64, Ordering};
-
 use kvx::{namespace, segment, Key, Namespace, Segment};
-
-use crate::{
-    commons::{error::Error, util::ext_serde, KrillResult},
-    daemon::config::Config,
-};
+use crate::commons::KrillResult;
+use crate::commons::error::{ApiAuthError, Error};
+use crate::commons::util::ext_serde;
+use crate::daemon::config::Config;
 
 const CHACHA20_KEY_BIT_LEN: usize = 256;
 const CHACHA20_KEY_BYTE_LEN: usize = CHACHA20_KEY_BIT_LEN / 8;
@@ -100,17 +98,6 @@ impl CryptState {
             nonce: NonceState::new()?,
         })
     }
-
-    pub fn from_key_vec(key_vec: Vec<u8>) -> KrillResult<CryptState> {
-        let boxed_array: Box<[u8; CHACHA20_KEY_BYTE_LEN]> =
-            key_vec.into_boxed_slice().try_into().map_err(|_| {
-                Error::custom(
-                    "Unable to process session encryption key".to_string(),
-                )
-            })?;
-
-        Self::from_key_bytes(*boxed_array)
-    }
 }
 
 // Returns nonce + tag + cipher text, or an error.
@@ -145,11 +132,13 @@ pub(crate) fn encrypt(
 
 // `payload` should be of the form nonce + tag + cipher text.
 // Returns the plain text resulting from decryption, or an error.
-pub(crate) fn decrypt(key: &[u8], payload: &[u8]) -> KrillResult<Vec<u8>> {
+pub(crate) fn decrypt(
+    key: &[u8], payload: &[u8]
+) -> Result<Vec<u8>, ApiAuthError> {
     // TODO: Do we need to get the cipher each time or could we do this just
     // once?
     if payload.len() <= CLEARTEXT_PREFIX_LEN {
-        return Err(Error::Custom(
+        return Err(ApiAuthError::ApiInvalidCredentials(
             "Decryption error: Insufficient data".to_string(),
         ));
     }
@@ -167,7 +156,11 @@ pub(crate) fn decrypt(key: &[u8], payload: &[u8]) -> KrillResult<Vec<u8>> {
         cipher_text,
         tag,
     )
-    .map_err(|err| Error::Custom(format!("Decryption error: {}", &err)))
+    .map_err(|err| {
+        ApiAuthError::ApiInvalidCredentials(
+            format!("Decryption error: {}", &err)
+        )
+    })
 }
 
 pub(crate) fn crypt_init(config: &Config) -> KrillResult<CryptState> {
