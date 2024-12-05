@@ -2,9 +2,9 @@ use std::{collections::HashMap, ops::Range};
 
 use intervaltree::IntervalTree;
 
-use rpki::repository::resources::ResourceSet;
+use rpki::repository::resources::{Addr, AddressRange, ResourceSet};
 
-use crate::commons::api::TypedPrefix;
+use crate::commons::api::{Ipv4Prefix, Ipv6Prefix, TypedPrefix};
 
 //------------ IpRange -----------------------------------------------------
 
@@ -43,6 +43,35 @@ impl IpRange {
 
     pub fn is_contained_by(&self, other: &Range<u128>) -> bool {
         other.start <= self.0.start && other.end >= self.0.end
+    }
+
+    pub fn to_prefixes(&self) -> Vec<TypedPrefix> {
+        let is_ipv4 = 
+            (self.0.start & 0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_0000_0000) == 
+                0x0000_0000_0000_0000_0000_FFFF_0000_0000;
+
+        let mut min = self.0.start;
+        let mut max = self.0.end;
+
+        if is_ipv4 {
+            // Krill stores IPv4 internally as an IPv4-mapped IPv6 address,
+            // rpki-rs stores IPv4 addresses in the top bytes, so that prefix
+            // handling works regardless of the IP type.
+            min <<= 96;
+            max <<= 96;
+        }
+
+        let range = AddressRange::from((
+            Addr::from_bits(min), 
+            Addr::from_bits(max)
+        ));
+
+        match is_ipv4 {
+            true => range.to_v4_prefixes()
+                .map(|x| TypedPrefix::from(Ipv4Prefix::from(x))).collect(),
+            false => range.to_v6_prefixes()
+                .map(|x| TypedPrefix::from(Ipv6Prefix::from(x))).collect()
+        }
     }
 }
 
@@ -228,5 +257,24 @@ mod tests {
         let (v4_ranges, v6_ranges) = IpRange::for_resource_set(&set);
         assert_eq!(2, v4_ranges.len());
         assert_eq!(2, v6_ranges.len());
+    }
+
+    #[test]
+    fn to_prefixes() {
+        let ipv4s = "10.0.0.0/8, 192.168.0.0-192.168.2.255";
+        let ipv6s = "::1-::3, 2001:db8::/32";
+        let set = ResourceSet::from_strs("", ipv4s, ipv6s).unwrap();
+
+        let (v4_ranges, v6_ranges) = IpRange::for_resource_set(&set);
+        let ranges: Vec<Vec<TypedPrefix>> = [v4_ranges, v6_ranges]
+            .concat()
+            .into_iter()
+            .map(|x| x.to_prefixes())
+            .collect();
+
+        assert_eq!(1, ranges[0].len());
+        assert_eq!(2, ranges[1].len());
+        assert_eq!(2, ranges[2].len());
+        assert_eq!(1, ranges[3].len());
     }
 }

@@ -217,11 +217,6 @@ persistent queue - to ensure that the tasks are not lost (typically they
 would be around 1 year into the future on every issuance). Plus we would
 need logic to clean up tasks for removed objects - so this needs some thought.
 
-### Task::RefreshAnnouncementsInfo
-
-This task checks whether the time has come to try and re-fetch RIS Whois
-BGP information and update the `Arc<BgpAnalyser>`.
-
 ### Task::SweepLoginCache
 
 This task triggers that expired logins are removed from the cache in
