@@ -689,10 +689,15 @@ as the ID of the user in Krill, you can do this like so:
 Given the example claims above, would use the value "Jane" as the ID of the
 user logged in to Krill.
 
+
+Default claims configuration
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 By default, Krill uses the value of the “email” claim as the user ID and
 the value the “role” for the role. Given that the example claims above don’t
 contain a “role” claim, Krill would reject a login with the defaults since
 it doesn’t know what role to use.
+
 
 Matching claims by name
 ~~~~~~~~~~~~~~~~~~~~~~~
