@@ -1665,7 +1665,7 @@ impl AuthProvider {
                     &self.oidc_conf()?.id_claims
                 )?.ok_or_else(|| {
                     Self::internal_error(
-                        format!("OpenID Connect: cannot determine user ID."),
+                        "OpenID Connect: cannot determine user ID.",
                         None
                     )
                 })?;
@@ -1673,9 +1673,7 @@ impl AuthProvider {
                     &self.oidc_conf()?.role_claims
                 )?.ok_or_else(|| {
                     Self::internal_error(
-                        format!(
-                            "OpenID Connect: cannot determine user's role."
-                        ),
+                        "OpenID Connect: cannot determine user's role.",
                         None
                     )
                 })?;
