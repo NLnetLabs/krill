@@ -5,13 +5,12 @@
 /// function is handled by the Trust Anchor Signer instead.
 use super::*;
 
-use std::{collections::HashMap, fmt, sync::Arc};
+use std::{cmp, collections::HashMap, fmt, sync::Arc};
 
 use chrono::Duration;
 use rpki::{
     ca::{
-        idexchange::{self, ChildHandle, MyHandle},
-        provisioning::{ResourceClassEntitlements, SigningCert},
+        idcert::IdCert, idexchange::{self, ChildHandle, MyHandle}, provisioning::{ResourceClassEntitlements, SigningCert}
     },
     crypto::KeyIdentifier,
     repository::x509::Time,
@@ -886,6 +885,8 @@ impl TrustAnchorProxy {
     ) -> KrillResult<TrustAnchorSignedRequest> {
         if let Some(nonce) = self.open_signer_request.as_ref().cloned() {
             let mut child_requests = vec![];
+            let mut renew_time  = None;
+
             for (child, details) in &self.child_details {
                 if !details.open_requests.is_empty() {
                     child_requests.push(TrustAnchorChildRequests {
@@ -894,11 +895,22 @@ impl TrustAnchorProxy {
                         requests: details.open_requests.clone(),
                     });
                 }
+
+                if let Ok(cert) = IdCert::try_from(&details.id) {
+                    let v = cert.validity();
+                    if let Some(rt) = renew_time {
+                        renew_time = Some(cmp::min(rt, v.not_after()));
+                    } else {
+                        renew_time = Some(v.not_after());
+                    }
+                }
             }
 
             TrustAnchorSignerRequest {
                 nonce,
                 child_requests,
+                timing,
+                renew_time
             }
             .sign(
                 self.id.public_key().key_identifier(),

@@ -465,6 +465,13 @@ impl TrustAnchorSigner {
         // and the 'content' is not tampered with.
         signed_request.validate(&self.proxy_id)?;
 
+        // Check whether the timing configs match
+        if ta_timing_config != signed_request.content().timing {
+            return Err(Error::Custom(format!(
+                "TA timing config between krillta and krill do not match!"
+            )));
+        }
+
         let mut objects = self.objects.clone();
 
         let mut child_responses: HashMap<
