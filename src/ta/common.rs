@@ -611,7 +611,7 @@ impl fmt::Display for TrustAnchorSignerRequest {
             writeln!(f, "The current certificate expires on {}.", rt.to_rfc3339())?; 
             if let Some(weeks) = TimeDelta::try_weeks(self.timing.issued_certificate_reissue_weeks_before) {
                 let t = rt - weeks;
-                writeln!(f, "Ergo the certificate is eligible for renewal on {}.", t.to_rfc3339())?; 
+                writeln!(f, "The certificate is eligible for renewal on {}.", t.to_rfc3339())?; 
             }
         }         
         writeln!(f)?;
