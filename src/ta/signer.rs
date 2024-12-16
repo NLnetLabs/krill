@@ -468,9 +468,10 @@ impl TrustAnchorSigner {
         // Check whether the timing configs match
         if let Some(ta_timing) = signed_request.content().timing {
             if ta_timing_config != ta_timing {
-                return Err(Error::Custom(format!(
+                return Err(Error::Custom(
                     "TA timing config between krillta and krill do not match!"
-                )));
+                    .to_string()
+                ));
             }
         }
 
