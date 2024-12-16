@@ -556,7 +556,7 @@ impl fmt::Display for TrustAnchorSignedRequest {
 pub struct TrustAnchorSignerRequest {
     pub nonce: Nonce, // should be matched in response (replay protection)
     pub child_requests: Vec<TrustAnchorChildRequests>,
-    pub timing: TaTimingConfig,
+    pub timing: Option<TaTimingConfig>,
     pub renew_time: Option<Time>
 }
 
@@ -605,15 +605,22 @@ impl fmt::Display for TrustAnchorSignerRequest {
             }
             writeln!(f)?;
         }   
-        writeln!(f, "Certificates will be reissued {} weeks before expiry.", 
-            self.timing.issued_certificate_reissue_weeks_before)?;
-        if let Some(rt) = self.renew_time { 
-            writeln!(f, "The current certificate expires on {}.", rt.to_rfc3339())?; 
-            if let Some(weeks) = TimeDelta::try_weeks(self.timing.issued_certificate_reissue_weeks_before) {
-                let t = rt - weeks;
-                writeln!(f, "The certificate is eligible for renewal on {}.", t.to_rfc3339())?; 
-            }
-        }         
+        if let Some(ta_timing) = self.timing {
+            if let Some(rt) = self.renew_time {
+                writeln!(f, "Certificates will be reissued {} weeks before expiry.", 
+                    ta_timing.issued_certificate_reissue_weeks_before)?;
+
+                writeln!(f, "The current certificate expires on {}.", 
+                    rt.to_rfc3339())?; 
+                if let Some(weeks) = TimeDelta::try_weeks(
+                    ta_timing.issued_certificate_reissue_weeks_before
+                ) {
+                    let t = rt - weeks;
+                    writeln!(f, "The certificate is eligible for renewal on {}."
+                        , t.to_rfc3339())?; 
+                }
+            }      
+        }   
         writeln!(f)?;
         writeln!(f, "NOTE: Use the JSON output for the signer.")?;
 

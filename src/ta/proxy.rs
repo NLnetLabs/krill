@@ -909,7 +909,7 @@ impl TrustAnchorProxy {
             TrustAnchorSignerRequest {
                 nonce,
                 child_requests,
-                timing,
+                timing: Some(timing),
                 renew_time
             }
             .sign(
