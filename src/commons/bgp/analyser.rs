@@ -26,11 +26,11 @@ pub struct BgpAnalyser {
 impl BgpAnalyser {
     pub fn new(
         bgp_api_enabled: bool,
-        bgp_api_uri: &str,
+        bgp_api_uri: String,
     ) -> Self {
         BgpAnalyser {
             bgp_api_enabled,
-            bgp_api_uri: String::from(bgp_api_uri),
+            bgp_api_uri,
         }
     }
 
@@ -581,7 +581,7 @@ mod tests {
         let resources_held =
             ResourceSet::from_strs("", "10.0.0.0/16", "").unwrap();
 
-        let analyser = BgpAnalyser::new(false, "");
+        let analyser = BgpAnalyser::new(false, "".to_string());
         let table = analyser.analyse(&roas, &resources_held, None).await;
         let table_entries = table.entries();
         assert_eq!(3, table_entries.len());
@@ -650,7 +650,8 @@ mod tests {
 
     #[test]
     fn format_url() {
-        let analyser = BgpAnalyser::new(true, "https://rest.bgp-api.net");
+        let analyser = BgpAnalyser::new(
+            true, "https://rest.bgp-api.net".to_string());
         assert_eq!("https://rest.bgp-api.net/api/v1/prefix/192.168.0.0/16/search", 
             analyser.format_url(TypedPrefix::from(Ipv4Prefix::from(
                 Prefix::from_str("192.168.0.0/16").unwrap()))));
@@ -661,7 +662,7 @@ mod tests {
 
     #[tokio::test]
     async fn retrieve_announcements() {
-        let analyser = BgpAnalyser::new(true, "test");
+        let analyser = BgpAnalyser::new(true, "test".to_string());
 
         let ipv4s = "185.49.140.0/22";
         let ipv6s = "2a04:b900::/29";
@@ -680,7 +681,7 @@ mod tests {
 
     #[tokio::test]
     async fn retrieve_broken_announcements() {
-        let analyser = BgpAnalyser::new(true, "test");
+        let analyser = BgpAnalyser::new(true, "test".to_string());
 
         let ipv4s = "1.1.1.1/32, 2.2.2.2/32, 3.3.3.3/32, 4.4.4.4/32";
         let set = ResourceSet::from_strs("", ipv4s, "").unwrap();
@@ -694,7 +695,7 @@ mod tests {
 
     #[tokio::test]
     async fn analyse_nlnet_labs_snapshot() {
-        let analyser = BgpAnalyser::new(true, "test");
+        let analyser = BgpAnalyser::new(true, "test".to_string());
 
         let ipv4s = "185.49.140.0/22";
         let ipv6s = "2a04:b900::/29";

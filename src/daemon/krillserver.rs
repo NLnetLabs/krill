@@ -185,7 +185,7 @@ impl KrillServer {
 
         let bgp_analyser = Arc::new(BgpAnalyser::new(
             config.bgp_api_enabled,
-            &config.bgp_api_uri,
+            config.bgp_api_uri.clone(),
         ));
 
         // When multi-node set ups with a shared queue are
