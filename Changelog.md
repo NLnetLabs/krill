@@ -13,6 +13,8 @@ Breaking Changes
 * Removed support for RTA in `krillc`. Support is currently still
   present in the Krill server, though behind a (non-default) feature flag.
   ([#1228])
+* Replaced downloading of RISwhois file for ROA analysis with calls to the
+  [Roto API](https://github.com/NLnetLabs/roto-api). ([#1233])
 
 New
 
@@ -35,6 +37,7 @@ Other changes
 [#1215]: https://github.com/NLnetLabs/krill/pull/1215
 [#1226]: https://github.com/NLnetLabs/krill/pull/1226
 [#1228]: https://github.com/NLnetLabs/krill/pull/1228
+[#1233]: https://github.com/NLnetLabs/krill/pull/1233
 [#1239]: https://github.com/NLnetLabs/krill/pull/1239
 [#1241]: https://github.com/NLnetLabs/krill/pull/1241
 
