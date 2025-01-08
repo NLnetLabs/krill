@@ -30,7 +30,6 @@ clap            = { version = "4.5.23", features = ["cargo", "derive", "env",  "
 cryptoki        = { version = "0.7", optional = true }
 fern            = { version = "0.6.2", features = ["syslog-6"] }
 futures-util    = "0.3"
-fslock          = "0.2.1"
 hex             = "0.4"
 http-body-util  = "0.1"
 hyper           = { version = "1.5.2", features = ["server"] }
@@ -39,7 +38,6 @@ intervaltree    = "0.2.7"
 jmespatch       = { version = "0.3", features = ["sync"], optional = true }
 kmip            = { version = "0.4.3", package = "kmip-protocol", features = [ "tls-with-openssl" ], optional = true }
 kvx             = { version = "0.9.3", features = ["macros"] }
-libflate        = "2.1.0"
 log             = "0.4"
 once_cell       = { version = "1.20.2", optional = true }
 openidconnect   = { version = "2.5.1", optional = true, default-features = false }
