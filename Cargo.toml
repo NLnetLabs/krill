@@ -39,7 +39,6 @@ jmespatch       = { version = "0.3", features = ["sync"], optional = true }
 kmip            = { version = "0.4.3", package = "kmip-protocol", features = [ "tls-with-openssl" ], optional = true }
 kvx             = { version = "0.9.3", features = ["macros"] }
 log             = "0.4"
-once_cell       = { version = "1.20.2", optional = true }
 openidconnect   = { version = "2.5.1", optional = true, default-features = false }
 openssl         = { version = "0.10", features = ["v110"] }
 oso             = { version = "0.12", optional = true, default-features = false }
@@ -76,7 +75,7 @@ syslog = "6.1.1"
 
 [features]
 default = ["multi-user", "hsm"]
-hsm = ["backoff", "kmip", "once_cell", "cryptoki", "r2d2"]
+hsm = ["backoff", "kmip", "cryptoki", "r2d2"]
 multi-user = [
     "basic-cookies",
     "jmespatch/sync",

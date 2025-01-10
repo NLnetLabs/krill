@@ -1251,7 +1251,6 @@ dependencies = [
  "kmip-protocol",
  "kvx",
  "log",
- "once_cell",
  "openidconnect",
  "openssl",
  "oso",
