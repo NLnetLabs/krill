@@ -50,6 +50,10 @@ impl RrdpSession {
     pub fn random() -> Self {
         Self::default()
     }
+
+    pub fn as_uuid(&self) -> &Uuid {
+        &self.0
+    }
 }
 
 impl AsRef<Uuid> for RrdpSession {
