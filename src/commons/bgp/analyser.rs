@@ -724,19 +724,19 @@ mod tests {
 
         let entry_expect_roa = |x: &str, y| {
             let x = x.to_string();
-            assert!(report.entries().into_iter().any(|s|
+            assert!(report.entries().iter().any(|s| 
                 s.state() == y &&
                 s.configured_roa().to_string() == x 
-            ));       
+            ));
         };
 
         let entry_expect_ann = |x: &str, y: u32, z: BgpAnalysisState| {
             let x = x.to_string();
-            assert!(report.entries().into_iter().any(|s|
+            assert!(report.entries().iter().any(|s|
                 s.state() == z &&
-                s.announcement().asn().clone() == AsNumber::new(y) &&
+                *s.announcement().asn() == AsNumber::new(y) &&
                 s.announcement().prefix().to_string() == x
-            ));       
+            ));
         };
 
         entry_expect_roa("2a04:b907::/48-48 => 0", BgpAnalysisState::RoaAs0Redundant);
