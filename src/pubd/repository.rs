@@ -1436,7 +1436,7 @@ impl RrdpServer {
 
         if let Some(old_notification) = old_notification_opt.as_ref() {
             if old_notification.serial() == self.serial
-                && old_notification.session_id() == self.session.into()
+                && old_notification.session_id() == *self.session.as_uuid()
             {
                 debug!("Existing notification file matches current session and serial. Nothing to write.");
                 return Ok(());
@@ -1475,7 +1475,9 @@ impl RrdpServer {
                     vec![]
                 }
                 Some(mut old_notification) => {
-                    if old_notification.session_id() == self.session.into() {
+                    if old_notification.session_id()
+                            == *self.session.as_uuid()
+                    {
                         // Sort the deltas from lowest serial up, and make
                         // sure that there are no gaps.
                         if old_notification.sort_and_verify_deltas(None) {

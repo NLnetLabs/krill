@@ -736,6 +736,18 @@ impl FromStr for TypedPrefix {
     }
 }
 
+impl From<Ipv4Prefix> for TypedPrefix {
+    fn from(prefix: Ipv4Prefix) -> Self {
+        TypedPrefix::V4(prefix)
+    }
+}
+
+impl From<Ipv6Prefix> for TypedPrefix {
+    fn from(prefix: Ipv6Prefix) -> Self {
+        TypedPrefix::V6(prefix)
+    }
+}
+
 impl fmt::Debug for TypedPrefix {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", &self)
@@ -854,6 +866,12 @@ impl fmt::Debug for Ipv4Prefix {
     }
 }
 
+impl From<Prefix> for Ipv4Prefix {
+    fn from(prefix: Prefix) -> Self {
+        Ipv4Prefix(prefix)
+    }
+}
+
 //------------ Ipv6Prefix --------------------------------------------------
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub struct Ipv6Prefix(Prefix);
@@ -873,6 +891,12 @@ impl fmt::Display for Ipv6Prefix {
 impl fmt::Debug for Ipv6Prefix {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", &self)
+    }
+}
+
+impl From<Prefix> for Ipv6Prefix {
+    fn from(prefix: Prefix) -> Self {
+        Ipv6Prefix(prefix)
     }
 }
 

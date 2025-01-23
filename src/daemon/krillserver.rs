@@ -144,9 +144,8 @@ impl KrillServer {
         );
 
         let bgp_analyser = Arc::new(BgpAnalyser::new(
-            config.bgp_risdumps_enabled,
-            &config.bgp_risdumps_v4_uri,
-            &config.bgp_risdumps_v6_uri,
+            config.bgp_api_enabled,
+            config.bgp_api_uri.clone(),
         ));
 
         // When multi-node set ups with a shared queue are
@@ -272,7 +271,6 @@ impl KrillServer {
             self.mq.clone(),
             self.ca_manager.clone(),
             self.repo_manager.clone(),
-            self.bgp_analyser.clone(),
             #[cfg(feature = "multi-user")]
             self.authorizer.clone(),
             self.config.clone(),

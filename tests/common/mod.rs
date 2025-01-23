@@ -164,9 +164,8 @@ impl TestConfig {
         let post_protocol_msg_timeout_seconds =
             ConfigDefaults::post_protocol_msg_timeout_seconds();
 
-        let bgp_risdumps_enabled = false;
-        let bgp_risdumps_v4_uri = ConfigDefaults::bgp_risdumps_v4_uri();
-        let bgp_risdumps_v6_uri = ConfigDefaults::bgp_risdumps_v6_uri();
+        let bgp_api_enabled = false;
+        let bgp_api_uri = ConfigDefaults::bgp_api_uri();
 
         let roa_aggregate_threshold = 3;
         let roa_deaggregate_threshold = 2;
@@ -282,9 +281,8 @@ impl TestConfig {
             post_limit_rfc6492,
             rfc6492_log_dir: None,
             post_protocol_msg_timeout_seconds,
-            bgp_risdumps_enabled,
-            bgp_risdumps_v4_uri,
-            bgp_risdumps_v6_uri,
+            bgp_api_enabled,
+            bgp_api_uri,
             roa_aggregate_threshold,
             roa_deaggregate_threshold,
             issuance_timing,
