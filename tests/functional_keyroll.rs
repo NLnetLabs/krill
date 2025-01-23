@@ -209,7 +209,7 @@ impl common::KrillServer {
 
 //------------ Extend ExpectedObjects ----------------------------------------
 
-impl<'a> common::ExpectedObjects<'a> {
+impl common::ExpectedObjects<'_> {
     pub async fn wait_for_manifest_current_key(&self) -> bool {
         let current_key = self.server.ca_key_for_rcn(
             self.ca, &common::rcn(0)
