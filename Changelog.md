@@ -31,6 +31,9 @@ Bug Fixes
 
 Other changes
 
+* Refactored Prometheus metrics generation which resulted in a slightly
+  different formatting but should still be syntactically correct.
+  ([#1249])
 * Added packaging support for Ubuntu Noble; removed packaging support for
   Ubuntu Xenial and Bionic, and Debian Stretch. ([#1239])
 
@@ -40,6 +43,7 @@ Other changes
 [#1233]: https://github.com/NLnetLabs/krill/pull/1233
 [#1239]: https://github.com/NLnetLabs/krill/pull/1239
 [#1241]: https://github.com/NLnetLabs/krill/pull/1241
+[#1249]: https://github.com/NLnetLabs/krill/pull/1249
 
 
 ## 0.14.5 ‘Who dis? New Phone’
