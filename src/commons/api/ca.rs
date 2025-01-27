@@ -1,11 +1,11 @@
 //! Common data types for Certificate Authorities, defined here so that the
 //! CLI can have access without needing to depend on the full krill_ca module.
 
+use std::{fmt, ops, str};
+use std::collections::hash_map;
 use std::collections::HashMap;
-use std::ops::{self};
 use std::str::FromStr;
 use std::sync::Arc;
-use std::{fmt, str};
 
 use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
 use base64::engine::Engine as _;
@@ -962,9 +962,7 @@ impl ParentStatuses {
         self.0.get(parent)
     }
 
-    pub fn iter(
-        &self,
-    ) -> impl Iterator<Item = (&ParentHandle, &ParentStatus)> {
+    pub fn iter(&self) -> hash_map::Iter<ParentHandle, ParentStatus> {
         self.0.iter()
     }
 
@@ -1062,11 +1060,19 @@ impl ParentStatuses {
 
 impl IntoIterator for ParentStatuses {
     type Item = (ParentHandle, ParentStatus);
-    type IntoIter =
-        std::collections::hash_map::IntoIter<ParentHandle, ParentStatus>;
+    type IntoIter = hash_map::IntoIter<ParentHandle, ParentStatus>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a ParentStatuses {
+    type Item = (&'a ParentHandle, &'a ParentStatus);
+    type IntoIter = hash_map::Iter<'a, ParentHandle, ParentStatus>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
     }
 }
 
