@@ -13,6 +13,8 @@ Breaking Changes
 * Removed support for RTA in `krillc`. Support is currently still
   present in the Krill server, though behind a (non-default) feature flag.
   ([#1228])
+* Replaced downloading of RISwhois file for ROA analysis with calls to the
+  [Roto API](https://github.com/NLnetLabs/roto-api). ([#1233])
 
 New
 
@@ -21,12 +23,27 @@ Bug Fixes
 * Fixed a potential infinite recursion in PKCS11 error handling. ([#1215])
 * Open ID connect: Re-initialize the connection after 60s to pick up
   configuration changes at the provider. ([#1226])
+* Fixed the naming of the trust anchor timing configuration. It was
+  expected to be `timing_config` for the config used by Krill and
+  `ta_timing` if used by the Krill TA signer. It is now `ta_timing` in
+  both cases while `timing_config` is accepted as an alias in both cases.
+  ([#1241])
 
 Other changes
+
+* Refactored Prometheus metrics generation which resulted in a slightly
+  different formatting but should still be syntactically correct.
+  ([#1249])
+* Added packaging support for Ubuntu Noble; removed packaging support for
+  Ubuntu Xenial and Bionic, and Debian Stretch. ([#1239])
 
 [#1215]: https://github.com/NLnetLabs/krill/pull/1215
 [#1226]: https://github.com/NLnetLabs/krill/pull/1226
 [#1228]: https://github.com/NLnetLabs/krill/pull/1228
+[#1233]: https://github.com/NLnetLabs/krill/pull/1233
+[#1239]: https://github.com/NLnetLabs/krill/pull/1239
+[#1241]: https://github.com/NLnetLabs/krill/pull/1241
+[#1249]: https://github.com/NLnetLabs/krill/pull/1249
 
 
 ## 0.14.5 ‘Who dis? New Phone’

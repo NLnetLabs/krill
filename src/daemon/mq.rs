@@ -80,8 +80,6 @@ pub enum Task {
     RepublishIfNeeded,
     RenewObjectsIfNeeded,
 
-    RefreshAnnouncementsInfo,
-
     UpdateSnapshots,
 
     RrdpUpdateIfNeeded,
@@ -136,9 +134,6 @@ impl Task {
                 ca,
                 rcn
             )),
-            Task::RefreshAnnouncementsInfo => {
-                Ok(Segment::make("refresh_bgp_announcements_info").to_owned())
-            }
             Task::UpdateSnapshots => {
                 Ok(Segment::make("update_stored_snapshots").to_owned())
             }
@@ -189,9 +184,6 @@ impl fmt::Display for Task {
             }
             Task::RenewObjectsIfNeeded => {
                 write!(f, "let CAs renew their signed objects if needed")
-            }
-            Task::RefreshAnnouncementsInfo => {
-                write!(f, "check for new announcement info")
             }
             Task::UpdateSnapshots => {
                 write!(f, "update repository content snapshot on disk")

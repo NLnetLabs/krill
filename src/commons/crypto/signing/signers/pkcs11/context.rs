@@ -35,7 +35,7 @@ use cryptoki::{
     slot::{Slot, SlotInfo, TokenInfo},
     types::AuthPin,
 };
-use once_cell::sync::OnceCell;
+use std::sync::OnceLock;
 
 use crate::commons::crypto::SignerError;
 
@@ -80,7 +80,7 @@ impl ThreadSafePkcs11Context {
 /// RwLock'd HashMap for this.
 type Pkcs11ContextsByFileName =
     Arc<RwLock<HashMap<String, ThreadSafePkcs11Context>>>;
-static CONTEXTS: OnceCell<Pkcs11ContextsByFileName> = OnceCell::new();
+static CONTEXTS: OnceLock<Pkcs11ContextsByFileName> = OnceLock::new();
 
 #[derive(Debug)]
 pub(super) struct Pkcs11Context {
@@ -106,14 +106,10 @@ impl Pkcs11Context {
     pub fn get_or_load(
         lib_path: &Path,
     ) -> Result<ThreadSafePkcs11Context, SignerError> {
-        // Initialize the singleton map of PKCS#11 contexts. Failure here
-        // should be impossible or else so severe that panicking is
-        // all we can do.
-        let contexts = CONTEXTS
-            .get_or_try_init(|| -> Result<Pkcs11ContextsByFileName, ()> {
-                Ok(Arc::new(RwLock::new(HashMap::new())))
-            })
-            .unwrap();
+        // Initialize the singleton map of PKCS#11 contexts.
+        let contexts = CONTEXTS.get_or_init(|| {
+            Arc::new(RwLock::new(HashMap::new()))
+        });
 
         // Use the file name of the library as the key into the map, if the
         // path represents a file.

@@ -41,7 +41,7 @@ use crate::{
     constants::*,
     daemon::{
         ca::{
-            self, testbed_ca_handle, CaManager, CaStatus,
+            self, testbed_ca_handle, CaManager, CaStatus, CertAuth,
             ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest,
         },
         config::Config,
@@ -72,9 +72,6 @@ pub struct KrillServer {
 
     // Handles the internal TA and/or CAs
     ca_manager: Arc<ca::CaManager>,
-
-    // Handles the internal TA and/or CAs
-    bgp_analyser: Arc<BgpAnalyser>,
 
     // Shared message queue
     mq: Arc<TaskQueue>,
@@ -134,12 +131,6 @@ impl KrillServer {
             )?,
         );
 
-        let bgp_analyser = Arc::new(BgpAnalyser::new(
-            config.bgp_risdumps_enabled,
-            &config.bgp_risdumps_v4_uri,
-            &config.bgp_risdumps_v6_uri,
-        ));
-
         // When multi-node set ups with a shared queue are
         // supported then we can no longer safely reschedule
         // ALL running tests. See issue: #1112
@@ -151,7 +142,6 @@ impl KrillServer {
             service_uri,
             repo_manager,
             ca_manager,
-            bgp_analyser,
             mq,
             system_actor,
             config: config.clone(),
@@ -265,7 +255,6 @@ impl KrillServer {
             self.mq.clone(),
             self.ca_manager.clone(),
             self.repo_manager.clone(),
-            self.bgp_analyser.clone(),
             #[cfg(feature = "multi-user")]
             login_session_cache,
             self.config.clone(),
@@ -599,35 +588,20 @@ impl KrillServer {
 
 /// # Stats and status of CAS
 impl KrillServer {
+    pub fn ca_count(&self) -> KrillResult<usize> {
+        Ok(self.ca_list(&self.system_actor)?.cas().len())
+    }
+
     pub fn cas_stats(
         &self,
-    ) -> KrillResult<HashMap<CaHandle, CertAuthStats>> {
-        let mut res = HashMap::new();
+    ) -> KrillResult<Vec<CaStats>> {
+        let mut res = Vec::new();
 
         for ca in self.ca_list(&self.system_actor)?.cas() {
             // can't fail really, but to be sure
-            if let Ok(ca) = self.ca_manager.get_ca(ca.handle()) {
-                let roas = ca.configured_roas();
-                let roa_count = roas.len();
-                let child_count = ca.children().count();
-
-                let bgp_report = if ca.handle().as_str() == "ta"
-                    || ca.handle().as_str() == "testbed"
-                {
-                    BgpAnalysisReport::new(vec![])
-                } else {
-                    self.bgp_analyser
-                        .analyse(roas.as_slice(), &ca.all_resources(), None)
-                };
-
-                res.insert(
-                    ca.handle().clone(),
-                    CertAuthStats::new(
-                        roa_count,
-                        child_count,
-                        bgp_report.into(),
-                    ),
-                );
+            if let Ok(ca) = self.get_ca(ca.handle()) {
+                let status = self.ca_status(ca.handle())?;
+                res.push(CaStats::new(ca, status));
             }
         }
 
@@ -955,6 +929,10 @@ impl KrillServer {
         self.ca_manager.ca_list(actor)
     }
 
+    pub fn get_ca(&self, ca: &CaHandle) -> KrillResult<Ca> {
+        self.ca_manager.get_ca(ca).map(|ca| Ca { ca })
+    }
+
     /// Returns the public CA info for a CA, or NONE if the CA cannot be
     /// found.
     pub fn ca_info(&self, ca: &CaHandle) -> KrillResult<CertAuthInfo> {
@@ -1154,56 +1132,6 @@ impl KrillServer {
         Ok(ca.configured_roas())
     }
 
-    pub fn ca_routes_bgp_analysis(
-        &self,
-        handle: &CaHandle,
-    ) -> KrillResult<BgpAnalysisReport> {
-        let ca = self.ca_manager.get_ca(handle)?;
-        let definitions = ca.configured_roas();
-        let resources_held = ca.all_resources();
-        Ok(self
-            .bgp_analyser
-            .analyse(definitions.as_slice(), &resources_held, None)
-        )
-    }
-
-    pub fn ca_routes_bgp_dry_run(
-        &self,
-        handle: &CaHandle,
-        updates: RoaConfigurationUpdates,
-    ) -> KrillResult<BgpAnalysisReport> {
-        let ca = self.ca_manager.get_ca(handle)?;
-
-        let updates = updates.into_explicit_max_length();
-        let resources_held = ca.all_resources();
-        let limit = Some(updates.affected_prefixes());
-
-        let (would_be_routes, _) = ca.update_authorizations(&updates)?;
-        let would_be_configurations = would_be_routes.roa_configurations();
-        let configured_roas =
-            ca.configured_roas_for_configs(would_be_configurations);
-
-        Ok(self
-            .bgp_analyser
-            .analyse(&configured_roas, &resources_held, limit)
-        )
-    }
-
-    pub fn ca_routes_bgp_suggest(
-        &self,
-        handle: &CaHandle,
-        limit: Option<ResourceSet>,
-    ) -> KrillResult<BgpAnalysisSuggestion> {
-        let ca = self.ca_manager.get_ca(handle)?;
-        let configured_roas = ca.configured_roas();
-        let resources_held = ca.all_resources();
-
-        Ok(self
-            .bgp_analyser
-            .suggest(configured_roas.as_slice(), &resources_held, limit)
-        )
-    }
-
     /// Re-issue ROA objects so that they will use short subjects (see issue
     /// #700)
     pub fn force_renew_roas(&self) -> KrillResult<()> {
@@ -1292,4 +1220,115 @@ impl KrillServer {
     }
 }
 
-// Tested through integration tests
+
+//------------ Ca ------------------------------------------------------------
+
+pub struct Ca {
+    ca: Arc<CertAuth>,
+}
+
+impl Ca {
+    pub fn handle(&self) -> &CaHandle {
+        self.ca.handle()
+    }
+
+    pub async fn routes_bgp_analysis(
+        &self,
+        analyser: &BgpAnalyser,
+    ) -> BgpAnalysisReport {
+        let definitions = self.ca.configured_roas();
+        let resources_held = self.ca.all_resources();
+        analyser.analyse(
+            definitions.as_slice(), &resources_held, None
+        ).await
+    }
+
+    pub async fn routes_bgp_dry_run(
+        &self,
+        updates: RoaConfigurationUpdates,
+        analyser: &BgpAnalyser,
+    ) -> KrillResult<BgpAnalysisReport> {
+        let updates = updates.into_explicit_max_length();
+        let resources_held = self.ca.all_resources();
+        let limit = Some(updates.affected_prefixes());
+
+        let (would_be_routes, _) = self.ca.update_authorizations(&updates)?;
+        let would_be_configurations = would_be_routes.roa_configurations();
+        let configured_roas =
+            self.ca.configured_roas_for_configs(would_be_configurations);
+
+        Ok(analyser.analyse(
+            &configured_roas, &resources_held, limit
+        ).await)
+    }
+
+    pub async fn routes_bgp_suggest(
+        &self,
+        limit: Option<ResourceSet>,
+        analyser: &BgpAnalyser,
+    ) -> KrillResult<BgpAnalysisSuggestion> {
+        let configured_roas = self.ca.configured_roas();
+        let resources_held = self.ca.all_resources();
+
+        Ok(analyser.suggest(
+            configured_roas.as_slice(), &resources_held, limit
+        ).await)
+    }
+}
+
+
+//------------ CaStats -------------------------------------------------------
+
+pub struct CaStats {
+    ca: Arc<CertAuth>,
+    status: CaStatus,
+    roas: Vec<ConfiguredRoa>,
+}
+
+impl CaStats {
+    fn new(ca: Ca, status: CaStatus) -> Self {
+        Self {
+            roas: ca.ca.configured_roas(),
+            ca: ca.ca,
+            status
+        }
+    }
+
+    pub fn handle(&self) -> &CaHandle {
+        self.ca.handle()
+    }
+
+    pub fn roa_count(&self) -> usize {
+        self.roas.len()
+    }
+
+    pub fn child_count(&self) -> usize {
+        self.ca.child_count()
+    }
+
+    pub fn status(&self) -> &CaStatus {
+        &self.status
+    }
+
+    pub async fn routes_bgp_analysis(
+        &self,
+        analyser: &BgpAnalyser,
+    ) -> BgpAnalysisReport {
+        let resources_held = self.ca.all_resources();
+        analyser.analyse(
+            self.roas.as_slice(), &resources_held, None
+        ).await
+    }
+
+    pub async fn to_cert_auth_stats(
+        &self,
+        analyser: &BgpAnalyser,
+    ) -> CertAuthStats {
+        CertAuthStats::new(
+            self.roa_count(),
+            self.child_count(),
+            self.routes_bgp_analysis(analyser).await.into()
+        )
+    }
+}
+

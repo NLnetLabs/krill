@@ -143,7 +143,7 @@ impl TrustAnchorSignerManager {
                     tal_rsync: info.tal_rsync,
                     private_key_pem: info.private_key_pem,
                     ta_mft_nr_override: info.ta_mft_nr_override,
-                    timing: self.config.timing_config,
+                    timing: self.config.ta_timing,
                     signer: self.signer.clone(),
                 },
                 &self.actor,
@@ -168,7 +168,7 @@ impl TrustAnchorSignerManager {
         let cmd = TrustAnchorSignerCommand::make_process_request_command(
             &self.ta_handle,
             signed_request,
-            self.config.timing_config,
+            self.config.ta_timing,
             ta_mft_number_override,
             self.signer.clone(),
             &self.actor,

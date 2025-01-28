@@ -22,6 +22,7 @@ use crate::{
 };
 
 pub mod auth;
+pub mod metrics;
 pub mod server;
 pub mod statics;
 pub mod testbed;
@@ -41,6 +42,7 @@ enum ContentType {
     Rfc8181,
     Rfc6492,
     Text,
+    Prometheus,
     Xml,
     Html,
     Fav,
@@ -59,6 +61,7 @@ impl AsRef<str> for ContentType {
             ContentType::Rfc8181 => publication::CONTENT_TYPE,
             ContentType::Rfc6492 => provisioning::CONTENT_TYPE,
             ContentType::Text => "text/plain",
+            ContentType::Prometheus => "text/plain; version=0.0.4",
             ContentType::Xml => "application/xml",
 
             ContentType::Html => "text/html",
@@ -144,8 +147,7 @@ impl io::Write for Response {
     }
 }
 
-//------------ HttpResponse
-//------------ ---------------------------------------------------
+//------------ HttpResponse --------------------------------------------------
 
 pub struct HttpResponse {
     response: HyperResponse,
@@ -247,6 +249,10 @@ impl HttpResponse {
                 .body(Either::Right(Full::new(body.into())))
                 .unwrap(),
         )
+    }
+
+    pub fn prometheus(body: Vec<u8>) -> Self {
+        Self::ok_response(ContentType::Prometheus, body)
     }
 
     pub fn xml(body: Vec<u8>) -> Self {

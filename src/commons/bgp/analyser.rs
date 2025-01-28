@@ -1,95 +1,151 @@
-use std::fmt;
 use std::str::FromStr;
-use std::sync::RwLock;
 
-use chrono::Duration;
+use serde_json::Value;
 
-use rpki::{repository::resources::ResourceSet, repository::x509::Time};
+use rpki::repository::resources::ResourceSet;
 
-use crate::{
-    commons::{
-        api::{AsNumber, ConfiguredRoa, RoaPayload},
+use crate::commons::{
+        api::{AsNumber, ConfiguredRoa, RoaPayload, TypedPrefix},
         bgp::{
             make_roa_tree, make_validated_announcement_tree, Announcement,
-            AnnouncementValidity, Announcements, BgpAnalysisEntry,
+            AnnouncementValidity, BgpAnalysisEntry,
             BgpAnalysisReport, BgpAnalysisState, BgpAnalysisSuggestion,
-            IpRange, RisDumpError, RisDumpLoader, ValidatedAnnouncement,
+            IpRange, ValidatedAnnouncement,
         },
-    },
-    constants::{test_announcements_enabled, BGP_RIS_REFRESH_MINUTES},
-};
+    };
+
 
 //------------ BgpAnalyser -------------------------------------------------
 
 /// This type helps analyse ROAs vs BGP and vice versa.
 pub struct BgpAnalyser {
-    dump_loader: Option<RisDumpLoader>,
-    seen: RwLock<Announcements>,
+    bgp_api_enabled: bool,
+    bgp_api_uri: String,
 }
 
 impl BgpAnalyser {
     pub fn new(
-        ris_enabled: bool,
-        ris_v4_uri: &str,
-        ris_v6_uri: &str,
+        bgp_api_enabled: bool,
+        bgp_api_uri: String,
     ) -> Self {
-        if test_announcements_enabled() {
-            Self::with_test_announcements()
-        } else {
-            let dump_loader = if ris_enabled {
-                Some(RisDumpLoader::new(ris_v4_uri, ris_v6_uri))
-            } else {
-                None
+        BgpAnalyser {
+            bgp_api_enabled,
+            bgp_api_uri,
+        }
+    }
+
+    pub fn format_url(&self, prefix: TypedPrefix) -> String {
+        let bgp_api_uri_str = self.bgp_api_uri.as_str();
+        match prefix {
+            TypedPrefix::V4(p) => format!("{}/api/v1/prefix/{:?}/{}/search", 
+                bgp_api_uri_str, 
+                p.as_ref().addr().to_v4(), 
+                p.as_ref().addr_len()
+            ),
+            TypedPrefix::V6(p) => format!("{}/api/v1/prefix/{:?}/{}/search", 
+                bgp_api_uri_str, 
+                p.as_ref().addr().to_v6(), 
+                p.as_ref().addr_len()
+            )
+        }
+    }
+
+    fn parse_meta(
+        &self, 
+        meta: &Value, 
+        prefix_str: &str, 
+        anns: &mut Vec<Announcement>
+    ) -> Option<()> {
+        if meta["sourceType"].as_str()? == "bgp" {
+            for asn in meta["originASNs"].as_array()? {
+                // Strip off "AS" prefix
+                let asn = 
+                    AsNumber::from_str(asn.as_str()?.get(2..)?).ok()?;
+                let prefix = 
+                    TypedPrefix::from_str(prefix_str).ok()?;
+
+                anns.push(Announcement::new(
+                    asn, 
+                    prefix
+                ));
+            }
+        }
+        Some(())
+    }
+
+    fn parse_member(&self, member: &Value, anns: &mut Vec<Announcement>) 
+        -> Option<()> {
+        let prefix_str = member["prefix"].as_str()?;
+        for meta in member["meta"].as_array()? {
+            self.parse_meta(meta, prefix_str, anns)?;
+        }
+        Some(())
+    }
+
+    // Obtain the announcements from the JSON tree.
+    //
+    // Every element in the tree is an Option, if an element cannot be found,
+    // we return None, indicating that something about the structure was
+    // malformed in some way.
+    fn obtain_announcements(&self, json: Value) -> Option<Vec<Announcement>> {
+        let mut anns: Vec<Announcement> = vec![];
+        let prefix_str = json["result"]["prefix"].as_str()?;
+        for meta in json["result"]["meta"].as_array()? {
+            self.parse_meta(meta, prefix_str, &mut anns)?;
+        }
+        for relation in json["result"]["relations"].as_array()? {
+            if relation["type"].as_str()? == "more-specific" {
+                for member in relation["members"].as_array()? {
+                    self.parse_member(member, &mut anns)?;
+                }
+            }
+        }
+        Some(anns)
+    }
+
+    async fn retrieve(
+        &self,
+        block: IpRange,
+    ) -> Result<Vec<Announcement>, BgpApiError> {
+        let client = reqwest::Client::new();
+
+        let mut announcements: Vec<Announcement> = vec![];
+
+        for prefix  in block.to_prefixes() {
+            let url = self.format_url(prefix);
+
+            let resp: Value = match url.starts_with("test") {
+                true => {
+                    // Use test responses predefined in the JSON
+                    let json: Value = serde_json::from_str(include_str!(
+                        "../../../test-resources/bgp/bgp-api.json"))?;
+                    let json_resp = json.get(url.as_str()).unwrap();
+                    json_resp.clone()
+                },
+                false => client.get(url.as_str())
+                    .send()
+                    .await?
+                    .json::<serde_json::Value>()
+                    .await?
             };
-            BgpAnalyser {
-                dump_loader,
-                seen: RwLock::new(Announcements::default()),
+            
+            let ann = self.obtain_announcements(resp);
+
+            if ann.is_none() {
+                return Err(BgpApiError::MalformedDataError)
             }
+            announcements.append(ann.unwrap().as_mut());
         }
+
+        Ok(announcements)
     }
 
-    pub fn update(&self) -> Result<bool, BgpAnalyserError> {
-        // XXX This will be replaced all go away soon (see #1233), so we keep
-        //     it in its current state even if it should probably run in its
-        //     own thread and somehow synchronize an accidental re-start.
-        let loader = match self.dump_loader.as_ref() {
-            Some(loader) => loader,
-            None => return Ok(false),
-        };
-        if let Some(last_time) = self.seen.read().unwrap().last_checked() {
-            if (last_time + Duration::minutes(BGP_RIS_REFRESH_MINUTES))
-                > Time::now()
-            {
-                trace!(
-                    "Will not check BGP RIS dumps until the \
-                    refresh interval has passed"
-                );
-                return Ok(false); // no need to update yet
-            }
-        }
-        let announcements = loader.download_updates()?;
-        let mut seen = self.seen.write().unwrap();
-        if seen.equivalent(&announcements) {
-            debug!("BGP Ris Dumps unchanged");
-            seen.update_checked();
-            Ok(false)
-        } else {
-            info!(
-                "Updated announcements ({}) based on BGP Ris Dumps",
-                announcements.len()
-            );
-            seen.update(announcements);
-            Ok(true)
-        }
-    }
-
-    pub fn analyse(
+    pub async fn analyse(
         &self,
         roas: &[ConfiguredRoa],
         resources_held: &ResourceSet,
         limited_scope: Option<ResourceSet>,
     ) -> BgpAnalysisReport {
-        let seen = self.seen.read().unwrap();
         let mut entries = vec![];
 
         let roas: Vec<ConfiguredRoa> = match &limited_scope {
@@ -112,7 +168,7 @@ impl BgpAnalyser {
             entries.push(BgpAnalysisEntry::roa_not_held(not_held));
         }
 
-        if seen.last_checked().is_none() {
+        if !self.bgp_api_enabled {
             // nothing to analyse, just push all ROAs as 'no announcement
             // info'
             for roa in roas_held {
@@ -126,14 +182,21 @@ impl BgpAnalyser {
 
             let (v4_scope, v6_scope) = IpRange::for_resource_set(scope);
 
-            let mut scoped_announcements = vec![];
-
-            for block in v4_scope.into_iter() {
-                scoped_announcements.append(&mut seen.contained_by(block));
-            }
-
-            for block in v6_scope.into_iter() {
-                scoped_announcements.append(&mut seen.contained_by(block));
+            let mut scoped_announcements: Vec<Announcement> = vec![];
+            
+            for block in [v4_scope, v6_scope].concat().into_iter() {
+                let announcements = self.retrieve(block).await;
+                if let Ok(mut announcements) = announcements {
+                    scoped_announcements.append(
+                        announcements.as_mut());
+                } else {
+                    for roa in roas_held {
+                        entries.push(
+                            BgpAnalysisEntry::roa_no_announcement_info(roa)
+                        );
+                    }
+                    return BgpAnalysisReport::new(entries);
+                }
             }
 
             let roa_payloads: Vec<_> = roas_held
@@ -306,7 +369,7 @@ impl BgpAnalyser {
         BgpAnalysisReport::new(entries)
     }
 
-    pub fn suggest(
+    pub async fn suggest(
         &self,
         roas: &[ConfiguredRoa],
         resources_held: &ResourceSet,
@@ -317,6 +380,7 @@ impl BgpAnalyser {
         // perform analysis
         let entries = self
             .analyse(roas, resources_held, limited_scope)
+            .await
             .into_entries();
         for entry in &entries {
             match entry.state() {
@@ -377,53 +441,26 @@ impl BgpAnalyser {
 
         suggestion
     }
-
-    fn test_announcements() -> Vec<Announcement> {
-        [
-            "10.0.0.0/22 => 64496",
-            "10.0.2.0/23 => 64496",
-            "10.0.0.0/24 => 64496",
-            "10.0.0.0/22 => 64497",
-            "10.0.0.0/21 => 64497",
-            "192.168.0.0/24 => 64497",
-            "192.168.0.0/24 => 64496",
-            "192.168.1.0/24 => 64497",
-            "2001:DB8::/32 => 64498",
-        ].into_iter().map(|s| {
-            Announcement::from(RoaPayload::from_str(s).unwrap())
-        }).collect()
-    }
-
-    fn with_test_announcements() -> Self {
-        let mut announcements = Announcements::default();
-        announcements.update(Self::test_announcements());
-        BgpAnalyser {
-            dump_loader: None,
-            seen: RwLock::new(announcements),
-        }
-    }
 }
 
 //------------ Error --------------------------------------------------------
 
 #[derive(Debug)]
-pub enum BgpAnalyserError {
-    RisDump(RisDumpError),
+pub enum BgpApiError {
+    ReqwestError(reqwest::Error),
+    SerdeError(serde_json::Error),
+    MalformedDataError
 }
 
-impl fmt::Display for BgpAnalyserError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            BgpAnalyserError::RisDump(e) => {
-                write!(f, "BGP RIS update error: {}", e)
-            }
-        }
+impl From<reqwest::Error> for BgpApiError {
+    fn from(e: reqwest::Error) -> BgpApiError {
+        BgpApiError::ReqwestError(e)
     }
 }
 
-impl From<RisDumpError> for BgpAnalyserError {
-    fn from(e: RisDumpError) -> Self {
-        BgpAnalyserError::RisDump(e)
+impl From<serde_json::Error> for BgpApiError {
+    fn from(e: serde_json::Error) -> BgpApiError {
+        BgpApiError::SerdeError(e)
     }
 }
 
@@ -431,31 +468,17 @@ impl From<RisDumpError> for BgpAnalyserError {
 
 #[cfg(test)]
 mod tests {
+    use rpki::repository::resources::Prefix;
+
     use crate::{
-        commons::{api::RoaConfigurationUpdates, bgp::BgpAnalysisState},
+        commons::{api::{Ipv4Prefix, Ipv6Prefix, RoaConfigurationUpdates}, bgp::BgpAnalysisState},
         test::{announcement, configured_roa},
     };
 
     use super::*;
 
-    #[test]
-    #[ignore]
-    fn download_ris_dumps() {
-        let analyser = BgpAnalyser::new(
-            true,
-            "http://www.ris.ripe.net/dumps/riswhoisdump.IPv4.gz",
-            "http://www.ris.ripe.net/dumps/riswhoisdump.IPv6.gz",
-        );
-
-        assert!(analyser.seen.read().unwrap().is_empty());
-        assert!(analyser.seen.read().unwrap().last_checked().is_none());
-        analyser.update().unwrap();
-        assert!(!analyser.seen.read().unwrap().is_empty());
-        assert!(analyser.seen.read().unwrap().last_checked().is_some());
-    }
-
-    #[test]
-    fn analyse_bgp() {
+    #[tokio::test]
+    async fn analyse_bgp() {
         let roa_too_permissive = configured_roa("10.0.0.0/22-23 => 64496");
         let roa_as0 = configured_roa("10.0.4.0/24 => 0");
         let roa_unseen_completely = configured_roa("10.0.3.0/24 => 64497");
@@ -472,7 +495,10 @@ mod tests {
                 .unwrap();
         let limit = None;
 
-        let analyser = BgpAnalyser::with_test_announcements();
+        let analyser = BgpAnalyser {
+            bgp_api_enabled: true,
+            bgp_api_uri: "test".to_string()
+        };
 
         let report = analyser
             .analyse(
@@ -487,7 +513,8 @@ mod tests {
                 ],
                 &resources_held,
                 limit,
-            );
+            )
+            .await;
 
         let expected: BgpAnalysisReport = serde_json::from_str(include_str!(
             "../../../test-resources/bgp/expected_full_report.json"
@@ -497,17 +524,20 @@ mod tests {
         assert_eq!(report, expected);
     }
 
-    #[test]
-    fn analyse_bgp_disallowed_announcements() {
+    #[tokio::test]
+    async fn analyse_bgp_disallowed_announcements() {
         let roa = configured_roa("10.0.0.0/22 => 0");
 
         let roas = &[roa];
-        let analyser = BgpAnalyser::with_test_announcements();
+        let analyser = BgpAnalyser {
+            bgp_api_enabled: true,
+            bgp_api_uri: "test".to_string()
+        };
 
         let resources_held =
             ResourceSet::from_strs("", "10.0.0.0/8, 192.168.0.0/16", "")
                 .unwrap();
-        let report = analyser.analyse(roas, &resources_held, None);
+        let report = analyser.analyse(roas, &resources_held, None).await;
 
         assert!(!report.contains_invalids());
 
@@ -527,7 +557,7 @@ mod tests {
 
         // The suggestion should not try to add the disallowed announcements
         // because they were disallowed by an AS0 roa.
-        let suggestion = analyser.suggest(roas, &resources_held, None);
+        let suggestion = analyser.suggest(roas, &resources_held, None).await;
         let updates = RoaConfigurationUpdates::from(suggestion);
 
         let added = updates.added();
@@ -540,8 +570,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn analyse_bgp_no_announcements() {
+    #[tokio::test]
+    async fn analyse_bgp_no_announcements() {
         let roa1 = configured_roa("10.0.0.0/23-24 => 64496");
         let roa2 = configured_roa("10.0.3.0/24 => 64497");
         let roa3 = configured_roa("10.0.4.0/24 => 0");
@@ -551,8 +581,8 @@ mod tests {
         let resources_held =
             ResourceSet::from_strs("", "10.0.0.0/16", "").unwrap();
 
-        let analyser = BgpAnalyser::new(false, "", "");
-        let table = analyser.analyse(&roas, &resources_held, None);
+        let analyser = BgpAnalyser::new(false, "".to_string());
+        let table = analyser.analyse(&roas, &resources_held, None).await;
         let table_entries = table.entries();
         assert_eq!(3, table_entries.len());
 
@@ -565,8 +595,8 @@ mod tests {
         assert_eq!(roas_no_info, roas);
     }
 
-    #[test]
-    fn make_bgp_analysis_suggestion() {
+    #[tokio::test]
+    async fn make_bgp_analysis_suggestion() {
         let roa_too_permissive = configured_roa("10.0.0.0/22-23 => 64496");
         let roa_redundant = configured_roa("10.0.0.0/23 => 64496");
         let roa_as0 = configured_roa("10.0.4.0/24 => 0");
@@ -586,7 +616,10 @@ mod tests {
             roa_as0_redundant,
         ];
 
-        let analyser = BgpAnalyser::with_test_announcements();
+        let analyser = BgpAnalyser {
+            bgp_api_enabled: true,
+            bgp_api_uri: "test".to_string()
+        };
 
         let resources_held =
             ResourceSet::from_strs("", "10.0.0.0/8, 192.168.0.0/16", "")
@@ -594,7 +627,7 @@ mod tests {
         let limit =
             Some(ResourceSet::from_strs("", "10.0.0.0/22", "").unwrap());
         let suggestion_resource_subset =
-            analyser.suggest(roas, &resources_held, limit);
+            analyser.suggest(roas, &resources_held, limit).await;
 
         let expected: BgpAnalysisSuggestion =
             serde_json::from_str(include_str!(
@@ -604,7 +637,7 @@ mod tests {
         assert_eq!(suggestion_resource_subset, expected);
 
         let suggestion_all_roas_in_scope =
-            analyser.suggest(roas, &resources_held, None);
+            analyser.suggest(roas, &resources_held, None).await;
 
         let expected: BgpAnalysisSuggestion =
             serde_json::from_str(include_str!(
@@ -613,5 +646,107 @@ mod tests {
             .unwrap();
 
         assert_eq!(suggestion_all_roas_in_scope, expected);
+    }
+
+    #[test]
+    fn format_url() {
+        let analyser = BgpAnalyser::new(
+            true, "https://rest.bgp-api.net".to_string());
+        assert_eq!("https://rest.bgp-api.net/api/v1/prefix/192.168.0.0/16/search", 
+            analyser.format_url(TypedPrefix::from(Ipv4Prefix::from(
+                Prefix::from_str("192.168.0.0/16").unwrap()))));
+        assert_eq!("https://rest.bgp-api.net/api/v1/prefix/2001:db8::/32/search", 
+            analyser.format_url(TypedPrefix::from(Ipv6Prefix::from(
+                Prefix::from_str("2001:db8::/32").unwrap()))));
+    }
+
+    #[tokio::test]
+    async fn retrieve_announcements() {
+        let analyser = BgpAnalyser::new(true, "test".to_string());
+
+        let ipv4s = "185.49.140.0/22";
+        let ipv6s = "2a04:b900::/29";
+        let set = ResourceSet::from_strs("", ipv4s, ipv6s).unwrap();
+
+        let (v4_ranges, v6_ranges) = IpRange::for_resource_set(&set);
+
+        for range in v6_ranges {
+            assert_eq!(6, analyser.retrieve(range).await.unwrap().len());
+        }
+
+        for range in v4_ranges {
+            assert_eq!(3, analyser.retrieve(range).await.unwrap().len());
+        }
+    }
+
+    #[tokio::test]
+    async fn retrieve_broken_announcements() {
+        let analyser = BgpAnalyser::new(true, "test".to_string());
+
+        let ipv4s = "1.1.1.1/32, 2.2.2.2/32, 3.3.3.3/32, 4.4.4.4/32";
+        let set = ResourceSet::from_strs("", ipv4s, "").unwrap();
+        
+        let (v4_ranges, _) = IpRange::for_resource_set(&set);
+
+        for range in v4_ranges {
+            assert!(analyser.retrieve(range).await.is_err());
+        }
+    }
+
+    #[tokio::test]
+    async fn analyse_nlnet_labs_snapshot() {
+        let analyser = BgpAnalyser::new(true, "test".to_string());
+
+        let ipv4s = "185.49.140.0/22";
+        let ipv6s = "2a04:b900::/29";
+        let set = ResourceSet::from_strs("AS211321", ipv4s, ipv6s).unwrap();
+
+        let roas = &[
+            configured_roa("2a04:b906::/48-48 => 0"),
+            configured_roa("2a04:b907::/48-48 => 0"),
+            configured_roa("185.49.142.0/24-24 => 0"),
+            configured_roa("2a04:b900::/30-32 => 8587"),
+            configured_roa("185.49.140.0/23-23 => 8587"),
+            configured_roa("2a04:b900::/30-30 => 8587"),
+            configured_roa("2a04:b905::/48-48 => 14618"),
+            configured_roa("2a04:b905::/48-48 => 16509"),
+            configured_roa("2a04:b902::/32-32 => 16509"),
+            configured_roa("2a04:b904::/48-48 => 211321"),
+            configured_roa("2a04:b907::/47-47 => 211321"),
+            configured_roa("185.49.142.0/23-23 => 211321"),
+            configured_roa("2a04:b902::/48-48 => 211321"),
+            configured_roa("185.49.143.0/24-24 => 211321"),
+        ];
+
+        let report = analyser.analyse(roas, &set, None).await;
+
+        dbg!(&report);
+
+        let entry_expect_roa = |x: &str, y| {
+            let x = x.to_string();
+            assert!(report.entries().iter().any(|s| 
+                s.state() == y &&
+                s.configured_roa().to_string() == x 
+            ));
+        };
+
+        let entry_expect_ann = |x: &str, y: u32, z: BgpAnalysisState| {
+            let x = x.to_string();
+            assert!(report.entries().iter().any(|s|
+                s.state() == z &&
+                *s.announcement().asn() == AsNumber::new(y) &&
+                s.announcement().prefix().to_string() == x
+            ));
+        };
+
+        entry_expect_roa("2a04:b907::/48-48 => 0", BgpAnalysisState::RoaAs0Redundant);
+        entry_expect_roa("185.49.142.0/24-24 => 0", BgpAnalysisState::RoaAs0Redundant);
+        entry_expect_roa("2a04:b900::/30-30 => 8587", BgpAnalysisState::RoaRedundant);
+        entry_expect_roa("2a04:b905::/48-48 => 14618", BgpAnalysisState::RoaUnseen);
+        entry_expect_roa("2a04:b902::/32-32 => 16509", BgpAnalysisState::RoaUnseen);
+        entry_expect_ann("2a04:b907::/48", 211321, BgpAnalysisState::AnnouncementInvalidLength);
+        entry_expect_ann("185.49.142.0/24", 211321, BgpAnalysisState::AnnouncementInvalidLength);
+        entry_expect_roa("2a04:b902::/48-48 => 211321", BgpAnalysisState::RoaUnseen);
+        entry_expect_roa("185.49.143.0/24-24 => 211321", BgpAnalysisState::RoaUnseen);
     }
 }
