@@ -2199,7 +2199,7 @@ async fn api_ca_routes_try_update(
                     Err(err) => return render_error(err),
                 };
                 match ca.routes_bgp_dry_run(
-                    updates.clone(), &state.bgp_analyser()
+                    updates.clone(), state.bgp_analyser()
                 ).await {
                     Err(e) => {
                         // update was rejected, return error
