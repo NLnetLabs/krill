@@ -3,13 +3,15 @@
 //! The test is disabled for HSM tests since it creates two Krill servers in
 //! the same process which can causes issues at least with PKCS#11 and never
 //! happens in reality.
+#![cfg(all(
+    not(feature = "hsm-tests-pkcs11"), not(feature = "hsm-tests-kmip")
+))]
 
 mod common;
 
 
 //------------ Test Function -------------------------------------------------
 
-#[cfg(all(not(feature = "hsm-tests-pkcs11"), not(feature = "hsm-tests-kmip")))]
 #[test]
 fn remote_parent_and_repo() {
     use rpki::repository::resources::ResourceSet;

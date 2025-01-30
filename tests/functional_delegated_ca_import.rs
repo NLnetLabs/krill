@@ -6,20 +6,22 @@
 //! The test is disabled for HSM tests since it creates two Krill servers in
 //! the same process which can causes issues at least with PKCS#11 and never
 //! happens in reality.
+#![cfg(all(
+    not(feature = "hsm-tests-pkcs11"), not(feature = "hsm-tests-kmip")
+))]
+
+use rpki::ca::idexchange::CaHandle;
+use rpki::ca::provisioning::ResourceClassName;
+use krill::commons::api;
+use rpki::repository::resources::ResourceSet;
 
 mod common;
 
 
 //------------ Test Function -------------------------------------------------
 
-#[cfg(all(not(feature = "hsm-tests-pkcs11"), not(feature = "hsm-tests-kmip")))]
 #[test]
 fn functional_delegated_ca_import() {
-    use rpki::ca::idexchange::CaHandle;
-    use rpki::ca::provisioning::ResourceClassName;
-    use krill::commons::api;
-    use rpki::repository::resources::ResourceSet;
-
     // Start two testbeds
     let (server1, _tmp1) = common::KrillServer::start_with_testbed();
     let (server2, _tmp2)
