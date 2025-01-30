@@ -388,6 +388,7 @@ impl CaManager {
                 ta_mft_nr_override: None,
                 timing: self.config.ta_timing,
                 signer: self.signer.clone(),
+                force_recreate: false
             };
             let cmd = TrustAnchorSignerInitCommand::new(
                 &handle,

@@ -244,6 +244,14 @@ where
             .map_err(AggregateStoreError::KeyStoreError)
     }
 
+    /// Returns Ok() if key was found and dropped
+    pub fn drop(&self, id: &MyHandle) -> Result<(), AggregateStoreError> {
+        let init_command_key = Self::key_for_command(id, 0);
+        self.kv
+            .drop_key(&init_command_key)
+            .map_err(AggregateStoreError::KeyStoreError)
+    }
+
     /// Lists all known ids.
     pub fn list(&self) -> Result<Vec<MyHandle>, AggregateStoreError> {
         self.aggregates()

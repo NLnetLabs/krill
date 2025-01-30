@@ -147,6 +147,7 @@ mod tests {
                     ta_mft_nr_override: Some(42),
                     timing,
                     signer: signer.clone(),
+                    force_recreate: true
                 },
                 &actor,
             );

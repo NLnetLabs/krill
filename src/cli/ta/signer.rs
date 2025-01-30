@@ -93,6 +93,7 @@ pub struct SignerInitInfo {
     pub tal_rsync: uri::Rsync,
     pub private_key_pem: Option<String>,
     pub ta_mft_nr_override: Option<u64>,
+    pub force: bool
 }
 
 
@@ -132,29 +133,35 @@ impl TrustAnchorSignerManager {
         info: SignerInitInfo,
     ) -> Result<Success, SignerClientError> {
         if self.store.has(&self.ta_handle)? {
-            Err(SignerClientError::other(
-                "Trust Anchor Signer was already initialised.",
-            ))
-        } else {
-            let cmd = TrustAnchorSignerInitCommand::new(
-                &self.ta_handle,
-                TrustAnchorSignerInitCommandDetails {
-                    proxy_id: info.proxy_id,
-                    repo_info: info.repo_info,
-                    tal_https: info.tal_https,
-                    tal_rsync: info.tal_rsync,
-                    private_key_pem: info.private_key_pem,
-                    ta_mft_nr_override: info.ta_mft_nr_override,
-                    timing: self.config.ta_timing,
-                    signer: self.signer.clone(),
-                },
-                &self.actor,
-            );
-
-            self.store.add(cmd)?;
-
-            Ok(Success)
+            if !info.force {
+                return Err(SignerClientError::other(
+                    "Trust Anchor Signer was already initialised.",
+                ));
+            } else if let Err(e) = self.store.drop(&self.ta_handle) {
+                return Err(SignerClientError::other(
+                    e.to_string(),
+                ));
+            }
         }
+        let cmd = TrustAnchorSignerInitCommand::new(
+            &self.ta_handle,
+            TrustAnchorSignerInitCommandDetails {
+                proxy_id: info.proxy_id,
+                repo_info: info.repo_info,
+                tal_https: info.tal_https,
+                tal_rsync: info.tal_rsync,
+                private_key_pem: info.private_key_pem,
+                ta_mft_nr_override: info.ta_mft_nr_override,
+                force_recreate: info.force,
+                timing: self.config.ta_timing,
+                signer: self.signer.clone(),
+            },
+            &self.actor,
+        );
+
+        self.store.add(cmd)?;
+
+        Ok(Success)
     }
 
     pub fn show(&self) -> Result<TrustAnchorSignerInfo, SignerClientError> {

@@ -109,6 +109,10 @@ pub struct Init {
     /// Set the initial manifest number
     #[arg(long, value_name = "number", default_value = "1")]
     initial_manifest_number: u64,
+
+    /// Force the signer to reinitialise even if previously already initialised
+    #[arg(long, action)]
+    force: bool
 }
 
 impl Init {
@@ -123,6 +127,7 @@ impl Init {
                 tal_rsync: self.tal_rsync,
                 private_key_pem: self.private_key_pem.map(|x| x.0),
                 ta_mft_nr_override: Some(self.initial_manifest_number),
+                force: self.force
             }
         )
     }

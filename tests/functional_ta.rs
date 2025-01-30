@@ -63,7 +63,8 @@ async fn functional_at() {
                 "rsync://localhost/ta/ta.cer"
             ).unwrap(),
             private_key_pem: None,
-            ta_mft_nr_override: None
+            ta_mft_nr_override: None,
+            force: true
         }
     ).unwrap();
 

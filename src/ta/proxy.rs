@@ -716,11 +716,7 @@ impl TrustAnchorProxy {
         &self,
         signer: TrustAnchorSignerInfo,
     ) -> KrillResult<Vec<TrustAnchorProxyEvent>> {
-        if self.signer.is_none() {
-            Ok(vec![TrustAnchorProxyEvent::SignerAdded(signer)])
-        } else {
-            Err(Error::TaProxyAlreadyHasSigner)
-        }
+        Ok(vec![TrustAnchorProxyEvent::SignerAdded(signer)])
     }
 
     fn process_make_signer_request(
