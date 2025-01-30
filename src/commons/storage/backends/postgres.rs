@@ -4,7 +4,7 @@
 
 use std::{error, fmt};
 use bytes::BytesMut;
-use postgres::{NoTls};
+use postgres::{IsolationLevel, NoTls};
 use postgres::types::{FromSql, IsNull, ToSql, Type};
 use r2d2_postgres::r2d2;
 use r2d2_postgres::PostgresConnectionManager;
@@ -51,44 +51,58 @@ impl Store {
     }
 
     pub fn execute<F, T>(
-        &self, _scope: &Scope, op: F
+        &self, scope: &Scope, op: F
     ) -> Result<T, SuperError>
     where
         F: for<'a> Fn(&mut SuperTransaction<'a>) -> Result<T, SuperError>
     {
-        const TRIES: usize = 10;
-        let mut i = 0;
+        let mut client = self.executor.get().map_err(Error::from)?;
+        let mut tran = client.build_transaction()
+            .isolation_level(IsolationLevel::Serializable)
+            .start().map_err(Error::from)?;
 
-        loop {
-            i += 1;
-            let mut client = self.executor.get().map_err(Error::from)?;
-            let mut tran = client.transaction().map_err(Error::from)?;
-            tran.execute(
-                "SET TRANSACTION ISOLATION LEVEL SERIALIZABLE", &[]
-            ).map_err(Error::from)?;
+        // Lock the locks table.
+        tran.execute(
+            "LOCK TABLE locks IN ROW EXCLUSIVE MODE",
+            &[]
+        )?;
 
-            let tran = Transaction {
-                namespace: &self.namespace,
-                transaction: tran,
-            };
-            let mut tran = SuperTransaction::from(tran);
-            match op(&mut tran) {
-                Ok(res) => {
-                    if let Ok(tran) = Transaction::try_from(tran) {
-                        tran.transaction.commit().map_err(Error::from)?;
-                    }
-                    break Ok(res)
+        // Insert the scope into the locks table. This will hang if the row
+        // already exists.
+        tran.execute(
+            "INSERT INTO locks (namespace, scope) VALUES ($1, $2)",
+            &[&self.namespace.as_ref(), scope],
+        )?;
+
+        // Now run the closure.
+        //
+        // If it returns an error, we roll back (just to be sure) and return.
+        let tran = Transaction {
+            namespace: &self.namespace,
+            transaction: tran,
+        };
+        let mut tran = SuperTransaction::from(tran);
+        let res = match op(&mut tran) {
+            Ok(res) => res,
+            Err(err) => {
+                if let Ok(tran) = Transaction::try_from(tran) {
+                    tran.transaction.rollback()?;
                 }
-                Err(err) => {
-                    if let Ok(tran) = Transaction::try_from(tran) {
-                        tran.transaction.rollback().map_err(Error::from)?;
-                    }
-                    if i == TRIES {
-                        break Err(err);
-                    }
-                }
+                return Err(err)
             }
+        };
+
+        // Remove the scope from the locks table.
+        if let Ok(mut tran) = Transaction::try_from(tran) {
+            tran.transaction.execute(
+                "DELETE FROM locks WHERE namespace = $1 and scope = $2",
+                &[&self.namespace.as_ref(), scope],
+            )?;
+
+            tran.transaction.commit()?;
         }
+
+        Ok(res)
     }
 
     pub fn is_empty(&self) -> Result<bool, Error> {
@@ -379,6 +393,12 @@ impl From<postgres::error::Error> for Error {
     }
 }
 
+impl From<postgres::error::Error> for SuperError {
+    fn from(src: postgres::error::Error) -> Self {
+        Error::Postgres(src).into()
+    }
+}
+
 impl From<r2d2::Error> for Error {
     fn from(src: r2d2::Error) -> Self {
         Self::R2D2(src)
@@ -490,3 +510,4 @@ impl<'a> FromSql<'a> for SegmentBuf {
         <String as FromSql<'a>>::accepts(ty)
     }
 }
+
