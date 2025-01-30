@@ -716,6 +716,11 @@ impl TrustAnchorProxy {
         &self,
         signer: TrustAnchorSignerInfo,
     ) -> KrillResult<Vec<TrustAnchorProxyEvent>> {
+        if let Some(s) = &self.signer {
+            if s.ta_cert_details.cert().key_identifier() != signer.ta_cert_details.cert().key_identifier() {
+                return Err(Error::TaProxyAlreadyHasSigner);
+            }
+        }
         Ok(vec![TrustAnchorProxyEvent::SignerAdded(signer)])
     }
 

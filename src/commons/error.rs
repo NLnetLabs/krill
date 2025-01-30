@@ -538,7 +538,7 @@ impl fmt::Display for Error {
             Error::TaProxyAlreadyHasRepository => write!(f, "Trust Anchor Proxy already has repository"),
             Error::TaProxyHasNoRepository => write!(f, "Trust Anchor Proxy has no repository"),
             Error::TaProxyHasNoSigner => write!(f, "Trust Anchor Proxy has no associated signer"),
-            Error::TaProxyAlreadyHasSigner => write!(f, "Trust Anchor Proxy already has associated signer"),
+            Error::TaProxyAlreadyHasSigner => write!(f, "Trust Anchor Proxy already has associated signer with a different key identifier"),
             Error::TaProxyHasNoRequest => write!(f, "Trust Anchor Proxy has no signer request"),
             Error::TaProxyHasRequest => write!(f, "Trust Anchor Proxy already has signer request"),
             Error::TaProxyRequestNonceMismatch(rcvd, expected) => write!(f, "Trust Anchor Response nonce '{}' does not match open Request nonce '{}'", rcvd, expected),
