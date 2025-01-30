@@ -1,15 +1,20 @@
-//! Tests running a CA under a remote parent and repo
-
-use rpki::repository::resources::ResourceSet;
-use krill::commons::api::{ObjectName, ParentCaReq, RoaConfigurationUpdates};
+//! Test running a CA under a remote parent and repo.
+//!
+//! The test is disabled for HSM tests since it creates two Krill servers in
+//! the same process which can causes issues at least with PKCS#11 and never
+//! happens in reality.
 
 mod common;
 
 
 //------------ Test Function -------------------------------------------------
 
+#[cfg(all(not(feature = "hsm-tests-pkcs11"), not(feature = "hsm-tests-kmip")))]
 #[test]
 fn remote_parent_and_repo() {
+    use rpki::repository::resources::ResourceSet;
+    use krill::commons::api::{ObjectName, ParentCaReq, RoaConfigurationUpdates};
+
     // Start two testbeds
     let (server1, _tmp1) = common::KrillServer::start_with_testbed();
     let (server2, _tmp2)
