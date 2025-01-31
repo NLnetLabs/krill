@@ -148,7 +148,7 @@ impl TrustAnchorSignerManager {
                     let pub_key = signer_info.ta_cert_details.cert().csr_info().key();
                     let k1 = priv_key.public_key_to_der()?;
                     let k2 = pub_key.to_info_bytes().to_vec();
-                    return Ok((k1, k2));
+                    Ok((k1, k2))
                 }();
                 if let Ok((k1, k2)) = res {
                     if k1 != k2 {
