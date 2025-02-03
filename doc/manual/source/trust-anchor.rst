@@ -468,3 +468,26 @@ friendlier to the human eye:
 .. code-block:: bash
 
   krillta signer exchanges --format text
+
+
+Changing the TA certificate
+---------------------------
+
+There may be a reason why you want to change the TA certificate without
+starting from scratch. Reasons might include: changes in the timing config,
+the TA certificate expiring, and changes in the HTTPS or rsync URI.
+
+In order to recreate the TA certificate, run the following command with the
+new parameters:
+
+.. code-block:: bash
+
+  krillta signer reinit
+
+Be aware that the private key also has to be supplied as an argument. After
+that, the flow is the same as for the initial initialisation: 
+
+.. code-block:: bash
+  krillta signer show > ./signer-info.json
+  krillta proxy signer init --info ./signer-info.json
+

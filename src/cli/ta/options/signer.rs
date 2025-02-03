@@ -55,6 +55,9 @@ pub enum Subcommand {
     /// Initialise the signer
     Init(Init),
 
+    /// Reinitialise an already initialised signer
+    Reinit(Reinit),
+
     /// Show the signer info
     Show(Show),
 
@@ -73,6 +76,7 @@ impl Subcommand {
     pub fn run(self, manager: &TrustAnchorSignerManager) -> Report {
         match self {
             Self::Init(cmd) => cmd.run(manager).into(),
+            Self::Reinit(cmd) => cmd.run(manager).into(),
             Self::Show(cmd) => cmd.run(manager).into(),
             Self::Process(cmd) => cmd.run(manager).into(),
             Self::Last(cmd) => cmd.run(manager).into(),
@@ -128,6 +132,54 @@ impl Init {
                 private_key_pem: self.private_key_pem.map(|x| x.0),
                 ta_mft_nr_override: Some(self.initial_manifest_number),
                 force: self.force
+            }
+        )
+    }
+}
+
+
+//------------ Reinit ----------------------------------------------------------
+
+#[derive(clap::Args)]
+pub struct Reinit {
+    /// Path to the proxy ID JSON file.
+    #[arg(long, short = 'i', value_name = "path")]
+    proxy_id: JsonFile<api::IdCertInfo, IdiMsg>,
+
+    /// Path to the proxy repository contact JSON file.
+    #[arg(long, short = 'r', value_name = "path")]
+    proxy_repository_contact: JsonFile<api::RepositoryContact, RcMsg>,
+
+    /// The rsync URI used for TA certificate on TAL and AIA
+    #[arg(long, value_name = "rsync URI")]
+    tal_rsync: uri::Rsync,
+
+    /// The HTTPS URI used for the TAL.
+    #[arg(long, value_name = "HTTPS URI")]
+    tal_https: Vec<uri::Https>,
+
+    /// The private key for the already initialised signer in PEM format
+    #[arg(long, value_name = "path")]
+    private_key_pem: PrivateKeyFile,
+
+    /// Set the manifest number
+    #[arg(long, value_name = "number", default_value = "1")]
+    initial_manifest_number: u64,
+}
+
+impl Reinit {
+    pub fn run(
+        self, manager: &TrustAnchorSignerManager
+    ) -> Result<api::Success, SignerClientError> {
+        manager.init(
+            SignerInitInfo {
+                proxy_id: self.proxy_id.content,
+                repo_info: self.proxy_repository_contact.content.into(),
+                tal_https: self.tal_https,
+                tal_rsync: self.tal_rsync,
+                private_key_pem: Some(self.private_key_pem.0),
+                ta_mft_nr_override: Some(self.initial_manifest_number),
+                force: true
             }
         )
     }
