@@ -313,10 +313,10 @@ endpoints for the TA certificate.
 
 .. code-block:: bash
 
-  krillta signer init --proxy_id ./proxy-id.json \
-                      --proxy_repository_contact ./proxy-repo.json \
-                      --tal_https <HTTPS URI for TA cert on TAL> \
-                      --tal_rsync <RSYNC URI for TA cert on TAL>
+  krillta signer init --proxy-id ./proxy-id.json \
+                      --proxy-repository-contact ./proxy-repo.json \
+                      --tal-https <HTTPS URI for TA cert on TAL> \
+                      --tal-rsync <RSYNC URI for TA cert on TAL>
 
 
 Associate the TA Signer with the Proxy
@@ -468,3 +468,26 @@ friendlier to the human eye:
 .. code-block:: bash
 
   krillta signer exchanges --format text
+
+
+Changing the TA certificate
+---------------------------
+
+There may be a reason why you want to change the TA certificate without
+starting from scratch. Reasons might include: changes in the timing config,
+the TA certificate expiring, and changes in the HTTPS or rsync URI.
+
+In order to recreate the TA certificate, run the following command with the
+new parameters:
+
+.. code-block:: bash
+
+  krillta signer reinit
+
+Be aware that the private key also has to be supplied as an argument. After
+that, the flow is the same as for the initial initialisation: 
+
+.. code-block:: bash
+  krillta signer show > ./signer-info.json
+  krillta proxy signer init --info ./signer-info.json
+

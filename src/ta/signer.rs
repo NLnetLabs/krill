@@ -79,6 +79,7 @@ pub struct TrustAnchorSignerInitCommandDetails {
     pub tal_rsync: uri::Rsync,
     pub private_key_pem: Option<String>,
     pub ta_mft_nr_override: Option<u64>,
+    pub force_recreate: bool,
     pub timing: TaTimingConfig,
     pub signer: Arc<KrillSigner>,
 }
@@ -296,6 +297,7 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
             timing.certificate_validity_years,
             &signer,
         )?;
+        
         let objects = TrustAnchorObjects::create(
             ta_cert_details.cert(),
             cmd.ta_mft_nr_override.unwrap_or(1),
