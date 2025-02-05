@@ -41,7 +41,6 @@ mod tests {
 
     use crate::{
         commons::{
-            actor::Actor,
             api::{CommandHistoryCriteria, CommandSummary},
         },
         constants::ACTOR_DEF_TEST,
@@ -74,11 +73,10 @@ mod tests {
 
     impl PersonInitCommand {
         fn make(id: &MyHandle, name: String) -> Self {
-            let actor = Actor::actor_from_def(ACTOR_DEF_TEST);
             PersonInitCommand::new(
                 id,
                 PersonInitCommandDetails { name },
-                &actor,
+                &ACTOR_DEF_TEST,
             )
         }
     }
@@ -194,12 +192,11 @@ mod tests {
 
     impl PersonCommand {
         pub fn go_around_sun(id: &MyHandle, version: Option<u64>) -> Self {
-            let actor = Actor::actor_from_def(ACTOR_DEF_TEST);
             Self::new(
                 id,
                 version,
                 PersonCommandDetails::GoAroundTheSun,
-                &actor,
+                &ACTOR_DEF_TEST,
             )
         }
 
@@ -209,8 +206,7 @@ mod tests {
             s: &str,
         ) -> Self {
             let details = PersonCommandDetails::ChangeName(s.to_string());
-            let actor = Actor::actor_from_def(ACTOR_DEF_TEST);
-            Self::new(id, version, details, &actor)
+            Self::new(id, version, details, &ACTOR_DEF_TEST)
         }
     }
 

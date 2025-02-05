@@ -15,7 +15,6 @@ use rpki::{
 
 use crate::{
     commons::{
-        actor::Actor,
         api::{
             AspaDefinition, AspaDefinitionUpdates, CustomerAsn, ProviderAsn,
         },
@@ -30,7 +29,7 @@ use crate::{
         KrillResult,
     },
     constants::{
-        CASERVER_NS, CA_OBJECTS_NS, KEYS_NS, KRILL_VERSION,
+        ACTOR_DEF_KRILL, CASERVER_NS, CA_OBJECTS_NS, KEYS_NS, KRILL_VERSION,
         PUBSERVER_CONTENT_NS, PUBSERVER_NS, SIGNERS_NS, STATUS_NS,
         TA_PROXY_SERVER_NS, TA_SIGNER_SERVER_NS,
     },
@@ -434,7 +433,7 @@ pub trait UpgradeAggregateStorePre0_14 {
                 // From 0.14.x and up we will have command '0' for the init,
                 // where beforehand we only had an event. We
                 // will have to make up some values for the actor and time.
-                let actor = Actor::system_actor().to_string();
+                let actor = ACTOR_DEF_KRILL;
 
                 // The time is tricky.. our best guess is to set this to the
                 // same value as the first command, if there
@@ -454,7 +453,7 @@ pub trait UpgradeAggregateStorePre0_14 {
                 let command = self.convert_init_event(
                     old_init,
                     handle.clone(),
-                    actor,
+                    actor.audit_name(),
                     time,
                 )?;
 

@@ -6,7 +6,9 @@ use hyper::StatusCode;
 
 use rpki::{
     ca::{
-        idexchange::{CaHandle, ChildHandle, ParentHandle, PublisherHandle},
+        idexchange::{
+            CaHandle, ChildHandle, MyHandle, ParentHandle, PublisherHandle
+        },
         provisioning,
         provisioning::ResourceClassName,
         publication,
@@ -18,6 +20,7 @@ use rpki::{
 
 use crate::{
     commons::{
+        actor::Actor,
         api::{
             rrdp::PublicationDeltaError, CustomerAsn, ErrorResponse,
             RoaPayload,
@@ -27,6 +30,7 @@ use crate::{
         util::httpclient,
     },
     daemon::{ca::RoaPayloadJsonMapKey, http::tls_keys},
+    daemon::auth::Permission,
     ta,
     upgrades::UpgradeError,
 };
@@ -125,6 +129,30 @@ pub enum ApiAuthError {
     ApiAuthTransientError(String),
     ApiAuthSessionExpired(String),
     ApiInsufficientRights(String),
+}
+
+impl ApiAuthError {
+    pub fn insufficient_rights(
+        actor: &Actor, perm: Permission, resource: Option<&MyHandle>
+    ) -> Self {
+        Self::ApiInsufficientRights(
+            match resource {
+                Some(res) => {
+                    format!(
+                        "User '{}' does not have permission '{}' \
+                         on resource '{}'",
+                        actor, perm, res,
+                    )
+                },
+                None => {
+                    format!(
+                        "User '{}' does not have permission '{}'",
+                        actor, perm,
+                    )
+                }
+            }
+        )
+    }
 }
 
 impl Display for ApiAuthError {

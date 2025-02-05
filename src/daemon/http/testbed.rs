@@ -3,8 +3,8 @@ use hyper::Method;
 use rpki::ca::idexchange::PublisherHandle;
 
 use crate::{
-    constants::ACTOR_DEF_TESTBED,
     daemon::{
+        auth::AuthInfo,
         ca::testbed_ca_handle,
         http::{
             server::{
@@ -55,7 +55,7 @@ pub async fn testbed(mut req: Request) -> RoutingResult {
         // Krill CAs and publishers. Upgrade anonymous users with testbed
         // rights ready for the next call in the chain to the testbed()
         // API call handler functions.
-        req.upgrade_from_anonymous(ACTOR_DEF_TESTBED).await;
+        req.upgrade_from_anonymous(AuthInfo::testbed()).await;
 
         let mut path = req.path().clone();
         match path.next() {
