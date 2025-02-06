@@ -32,7 +32,6 @@ mod test {
     use std::sync::Arc;
     use serde::Serialize;
     use rpki::ca::idexchange::MyHandle;
-    use crate::commons::actor::Actor;
     use crate::commons::api::{CommandHistoryCriteria, CommandSummary};
     use crate::commons::storage::Namespace;
     use crate::constants::ACTOR_DEF_TEST;
@@ -63,11 +62,10 @@ mod test {
 
     impl PersonInitCommand {
         fn make(id: &MyHandle, name: String) -> Self {
-            let actor = Actor::actor_from_def(ACTOR_DEF_TEST);
             PersonInitCommand::new(
                 id,
                 PersonInitCommandDetails { name },
-                &actor,
+                &ACTOR_DEF_TEST,
             )
         }
     }
@@ -183,12 +181,11 @@ mod test {
 
     impl PersonCommand {
         pub fn go_around_sun(id: &MyHandle, version: Option<u64>) -> Self {
-            let actor = Actor::actor_from_def(ACTOR_DEF_TEST);
             Self::new(
                 id,
                 version,
                 PersonCommandDetails::GoAroundTheSun,
-                &actor,
+                &ACTOR_DEF_TEST,
             )
         }
 
@@ -198,8 +195,7 @@ mod test {
             s: &str,
         ) -> Self {
             let details = PersonCommandDetails::ChangeName(s.to_string());
-            let actor = Actor::actor_from_def(ACTOR_DEF_TEST);
-            Self::new(id, version, details, &actor)
+            Self::new(id, version, details, &ACTOR_DEF_TEST)
         }
     }
 

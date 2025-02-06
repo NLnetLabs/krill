@@ -13,6 +13,13 @@ Breaking Changes
 * Removed support for RTA in `krillc`. Support is currently still
   present in the Krill server, though behind a (non-default) feature flag.
   ([#1228])
+* Changed how authorization works with OpenID Connect and configuration
+  files. Custom profiles have been replaced with a straightforward mapping
+  from access permission to roles and assigning roles to users. For
+  configuration file-based authentication, the file format has slightly
+  changed but the current format is still accepted. If you are using
+  OpenID Connect, you will have to update your configuration. Please, see
+  the manual for details. ([#1232])
 * Replaced downloading of RISwhois file for ROA analysis with calls to the
   [Roto API](https://github.com/NLnetLabs/roto-api). ([#1233])
 
@@ -40,6 +47,7 @@ Other changes
 [#1215]: https://github.com/NLnetLabs/krill/pull/1215
 [#1226]: https://github.com/NLnetLabs/krill/pull/1226
 [#1228]: https://github.com/NLnetLabs/krill/pull/1228
+[#1232]: https://github.com/NLnetLabs/krill/pull/1232
 [#1233]: https://github.com/NLnetLabs/krill/pull/1233
 [#1239]: https://github.com/NLnetLabs/krill/pull/1239
 [#1241]: https://github.com/NLnetLabs/krill/pull/1241

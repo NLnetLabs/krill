@@ -32,7 +32,7 @@ use crate::{
         util::KrillVersion,
         KrillResult,
     },
-    constants::{PROPERTIES_DFLT_NAME, PROPERTIES_NS},
+    constants::{ACTOR_DEF_KRILL, PROPERTIES_DFLT_NAME, PROPERTIES_NS},
 };
 
 //------------ PropertiesInitCommand ---------------------------------------
@@ -282,7 +282,7 @@ impl PropertiesManager {
             .map(|store| PropertiesManager {
                 store,
                 main_key,
-                system_actor: Actor::system_actor(),
+                system_actor: ACTOR_DEF_KRILL,
             })
             .map_err(Error::AggregateStoreError)
     }
