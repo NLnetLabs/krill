@@ -471,7 +471,7 @@ mod tests {
         let publisher_req =
             make_publisher_req(alice_handle.as_str(), alice.id_cert());
 
-        let actor = Actor::actor_from_def(ACTOR_DEF_TEST);
+        let actor = ACTOR_DEF_TEST;
         server.create_publisher(publisher_req, &actor).unwrap();
 
         let alice_found =
@@ -493,7 +493,7 @@ mod tests {
         let publisher_req =
             make_publisher_req(alice_handle.as_str(), alice.id_cert());
 
-        let actor = Actor::actor_from_def(ACTOR_DEF_TEST);
+        let actor = ACTOR_DEF_TEST;
         server
             .create_publisher(publisher_req.clone(), &actor)
             .unwrap();
@@ -517,7 +517,7 @@ mod tests {
         let publisher_req =
             make_publisher_req(alice_handle.as_str(), alice.id_cert());
 
-        let actor = Actor::actor_from_def(ACTOR_DEF_TEST);
+        let actor = ACTOR_DEF_TEST;
         server.create_publisher(publisher_req, &actor).unwrap();
 
         let list_reply = server.list(&alice_handle).unwrap();
@@ -544,7 +544,7 @@ mod tests {
         let publisher_req =
             make_publisher_req(alice_handle.as_str(), alice.id_cert());
 
-        let actor = Actor::actor_from_def(ACTOR_DEF_TEST);
+        let actor = ACTOR_DEF_TEST;
         server.create_publisher(publisher_req, &actor).unwrap();
 
         // get the file out of a list_reply
@@ -780,7 +780,7 @@ mod tests {
         let publisher_req =
             make_publisher_req(alice_handle.as_str(), alice.id_cert());
 
-        let actor = Actor::actor_from_def(ACTOR_DEF_TEST);
+        let actor = ACTOR_DEF_TEST;
         server.create_publisher(publisher_req, &actor).unwrap();
 
         // get the file out of a list_reply

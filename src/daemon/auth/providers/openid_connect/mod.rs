@@ -1,9 +1,13 @@
+//! An authentication provider using OpenID Connect.
+
+pub use self::config::ConfigAuthOpenIDConnect;
+pub use self::provider::AuthProvider;
+
 #[macro_use]
-pub mod util;
+mod util;
 
-pub mod config;
-pub mod httpclient;
-pub mod jmespathext;
-pub mod provider;
+mod claims;
+mod config;
+mod httpclient;
+mod provider;
 
-pub use config::ConfigAuthOpenIDConnect;

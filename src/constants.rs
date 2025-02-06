@@ -1,9 +1,5 @@
 use crate::commons::storage::Namespace;
-
-use crate::{
-    commons::actor::ActorDef,
-    daemon::auth::common::NoResourceType,
-};
+use crate::commons::actor::Actor;
 
 pub const KRILL_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const KRILL_VERSION_MAJOR: &str = env!("CARGO_PKG_VERSION_MAJOR");
@@ -103,18 +99,16 @@ pub const HTTP_CLIENT_TIMEOUT_SECS: u64 = 120;
 pub const HTTP_USER_AGENT_TRUNCATE: usize = 256; // Will truncate received user-agent values at this size.
 pub const OPENID_CONNECT_HTTP_CLIENT_TIMEOUT_SECS: u64 = 30;
 
-pub const NO_RESOURCE: NoResourceType = NoResourceType;
+pub const ACTOR_COMPONENT_KRILL: &str = "krill";
 
-pub const ACTOR_DEF_KRILL: ActorDef = ActorDef::system("krill", "admin");
-pub const ACTOR_DEF_KRILLTA: ActorDef = ActorDef::system("krillta", "admin");
-pub const ACTOR_DEF_ANON: ActorDef = ActorDef::anonymous();
-pub const ACTOR_DEF_ADMIN_TOKEN: ActorDef =
-    ActorDef::system("admin-token", "admin");
-pub const ACTOR_DEF_TESTBED: ActorDef =
-    ActorDef::system("testbed", "testbed");
+pub const ACTOR_DEF_KRILL: Actor = Actor::system("krill");
+pub const ACTOR_DEF_KRILLTA: Actor = Actor::system("krillta");
+pub const ACTOR_DEF_ANON: Actor = Actor::anonymous();
+pub const ACTOR_DEF_ADMIN_TOKEN: Actor = Actor::system("admin-token");
+pub const ACTOR_DEF_TESTBED: Actor = Actor::system("testbed");
 
 #[cfg(test)]
-pub const ACTOR_DEF_TEST: ActorDef = ActorDef::system("test", "admin");
+pub const ACTOR_DEF_TEST: Actor = Actor::system("test");
 
 // Note: These must match the values used by Lagosta.
 #[cfg(feature = "multi-user")]

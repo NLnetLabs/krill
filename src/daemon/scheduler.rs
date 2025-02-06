@@ -41,7 +41,7 @@ use crate::{
 };
 
 #[cfg(feature = "multi-user")]
-use crate::daemon::auth::common::session::LoginSessionCache;
+use crate::daemon::auth::Authorizer;
 
 use super::mq::TaskResult;
 
@@ -51,7 +51,7 @@ pub struct Scheduler {
     repo_manager: Arc<RepositoryManager>,
     #[cfg(feature = "multi-user")]
     // Responsible for purging expired cached login tokens
-    login_session_cache: Arc<LoginSessionCache>,
+    authorizer: Arc<Authorizer>,
     config: Arc<Config>,
     system_actor: Actor,
     started: Timestamp,
@@ -62,9 +62,7 @@ impl Scheduler {
         tasks: Arc<TaskQueue>,
         ca_manager: Arc<CaManager>,
         repo_manager: Arc<RepositoryManager>,
-        #[cfg(feature = "multi-user")] login_session_cache: Arc<
-            LoginSessionCache,
-        >,
+        #[cfg(feature = "multi-user")] authorizer: Arc<Authorizer>,
         config: Arc<Config>,
         system_actor: Actor,
     ) -> Self {
@@ -73,7 +71,7 @@ impl Scheduler {
             ca_manager,
             repo_manager,
             #[cfg(feature = "multi-user")]
-            login_session_cache,
+            authorizer,
             config,
             system_actor,
             started: Timestamp::now(),
@@ -231,11 +229,7 @@ impl Scheduler {
         // to avoid a thundering herd. Note that the operator can always
         // choose to run bulk operations manually if they know that they
         // cannot wait.
-        let ca_list = self
-            .ca_manager
-            .ca_list(&self.system_actor)
-            .map_err(FatalError)?;
-        let cas = ca_list.cas();
+        let cas = self.ca_manager.ca_handles().map_err(FatalError)?;
         debug!("Adding missing tasks at start up");
 
         // If we have many CAs then we need to apply some jitter
@@ -244,10 +238,10 @@ impl Scheduler {
 
         let use_jitter = cas.len() >= SCHEDULER_USE_JITTER_CAS_THRESHOLD;
 
-        for summary in cas {
+        for handle in &cas {
             let ca = self
                 .ca_manager
-                .get_ca(summary.handle())
+                .get_ca(handle)
                 .map_err(FatalError)?;
             let ca_handle = ca.handle();
             let ca_version = ca.version();
@@ -530,7 +524,7 @@ impl Scheduler {
 
     #[cfg(feature = "multi-user")]
     fn sweep_login_cache(&self) -> Result<TaskResult, FatalError> {
-        if let Err(e) = self.login_session_cache.sweep() {
+        if let Err(e) = self.authorizer.sweep() {
             error!(
                 "Background sweep of session decryption cache failed: {}",
                 e

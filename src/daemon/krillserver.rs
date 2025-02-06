@@ -1,10 +1,11 @@
 //! An RPKI publication protocol server.
-use std::{collections::HashMap, path::PathBuf, str::FromStr, sync::Arc};
-
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::str::FromStr;
+use std::sync::Arc;
 use bytes::Bytes;
 use chrono::Duration;
 
-//use futures_util::future::try_join_all;
 
 use rpki::{
     ca::{
@@ -15,6 +16,7 @@ use rpki::{
     uri,
 };
 
+use crate::daemon::auth::AuthInfo;
 use crate::{
     commons::{
         actor::Actor,
@@ -56,7 +58,8 @@ use crate::{
 };
 
 #[cfg(feature = "multi-user")]
-use crate::daemon::auth::common::session::LoginSessionCache;
+use crate::daemon::auth::Authorizer;
+
 
 
 //------------ KrillServer ---------------------------------------------------
@@ -76,8 +79,8 @@ pub struct KrillServer {
     // Shared message queue
     mq: Arc<TaskQueue>,
 
-    // System actor
-    system_actor: Actor,
+    // Auth info for our system actor
+    system_actor: AuthInfo,
 
     pub config: Arc<Config>,
 }
@@ -107,7 +110,7 @@ impl KrillServer {
         .with_one_off_signer(config.one_off_signer())
         .build()?;
         let signer = Arc::new(signer);
-        let system_actor = Actor::system_actor();
+        let system_actor = AuthInfo::system(ACTOR_COMPONENT_KRILL);
 
         // Task queue Arc is shared between ca_manager, repo_manager and the
         // scheduler.
@@ -127,7 +130,7 @@ impl KrillServer {
                 config.clone(),
                 mq.clone(),
                 signer,
-                system_actor.clone(),
+                system_actor.actor().clone(),
             )?,
         );
 
@@ -249,16 +252,16 @@ impl KrillServer {
     pub fn build_scheduler(
         &self,
         #[cfg(feature = "multi-user")]
-        login_session_cache: Arc<LoginSessionCache>
+        authorizer: Arc<Authorizer>,
     ) -> Scheduler {
         Scheduler::build(
             self.mq.clone(),
             self.ca_manager.clone(),
             self.repo_manager.clone(),
             #[cfg(feature = "multi-user")]
-            login_session_cache,
+            authorizer,
             self.config.clone(),
-            self.system_actor.clone(),
+            self.system_actor.actor().clone(),
         )
     }
 
@@ -267,7 +270,7 @@ impl KrillServer {
     }
 
     pub fn system_actor(&self) -> &Actor {
-        &self.system_actor
+        self.system_actor.actor()
     }
 
     pub fn testbed_enabled(&self) -> bool {
@@ -597,10 +600,10 @@ impl KrillServer {
     ) -> KrillResult<Vec<CaStats>> {
         let mut res = Vec::new();
 
-        for ca in self.ca_list(&self.system_actor)?.cas() {
+        for handle in self.ca_manager.ca_handles()? {
             // can't fail really, but to be sure
-            if let Ok(ca) = self.get_ca(ca.handle()) {
-                let status = self.ca_status(ca.handle())?;
+            if let Ok(ca) = self.get_ca(&handle) {
+                let status = self.ca_status(&handle)?;
                 res.push(CaStats::new(ca, status));
             }
         }
@@ -617,10 +620,10 @@ impl KrillServer {
         // We need to know which CAs already exist. They should not be
         // imported again, but can serve as parents.
         let mut existing_cas = HashMap::new();
-        for ca in self.ca_list(&actor)?.cas() {
-            let parent_handle = ca.handle().convert();
+        for handle in self.ca_manager.ca_handles()? {
+            let parent_handle = handle.convert();
             let resources =
-                self.ca_manager.get_ca(ca.handle())?.all_resources();
+                self.ca_manager.get_ca(&handle)?.all_resources();
             existing_cas.insert(parent_handle, resources);
         }
         structure.validate_ca_hierarchy(existing_cas)?;
@@ -847,10 +850,10 @@ impl KrillServer {
 
     pub fn all_ca_issues(
         &self,
-        actor: &Actor,
+        auth: &AuthInfo,
     ) -> KrillResult<AllCertAuthIssues> {
         let mut all_issues = AllCertAuthIssues::default();
-        for ca in self.ca_list(actor)?.cas() {
+        for ca in self.ca_list(auth)?.cas() {
             let issues = self.ca_issues(ca.handle())?;
             if !issues.is_empty() {
                 all_issues.add(ca.handle().clone(), issues);
@@ -895,8 +898,8 @@ impl KrillServer {
     }
 
     /// Re-sync all CAs with their repositories
-    pub fn cas_repo_sync_all(&self, actor: &Actor) -> KrillEmptyResult {
-        self.ca_manager.cas_schedule_repo_sync_all(actor)
+    pub fn cas_repo_sync_all(&self, auth: &AuthInfo) -> KrillEmptyResult {
+        self.ca_manager.cas_schedule_repo_sync_all(auth)
     }
 
     /// Re-sync a specific CA with its repository
@@ -925,8 +928,8 @@ impl KrillServer {
 
 /// # Admin CAS
 impl KrillServer {
-    pub fn ca_list(&self, actor: &Actor) -> KrillResult<CertAuthList> {
-        self.ca_manager.ca_list(actor)
+    pub fn ca_list(&self, auth: &AuthInfo) -> KrillResult<CertAuthList> {
+        self.ca_manager.ca_list(auth)
     }
 
     pub fn get_ca(&self, ca: &CaHandle) -> KrillResult<Ca> {

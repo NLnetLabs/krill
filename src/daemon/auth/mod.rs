@@ -1,23 +1,14 @@
-pub mod authorizer;
+
+
+pub use self::authorizer::{AuthInfo, Authorizer, LoggedInUser};
+pub use self::permission::{Permission, PermissionSet};
+pub use self::roles::{Role, RoleMap};
+
 pub mod providers;
 
-pub mod common;
+mod authorizer;
+#[cfg(feature = "multi-user")] mod crypt;
+mod permission;
+mod roles;
+#[cfg(feature = "multi-user")] mod session;
 
-#[cfg(feature = "multi-user")]
-pub mod policy;
-#[cfg(not(feature = "multi-user"))]
-pub mod policy {
-    use std::sync::Arc;
-
-    use crate::{commons::KrillResult, daemon::config::Config};
-
-    #[derive(Clone)]
-    pub struct AuthPolicy {}
-    impl AuthPolicy {
-        pub fn new(_: Arc<Config>) -> KrillResult<Self> {
-            Ok(AuthPolicy {})
-        }
-    }
-}
-
-pub use authorizer::{Auth, AuthProvider, Authorizer, Handle, LoggedInUser};

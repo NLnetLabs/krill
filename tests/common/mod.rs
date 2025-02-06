@@ -127,13 +127,10 @@ impl TestConfig {
         let auth_type = AuthType::AdminToken;
         let admin_token = Token::from("secret");
         #[cfg(feature = "multi-user")]
-        let auth_policies = vec![];
-        #[cfg(feature = "multi-user")]
-        let auth_private_attributes = vec![];
-        #[cfg(feature = "multi-user")]
         let auth_users = None;
         #[cfg(feature = "multi-user")]
         let auth_openidconnect = None;
+        let auth_roles = ConfigDefaults::auth_roles();
 
         let default_signer = SignerReference::default();
         let one_off_signer = SignerReference::default();
@@ -264,13 +261,10 @@ impl TestConfig {
             admin_token,
             auth_type,
             #[cfg(feature = "multi-user")]
-            auth_policies,
-            #[cfg(feature = "multi-user")]
-            auth_private_attributes,
-            #[cfg(feature = "multi-user")]
             auth_users,
             #[cfg(feature = "multi-user")]
             auth_openidconnect,
+            auth_roles,
             default_signer,
             one_off_signer,
             signers,
