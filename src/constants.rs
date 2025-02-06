@@ -99,7 +99,7 @@ pub const HTTP_CLIENT_TIMEOUT_SECS: u64 = 120;
 pub const HTTP_USER_AGENT_TRUNCATE: usize = 256; // Will truncate received user-agent values at this size.
 pub const OPENID_CONNECT_HTTP_CLIENT_TIMEOUT_SECS: u64 = 30;
 
-pub const ACTOR_COMPONENT_KRILL: &'static str = "krill";
+pub const ACTOR_COMPONENT_KRILL: &str = "krill";
 
 pub const ACTOR_DEF_KRILL: Actor = Actor::system("krill");
 pub const ACTOR_DEF_KRILLTA: Actor = Actor::system("krillta");
