@@ -1425,7 +1425,6 @@ dependencies = [
  "postgres",
  "postgres-types",
  "r2d2",
- "r2d2_postgres",
  "rand 0.8.5",
  "regex",
  "reqwest",
@@ -2096,16 +2095,6 @@ dependencies = [
  "log",
  "parking_lot",
  "scheduled-thread-pool",
-]
-
-[[package]]
-name = "r2d2_postgres"
-version = "0.18.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "efd4b47636dbca581cd057e2f27a5d39be741ea4f85fd3c29e415c55f71c7595"
-dependencies = [
- "postgres",
- "r2d2",
 ]
 
 [[package]]

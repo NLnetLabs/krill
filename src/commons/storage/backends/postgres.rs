@@ -2,12 +2,16 @@
 #![allow(dead_code)]
 #![cfg(feature = "postgres")]
 
-use std::{error, fmt};
+use std::{error, fmt, thread};
+use std::collections::VecDeque;
+use std::sync::mpsc;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::time::{Duration, Instant};
 use bytes::BytesMut;
 use postgres::{IsolationLevel, NoTls};
 use postgres::types::{FromSql, IsNull, ToSql, Type};
-use r2d2_postgres::r2d2;
-use r2d2_postgres::PostgresConnectionManager;
+use r2d2::{ManageConnection, Pool};
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
 use serde_json::Value;
@@ -21,33 +25,64 @@ use super::{
 };
 
 
+//------------ Configuration -------------------------------------------------
+
+const LOCK_TIMEOUT: Duration = Duration::from_secs(120);
+
+
 //------------ Store ---------------------------------------------------------
 
 /// A storage backend using a PostgreSQL database.
 #[derive(Debug)]
 pub struct Store {
     namespace: NamespaceBuf,
-    executor: r2d2::Pool<PostgresConnectionManager<NoTls>>,
+    executor: Pool<ConnectionManager>,
+    timeouts: mpsc::Sender<TimeoutCommand>,
+    ticket: AtomicU32,
 }
 
 impl Store {
     pub fn from_uri(
         uri: &Url, namespace: &Namespace
     ) -> Result<Option<Self>, Error> {
-        if uri.scheme() != "postgres" {
+        if uri.scheme() != "postgresql" {
             return Ok(None)
         }
 
-        let manager = PostgresConnectionManager::new(
-            uri.as_str().parse().map_err(Error::Postgres)?,
-            NoTls
-        );
+        let manager = ConnectionManager::new(uri)?;
         let pool = r2d2::Pool::new(manager)?;
 
         Ok(Some(Self {
             namespace: namespace.into(),
             executor: pool,
+            timeouts: run_timeout_thread(),
+            ticket: AtomicU32::new(0),
         }))
+    }
+
+    pub fn init(&self) -> Result<(), Error> {
+        let mut client = self.executor.get()?;
+        client.psql.execute("DROP TABLE IF EXISTS store", &[])?;
+        client.psql.execute(
+            r##"CREATE TABLE store (
+                "namespace" VARCHAR NOT NULL,
+                "scope" TEXT[] NOT NULL,
+                "key" VARCHAR NOT NULL,
+                "value" JSONB NOT NULL,
+                PRIMARY KEY("namespace", "scope", "key")
+            )"##,
+            &[]
+        )?;
+        client.psql.execute("DROP TABLE IF EXISTS locks", &[])?;
+        client.psql.execute(
+            r##"CREATE TABLE locks (
+                "namespace" VARCHAR NOT NULL,
+                "scope" TEXT[] NOT NULL,
+                PRIMARY KEY("namespace", "scope")
+            )"##,
+            &[]
+        )?;
+        Ok(())
     }
 
     pub fn execute<F, T>(
@@ -56,58 +91,76 @@ impl Store {
     where
         F: for<'a> Fn(&mut SuperTransaction<'a>) -> Result<T, SuperError>
     {
-        let mut client = self.executor.get().map_err(Error::from)?;
-        let mut tran = client.build_transaction()
-            .isolation_level(IsolationLevel::Serializable)
-            .start().map_err(Error::from)?;
+        let mut client = self.executor.get()?;
 
-        // Lock the locks table.
-        tran.execute(
-            "LOCK TABLE locks IN ROW EXCLUSIVE MODE",
-            &[]
-        )?;
+        // Register the timeout.
+        let ticket = self.ticket.fetch_add(1, Ordering::SeqCst);
+        self.timeouts.send(TimeoutCommand::Timeout(Timeout {
+            token: client.psql.cancel_token(),
+            discard: client.discard.clone(),
+            ticket
+        })).map_err(|_| Error::LostTimeoutThread)?;
 
-        // Insert the scope into the locks table. This will hang if the row
-        // already exists.
-        tran.execute(
-            "INSERT INTO locks (namespace, scope) VALUES ($1, $2)",
-            &[&self.namespace.as_ref(), scope],
-        )?;
+        let res = (|| {
+            let mut tran = client.psql.build_transaction()
+                .isolation_level(IsolationLevel::Serializable)
+                .start().map_err(Error::from)?;
 
-        // Now run the closure.
-        //
-        // If it returns an error, we roll back (just to be sure) and return.
-        let tran = Transaction {
-            namespace: &self.namespace,
-            transaction: tran,
-        };
-        let mut tran = SuperTransaction::from(tran);
-        let res = match op(&mut tran) {
-            Ok(res) => res,
-            Err(err) => {
-                if let Ok(tran) = Transaction::try_from(tran) {
-                    tran.transaction.rollback()?;
-                }
-                return Err(err)
-            }
-        };
+            // Lock the locks table.
+            tran.execute(
+                "LOCK TABLE locks IN ROW EXCLUSIVE MODE",
+                &[]
+            )?;
 
-        // Remove the scope from the locks table.
-        if let Ok(mut tran) = Transaction::try_from(tran) {
-            tran.transaction.execute(
-                "DELETE FROM locks WHERE namespace = $1 and scope = $2",
+            // Insert the scope into the locks table. This will hang if the
+            // row already exists.
+            tran.execute(
+                "INSERT INTO locks (namespace, scope) VALUES ($1, $2)",
                 &[&self.namespace.as_ref(), scope],
             )?;
 
-            tran.transaction.commit()?;
-        }
+            // Now run the closure.
+            //
+            // If it returns an error, we roll back (just to be sure) and
+            // return.
+            let tran = Transaction {
+                namespace: &self.namespace,
+                transaction: tran,
+            };
+            let mut tran = SuperTransaction::from(tran);
+            let res = match op(&mut tran) {
+                Ok(res) => res,
+                Err(err) => {
+                    if let Ok(tran) = Transaction::try_from(tran) {
+                        tran.transaction.rollback()?;
+                    }
+                    return Err(err)
+                }
+            };
 
-        Ok(res)
+            // Remove the scope from the locks table.
+            if let Ok(mut tran) = Transaction::try_from(tran) {
+                tran.transaction.execute(
+                    "DELETE FROM locks WHERE namespace = $1 and scope = $2",
+                    &[&self.namespace.as_ref(), scope],
+                )?;
+
+                tran.transaction.commit()?;
+            }
+
+            Ok(res)
+        })();
+
+        self.timeouts.send(
+            TimeoutCommand::Cancel(ticket)
+        ).map_err(|_| Error::LostTimeoutThread)?;
+
+        res
     }
 
     pub fn is_empty(&self) -> Result<bool, Error> {
         Ok(
-            self.executor.get()?.query_opt(
+            self.executor.get()?.psql.query_opt(
                 "SELECT DISTINCT namespace FROM store WHERE namespace = $1",
                 &[&self.namespace.as_ref()],
             )?
@@ -117,7 +170,7 @@ impl Store {
 
     pub fn get_any(&self, key: &Key) -> Result<Option<Value>, Error> {
         Ok(
-            self.executor.get()?.query_opt(
+            self.executor.get()?.psql.query_opt(
                 "SELECT value FROM store \
                  WHERE namespace = $1 AND scope = $2 AND key = $3",
                 &[&self.namespace.as_ref(), key.scope(), &key.name()],
@@ -129,7 +182,7 @@ impl Store {
     pub fn store_any(
         &self, key: &Key, value: &Value
     ) -> Result<(), Error> {
-        self.executor.get()?.execute(
+        self.executor.get()?.psql.execute(
             "INSERT INTO store (namespace, scope, key, value) \
              VALUES ($1, $2, $3, $4) ON CONFLICT (namespace, scope, key) \
              DO UPDATE SET value = $4",
@@ -142,7 +195,7 @@ impl Store {
         &mut self, to: &Namespace
     ) -> Result<(), Error> {
         let mut client = self.executor.get()?;
-        let mut transaction = client.transaction()?;
+        let mut transaction = client.psql.transaction()?;
         transaction.execute(
             "SET TRANSACTION ISOLATION LEVEL SERIALIZABLE", &[]
         )?;
@@ -360,12 +413,142 @@ impl fmt::Debug for Transaction<'_> {
 }
 
 
+//------------ ConnectionManager ---------------------------------------------
+
+#[derive(Debug)]
+pub struct ConnectionManager {
+    config: postgres::Config,
+}
+
+impl ConnectionManager {
+    fn new(uri: &Url) -> Result<Self, postgres::Error> {
+        Ok(Self {
+            config: uri.as_str().parse()?,
+        })
+    }
+}
+
+impl ManageConnection for ConnectionManager {
+    type Connection = Connection;
+    type Error = postgres::Error;
+
+    fn connect(&self) -> Result<Self::Connection, Self::Error> {
+        Ok(Connection::new(self.config.connect(NoTls)?))
+    }
+
+    fn is_valid(
+        &self, client: &mut Self::Connection
+    ) -> Result<(), Self::Error> {
+        client.psql.simple_query("").map(|_| ())
+    }
+
+    fn has_broken(
+        &self, client: &mut Self::Connection
+    ) -> bool {
+        client.has_broken()
+    }
+}
+
+
+//------------ Connection ----------------------------------------------------
+
+pub struct Connection {
+    psql: postgres::Client,
+    discard: Arc<AtomicBool>,
+}
+
+impl Connection {
+    fn new(psql: postgres::Client) -> Self {
+        Self {
+            psql,
+            discard: AtomicBool::new(false).into(),
+        }
+    }
+
+    fn has_broken(&self) -> bool {
+        self.discard.load(Ordering::Relaxed) || self.psql.is_closed()
+    }
+}
+
+
+//------------ Timeout Thread ------------------------------------------------
+
+fn run_timeout_thread() -> mpsc::Sender<TimeoutCommand> {
+    let (tx, rx) = mpsc::channel();
+
+    thread::spawn(move || {
+        let mut commands = VecDeque::<(Instant, Timeout)>::new();
+
+        loop {
+            let cmd = if let Some((first, _)) = commands.front() {
+                // We have at least one command, wait until it times out.
+                // Gracefully deal with the command having a timeout in the
+                // past.
+                match first.checked_duration_since(Instant::now()) {
+                    Some(duration) => rx.recv_timeout(duration),
+                    None => rx.recv().map_err(Into::into),
+                }
+            }
+            else {
+                // No commands, wait forever.
+                rx.recv().map_err(Into::into)
+            };
+
+            match cmd {
+                Ok(TimeoutCommand::Timeout(cmd)) => {
+                    commands.push_back((Instant::now() + LOCK_TIMEOUT, cmd));
+                }
+                Ok(TimeoutCommand::Cancel(ticket)) => {
+                    commands.retain(|(_, cmd)| cmd.ticket != ticket);
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    // Check that the first command is indeed in the past.
+                    if let Some((first, _)) = commands.front() {
+                        if *first > Instant::now() {
+                            continue
+                        }
+                    }
+
+                    // Now cancel the first command.
+                    if let Some((_, cmd)) = commands.pop_front() {
+                        // XXX This failing should probably cause some kind of
+                        //     major meltdown
+                        let _ = cmd.token.cancel_query(NoTls);
+                        cmd.discard.store(true, Ordering::Relaxed);
+                    }
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    break;
+                }
+            }
+        }
+    });
+
+    tx
+}
+
+
+//------------ TimeoutCommand ------------------------------------------------
+
+enum TimeoutCommand {
+    Timeout(Timeout),
+    Cancel(u32),
+}
+
+struct Timeout {
+    token: postgres::CancelToken,
+    discard: Arc<AtomicBool>,
+    ticket: u32,
+}
+
+
 //------------ Error ---------------------------------------------------------
 
 #[derive(Debug)]
 pub enum Error {
     Postgres(postgres::error::Error),
     R2D2(r2d2::Error),
+    LostTimeoutThread,
     Deserialize {
         key: Key,
         err: String,
@@ -405,11 +588,20 @@ impl From<r2d2::Error> for Error {
     }
 }
 
+impl From<r2d2::Error> for SuperError {
+    fn from(src: r2d2::Error) -> Self {
+        Error::from(src).into()
+    }
+}
+
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Error::Postgres(inner) => inner.fmt(f),
             Error::R2D2(inner) => inner.fmt(f),
+            Error::LostTimeoutThread => {
+                f.write_str("PostgreSQL storage’s lock thread ended")
+            }
             Error::Deserialize { key, err } => {
                 write!(f,
                     "failed to deserialize value for key '{}': {}",
@@ -508,6 +700,24 @@ impl<'a> FromSql<'a> for SegmentBuf {
 
     fn accepts(ty: &Type) -> bool {
         <String as FromSql<'a>>::accepts(ty)
+    }
+}
+
+
+//============ Tests =========================================================
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    #[ignore = "needs PostgreSQL installed locally"]
+    fn locks() {
+        let store = Store::from_uri(
+            &Url::parse("postgresql:///test?host=/var/run/postgresql/").unwrap(),
+            Namespace::parse("test").unwrap(),
+        ).unwrap().unwrap();
+        store.init().unwrap();
     }
 }
 

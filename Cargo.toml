@@ -45,7 +45,6 @@ percent-encoding = "2.3.1"
 pin-project-lite = "0.2.15"
 postgres        = { version = "0.19", features = ["with-serde_json-1"], optional = true }
 postgres-types  = { version = "0.2", features = ["derive"], optional = true }
-r2d2_postgres   = { version = "0.18", optional = true }
 r2d2            = { version = "0.8.10", optional = true }
 rand            = "0.8"
 regex           = { version = "1.11.1", optional = true, default-features = false, features = [ "std" ] }
@@ -78,7 +77,7 @@ syslog = "6.1.1"
 
 [features]
 default = ["multi-user", "hsm", "postgres"]
-hsm = ["backoff", "kmip", "cryptoki", "r2d2"]
+hsm = ["backoff", "kmip", "cryptoki", "dep:r2d2"]
 multi-user = [
     "basic-cookies",
     "regex",
@@ -88,7 +87,7 @@ multi-user = [
     "unicode-normalization",
     "urlparse",
 ]
-postgres = ["dep:postgres", "dep:r2d2_postgres", "dep:postgres-types"]
+postgres = ["dep:postgres", "dep:r2d2", "dep:postgres-types"]
 static-openssl = ["openssl/vendored"]
 
 # Preview features - not ready for production use
