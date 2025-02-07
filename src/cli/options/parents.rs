@@ -34,13 +34,13 @@ pub enum Command {
 }
 
 impl Command {
-    pub async fn run(self, client: &KrillClient) -> Report {
+    pub fn run(self, client: &KrillClient) -> Report {
         match self {
-            Self::Request(cmd) => cmd.run(client).await.into(),
-            Self::Add(cmd) => cmd.run(client).await.into(),
-            Self::Contact(cmd) => cmd.run(client).await.into(),
-            Self::Statuses(cmd) => cmd.run(client).await.into(),
-            Self::Remove(cmd) => cmd.run(client).await.into(),
+            Self::Request(cmd) => cmd.run(client).into(),
+            Self::Add(cmd) => cmd.run(client).into(),
+            Self::Contact(cmd) => cmd.run(client).into(),
+            Self::Statuses(cmd) => cmd.run(client).into(),
+            Self::Remove(cmd) => cmd.run(client).into(),
         }
     }
 }
@@ -69,10 +69,10 @@ pub struct Request {
 }
 
 impl Request {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<idexchange::ChildRequest, httpclient::Error> {
-        client.child_request(&self.ca.ca).await
+        client.child_request(&self.ca.ca)
     }
 }
 
@@ -90,13 +90,13 @@ pub struct Add {
 }
 
 impl Add {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<api::Success, httpclient::Error> {
         client.parent_add(
             &self.handle.ca.ca,
             api::ParentCaReq::new(self.handle.parent, self.response.0)
-        ).await
+        )
     }
 }
 
@@ -110,10 +110,10 @@ pub struct CaContact {
 }
 
 impl CaContact {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<api::ParentCaContact, httpclient::Error> {
-        client.parent_details(&self.handle.ca.ca, &self.handle.parent).await
+        client.parent_details(&self.handle.ca.ca, &self.handle.parent)
     }
 }
 
@@ -127,10 +127,10 @@ pub struct Statuses {
 }
 
 impl Statuses {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<api::ParentStatuses, httpclient::Error> {
-        client.parent_list(&self.ca.ca).await
+        client.parent_list(&self.ca.ca)
     }
 }
 
@@ -144,10 +144,10 @@ pub struct Remove {
 }
 
 impl Remove {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<api::Success, httpclient::Error> {
-        client.parent_delete(&self.handle.ca.ca, &self.handle.parent).await
+        client.parent_delete(&self.handle.ca.ca, &self.handle.parent)
     }
 }
 

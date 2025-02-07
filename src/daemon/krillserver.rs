@@ -5,7 +5,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use bytes::Bytes;
 use chrono::Duration;
-use futures_util::future::try_join_all;
+
 
 use rpki::{
     ca::{
@@ -33,7 +33,7 @@ use crate::{
             PublicationServerUris, PublisherDetails, ReceivedCert,
             RepoFileDeleteCriteria, RepositoryContact, RoaConfiguration,
             RoaConfigurationUpdates, RoaPayload, RtaList, RtaName,
-            RtaPrepResponse, ServerInfo, Timestamp, UpdateChildRequest,
+            RtaPrepResponse, UpdateChildRequest,
         },
         bgp::{BgpAnalyser, BgpAnalysisReport, BgpAnalysisSuggestion},
         crypto::KrillSignerBuilder,
@@ -42,13 +42,11 @@ use crate::{
     },
     constants::*,
     daemon::{
-        auth::{Authorizer, LoggedInUser},
         ca::{
-            self, testbed_ca_handle, CaManager, CaStatus,
+            self, testbed_ca_handle, CaManager, CaStatus, CertAuth,
             ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest,
         },
         config::Config,
-        http::{HttpResponse, HyperRequest},
         mq::{now, Task, TaskQueue},
         scheduler::Scheduler,
     },
@@ -59,6 +57,11 @@ use crate::{
     },
 };
 
+#[cfg(feature = "multi-user")]
+use crate::daemon::auth::Authorizer;
+
+
+
 //------------ KrillServer ---------------------------------------------------
 
 /// This is the Krill server that is doing all the orchestration for all
@@ -67,26 +70,17 @@ pub struct KrillServer {
     // The base URI for this service
     service_uri: uri::Https,
 
-    // Component responsible for API authorization checks
-    authorizer: Arc<Authorizer>,
-
     // Publication server, with configured publishers
     repo_manager: Arc<RepositoryManager>,
 
     // Handles the internal TA and/or CAs
     ca_manager: Arc<ca::CaManager>,
 
-    // Handles the internal TA and/or CAs
-    bgp_analyser: Arc<BgpAnalyser>,
-
     // Shared message queue
     mq: Arc<TaskQueue>,
 
-    // Time this server was started
-    started: Timestamp,
-
-    // System actor
-    system_actor: Actor,
+    // Auth info for our system actor
+    system_actor: AuthInfo,
 
     pub config: Arc<Config>,
 }
@@ -95,7 +89,7 @@ pub struct KrillServer {
 impl KrillServer {
     /// Creates a new publication server. Note that state is preserved
     /// in the data storage.
-    pub async fn build(config: Arc<Config>) -> KrillResult<Self> {
+    pub fn build(config: Arc<Config>) -> KrillResult<Self> {
         let service_uri = config.service_uri();
 
         info!("Starting {} v{}", KRILL_SERVER_APP, KRILL_VERSION);
@@ -116,9 +110,7 @@ impl KrillServer {
         .with_one_off_signer(config.one_off_signer())
         .build()?;
         let signer = Arc::new(signer);
-
-        let authorizer = Authorizer::new(config.clone())?.into();
-        let system_actor = ACTOR_DEF_KRILL;
+        let system_actor = AuthInfo::system(ACTOR_COMPONENT_KRILL);
 
         // Task queue Arc is shared between ca_manager, repo_manager and the
         // scheduler.
@@ -138,15 +130,9 @@ impl KrillServer {
                 config.clone(),
                 mq.clone(),
                 signer,
-                system_actor.clone(),
-            )
-            .await?,
+                system_actor.actor().clone(),
+            )?,
         );
-
-        let bgp_analyser = Arc::new(BgpAnalyser::new(
-            config.bgp_api_enabled,
-            config.bgp_api_uri.clone(),
-        ));
 
         // When multi-node set ups with a shared queue are
         // supported then we can no longer safely reschedule
@@ -157,12 +143,9 @@ impl KrillServer {
 
         let server = KrillServer {
             service_uri,
-            authorizer,
             repo_manager,
             ca_manager,
-            bgp_analyser,
             mq,
-            started: Timestamp::now(),
             system_actor,
             config: config.clone(),
         };
@@ -259,22 +242,26 @@ impl KrillServer {
                     testbed.publication_server_uris(),
                     import_cas,
                 );
-                server.cas_import(startup_structure).await?;
+                server.cas_import(startup_structure)?;
             }
         }
 
         Ok(server)
     }
 
-    pub fn build_scheduler(&self) -> Scheduler {
+    pub fn build_scheduler(
+        &self,
+        #[cfg(feature = "multi-user")]
+        authorizer: Arc<Authorizer>,
+    ) -> Scheduler {
         Scheduler::build(
             self.mq.clone(),
             self.ca_manager.clone(),
             self.repo_manager.clone(),
             #[cfg(feature = "multi-user")]
-            self.authorizer.clone(),
+            authorizer,
             self.config.clone(),
-            self.system_actor.clone(),
+            self.system_actor.actor().clone(),
         )
     }
 
@@ -282,48 +269,12 @@ impl KrillServer {
         &self.service_uri
     }
 
-    pub fn server_info(&self) -> ServerInfo {
-        ServerInfo::new(KRILL_VERSION, self.started)
-    }
-}
-
-/// # Authentication and Access
-impl KrillServer {
     pub fn system_actor(&self) -> &Actor {
-        &self.system_actor
-    }
-
-    pub async fn authenticate_request(
-        &self, request: &HyperRequest
-    ) -> AuthInfo {
-        self.authorizer.authenticate_request(request).await
-    }
-
-    pub async fn get_login_url(&self) -> KrillResult<HttpResponse> {
-        self.authorizer.get_login_url().await
-    }
-
-    pub async fn login(
-        &self,
-        request: &HyperRequest,
-    ) -> KrillResult<LoggedInUser> {
-        self.authorizer.login(request).await
-    }
-
-    pub async fn logout(
-        &self,
-        request: &HyperRequest,
-    ) -> KrillResult<HttpResponse> {
-        self.authorizer.logout(request).await
+        self.system_actor.actor()
     }
 
     pub fn testbed_enabled(&self) -> bool {
         self.ca_manager.testbed_enabled()
-    }
-
-    #[cfg(feature = "multi-user")]
-    pub fn login_session_cache_size(&self) -> usize {
-        self.authorizer.login_session_cache_size()
     }
 }
 
@@ -406,68 +357,64 @@ impl KrillServer {
         self.config.ta_proxy_enabled()
     }
 
-    pub async fn ta_proxy_init(&self) -> KrillResult<()> {
-        self.ca_manager.ta_proxy_init().await
+    pub fn ta_proxy_init(&self) -> KrillResult<()> {
+        self.ca_manager.ta_proxy_init()
     }
 
-    pub async fn ta_proxy_id(&self) -> KrillResult<IdCertInfo> {
-        self.ca_manager.ta_proxy_id().await
+    pub fn ta_proxy_id(&self) -> KrillResult<IdCertInfo> {
+        self.ca_manager.ta_proxy_id()
     }
 
-    pub async fn ta_proxy_publisher_request(
+    pub fn ta_proxy_publisher_request(
         &self,
     ) -> KrillResult<idexchange::PublisherRequest> {
-        self.ca_manager.ta_proxy_publisher_request().await
+        self.ca_manager.ta_proxy_publisher_request()
     }
 
-    pub async fn ta_proxy_repository_update(
+    pub fn ta_proxy_repository_update(
         &self,
         contact: RepositoryContact,
         actor: &Actor,
     ) -> KrillResult<()> {
-        self.ca_manager
-            .ta_proxy_repository_update(contact, actor)
-            .await
+        self.ca_manager.ta_proxy_repository_update(contact, actor)
     }
 
-    pub async fn ta_proxy_repository_contact(
+    pub fn ta_proxy_repository_contact(
         &self,
     ) -> KrillResult<RepositoryContact> {
-        self.ca_manager.ta_proxy_repository_contact().await
+        self.ca_manager.ta_proxy_repository_contact()
     }
 
-    pub async fn ta_proxy_signer_add(
+    pub fn ta_proxy_signer_add(
         &self,
         info: TrustAnchorSignerInfo,
         actor: &Actor,
     ) -> KrillResult<()> {
-        self.ca_manager.ta_proxy_signer_add(info, actor).await
+        self.ca_manager.ta_proxy_signer_add(info, actor)
     }
 
-    pub async fn ta_proxy_signer_make_request(
+    pub fn ta_proxy_signer_make_request(
         &self,
         actor: &Actor,
     ) -> KrillResult<TrustAnchorSignedRequest> {
-        self.ca_manager.ta_proxy_signer_make_request(actor).await
+        self.ca_manager.ta_proxy_signer_make_request(actor)
     }
 
-    pub async fn ta_proxy_signer_get_request(
+    pub fn ta_proxy_signer_get_request(
         &self,
     ) -> KrillResult<TrustAnchorSignedRequest> {
-        self.ca_manager.ta_proxy_signer_get_request().await
+        self.ca_manager.ta_proxy_signer_get_request()
     }
 
-    pub async fn ta_proxy_signer_process_response(
+    pub fn ta_proxy_signer_process_response(
         &self,
         response: TrustAnchorSignedResponse,
         actor: &Actor,
     ) -> KrillResult<()> {
-        self.ca_manager
-            .ta_proxy_signer_process_response(response, actor)
-            .await
+        self.ca_manager.ta_proxy_signer_process_response(response, actor)
     }
 
-    pub async fn ta_proxy_children_add(
+    pub fn ta_proxy_children_add(
         &self,
         child_request: AddChildRequest,
         actor: &Actor,
@@ -480,17 +427,15 @@ impl KrillServer {
                 &self.config.service_uri(),
                 actor,
             )
-            .await
     }
 
-    pub async fn ta_cert_details(&self) -> KrillResult<TaCertDetails> {
-        let proxy = self.ca_manager.get_trust_anchor_proxy().await?;
+    pub fn ta_cert_details(&self) -> KrillResult<TaCertDetails> {
+        let proxy = self.ca_manager.get_trust_anchor_proxy()?;
         Ok(proxy.get_ta_details()?.clone())
     }
 
-    pub async fn trust_anchor_cert(&self) -> Option<ReceivedCert> {
+    pub fn trust_anchor_cert(&self) -> Option<ReceivedCert> {
         self.ta_cert_details()
-            .await
             .ok()
             .map(|details| details.into())
     }
@@ -500,97 +445,90 @@ impl KrillServer {
 impl KrillServer {
     /// Adds a child to a CA and returns the ParentCaInfo that the child
     /// will need to contact this CA for resource requests.
-    pub async fn ca_add_child(
+    pub fn ca_add_child(
         &self,
         ca: &CaHandle,
         req: AddChildRequest,
         actor: &Actor,
     ) -> KrillResult<idexchange::ParentResponse> {
-        self.ca_manager
-            .ca_add_child(ca, req, &self.service_uri, actor)
-            .await
+        self.ca_manager.ca_add_child(ca, req, &self.service_uri, actor)
     }
 
     /// Shows the parent contact for a child.
-    pub async fn ca_parent_contact(
+    pub fn ca_parent_contact(
         &self,
         ca: &CaHandle,
         child: ChildHandle,
     ) -> KrillResult<ParentCaContact> {
-        self.ca_manager
-            .ca_parent_contact(ca, child, &self.service_uri)
-            .await
+        self.ca_manager.ca_parent_contact(ca, child, &self.service_uri)
     }
 
     /// Shows the parent contact for a child.
-    pub async fn ca_parent_response(
+    pub fn ca_parent_response(
         &self,
         ca: &CaHandle,
         child: ChildHandle,
     ) -> KrillResult<idexchange::ParentResponse> {
-        self.ca_manager
-            .ca_parent_response(ca, child, &self.service_uri)
-            .await
+        self.ca_manager.ca_parent_response(ca, child, &self.service_uri)
     }
 
     /// Update IdCert or resources of a child.
-    pub async fn ca_child_update(
+    pub fn ca_child_update(
         &self,
         ca: &CaHandle,
         child: ChildHandle,
         req: UpdateChildRequest,
         actor: &Actor,
     ) -> KrillEmptyResult {
-        self.ca_manager.ca_child_update(ca, child, req, actor).await
+        self.ca_manager.ca_child_update(ca, child, req, actor)
     }
 
     /// Update IdCert or resources of a child.
-    pub async fn ca_child_remove(
+    pub fn ca_child_remove(
         &self,
         ca: &CaHandle,
         child: ChildHandle,
         actor: &Actor,
     ) -> KrillEmptyResult {
-        self.ca_manager.ca_child_remove(ca, child, actor).await?;
+        self.ca_manager.ca_child_remove(ca, child, actor)?;
         Ok(())
     }
 
     /// Show details for a child under the CA.
-    pub async fn ca_child_show(
+    pub fn ca_child_show(
         &self,
         ca: &CaHandle,
         child: &ChildHandle,
     ) -> KrillResult<ChildCaInfo> {
-        self.ca_manager.ca_show_child(ca, child).await
+        self.ca_manager.ca_show_child(ca, child)
     }
 
     /// Export a child under the CA.
-    pub async fn api_ca_child_export(
+    pub fn api_ca_child_export(
         &self,
         ca: &CaHandle,
         child: &ChildHandle,
     ) -> KrillResult<ExportChild> {
-        self.ca_manager.ca_child_export(ca, child).await
+        self.ca_manager.ca_child_export(ca, child)
     }
 
     /// Import a child under the CA.
-    pub async fn api_ca_child_import(
+    pub fn api_ca_child_import(
         &self,
         ca: &CaHandle,
         child: ImportChild,
         actor: &Actor,
     ) -> KrillResult<()> {
-        self.ca_manager.ca_child_import(ca, child, actor).await
+        self.ca_manager.ca_child_import(ca, child, actor)
     }
 
     /// Show children stats under the CA.
-    pub async fn ca_stats_child_connections(
+    pub fn ca_stats_child_connections(
         &self,
         ca: &CaHandle,
     ) -> KrillResult<ChildrenConnectionStats> {
         self.ca_manager
             .get_ca_status(ca)
-            .await
             .map(|status| status.get_children_connection_stats())
     }
 }
@@ -598,18 +536,17 @@ impl KrillServer {
 /// # Being a child
 impl KrillServer {
     /// Returns the child request for a CA, or NONE if the CA cannot be found.
-    pub async fn ca_child_req(
+    pub fn ca_child_req(
         &self,
         ca: &CaHandle,
     ) -> KrillResult<idexchange::ChildRequest> {
         self.ca_manager
             .get_ca(ca)
-            .await
             .map(|ca| ca.child_request())
     }
 
     /// Updates a parent contact for a CA
-    pub async fn ca_parent_add_or_update(
+    pub fn ca_parent_add_or_update(
         &self,
         ca: CaHandle,
         parent_req: ParentCaReq,
@@ -626,16 +563,14 @@ impl KrillServer {
             Error::CaParentResponseInvalid(ca.clone(), e.to_string())
         })?;
         self.ca_manager
-            .get_entitlements_from_contact(&ca, parent, &contact, false)
-            .await?;
+            .get_entitlements_from_contact(&ca, parent, &contact, false)?;
 
         // Seems good. Add/update the parent.
         self.ca_manager
             .ca_parent_add_or_update(ca, parent_req, actor)
-            .await
     }
 
-    pub async fn ca_parent_remove(
+    pub fn ca_parent_remove(
         &self,
         handle: CaHandle,
         parent: ParentHandle,
@@ -643,57 +578,40 @@ impl KrillServer {
     ) -> KrillEmptyResult {
         self.ca_manager
             .ca_parent_remove(handle, parent, actor)
-            .await
     }
 
-    pub async fn ca_parent_revoke(
+    pub fn ca_parent_revoke(
         &self,
         handle: &CaHandle,
         parent: &ParentHandle,
     ) -> KrillEmptyResult {
-        self.ca_manager.ca_parent_revoke(handle, parent).await
+        self.ca_manager.ca_parent_revoke(handle, parent)
     }
 }
 
 /// # Stats and status of CAS
 impl KrillServer {
-    pub async fn cas_stats(
+    pub fn ca_count(&self) -> KrillResult<usize> {
+        Ok(self.ca_list(&self.system_actor)?.cas().len())
+    }
+
+    pub fn cas_stats(
         &self,
-    ) -> KrillResult<HashMap<CaHandle, CertAuthStats>> {
-        let mut res = HashMap::new();
+    ) -> KrillResult<Vec<CaStats>> {
+        let mut res = Vec::new();
 
         for handle in self.ca_manager.ca_handles()? {
             // can't fail really, but to be sure
-            if let Ok(ca) = self.ca_manager.get_ca(&handle).await {
-                let roas = ca.configured_roas();
-                let roa_count = roas.len();
-                let child_count = ca.children().count();
-
-                let bgp_report = if ca.handle().as_str() == "ta"
-                    || ca.handle().as_str() == "testbed"
-                {
-                    BgpAnalysisReport::new(vec![])
-                } else {
-                    self.bgp_analyser
-                        .analyse(roas.as_slice(), &ca.all_resources(), None)
-                        .await
-                };
-
-                res.insert(
-                    ca.handle().clone(),
-                    CertAuthStats::new(
-                        roa_count,
-                        child_count,
-                        bgp_report.into(),
-                    ),
-                );
+            if let Ok(ca) = self.get_ca(&handle) {
+                let status = self.ca_status(&handle)?;
+                res.push(CaStats::new(ca, status));
             }
         }
 
         Ok(res)
     }
 
-    pub async fn cas_import(
+    pub fn cas_import(
         &self,
         structure: api::import::Structure,
     ) -> KrillResult<()> {
@@ -705,7 +623,7 @@ impl KrillServer {
         for handle in self.ca_manager.ca_handles()? {
             let parent_handle = handle.convert();
             let resources =
-                self.ca_manager.get_ca(&handle).await?.all_resources();
+                self.ca_manager.get_ca(&handle)?.all_resources();
             existing_cas.insert(parent_handle, resources);
         }
         structure.validate_ca_hierarchy(existing_cas)?;
@@ -731,8 +649,7 @@ impl KrillServer {
                         ta_key_pem,
                         &self.repo_manager,
                         &actor,
-                    )
-                    .await?;
+                    )?;
             } else {
                 return Err(Error::custom(
                     "Import TA requires ta_support_enabled = true and ta_signer_enabled = true",
@@ -742,6 +659,18 @@ impl KrillServer {
 
         info!("Bulk import {} CAs", structure.cas.len());
         // Set up each online TA child with local repo, do this in parallel.
+        // TODO todo: Do this in parallel.
+        for ca in structure.into_cas() {
+            Self::import_ca(
+                ca,
+                self.ca_manager.clone(),
+                self.repo_manager.clone(),
+                &self.service_uri,
+                actor.clone(),
+            )?;
+        }
+
+        /* This was:
         let mut import_fns = vec![];
         let service_uri = Arc::new(self.config.service_uri());
         for ca in structure.into_cas() {
@@ -749,22 +678,23 @@ impl KrillServer {
                 ca,
                 self.ca_manager.clone(),
                 self.repo_manager.clone(),
-                service_uri.clone(),
+                self.service_uri.clone(),
                 actor.clone(),
             )));
         }
-        try_join_all(import_fns).await.map_err(|e| {
+        try_join_all(import_fns).map_err(|e| {
             Error::Custom(format!("Could not import CAs: {}", e))
         })?;
+        */
 
         Ok(())
     }
 
-    async fn import_ca(
+    fn import_ca(
         ca: api::import::ImportCa,
         ca_manager: Arc<CaManager>,
         repo_manager: Arc<RepositoryManager>,
-        service_uri: Arc<uri::Https>,
+        service_uri: &uri::Https,
         actor: Arc<Actor>,
     ) -> KrillEmptyResult {
         // outline:
@@ -781,7 +711,7 @@ impl KrillServer {
 
         // Get Publisher Request
         let pub_req = {
-            let ca = ca_manager.get_ca(&ca_handle).await?;
+            let ca = ca_manager.get_ca(&ca_handle)?;
             idexchange::PublisherRequest::new(
                 ca.id_cert().base64().clone(),
                 ca_handle.convert(),
@@ -808,8 +738,7 @@ impl KrillServer {
                 repo_contact,
                 false,
                 &actor,
-            )
-            .await?;
+            )?;
 
         for import_parent in parents {
             let (parent, resources) = import_parent.unpack();
@@ -831,8 +760,7 @@ impl KrillServer {
             if parent.as_str() != TA_NAME {
                 loop {
                     tried += 1;
-                    if let Ok(parent) = ca_manager.get_ca(&parent_as_ca).await
-                    {
+                    if let Ok(parent) = ca_manager.get_ca(&parent_as_ca) {
                         if parent.all_resources().contains(&resources) {
                             break;
                         } else {
@@ -848,10 +776,9 @@ impl KrillServer {
                             parent_as_ca, ca_handle
                         );
                     }
-                    tokio::time::sleep(std::time::Duration::from_millis(
+                    std::thread::sleep(std::time::Duration::from_millis(
                         wait_ms,
-                    ))
-                    .await;
+                    ));
                     if tried >= max_tries {
                         return Err(Error::Custom(format!(
                             "Could not import CA {}. Parent: {} is not created",
@@ -863,7 +790,7 @@ impl KrillServer {
 
             // Add the CA as the child of parent and get the parent response
             let parent_response = {
-                let ca = ca_manager.get_ca(&ca_handle).await?;
+                let ca = ca_manager.get_ca(&ca_handle)?;
                 let id_cert =
                     ca.child_request().validate().map_err(Error::rfc8183)?;
                 let child_req = AddChildRequest::new(
@@ -876,10 +803,9 @@ impl KrillServer {
                     .ca_add_child(
                         &parent.convert(),
                         child_req,
-                        &service_uri,
+                        service_uri,
                         &actor,
-                    )
-                    .await?
+                    )?
             };
 
             // Add the parent to the child and force sync
@@ -891,29 +817,25 @@ impl KrillServer {
                         ca_handle.clone(),
                         parent_req,
                         &actor,
-                    )
-                    .await?;
+                    )?;
 
                 // First sync will inform child of its entitlements and
                 // trigger that CSR is created.
                 ca_manager
-                    .ca_sync_parent(&ca_handle, 0, &parent, &actor)
-                    .await?;
+                    .ca_sync_parent(&ca_handle, 0, &parent, &actor)?;
 
                 // Second sync will send that CSR to the parent
                 ca_manager
-                    .ca_sync_parent(&ca_handle, 0, &parent, &actor)
-                    .await?;
+                    .ca_sync_parent(&ca_handle, 0, &parent, &actor)?;
 
                 // If the parent is a TA, then we will need to push a bit
                 // more.. Normally this should be handled by
                 // triggered tasks, but the task scheduler is
                 // not running when we do this at startup.
                 if parent.as_str() == TA_NAME {
-                    ca_manager.sync_ta_proxy_signer_if_possible().await?;
+                    ca_manager.sync_ta_proxy_signer_if_possible()?;
                     ca_manager
-                        .ca_sync_parent(&ca_handle, 0, &parent, &actor)
-                        .await?;
+                        .ca_sync_parent(&ca_handle, 0, &parent, &actor)?;
                 }
             }
         }
@@ -921,19 +843,18 @@ impl KrillServer {
         // Add ROA definitions
         let roa_updates = RoaConfigurationUpdates::new(roas, vec![]);
         ca_manager
-            .ca_routes_update(ca_handle, roa_updates, &actor)
-            .await?;
+            .ca_routes_update(ca_handle, roa_updates, &actor)?;
 
         Ok(())
     }
 
-    pub async fn all_ca_issues(
+    pub fn all_ca_issues(
         &self,
         auth: &AuthInfo,
     ) -> KrillResult<AllCertAuthIssues> {
         let mut all_issues = AllCertAuthIssues::default();
         for ca in self.ca_list(auth)?.cas() {
-            let issues = self.ca_issues(ca.handle()).await?;
+            let issues = self.ca_issues(ca.handle())?;
             if !issues.is_empty() {
                 all_issues.add(ca.handle().clone(), issues);
             }
@@ -942,13 +863,13 @@ impl KrillServer {
         Ok(all_issues)
     }
 
-    pub async fn ca_issues(
+    pub fn ca_issues(
         &self,
         ca: &CaHandle,
     ) -> KrillResult<CertAuthIssues> {
         let mut issues = CertAuthIssues::default();
 
-        let ca_status = self.ca_manager.get_ca_status(ca).await?;
+        let ca_status = self.ca_manager.get_ca_status(ca)?;
 
         if let Some(error) = ca_status.repo().to_failure_opt() {
             issues.add_repo_issue(error)
@@ -967,8 +888,8 @@ impl KrillServer {
 /// # Synchronization operations for CAS
 impl KrillServer {
     /// Republish all CAs that need it.
-    pub async fn republish_all(&self, force: bool) -> KrillEmptyResult {
-        let cas = self.ca_manager.republish_all(force).await?;
+    pub fn republish_all(&self, force: bool) -> KrillEmptyResult {
+        let cas = self.ca_manager.republish_all(force)?;
         for ca in cas {
             self.cas_repo_sync_single(&ca)?;
         }
@@ -987,16 +908,16 @@ impl KrillServer {
     }
 
     /// Refresh all CAs: ask for updates and shrink as needed.
-    pub async fn cas_refresh_all(&self) -> KrillEmptyResult {
-        self.ca_manager.cas_schedule_refresh_all().await
+    pub fn cas_refresh_all(&self) -> KrillEmptyResult {
+        self.ca_manager.cas_schedule_refresh_all()
     }
 
     /// Refresh a specific CA with its parents
-    pub async fn cas_refresh_single(
+    pub fn cas_refresh_single(
         &self,
         ca_handle: CaHandle,
     ) -> KrillEmptyResult {
-        self.ca_manager.cas_schedule_refresh_single(ca_handle).await
+        self.ca_manager.cas_schedule_refresh_single(ca_handle)
     }
 
     /// Schedule check suspend children for all CAs
@@ -1011,49 +932,51 @@ impl KrillServer {
         self.ca_manager.ca_list(auth)
     }
 
+    pub fn get_ca(&self, ca: &CaHandle) -> KrillResult<Ca> {
+        self.ca_manager.get_ca(ca).map(|ca| Ca { ca })
+    }
+
     /// Returns the public CA info for a CA, or NONE if the CA cannot be
     /// found.
-    pub async fn ca_info(&self, ca: &CaHandle) -> KrillResult<CertAuthInfo> {
-        self.ca_manager.get_ca(ca).await.map(|ca| ca.as_ca_info())
+    pub fn ca_info(&self, ca: &CaHandle) -> KrillResult<CertAuthInfo> {
+        self.ca_manager.get_ca(ca).map(|ca| ca.as_ca_info())
     }
 
     /// Returns the CA status, or an error if none can be found.
-    pub async fn ca_status(&self, ca: &CaHandle) -> KrillResult<CaStatus> {
-        self.ca_manager.get_ca_status(ca).await
+    pub fn ca_status(&self, ca: &CaHandle) -> KrillResult<CaStatus> {
+        self.ca_manager.get_ca_status(ca)
     }
 
     /// Delete a CA. Let it do best effort revocation requests and withdraw
     /// all its objects first. Note that any children of this CA will be left
     /// orphaned, and they will only learn of this sad fact when they choose
     /// to call home.
-    pub async fn ca_delete(
+    pub fn ca_delete(
         &self,
         ca: &CaHandle,
         actor: &Actor,
     ) -> KrillResult<()> {
-        self.ca_manager
-            .delete_ca(self.repo_manager.as_ref(), ca, actor)
-            .await
+        self.ca_manager.delete_ca(self.repo_manager.as_ref(), ca, actor)
     }
 
     /// Returns the parent contact for a CA and parent, or NONE if either the
     /// CA or the parent cannot be found.
-    pub async fn ca_my_parent_contact(
+    pub fn ca_my_parent_contact(
         &self,
         ca: &CaHandle,
         parent: &ParentHandle,
     ) -> KrillResult<ParentCaContact> {
-        let ca = self.ca_manager.get_ca(ca).await?;
+        let ca = self.ca_manager.get_ca(ca)?;
         ca.parent(parent).cloned()
     }
 
     /// Returns the history for a CA.
-    pub async fn ca_history(
+    pub fn ca_history(
         &self,
         ca: &CaHandle,
         crit: CommandHistoryCriteria,
     ) -> KrillResult<CommandHistory> {
-        self.ca_manager.ca_history(ca, crit).await
+        self.ca_manager.ca_history(ca, crit)
     }
 
     pub fn ca_command_details(
@@ -1066,13 +989,12 @@ impl KrillServer {
 
     /// Returns the publisher request for a CA, or NONE of the CA cannot be
     /// found.
-    pub async fn ca_publisher_req(
+    pub fn ca_publisher_req(
         &self,
         ca: &CaHandle,
     ) -> KrillResult<idexchange::PublisherRequest> {
         self.ca_manager
             .get_ca(ca)
-            .await
             .map(|ca| ca.publisher_request())
     }
 
@@ -1083,18 +1005,18 @@ impl KrillServer {
 
     /// Return the info about the CONFIGured repository server for a given Ca.
     /// and the actual objects published there, as reported by a list reply.
-    pub async fn ca_repo_details(
+    pub fn ca_repo_details(
         &self,
         ca_handle: &CaHandle,
     ) -> KrillResult<CaRepoDetails> {
-        let ca = self.ca_manager.get_ca(ca_handle).await?;
+        let ca = self.ca_manager.get_ca(ca_handle)?;
         let contact = ca.repository_contact()?;
         Ok(CaRepoDetails::new(contact.clone()))
     }
 
     /// Update the repository for a CA, or return an error. (see
     /// `CertAuth::repo_update`)
-    pub async fn ca_repo_update(
+    pub fn ca_repo_update(
         &self,
         ca: CaHandle,
         contact: RepositoryContact,
@@ -1102,38 +1024,35 @@ impl KrillServer {
     ) -> KrillEmptyResult {
         self.ca_manager
             .update_repo(self.repo_manager.as_ref(), ca, contact, true, actor)
-            .await
     }
 
-    pub async fn ca_update_id(
+    pub fn ca_update_id(
         &self,
         ca: CaHandle,
         actor: &Actor,
     ) -> KrillEmptyResult {
-        self.ca_manager.ca_update_id(ca, actor).await
+        self.ca_manager.ca_update_id(ca, actor)
     }
 
-    pub async fn ca_keyroll_init(
+    pub fn ca_keyroll_init(
         &self,
         ca: CaHandle,
         actor: &Actor,
     ) -> KrillEmptyResult {
         self.ca_manager
             .ca_keyroll_init(ca, Duration::seconds(0), actor)
-            .await
     }
 
-    pub async fn ca_keyroll_activate(
+    pub fn ca_keyroll_activate(
         &self,
         ca: CaHandle,
         actor: &Actor,
     ) -> KrillEmptyResult {
         self.ca_manager
             .ca_keyroll_activate(ca, Duration::seconds(0), actor)
-            .await
     }
 
-    pub async fn rfc6492(
+    pub fn rfc6492(
         &self,
         ca: CaHandle,
         msg_bytes: Bytes,
@@ -1142,20 +1061,19 @@ impl KrillServer {
     ) -> KrillResult<Bytes> {
         self.ca_manager
             .rfc6492(&ca, msg_bytes, user_agent, actor)
-            .await
     }
 }
 
 /// # Handle ASPA requests
 impl KrillServer {
-    pub async fn ca_aspas_definitions_show(
+    pub fn ca_aspas_definitions_show(
         &self,
         ca: CaHandle,
     ) -> KrillResult<AspaDefinitionList> {
-        self.ca_manager.ca_aspas_definitions_show(ca).await
+        self.ca_manager.ca_aspas_definitions_show(ca)
     }
 
-    pub async fn ca_aspas_definitions_update(
+    pub fn ca_aspas_definitions_update(
         &self,
         ca: CaHandle,
         updates: AspaDefinitionUpdates,
@@ -1163,10 +1081,9 @@ impl KrillServer {
     ) -> KrillEmptyResult {
         self.ca_manager
             .ca_aspas_definitions_update(ca, updates, actor)
-            .await
     }
 
-    pub async fn ca_aspas_update_aspa(
+    pub fn ca_aspas_update_aspa(
         &self,
         ca: CaHandle,
         customer: CustomerAsn,
@@ -1175,20 +1092,19 @@ impl KrillServer {
     ) -> KrillEmptyResult {
         self.ca_manager
             .ca_aspas_update_aspa(ca, customer, update, actor)
-            .await
     }
 }
 
 /// # Handle BGPSec requests
 impl KrillServer {
-    pub async fn ca_bgpsec_definitions_show(
+    pub fn ca_bgpsec_definitions_show(
         &self,
         ca: CaHandle,
     ) -> KrillResult<BgpSecCsrInfoList> {
-        self.ca_manager.ca_bgpsec_definitions_show(ca).await
+        self.ca_manager.ca_bgpsec_definitions_show(ca)
     }
 
-    pub async fn ca_bgpsec_definitions_update(
+    pub fn ca_bgpsec_definitions_update(
         &self,
         ca: CaHandle,
         updates: BgpSecDefinitionUpdates,
@@ -1196,86 +1112,34 @@ impl KrillServer {
     ) -> KrillResult<()> {
         self.ca_manager
             .ca_bgpsec_definitions_update(ca, updates, actor)
-            .await
     }
 }
 
 /// # Handle route authorization requests
 impl KrillServer {
-    pub async fn ca_routes_update(
+    pub fn ca_routes_update(
         &self,
         ca: CaHandle,
         updates: RoaConfigurationUpdates,
         actor: &Actor,
     ) -> KrillEmptyResult {
-        self.ca_manager.ca_routes_update(ca, updates, actor).await
+        self.ca_manager.ca_routes_update(ca, updates, actor)
     }
 
-    pub async fn ca_routes_show(
+    pub fn ca_routes_show(
         &self,
         handle: &CaHandle,
     ) -> KrillResult<Vec<ConfiguredRoa>> {
-        let ca = self.ca_manager.get_ca(handle).await?;
+        let ca = self.ca_manager.get_ca(handle)?;
 
         Ok(ca.configured_roas())
     }
 
-    pub async fn ca_routes_bgp_analysis(
-        &self,
-        handle: &CaHandle,
-    ) -> KrillResult<BgpAnalysisReport> {
-        let ca = self.ca_manager.get_ca(handle).await?;
-        let definitions = ca.configured_roas();
-        let resources_held = ca.all_resources();
-        Ok(self
-            .bgp_analyser
-            .analyse(definitions.as_slice(), &resources_held, None)
-            .await)
-    }
-
-    pub async fn ca_routes_bgp_dry_run(
-        &self,
-        handle: &CaHandle,
-        updates: RoaConfigurationUpdates,
-    ) -> KrillResult<BgpAnalysisReport> {
-        let ca = self.ca_manager.get_ca(handle).await?;
-
-        let updates = updates.into_explicit_max_length();
-        let resources_held = ca.all_resources();
-        let limit = Some(updates.affected_prefixes());
-
-        let (would_be_routes, _) = ca.update_authorizations(&updates)?;
-        let would_be_configurations = would_be_routes.roa_configurations();
-        let configured_roas =
-            ca.configured_roas_for_configs(would_be_configurations);
-
-        Ok(self
-            .bgp_analyser
-            .analyse(&configured_roas, &resources_held, limit)
-            .await)
-    }
-
-    pub async fn ca_routes_bgp_suggest(
-        &self,
-        handle: &CaHandle,
-        limit: Option<ResourceSet>,
-    ) -> KrillResult<BgpAnalysisSuggestion> {
-        let ca = self.ca_manager.get_ca(handle).await?;
-        let configured_roas = ca.configured_roas();
-        let resources_held = ca.all_resources();
-
-        Ok(self
-            .bgp_analyser
-            .suggest(configured_roas.as_slice(), &resources_held, limit)
-            .await)
-    }
-
     /// Re-issue ROA objects so that they will use short subjects (see issue
     /// #700)
-    pub async fn force_renew_roas(&self) -> KrillResult<()> {
+    pub fn force_renew_roas(&self) -> KrillResult<()> {
         self.ca_manager
             .force_renew_roas_all(self.system_actor())
-            .await
     }
 }
 
@@ -1307,34 +1171,34 @@ impl KrillServer {
 /// # Handle Resource Tagged Attestation requests
 impl KrillServer {
     /// List all known RTAs
-    pub async fn rta_list(&self, ca: CaHandle) -> KrillResult<RtaList> {
-        let ca = self.ca_manager.get_ca(&ca).await?;
+    pub fn rta_list(&self, ca: CaHandle) -> KrillResult<RtaList> {
+        let ca = self.ca_manager.get_ca(&ca)?;
         Ok(ca.rta_list())
     }
 
     /// Show RTA
-    pub async fn rta_show(
+    pub fn rta_show(
         &self,
         ca: CaHandle,
         name: RtaName,
     ) -> KrillResult<ResourceTaggedAttestation> {
-        let ca = self.ca_manager.get_ca(&ca).await?;
+        let ca = self.ca_manager.get_ca(&ca)?;
         ca.rta_show(&name)
     }
 
     /// Sign an RTA - either a new, or a prepared RTA
-    pub async fn rta_sign(
+    pub fn rta_sign(
         &self,
         ca: CaHandle,
         name: RtaName,
         request: RtaContentRequest,
         actor: &Actor,
     ) -> KrillResult<()> {
-        self.ca_manager.rta_sign(ca, name, request, actor).await
+        self.ca_manager.rta_sign(ca, name, request, actor)
     }
 
     /// Prepare a multi
-    pub async fn rta_multi_prep(
+    pub fn rta_multi_prep(
         &self,
         ca: CaHandle,
         name: RtaName,
@@ -1342,22 +1206,132 @@ impl KrillServer {
         actor: &Actor,
     ) -> KrillResult<RtaPrepResponse> {
         self.ca_manager
-            .rta_multi_prep(&ca, name.clone(), request, actor)
-            .await?;
-        let ca = self.ca_manager.get_ca(&ca).await?;
+            .rta_multi_prep(&ca, name.clone(), request, actor)?;
+        let ca = self.ca_manager.get_ca(&ca)?;
         ca.rta_prep_response(&name)
     }
 
     /// Co-sign an existing RTA
-    pub async fn rta_multi_cosign(
+    pub fn rta_multi_cosign(
         &self,
         ca: CaHandle,
         name: RtaName,
         rta: ResourceTaggedAttestation,
         actor: &Actor,
     ) -> KrillResult<()> {
-        self.ca_manager.rta_multi_cosign(ca, name, rta, actor).await
+        self.ca_manager.rta_multi_cosign(ca, name, rta, actor)
     }
 }
 
-// Tested through integration tests
+
+//------------ Ca ------------------------------------------------------------
+
+pub struct Ca {
+    ca: Arc<CertAuth>,
+}
+
+impl Ca {
+    pub fn handle(&self) -> &CaHandle {
+        self.ca.handle()
+    }
+
+    pub async fn routes_bgp_analysis(
+        &self,
+        analyser: &BgpAnalyser,
+    ) -> BgpAnalysisReport {
+        let definitions = self.ca.configured_roas();
+        let resources_held = self.ca.all_resources();
+        analyser.analyse(
+            definitions.as_slice(), &resources_held, None
+        ).await
+    }
+
+    pub async fn routes_bgp_dry_run(
+        &self,
+        updates: RoaConfigurationUpdates,
+        analyser: &BgpAnalyser,
+    ) -> KrillResult<BgpAnalysisReport> {
+        let updates = updates.into_explicit_max_length();
+        let resources_held = self.ca.all_resources();
+        let limit = Some(updates.affected_prefixes());
+
+        let (would_be_routes, _) = self.ca.update_authorizations(&updates)?;
+        let would_be_configurations = would_be_routes.roa_configurations();
+        let configured_roas =
+            self.ca.configured_roas_for_configs(would_be_configurations);
+
+        Ok(analyser.analyse(
+            &configured_roas, &resources_held, limit
+        ).await)
+    }
+
+    pub async fn routes_bgp_suggest(
+        &self,
+        limit: Option<ResourceSet>,
+        analyser: &BgpAnalyser,
+    ) -> KrillResult<BgpAnalysisSuggestion> {
+        let configured_roas = self.ca.configured_roas();
+        let resources_held = self.ca.all_resources();
+
+        Ok(analyser.suggest(
+            configured_roas.as_slice(), &resources_held, limit
+        ).await)
+    }
+}
+
+
+//------------ CaStats -------------------------------------------------------
+
+pub struct CaStats {
+    ca: Arc<CertAuth>,
+    status: CaStatus,
+    roas: Vec<ConfiguredRoa>,
+}
+
+impl CaStats {
+    fn new(ca: Ca, status: CaStatus) -> Self {
+        Self {
+            roas: ca.ca.configured_roas(),
+            ca: ca.ca,
+            status
+        }
+    }
+
+    pub fn handle(&self) -> &CaHandle {
+        self.ca.handle()
+    }
+
+    pub fn roa_count(&self) -> usize {
+        self.roas.len()
+    }
+
+    pub fn child_count(&self) -> usize {
+        self.ca.child_count()
+    }
+
+    pub fn status(&self) -> &CaStatus {
+        &self.status
+    }
+
+    pub async fn routes_bgp_analysis(
+        &self,
+        analyser: &BgpAnalyser,
+    ) -> BgpAnalysisReport {
+        let resources_held = self.ca.all_resources();
+        analyser.analyse(
+            self.roas.as_slice(), &resources_held, None
+        ).await
+    }
+
+    pub async fn to_cert_auth_stats(
+        &self,
+        analyser: &BgpAnalyser,
+    ) -> CertAuthStats {
+        CertAuthStats::new(
+            self.roa_count(),
+            self.child_count(),
+            self.routes_bgp_analysis(analyser).await.into()
+        )
+    }
+}
+

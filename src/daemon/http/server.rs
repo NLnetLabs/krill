@@ -1,12 +1,14 @@
 //! Hyper based HTTP server for Krill.
+
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::{env, process};
-
 use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
 use base64::engine::Engine as _;
 use bytes::Bytes;
@@ -31,18 +33,20 @@ use crate::{
         api::{
             ApiRepositoryContact, AspaDefinitionUpdates,
             CommandHistoryCriteria, ParentCaReq, PublisherList,
-            RepositoryContact, RoaConfigurationUpdates, RtaName, Token,
+            RepositoryContact, RoaConfigurationUpdates, RtaName,
+            ServerInfo, Timestamp, Token,
         },
-        bgp::BgpAnalysisAdvice,
+        bgp::{BgpAnalyser, BgpAnalysisAdvice},
         error::Error,
         eventsourcing::AggregateStoreError,
         util::file,
+        KrillResult,
     },
     constants::{
-        KRILL_ENV_HTTP_LOG_INFO, KRILL_ENV_UPGRADE_ONLY,
+        KRILL_ENV_HTTP_LOG_INFO, KRILL_ENV_UPGRADE_ONLY, KRILL_VERSION,
     },
     daemon::{
-        auth::Permission,
+        auth::{AuthInfo, Authorizer, LoggedInUser, Permission},
         config::Config,
         http::{
             auth::auth, statics::statics, testbed::testbed, tls, tls_keys,
@@ -59,9 +63,122 @@ use crate::{
     },
 };
 
-//------------ State -----------------------------------------------------
 
-pub type State = Arc<KrillServer>;
+//------------ State ---------------------------------------------------------
+
+#[derive(Clone)]
+pub struct State(Arc<StateInner>);
+
+struct StateInner {
+    /// A copy of the configuration.
+    ///
+    /// TODO: only keep the things we actually need.
+    config: Arc<Config>,
+
+    /// All the “business logic.”
+    server: KrillServer,
+
+    /// User authentication.
+    authorizer: Arc<Authorizer>,
+
+    bgp_analyser: Arc<BgpAnalyser>,
+
+    // Time this server was started
+    started: Timestamp,
+}
+
+impl State {
+    pub fn config(&self) -> &Config {
+        &self.0.config
+    }
+
+    pub fn rrdp_base_path(&self) -> PathBuf {
+        let mut path = self.config().repo_dir().to_path_buf();
+        path.push("rrdp");
+        path.to_path_buf()
+    }
+
+    pub fn server_info(&self) -> ServerInfo {
+        ServerInfo::new(KRILL_VERSION, self.0.started)
+    }
+
+    pub fn testbed_enabled(&self) -> bool {
+        self.config().testbed().is_some()
+    }
+
+    pub fn bgp_analyser(&self) -> &BgpAnalyser {
+        &self.0.bgp_analyser
+    }
+}
+
+impl State {
+    pub fn new(config: Arc<Config>) -> KrillResult<Self> {
+        let server = KrillServer::build(config.clone())?;
+
+        let authorizer = Authorizer::new(config.clone())?.into();
+
+        let bgp_analyser = Arc::new(BgpAnalyser::new(
+            config.bgp_api_enabled,
+            config.bgp_api_uri.clone(),
+        ));
+
+        Ok(Self(
+            StateInner {
+                config,
+                server,
+                authorizer,
+                bgp_analyser,
+                started: Timestamp::now(),
+            }.into()
+        ))
+    }
+
+    pub async fn process<F, T>(&self, op: F) -> Result<T, Error>
+    where
+        F: FnOnce(&KrillServer) -> Result<T, Error> + Send + 'static,
+        T: Send + 'static
+    {
+        let state = self.clone();
+        tokio::task::spawn_blocking(move || {
+            op(&state.0.server)
+        }).await.map_err(|err| Error::Custom(err.to_string()))?
+    }
+}
+
+/// # Authentication and Access
+impl State {
+    pub async fn authenticate_request(
+        &self, request: &HyperRequest
+    ) -> AuthInfo {
+        self.0.authorizer.authenticate_request(request).await
+    }
+
+    pub async fn get_login_url(&self) -> KrillResult<HttpResponse> {
+        self.0.authorizer.get_login_url().await
+    }
+
+    pub async fn login(
+        &self,
+        request: &HyperRequest,
+    ) -> KrillResult<LoggedInUser> {
+        self.0.authorizer.login(request).await
+    }
+
+    pub async fn logout(
+        &self,
+        request: &HyperRequest,
+    ) -> KrillResult<HttpResponse> {
+        self.0.authorizer.logout(request).await
+    }
+
+    #[cfg(feature = "multi-user")]
+    pub fn login_session_cache_size(&self) -> usize {
+        self.0.authorizer.login_session_cache_size()
+    }
+}
+
+
+//----------------------------------------------------------------------------
 
 fn print_write_error_hint_and_die(error_msg: String) {
     eprintln!("{}", error_msg);
@@ -115,9 +232,10 @@ fn test_data_dirs_or_die(config: &Config) {
     }
 }
 
-pub async fn start_krill_daemon(
+pub fn start_krill_daemon(
     config: Arc<Config>,
     mut signal_running: Option<oneshot::Sender<()>>,
+    cancel: oneshot::Receiver<()>,
 ) -> Result<(), Error> {
     write_pid_file_or_die(&config);
     test_data_dirs_or_die(&config);
@@ -153,13 +271,13 @@ pub async fn start_krill_daemon(
 
     // Create the server, this will create the necessary data sub-directories
     // if needed
-    let krill_server = KrillServer::build(config.clone()).await?;
+    let state = State::new(config.clone())?;
 
     // Call post-start upgrades to trigger any upgrade related runtime
     // actions, such as re-issuing ROAs because subject name strategy has
     // changed.
     if let Some(report) = upgrade_report {
-        post_start_upgrade(report, &krill_server).await?;
+        post_start_upgrade(report, &state.0.server)?;
     }
 
     // If the operator wanted to do the upgrade only, now is a good time to
@@ -171,11 +289,10 @@ pub async fn start_krill_daemon(
 
     // Build the scheduler which will be responsible for executing
     // planned/triggered tasks
-    let scheduler = krill_server.build_scheduler();
-    let scheduler_future = scheduler.run();
-
-    // Start creating the server.
-    let krill_server = Arc::new(krill_server);
+    let scheduler = state.0.server.build_scheduler(
+        #[cfg(feature = "multi-user")]
+        state.0.authorizer.clone(),
+    );
 
     // Create self-signed HTTPS cert if configured and not generated earlier.
     if config.https_mode().is_generate_https_cert() {
@@ -183,29 +300,47 @@ pub async fn start_krill_daemon(
             .map_err(|e| Error::HttpsSetup(format!("{}", e)))?;
     }
 
-    // Start a hyper server for the configured socket.
-    let server_futures = futures_util::future::select_all(
-        config.socket_addresses().into_iter().map(|socket_addr| {
-            tokio::spawn(single_http_listener(
-                krill_server.clone(),
-                socket_addr,
-                config.clone(),
-                signal_running.take(),
-            ))
-        }),
-    );
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all().build()
+        .map_err(|err| Error::custom(err.to_string()))?;
 
-    select!(
-        _ = server_futures => error!("http server stopped unexpectedly"),
-        _ = scheduler_future => error!("scheduler stopped unexpectedly"),
-    );
+    runtime.block_on(async {
+        let scheduler_cancel = Arc::new(AtomicBool::new(false));
+        let scheduler_cancel_clone = scheduler_cancel.clone();
+        let mut scheduler_future = tokio::task::spawn_blocking(move || {
+            scheduler.run(scheduler_cancel_clone)
+        });
+
+        // Start a hyper server for the configured sockets.
+        let server_futures = futures_util::future::select_all(
+            config.socket_addresses().into_iter().map(|socket_addr| {
+                tokio::spawn(single_http_listener(
+                    state.clone(),
+                    socket_addr,
+                    config.clone(),
+                    signal_running.take(),
+                ))
+            }),
+        );
+
+        select!(
+            _ = server_futures => error!("http server stopped unexpectedly"),
+            _ = &mut scheduler_future => error!("scheduler stopped unexpectedly"),
+            _ = cancel => { }
+        );
+
+        scheduler_cancel.store(true, Ordering::Relaxed);
+        if !scheduler_future.is_finished() {
+            let _ = scheduler_future.await;
+        }
+    });
 
     Err(Error::custom("stopping krill process"))
 }
 
 /// Runs an HTTP listener on a single socket.
 async fn single_http_listener(
-    krill_server: Arc<KrillServer>,
+    state: State,
     addr: SocketAddr,
     config: Arc<Config>,
     signal_running: Option<oneshot::Sender<()>>,
@@ -247,7 +382,7 @@ async fn single_http_listener(
                 return;
             }
         };
-        let server = krill_server.clone();
+        let state = state.clone();
         tokio::task::spawn(async move {
             let _ = hyper_util::server::conn::auto::Builder::new(
                 TokioExecutor::new(),
@@ -255,8 +390,8 @@ async fn single_http_listener(
             .serve_connection(
                 TokioIo::new(stream),
                 service_fn(move |req| {
-                    let server = server.clone();
-                    async move { map_requests(req, server).await }
+                    let state = state.clone();
+                    async move { map_requests(req, state).await }
                 }),
             )
             .await;
@@ -481,6 +616,7 @@ pub async fn health(req: Request) -> RoutingResult {
     }
 }
 
+
 //------------ Publication ---------------------------------------------------
 
 /// Handle RFC8181 queries and return the appropriate response.
@@ -499,7 +635,9 @@ pub async fn rfc8181(req: Request) -> RoutingResult {
             Err(e) => return render_error(e),
         };
 
-        match state.rfc8181(publisher, bytes) {
+        match state.process(move |server| {
+            server.rfc8181(publisher, bytes)
+        }).await {
             Ok(bytes) => Ok(HttpResponse::rfc8181(bytes.to_vec())),
             Err(e) => render_error(e),
         }
@@ -508,7 +646,9 @@ pub async fn rfc8181(req: Request) -> RoutingResult {
     }
 }
 
+
 //------------ Embedded TA  --------------------------------------------------
+
 async fn ta(req: Request) -> RoutingResult {
     match *req.method() {
         Method::GET => match req.path.full() {
@@ -522,7 +662,9 @@ async fn ta(req: Request) -> RoutingResult {
 }
 
 pub async fn tal(req: Request) -> RoutingResult {
-    match req.state().ta_cert_details().await {
+    match req.state().process(|server| {
+        server.ta_cert_details()
+    }).await {
         Ok(ta) => {
             Ok(HttpResponse::text(format!("{}", ta.tal()).into_bytes()))
         }
@@ -531,11 +673,15 @@ pub async fn tal(req: Request) -> RoutingResult {
 }
 
 pub async fn ta_cer(req: Request) -> RoutingResult {
-    match req.state().trust_anchor_cert().await {
-        Some(cert) => Ok(HttpResponse::cert(cert.to_bytes().to_vec())),
-        None => render_unknown_resource(),
+    match req.state().process(|server| {
+        Ok(server.trust_anchor_cert())
+    }).await {
+        Ok(Some(cert)) => Ok(HttpResponse::cert(cert.to_bytes().to_vec())),
+        Ok(None) => render_unknown_resource(),
+        Err(err) => render_error(err),
     }
 }
+
 
 //------------ Provisioning (RFC6492) ----------------------------------------
 
@@ -556,8 +702,9 @@ pub async fn rfc6492(req: Request) -> RoutingResult {
             Ok(bytes) => bytes,
             Err(e) => return render_error(e),
         };
-        let krill_server = state;
-        match krill_server.rfc6492(ca, bytes, user_agent, &actor).await {
+        match state.process(move |server| {
+            server.rfc6492(ca, bytes, user_agent, &actor)
+        }).await {
             Ok(bytes) => Ok(HttpResponse::rfc6492(bytes.to_vec())),
             Err(e) => render_error(e),
         }
@@ -570,9 +717,32 @@ pub async fn rfc6492(req: Request) -> RoutingResult {
 async fn stats(req: Request) -> RoutingResult {
     match *req.method() {
         Method::GET => match req.path().full() {
-            "/stats/info" => render_json(req.state().server_info()),
-            "/stats/repo" => render_json_res(req.state().repo_stats()),
-            "/stats/cas" => render_json_res(req.state().cas_stats().await),
+            "/stats/info" => {
+                render_json(req.state().server_info())
+            }
+            "/stats/repo" => {
+                render_json_res(req.state().process(|server| {
+                    server.repo_stats()
+                }).await)
+            }
+            "/stats/cas" => {
+                let cas_stats = match req.state().process(|server| {
+                    server.cas_stats()
+                }).await {
+                    Ok(cas_stats) => cas_stats,
+                    Err(err) => return render_error(err),
+                };
+                let mut res = HashMap::with_capacity(cas_stats.len());
+                for ca in cas_stats {
+                    res.insert(
+                        ca.handle().clone(),
+                        ca.to_cert_auth_stats(
+                            req.state().bgp_analyser()
+                        ).await
+                    );
+                }
+                render_json(res)
+            }
             _ => Err(req),
         },
         _ => Err(req),
@@ -883,10 +1053,14 @@ async fn api_ca_sync(
         if req.is_post() {
             match path.next() {
                 Some("parents") => {
-                    render_empty_res(req.state().cas_refresh_single(ca).await)
+                    render_empty_res(req.state().process(move |server| {
+                        server.cas_refresh_single(ca)
+                    }).await)
                 }
                 Some("repo") => {
-                    render_empty_res(req.state().cas_repo_sync_single(&ca))
+                    render_empty_res(req.state().process(move |server| {
+                        server.cas_repo_sync_single(&ca)
+                    }).await)
                 }
                 _ => render_unknown_method(),
             }
@@ -907,9 +1081,11 @@ async fn api_publication_server(
                 let state = req.state.clone();
 
                 match req.json().await {
-                    Ok(criteria) => render_empty_res(
-                        state.delete_matching_files(criteria),
-                    ),
+                    Ok(criteria) => {
+                        render_empty_res(state.process(move |server| {
+                            server.delete_matching_files(criteria)
+                        }).await)
+                    }
                     Err(e) => render_error(e),
                 }
             }
@@ -920,16 +1096,26 @@ async fn api_publication_server(
             Method::POST => {
                 let state = req.state.clone();
                 match req.json().await {
-                    Ok(uris) => render_empty_res(state.repository_init(uris)),
+                    Ok(uris) => {
+                        render_empty_res(state.process(move |server| {
+                            server.repository_init(uris)
+                        }).await)
+                    }
                     Err(e) => render_error(e),
                 }
             }
-            Method::DELETE => render_empty_res(req.state.repository_clear()),
+            Method::DELETE => {
+                render_empty_res(req.state().process(|server| {
+                    server.repository_clear()
+                }).await)
+            }
             _ => render_unknown_method(),
         },
         Some("session_reset") => match *req.method() {
             Method::POST => {
-                render_empty_res(req.state().repository_session_reset())
+                render_empty_res(req.state().process(|server| {
+                    server.repository_session_reset()
+                }).await)
             }
             _ => render_unknown_method(),
         },
@@ -968,6 +1154,7 @@ async fn api_publishers(
     }
 }
 
+
 //------------ Admin: Publishers ---------------------------------------------
 
 /// Returns a list of publisher which have not updated for more
@@ -980,9 +1167,11 @@ pub async fn api_stale_publishers(
         let seconds = seconds.unwrap_or("");
         match i64::from_str(seconds) {
             Ok(seconds) => {
-                render_json_res(req.state().repo_stats().map(|stats| {
-                    PublisherList::build(&stats.stale_publishers(seconds))
-                }))
+                render_json_res(req.state().process(move |server| {
+                    server.repo_stats().map(|stats| {
+                        PublisherList::build(&stats.stale_publishers(seconds))
+                    })
+                }).await)
             }
             Err(_) => render_error(Error::ApiInvalidSeconds),
         }
@@ -992,11 +1181,11 @@ pub async fn api_stale_publishers(
 /// Returns a json structure with all publishers in it.
 pub async fn api_list_pbl(req: Request) -> RoutingResult {
     aa!(req, Permission::PubList, {
-        render_json_res(
-            req.state()
-                .publishers()
-                .map(|publishers| PublisherList::build(&publishers)),
-        )
+        render_json_res(req.state().process(|server| {
+            server.publishers().map(|publishers| {
+                PublisherList::build(&publishers)
+            })
+        }).await)
     })
 }
 
@@ -1004,9 +1193,13 @@ pub async fn api_list_pbl(req: Request) -> RoutingResult {
 pub async fn api_add_pbl(req: Request) -> RoutingResult {
     aa!(req, Permission::PubCreate, {
         let actor = req.actor();
-        let server = req.state().clone();
+        let state = req.state().clone();
         match req.json().await {
-            Ok(pbl) => render_json_res(server.add_publisher(pbl, &actor)),
+            Ok(pbl) => {
+                render_json_res(state.process(move |server| {
+                    server.add_publisher(pbl, &actor)
+                }).await)
+            }
             Err(e) => render_error(e),
         }
     })
@@ -1021,7 +1214,9 @@ pub async fn api_remove_pbl(
 ) -> RoutingResult {
     aa!(req, Permission::PubDelete, {
         let actor = req.actor();
-        render_empty_res(req.state().remove_publisher(publisher, &actor))
+        render_empty_res(req.state().process(move |server| {
+            server.remove_publisher(publisher, &actor)
+        }).await)
     })
 }
 
@@ -1034,12 +1229,14 @@ pub async fn api_show_pbl(
     aa!(
         req,
         Permission::PubRead,
-        render_json_res(req.state().get_publisher(&publisher))
+        render_json_res(req.state().process(move |server| {
+            server.get_publisher(&publisher)
+        }).await)
     )
 }
 
-//------------ repository_response
-//------------ ---------------------------------------------
+
+//------------ repository_response -------------------------------------------
 
 #[allow(clippy::redundant_clone)] // false positive
 pub async fn api_repository_response_xml(
@@ -1047,7 +1244,7 @@ pub async fn api_repository_response_xml(
     publisher: PublisherHandle,
 ) -> RoutingResult {
     aa!(req, Permission::PubRead, {
-        match repository_response(&req, &publisher).await {
+        match repository_response(&req, publisher).await {
             Ok(repository_response) => {
                 Ok(HttpResponse::xml(repository_response.to_xml_vec()))
             }
@@ -1062,7 +1259,7 @@ pub async fn api_repository_response_json(
     publisher: PublisherHandle,
 ) -> RoutingResult {
     aa!(req, Permission::PubRead, {
-        match repository_response(&req, &publisher).await {
+        match repository_response(&req, publisher).await {
             Ok(res) => render_json(res),
             Err(e) => render_error(e),
         }
@@ -1071,19 +1268,23 @@ pub async fn api_repository_response_json(
 
 async fn repository_response(
     req: &Request,
-    publisher: &PublisherHandle,
+    publisher: PublisherHandle,
 ) -> Result<idexchange::RepositoryResponse, Error> {
-    req.state().repository_response(publisher)
+    req.state().process(move |server| {
+        server.repository_response(&publisher)
+    }).await
 }
 
 pub async fn api_ca_add_child(req: Request, ca: CaHandle) -> RoutingResult {
     aa!(req, Permission::CaUpdate, ca, {
         let actor = req.actor();
-        let server = req.state().clone();
+        let state = req.state().clone();
         match req.json().await {
-            Ok(child_req) => render_json_res(
-                server.ca_add_child(&ca, child_req, &actor).await,
-            ),
+            Ok(child_req) => {
+                render_json_res(state.process(move |server| {
+                    server.ca_add_child(&ca, child_req, &actor)
+                }).await)
+            }
             Err(e) => render_error(e),
         }
     })
@@ -1096,11 +1297,13 @@ async fn api_ca_child_update(
 ) -> RoutingResult {
     aa!(req, Permission::CaUpdate, ca, {
         let actor = req.actor();
-        let server = req.state().clone();
+        let state = req.state().clone();
         match req.json().await {
-            Ok(child_req) => render_empty_res(
-                server.ca_child_update(&ca, child, child_req, &actor).await,
-            ),
+            Ok(child_req) => {
+                render_empty_res(state.process(move |server| {
+                    server.ca_child_update(&ca, child, child_req, &actor)
+                }).await)
+            }
             Err(e) => render_error(e),
         }
     })
@@ -1113,9 +1316,9 @@ pub async fn api_ca_child_remove(
 ) -> RoutingResult {
     aa!(req, Permission::CaUpdate, ca, {
         let actor = req.actor();
-        render_empty_res(
-            req.state().ca_child_remove(&ca, child, &actor).await,
-        )
+        render_empty_res(req.state().process(move |server| {
+            server.ca_child_remove(&ca, child, &actor)
+        }).await)
     })
 }
 
@@ -1127,8 +1330,10 @@ async fn api_ca_child_show(
     aa!(
         req,
         Permission::CaRead,
-        ca,
-        render_json_res(req.state().ca_child_show(&ca, &child).await)
+        &ca,
+        render_json_res(req.state().process(move |server| {
+            server.ca_child_show(&ca, &child)
+        }).await)
     )
 }
 
@@ -1140,19 +1345,23 @@ async fn api_ca_child_export(
     aa!(
         req,
         Permission::CaRead,
-        ca,
-        render_json_res(req.state().api_ca_child_export(&ca, &child).await)
+        &ca,
+        render_json_res(req.state().process(move |server| {
+            server.api_ca_child_export(&ca, &child)
+        }).await)
     )
 }
 
 async fn api_ca_child_import(req: Request, ca: CaHandle) -> RoutingResult {
     aa!(req, Permission::CaAdmin, ca, {
         let actor = req.actor();
-        let server = req.state().clone();
+        let state = req.state().clone();
         match req.json().await {
-            Ok(import_child) => render_empty_res(
-                server.api_ca_child_import(&ca, import_child, &actor).await,
-            ),
+            Ok(import_child) => {
+                render_empty_res(state.process(move |server| {
+                    server.api_ca_child_import(&ca, import_child, &actor)
+                }).await)
+            }
             Err(e) => render_error(e),
         }
     })
@@ -1165,8 +1374,10 @@ async fn api_ca_stats_child_connections(
     aa!(
         req,
         Permission::CaRead,
-        ca,
-        render_json_res(req.state().ca_stats_child_connections(&ca).await)
+        &ca,
+        render_json_res(req.state().process(move |server| {
+            server.ca_stats_child_connections(&ca)
+        }).await)
     )
 }
 
@@ -1178,10 +1389,10 @@ async fn api_ca_parent_res_json(
     aa!(
         req,
         Permission::CaRead,
-        ca,
-        render_json_res(
-            req.state().ca_parent_response(&ca, child.clone()).await
-        )
+        &ca,
+        render_json_res(req.state().process(move |server| {
+            server.ca_parent_response(&ca, child.clone())
+        }).await)
     )
 }
 
@@ -1190,8 +1401,10 @@ pub async fn api_ca_parent_res_xml(
     ca: CaHandle,
     child: ChildHandle,
 ) -> RoutingResult {
-    aa!(req, Permission::CaRead, ca, {
-        match req.state().ca_parent_response(&ca, child.clone()).await {
+    aa!(req, Permission::CaRead, &ca, {
+        match req.state().process(move |server| {
+            server.ca_parent_response(&ca, child.clone())
+        }).await {
             Ok(res) => Ok(HttpResponse::xml(res.to_xml_vec())),
             Err(e) => render_error(e),
         }
@@ -1203,10 +1416,14 @@ pub async fn api_ca_parent_res_xml(
 async fn api_cas_import(req: Request) -> RoutingResult {
     match *req.method() {
         Method::POST => aa!(req, Permission::CaAdmin, {
-            let server = req.state().clone();
+            let state = req.state().clone();
             match req.json().await {
                 Ok(structure) => {
-                    render_empty_res(server.cas_import(structure).await)
+                    render_empty_res(
+                        state.process(|server| {
+                            server.cas_import(structure)
+                        }).await
+                    )
                 }
                 Err(e) => render_error(e),
             }
@@ -1218,9 +1435,10 @@ async fn api_cas_import(req: Request) -> RoutingResult {
 async fn api_all_ca_issues(req: Request) -> RoutingResult {
     match *req.method() {
         Method::GET => aa!(req, Permission::CaRead, {
-            render_json_res(
-                req.state().all_ca_issues(req.auth_info()).await
-            )
+            let server = req.state().clone();
+            render_json_res(server.process(move |server| {
+                server.all_ca_issues(req.auth_info())
+            }).await)
         }),
         _ => render_unknown_method(),
     }
@@ -1232,8 +1450,10 @@ async fn api_ca_issues(req: Request, ca: CaHandle) -> RoutingResult {
         Method::GET => aa!(
             req,
             Permission::CaRead,
-            ca,
-            render_json_res(req.state().ca_issues(&ca).await)
+            &ca,
+            render_json_res(req.state().process(move |server| {
+                server.ca_issues(&ca)
+            }).await)
         ),
         _ => render_unknown_method(),
     }
@@ -1241,7 +1461,10 @@ async fn api_ca_issues(req: Request, ca: CaHandle) -> RoutingResult {
 
 async fn api_cas_list(req: Request) -> RoutingResult {
     aa!(req, Permission::CaList, {
-        render_json_res(req.state().ca_list(req.auth_info()))
+        let server = req.state().clone();
+        render_json_res(server.process(move |server| {
+            server.ca_list(req.auth_info())
+        }).await)
     })
 }
 
@@ -1250,7 +1473,11 @@ pub async fn api_ca_init(req: Request) -> RoutingResult {
         let state = req.state().clone();
 
         match req.json().await {
-            Ok(ca_init) => render_empty_res(state.ca_init(ca_init)),
+            Ok(ca_init) => {
+                render_empty_res(state.process(move |server| {
+                    server.ca_init(ca_init)
+                }).await)
+            }
             Err(e) => render_error(e),
         }
     })
@@ -1264,7 +1491,9 @@ async fn api_ca_id(
     match *req.method() {
         Method::POST => aa!(req, Permission::CaUpdate, ca, {
             let actor = req.actor();
-            render_empty_res(req.state().ca_update_id(ca, &actor).await)
+            render_empty_res(req.state().process(move |server| {
+                server.ca_update_id(ca, &actor)
+            }).await)
         }),
         Method::GET => match path.next() {
             Some("child_request.xml") => api_ca_child_req_xml(req, ca).await,
@@ -1287,8 +1516,10 @@ async fn api_ca_info(req: Request, handle: CaHandle) -> RoutingResult {
     aa!(
         req,
         Permission::CaRead,
-        handle,
-        render_json_res(req.state().ca_info(&handle).await)
+        &handle,
+        render_json_res(req.state().process(move |server| {
+            server.ca_info(&handle)
+        }).await)
     )
 }
 
@@ -1297,8 +1528,10 @@ async fn api_ca_delete(req: Request, handle: CaHandle) -> RoutingResult {
     aa!(
         req,
         Permission::CaDelete,
-        handle,
-        render_json_res(req.state().ca_delete(&handle, &actor).await)
+        &handle,
+        render_json_res(req.state().process(move |server| {
+            server.ca_delete(&handle, &actor)
+        }).await)
     )
 }
 
@@ -1310,8 +1543,10 @@ async fn api_ca_my_parent_contact(
     aa!(
         req,
         Permission::CaRead,
-        ca,
-        render_json_res(req.state().ca_my_parent_contact(&ca, &parent).await)
+        &ca,
+        render_json_res(req.state().process(move |server| {
+            server.ca_my_parent_contact(&ca, &parent)
+        }).await)
     )
 }
 
@@ -1322,13 +1557,10 @@ async fn api_ca_my_parent_statuses(
     aa!(
         req,
         Permission::CaRead,
-        ca,
-        render_json_res(
-            req.state()
-                .ca_status(&ca)
-                .await
-                .map(|s| s.parents().clone())
-        )
+        &ca,
+        render_json_res(req.state().process(move |server| {
+            server.ca_status(&ca)
+        }).await.map(|s| s.parents().clone()))
     )
 }
 
@@ -1392,8 +1624,10 @@ async fn api_ca_bgpsec_definitions_show(
     req: Request,
     ca: CaHandle,
 ) -> RoutingResult {
-    aa!(req, Permission::BgpsecRead, ca, {
-        render_json_res(req.state().ca_bgpsec_definitions_show(ca).await)
+    aa!(req, Permission::BgpsecRead, &ca, {
+        render_json_res(req.state().process(move |server| {
+            server.ca_bgpsec_definitions_show(ca)
+        }).await)
     })
 }
 
@@ -1403,13 +1637,13 @@ async fn api_ca_bgpsec_definitions_update(
 ) -> RoutingResult {
     aa!(req, Permission::BgpsecUpdate, ca, {
         let actor = req.actor();
-        let server = req.state().clone();
+        let state = req.state().clone();
         match req.json().await {
-            Ok(updates) => render_empty_res(
-                server
-                    .ca_bgpsec_definitions_update(ca, updates, &actor)
-                    .await,
-            ),
+            Ok(updates) => {
+                render_empty_res(state.process(move |server| {
+                    server.ca_bgpsec_definitions_update(ca, updates, &actor)
+                }).await)
+            }
             Err(e) => render_error(e),
         }
     })
@@ -1472,7 +1706,9 @@ async fn api_ca_history_commands(
                 if let Some(before) = path.path_arg() {
                     crit.set_before(before);
                 }
-                match req.state().ca_history(&handle, crit).await {
+                match req.state().process(move |server| {
+                    server.ca_history(&handle, crit)
+                }).await {
                     Ok(history) => render_json(history),
                     Err(e) => render_error(e),
                 }
@@ -1504,8 +1740,10 @@ async fn api_ca_command_details(
     match path.path_arg() {
         Some(key) => match *req.method() {
             Method::GET => {
-                aa!(req, Permission::CaRead, ca, {
-                    match req.state().ca_command_details(&ca, key) {
+                aa!(req, Permission::CaRead, &ca, {
+                    match req.state().process(move |server| {
+                        server.ca_command_details(&ca, key)
+                    }).await {
                         Ok(details) => render_json(details),
                         Err(e) => match e {
                             Error::AggregateStoreError(
@@ -1527,8 +1765,8 @@ async fn api_ca_child_req_xml(req: Request, ca: CaHandle) -> RoutingResult {
         Method::GET => aa!(
             req,
             Permission::CaRead,
-            ca,
-            match ca_child_req(&req, &ca).await {
+            &ca,
+            match ca_child_req(&req, ca).await {
                 Ok(child_request) =>
                     Ok(HttpResponse::xml(child_request.to_xml_vec())),
                 Err(e) => render_error(e),
@@ -1543,8 +1781,8 @@ async fn api_ca_child_req_json(req: Request, ca: CaHandle) -> RoutingResult {
         Method::GET => aa!(
             req,
             Permission::CaRead,
-            ca,
-            match ca_child_req(&req, &ca).await {
+            &ca,
+            match ca_child_req(&req, ca).await {
                 Ok(req) => render_json(req),
                 Err(e) => render_error(e),
             }
@@ -1554,10 +1792,9 @@ async fn api_ca_child_req_json(req: Request, ca: CaHandle) -> RoutingResult {
 }
 
 async fn ca_child_req(
-    req: &Request,
-    ca: &CaHandle,
+    req: &Request, ca: CaHandle,
 ) -> Result<idexchange::ChildRequest, Error> {
-    req.state().ca_child_req(ca).await
+    req.state().process(move |server| server.ca_child_req(&ca)).await
 }
 
 async fn api_ca_publisher_req_json(
@@ -1568,8 +1805,10 @@ async fn api_ca_publisher_req_json(
         Method::GET => aa!(
             req,
             Permission::CaRead,
-            ca,
-            render_json_res(req.state().ca_publisher_req(&ca).await)
+            &ca,
+            render_json_res(req.state().process(move |server| {
+                server.ca_publisher_req(&ca)
+            }).await)
         ),
         _ => render_unknown_method(),
     }
@@ -1583,8 +1822,10 @@ async fn api_ca_publisher_req_xml(
         Method::GET => aa!(
             req,
             Permission::CaRead,
-            ca,
-            match req.state().ca_publisher_req(&ca).await {
+            &ca,
+            match req.state().process(move |server| {
+                server.ca_publisher_req(&ca)
+            }).await {
                 Ok(publisher_request) =>
                     Ok(HttpResponse::xml(publisher_request.to_xml_vec())),
                 Err(e) => render_error(e),
@@ -1598,8 +1839,10 @@ async fn api_ca_repo_details(req: Request, ca: CaHandle) -> RoutingResult {
     aa!(
         req,
         Permission::CaRead,
-        ca,
-        render_json_res(req.state().ca_repo_details(&ca).await)
+        &ca,
+        render_json_res(req.state().process(move |server| {
+            server.ca_repo_details(&ca)
+        }).await)
     )
 }
 
@@ -1610,10 +1853,9 @@ async fn api_ca_repo_status(req: Request, ca: CaHandle) -> RoutingResult {
             Permission::CaRead,
             ca,
             render_json_res(
-                req.state()
-                    .ca_status(&ca)
-                    .await
-                    .map(|status| status.repo().clone())
+                req.state().process(move |server| {
+                    server.ca_status(&ca)
+                }).await.map(|status| status.repo().clone())
             )
         ),
         _ => render_unknown_method(),
@@ -1657,16 +1899,18 @@ fn extract_repository_contact(
 async fn api_ca_repo_update(req: Request, ca: CaHandle) -> RoutingResult {
     aa!(req, Permission::CaUpdate, ca, {
         let actor = req.actor();
-        let server = req.state().clone();
+        let state = req.state().clone();
 
         match req
             .api_bytes()
             .await
             .map(|bytes| extract_repository_contact(&ca, bytes))
         {
-            Ok(Ok(update)) => render_empty_res(
-                server.ca_repo_update(ca, update, &actor).await,
-            ),
+            Ok(Ok(update)) => {
+                render_empty_res(state.process(move |server| {
+                    server.ca_repo_update(ca, update, &actor)
+                }).await)
+            }
             Ok(Err(e)) | Err(e) => render_error(e),
         }
     })
@@ -1679,7 +1923,7 @@ async fn api_ca_parent_add_or_update(
 ) -> RoutingResult {
     aa!(req, Permission::CaUpdate, ca, {
         let actor = req.actor();
-        let server = req.state().clone();
+        let state = req.state().clone();
 
         let bytes = match req.api_bytes().await {
             Ok(bytes) => bytes,
@@ -1687,9 +1931,11 @@ async fn api_ca_parent_add_or_update(
         };
 
         match extract_parent_ca_req(&ca, bytes, parent_override) {
-            Ok(parent_req) => render_empty_res(
-                server.ca_parent_add_or_update(ca, parent_req, &actor).await,
-            ),
+            Ok(parent_req) => {
+                render_empty_res(state.process(move |server| {
+                    server.ca_parent_add_or_update(ca, parent_req, &actor)
+                }).await)
+            }
             Err(e) => render_error(e),
         }
     })
@@ -1748,9 +1994,9 @@ async fn api_ca_remove_parent(
 ) -> RoutingResult {
     aa!(req, Permission::CaUpdate, ca, {
         let actor = req.actor();
-        render_empty_res(
-            req.state().ca_parent_remove(ca, parent, &actor).await,
-        )
+        render_empty_res(req.state().process(move |server| {
+            server.ca_parent_remove(ca, parent, &actor)
+        }).await)
     })
 }
 
@@ -1758,7 +2004,9 @@ async fn api_ca_remove_parent(
 async fn api_ca_kr_init(req: Request, ca: CaHandle) -> RoutingResult {
     aa!(req, Permission::CaUpdate, ca, {
         let actor = req.actor();
-        render_empty_res(req.state().ca_keyroll_init(ca, &actor).await)
+        render_empty_res(req.state().process(move |server| {
+            server.ca_keyroll_init(ca, &actor)
+        }).await)
     })
 }
 
@@ -1767,7 +2015,9 @@ async fn api_ca_kr_init(req: Request, ca: CaHandle) -> RoutingResult {
 async fn api_ca_kr_activate(req: Request, ca: CaHandle) -> RoutingResult {
     aa!(req, Permission::CaUpdate, ca, {
         let actor = req.actor();
-        render_empty_res(req.state().ca_keyroll_activate(ca, &actor).await)
+        render_empty_res(req.state().process(move |server| {
+            server.ca_keyroll_activate(ca, &actor)
+        }).await)
     })
 }
 
@@ -1778,9 +2028,10 @@ async fn api_ca_aspas_definitions_show(
     req: Request,
     ca: CaHandle,
 ) -> RoutingResult {
-    aa!(req, Permission::AspasRead, ca, {
-        let state = req.state().clone();
-        render_json_res(state.ca_aspas_definitions_show(ca).await)
+    aa!(req, Permission::AspasRead, &ca, {
+        render_json_res(req.state().process(move |server| {
+            server.ca_aspas_definitions_show(ca)
+        }).await)
     })
 }
 
@@ -1795,9 +2046,11 @@ async fn api_ca_aspas_definitions_update(
 
         match req.json().await {
             Err(e) => render_error(e),
-            Ok(updates) => render_empty_res(
-                state.ca_aspas_definitions_update(ca, updates, &actor).await,
-            ),
+            Ok(updates) => {
+                render_empty_res(state.process(move |server| {
+                    server.ca_aspas_definitions_update(ca, updates, &actor)
+                }).await)
+            }
         }
     })
 }
@@ -1815,11 +2068,11 @@ async fn api_ca_aspas_update_aspa(
 
         match req.json().await {
             Err(e) => render_error(e),
-            Ok(update) => render_empty_res(
-                state
-                    .ca_aspas_update_aspa(ca, customer, update, &actor)
-                    .await,
-            ),
+            Ok(update) => {
+                render_empty_res(state.process(move |server| {
+                    server.ca_aspas_update_aspa(ca, customer, update, &actor)
+                }).await)
+            }
         }
     })
 }
@@ -1835,9 +2088,9 @@ async fn api_ca_aspas_delete(
         let state = req.state().clone();
 
         let updates = AspaDefinitionUpdates::new(vec![], vec![customer]);
-        render_empty_res(
-            state.ca_aspas_definitions_update(ca, updates, &actor).await,
-        )
+        render_empty_res(state.process(move |server| {
+            server.ca_aspas_definitions_update(ca, updates, &actor)
+        }).await)
     })
 }
 
@@ -1849,9 +2102,11 @@ async fn api_ca_routes_update(req: Request, ca: CaHandle) -> RoutingResult {
 
         match req.json().await {
             Err(e) => render_error(e),
-            Ok(updates) => render_empty_res(
-                state.ca_routes_update(ca, updates, &actor).await,
-            ),
+            Ok(updates) => {
+                render_empty_res(state.process(move |server| {
+                    server.ca_routes_update(ca, updates, &actor)
+                }).await)
+            }
         }
     })
 }
@@ -1861,18 +2116,25 @@ async fn api_ca_routes_update(req: Request, ca: CaHandle) -> RoutingResult {
 /// it. Otherwise return the analysis and a suggestion.
 async fn api_ca_routes_try_update(
     req: Request,
-    ca: CaHandle,
+    ca_handle: CaHandle,
 ) -> RoutingResult {
-    aa!(req, Permission::RoutesUpdate, ca, {
+    aa!(req, Permission::RoutesUpdate, &ca_handle, {
         let actor = req.actor();
         let state = req.state().clone();
 
         match req.json::<RoaConfigurationUpdates>().await {
             Err(e) => render_error(e),
             Ok(updates) => {
-                let server = state;
-                match server.ca_routes_bgp_dry_run(&ca, updates.clone()).await
-                {
+                let ca_handle_clone = ca_handle.clone();
+                let ca = match state.process(move |srv| {
+                    srv.get_ca(&ca_handle_clone)
+                }).await {
+                    Ok(ca) => ca,
+                    Err(err) => return render_error(err),
+                };
+                match ca.routes_bgp_dry_run(
+                    updates.clone(), state.bgp_analyser()
+                ).await {
                     Err(e) => {
                         // update was rejected, return error
                         render_error(e)
@@ -1880,20 +2142,21 @@ async fn api_ca_routes_try_update(
                     Ok(effect) => {
                         if !effect.contains_invalids() {
                             // no issues found, apply
-                            render_empty_res(
-                                server
-                                    .ca_routes_update(ca, updates, &actor)
-                                    .await,
-                            )
-                        } else {
+                            render_empty_res(state.process(move |server| {
+                                server.ca_routes_update(
+                                    ca_handle, updates, &actor
+                                )
+                            }).await)
+                        } 
+                        else {
                             // remaining invalids exist, advise user
                             let updates = updates.into_explicit_max_length();
                             let resources = updates.affected_prefixes();
 
-                            match server
-                                .ca_routes_bgp_suggest(&ca, Some(resources))
-                                .await
-                            {
+                            match ca.routes_bgp_suggest(
+                                Some(resources),
+                                state.bgp_analyser(),
+                            ).await {
                                 Err(e) => render_error(e), /* should not */
                                 // fail after
                                 // dry run, but
@@ -1914,8 +2177,10 @@ async fn api_ca_routes_try_update(
 
 /// show the route authorizations for this CA
 async fn api_ca_routes_show(req: Request, ca: CaHandle) -> RoutingResult {
-    aa!(req, Permission::RoutesRead, ca, {
-        match req.state().ca_routes_show(&ca).await {
+    aa!(req, Permission::RoutesRead, &ca, {
+        match req.state().process(move |server| {
+            server.ca_routes_show(&ca)
+        }).await {
             Ok(roas) => render_json(roas),
             Err(_) => render_unknown_resource(),
         }
@@ -1931,33 +2196,69 @@ async fn api_ca_routes_analysis(
     aa!(req, Permission::RoutesAnalysis, ca, {
         match path.next() {
             Some("full") => {
-                render_json_res(req.state().ca_routes_bgp_analysis(&ca).await)
+                let ca = match req.state().process(move |srv| {
+                    srv.get_ca(&ca)
+                }).await {
+                    Ok(ca) => ca,
+                    Err(err) => return render_error(err),
+                };
+                render_json(
+                    ca.routes_bgp_analysis(req.state().bgp_analyser()).await
+                )
             }
             Some("dryrun") => match *req.method() {
                 Method::POST => {
                     let state = req.state.clone();
                     match req.json().await {
                         Err(e) => render_error(e),
-                        Ok(updates) => render_json_res(
-                            state.ca_routes_bgp_dry_run(&ca, updates).await,
-                        ),
+                        Ok(updates) => {
+                            let ca = match state.process(move |srv| {
+                                srv.get_ca(&ca)
+                            }).await {
+                                Ok(ca) => ca,
+                                Err(err) => return render_error(err),
+                            };
+                            render_json_res(
+                                ca.routes_bgp_dry_run(
+                                    updates, state.bgp_analyser()
+                                ).await
+                            )
+                        }
                     }
                 }
                 _ => render_unknown_method(),
             },
             Some("suggest") => match *req.method() {
-                Method::GET => render_json_res(
-                    req.state().ca_routes_bgp_suggest(&ca, None).await,
-                ),
+                Method::GET => {
+                    let ca = match req.state().process(move |srv| {
+                        srv.get_ca(&ca)
+                    }).await {
+                        Ok(ca) => ca,
+                        Err(err) => return render_error(err),
+                    };
+                    render_json_res(
+                        ca.routes_bgp_suggest(
+                            None, req.state().bgp_analyser()
+                        ).await
+                    )
+                }
                 Method::POST => {
-                    let server = req.state().clone();
+                    let state = req.state().clone();
                     match req.json().await {
                         Err(e) => render_error(e),
-                        Ok(resources) => render_json_res(
-                            server
-                                .ca_routes_bgp_suggest(&ca, Some(resources))
-                                .await,
-                        ),
+                        Ok(resources) => {
+                            let ca = match state.process(move |srv| {
+                                srv.get_ca(&ca)
+                            }).await {
+                                Ok(ca) => ca,
+                                Err(err) => return render_error(err),
+                            };
+                            render_json_res(
+                                ca.routes_bgp_suggest(
+                                    Some(resources), state.bgp_analyser(),
+                                ).await
+                            )
+                        }
                     }
                 }
                 _ => render_unknown_method(),
@@ -1967,12 +2268,15 @@ async fn api_ca_routes_analysis(
     })
 }
 
+
 //------------ Admin: Force republish ----------------------------------------
 
 async fn api_republish_all(req: Request, force: bool) -> RoutingResult {
     match *req.method() {
         Method::POST => aa!(req, Permission::CaAdmin, {
-            render_empty_res(req.state().republish_all(force).await)
+            render_empty_res(req.state().process(move |server| {
+                server.republish_all(force)
+            }).await)
         }),
         _ => render_unknown_method(),
     }
@@ -1981,7 +2285,10 @@ async fn api_republish_all(req: Request, force: bool) -> RoutingResult {
 async fn api_resync_all(req: Request) -> RoutingResult {
     match *req.method() {
         Method::POST => aa!(req, Permission::CaAdmin, {
-            render_empty_res(req.state().cas_repo_sync_all(req.auth_info()))
+            let server = req.state().clone();
+            render_empty_res(server.process(move |server| {
+                server.cas_repo_sync_all(req.auth_info())
+            }).await)
         }),
         _ => render_unknown_method(),
     }
@@ -1991,7 +2298,9 @@ async fn api_resync_all(req: Request) -> RoutingResult {
 async fn api_refresh_all(req: Request) -> RoutingResult {
     match *req.method() {
         Method::POST => aa!(req, Permission::CaAdmin, {
-            render_empty_res(req.state().cas_refresh_all().await)
+            render_empty_res(req.state().process(|server| {
+                server.cas_refresh_all()
+            }).await)
         }),
         _ => render_unknown_method(),
     }
@@ -2001,7 +2310,9 @@ async fn api_refresh_all(req: Request) -> RoutingResult {
 async fn api_suspend_all(req: Request) -> RoutingResult {
     match *req.method() {
         Method::POST => aa!(req, Permission::CaAdmin, {
-            render_empty_res(req.state().cas_schedule_suspend_all())
+            render_empty_res(req.state().process(|server| {
+                server.cas_schedule_suspend_all()
+            }).await)
         }),
         _ => render_unknown_method(),
     }
@@ -2013,7 +2324,7 @@ async fn rrdp(req: Request) -> RoutingResult {
     if !req.path().full().starts_with("/rrdp/") {
         Err(req) // Not for us
     } else {
-        let mut full_path: PathBuf = req.state.rrdp_base_path();
+        let mut full_path: PathBuf = req.state().rrdp_base_path();
         let (_, path) = req.path.remaining().split_at(1);
         let cache_seconds = if path.ends_with("notification.xml") {
             60
@@ -2081,8 +2392,10 @@ async fn api_ca_rta_list(req: Request, ca: CaHandle) -> RoutingResult {
     aa!(
         req,
         Permission::RtaList,
-        ca,
-        render_json_res(req.state().rta_list(ca).await)
+        &ca,
+        render_json_res(req.state().process(move |server| {
+            server.rta_list(ca)
+        }).await)
     )
 }
 
@@ -2094,8 +2407,10 @@ async fn api_ca_rta_show(
     aa!(
         req,
         Permission::RtaRead,
-        ca,
-        render_json_res(req.state().rta_show(ca, name).await)
+        &ca,
+        render_json_res(req.state().process(move |server| {
+            server.rta_show(ca, name)
+        }).await)
     )
 }
 
@@ -2109,9 +2424,11 @@ async fn api_ca_rta_sign(
         let state = req.state().clone();
         match req.json().await {
             Err(e) => render_error(e),
-            Ok(request) => render_empty_res(
-                state.rta_sign(ca, name, request, &actor).await,
-            ),
+            Ok(request) => {
+                render_empty_res(state.process(move |server| {
+                    server.rta_sign(ca, name, request, &actor)
+                }).await)
+            }
         }
     })
 }
@@ -2126,9 +2443,11 @@ async fn api_ca_rta_multi_prep(
         let state = req.state().clone();
 
         match req.json().await {
-            Ok(resources) => render_json_res(
-                state.rta_multi_prep(ca, name, resources, &actor).await,
-            ),
+            Ok(resources) => {
+                render_json_res(state.process(move |server| {
+                    server.rta_multi_prep(ca, name, resources, &actor)
+                }).await)
+            }
             Err(e) => render_error(e),
         }
     })
@@ -2143,9 +2462,11 @@ async fn api_ca_rta_multi_sign(
         let actor = req.actor();
         let state = req.state().clone();
         match req.json().await {
-            Ok(rta) => render_empty_res(
-                state.rta_multi_cosign(ca, name, rta, &actor).await,
-            ),
+            Ok(rta) => {
+                render_empty_res(state.process(move |server| {
+                    server.rta_multi_cosign(ca, name, rta, &actor)
+                }).await)
+            }
             Err(_) => render_error(Error::custom(
                 "Cannot decode RTA for co-signing",
             )),
@@ -2153,7 +2474,9 @@ async fn api_ca_rta_multi_sign(
     })
 }
 
-//-------------------------------- API TA --------------------------------------------------
+
+//------------ API TA --------------------------------------------------------
+
 async fn api_ta(req: Request, path: &mut RequestPath) -> RoutingResult {
     //
     // krillta proxy --server .. --token ..
@@ -2193,19 +2516,29 @@ async fn api_ta(req: Request, path: &mut RequestPath) -> RoutingResult {
     match path.next() {
         Some("proxy") => match path.next() {
             Some("init") => {
-                render_empty_res(req.state().ta_proxy_init().await)
+                render_empty_res(req.state().process(|server| {
+                    server.ta_proxy_init()
+                }).await)
             }
-            Some("id") => render_json_res(req.state().ta_proxy_id().await),
+            Some("id") => {
+                render_json_res(req.state().process(|server| {
+                    server.ta_proxy_id()
+                }).await)
+            }
             Some("repo") => match path.next() {
                 Some("request.xml") => {
-                    match req.state().ta_proxy_publisher_request().await {
+                    match req.state().process(|server| {
+                        server.ta_proxy_publisher_request()
+                    }).await {
                         Ok(req) => Ok(HttpResponse::xml(req.to_xml_vec())),
                         Err(e) => render_error(e),
                     }
                 }
-                Some("request.json") => render_json_res(
-                    req.state().ta_proxy_publisher_request().await,
-                ),
+                Some("request.json") => {
+                    render_json_res(req.state().process(|server| {
+                        server.ta_proxy_publisher_request()
+                    }).await)
+                }
                 None => match *req.method() {
                     Method::POST => {
                         let ta_handle = ta::ta_handle();
@@ -2215,19 +2548,21 @@ async fn api_ta(req: Request, path: &mut RequestPath) -> RoutingResult {
                         match req.api_bytes().await.map(|bytes| {
                             extract_repository_contact(&ta_handle, bytes)
                         }) {
-                            Ok(Ok(contact)) => render_empty_res(
-                                server
-                                    .ta_proxy_repository_update(
+                            Ok(Ok(contact)) => {
+                                render_empty_res(server.process(move |server| {
+                                    server.ta_proxy_repository_update(
                                         contact, &actor,
                                     )
-                                    .await,
-                            ),
+                                }).await)
+                            }
                             Ok(Err(e)) | Err(e) => render_error(e),
                         }
                     }
-                    Method::GET => render_json_res(
-                        req.state().ta_proxy_repository_contact().await,
-                    ),
+                    Method::GET => {
+                        render_json_res(req.state().process(|server| {
+                            server.ta_proxy_repository_contact()
+                        }).await)
+                    }
                     _ => render_unknown_method(),
                 },
 
@@ -2237,24 +2572,30 @@ async fn api_ta(req: Request, path: &mut RequestPath) -> RoutingResult {
                 Some("add") => {
                     let server = req.state().clone();
                     let actor = req.actor();
+
                     match req.json().await {
-                        Ok(ta_signer_info) => render_empty_res(
-                            server
-                                .ta_proxy_signer_add(ta_signer_info, &actor)
-                                .await,
-                        ),
+                        Ok(ta_signer_info) => {
+                            render_empty_res(server.process(move |server| {
+                                server.ta_proxy_signer_add(
+                                    ta_signer_info, &actor
+                                )
+                            }).await)
+                        }
                         Err(e) => render_error(e),
                     }
                 }
                 Some("request") => match *req.method() {
-                    Method::POST => render_json_res(
-                        req.state()
-                            .ta_proxy_signer_make_request(&req.actor())
-                            .await,
-                    ),
-                    Method::GET => render_json_res(
-                        req.state().ta_proxy_signer_get_request().await,
-                    ),
+                    Method::POST => {
+                        let state = req.state().clone();
+                        render_json_res(state.process(move |server| {
+                            server.ta_proxy_signer_make_request(&req.actor())
+                        }).await)
+                    }
+                    Method::GET => {
+                        render_json_res(req.state().process(|server| {
+                            server.ta_proxy_signer_get_request()
+                        }).await)
+                    }
                     _ => render_unknown_method(),
                 },
                 Some("response") => match *req.method() {
@@ -2263,13 +2604,13 @@ async fn api_ta(req: Request, path: &mut RequestPath) -> RoutingResult {
                         let actor = req.actor();
 
                         match req.json().await {
-                            Ok(response) => render_empty_res(
-                                server
-                                    .ta_proxy_signer_process_response(
+                            Ok(response) => {
+                                render_empty_res(server.process(move |server| {
+                                    server.ta_proxy_signer_process_response(
                                         response, &actor,
                                     )
-                                    .await,
-                            ),
+                                }).await)
+                            }
                             Err(e) => render_error(e),
                         }
                     }
@@ -2279,16 +2620,15 @@ async fn api_ta(req: Request, path: &mut RequestPath) -> RoutingResult {
             },
             Some("children") => match path.path_arg::<ChildHandle>() {
                 Some(child) => match path.next() {
-                    Some("parent_response.json") => render_json_res(
-                        req.state()
-                            .ca_parent_response(&ta::ta_handle(), child)
-                            .await,
-                    ),
+                    Some("parent_response.json") => {
+                        render_json_res(req.state().process(move |server| {
+                            server.ca_parent_response(&ta::ta_handle(), child)
+                        }).await)
+                    }
                     Some("parent_response.xml") => {
-                        match req
-                            .state()
-                            .ca_parent_response(&ta::ta_handle(), child)
-                            .await
+                        match req.state().process(move |server| {
+                            server.ca_parent_response(&ta::ta_handle(), child)
+                        }).await
                         {
                             Ok(parent_response) => Ok(HttpResponse::xml(
                                 parent_response.to_xml_vec(),
@@ -2310,13 +2650,15 @@ async fn api_ta(req: Request, path: &mut RequestPath) -> RoutingResult {
                 None => match *req.method() {
                     Method::POST => {
                         let actor = req.actor();
-                        let server = req.state().clone();
+                        let state = req.state().clone();
                         match req.json().await {
-                            Ok(child_req) => render_json_res(
-                                server
-                                    .ta_proxy_children_add(child_req, &actor)
-                                    .await,
-                            ),
+                            Ok(child_req) => {
+                                render_json_res(state.process(move |server| {
+                                    server.ta_proxy_children_add(
+                                        child_req, &actor
+                                    )
+                                }).await)
+                            }
                             Err(e) => render_error(e),
                         }
                     }
@@ -2332,31 +2674,3 @@ async fn api_ta(req: Request, path: &mut RequestPath) -> RoutingResult {
     }
 }
 
-/* XXX The server is extensively tested in the integration tests so I don’t
- *     think we need it to start it here.
- *
-//------------ Tests ---------------------------------------------------------
-#[cfg(test)]
-mod tests {
-    // NOTE: This is extensively tested through the functional and e2e tests
-    // found under       the $project/tests dir
-    use crate::test;
-
-    #[tokio::test]
-    async fn start_krill_daemon() {
-        let cleanup = test::start_krill_with_default_test_config(
-            false, false, false, false,
-        )
-        .await;
-
-        cleanup();
-    }
-
-    #[tokio::test]
-    async fn start_krill_pubd_daemon() {
-        let cleanup = test::start_krill_pubd(0).await;
-
-        cleanup();
-    }
-}
-*/

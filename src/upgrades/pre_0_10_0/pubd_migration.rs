@@ -3,10 +3,8 @@ use rpki::{ca::idexchange::MyHandle, repository::x509::Time};
 use crate::{
     commons::{
         api::StorableRepositoryCommand,
-        eventsourcing::{
-            segment, AggregateStore, KeyValueStore, Scope, Segment,
-            StoredCommandBuilder,
-        },
+        eventsourcing::{AggregateStore, StoredCommandBuilder},
+        storage::{KeyValueStore, Scope, Segment},
         util::KrillVersion,
     },
     constants::PUBSERVER_NS,
@@ -60,7 +58,7 @@ impl PublicationServerRepositoryAccessMigration {
 
         if store_migration
             .current_kv_store
-            .has_scope(&Scope::from_segment(segment!("0")))?
+            .has_scope(&Scope::from_segment(const { Segment::make("0") }))?
             && versions.from >= KrillVersion::release(0, 9, 0)
             && versions.from < KrillVersion::candidate(0, 10, 0, 1)
         {

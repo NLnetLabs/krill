@@ -14,10 +14,10 @@ use crate::commons::util::httpclient;
 pub struct List;
 
 impl List {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<api::CertAuthList, httpclient::Error> {
-        client.cas_list().await
+        client.cas_list()
     }
 }
 
@@ -41,10 +41,10 @@ pub struct Add {
 }
 
 impl Add {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<api::Success, httpclient::Error> {
-        client.ca_add(self.ca.ca).await
+        client.ca_add(self.ca.ca)
     }
 }
 
@@ -58,10 +58,10 @@ pub struct Show {
 }
 
 impl Show {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<api::CertAuthInfo, httpclient::Error> {
-        client.ca_details(&self.ca.ca).await
+        client.ca_details(&self.ca.ca)
     }
 }
 
@@ -75,10 +75,10 @@ pub struct Delete {
 }
 
 impl Delete {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<api::Success, httpclient::Error> {
-        client.ca_delete(&self.ca.ca).await
+        client.ca_delete(&self.ca.ca)
     }
 }
 
@@ -95,10 +95,10 @@ pub enum History {
 }
 
 impl History {
-    pub async fn run(self, client: &KrillClient) -> Report {
+    pub fn run(self, client: &KrillClient) -> Report {
         match self {
-            Self::Commands(cmd) => cmd.run(client).await.into(),
-            Self::Details(cmd) => cmd.run(client).await.into(),
+            Self::Commands(cmd) => cmd.run(client).into(),
+            Self::Details(cmd) => cmd.run(client).into(),
         }
     }
 }
@@ -129,12 +129,12 @@ pub struct HistoryCommands {
 }
 
 impl HistoryCommands {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<api::CommandHistory, httpclient::Error> {
         client.ca_history_commands(
             &self.ca.ca, self.rows, self.offset,self.after, self.before
-        ).await
+        )
     }
 }
 
@@ -152,10 +152,10 @@ pub struct HistoryDetails {
 }
 
 impl HistoryDetails {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<api::CaCommandDetails, httpclient::Error> {
-        client.ca_history_details(&self.ca.ca, &self.key).await
+        client.ca_history_details(&self.ca.ca, &self.key)
     }
 }
 
@@ -172,10 +172,10 @@ pub enum Keyroll {
 }
 
 impl Keyroll {
-    pub async fn run(self, client: &KrillClient) -> Report {
+    pub fn run(self, client: &KrillClient) -> Report {
         match self {
-            Self::Init(cmd) => cmd.run(client).await.into(),
-            Self::Activate(cmd) => cmd.run(client).await.into(),
+            Self::Init(cmd) => cmd.run(client).into(),
+            Self::Activate(cmd) => cmd.run(client).into(),
         }
     }
 }
@@ -190,10 +190,10 @@ pub struct InitKeyroll {
 }
 
 impl InitKeyroll {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<api::Success, httpclient::Error> {
-        client.ca_init_keyroll(&self.handle.ca).await
+        client.ca_init_keyroll(&self.handle.ca)
     }
 }
 
@@ -207,10 +207,10 @@ pub struct ActivateKeyroll {
 }
 
 impl ActivateKeyroll {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<api::Success, httpclient::Error> {
-        client.ca_activate_keyroll(&self.handle.ca).await
+        client.ca_activate_keyroll(&self.handle.ca)
     }
 }
 

@@ -30,11 +30,11 @@ pub enum Command {
 }
 
 impl Command {
-    pub async fn run(self, client: &KrillClient) -> Report {
+    pub fn run(self, client: &KrillClient) -> Report {
         match self {
-            Self::Publishers(cmd) => cmd.run(client).await,
-            Self::Delete(cmd) => cmd.run(client).await.into(),
-            Self::Server(cmd) => cmd.run(client).await,
+            Self::Publishers(cmd) => cmd.run(client),
+            Self::Delete(cmd) => cmd.run(client).into(),
+            Self::Server(cmd) => cmd.run(client),
         }
     }
 }
@@ -64,14 +64,14 @@ pub enum Publishers {
 }
 
 impl Publishers {
-    async fn run(self, client: &KrillClient) -> Report {
+    fn run(self, client: &KrillClient) -> Report {
         match self {
-            Self::List(cmd) => cmd.run(client).await.into(),
-            Self::Stale(cmd) => cmd.run(client).await.into(),
-            Self::Add(cmd) => cmd.run(client).await.into(),
-            Self::Response(cmd) => cmd.run(client).await.into(),
-            Self::Show(cmd) => cmd.run(client).await.into(),
-            Self::Remove(cmd) => cmd.run(client).await.into(),
+            Self::List(cmd) => cmd.run(client).into(),
+            Self::Stale(cmd) => cmd.run(client).into(),
+            Self::Add(cmd) => cmd.run(client).into(),
+            Self::Response(cmd) => cmd.run(client).into(),
+            Self::Show(cmd) => cmd.run(client).into(),
+            Self::Remove(cmd) => cmd.run(client).into(),
         }
     }
 }
@@ -83,10 +83,10 @@ impl Publishers {
 pub struct List;
 
 impl List {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<api::PublisherList, httpclient::Error> {
-        client.publishers_list().await
+        client.publishers_list()
     }
 }
 
@@ -101,10 +101,10 @@ pub struct Stale {
 }
 
 impl Stale {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<api::PublisherList, httpclient::Error> {
-        client.publishers_stale(self.seconds).await
+        client.publishers_stale(self.seconds)
     }
 }
 
@@ -123,13 +123,13 @@ pub struct Add {
 }
 
 impl Add {
-    async fn run(
+    fn run(
         mut self, client: &KrillClient
     ) -> Result<idexchange::RepositoryResponse, httpclient::Error> {
         if let Some(handle) = self.publisher {
             self.request.0.set_publisher_handle(handle)
         }
-        client.publishers_add(self.request.0).await
+        client.publishers_add(self.request.0)
     }
 }
 
@@ -153,10 +153,10 @@ pub struct Response {
 }
 
 impl Response {
-    async fn run(
+    fn run(
         self, client: &KrillClient
     ) -> Result<idexchange::RepositoryResponse, httpclient::Error> {
-        client.publisher_response(&self.handle.publisher).await
+        client.publisher_response(&self.handle.publisher)
     }
 }
 
@@ -170,10 +170,10 @@ pub struct Show {
 }
 
 impl Show {
-    async fn run(
+    fn run(
         self, client: &KrillClient
     ) -> Result<api::PublisherDetails, httpclient::Error> {
-        client.publisher_details(&self.handle.publisher).await
+        client.publisher_details(&self.handle.publisher)
     }
 }
 
@@ -187,10 +187,10 @@ pub struct Remove {
 }
 
 impl Remove {
-    async fn run(
+    fn run(
         self, client: &KrillClient
     ) -> Result<api::Success, httpclient::Error> {
-        client.publisher_delete(&self.handle.publisher).await
+        client.publisher_delete(&self.handle.publisher)
     }
 }
 
@@ -203,10 +203,10 @@ pub struct DeleteFiles {
 }
 
 impl DeleteFiles {
-    async fn run(
+    fn run(
         self, client: &KrillClient
     ) -> Result<api::Success, httpclient::Error> {
-        client.pubserver_delete_files(self.base_uri).await
+        client.pubserver_delete_files(self.base_uri)
     }
 }
 
@@ -230,12 +230,12 @@ pub enum ServerCommand {
 }
 
 impl ServerCommand {
-    pub async fn run(self, client: &KrillClient) -> Report {
+    pub fn run(self, client: &KrillClient) -> Report {
         match self {
-            Self::Init(cmd) => cmd.run(client).await.into(),
-            Self::Stats(cmd) => cmd.run(client).await.into(),
-            Self::SessionReset(cmd) => cmd.run(client).await.into(),
-            Self::Clear(cmd) => cmd.run(client).await.into(),
+            Self::Init(cmd) => cmd.run(client).into(),
+            Self::Stats(cmd) => cmd.run(client).into(),
+            Self::SessionReset(cmd) => cmd.run(client).into(),
+            Self::Clear(cmd) => cmd.run(client).into(),
         }
     }
 }
@@ -255,14 +255,14 @@ pub struct Init {
 }
 
 impl Init {
-    pub async fn run(
+    pub fn run(
         mut self, client: &KrillClient
     ) -> Result<api::Success, httpclient::Error> {
         // Ensure URIs end in a slash.
         self.rrdp.path_into_dir();
         self.rsync.path_into_dir();
 
-        client.pubserver_init(self.rrdp, self.rsync).await
+        client.pubserver_init(self.rrdp, self.rsync)
     }
 }
 
@@ -273,10 +273,10 @@ impl Init {
 pub struct Stats;
 
 impl Stats {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<pubd::RepoStats, httpclient::Error> {
-        client.pubserver_stats().await
+        client.pubserver_stats()
     }
 }
 
@@ -287,10 +287,10 @@ impl Stats {
 pub struct SessionReset;
 
 impl SessionReset {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<api::Success, httpclient::Error> {
-        client.pubserver_session_reset().await
+        client.pubserver_session_reset()
     }
 }
 
@@ -301,10 +301,10 @@ impl SessionReset {
 pub struct Clear;
 
 impl Clear {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<api::Success, httpclient::Error> {
-        client.pubserver_clear().await
+        client.pubserver_clear()
     }
 }
 

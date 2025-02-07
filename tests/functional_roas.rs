@@ -22,9 +22,9 @@ mod common;
 ///       |
 ///      CA
 /// ```
-#[tokio::test]
-async fn functional_roas() {
-    let (server, _tmpdir) = common::KrillServer::start_with_testbed().await;
+#[test]
+fn functional_roas() {
+    let (server, _tmpdir) = common::KrillServer::start_with_testbed();
 
     let testbed = common::ca_handle("testbed");
     let ca = common::ca_handle("CA");
@@ -50,12 +50,12 @@ async fn functional_roas() {
     // that all CAs which are set up as part of krill_start under the
     // testbed config have been set up.
     assert!(
-        server.wait_for_ca_resources(&testbed, &ResourceSet::all()).await
+        server.wait_for_ca_resources(&testbed, &ResourceSet::all())
     );
 
     eprintln!(">>>> Set up CA under testbed.");
-    server.create_ca_with_repo(&ca).await;
-    server.register_ca_with_parent(&ca, &testbed, &ca_res).await;
+    server.create_ca_with_repo(&ca);
+    server.register_ca_with_parent(&ca, &testbed, &ca_res);
 
     eprintln!(">>>> Add ROAs to CA.");
     server.client().roas_update(
@@ -68,7 +68,7 @@ async fn functional_roas() {
             ],
             vec![]
         )
-    ).await.unwrap();
+    ).unwrap();
     assert!(
         server.check_configured_roas(
             &ca,
@@ -77,7 +77,7 @@ async fn functional_roas() {
                 route_resource_set_10_0_0_0_def_2.clone(),
                 route_resource_set_10_1_0_0_def_1.clone(),
             ]
-        ).await
+        )
     );
     assert!(
         server.wait_for_objects(
@@ -87,14 +87,14 @@ async fn functional_roas() {
                 &route_resource_set_10_0_0_0_def_2,
                 &route_resource_set_10_1_0_0_def_1,
             ]
-        ).await
+        )
     );
 
     eprintln!(">>>> Shrink resources, expect affected ROAs to disappear.");
     server.client().child_update(
         &testbed, &ca.convert(),
         UpdateChildRequest::resources(ca_res_shrunk.clone())
-    ).await.unwrap();
+    ).unwrap();
     assert!(
         server.wait_for_objects(
             &ca,
@@ -103,14 +103,14 @@ async fn functional_roas() {
                 &route_resource_set_10_0_0_0_def_2,
                 //&route_resource_set_10_1_0_0_def_1, // gone.
             ]
-        ).await
+        )
     );
 
     eprintln!(">>>> Extend resources, expect affected ROAs to reappear.");
     server.client().child_update(
         &testbed, &ca.convert(),
         UpdateChildRequest::resources(ca_res.clone())
-    ).await.unwrap();
+    ).unwrap();
     assert!(
         server.wait_for_objects(
             &ca,
@@ -119,7 +119,7 @@ async fn functional_roas() {
                 &route_resource_set_10_0_0_0_def_2,
                 &route_resource_set_10_1_0_0_def_1, // back
             ]
-        ).await
+        )
     );
 
     eprintln!(">>>> Add ROAs beyond aggregation limit and they aggregate.");
@@ -132,12 +132,12 @@ async fn functional_roas() {
             ],
             vec![]
         )
-    ).await.unwrap();
+    ).unwrap();
     let mut files = server.expected_objects(&ca);
-    files.push_mft_and_crl(&rcn0).await;
+    files.push_mft_and_crl(&rcn0);
     files.push("AS64496.roa".into());
     files.push("AS64497.roa".into());
-    assert!(files.wait_for_published().await);
+    assert!(files.wait_for_published());
 
     eprintln!(">>>> Remove ROAs below the de-aggregation threshold again.");
     server.client().roas_update(
@@ -151,37 +151,37 @@ async fn functional_roas() {
                 route_resource_set_10_1_0_0_def_1.payload(),
             ],
         )
-    ).await.unwrap();
+    ).unwrap();
     assert!(
         server.wait_for_objects(
             &ca,
             &[
                 &route_resource_set_10_0_0_0_def_1,
             ]
-        ).await
+        )
     );
 
     eprintln!(">>>> Sanity check the operation of the RRDP endpoint.");
     // Verify that requesting rrdp/ on a CA-only instance of Krill results
     // in an error rather than a panic.
-    assert!(server.http_get_404("rrdp/").await);
+    assert!(server.http_get_404("rrdp/"));
 }
 
 
 //------------ Extend KrillServer --------------------------------------------
 
 impl common::KrillServer {
-    pub async fn wait_for_objects(
+    pub fn wait_for_objects(
         &self,
         ca: &CaHandle,
         roas: &[&RoaConfiguration]
     ) -> bool {
         let mut files = self.expected_objects(ca);
-        files.push_mft_and_crl(&common::rcn(0)).await;
+        files.push_mft_and_crl(&common::rcn(0));
         for roa in roas {
             files.push(ObjectName::from(&roa.payload()).to_string());
         }
-        files.wait_for_published().await
+        files.wait_for_published()
     }
 }
 

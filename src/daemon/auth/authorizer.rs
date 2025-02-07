@@ -391,6 +391,15 @@ impl AuthInfo {
         Self::user("testbed", Role::testbed().into())
     }
 
+    /// Creates auth info for the system user for the given component.
+    pub fn system(component: &'static str) -> Self {
+        Self {
+            actor: Actor::system(component),
+            new_token: None,
+            permissions: Ok(Role::admin().into()),
+        }
+    }
+
     /// Creates auth info for the anonymous actor.
     ///
     /// This actor fails all permission checks with insufficient permissions.

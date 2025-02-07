@@ -1,11 +1,18 @@
-use std::{str::FromStr, time::Duration};
+//! The HTTP client to talk to the OpenID Connect provider.
+//!
+//! This differs from the usual HTTP client provided by
+//! [`crate::commons::util::httpclient`] in that it uses the non-blocking,
+//! async part of _reqwest._
 
+use std::env;
+use std::str::FromStr;
+use std::time::Duration;
 use reqwest::Response;
-
-use crate::{
-    commons::error::Error,
-    commons::util::httpclient,
-    constants::{test_mode_enabled, OPENID_CONNECT_HTTP_CLIENT_TIMEOUT_SECS},
+use crate::commons::error::Error;
+use crate::commons::util::httpclient;
+use crate::constants::{
+    test_mode_enabled, KRILL_HTTPS_ROOT_CERTS_ENV,
+    OPENID_CONNECT_HTTP_CLIENT_TIMEOUT_SECS
 };
 
 // Wrap the httpclient produced above with optional logging of requests to and
@@ -59,12 +66,7 @@ async fn dispatch_openid_request(
 ) -> Result<openidconnect::HttpResponse, httpclient::Error> {
     let request_uri = request.url.to_string();
 
-    let client = {
-        let timeout = openid_connect_provider_timeout();
-        let allow_redirects = false; // Following redirects opens the client up to SSRF vulnerabilities.
-
-        httpclient::client_with_tweaks(&request_uri, timeout, allow_redirects)
-    }?;
+    let client = client_with_tweaks(&request_uri)?;
 
     let request = convert_openid_request(request, &client)?;
 
@@ -74,6 +76,32 @@ async fn dispatch_openid_request(
         .map_err(|e| httpclient::Error::execute(&request_uri, e))?;
 
     convert_to_openid_response(&request_uri, response).await
+}
+
+/// Client with tweaks - in particular needed by the openid connect client
+#[allow(clippy::result_large_err)]
+pub fn client_with_tweaks(
+    uri: &str,
+) -> Result<reqwest::Client, httpclient::Error> {
+    let mut builder = reqwest::ClientBuilder::new().timeout(
+        openid_connect_provider_timeout()
+    ).redirect(reqwest::redirect::Policy::none());
+
+    if let Ok(cert_list) = env::var(KRILL_HTTPS_ROOT_CERTS_ENV) {
+        for path in cert_list.split(':') {
+            let cert = httpclient::load_root_cert(path)?;
+            builder = builder.add_root_certificate(cert);
+        }
+    }
+
+    if uri.starts_with("https://localhost")
+        || uri.starts_with("https://127.0.0.1")
+    {
+        builder.danger_accept_invalid_certs(true).build()
+    } else {
+        builder.build()
+    }
+    .map_err(|e| httpclient::Error::request_build(uri, e))
 }
 
 #[allow(clippy::result_large_err)]
