@@ -48,20 +48,19 @@ async fn functional_at() {
         ).unwrap()
     ).unwrap();
 
-    let pem: Option<String>;
+    let rsa = openssl::rsa::Rsa::generate(2048).unwrap();
+    let private_key = openssl::pkey::PKey::from_rsa(rsa).unwrap();
+    let mut pem = Some(String::from_utf8(
+        private_key.private_key_to_pem_pkcs8().unwrap()).unwrap());
 
+    #[cfg(feature = "hsm")]
     if signer
         .get_krill_signer()
         .get_active_signers()
         .into_values()
-        .any(|x| matches!(*x, SignerProvider::OpenSsl(_, _))) {
+        .any(|x| !matches!(*x, SignerProvider::OpenSsl(_, _))) {
             // The other signer types do not allow a PEM input causing this test to fail.
             pem = None;  
-    } else {
-        let rsa = openssl::rsa::Rsa::generate(2048).unwrap();
-        let private_key = openssl::pkey::PKey::from_rsa(rsa).unwrap();
-        pem = Some(String::from_utf8(
-            private_key.private_key_to_pem_pkcs8().unwrap()).unwrap());
     }
 
     eprintln!(">>>> Initialise the TA signer.");
