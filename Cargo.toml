@@ -43,7 +43,7 @@ openidconnect   = { version = "3.5.0", optional = true, default-features = false
 openssl         = { version = "0.10", features = ["v110"] }
 percent-encoding = "2.3.1"
 pin-project-lite = "0.2.15"
-postgres        = { version = "0.19", features = ["with-serde_json-1"], optional = true }
+postgres        = { version = "0.19", features = ["array-impls", "with-serde_json-1"], optional = true }
 postgres-types  = { version = "0.2", features = ["derive"], optional = true }
 r2d2            = { version = "0.8.10", optional = true }
 rand            = "0.8"
@@ -97,6 +97,7 @@ rta = []
 all = ["multi-user", "rta", "static-openssl"]
 hsm-tests-kmip = ["hsm"]
 hsm-tests-pkcs11 = ["hsm"]
+storage-tests-postgres = ["postgres"]
 
 [dev-dependencies]
 regex     = "1.11.1"

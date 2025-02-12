@@ -645,6 +645,43 @@ impl ToSql for &Namespace {
 }
 
 
+//--- Scope
+
+impl ToSql for Scope {
+    fn to_sql(
+        &self, ty: &Type, out: &mut BytesMut
+    ) -> Result<IsNull, Box<dyn error::Error + Sync + Send>> {
+        self.as_slice().to_sql(ty, out)
+    }
+
+    fn accepts(ty: &Type) -> bool {
+        <&[SegmentBuf] as ToSql>::accepts(ty)
+    }
+
+    fn to_sql_checked(
+        &self,
+        ty: &Type,
+        out: &mut BytesMut,
+    ) -> Result<IsNull, Box<dyn error::Error + Sync + Send>> {
+        self.as_slice().to_sql_checked(ty, out)
+    }
+}
+
+impl<'a> FromSql<'a> for Scope {
+    fn from_sql(
+        ty: &Type,
+        raw: &'a [u8],
+    ) -> Result<Self, Box<dyn error::Error + Sync + Send>> {
+        Vec::<SegmentBuf>::from_sql(ty, raw).map(Self::new)
+    }
+
+    fn accepts(ty: &Type) -> bool {
+        <Vec::<SegmentBuf> as FromSql<'a>>::accepts(ty)
+    }
+}
+
+
+
 //--- Segment
 
 impl ToSql for &Segment {

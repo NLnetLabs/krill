@@ -10,10 +10,6 @@ use super::segment::{ParseSegmentError, Segment, SegmentBuf};
 ///
 /// A scope consists of a sequence of zero or more segments.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
-#[cfg_attr(
-    feature = "postgres",
-    derive(postgres::types::ToSql, postgres::types::FromSql)
-)]
 pub struct Scope {
     segments: Vec<SegmentBuf>,
 }
