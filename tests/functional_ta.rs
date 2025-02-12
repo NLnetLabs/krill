@@ -1,6 +1,7 @@
 //! Test setting up Krill as a trust anchor.
 
 use std::str::FromStr;
+use krill::commons::crypto::dispatch::signerprovider::SignerProvider;
 use rpki::uri;
 use rpki::repository::resources::ResourceSet;
 use krill::cli::ta::signer::{SignerInitInfo, TrustAnchorSignerManager};
@@ -47,10 +48,21 @@ async fn functional_at() {
         ).unwrap()
     ).unwrap();
 
-    let rsa = openssl::rsa::Rsa::generate(2048).unwrap();
-    let private_key = openssl::pkey::PKey::from_rsa(rsa).unwrap();
-    let pem = String::from_utf8(
-        private_key.private_key_to_pem_pkcs8().unwrap()).unwrap();
+    let pem: Option<String>;
+
+    if signer
+        .get_krill_signer()
+        .get_active_signers()
+        .into_values()
+        .any(|x| matches!(*x, SignerProvider::OpenSsl(_, _))) {
+            // The other signer types do not allow a PEM input causing this test to fail.
+            pem = None;  
+    } else {
+        let rsa = openssl::rsa::Rsa::generate(2048).unwrap();
+        let private_key = openssl::pkey::PKey::from_rsa(rsa).unwrap();
+        pem = Some(String::from_utf8(
+            private_key.private_key_to_pem_pkcs8().unwrap()).unwrap());
+    }
 
     eprintln!(">>>> Initialise the TA signer.");
     signer.init(
@@ -67,7 +79,7 @@ async fn functional_at() {
             tal_rsync: uri::Rsync::from_str(
                 "rsync://localhost/ta/ta.cer"
             ).unwrap(),
-            private_key_pem: Some(pem.clone()),
+            private_key_pem: pem.clone(),
             ta_mft_nr_override: None,
             force: true
         }
@@ -117,36 +129,38 @@ async fn functional_at() {
     let response = signer.show_last_response().unwrap();
     server.client().ta_proxy_signer_response(response).await.unwrap();
 
-    eprintln!(">>>> Reinitialise the TA signer.");
-    signer.init(
-        SignerInitInfo {
-            proxy_id: server.client().ta_proxy_id().await.unwrap(),
-            repo_info: {
-                server.client().ta_proxy_repo_contact().await.unwrap().into()
-            },
-            tal_https: vec![
-                uri::Https::from_string(
-                    format!("https://localhost:{}/ta/ta.cer", port)
-                ).unwrap()
-            ],
-            tal_rsync: uri::Rsync::from_str(
-                "rsync://localhost/resignedta/ta.cer"
-            ).unwrap(),
-            private_key_pem: Some(pem.clone()),
-            ta_mft_nr_override: None,
-            force: true
-        }
-    ).unwrap();
+    if pem.is_some() {
+        eprintln!(">>>> Reinitialise the TA signer.");
+        signer.init(
+            SignerInitInfo {
+                proxy_id: server.client().ta_proxy_id().await.unwrap(),
+                repo_info: {
+                    server.client().ta_proxy_repo_contact().await.unwrap().into()
+                },
+                tal_https: vec![
+                    uri::Https::from_string(
+                        format!("https://localhost:{}/ta/ta.cer", port)
+                    ).unwrap()
+                ],
+                tal_rsync: uri::Rsync::from_str(
+                    "rsync://localhost/resignedta/ta.cer"
+                ).unwrap(),
+                private_key_pem: pem.clone(),
+                ta_mft_nr_override: None,
+                force: true
+            }
+        ).unwrap();
 
-    eprintln!(">>>> Reassociate the TA signer with the proxy.");
-    let signer_info = signer.show().unwrap();
-    server.client().ta_proxy_signer_add(signer_info).await.unwrap();
+        eprintln!(">>>> Reassociate the TA signer with the proxy.");
+        let signer_info = signer.show().unwrap();
+        server.client().ta_proxy_signer_add(signer_info).await.unwrap();
 
-    eprintln!(">>>> Refetch TAL and check it isn’t empty.");
-    assert!(!server.client().testbed_tal().await.unwrap().is_empty());
+        eprintln!(">>>> Refetch TAL and check it isn’t empty.");
+        assert!(!server.client().testbed_tal().await.unwrap().is_empty());
 
-    eprintln!(">>>> Refetch TAL and check it was resigned.");
-    assert!(server.client().testbed_tal().await.unwrap().contains("resigned"));
+        eprintln!(">>>> Refetch TAL and check it was resigned.");
+        assert!(server.client().testbed_tal().await.unwrap().contains("resigned"));
+    }
 
     // XXX This should probably test that everything is in order but I don’t
     //     know how just yet.

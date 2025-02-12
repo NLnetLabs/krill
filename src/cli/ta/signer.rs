@@ -258,3 +258,9 @@ impl TrustAnchorSignerManager {
     }
 }
 
+impl TrustAnchorSignerManager {
+    pub fn get_krill_signer(&self) -> Arc<KrillSigner> {
+        self.signer.clone()
+    }
+}
+
