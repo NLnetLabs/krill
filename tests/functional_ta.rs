@@ -73,7 +73,8 @@ async fn functional_at() {
         }
     );
     
-    if let Err(SignerClientError::Other(msg)) = &init {
+    if let Err(SignerClientError::KrillError(
+        krill::commons::error::Error::SignerError(msg))) = &init {
         // If this fails, it's likely because of the signer not supporting an
         // explicit private key (e.g. HSMs)
         if msg.contains("import key not supported") {
