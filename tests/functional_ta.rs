@@ -3,7 +3,7 @@
 use std::str::FromStr;
 use rpki::uri;
 use rpki::repository::resources::ResourceSet;
-use krill::cli::ta::signer::{SignerInitInfo, TrustAnchorSignerManager};
+use krill::cli::ta::signer::{SignerClientError, SignerInitInfo, TrustAnchorSignerManager};
 use krill::commons::api;
 
 mod common;
@@ -53,7 +53,7 @@ async fn functional_at() {
         private_key.private_key_to_pem_pkcs8().unwrap()).unwrap());
 
     eprintln!(">>>> Initialise the TA signer.");
-    if signer.init(
+    let mut init = signer.init(
         SignerInitInfo {
             proxy_id: server.client().ta_proxy_id().await.unwrap(),
             repo_info: {
@@ -71,30 +71,36 @@ async fn functional_at() {
             ta_mft_nr_override: None,
             force: true
         }
-    ).is_err() {
+    );
+    
+    if let Err(SignerClientError::Other(msg)) = &init {
         // If this fails, it's likely because of the signer not supporting an
         // explicit private key (e.g. HSMs)
-        pem = None;
-        signer.init(
-            SignerInitInfo {
-                proxy_id: server.client().ta_proxy_id().await.unwrap(),
-                repo_info: {
-                    server.client().ta_proxy_repo_contact().await.unwrap().into()
-                },
-                tal_https: vec![
-                    uri::Https::from_string(
-                        format!("https://localhost:{}/ta/ta.cer", port)
-                    ).unwrap()
-                ],
-                tal_rsync: uri::Rsync::from_str(
-                    "rsync://localhost/ta/ta.cer"
-                ).unwrap(),
-                private_key_pem: pem.clone(),
-                ta_mft_nr_override: None,
-                force: true
-            }
-        ).unwrap();
+        if msg.contains("import key not supported") {
+            pem = None;
+            init = signer.init(
+                SignerInitInfo {
+                    proxy_id: server.client().ta_proxy_id().await.unwrap(),
+                    repo_info: {
+                        server.client().ta_proxy_repo_contact().await.unwrap().into()
+                    },
+                    tal_https: vec![
+                        uri::Https::from_string(
+                            format!("https://localhost:{}/ta/ta.cer", port)
+                        ).unwrap()
+                    ],
+                    tal_rsync: uri::Rsync::from_str(
+                        "rsync://localhost/ta/ta.cer"
+                    ).unwrap(),
+                    private_key_pem: pem.clone(),
+                    ta_mft_nr_override: None,
+                    force: true
+                }
+            );
+        }
     }
+
+    init.unwrap();
 
     eprintln!(">>>> Associate the TA signer with the proxy.");
     let signer_info = signer.show().unwrap();
