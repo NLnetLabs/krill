@@ -3,7 +3,6 @@
 
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
-use kvx::Namespace;
 use tokio::time::sleep;
 
 use rpki::ca::{
@@ -19,6 +18,7 @@ use crate::{
         crypto::dispatch::signerinfo::SignerInfo,
         error::FatalError,
         eventsourcing::{Aggregate, AggregateStore, WalStore, WalSupport},
+        storage::{Key, Namespace},
         util::KrillVersion,
     },
     constants::{
@@ -82,7 +82,7 @@ impl Scheduler {
         loop {
             while let Some(running_task) = self.tasks.pop() {
                 // remember the key so we can finish or re-schedule the task.
-                let task_key = kvx::Key::from(&running_task);
+                let task_key = Key::from(&running_task);
 
                 match serde_json::from_value(running_task.value) {
                     Err(e) => {

@@ -41,7 +41,8 @@ mod tests {
         commons::{
             api::{PublicationServerInfo, RepositoryContact},
             crypto::KrillSignerBuilder,
-            eventsourcing::{namespace, AggregateStore, Namespace},
+            eventsourcing::AggregateStore,
+            storage::Namespace,
         },
         daemon::config::ConfigDefaults,
         test,
@@ -57,14 +58,14 @@ mod tests {
             let ta_signer_store: AggregateStore<TrustAnchorSigner> =
                 AggregateStore::create(
                     storage_uri,
-                    namespace!("ta_signer"),
+                    Namespace::make("ta_signer"),
                     false,
                 )
                 .unwrap();
             let ta_proxy_store: AggregateStore<TrustAnchorProxy> =
                 AggregateStore::create(
                     storage_uri,
-                    namespace!("ta_proxy"),
+                    Namespace::make("ta_proxy"),
                     false,
                 )
                 .unwrap();
