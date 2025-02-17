@@ -22,11 +22,11 @@ pub enum Command {
 }
 
 impl Command {
-    pub async fn run(self, client: &KrillClient) -> Report {
+    pub fn run(self, client: &KrillClient) -> Report {
         match self {
-            Self::Refresh(cmd) => cmd.run(client).await.into(),
-            Self::Publish(cmd) => cmd.run(client).await.into(),
-            Self::Sync(cmd) => cmd.run(client).await.into(),
+            Self::Refresh(cmd) => cmd.run(client).into(),
+            Self::Publish(cmd) => cmd.run(client).into(),
+            Self::Sync(cmd) => cmd.run(client).into(),
         }
     }
 }
@@ -38,10 +38,10 @@ impl Command {
 pub struct Refresh;
 
 impl Refresh {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<api::Success, httpclient::Error> {
-        client.bulk_sync_parents().await
+        client.bulk_sync_parents()
     }
 }
 
@@ -52,10 +52,10 @@ impl Refresh {
 pub struct Publish;
 
 impl Publish {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<api::Success, httpclient::Error> {
-        client.bulk_publish().await
+        client.bulk_publish()
     }
 }
 
@@ -66,10 +66,10 @@ impl Publish {
 pub struct SyncRepo;
 
 impl SyncRepo {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<api::Success, httpclient::Error> {
-        client.bulk_sync_repo().await
+        client.bulk_sync_repo()
     }
 }
 

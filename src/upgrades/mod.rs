@@ -20,11 +20,11 @@ use crate::{
         },
         error::KrillIoError,
         eventsourcing::{
-            segment, Aggregate, AggregateStore, AggregateStoreError, Key,
-            KeyValueError, KeyValueStore, Scope, Segment, SegmentExt,
+            Aggregate, AggregateStore, AggregateStoreError,
             Storable, StoredCommand, WalStore, WalStoreError,
             WithStorableDetails,
         },
+        storage::{Key, KeyValueError, KeyValueStore, Scope, Segment},
         util::KrillVersion,
         KrillResult,
     },
@@ -658,7 +658,9 @@ pub trait UpgradeAggregateStorePre0_14 {
     /// another version set as the target.
     fn preparation_store_prepare(&self) -> UpgradeResult<()> {
         let code_version = KrillVersion::code_version();
-        let version_key = Key::new_global(segment!("version"));
+        let version_key = Key::new_global(
+            const { Segment::make("version") }
+        );
 
         if let Ok(Some(existing_migration_version)) = self
             .preparation_key_value_store()
@@ -719,7 +721,7 @@ pub trait UpgradeAggregateStorePre0_14 {
     }
 
     fn data_upgrade_info_key(scope: Scope) -> Key {
-        Key::new_scoped(scope, segment!("upgrade_info.json"))
+        Key::new_scoped(scope, const { Segment::make("upgrade_info.json") })
     }
 
     /// Return the DataUpgradeInfo telling us to where we got to with this
@@ -747,7 +749,9 @@ pub trait UpgradeAggregateStorePre0_14 {
 
     /// Clean up keys used for tracking migration progress
     fn clean_migration_help_files(&self) -> UpgradeResult<()> {
-        let version_key = Key::new_global(segment!("version"));
+        let version_key = Key::new_global(
+            const { Segment::make("version")
+        });
         self.preparation_key_value_store()
             .drop_key(&version_key)
             .map_err(UpgradeError::KeyStoreError)?;
@@ -869,7 +873,9 @@ pub fn prepare_upgrade_data_migrations(
             // case to put in the effort, but there really isn't.
             let ca_kv_store =
                 KeyValueStore::create(&config.storage_uri, CASERVER_NS)?;
-            if ca_kv_store.has_scope(&Scope::from_segment(segment!("ta")))? {
+            if ca_kv_store.has_scope(&Scope::from_segment(
+                    const { Segment::make("ta") }
+                ))? {
                 return Err(UpgradeError::OldTaMigration);
             }
 
@@ -996,8 +1002,8 @@ fn migrate_0_12_pubd_objects(config: &Config) -> KrillResult<bool> {
         let repo_content: pubd::RepositoryContent =
             old_repo_content.try_into()?;
         let new_key = Key::new_scoped(
-            Scope::from_segment(segment!("0")),
-            segment!("snapshot.json"),
+            Scope::from_segment(const { Segment::make("0") }),
+            const { Segment::make("snapshot.json") },
         );
         let upgrade_store = KeyValueStore::create_upgrade_store(
             &config.storage_uri,
@@ -1015,7 +1021,7 @@ fn migrate_0_12_pubd_objects(config: &Config) -> KrillResult<bool> {
 fn migrate_pre_0_12_pubd_objects(config: &Config) -> KrillResult<()> {
     let old_store =
         KeyValueStore::create(&config.storage_uri, PUBSERVER_CONTENT_NS)?;
-    let old_key = Key::new_global(segment!("0.json"));
+    let old_key = Key::new_global(const { Segment::make("0.json") });
     if let Ok(Some(old_repo_content)) =
         old_store.get::<pre_0_13_0::OldRepositoryContent>(&old_key)
     {
@@ -1024,8 +1030,8 @@ fn migrate_pre_0_12_pubd_objects(config: &Config) -> KrillResult<()> {
             old_repo_content.try_into()?;
 
         let new_key = Key::new_scoped(
-            Scope::from_segment(segment!("0")),
-            segment!("snapshot.json"),
+            Scope::from_segment(const { Segment::make("0") }),
+            const { Segment::make("snapshot.json") },
         );
         let upgrade_store = KeyValueStore::create_upgrade_store(
             &config.storage_uri,
@@ -1090,7 +1096,9 @@ pub fn finalise_data_migration(
             // so, remove it.
             let current_store =
                 KeyValueStore::create(&config.storage_uri, ns)?;
-            let version_key = Key::new_global(segment!("version"));
+            let version_key = Key::new_global(
+                const { Segment::make("version")
+            });
             if current_store.has(&version_key)? {
                 debug!("Removing excess version key in ns: {}", ns);
                 current_store.drop_key(&version_key)?;
@@ -1222,13 +1230,13 @@ fn record_preexisting_openssl_keys_in_signer_mapper(
 
 /// Should be called after the KrillServer is started, but before the web
 /// server is started and operators can make changes.
-pub async fn post_start_upgrade(
+pub fn post_start_upgrade(
     report: UpgradeReport,
     server: &KrillServer,
 ) -> KrillResult<()> {
     if report.versions().from() < &KrillVersion::candidate(0, 9, 3, 2) {
         info!("Reissue ROAs on upgrade to force short EE certificate subjects in the objects");
-        server.force_renew_roas().await?;
+        server.force_renew_roas()?;
     }
 
     for (ca, configs) in report.into_aspa_configs().into_iter() {
@@ -1239,8 +1247,7 @@ pub async fn post_start_upgrade(
                 ca,
                 aspa_updates,
                 server.system_actor(),
-            )
-            .await?;
+            )?;
     }
 
     Ok(())
@@ -1284,7 +1291,9 @@ fn upgrade_versions(
             PUBSERVER_CONTENT_NS,
         ] {
             let kv_store = KeyValueStore::create(&config.storage_uri, ns)?;
-            let key = Key::new_global(segment!("version"));
+            let key = Key::new_global(
+                const { Segment::make("version")
+            });
 
             if let Some(key_store_version) =
                 kv_store.get::<KrillVersion>(&key)?
@@ -1311,13 +1320,10 @@ fn upgrade_versions(
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
-
-    use kvx::Namespace;
     use log::LevelFilter;
     use url::Url;
-
+    use crate::commons::storage::Namespace;
     use crate::test;
-
     use super::*;
 
     fn test_upgrade(base_dir: &str, namespaces: &[&str]) {

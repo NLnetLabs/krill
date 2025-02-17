@@ -986,6 +986,10 @@ impl CertAuth {
         self.children.keys()
     }
 
+    pub fn child_count(&self) -> usize {
+        self.children.len()
+    }
+
     /// Adds the child, returns an error if the child is a duplicate,
     /// or if the resources are empty, or not held by this CA.
     fn child_add(

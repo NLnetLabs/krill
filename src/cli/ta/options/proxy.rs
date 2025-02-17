@@ -32,14 +32,14 @@ pub struct Command {
 }
 
 impl Command {
-    pub async fn run(self) -> Report {
+    pub fn run(self) -> Report {
         let client = KrillClient::new(
             self.general.server, self.general.token
         );
         if self.general.api {
             env::set_var(constants::KRILL_CLI_API_ENV, "1")
         }
-        self.command.run(&client).await
+        self.command.run(&client)
     }
 }
 
@@ -68,13 +68,13 @@ pub enum Subcommand {
 }
 
 impl Subcommand {
-    pub async fn run(self, client: &KrillClient) -> Report {
+    pub fn run(self, client: &KrillClient) -> Report {
         match self {
-            Self::Init(cmd) => cmd.run(client).await.into(),
-            Self::Id(cmd) => cmd.run(client).await.into(),
-            Self::Repo(cmd) => cmd.run(client).await,
-            Self::Signer(cmd) => cmd.run(client).await,
-            Self::Children(cmd) => cmd.run(client).await,
+            Self::Init(cmd) => cmd.run(client).into(),
+            Self::Id(cmd) => cmd.run(client).into(),
+            Self::Repo(cmd) => cmd.run(client),
+            Self::Signer(cmd) => cmd.run(client),
+            Self::Children(cmd) => cmd.run(client),
         }
     }
 }
@@ -86,10 +86,10 @@ impl Subcommand {
 pub struct Init;
 
 impl Init {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<api::Success, httpclient::Error> {
-        client.ta_proxy_init().await
+        client.ta_proxy_init()
     }
 }
 
@@ -100,10 +100,10 @@ impl Init {
 pub struct Id;
 
 impl Id {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<api::IdCertInfo, httpclient::Error> {
-        client.ta_proxy_id().await
+        client.ta_proxy_id()
     }
 }
 
@@ -123,11 +123,11 @@ pub enum Repo {
 }
 
 impl Repo {
-    pub async fn run(self, client: &KrillClient) -> Report {
+    pub fn run(self, client: &KrillClient) -> Report {
         match self {
-            Self::Request(cmd) => cmd.run(client).await.into(),
-            Self::Contact(cmd) => cmd.run(client).await.into(),
-            Self::Configure(cmd) => cmd.run(client).await.into(),
+            Self::Request(cmd) => cmd.run(client).into(),
+            Self::Contact(cmd) => cmd.run(client).into(),
+            Self::Configure(cmd) => cmd.run(client).into(),
         }
     }
 }
@@ -139,10 +139,10 @@ impl Repo {
 pub struct RepoRequest;
 
 impl RepoRequest {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<idexchange::PublisherRequest, httpclient::Error> {
-        client.ta_proxy_repo_request().await
+        client.ta_proxy_repo_request()
     }
 }
 
@@ -153,10 +153,10 @@ impl RepoRequest {
 pub struct RepoContact;
 
 impl RepoContact {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<api::RepositoryContact, httpclient::Error> {
-        client.ta_proxy_repo_contact().await
+        client.ta_proxy_repo_contact()
     }
 }
 
@@ -171,10 +171,10 @@ pub struct RepoConfigure {
 }
 
 impl RepoConfigure {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<api::Success, httpclient::Error> {
-        client.ta_proxy_repo_configure(self.response.into()).await
+        client.ta_proxy_repo_configure(self.response.into())
     }
 }
 
@@ -197,12 +197,12 @@ pub enum Signer {
 }
 
 impl Signer {
-    pub async fn run(self, client: &KrillClient) -> Report {
+    pub fn run(self, client: &KrillClient) -> Report {
         match self {
-            Self::Init(cmd) => cmd.run(client).await.into(),
-            Self::MakeRequest(cmd) => cmd.run(client).await.into(),
-            Self::ShowRequest(cmd) => cmd.run(client).await.into(),
-            Self::ProcessResponse(cmd) => cmd.run(client).await.into(),
+            Self::Init(cmd) => cmd.run(client).into(),
+            Self::MakeRequest(cmd) => cmd.run(client).into(),
+            Self::ShowRequest(cmd) => cmd.run(client).into(),
+            Self::ProcessResponse(cmd) => cmd.run(client).into(),
         }
     }
 }
@@ -218,10 +218,10 @@ pub struct SignerInit {
 }
 
 impl SignerInit {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<api::Success, httpclient::Error> {
-        client.ta_proxy_signer_add(self.info.content).await
+        client.ta_proxy_signer_add(self.info.content)
     }
 }
 
@@ -241,10 +241,10 @@ impl fmt::Display for TasiMsg {
 pub struct SignerMakeRequest;
 
 impl SignerMakeRequest {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<ta::TrustAnchorSignedRequest, httpclient::Error> {
-        client.ta_proxy_signer_make_request().await
+        client.ta_proxy_signer_make_request()
     }
 }
 
@@ -255,10 +255,10 @@ impl SignerMakeRequest {
 pub struct SignerShowRequest;
 
 impl SignerShowRequest {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<ta::TrustAnchorSignedRequest, httpclient::Error> {
-        client.ta_proxy_signer_show_request().await
+        client.ta_proxy_signer_show_request()
     }
 }
 
@@ -273,10 +273,10 @@ pub struct SignerProcessResponse {
 }
 
 impl SignerProcessResponse {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<api::Success, httpclient::Error> {
-        client.ta_proxy_signer_response(self.response.content).await
+        client.ta_proxy_signer_response(self.response.content)
     }
 }
 
@@ -302,10 +302,10 @@ pub enum Children {
 }
 
 impl Children {
-    pub async fn run(self, client: &KrillClient) -> Report {
+    pub fn run(self, client: &KrillClient) -> Report {
         match self {
-            Self::Add(cmd) => cmd.run(client).await.into(),
-            Self::Response(cmd) => cmd.run(client).await.into(),
+            Self::Add(cmd) => cmd.run(client).into(),
+            Self::Response(cmd) => cmd.run(client).into(),
         }
     }
 }
@@ -345,7 +345,7 @@ pub struct ChildrenAdd {
 }
 
 impl ChildrenAdd {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<idexchange::ParentResponse, httpclient::Error> {
         client.ta_proxy_children_add(
@@ -354,7 +354,7 @@ impl ChildrenAdd {
                 ResourceSet::new(self.asn, self.ipv4, self.ipv6),
                 self.info.id_cert,
             )
-        ).await
+        )
     }
 }
 
@@ -369,10 +369,10 @@ pub struct ChildrenResponse {
 }
 
 impl ChildrenResponse {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<idexchange::ParentResponse, httpclient::Error> {
-        client.ta_proxy_child_response(&self.child).await
+        client.ta_proxy_child_response(&self.child)
     }
 }
 

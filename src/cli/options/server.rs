@@ -13,10 +13,10 @@ use crate::commons::util::httpclient;
 pub struct Health;
 
 impl Health {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<api::Success, httpclient::Error> {
-        client.authorized().await
+        client.authorized()
     }
 }
 
@@ -27,10 +27,10 @@ impl Health {
 pub struct Info;
 
 impl Info {
-    pub async fn run(
+    pub fn run(
         self, client: &KrillClient
     ) -> Result<api::ServerInfo, httpclient::Error> {
-        client.info().await
+        client.info()
     }
 }
 
@@ -45,12 +45,12 @@ pub struct Issues {
 }
 
 impl Issues {
-    pub async fn run(self, client: &KrillClient) -> Report {
+    pub fn run(self, client: &KrillClient) -> Report {
         match self.ca {
             Some(ca) => {
-                client.ca_issues(&ca).await.into()
+                client.ca_issues(&ca).into()
             }
-            None => client.bulk_issues().await.into()
+            None => client.bulk_issues().into()
         }
     }
 }

@@ -1,101 +1,58 @@
-use std::{fmt, str::FromStr};
+//! The publicly exposed key-value store.
 
-pub use kvx::{
-    namespace, segment, Key, Namespace, Scope, Segment, SegmentBuf,
-};
-use kvx::{KeyValueStoreBackend, NamespaceBuf, ReadStore, WriteStore};
-use serde::{de::DeserializeOwned, Serialize};
+use std::fmt;
+use std::str::FromStr;
+use serde::de::DeserializeOwned;
+use serde::ser::Serialize;
 use url::Url;
 
-use crate::commons::error::KrillIoError;
+use crate::commons::storage;
+use crate::commons::storage::{
+    Backend, Key, Namespace, NamespaceBuf, Scope, Transaction,
+};
 
-pub trait SegmentExt {
-    fn parse_lossy(value: &str) -> SegmentBuf;
-    fn concat(
-        lhs: impl Into<SegmentBuf>,
-        rhs: impl Into<SegmentBuf>,
-    ) -> SegmentBuf;
-}
 
-impl SegmentExt for Segment {
-    fn parse_lossy(value: &str) -> SegmentBuf {
-        match Segment::parse(value) {
-            Ok(segment) => segment.to_owned(),
-            Err(error) => {
-                let sanitized = value.trim().replace(Scope::SEPARATOR, "+");
-                let nonempty = sanitized
-                    .is_empty()
-                    .then(|| "EMPTY".to_owned())
-                    .unwrap_or(sanitized);
-                let segment = Segment::parse(&nonempty).unwrap(); // cannot panic as all checks are performed above
-                warn!("{value} is not a valid Segment: {error}\nusing {segment} instead");
-                segment.to_owned()
-            }
-        }
-    }
+//------------ KeyValueStore -------------------------------------------------
 
-    fn concat(
-        lhs: impl Into<SegmentBuf>,
-        rhs: impl Into<SegmentBuf>,
-    ) -> SegmentBuf {
-        Segment::parse(&format!("{}{}", lhs.into(), rhs.into()))
-            .unwrap()
-            .to_owned()
-    }
-}
-
+/// A key-value store.
 #[derive(Debug)]
 pub struct KeyValueStore {
-    inner: kvx::KeyValueStore,
+    inner: Backend,
 }
 
-// # Construct and high level functions.
 impl KeyValueStore {
-    /// Creates a new KeyValueStore.
+    /// Creates a new store.
     pub fn create(
         storage_uri: &Url,
         namespace: &Namespace,
     ) -> Result<Self, KeyValueError> {
-        kvx::KeyValueStore::new(storage_uri, namespace)
-            .map(|inner| KeyValueStore { inner })
-            .map_err(KeyValueError::Inner)
+        Ok(Self {
+            inner: Backend::new(storage_uri, namespace)?.ok_or_else(|| {
+                KeyValueError::UnknownScheme(storage_uri.scheme().into())
+            })?
+        })
     }
 
-    /// Returns true if this KeyValueStore (with this namespace) has any
-    /// entries.
+    /// Returns whether the store has no entries.
     pub fn is_empty(&self) -> Result<bool, KeyValueError> {
-        // NOTE: this is done using `self.execute` as this would result in a
-        // lockfile       to be created for disk based inner stores,
-        // and that would make them       appear as not empty.
+        // NOTE: this is not done using `self.execute` as this would result
+        // in a lockfile to be created for disk based inner stores, and that
+        // would make them appear as not empty.
         self.inner.is_empty().map_err(KeyValueError::Inner)
     }
 
-    /// Wipe the complete store. Needless to say perhaps.. use with care..
+    /// Wipes the complete store.
     pub fn wipe(&self) -> Result<(), KeyValueError> {
         self.execute(&Scope::global(), |kv| kv.clear())
     }
 
-    /// Execute one or more `kvx::KeyValueStoreBackend` operations
-    /// within a transaction or scope lock context inside the given
-    /// closure.
-    ///
-    /// The closure needs to return a Result<T, kvx::Error>. This
-    /// allows the caller to simply use the ? operator on any kvx
-    /// calls that could result in an error within the closure. The
-    /// kvx::Error is mapped to a KeyValueError to avoid that the
-    /// caller needs to have any specific knowledge about the kvx::Error
-    /// type.
-    ///
-    /// T can be () if no return value is needed. If anything can
-    /// fail in the closure, other than kvx calls, then T can be
-    /// a Result<X,Y>.
     pub fn execute<F, T>(
         &self,
         scope: &Scope,
         op: F,
     ) -> Result<T, KeyValueError>
     where
-        F: FnMut(&dyn KeyValueStoreBackend) -> Result<T, kvx::Error>,
+        F: Fn(&mut Transaction) -> Result<T, storage::Error>,
     {
         self.inner.execute(scope, op).map_err(KeyValueError::Inner)
     }
@@ -111,9 +68,7 @@ impl KeyValueStore {
     ) -> Result<(), KeyValueError> {
         self.execute(
             key.scope(),
-            &mut move |kv: &dyn KeyValueStoreBackend| {
-                kv.store(key, serde_json::to_value(value)?)
-            },
+            |kv| kv.store(key, value),
         )
     }
 
@@ -125,11 +80,16 @@ impl KeyValueStore {
     ) -> Result<(), KeyValueError> {
         self.execute(
             key.scope(),
-            &mut move |kv: &dyn KeyValueStoreBackend| match kv.get(key)? {
-                None => kv.store(key, serde_json::to_value(value)?),
-                _ => Err(kvx::Error::Unknown),
-            },
-        )
+            |kv| {
+                if kv.has(key)? {
+                    Ok(Err(KeyValueError::DuplicateKey(key.clone())))
+                }
+                else {
+                    kv.store(key, value)?;
+                    Ok(Ok(()))
+                }
+            }
+        )?
     }
 
     /// Gets a value for a key, returns an error if the value cannot be
@@ -139,11 +99,7 @@ impl KeyValueStore {
         key: &Key,
     ) -> Result<Option<V>, KeyValueError> {
         self.execute(key.scope(), |kv| {
-            if let Some(value) = kv.get(key)? {
-                Ok(Some(serde_json::from_value(value)?))
-            } else {
-                Ok(None)
-            }
+            kv.get(key)
         })
     }
 
@@ -168,7 +124,7 @@ impl KeyValueStore {
         matching: &str,
     ) -> Result<Vec<Key>, KeyValueError> {
         self.execute(scope, |kv| {
-            // kvx list_keys returns keys in sub-scopes
+            // storage list_keys returns keys in sub-scopes
             kv.list_keys(scope).map(|keys| {
                 keys.into_iter()
                     .filter(|key| {
@@ -209,11 +165,10 @@ impl KeyValueStore {
         storage_uri: &Url,
         namespace: &Namespace,
     ) -> Result<Self, KeyValueError> {
-        let namespace = Self::prefixed_namespace(namespace, "upgrade")?;
-
-        kvx::KeyValueStore::new(storage_uri, namespace)
-            .map(|inner| KeyValueStore { inner })
-            .map_err(KeyValueError::Inner)
+        Self::create(
+            storage_uri,
+            &Self::prefixed_namespace(namespace, "upgrade")?
+        )
     }
 
     fn prefixed_namespace(
@@ -239,12 +194,9 @@ impl KeyValueStore {
         let archive_ns = Self::prefixed_namespace(namespace, "archive")?;
         // Wipe any existing archive, before archiving this store.
         // We don't want to keep too much old data. See issue: #1088.
-        let archive_store = KeyValueStore::create(storage_uri, &archive_ns)?;
-        archive_store.wipe()?;
-
-        self.inner
-            .migrate_namespace(archive_ns)
-            .map_err(KeyValueError::Inner)
+        KeyValueStore::create(storage_uri, &archive_ns)?.wipe()?;
+        self.inner.migrate_namespace(&archive_ns)?;
+        Ok(())
     }
 
     /// Make this (upgrade) store the current store.
@@ -263,7 +215,7 @@ impl KeyValueStore {
             )))
         } else {
             self.inner
-                .migrate_namespace(namespace.into())
+                .migrate_namespace(namespace)
                 .map_err(KeyValueError::Inner)
         }
     }
@@ -278,16 +230,12 @@ impl KeyValueStore {
     /// Krill is not running.
     pub fn import(&self, other: &Self) -> Result<(), KeyValueError> {
         let mut scopes = other.scopes()?;
-        scopes.push(Scope::global()); // not explicitly listed but should be migrated as well.
+        scopes.push(Scope::global());
 
         for scope in scopes {
             for key in other.keys(&scope, "")? {
-                if let Some(value) =
-                    other.inner.get(&key).map_err(KeyValueError::Inner)?
-                {
-                    self.inner
-                        .store(&key, value)
-                        .map_err(KeyValueError::Inner)?;
+                if let Some(value) = other.inner.get_any(&key)? {
+                    self.inner.store_any(&key, &value)?
                 }
             }
         }
@@ -296,11 +244,6 @@ impl KeyValueStore {
     }
 }
 
-impl fmt::Display for KeyValueStore {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.inner.fmt(f)
-    }
-}
 
 //------------ KeyValueError -------------------------------------------------
 
@@ -308,28 +251,13 @@ impl fmt::Display for KeyValueStore {
 #[derive(Debug)]
 pub enum KeyValueError {
     UnknownScheme(String),
-    IoError(KrillIoError),
-    JsonError(serde_json::Error),
-    UnknownKey(Key),
     DuplicateKey(Key),
-    Inner(kvx::Error),
+    Inner(storage::Error),
     Other(String),
 }
 
-impl From<KrillIoError> for KeyValueError {
-    fn from(e: KrillIoError) -> Self {
-        KeyValueError::IoError(e)
-    }
-}
-
-impl From<serde_json::Error> for KeyValueError {
-    fn from(e: serde_json::Error) -> Self {
-        KeyValueError::JsonError(e)
-    }
-}
-
-impl From<kvx::Error> for KeyValueError {
-    fn from(e: kvx::Error) -> Self {
+impl From<storage::Error> for KeyValueError {
+    fn from(e: storage::Error) -> Self {
         KeyValueError::Inner(e)
     }
 }
@@ -339,11 +267,6 @@ impl fmt::Display for KeyValueError {
         match self {
             KeyValueError::UnknownScheme(e) => {
                 write!(f, "Unknown Scheme: {}", e)
-            }
-            KeyValueError::IoError(e) => write!(f, "I/O error: {}", e),
-            KeyValueError::JsonError(e) => write!(f, "JSON error: {}", e),
-            KeyValueError::UnknownKey(key) => {
-                write!(f, "Unknown key: {}", key)
             }
             KeyValueError::DuplicateKey(key) => {
                 write!(f, "Duplicate key: {}", key)
@@ -358,10 +281,10 @@ impl fmt::Display for KeyValueError {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::env;
-
     use rand::{distributions::Alphanumeric, Rng};
+    use crate::commons::storage::{Segment, SegmentBuf};
+    use super::*;
 
     fn random_segment() -> SegmentBuf {
         rand::thread_rng()
@@ -425,7 +348,7 @@ mod tests {
             KeyValueStore::create(&storage_uri, &random_namespace()).unwrap();
         let content = "content".to_owned();
         let id = random_segment();
-        let scope = Scope::from_segment(segment!("scope"));
+        let scope = Scope::from_segment(Segment::make("scope"));
         let key = Key::new_scoped(scope.clone(), id.clone());
 
         store.store(&key, &content).unwrap();
@@ -528,7 +451,7 @@ mod tests {
         let store =
             KeyValueStore::create(&storage_uri, &random_namespace()).unwrap();
         let content = "content".to_owned();
-        let scope = Scope::from_segment(segment!("scope"));
+        let scope = Scope::from_segment(Segment::make("scope"));
         let key = Key::new_scoped(scope.clone(), random_segment());
         store.store(&key, &content).unwrap();
         assert!(store.has_scope(&scope).unwrap());
@@ -547,7 +470,7 @@ mod tests {
         let store =
             KeyValueStore::create(&storage_uri, &random_namespace()).unwrap();
         let content = "content".to_owned();
-        let id = segment!("id");
+        let id = Segment::make("id");
         let scope = Scope::from_segment(random_segment());
         let key = Key::new_scoped(scope.clone(), id);
 
@@ -578,7 +501,7 @@ mod tests {
             KeyValueStore::create(&storage_uri, &random_namespace()).unwrap();
         let content = "content".to_owned();
         let scope = Scope::from_segment(random_segment());
-        let key = Key::new_scoped(scope.clone(), segment!("id"));
+        let key = Key::new_scoped(scope.clone(), Segment::make("id"));
         assert!(!store.has_scope(&scope).unwrap());
 
         store.store(&key, &content).unwrap();
@@ -592,11 +515,11 @@ mod tests {
         let store =
             KeyValueStore::create(&storage_uri, &random_namespace()).unwrap();
         let content = "content".to_owned();
-        let id = segment!("command--id");
-        let scope = Scope::from_segment(segment!("command"));
+        let id = Segment::make("command--id");
+        let scope = Scope::from_segment(Segment::make("command"));
         let key = Key::new_scoped(scope.clone(), id);
 
-        let id2 = segment!("command--ls");
+        let id2 = Segment::make("command--ls");
         let id3 = random_segment();
         let key2 = Key::new_scoped(scope.clone(), id2);
         let key3 = Key::new_global(id3.clone());

@@ -19,8 +19,7 @@ use crate::{
     ta::ta_handle,
 };
 
-//------------ Support acting as a testbed
-//------------ -------------------------------------
+//------------ Support acting as a testbed -----------------------------------
 //
 // Testbed mode enables Krill to run as an open root of a test RPKI hierarchy
 // with web-UI based self-service ability for other RPKI certificate

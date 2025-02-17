@@ -4,8 +4,7 @@ use krill::cli::options::Options;
 use krill::constants;
 
 
-#[tokio::main]
-async fn main() {
+fn main() {
     let options = Options::from_args();
     let client = KrillClient::new(
         options.general.server, options.general.token
@@ -13,7 +12,7 @@ async fn main() {
     if options.general.api {
         env::set_var(constants::KRILL_CLI_API_ENV, "1")
     }
-    let report = options.command.run(&client).await;
+    let report = options.command.run(&client);
     let status = report.report(options.general.format);
     process::exit(status);
 }
