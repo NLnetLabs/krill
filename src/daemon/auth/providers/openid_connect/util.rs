@@ -1,3 +1,4 @@
+use log::{debug, error};
 use openidconnect::{
     core::{
         CoreAuthDisplay, CoreAuthPrompt, CoreClaimName, CoreClaimType,
@@ -13,6 +14,7 @@ use openidconnect::{
     IdTokenClaims, IdTokenFields, ProviderMetadata, StandardErrorResponse,
     StandardTokenResponse, UserInfoClaims,
 };
+use serde::{Deserialize, Serialize};
 
 use crate::commons::{error::Error, KrillResult};
 

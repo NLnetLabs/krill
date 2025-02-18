@@ -1,6 +1,7 @@
 //! Auth provider using a pre-defined token.
 
 use std::sync::Arc;
+use log::{info, log_enabled, trace};
 use crate::commons::KrillResult;
 use crate::commons::api::Token;
 use crate::commons::error::{ApiAuthError, Error};

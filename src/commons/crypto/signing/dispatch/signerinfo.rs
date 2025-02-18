@@ -7,6 +7,7 @@ use rpki::{
     ca::idexchange::MyHandle,
     crypto::{KeyIdentifier, PublicKey},
 };
+use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::{

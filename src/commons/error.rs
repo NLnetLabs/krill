@@ -17,6 +17,7 @@ use rpki::{
     repository::error::ValidationError,
     uri,
 };
+use serde::{Deserialize, Serialize};
 
 use crate::{
     commons::{

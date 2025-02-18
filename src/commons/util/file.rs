@@ -9,7 +9,9 @@ use std::{
 };
 
 use bytes::Bytes;
-use serde::{de::DeserializeOwned, Serialize};
+use log::trace;
+use serde::{Deserialize, Serialize};
+use serde::de::DeserializeOwned;
 
 use rpki::{
     ca::publication::{Base64, ListElement, Publish, Update, Withdraw},

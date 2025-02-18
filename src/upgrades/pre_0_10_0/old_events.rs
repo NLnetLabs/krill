@@ -1,6 +1,7 @@
 use std::{collections::HashMap, fmt};
 
 use bytes::Bytes;
+use serde::{Deserialize, Serialize};
 use rpki::{
     ca::{
         idcert::IdCert,

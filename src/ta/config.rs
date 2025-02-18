@@ -6,6 +6,7 @@ use std::{
 };
 
 use log::LevelFilter;
+use serde::Deserialize;
 use url::Url;
 
 use crate::{

@@ -1,6 +1,7 @@
 //! Address segments.
 
 use std::{borrow, error, fmt, mem, ops, str};
+use log::warn;
 
 
 //------------ SegmentBuf ----------------------------------------------------

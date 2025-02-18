@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use rpki::ca::idexchange::{MyHandle, PublisherHandle};
 use rpki::uri;
+use serde::{Deserialize, Serialize};
 
 use crate::commons::crypto::KrillSigner;
 use crate::commons::eventsourcing::{

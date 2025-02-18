@@ -30,7 +30,7 @@ mod test {
     use std::fmt;
     use std::str::FromStr;
     use std::sync::Arc;
-    use serde::Serialize;
+    use serde::{Deserialize, Serialize};
     use rpki::ca::idexchange::MyHandle;
     use crate::commons::api::{CommandHistoryCriteria, CommandSummary};
     use crate::commons::storage::Namespace;

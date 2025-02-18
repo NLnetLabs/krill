@@ -10,6 +10,7 @@ use rpki::{
     rrdp::Hash,
     uri,
 };
+use serde::{Deserialize, Serialize};
 
 use crate::{
     commons::{

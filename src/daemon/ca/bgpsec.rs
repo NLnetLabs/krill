@@ -10,6 +10,7 @@ use rpki::{
         Cert,
     },
 };
+use serde::{Deserialize, Serialize};
 
 use crate::{
     commons::{

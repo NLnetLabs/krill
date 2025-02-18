@@ -1,6 +1,7 @@
 //! Authorization for the API
 
 use std::sync::Arc;
+use log::{info, log_enabled, trace};
 use rpki::ca::idexchange::MyHandle;
 use serde::Serialize;
 use crate::commons::KrillResult;

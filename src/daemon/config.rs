@@ -9,13 +9,14 @@ use std::{
 };
 
 use chrono::Duration;
-use log::{error, LevelFilter};
+use log::{error, info, warn, LevelFilter};
 use rpki::{
     ca::idexchange::PublisherHandle,
     repository::x509::{Time, Validity},
     uri,
 };
-use serde::{de, Deserialize, Deserializer};
+use serde::de;
+use serde::{Deserialize, Deserializer, Serialize};
 use url::Url;
 
 #[cfg(unix)]

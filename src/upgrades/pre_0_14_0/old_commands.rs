@@ -10,6 +10,7 @@ use rpki::{
     crypto::KeyIdentifier,
     repository::resources::ResourceSet,
 };
+use serde::{Deserialize, Serialize};
 
 use crate::{
     commons::{

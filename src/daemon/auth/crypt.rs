@@ -22,6 +22,7 @@
 // 4: https://github.com/NLnetLabs/krill/issues/382
 
 use std::sync::atomic::{AtomicU64, Ordering};
+use serde::{Deserialize, Serialize};
 use crate::commons::KrillResult;
 use crate::commons::error::{ApiAuthError, Error};
 use crate::commons::storage::{Key, Namespace, Segment};

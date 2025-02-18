@@ -1,7 +1,6 @@
 use std::{collections::HashMap, fmt, ops::Deref, str::FromStr};
 
-use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
-
+use log::debug;
 use rpki::{
     ca::publication::Base64,
     repository::{
@@ -13,6 +12,7 @@ use rpki::{
     rrdp::Hash,
     uri,
 };
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{
     commons::{

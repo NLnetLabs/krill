@@ -7,6 +7,7 @@ use hyper::body::Body;
 use hyper::header::USER_AGENT;
 use hyper::http::uri::PathAndQuery;
 use hyper::{HeaderMap, Method, StatusCode};
+use log::info;
 use rpki::ca::{provisioning, publication};
 use rpki::ca::idexchange::MyHandle;
 use serde::Serialize;

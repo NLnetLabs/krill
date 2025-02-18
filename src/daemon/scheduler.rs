@@ -5,6 +5,7 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use tokio::time::sleep;
 
+use log::{debug, error, info, warn};
 use rpki::ca::{
     idexchange::{CaHandle, ParentHandle},
     provisioning::{ResourceClassName, RevocationRequest},

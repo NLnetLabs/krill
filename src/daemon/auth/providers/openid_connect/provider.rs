@@ -39,7 +39,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD as URL_BASE64_ENGINE;
 use base64::engine::Engine as _;
 use basic_cookies::Cookie;
 use hyper::header::{HeaderValue, SET_COOKIE};
-
+use log::{debug, error, info, log_enabled, trace, warn};
 use openidconnect::{
     core::{
         CoreAuthPrompt, CoreErrorResponseType, CoreIdTokenVerifier,
@@ -51,7 +51,7 @@ use openidconnect::{
     RedirectUrl, RefreshToken, RequestTokenError,
     RevocationErrorResponseType, RevocationUrl, Scope, UserInfoError,
 };
-
+use serde::{Deserialize, Serialize};
 use urlparse::{urlparse, GetQuery};
 
 use crate::daemon::http::{HttpResponse, HyperRequest};

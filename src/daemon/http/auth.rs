@@ -1,4 +1,5 @@
 use hyper::Method;
+use log::{log_enabled, trace};
 
 use crate::{
     commons::error::Error,

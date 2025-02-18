@@ -1,5 +1,5 @@
 use std::{cmp::Ordering, collections::HashMap, fmt};
-
+use serde::{Deserialize, Serialize};
 use crate::commons::{
     api::{
         BgpStats, ConfiguredRoa, RoaConfiguration, RoaConfigurationUpdates,

@@ -4,6 +4,7 @@ use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
 use base64::engine::Engine as _;
+use log::{debug, trace, warn};
 use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
 use crate::commons::KrillResult;

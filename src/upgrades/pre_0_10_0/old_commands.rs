@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use rpki::{
     ca::{
         idexchange::{ChildHandle, ParentHandle, ServiceUri},

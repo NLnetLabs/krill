@@ -1,6 +1,7 @@
 use std::fmt;
 
 use rpki::{ca::idexchange::MyHandle, repository::x509::Time};
+use serde::{Deserialize, Serialize};
 
 use crate::commons::{
     actor::Actor,

@@ -3,7 +3,7 @@
 
 use std::{collections::HashMap, fmt};
 
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use rpki::{
     ca::{

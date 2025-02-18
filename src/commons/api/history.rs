@@ -15,6 +15,7 @@ use rpki::{
     repository::{resources::ResourceSet, x509::Time},
     rrdp::Hash,
 };
+use serde::{Deserialize, Serialize};
 
 use crate::{
     commons::{

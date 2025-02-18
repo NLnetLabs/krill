@@ -2,6 +2,7 @@
 
 use std::{str::FromStr, sync::Arc};
 
+use log::{debug, info, warn};
 use rpki::crypto::KeyIdentifier;
 use url::Url;
 

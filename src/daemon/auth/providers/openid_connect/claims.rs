@@ -1,8 +1,10 @@
 //! Processing OpenID Connect claims.
 
 use std::sync::Arc;
+use log::warn;
 use regex::{Regex, Replacer};
-use serde::de::{Deserialize, Deserializer, Error as _};
+use serde::Deserialize;
+use serde::de::{Deserializer, Error as _};
 use serde_json::{Number as JsonNumber, Value as JsonValue};
 use crate::commons::KrillResult;
 use crate::commons::error::Error;

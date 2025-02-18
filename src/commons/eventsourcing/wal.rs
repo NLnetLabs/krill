@@ -5,8 +5,9 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+use log::{error, warn, trace};
 use rpki::ca::idexchange::MyHandle;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::commons::eventsourcing::Storable;

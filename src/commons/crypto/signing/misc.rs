@@ -12,6 +12,7 @@ use rpki::{
     },
     uri,
 };
+use serde::{Deserialize, Serialize};
 
 use crate::{
     commons::{

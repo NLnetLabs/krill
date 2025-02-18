@@ -17,6 +17,7 @@ use cryptoki::{
     slot::{Slot, SlotInfo, TokenInfo},
     types::AuthPin,
 };
+use log::{debug, error, info, trace, warn};
 
 use rpki::{
     crypto::signer::KeyError,

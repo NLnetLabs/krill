@@ -15,6 +15,7 @@ use hyper::http::HeaderValue;
 use hyper::service::service_fn;
 use hyper::Method;
 use hyper_util::rt::{TokioExecutor, TokioIo};
+use log::{debug, info, error, log_enabled, trace, warn};
 use rpki::ca::idexchange;
 use rpki::ca::idexchange::{
     CaHandle, ChildHandle, MyHandle, ParentHandle, PublisherHandle,

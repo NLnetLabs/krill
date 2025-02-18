@@ -1,6 +1,7 @@
 mod cas_migration;
 use rpki::ca::publication::Base64;
 use rpki::repository::x509::Time;
+use serde::{Deserialize, Serialize};
 
 use crate::commons::api::AspaDefinition;
 

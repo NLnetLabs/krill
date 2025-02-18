@@ -9,6 +9,7 @@ use std::fmt;
 use std::str::FromStr;
 
 use rpki::repository::resources::Asn;
+use serde::{Deserialize, Serialize};
 
 pub type CustomerAsn = Asn;
 pub type ProviderAsn = Asn;

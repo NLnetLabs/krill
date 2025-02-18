@@ -1,5 +1,6 @@
 use std::{str::FromStr, time::Duration};
 
+use log::{debug, log_enabled};
 use reqwest::Response;
 
 use crate::{

@@ -17,7 +17,9 @@
 
 use std::{fmt, str::FromStr, sync::Arc};
 
+use log::{log_enabled, trace};
 use rpki::ca::idexchange::MyHandle;
+use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::{

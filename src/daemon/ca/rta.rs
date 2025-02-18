@@ -9,6 +9,7 @@ use rpki::{
         resources::ResourceSet, rta, sigobj::MessageDigest, x509::Validity,
     },
 };
+use serde::{Deserialize, Serialize};
 
 use crate::commons::{
     api::{Revocation, RtaList, RtaName},

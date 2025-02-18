@@ -1,6 +1,7 @@
 use std::fmt;
 
 use rpki::{ca::idexchange::PublisherHandle, uri};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     commons::{

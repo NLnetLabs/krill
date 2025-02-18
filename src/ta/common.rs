@@ -18,7 +18,7 @@ use rpki::{
     repository::{resources::ResourceSet, x509::Time},
     uri,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     commons::{

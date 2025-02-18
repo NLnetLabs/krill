@@ -8,6 +8,7 @@ use std::{
 use rpki::{
     ca::idexchange::PublisherHandle, repository::x509::Time, rrdp::Hash, uri,
 };
+use serde::{Deserialize, Serialize};
 
 use crate::{
     commons::{

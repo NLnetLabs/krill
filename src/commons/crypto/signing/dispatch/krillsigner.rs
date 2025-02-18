@@ -1,6 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use bytes::Bytes;
+use log::info;
 use rpki::{
     ca::{
         csr::{Csr, RpkiCaCsr},

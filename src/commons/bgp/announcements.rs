@@ -1,6 +1,7 @@
 use std::{cmp::Ordering, collections::HashSet, fmt, str::FromStr};
 
 use rpki::repository::x509::Time;
+use serde::{Deserialize, Serialize};
 
 use crate::commons::{
     api::{AsNumber, RoaPayload, TypedPrefix},

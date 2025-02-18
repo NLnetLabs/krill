@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 
+use log::{debug, info};
 use rpki::{
     ca::{
         idexchange,
