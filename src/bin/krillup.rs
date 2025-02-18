@@ -9,9 +9,8 @@ use url::Url;
 use krill::constants;
 use krill::daemon::config::{Config, LogType};
 use krill::daemon::properties::PropertiesManager;
-use krill::upgrades::{
-    data_migration::migrate, prepare_upgrade_data_migrations, UpgradeMode,
-};
+use krill::upgrades::{prepare_upgrade_data_migrations, UpgradeMode};
+use krill::upgrades::data_migration::migrate;
 
 
 //------------ main ----------------------------------------------------------
@@ -114,7 +113,10 @@ fn main() {
 
 /// The command line options for the krillup command.
 #[derive(clap::Parser)]
-#[command(version)]
+#[command(
+    version,
+    about = "Krill data migration tool",
+)]
 pub struct Options {
     /// Path to the Krill config file
     #[arg(

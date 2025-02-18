@@ -29,7 +29,10 @@ use super::report::{Report, ReportFormat};
 
 /// The command line options for the Krill client.
 #[derive(clap::Parser)]
-#[command(version)]
+#[command(
+    version,
+    about = "The Krill command line client.",
+)]
 pub struct Options {
     #[command(flatten)]
     pub general: GeneralOptions,
