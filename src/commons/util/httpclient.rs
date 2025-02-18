@@ -2,6 +2,7 @@
 use std::{env, fmt, path::PathBuf, str::FromStr, time::Duration};
 
 use bytes::Bytes;
+use clap::crate_version;
 use reqwest::{
     header::{HeaderMap, HeaderValue, CONTENT_TYPE, USER_AGENT},
     Response, StatusCode,
@@ -16,7 +17,7 @@ use crate::{
     },
     constants::{
         HTTP_CLIENT_TIMEOUT_SECS, KRILL_CLI_API_ENV,
-        KRILL_HTTPS_ROOT_CERTS_ENV, KRILL_VERSION,
+        KRILL_HTTPS_ROOT_CERTS_ENV,
     },
 };
 
@@ -270,7 +271,7 @@ pub async fn post_binary_with_full_ua(
 
     let mut headers = HeaderMap::new();
 
-    let ua_string = format!("krill/{}", KRILL_VERSION);
+    let ua_string = concat!("krill/{}", crate_version!());
     let user_agent_value = HeaderValue::from_str(&ua_string)
         .map_err(|e| Error::request_build(uri, e))?;
     let content_type_value = HeaderValue::from_str(content_type)
@@ -334,7 +335,7 @@ fn load_root_cert(path_str: &str) -> Result<reqwest::Certificate, Error> {
 
 /// Default client for Krill use cases.
 #[allow(clippy::result_large_err)]
-pub fn client(uri: &str) -> Result<reqwest::Client, Error> {
+fn client(uri: &str) -> Result<reqwest::Client, Error> {
     client_with_tweaks(
         uri,
         Duration::from_secs(HTTP_CLIENT_TIMEOUT_SECS),

@@ -4,21 +4,21 @@ use std::{cmp::Ordering, fmt, net::IpAddr, str::FromStr};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 use bytes::Bytes;
+use clap::crate_version;
 use rpki::{
     crypto::DigestAlgorithm,
     uri::{Https, Rsync},
 };
-
-use crate::constants::KRILL_VERSION;
 
 pub mod cmslogger;
 pub mod ext_serde;
 pub mod file;
 pub mod httpclient;
 
+
 //------------ KrillVersion --------------------------------------------------
 
-/// Defines a Krill version. Will
+/// Defines a Krill version.
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct KrillVersion {
@@ -32,7 +32,7 @@ impl KrillVersion {
     pub fn code_version() -> Self {
         // Note: we have a unit test to ensure that the KRILL_VERSION constant
         // which is derived from the Cargo.toml version can be parsed.
-        Self::from_str(KRILL_VERSION).unwrap()
+        Self::from_str(crate_version!()).unwrap()
     }
 
     /// Make a notation friendly to namespaces for upgrades.

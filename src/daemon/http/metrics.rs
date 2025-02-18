@@ -3,9 +3,6 @@
 use std::fmt;
 use std::collections::HashMap;
 use std::fmt::Write;
-use crate::constants::{
-    KRILL_VERSION_MAJOR, KRILL_VERSION_MINOR, KRILL_VERSION_PATCH,
-};
 use crate::ta::TA_NAME;
 use super::{HttpResponse, Request, RoutingResult};
 
@@ -31,21 +28,21 @@ pub async fn metrics(req: Request) -> RoutingResult {
             "version_major",
             "Krill server major version number",
         ),
-        KRILL_VERSION_MAJOR
+        env!("CARGO_PKG_VERSION_MAJOR"),
     );
     target.single(
         Metric::gauge(
             "version_minor",
             "Krill server minor version number",
         ),
-        KRILL_VERSION_MINOR
+        env!("CARGO_PKG_VERSION_MINOR"),
     );
     target.single(
         Metric::gauge(
             "version_patch",
             "Krill server patch version number",
         ),
-        KRILL_VERSION_PATCH
+        env!("CARGO_PKG_VERSION_PATCH"),
     );
 
     #[cfg(feature = "multi-user")]

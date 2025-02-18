@@ -3,9 +3,10 @@ extern crate krill;
 use std::path::PathBuf;
 use std::sync::Arc;
 use clap::Parser;
+use clap::crate_version;
 use log::error;
 use krill::constants::{
-    KRILL_DEFAULT_CONFIG_FILE, KRILL_SERVER_APP, KRILL_VERSION
+    KRILL_DEFAULT_CONFIG_FILE, KRILL_SERVER_APP,
 };
 use krill::daemon::{config::Config, http::server};
 
@@ -14,7 +15,7 @@ use krill::daemon::{config::Config, http::server};
 
 #[derive(clap::Parser)]
 #[command(
-    version = KRILL_VERSION, name = KRILL_SERVER_APP,
+    version = crate_version!(), name = KRILL_SERVER_APP,
     about, long_about = None,
 )]
 struct Args {

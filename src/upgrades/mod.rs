@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::str::FromStr;
 
+use clap::crate_version;
 use log::{debug, error, info, trace, warn};
 use rpki::{
     ca::idexchange::{CaHandle, MyHandle},
@@ -30,7 +31,7 @@ use crate::{
         KrillResult,
     },
     constants::{
-        ACTOR_DEF_KRILL, CASERVER_NS, CA_OBJECTS_NS, KEYS_NS, KRILL_VERSION,
+        ACTOR_DEF_KRILL, CASERVER_NS, CA_OBJECTS_NS, KEYS_NS,
         PUBSERVER_CONTENT_NS, PUBSERVER_NS, SIGNERS_NS, STATUS_NS,
         TA_PROXY_SERVER_NS, TA_SIGNER_SERVER_NS,
     },
@@ -385,7 +386,7 @@ pub trait UpgradeAggregateStorePre0_14 {
         info!(
             "Prepare upgrading {} to Krill version {}",
             self.store_name(),
-            KRILL_VERSION
+            crate_version!(),
         );
 
         // Migrate the event sourced data for each scope and create new
@@ -607,7 +608,7 @@ pub trait UpgradeAggregateStorePre0_14 {
             UpgradeMode::PrepareOnly => {
                 info!(
                     "Prepared migrating data to Krill version {}. Will save progress for final upgrade when Krill restarts.",
-                    KRILL_VERSION
+                    crate_version!(),
                 );
                 Ok(AspaMigrationConfigs::default())
             }
@@ -644,7 +645,7 @@ pub trait UpgradeAggregateStorePre0_14 {
                 self.clean_migration_help_files()?;
                 info!(
                     "Prepared migrating data to Krill version {}.",
-                    KRILL_VERSION
+                    crate_version!(),
                 );
 
                 Ok(aspa_configs)

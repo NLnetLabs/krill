@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 use bytes::Bytes;
+use clap::crate_version;
 use chrono::Duration;
 use futures_util::future::try_join_all;
 use log::info;
@@ -99,7 +100,7 @@ impl KrillServer {
     pub async fn build(config: Arc<Config>) -> KrillResult<Self> {
         let service_uri = config.service_uri();
 
-        info!("Starting {} v{}", KRILL_SERVER_APP, KRILL_VERSION);
+        info!("Starting {} v{}", KRILL_SERVER_APP, crate_version!());
         info!("{} uses service uri: {}", KRILL_SERVER_APP, service_uri);
 
         // Assumes that Config::verify() has already ensured that the signer
@@ -284,7 +285,7 @@ impl KrillServer {
     }
 
     pub fn server_info(&self) -> ServerInfo {
-        ServerInfo::new(KRILL_VERSION, self.started)
+        ServerInfo::new(crate_version!(), self.started)
     }
 }
 
