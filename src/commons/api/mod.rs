@@ -4,8 +4,8 @@ pub mod admin;
 pub mod aspa;
 pub mod bgpsec;
 pub mod ca;
-pub mod error;
 pub mod history;
 pub mod import;
 pub mod roa;
+pub mod status;
 

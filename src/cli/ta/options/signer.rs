@@ -114,7 +114,7 @@ pub struct Init {
 impl Init {
     pub fn run(
         self, manager: &TrustAnchorSignerManager
-    ) -> Result<api::admin::Success, SignerClientError> {
+    ) -> Result<api::status::Success, SignerClientError> {
         manager.init(
             SignerInitInfo {
                 proxy_id: self.proxy_id.content,

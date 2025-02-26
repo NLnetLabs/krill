@@ -5,7 +5,7 @@ use rpki::ca::idexchange;
 use rpki::uri;
 use crate::ta;
 use crate::commons::actor::Actor;
-use crate::commons::api::admin::Success;
+use crate::commons::api::status::Success;
 use crate::commons::api::ca::IdCertInfo;
 use crate::commons::crypto::KrillSigner;
 use crate::commons::error::Error as KrillError;

@@ -75,7 +75,7 @@ pub struct Add {
 impl Add {
     async fn run(
         self, client: &KrillClient
-    ) -> Result<api::admin::Success, httpclient::Error> {
+    ) -> Result<api::status::Success, httpclient::Error> {
         client.bgpsec_update(
             &self.ca.ca,
             api::bgpsec::BgpSecDefinitionUpdates {
@@ -111,7 +111,7 @@ pub struct Remove {
 impl Remove {
     async fn run(
         self, client: &KrillClient
-    ) -> Result<api::admin::Success, httpclient::Error> {
+    ) -> Result<api::status::Success, httpclient::Error> {
         client.bgpsec_update(
             &self.ca.ca,
             api::bgpsec::BgpSecDefinitionUpdates {

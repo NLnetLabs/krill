@@ -14,7 +14,7 @@ use crate::commons::{
         ChildConnectionStats, ChildStatus, ChildrenConnectionStats,
         ParentStatus, ParentStatuses, RepoStatus,
     },
-    api::error::ErrorResponse,
+    api::status::ErrorResponse,
     error::Error,
     storage::{Key, KeyValueStore, Namespace, Scope, Segment},
     util::httpclient,

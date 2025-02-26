@@ -92,7 +92,7 @@ pub struct Add {
 impl Add {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::admin::Success, httpclient::Error> {
+    ) -> Result<api::status::Success, httpclient::Error> {
         client.parent_add(
             &self.handle.ca.ca,
             api::admin::ParentCaReq {
@@ -149,7 +149,7 @@ pub struct Remove {
 impl Remove {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::admin::Success, httpclient::Error> {
+    ) -> Result<api::status::Success, httpclient::Error> {
         client.parent_delete(&self.handle.ca.ca, &self.handle.parent).await
     }
 }

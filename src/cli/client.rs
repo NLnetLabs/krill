@@ -16,7 +16,8 @@ use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
 use crate::{pubd, ta};
 use crate::commons::{api, bgp};
-use crate::commons::api::admin::{Success, Token};
+use crate::commons::api::admin::Token;
+use crate::commons::api::status::Success;
 use crate::commons::util::httpclient;
 use crate::commons::util::httpclient::Error;
 

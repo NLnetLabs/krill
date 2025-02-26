@@ -107,7 +107,7 @@ pub struct Configure {
 impl Configure {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::admin::Success, httpclient::Error> {
+    ) -> Result<api::status::Success, httpclient::Error> {
         client.repo_update(&self.ca.ca, self.response.0).await
     }
 }

@@ -43,7 +43,7 @@ pub struct Add {
 impl Add {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::admin::Success, httpclient::Error> {
+    ) -> Result<api::status::Success, httpclient::Error> {
         client.ca_add(self.ca.ca).await
     }
 }
@@ -77,7 +77,7 @@ pub struct Delete {
 impl Delete {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::admin::Success, httpclient::Error> {
+    ) -> Result<api::status::Success, httpclient::Error> {
         client.ca_delete(&self.ca.ca).await
     }
 }
@@ -192,7 +192,7 @@ pub struct InitKeyroll {
 impl InitKeyroll {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::admin::Success, httpclient::Error> {
+    ) -> Result<api::status::Success, httpclient::Error> {
         client.ca_init_keyroll(&self.handle.ca).await
     }
 }
@@ -209,7 +209,7 @@ pub struct ActivateKeyroll {
 impl ActivateKeyroll {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::admin::Success, httpclient::Error> {
+    ) -> Result<api::status::Success, httpclient::Error> {
         client.ca_activate_keyroll(&self.handle.ca).await
     }
 }

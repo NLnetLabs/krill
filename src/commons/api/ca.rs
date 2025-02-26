@@ -37,7 +37,7 @@ use crate::commons::util::KrillVersion;
 use super::admin::{ParentCaContact, PublishedFile, RepositoryContact};
 use super::aspa::AspaDefinition;
 use super::bgpsec::BgpSecAsnKey;
-use super::error::ErrorResponse;
+use super::status::ErrorResponse;
 use super::roa::{RoaPayload, RoaPayloadJsonMapKey};
 
 

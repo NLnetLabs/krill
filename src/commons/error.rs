@@ -22,9 +22,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     commons::{
         actor::Actor,
-        api::{
-            error::ErrorResponse,
-        },
+        api::status::ErrorResponse,
         crypto::SignerError,
         eventsourcing::AggregateStoreError,
         queue,

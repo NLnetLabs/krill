@@ -15,7 +15,7 @@ pub struct Health;
 impl Health {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::admin::Success, httpclient::Error> {
+    ) -> Result<api::status::Success, httpclient::Error> {
         client.authorized().await
     }
 }

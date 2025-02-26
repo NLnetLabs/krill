@@ -88,7 +88,7 @@ pub struct Init;
 impl Init {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::admin::Success, httpclient::Error> {
+    ) -> Result<api::status::Success, httpclient::Error> {
         client.ta_proxy_init().await
     }
 }
@@ -173,7 +173,7 @@ pub struct RepoConfigure {
 impl RepoConfigure {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::admin::Success, httpclient::Error> {
+    ) -> Result<api::status::Success, httpclient::Error> {
         client.ta_proxy_repo_configure(self.response.into()).await
     }
 }
@@ -220,7 +220,7 @@ pub struct SignerInit {
 impl SignerInit {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::admin::Success, httpclient::Error> {
+    ) -> Result<api::status::Success, httpclient::Error> {
         client.ta_proxy_signer_add(self.info.content).await
     }
 }
@@ -275,7 +275,7 @@ pub struct SignerProcessResponse {
 impl SignerProcessResponse {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::admin::Success, httpclient::Error> {
+    ) -> Result<api::status::Success, httpclient::Error> {
         client.ta_proxy_signer_response(self.response.content).await
     }
 }

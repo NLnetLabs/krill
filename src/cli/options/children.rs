@@ -139,7 +139,7 @@ pub struct Update {
 impl Update {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::admin::Success, httpclient::Error> {
+    ) -> Result<api::status::Success, httpclient::Error> {
         client.child_update(&self.handle.ca, &self.handle.child,
             api::admin::UpdateChildRequest {
                 id_cert: self.request.map(|x| x.0),
@@ -180,7 +180,7 @@ pub struct Suspend {
 impl Suspend {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::admin::Success, httpclient::Error> {
+    ) -> Result<api::status::Success, httpclient::Error> {
         client.child_update(
             &self.handle.ca, &self.handle.child,
             api::admin::UpdateChildRequest::suspend(),
@@ -200,7 +200,7 @@ pub struct Unsuspend {
 impl Unsuspend {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::admin::Success, httpclient::Error> {
+    ) -> Result<api::status::Success, httpclient::Error> {
         client.child_update(
             &self.handle.ca, &self.handle.child,
             api::admin::UpdateChildRequest::unsuspend(),
@@ -220,7 +220,7 @@ pub struct Remove {
 impl Remove {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::admin::Success, httpclient::Error> {
+    ) -> Result<api::status::Success, httpclient::Error> {
         client.child_delete(&self.handle.ca, &self.handle.child).await
     }
 }

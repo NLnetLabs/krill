@@ -20,7 +20,7 @@ use crate::{
     },
 };
 use crate::commons::api::admin::Token;
-use crate::commons::api::error::ErrorResponse;
+use crate::commons::api::status::ErrorResponse;
 
 const JSON_CONTENT: &str = "application/json";
 
