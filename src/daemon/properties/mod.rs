@@ -25,7 +25,6 @@ use url::Url;
 use crate::{
     commons::{
         actor::Actor,
-        api::CommandSummary,
         error::Error,
         eventsourcing::{
             self, Aggregate, AggregateStore, Event, InitCommandDetails,
@@ -36,6 +35,8 @@ use crate::{
     },
     constants::{ACTOR_DEF_KRILL, PROPERTIES_DFLT_NAME, PROPERTIES_NS},
 };
+use crate::commons::api::history::CommandSummary;
+
 
 //------------ PropertiesInitCommand ---------------------------------------
 pub type PropertiesInitCommand =
@@ -123,14 +124,14 @@ impl From<&PropertiesCommandDetails> for StorablePropertiesCommand {
 }
 
 impl eventsourcing::WithStorableDetails for StorablePropertiesCommand {
-    fn summary(&self) -> crate::commons::api::CommandSummary {
+    fn summary(&self) -> crate::commons::api::history::CommandSummary {
         match self {
             StorablePropertiesCommand::Init => {
                 CommandSummary::new("cmd-properties-init", self)
             }
             StorablePropertiesCommand::UpgradeTo { krill_version } => {
                 CommandSummary::new("cmd-properties-krill-upgrade", self)
-                    .with_arg("version", krill_version)
+                    .arg("version", krill_version)
             }
         }
     }

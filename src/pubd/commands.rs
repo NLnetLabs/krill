@@ -12,11 +12,13 @@ use crate::commons::eventsourcing::{
 use crate::{
     commons::{
         actor::Actor,
-        api::{IdCertInfo, StorableRepositoryCommand},
         eventsourcing::{CommandDetails, SentCommand},
     },
     pubd::RepositoryAccessEvent,
 };
+use crate::commons::api::ca::IdCertInfo;
+use crate::commons::api::history::CommandSummary;
+
 
 //------------ RepositoryAccessCommand -------------------------------------
 
@@ -142,6 +144,55 @@ impl From<RepositoryAccessCommandDetails> for StorableRepositoryCommand {
             }
             RepositoryAccessCommandDetails::RemovePublisher { name } => {
                 StorableRepositoryCommand::RemovePublisher { name }
+            }
+        }
+    }
+}
+
+//------------ StorableRepositoryCommand -----------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[allow(clippy::large_enum_variant)]
+#[serde(rename_all = "snake_case", tag = "type")]
+pub enum StorableRepositoryCommand {
+    Init,
+    AddPublisher { name: PublisherHandle },
+    RemovePublisher { name: PublisherHandle },
+}
+
+impl WithStorableDetails for StorableRepositoryCommand {
+    fn summary(&self) -> CommandSummary {
+        match self {
+            StorableRepositoryCommand::Init => {
+                CommandSummary::new("pubd-init", self)
+            }
+            StorableRepositoryCommand::AddPublisher { name } => {
+                CommandSummary::new("pubd-publisher-add", self)
+                    .publisher(name)
+            }
+            StorableRepositoryCommand::RemovePublisher { name } => {
+                CommandSummary::new("pubd-publisher-remove", self)
+                    .publisher(name)
+            }
+        }
+    }
+
+    fn make_init() -> Self {
+        Self::Init
+    }
+}
+
+impl fmt::Display for StorableRepositoryCommand {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            StorableRepositoryCommand::Init => {
+                write!(f, "Initialise server")
+            }
+            StorableRepositoryCommand::AddPublisher { name } => {
+                write!(f, "Added publisher '{}'", name)
+            }
+            StorableRepositoryCommand::RemovePublisher { name } => {
+                write!(f, "Removed publisher '{}'", name)
             }
         }
     }

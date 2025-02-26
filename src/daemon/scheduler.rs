@@ -15,7 +15,7 @@ use url::Url;
 use crate::{
     commons::{
         actor::Actor,
-        api::Timestamp,
+        api::ca::Timestamp,
         crypto::dispatch::signerinfo::SignerInfo,
         error::FatalError,
         eventsourcing::{Aggregate, AggregateStore, WalStore, WalSupport},

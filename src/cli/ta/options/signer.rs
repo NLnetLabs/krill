@@ -88,11 +88,11 @@ impl Subcommand {
 pub struct Init {
     /// Path to the proxy ID JSON file.
     #[arg(long, short = 'i', value_name = "path")]
-    proxy_id: JsonFile<api::IdCertInfo, IdiMsg>,
+    proxy_id: JsonFile<api::ca::IdCertInfo, IdiMsg>,
 
     /// Path to the proxy repository contact JSON file.
     #[arg(long, short = 'r', value_name = "path")]
-    proxy_repository_contact: JsonFile<api::RepositoryContact, RcMsg>,
+    proxy_repository_contact: JsonFile<api::admin::RepositoryContact, RcMsg>,
 
     /// The rsync URI used for TA certificate on TAL and AIA
     #[arg(long, value_name = "rsync URI")]
@@ -114,7 +114,7 @@ pub struct Init {
 impl Init {
     pub fn run(
         self, manager: &TrustAnchorSignerManager
-    ) -> Result<api::Success, SignerClientError> {
+    ) -> Result<api::admin::Success, SignerClientError> {
         manager.init(
             SignerInitInfo {
                 proxy_id: self.proxy_id.content,

@@ -57,7 +57,7 @@ use urlparse::{urlparse, GetQuery};
 use crate::daemon::http::{HttpResponse, HyperRequest};
 use crate::{
     commons::{
-        api::Token,
+        api::admin::Token,
         error::{ApiAuthError, Error},
         util::{httpclient, sha256},
         KrillResult,

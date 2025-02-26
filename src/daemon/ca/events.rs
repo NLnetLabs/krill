@@ -15,23 +15,29 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     commons::{
-        api::{
-            AspaDefinition, AspaProvidersUpdate, BgpSecAsnKey, CustomerAsn,
-            IdCertInfo, IssuedCertificate, ObjectName, ParentCaContact,
-            ReceivedCert, RepositoryContact, ResourceClassNameMapping,
-            RoaAggregateKey, RtaName, SuspendedCert, UnsuspendedCert,
-        },
         crypto::KrillSigner,
         eventsourcing::{Event, InitEvent},
         KrillResult,
     },
     daemon::ca::{
-        AspaInfo, CertifiedKey, PreparedRta, RoaInfo, RoaPayloadJsonMapKey,
+        AspaInfo, CertifiedKey, PreparedRta,
         SignedRta,
     },
 };
+use crate::commons::api::admin::{
+    ParentCaContact, RepositoryContact, ResourceClassNameMapping,
+};
+use crate::commons::api::aspa::{
+    AspaDefinition, AspaProvidersUpdate, CustomerAsn,
+};
+use crate::commons::api::bgpsec::BgpSecAsnKey;
+use crate::commons::api::ca::{
+    IdCertInfo, IssuedCertificate, ObjectName, ReceivedCert, SuspendedCert,
+    UnsuspendedCert, RtaName,
+};
+use crate::commons::api::roa::{RoaInfo, RoaPayloadJsonMapKey};
 
-use super::{BgpSecCertInfo, StoredBgpSecCsr};
+use super::{BgpSecCertInfo, RoaAggregateKey, StoredBgpSecCsr};
 
 //------------ Rfc8183Id ---------------------------------------------------
 
@@ -92,7 +98,7 @@ impl fmt::Display for CertAuthInitEvent {
         write!(
             f,
             "Initialized with ID key hash: {}",
-            self.id.cert().public_key().key_identifier()
+            self.id.cert().public_key.key_identifier()
         )?;
         Ok(())
     }
@@ -168,7 +174,7 @@ impl RoaUpdates {
         let mut res = HashMap::new();
 
         for (auth, info) in &self.updated {
-            let name = ObjectName::from(auth);
+            let name = ObjectName::from(*auth);
             res.insert(name, info.clone());
         }
 
@@ -184,7 +190,7 @@ impl RoaUpdates {
         let mut res = vec![];
 
         for simple in &self.removed {
-            res.push(ObjectName::from(simple))
+            res.push(ObjectName::from(*simple))
         }
 
         for agg in &self.aggregate_removed {
@@ -217,13 +223,13 @@ impl fmt::Display for RoaUpdates {
         if !self.updated.is_empty() {
             write!(f, "Updated single VRP ROAs: ")?;
             for roa in self.updated.keys() {
-                write!(f, "{} ", ObjectName::from(roa))?;
+                write!(f, "{} ", ObjectName::from(*roa))?;
             }
         }
         if !self.removed.is_empty() {
             write!(f, "Removed single VRP ROAs: ")?;
             for roa in &self.removed {
-                write!(f, "{} ", ObjectName::from(roa))?;
+                write!(f, "{} ", ObjectName::from(*roa))?;
             }
         }
         if !self.aggregate_updated.is_empty() {
@@ -796,7 +802,7 @@ impl fmt::Display for CertAuthEvent {
                     "added child '{}' with resources '{}, id (hash): {}",
                     child,
                     resources,
-                    id_cert.public_key().key_identifier()
+                    id_cert.public_key.key_identifier()
                 )
             }
             CertAuthEvent::ChildCertificateIssued {
@@ -862,7 +868,7 @@ impl fmt::Display for CertAuthEvent {
                     f,
                     "updated child '{}' id (hash) '{}'",
                     child,
-                    id_cert.public_key().key_identifier()
+                    id_cert.public_key.key_identifier()
                 )
             }
             CertAuthEvent::ChildUpdatedResources { child, resources } => {
@@ -888,7 +894,7 @@ impl fmt::Display for CertAuthEvent {
             CertAuthEvent::IdUpdated { id } => write!(
                 f,
                 "updated RFC8183 id to key '{}'",
-                id.cert().public_key().key_identifier()
+                id.cert().public_key.key_identifier()
             ),
             CertAuthEvent::ParentAdded { parent, .. } => {
                 write!(f, "added parent '{}' ", parent)
@@ -998,7 +1004,7 @@ impl fmt::Display for CertAuthEvent {
                 if !updates.updated.is_empty() || !updates.aggregate_updated.is_empty() {
                     write!(f, " added: ")?;
                     for auth in updates.updated.keys() {
-                        write!(f, "{} ", ObjectName::from(auth))?;
+                        write!(f, "{} ", ObjectName::from(*auth))?;
                     }
                     for agg_key in updates.aggregate_updated.keys() {
                         write!(f, "{} ", ObjectName::from(agg_key))?;
@@ -1007,7 +1013,7 @@ impl fmt::Display for CertAuthEvent {
                 if !updates.removed.is_empty() || !updates.aggregate_removed.is_empty() {
                     write!(f, " removed: ")?;
                     for auth in &updates.removed {
-                        write!(f, "{} ", ObjectName::from(auth))?;
+                        write!(f, "{} ", ObjectName::from(*auth))?;
                     }
                     for agg_key in &updates.aggregate_removed {
                         write!(f, "{} ", ObjectName::from(agg_key))?;
@@ -1032,13 +1038,16 @@ impl fmt::Display for CertAuthEvent {
                 if !updates.updated().is_empty() {
                     write!(f, " updated:")?;
                     for upd in updates.updated() {
-                        write!(f, " {}", ObjectName::aspa(upd.customer()))?;
+                        write!(
+                            f, " {}",
+                            ObjectName::aspa_from_customer(upd.customer())
+                        )?;
                     }
                 }
                 if !updates.removed().is_empty() {
                     write!(f, " removed:")?;
                     for rem in updates.removed() {
-                        write!(f, " {}", ObjectName::aspa(*rem))?;
+                        write!(f, " {}", ObjectName::aspa_from_customer(*rem))?;
                     }
                 }
                 Ok(())
@@ -1049,24 +1058,24 @@ impl fmt::Display for CertAuthEvent {
                 write!(
                     f,
                     "added BGPSec definition for ASN: {} and key id: {}",
-                    key.asn(),
-                    key.key_identifier()
+                    key.asn,
+                    key.key
                 )
             }
             CertAuthEvent::BgpSecDefinitionUpdated { key, .. } => {
                 write!(
                     f,
                     "updated CSR for BGPSec definition for ASN: {} and key id: {}",
-                    key.asn(),
-                    key.key_identifier()
+                    key.asn,
+                    key.key,
                 )
             }
             CertAuthEvent::BgpSecDefinitionRemoved { key } => {
                 write!(
                     f,
                     "removed BGPSec definition for ASN: {} and key id: {}",
-                    key.asn(),
-                    key.key_identifier()
+                    key.asn,
+                    key.key,
                 )
             }
             CertAuthEvent::BgpSecCertificatesUpdated {
@@ -1100,7 +1109,7 @@ impl fmt::Display for CertAuthEvent {
                 write!(
                     f,
                     "updated repository to remote server: {}",
-                    contact.server_info().service_uri()
+                    contact.server_info.service_uri
                 )
             }
 

@@ -21,7 +21,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     commons::{
-        api::{AspaDefinition, AspaProvidersUpdate, CustomerAsn, ObjectName},
         crypto::KrillSigner,
         error::Error,
         KrillResult,
@@ -31,6 +30,10 @@ use crate::{
         config::{Config, IssuanceTimingConfig},
     },
 };
+use crate::commons::api::aspa::{
+    AspaDefinition, AspaProvidersUpdate, CustomerAsn
+};
+use crate::commons::api::ca::ObjectName;
 
 pub fn make_aspa_object(
     aspa_def: AspaDefinition,
@@ -41,8 +44,10 @@ pub fn make_aspa_object(
     let name = ObjectName::from(&aspa_def);
 
     let aspa_builder = {
-        let (customer_as, providers) = aspa_def.unpack();
-        AspaBuilder::new(customer_as, providers).map_err(|e| {
+        AspaBuilder::new(
+            aspa_def.customer,
+            aspa_def.providers
+        ).map_err(|e| {
             Error::Custom(format!("Cannot use aspa config: {}", e))
         })
     }?;
@@ -52,7 +57,7 @@ pub fn make_aspa_object(
 
         let crl_uri = incoming_cert.crl_uri();
         let aspa_uri = incoming_cert.uri_for_name(&name);
-        let ca_issuer = incoming_cert.uri().clone();
+        let ca_issuer = incoming_cert.uri.clone();
 
         let mut object_builder = SignedObjectBuilder::new(
             signer.random_serial()?,
@@ -61,7 +66,7 @@ pub fn make_aspa_object(
             ca_issuer,
             aspa_uri,
         );
-        object_builder.set_issuer(Some(incoming_cert.subject().clone()));
+        object_builder.set_issuer(Some(incoming_cert.subject.clone()));
         object_builder.set_signing_time(Some(Time::now()));
 
         object_builder
@@ -88,7 +93,7 @@ pub struct AspaDefinitions {
 impl AspaDefinitions {
     // Add or replace a new definition
     pub fn add_or_replace(&mut self, aspa_def: AspaDefinition) {
-        let customer = aspa_def.customer();
+        let customer = aspa_def.customer;
         self.attestations.insert(customer, aspa_def);
     }
 
@@ -110,13 +115,13 @@ impl AspaDefinitions {
             // If there are no remaining providers for this AspaDefinition,
             // then remove it so that its ASPA object will also be
             // removed.
-            if current.providers().is_empty() {
+            if current.providers.is_empty() {
                 self.attestations.remove(&customer);
             }
         } else {
             // There was no AspaDefinition. So create an empty definition,
             // apply the update and then add it.
-            let mut def = AspaDefinition::new(customer, vec![]);
+            let mut def = AspaDefinition { customer, providers: vec![] };
             def.apply_update(update);
 
             self.attestations.insert(customer, def);
@@ -184,17 +189,17 @@ impl AspaObjects {
         signer: &KrillSigner,
     ) -> KrillResult<AspaObjectsUpdates> {
         let mut object_updates = AspaObjectsUpdates::default();
-        let resources = certified_key.incoming_cert().resources();
+        let resources = &certified_key.incoming_cert().resources;
 
         // Issue new and updated ASPAs for definitions relevant to the
         // resources in scope
         for relevant_aspa in all_aspa_defs
             .all()
-            .filter(|aspa| resources.contains_asn(aspa.customer()))
+            .filter(|aspa| resources.contains_asn(aspa.customer))
         {
             let need_to_issue = self
                 .0
-                .get(&relevant_aspa.customer())
+                .get(&relevant_aspa.customer)
                 .map(|existing| existing.definition() != relevant_aspa)
                 .unwrap_or(true);
 
@@ -321,7 +326,7 @@ impl AspaInfo {
     }
 
     pub fn customer(&self) -> CustomerAsn {
-        self.definition.customer()
+        self.definition.customer
     }
 
     pub fn expires(&self) -> Time {

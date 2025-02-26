@@ -25,19 +25,8 @@ use crate::{
     commons::{
         actor::Actor,
         api::{
-            import::{ExportChild, ImportChild},
+            import::ImportChild,
             rrdp::PublishElement,
-            BgpSecCsrInfoList, BgpSecDefinitionUpdates, IdCertInfo,
-            ParentServerInfo, PublicationServerInfo, RoaConfigurationUpdates,
-            Timestamp,
-        },
-        api::{
-            AddChildRequest, AspaDefinitionList, AspaDefinitionUpdates,
-            AspaProvidersUpdate, CaCommandDetails, CertAuthList,
-            CertAuthSummary, ChildCaInfo, CommandHistory,
-            CommandHistoryCriteria, CustomerAsn, ParentCaContact,
-            ParentCaReq, ReceivedCert, RepositoryContact, RtaName,
-            UpdateChildRequest,
         },
         crypto::KrillSigner,
         error::Error,
@@ -51,8 +40,8 @@ use crate::{
     daemon::{
         auth::{AuthInfo, Permission},
         ca::{
-            CaObjectsStore, CaStatus, CertAuth, CertAuthCommand,
-            CertAuthCommandDetails, DeprecatedRepository,
+            CaObjectsStore, CaStatus, CertAuth,
+            CertAuthCommand, CertAuthCommandDetails, DeprecatedRepository,
             ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest,
             StatusStore,
         },
@@ -69,6 +58,23 @@ use crate::{
         TA_NAME,
     },
 };
+use crate::commons::api::admin::{
+    AddChildRequest, ParentCaContact, ParentServerInfo, PublicationServerInfo,
+    ParentCaReq, RepositoryContact, UpdateChildRequest,
+};
+use crate::commons::api::aspa::{
+    AspaDefinitionList, AspaDefinitionUpdates, AspaProvidersUpdate,
+    CustomerAsn,
+};
+use crate::commons::api::bgpsec::{BgpSecCsrInfoList, BgpSecDefinitionUpdates};
+use crate::commons::api::ca::{
+    CertAuthList, CertAuthSummary, ChildCaInfo, IdCertInfo, Timestamp,
+    ReceivedCert, RtaName,
+};
+use crate::commons::api::history::{
+    CommandDetails, CommandHistory, CommandHistoryCriteria
+};
+use crate::commons::api::roa::RoaConfigurationUpdates;
 
 use super::{CertAuthInitCommand, CertAuthInitCommandDetails};
 
@@ -381,7 +387,7 @@ impl CaManager {
 
             let details = TrustAnchorSignerInitCommandDetails {
                 proxy_id,
-                repo_info: repo_contact.repo_info().clone(),
+                repo_info: repo_contact.repo_info,
                 tal_https,
                 tal_rsync,
                 private_key_pem,
@@ -533,8 +539,9 @@ impl CaManager {
             repo_manager.repository_response(&ta_handle.convert())?;
 
         // Add repository to proxy
-        let contact = RepositoryContact::for_response(repository_response)
-            .map_err(Error::rfc8183)?;
+        let contact = RepositoryContact::try_from_response(
+            repository_response
+        ).map_err(Error::rfc8183)?;
         self.ta_proxy_repository_update(contact, &self.system_actor)
             .await?;
 
@@ -620,8 +627,8 @@ impl CaManager {
     pub fn ca_list(
         &self, auth: &AuthInfo,
     ) -> KrillResult<CertAuthList> {
-        Ok(CertAuthList::new(
-            self.ca_store
+        Ok(CertAuthList {
+            cas: self.ca_store
                 .list()?
                 .into_iter()
                 .filter(|handle| {
@@ -629,9 +636,9 @@ impl CaManager {
                         Permission::CaRead, Some(handle)
                     ).is_ok()
                 })
-                .map(CertAuthSummary::new)
+                .map(|handle| CertAuthSummary { handle })
                 .collect(),
-        ))
+        })
     }
 
     /// Gets a CA by the given handle, returns an
@@ -749,9 +756,10 @@ impl CaManager {
         &self,
         handle: &CaHandle,
         version: u64,
-    ) -> KrillResult<CaCommandDetails> {
+    ) -> KrillResult<CommandDetails> {
         self.ca_store
             .get_command(handle, version)
+            .map(|cmd| cmd.to_history_details())
             .map_err(Error::AggregateStoreError)
     }
 }
@@ -770,19 +778,17 @@ impl CaManager {
     ) -> KrillResult<idexchange::ParentResponse> {
         info!("CA '{}' process add child request: {}", &ca, &req);
         if ca.as_str() != TA_NAME {
-            let (child_handle, child_res, id_cert) = req.unpack();
-
             let add_child = CertAuthCommandDetails::child_add(
                 ca,
-                child_handle.clone(),
-                id_cert.into(),
-                child_res,
+                req.handle.clone(),
+                req.id_cert.into(),
+                req.resources,
                 actor,
             );
             self.send_ca_command(add_child).await?;
-            self.ca_parent_response(ca, child_handle, service_uri).await
+            self.ca_parent_response(ca, req.handle, service_uri).await
         } else {
-            let child_handle = req.handle().clone();
+            let child_handle = req.handle.clone();
             let add_child_cmd =
                 TrustAnchorProxyCommand::add_child(ca, req, actor);
             self.send_ta_proxy_command(add_child_cmd).await?;
@@ -811,7 +817,7 @@ impl CaManager {
         &self,
         ca: &CaHandle,
         child_handle: &ChildHandle,
-    ) -> KrillResult<ExportChild> {
+    ) -> KrillResult<ImportChild> {
         trace!("Exporting CA: {} under parent: {}", child_handle, ca);
         self.get_ca(ca).await?.child_export(child_handle)
     }
@@ -849,13 +855,13 @@ impl CaManager {
         let service_uri = Self::service_uri_for_ca(service_uri, ca_handle);
         let ca = self.get_ca(ca_handle).await?;
 
-        let server_info = ParentServerInfo::new(
+        let server_info = ParentServerInfo {
             service_uri,
-            ca_handle.convert(),
+            parent_handle: ca_handle.convert(),
             child_handle,
-            ca.id_cert().clone(),
-        );
-        Ok(ParentCaContact::for_parent_server_info(server_info))
+            id_cert: ca.id_cert().clone(),
+        };
+        Ok(ParentCaContact::Rfc6492(server_info))
     }
 
     /// Gets an RFC8183 Parent Response for the child.
@@ -869,11 +875,11 @@ impl CaManager {
         let id_cert: publication::Base64 = if ca_handle.as_str() != TA_NAME {
             let ca = self.get_ca(ca_handle).await?;
             ca.get_child(&child_handle)?; // ensure the child is known
-            ca.id_cert().base64().clone()
+            ca.id_cert().base64.clone()
         } else {
             let proxy = self.get_trust_anchor_proxy().await?;
             proxy.get_child(&child_handle)?;
-            proxy.id().base64().clone()
+            proxy.id().base64.clone()
         };
 
         Ok(idexchange::ParentResponse::new(
@@ -908,14 +914,7 @@ impl CaManager {
         req: UpdateChildRequest,
         actor: &Actor,
     ) -> KrillResult<()> {
-        let (
-            id_opt,
-            resources_opt,
-            suspend_opt,
-            resource_class_name_mapping_opt,
-        ) = req.unpack();
-
-        if let Some(id) = id_opt {
+        if let Some(id) = req.id_cert {
             self.send_ca_command(CertAuthCommandDetails::child_update_id(
                 ca,
                 child.clone(),
@@ -924,7 +923,7 @@ impl CaManager {
             ))
             .await?;
         }
-        if let Some(resources) = resources_opt {
+        if let Some(resources) = req.resources {
             self.send_ca_command(
                 CertAuthCommandDetails::child_update_resources(
                     ca,
@@ -935,7 +934,7 @@ impl CaManager {
             )
             .await?;
         }
-        if let Some(suspend) = suspend_opt {
+        if let Some(suspend) = req.suspend {
             if suspend {
                 self.send_ca_command(
                     CertAuthCommandDetails::child_suspend_inactive(
@@ -956,7 +955,7 @@ impl CaManager {
                 .await?;
             }
         }
-        if let Some(mapping) = resource_class_name_mapping_opt {
+        if let Some(mapping) = req.resource_class_name_mapping {
             self.send_ca_command(CertAuthCommandDetails::child_update_resource_class_name_mapping(
                 ca, child, mapping, actor,
             ))
@@ -1321,19 +1320,19 @@ impl CaManager {
     ) -> KrillResult<()> {
         let ca = self.get_ca(&handle).await?;
 
-        let (parent, response) = parent_req.unpack();
-        let contact = ParentCaContact::for_rfc8183_parent_response(response)
-            .map_err(|e| {
-                Error::CaParentResponseInvalid(handle.clone(), e.to_string())
-            })?;
+        let contact = ParentCaContact::try_from_rfc8183_parent_response(
+            parent_req.response
+        ).map_err(|e| {
+            Error::CaParentResponseInvalid(handle.clone(), e.to_string())
+        })?;
 
-        let cmd = if !ca.parent_known(&parent) {
+        let cmd = if !ca.parent_known(&parent_req.handle) {
             CertAuthCommandDetails::add_parent(
-                &handle, parent, contact, actor,
+                &handle, parent_req.handle, contact, actor,
             )
         } else {
             CertAuthCommandDetails::update_parent(
-                &handle, parent, contact, actor,
+                &handle, parent_req.handle, contact, actor,
             )
         };
 
@@ -1709,26 +1708,26 @@ impl CaManager {
     ) -> KrillResult<HashMap<ResourceClassName, Vec<RevocationResponse>>>
     {
         let child = self.get_ca(handle).await?;
-
         let server_info = child.parent(parent)?.parent_server_info();
-        let parent_uri = server_info.service_uri();
 
         match self
             .send_revoke_requests_rfc6492(
                 revoke_requests,
-                &child.id_cert().public_key().key_identifier(),
+                &child.id_cert().public_key.key_identifier(),
                 server_info,
             )
             .await
         {
             Err(e) => {
-                self.status_store
-                    .set_parent_failure(handle, parent, parent_uri, &e)?;
+                self.status_store.set_parent_failure(
+                    handle, parent, &server_info.service_uri, &e
+                )?;
                 Err(e)
             }
             Ok(res) => {
-                self.status_store
-                    .set_parent_last_updated(handle, parent, parent_uri)?;
+                self.status_store.set_parent_last_updated(
+                    handle, parent, &server_info.service_uri
+                )?;
                 Ok(res)
             }
         }
@@ -1761,8 +1760,8 @@ impl CaManager {
         for (rcn, revoke_requests) in revoke_requests.into_iter() {
             let mut revocations = vec![];
             for req in revoke_requests.into_iter() {
-                let sender = server_info.child_handle().convert();
-                let recipient = server_info.parent_handle().convert();
+                let sender = server_info.child_handle.convert();
+                let recipient = server_info.parent_handle.convert();
 
                 let revoke = provisioning::Message::revoke(
                     sender,
@@ -1859,7 +1858,7 @@ impl CaManager {
     ) -> KrillResult<()> {
         let ca = self.get_ca(ca_handle).await?;
         let requests = ca.cert_requests(parent);
-        let signing_key = ca.id_cert().public_key().key_identifier();
+        let signing_key = ca.id_cert().public_key.key_identifier();
         let server_info = ca.parent(parent)?.parent_server_info();
 
         // We may need to do work for multiple resource class and there may
@@ -1877,8 +1876,8 @@ impl CaManager {
             // We could have multiple requests in a single resource class
             // (multiple keys during rollover)
             for req in requests {
-                let sender = server_info.child_handle().convert();
-                let recipient = server_info.parent_handle().convert();
+                let sender = server_info.child_handle.convert();
+                let recipient = server_info.parent_handle.convert();
 
                 let msg =
                     provisioning::Message::issue(sender, recipient, req);
@@ -2198,7 +2197,7 @@ impl CaManager {
             }
         }
 
-        let uri = server_info.service_uri();
+        let uri = &server_info.service_uri;
         if errors.is_empty() {
             self.status_store
                 .set_parent_last_updated(ca_handle, parent, uri)?;
@@ -2256,7 +2255,7 @@ impl CaManager {
         existing_parent: bool,
     ) -> KrillResult<ResourceClassListResponse> {
         let server_info = contact.parent_server_info();
-        let uri = server_info.service_uri();
+        let uri = &server_info.service_uri;
 
         let result = self.get_entitlements_rfc6492(ca, server_info).await;
 
@@ -2291,14 +2290,14 @@ impl CaManager {
         debug!(
             "Getting entitlements for CA '{}' from parent '{}'",
             handle,
-            server_info.parent_handle()
+            server_info.parent_handle
         );
 
         let child = self.ca_store.get_latest(handle)?;
 
         // create a list request
-        let sender = server_info.child_handle().convert();
-        let recipient = server_info.parent_handle().convert();
+        let sender = server_info.child_handle.convert();
+        let recipient = server_info.parent_handle.convert();
 
         let list = provisioning::Message::list(sender, recipient);
 
@@ -2306,7 +2305,7 @@ impl CaManager {
             .send_rfc6492_and_validate_response(
                 list,
                 server_info,
-                &child.id_cert().public_key().key_identifier(),
+                &child.id_cert().public_key.key_identifier(),
             )
             .await?;
 
@@ -2331,7 +2330,7 @@ impl CaManager {
         server_info: &ParentServerInfo,
         signing_key: &KeyIdentifier,
     ) -> KrillResult<provisioning::Message> {
-        let service_uri = server_info.service_uri();
+        let service_uri = &server_info.service_uri;
         if let Some(parent) =
             Self::local_parent(service_uri, &self.config.service_uri())
         {
@@ -2383,7 +2382,7 @@ impl CaManager {
                     Err(Error::Rfc6492(e))
                 }
                 Ok(cms) => match cms
-                    .validate(server_info.id_cert().public_key())
+                    .validate(&server_info.id_cert.public_key)
                 {
                     Err(e) => {
                         error!(
@@ -2465,8 +2464,8 @@ impl CaManager {
         &self,
         auth: &AuthInfo,
     ) -> KrillResult<()> {
-        for ca in self.ca_list(auth)?.cas() {
-            self.cas_schedule_repo_sync(ca.handle().clone())?;
+        for ca in &self.ca_list(auth)?.cas {
+            self.cas_schedule_repo_sync(ca.handle.clone())?;
         }
         Ok(())
     }
@@ -2609,7 +2608,7 @@ impl CaManager {
                 repo_manager,
                 ca_handle,
                 id_cert,
-                repo_contact.server_info(),
+                &repo_contact.server_info,
             )
             .await?;
 
@@ -2620,7 +2619,8 @@ impl CaManager {
             .collect();
 
         let mut all_objects: HashMap<_, _> =
-            publish_elements.into_iter().map(|el| el.unpack()).collect();
+            publish_elements.into_iter()
+                .map(|el| (el.uri, el.base64)).collect();
 
         let mut delta = PublishDelta::empty();
 
@@ -2645,7 +2645,7 @@ impl CaManager {
                 repo_manager,
                 ca_handle,
                 id_cert,
-                repo_contact.server_info(),
+                &repo_contact.server_info,
                 delta,
             )
             .await?;
@@ -2724,7 +2724,7 @@ impl CaManager {
                 repo_manager,
                 &ca_handle,
                 ca.id_cert(),
-                new_contact.server_info(),
+                &new_contact.server_info,
             )
             .await
             .map_err(|e| {
@@ -2748,8 +2748,7 @@ impl CaManager {
         id_cert: &IdCertInfo,
         server_info: &PublicationServerInfo,
     ) -> KrillResult<ListReply> {
-        let uri = server_info.service_uri();
-        let signing_key = id_cert.public_key().key_identifier();
+        let signing_key = id_cert.public_key.key_identifier();
 
         let message = publication::Message::list_query();
 
@@ -2767,7 +2766,7 @@ impl CaManager {
             Err(e) => {
                 self.status_store.set_status_repo_failure(
                     ca_handle,
-                    uri.clone(),
+                    server_info.service_uri.clone(),
                     &e,
                 )?;
                 return Err(e);
@@ -2776,15 +2775,16 @@ impl CaManager {
 
         match reply {
             publication::Reply::List(list_reply) => {
-                self.status_store
-                    .set_status_repo_success(ca_handle, uri.clone())?;
+                self.status_store.set_status_repo_success(
+                    ca_handle, server_info.service_uri.clone()
+                )?;
                 Ok(list_reply)
             }
             publication::Reply::Success => {
                 let err = Error::custom("Got success reply to list query?!");
                 self.status_store.set_status_repo_failure(
                     ca_handle,
-                    uri.clone(),
+                    server_info.service_uri.clone(),
                     &err,
                 )?;
                 Err(err)
@@ -2793,7 +2793,7 @@ impl CaManager {
                 let err = Error::Custom(format!("Got error reply: {}", e));
                 self.status_store.set_status_repo_failure(
                     ca_handle,
-                    uri.clone(),
+                    server_info.service_uri.clone(),
                     &err,
                 )?;
                 Err(err)
@@ -2809,8 +2809,7 @@ impl CaManager {
         server_info: &PublicationServerInfo,
         delta: PublishDelta,
     ) -> KrillResult<()> {
-        let uri = server_info.service_uri();
-        let signing_key = id_cert.public_key().key_identifier();
+        let signing_key = id_cert.public_key.key_identifier();
 
         let message = publication::Message::delta(delta.clone());
 
@@ -2828,7 +2827,7 @@ impl CaManager {
             Err(e) => {
                 self.status_store.set_status_repo_failure(
                     ca_handle,
-                    uri.clone(),
+                    server_info.service_uri.clone(),
                     &e,
                 )?;
                 return Err(e);
@@ -2839,7 +2838,7 @@ impl CaManager {
             publication::Reply::Success => {
                 self.status_store.set_status_repo_published(
                     ca_handle,
-                    uri.clone(),
+                    server_info.service_uri.clone(),
                     delta,
                 )?;
                 Ok(())
@@ -2848,7 +2847,7 @@ impl CaManager {
                 let err = Error::Custom(format!("Got error reply: {}", e));
                 self.status_store.set_status_repo_failure(
                     ca_handle,
-                    uri.clone(),
+                    server_info.service_uri.clone(),
                     &err,
                 )?;
                 Err(err)
@@ -2857,7 +2856,7 @@ impl CaManager {
                 let err = Error::custom("Got list reply to delta query?!");
                 self.status_store.set_status_repo_failure(
                     ca_handle,
-                    uri.clone(),
+                    server_info.service_uri.clone(),
                     &err,
                 )?;
                 Err(err)
@@ -2873,7 +2872,7 @@ impl CaManager {
         ca_handle: &CaHandle,
         signing_key: &KeyIdentifier,
     ) -> KrillResult<publication::Reply> {
-        let repo_service_uri = server_info.service_uri();
+        let repo_service_uri = &server_info.service_uri;
 
         if repo_service_uri
             .as_str()
@@ -2918,7 +2917,7 @@ impl CaManager {
                     cms_logger.err(format!("Could not decode CMS: {}", e))?;
                     Err(Error::Rfc8181(e))
                 }
-                Ok(cms) => match cms.validate(server_info.public_key()) {
+                Ok(cms) => match cms.validate(&server_info.public_key) {
                     Err(e) => {
                         error!(
                             "Could not validate response from publication server at: {}, for ca: {}. Error: {}",

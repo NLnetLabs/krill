@@ -17,9 +17,6 @@ use serde::de::DeserializeOwned;
 
 use crate::{
     commons::{
-        api::{
-            AspaDefinition, AspaDefinitionUpdates, CustomerAsn, ProviderAsn,
-        },
         error::KrillIoError,
         eventsourcing::{
             Aggregate, AggregateStore, AggregateStoreError,
@@ -43,6 +40,9 @@ use crate::{
     upgrades::pre_0_14_0::{
         OldStoredCommand, OldStoredEffect, OldStoredEvent,
     },
+};
+use crate::commons::api::aspa::{
+    AspaDefinition, AspaDefinitionUpdates, CustomerAsn, ProviderAsn,
 };
 
 #[cfg(feature = "hsm")]
@@ -634,7 +634,7 @@ pub trait UpgradeAggregateStorePre0_14 {
                         .aspa_configs
                         .into_iter()
                         .map(|(customer, providers)| {
-                            AspaDefinition::new(customer, providers)
+                            AspaDefinition { customer, providers }
                         })
                         .collect();
 
@@ -1243,7 +1243,10 @@ pub async fn post_start_upgrade(
 
     for (ca, configs) in report.into_aspa_configs().into_iter() {
         info!("Re-import ASPA configurations after migration for CA '{ca}'");
-        let aspa_updates = AspaDefinitionUpdates::new(configs, vec![]);
+        let aspa_updates = AspaDefinitionUpdates {
+            add_or_replace: configs,
+            remove: Vec::new()
+        };
         server
             .ca_aspas_definitions_update(
                 ca,

@@ -211,3 +211,27 @@ where
 {
     s.serialize_u64(v.load(Ordering::SeqCst))
 }
+
+/// Inspired by the serde_with crate. But, given that we don't need all
+/// its features - just implementing the one thing we need here.
+#[derive(Deserialize)]
+#[serde(untagged)]
+pub enum OneOrMany<'a, T> {
+    One(T),
+    Many(Vec<T>),
+    #[serde(skip)]
+    _LifeTimeMarker(std::marker::PhantomData<&'a u32>),
+}
+
+impl<T> From<OneOrMany<'_, T>> for Vec<T> {
+    fn from(one_or_many: OneOrMany<T>) -> Self {
+        match one_or_many {
+            OneOrMany::One(t) => vec![t],
+            OneOrMany::Many(vec_of_t) => vec_of_t,
+            OneOrMany::_LifeTimeMarker(_) => {
+                unreachable!("variant is never created")
+            }
+        }
+    }
+}
+

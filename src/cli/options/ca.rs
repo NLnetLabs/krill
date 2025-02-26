@@ -16,7 +16,7 @@ pub struct List;
 impl List {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::CertAuthList, httpclient::Error> {
+    ) -> Result<api::ca::CertAuthList, httpclient::Error> {
         client.cas_list().await
     }
 }
@@ -43,7 +43,7 @@ pub struct Add {
 impl Add {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::Success, httpclient::Error> {
+    ) -> Result<api::admin::Success, httpclient::Error> {
         client.ca_add(self.ca.ca).await
     }
 }
@@ -60,7 +60,7 @@ pub struct Show {
 impl Show {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::CertAuthInfo, httpclient::Error> {
+    ) -> Result<api::ca::CertAuthInfo, httpclient::Error> {
         client.ca_details(&self.ca.ca).await
     }
 }
@@ -77,7 +77,7 @@ pub struct Delete {
 impl Delete {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::Success, httpclient::Error> {
+    ) -> Result<api::admin::Success, httpclient::Error> {
         client.ca_delete(&self.ca.ca).await
     }
 }
@@ -131,7 +131,7 @@ pub struct HistoryCommands {
 impl HistoryCommands {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::CommandHistory, httpclient::Error> {
+    ) -> Result<api::history::CommandHistory, httpclient::Error> {
         client.ca_history_commands(
             &self.ca.ca, self.rows, self.offset,self.after, self.before
         ).await
@@ -154,7 +154,7 @@ pub struct HistoryDetails {
 impl HistoryDetails {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::CaCommandDetails, httpclient::Error> {
+    ) -> Result<api::history::CommandDetails, httpclient::Error> {
         client.ca_history_details(&self.ca.ca, &self.key).await
     }
 }
@@ -192,7 +192,7 @@ pub struct InitKeyroll {
 impl InitKeyroll {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::Success, httpclient::Error> {
+    ) -> Result<api::admin::Success, httpclient::Error> {
         client.ca_init_keyroll(&self.handle.ca).await
     }
 }
@@ -209,7 +209,7 @@ pub struct ActivateKeyroll {
 impl ActivateKeyroll {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::Success, httpclient::Error> {
+    ) -> Result<api::admin::Success, httpclient::Error> {
         client.ca_activate_keyroll(&self.handle.ca).await
     }
 }

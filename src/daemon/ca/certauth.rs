@@ -28,16 +28,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     commons::{
-        api::{
-            import::{ExportChild, ImportChild, ImportChildCertificate},
-            AspaDefinition, AspaDefinitionList, AspaDefinitionUpdates,
-            AspaProvidersUpdate, BgpSecAsnKey, BgpSecCsrInfoList,
-            BgpSecDefinitionUpdates, CertAuthInfo, CertAuthStorableCommand,
-            ConfiguredRoa, CustomerAsn, IdCertInfo, ObjectName,
-            ParentCaContact, ReceivedCert, RepositoryContact,
-            ResourceClassNameMapping, Revocation, RoaConfiguration,
-            RoaConfigurationUpdates, RtaList, RtaName, RtaPrepResponse,
-        },
         crypto::{CsrInfo, KrillSigner},
         error::{Error, RoaDeltaError},
         eventsourcing::Aggregate,
@@ -48,14 +38,35 @@ use crate::{
         ca::{
             events::ChildCertificateUpdates, AspaDefinitions,
             BgpSecDefinitions, CertAuthCommand, CertAuthCommandDetails,
-            CertAuthEvent, CertAuthInitEvent, ChildDetails, DropReason,
-            PreparedRta, ResourceClass, ResourceTaggedAttestation, Rfc8183Id,
-            RoaInfo, RoaPayloadJsonMapKey, Routes, RtaContentRequest,
+            CertAuthEvent, CertAuthInitEvent, CertAuthStorableCommand, 
+            ChildDetails, DropReason, PreparedRta, ResourceClass,
+            ResourceTaggedAttestation, Rfc8183Id, 
+            Routes, RtaContentRequest,
             RtaPrepareRequest, Rtas, SignedRta, StoredBgpSecCsr,
         },
         config::{Config, IssuanceTimingConfig},
     },
 };
+use crate::commons::api::admin::{
+    ParentCaContact, RepositoryContact, ResourceClassNameMapping,
+};
+use crate::commons::api::aspa::{
+    AspaDefinition, AspaDefinitionList, AspaDefinitionUpdates,
+    AspaProvidersUpdate, CustomerAsn,
+};
+use crate::commons::api::bgpsec::{
+    BgpSecAsnKey, BgpSecCsrInfoList, BgpSecDefinitionUpdates,
+};
+use crate::commons::api::ca::{
+    CertAuthInfo, IdCertInfo, ObjectName, ReceivedCert, Revocation, RtaList,
+    RtaName, RtaPrepResponse,
+};
+use crate::commons::api::import::{ImportChild, ImportChildCertificate};
+use crate::commons::api::roa::{
+    ConfiguredRoa, RoaConfiguration, RoaConfigurationUpdates, RoaInfo,
+    RoaPayloadJsonMapKey, 
+};
+
 
 use super::CertAuthInitCommand;
 
@@ -445,7 +456,7 @@ impl Aggregate for CertAuth {
             CertAuthEvent::RepoUpdated { contact } => {
                 if let Some(current) = &self.repository {
                     for rc in self.resources.values_mut() {
-                        rc.set_old_repo(current.repo_info().clone());
+                        rc.set_old_repo(current.repo_info.clone());
                     }
                 }
                 self.repository = Some(contact);
@@ -638,14 +649,14 @@ impl CertAuth {
         let repo_info = self
             .repository
             .as_ref()
-            .map(|repo| repo.repo_info().clone());
+            .map(|repo| repo.repo_info.clone());
 
         let parents = self.parents.clone();
 
         let mut resources = HashMap::new();
 
         for (name, rc) in &self.resources {
-            resources.insert(name.clone(), rc.as_info());
+            resources.insert(name.clone(), rc.to_info());
         }
         let children: Vec<ChildHandle> =
             self.children.keys().cloned().collect();
@@ -683,13 +694,13 @@ impl CertAuth {
         let mut configured_roas = vec![];
 
         for roa_configuration in roa_configurations {
-            let mut roa_infos: Vec<RoaInfo> = vec![];
+            let mut roa_objects: Vec<RoaInfo> = vec![];
             for rc in self.resources.values() {
-                roa_infos
+                roa_objects
                     .append(&mut rc.matching_roa_infos(&roa_configuration));
             }
             configured_roas
-                .push(ConfiguredRoa::new(roa_configuration, roa_infos))
+                .push(ConfiguredRoa { roa_configuration, roa_objects })
         }
 
         configured_roas
@@ -699,7 +710,7 @@ impl CertAuth {
     /// a parent of this `CertAuth`
     pub fn child_request(&self) -> idexchange::ChildRequest {
         idexchange::ChildRequest::new(
-            self.id_cert().base64().clone(),
+            self.id_cert().base64.clone(),
             self.handle.convert(),
         )
     }
@@ -708,7 +719,7 @@ impl CertAuth {
     /// XML to a repository for this `CertAuth`
     pub fn publisher_request(&self) -> idexchange::PublisherRequest {
         idexchange::PublisherRequest::new(
-            self.id_cert().base64().clone(),
+            self.id_cert().base64.clone(),
             self.handle.convert(),
             None,
         )
@@ -748,7 +759,7 @@ impl CertAuth {
     pub fn child_export(
         &self,
         child_handle: &ChildHandle,
-    ) -> KrillResult<ExportChild> {
+    ) -> KrillResult<ImportChild> {
         let child = self.get_child(child_handle)?;
 
         let id_cert = child.id_cert().try_into()?;
@@ -775,7 +786,7 @@ impl CertAuth {
             "no issued certificate found for child to export",
         ))?;
 
-        let csr = issued_cert.csr_info().clone();
+        let csr = issued_cert.csr_info.clone();
 
         let class_name = {
             let child_rcn = child.name_for_parent_rcn(my_rcn);
@@ -788,7 +799,7 @@ impl CertAuth {
 
         let issued_cert = ImportChildCertificate { csr, class_name };
 
-        Ok(ExportChild {
+        Ok(ImportChild {
             name: child_handle.clone(),
             id_cert,
             resources,
@@ -810,7 +821,7 @@ impl CertAuth {
             ))
         })?;
 
-        cms.validate(child.id_cert().public_key()).map_err(|e| {
+        cms.validate(&child.id_cert().public_key).map_err(|e| {
             Error::Custom(format!(
                 "CA {} cannot validate request by child {}: {}",
                 self.handle(),
@@ -830,7 +841,7 @@ impl CertAuth {
         signer
             .create_rfc6492_cms(
                 message,
-                &self.id.cert().public_key().key_identifier(),
+                &self.id.cert().public_key.key_identifier(),
             )
             .map(|res| res.to_bytes())
             .map_err(Error::signer)
@@ -902,7 +913,7 @@ impl CertAuth {
         })?;
 
         let signing_cert =
-            SigningCert::new(my_rcvd_cert.uri().clone(), my_cert);
+            SigningCert::new(my_rcvd_cert.uri.clone(), my_cert);
 
         let child = match self.get_child(child_handle) {
             Ok(child) => child,
@@ -910,7 +921,7 @@ impl CertAuth {
         };
 
         let child_resources =
-            my_rcvd_cert.resources().intersection(child.resources());
+            my_rcvd_cert.resources.intersection(child.resources());
         if child_resources.is_empty() {
             return Ok(None);
         }
@@ -946,12 +957,12 @@ impl CertAuth {
                     Error::Custom(format!(
                         "Issue with issued certificate held by CA '{}', published at '{}', error: {} ",
                         self.handle(),
-                        issued.uri(),
+                        issued.uri,
                         e
                     ))
                 })?);
 
-                let expires = issued.validity().not_after();
+                let expires = issued.validity.not_after();
 
                 if expires > threshold {
                     not_after = expires;
@@ -1152,7 +1163,7 @@ impl CertAuth {
             &config.issuance_timing,
             &signer,
         )?;
-        let cert_name = ObjectName::new(&issued.key_identifier(), "cer");
+        let cert_name = ObjectName::from_key(&issued.key_identifier(), "cer");
 
         info!(
             "CA '{}' issued certificate '{}' to child '{}'",
@@ -1230,7 +1241,7 @@ impl CertAuth {
                 "CA '{}' updated child '{}' cert. New key id: {}",
                 self.handle,
                 child_handle,
-                id_cert.public_key().key_identifier()
+                id_cert.public_key.key_identifier()
             );
 
             Ok(vec![CertAuthEvent::child_updated_cert(
@@ -1305,7 +1316,7 @@ impl CertAuth {
             ChildCertificateUpdates::default();
         child_certificate_updates.remove(key);
 
-        let cert_name = ObjectName::new(&key, "cer");
+        let cert_name = ObjectName::from_key(&key, "cer");
         info!(
             "CA '{}' revoked certificate '{}' for child '{}'",
             self.handle, cert_name, child_handle
@@ -1353,7 +1364,7 @@ impl CertAuth {
                 info!(
                     "CA '{}' revoked certificate '{}' for child '{}'",
                     self.handle,
-                    issued.name(),
+                    issued.name,
                     child_handle
                 );
                 cert_updates.remove(issued.key_identifier())
@@ -1401,7 +1412,7 @@ impl CertAuth {
 
             for key in certified_keys {
                 if let Some(issued) = rc.issued(&key) {
-                    cert_updates.suspend(issued.convert());
+                    cert_updates.suspend(issued.to_converted());
                 }
             }
 
@@ -1466,13 +1477,13 @@ impl CertAuth {
                 if let Some(suspended) = rc.suspended(&key) {
                     // check that the cert is actually not expired or about to
                     // expire and not overclaiming
-                    if suspended.validity().not_after()
+                    if suspended.validity.not_after()
                         > Time::now() + Duration::days(1)
-                        && child.resources().contains(suspended.resources())
+                        && child.resources().contains(&suspended.resources)
                     {
                         // certificate is still fit for publication, so move
                         // it back to issued
-                        cert_updates.unsuspend(suspended.convert());
+                        cert_updates.unsuspend(suspended.to_converted());
                     } else {
                         // certificate should not be published as is. Remove
                         // it and the child will request
@@ -1514,7 +1525,7 @@ impl CertAuth {
         info!(
             "CA '{}' generated new ID certificate with key id: {}",
             self.handle,
-            id.cert().public_key().key_identifier()
+            id.cert().public_key.key_identifier()
         );
         Ok(vec![CertAuthEvent::id_updated(id)])
     }
@@ -1676,7 +1687,7 @@ impl CertAuth {
         rc.make_entitlement_events(
             self.handle(),
             entitlement,
-            repo.repo_info(),
+            &repo.repo_info,
             signer,
         )
     }
@@ -1905,7 +1916,7 @@ impl CertAuth {
             let mut started = false;
             let repo = self.repository_contact()?;
             for event in rc
-                .keyroll_initiate(repo.repo_info(), duration, &signer)?
+                .keyroll_initiate(&repo.repo_info, duration, &signer)?
                 .into_iter()
             {
                 started = true;
@@ -2003,7 +2014,6 @@ impl CertAuth {
             }
             // Initiate rolls in all RCs so we can use the new repo in the new
             // key.
-            let info = contact.repo_info().clone();
             for rc in self.resources.values() {
                 // If we are in any keyroll, reject.. because we will need to
                 // introduce the change as a key roll (new key, new repo,
@@ -2016,7 +2026,7 @@ impl CertAuth {
                 }
 
                 events.append(&mut rc.keyroll_initiate(
-                    &info,
+                    &contact.repo_info,
                     Duration::seconds(0),
                     signer,
                 )?);
@@ -2027,7 +2037,7 @@ impl CertAuth {
         info!(
             "CA '{}' updated repository. Service URI will be: {}",
             self.handle,
-            contact.server_info().service_uri()
+            contact.server_info.service_uri
         );
 
         events.push(CertAuthEvent::RepoUpdated { contact });
@@ -2042,12 +2052,11 @@ impl CertAuth {
     /// does not hold the prefix.
     fn route_authorizations_update(
         &self,
-        route_auth_updates: RoaConfigurationUpdates,
+        mut route_auth_updates: RoaConfigurationUpdates,
         config: &Config,
         signer: Arc<KrillSigner>,
     ) -> KrillResult<Vec<CertAuthEvent>> {
-        let route_auth_updates =
-            route_auth_updates.into_explicit_max_length();
+        route_auth_updates.set_explicit_max_length();
 
         let (routes, mut events) =
             self.update_authorizations(&route_auth_updates)?;
@@ -2131,7 +2140,7 @@ impl CertAuth {
         let mut desired_routes = self.routes.clone();
 
         // make sure that all removals are held
-        for roa_payload in updates.removed() {
+        for roa_payload in &updates.removed {
             let auth = RoaPayloadJsonMapKey::from(*roa_payload);
             if desired_routes.remove(&auth) {
                 res.push(CertAuthEvent::RouteAuthorizationRemoved { auth });
@@ -2141,9 +2150,9 @@ impl CertAuth {
         }
 
         // make sure that all new additions are allowed
-        for roa_configuration in updates.added() {
-            let roa_payload = roa_configuration.payload();
-            let comment = roa_configuration.comment();
+        for roa_configuration in &updates.added {
+            let roa_payload = roa_configuration.payload;
+            let comment = roa_configuration.comment.as_ref();
 
             let auth = RoaPayloadJsonMapKey::from(roa_payload);
 
@@ -2213,13 +2222,11 @@ impl CertAuth {
     ) -> KrillResult<Vec<CertAuthEvent>> {
         let mut events = vec![];
 
-        let (add_or_replace, remove) = updates.unpack();
-
         // Keep track of a copy of the AspaDefinitions so we can use to update
         // ASPA objects
         let mut all_aspas = self.aspas.clone();
 
-        for customer in remove {
+        for customer in updates.remove {
             if !all_aspas.has(customer) {
                 return Err(Error::AspaCustomerUnknown(
                     self.handle().clone(),
@@ -2230,9 +2237,9 @@ impl CertAuth {
             all_aspas.remove(customer);
         }
 
-        for aspa_config in add_or_replace {
-            let customer = aspa_config.customer();
-            if aspa_config.providers().is_empty() {
+        for aspa_config in updates.add_or_replace {
+            let customer = aspa_config.customer;
+            if aspa_config.providers.is_empty() {
                 return Err(Error::AspaProvidersEmpty(
                     self.handle().clone(),
                     customer,
@@ -2270,29 +2277,28 @@ impl CertAuth {
                 Some(existing) => {
                     // Determine the update from existing to (new) aspa_config
                     let added = aspa_config
-                        .providers()
+                        .providers
                         .iter()
                         .filter(|new_provider| {
-                            !existing.providers().contains(new_provider)
+                            !existing.providers.contains(new_provider)
                         })
                         .copied()
                         .collect();
 
                     let removed = existing
-                        .providers()
+                        .providers
                         .iter()
                         .filter(|existing| {
-                            !aspa_config.providers().contains(existing)
+                            !aspa_config.providers.contains(existing)
                         })
                         .copied()
                         .collect();
 
-                    let update = AspaProvidersUpdate::new(added, removed);
+                    let update = AspaProvidersUpdate { added, removed };
 
-                    if update.contains_changes() {
+                    if !update.is_empty() {
                         events.push(CertAuthEvent::AspaConfigUpdated {
-                            customer,
-                            update,
+                            customer, update
                         })
                     }
                 }
@@ -2396,14 +2402,14 @@ impl CertAuth {
             .aspas
             .get(customer)
             .cloned()
-            .unwrap_or_else(|| AspaDefinition::new(customer, vec![]));
+            .unwrap_or_else(|| AspaDefinition { customer, providers: vec![] });
 
         let mut updated = existing.clone();
         updated.apply_update(update);
 
         if updated == existing {
             Ok(false)
-        } else if updated.providers().is_empty() {
+        } else if updated.providers.is_empty() {
             // this update will remove the definition
             Ok(true)
         } else if !self.all_resources().contains_asn(customer) {
@@ -2439,8 +2445,6 @@ impl CertAuth {
     ) -> KrillResult<Vec<CertAuthEvent>> {
         let mut events = vec![];
 
-        let (additions, removals) = updates.unpack();
-
         // We keep a copy of the definitions so that we can:
         // a. remove and then re-add definitions
         // b. use the updated definitions to generate objects in
@@ -2450,7 +2454,7 @@ impl CertAuth {
         // applied)
         let mut definitions = self.bgpsec_defs.clone();
 
-        for key in removals {
+        for key in updates.remove {
             if !definitions.remove(&key) {
                 return Err(Error::BgpSecDefinitionUnknown(
                     self.handle.clone(),
@@ -2463,9 +2467,9 @@ impl CertAuth {
 
         // Verify that the CSR in each 'addition' is valid. Then either add
         // a new or update an existing definition.
-        for definition in additions {
+        for definition in updates.add {
             // ensure the CSR is validly signed
-            definition.csr().verify_signature().map_err(|e| {
+            definition.csr.verify_signature().map_err(|e| {
                 Error::BgpSecDefinitionInvalidlySigned(
                     self.handle.clone(),
                     definition.clone(),
@@ -2474,10 +2478,10 @@ impl CertAuth {
             })?;
 
             let key = BgpSecAsnKey::from(&definition);
-            let csr = StoredBgpSecCsr::from(definition.csr());
+            let csr = StoredBgpSecCsr::from(&definition.csr);
 
             // ensure this CA holds the AS
-            if !self.all_resources().contains_asn(key.asn()) {
+            if !self.all_resources().contains_asn(key.asn) {
                 return Err(Error::BgpSecDefinitionNotEntitled(
                     self.handle.clone(),
                     key,

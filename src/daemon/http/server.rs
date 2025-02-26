@@ -29,11 +29,6 @@ use tokio::sync::oneshot;
 
 use crate::{
     commons::{
-        api::{
-            ApiRepositoryContact, AspaDefinitionUpdates,
-            CommandHistoryCriteria, ParentCaReq, PublisherList,
-            RepositoryContact, RoaConfigurationUpdates, RtaName, Token,
-        },
         bgp::BgpAnalysisAdvice,
         error::Error,
         eventsourcing::AggregateStoreError,
@@ -59,6 +54,15 @@ use crate::{
         prepare_upgrade_data_migrations, UpgradeError, UpgradeMode,
     },
 };
+use crate::commons::api::admin::{
+    ApiRepositoryContact, ParentCaReq, PublisherList, RepositoryContact,
+    Token,
+};
+use crate::commons::api::aspa::AspaDefinitionUpdates;
+use crate::commons::api::ca::RtaName;
+use crate::commons::api::history::CommandHistoryCriteria;
+use crate::commons::api::roa::RoaConfigurationUpdates;
+
 
 //------------ State -----------------------------------------------------
 
@@ -982,7 +986,7 @@ pub async fn api_stale_publishers(
         match i64::from_str(seconds) {
             Ok(seconds) => {
                 render_json_res(req.state().repo_stats().map(|stats| {
-                    PublisherList::build(&stats.stale_publishers(seconds))
+                    PublisherList::from_slice(&stats.stale_publishers(seconds))
                 }))
             }
             Err(_) => render_error(Error::ApiInvalidSeconds),
@@ -996,7 +1000,7 @@ pub async fn api_list_pbl(req: Request) -> RoutingResult {
         render_json_res(
             req.state()
                 .publishers()
-                .map(|publishers| PublisherList::build(&publishers)),
+                .map(|publishers| PublisherList::from_slice(&publishers)),
         )
     })
 }
@@ -1035,7 +1039,7 @@ pub async fn api_show_pbl(
     aa!(
         req,
         Permission::PubRead,
-        render_json_res(req.state().get_publisher(&publisher))
+        render_json_res(req.state().get_publisher(publisher))
     )
 }
 
@@ -1457,22 +1461,13 @@ async fn api_ca_history_commands(
                 // /api/v1/cas/{ca}/history/commands
                 // /<rows>/<offset>/<after>/<before>
                 let mut crit = CommandHistoryCriteria::default();
-
-                if let Some(rows) = path.path_arg() {
-                    crit.set_rows(rows);
-                }
-
+                crit.rows_limit = Some(path.path_arg().unwrap_or(100));
                 if let Some(offset) = path.path_arg() {
-                    crit.set_offset(offset);
+                    crit.offset = offset
                 }
+                crit.after = path.path_arg();
+                crit.before = path.path_arg();
 
-                if let Some(after) = path.path_arg() {
-                    crit.set_after(after);
-                }
-
-                if let Some(before) = path.path_arg() {
-                    crit.set_before(before);
-                }
                 match req.state().ca_history(&handle, crit).await {
                     Ok(history) => render_json(history),
                     Err(e) => render_error(e),
@@ -1644,14 +1639,14 @@ fn extract_repository_contact(
                         )
                     })?;
 
-            RepositoryContact::for_response(response).map_err(|e| {
+            RepositoryContact::try_from_response(response).map_err(|e| {
                 Error::CaRepoResponseInvalid(ca.clone(), e.to_string())
             })
         }
     } else {
         let api_contact: ApiRepositoryContact =
             serde_json::from_str(string).map_err(Error::JsonError)?;
-        api_contact.try_into()
+        RepositoryContact::try_from_response(api_contact.repository_response)
     }
 }
 
@@ -1722,17 +1717,17 @@ fn extract_parent_ca_req(
             let parent_name = parent_override
                 .unwrap_or_else(|| response.parent_handle().clone());
 
-            ParentCaReq::new(parent_name, response)
+            ParentCaReq { handle: parent_name, response }
         }
     } else {
         let req: ParentCaReq =
             serde_json::from_str(string).map_err(Error::JsonError)?;
         if let Some(parent_override) = parent_override {
-            if req.handle() != &parent_override {
+            if req.handle != parent_override {
                 return Err(Error::Custom(format!(
                     "Used different parent names on path ({}) and submitted JSON ({}) for adding/updating a parent",
                     parent_override,
-                    req.handle()
+                    req.handle
                 )));
             }
         }
@@ -1835,7 +1830,10 @@ async fn api_ca_aspas_delete(
         let actor = req.actor();
         let state = req.state().clone();
 
-        let updates = AspaDefinitionUpdates::new(vec![], vec![customer]);
+        let updates = AspaDefinitionUpdates {
+            add_or_replace: Vec::new(),
+            remove: vec![customer]
+        };
         render_empty_res(
             state.ca_aspas_definitions_update(ca, updates, &actor).await,
         )
@@ -1870,7 +1868,7 @@ async fn api_ca_routes_try_update(
 
         match req.json::<RoaConfigurationUpdates>().await {
             Err(e) => render_error(e),
-            Ok(updates) => {
+            Ok(mut updates) => {
                 let server = state;
                 match server.ca_routes_bgp_dry_run(&ca, updates.clone()).await
                 {
@@ -1888,7 +1886,7 @@ async fn api_ca_routes_try_update(
                             )
                         } else {
                             // remaining invalids exist, advise user
-                            let updates = updates.into_explicit_max_length();
+                            updates.set_explicit_max_length();
                             let resources = updates.affected_prefixes();
 
                             match server

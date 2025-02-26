@@ -25,8 +25,7 @@ use url::Url;
 use crate::{
     commons::{
         api::{
-            rrdp::PublishElement, CertInfo, IssuedCertificate, ObjectName,
-            ReceivedCert, RepositoryContact, Revocation, Revocations,
+            rrdp::PublishElement, 
         },
         crypto::KrillSigner,
         error::Error,
@@ -43,10 +42,16 @@ use crate::{
         config::IssuanceTimingConfig,
     },
 };
+use crate::commons::api::admin::RepositoryContact;
+use crate::commons::api::ca::{
+    CertInfo, IssuedCertificate, ObjectName, ReceivedCert, Revocation,
+    Revocations,
+};
+use crate::commons::api::roa::RoaInfo;
 
 use super::{
     AspaInfo, AspaObjectsUpdates, BgpSecCertInfo, BgpSecCertificateUpdates,
-    RoaInfo,
+    
 };
 
 //------------ CaObjectsStore ----------------------------------------------
@@ -1068,7 +1073,7 @@ impl KeyObjectSet {
         let signing_cert = key.incoming_cert().clone();
 
         let signing_key = signing_cert.key_identifier();
-        let issuer = signing_cert.subject().clone();
+        let issuer = signing_cert.subject.clone();
         let revocations = Revocations::default();
         let revision = ObjectSetRevision::create(timing.publish_next());
 
@@ -1117,10 +1122,10 @@ impl KeyObjectSet {
         elements.push(self.crl.publish_element(crl_uri));
 
         for (name, object) in &self.published_objects {
-            elements.push(PublishElement::new(
-                object.base64.clone(),
-                self.signing_cert.uri_for_name(name),
-            ));
+            elements.push(PublishElement {
+                uri: self.signing_cert.uri_for_name(name),
+                base64: object.base64.clone(),
+            });
         }
     }
 
@@ -1167,7 +1172,7 @@ impl KeyObjectSet {
 
     fn update_aspas(&mut self, updates: &AspaObjectsUpdates) {
         for aspa_info in updates.updated() {
-            let name = ObjectName::aspa(aspa_info.customer());
+            let name = ObjectName::aspa_from_customer(aspa_info.customer());
             let published_object =
                 PublishedObject::for_aspa(name.clone(), aspa_info);
             if let Some(old) =
@@ -1177,7 +1182,7 @@ impl KeyObjectSet {
             }
         }
         for removed in updates.removed() {
-            let name = ObjectName::aspa(*removed);
+            let name = ObjectName::aspa_from_customer(*removed);
             if let Some(old) = self.published_objects.remove(&name) {
                 self.revocations.add(old.revoke());
             }
@@ -1206,7 +1211,7 @@ impl KeyObjectSet {
 
     fn update_certs(&mut self, cert_updates: &ChildCertificateUpdates) {
         for removed in cert_updates.removed() {
-            let name = ObjectName::new(removed, "cer");
+            let name = ObjectName::from_key(removed, "cer");
             if let Some(old) = self.published_objects.remove(&name) {
                 self.revocations.add(old.revoke());
             }
@@ -1216,7 +1221,7 @@ impl KeyObjectSet {
             let published_object = PublishedObject::for_cert_info(issued);
             if let Some(old) = self
                 .published_objects
-                .insert(issued.name().clone(), published_object)
+                .insert(issued.name.clone(), published_object)
             {
                 self.revocations.add(old.revoke());
             }
@@ -1227,7 +1232,7 @@ impl KeyObjectSet {
             let published_object = PublishedObject::for_cert_info(cert);
             if let Some(old) = self
                 .published_objects
-                .insert(cert.name().clone(), published_object)
+                .insert(cert.name.clone(), published_object)
             {
                 // this should not happen, but just to be safe.
                 self.revocations.add(old.revoke());
@@ -1235,7 +1240,7 @@ impl KeyObjectSet {
         }
 
         for suspended in cert_updates.suspended() {
-            if let Some(old) = self.published_objects.remove(suspended.name())
+            if let Some(old) = self.published_objects.remove(&suspended.name)
             {
                 self.revocations.add(old.revoke());
             }
@@ -1258,7 +1263,7 @@ impl KeyObjectSet {
 
         self.revocations.remove_expired();
         let signing_key = self.signing_cert.key_identifier();
-        let issuer = self.signing_cert.subject().clone();
+        let issuer = self.signing_cert.subject.clone();
 
         self.crl = CrlBuilder::build(
             signing_key,
@@ -1400,7 +1405,7 @@ impl<T> PublishedItem<T> {
     }
 
     pub fn publish_element(&self, uri: uri::Rsync) -> PublishElement {
-        PublishElement::new(self.base64.clone(), uri)
+        PublishElement { uri, base64: self.base64.clone() }
     }
 
     pub fn revoke(&self) -> Revocation {
@@ -1452,8 +1457,8 @@ impl PublishedObject {
     pub fn for_roa(name: ObjectName, roa_info: &RoaInfo) -> Self {
         PublishedObject::new(
             name,
-            roa_info.base64().clone(),
-            roa_info.serial(),
+            roa_info.base64.clone(),
+            roa_info.serial,
             roa_info.expires(),
         )
     }
@@ -1469,9 +1474,9 @@ impl PublishedObject {
 
     pub fn for_cert_info<T>(cert: &CertInfo<T>) -> Self {
         PublishedObject::new(
-            cert.name().clone(),
-            cert.base64().clone(),
-            cert.serial(),
+            cert.name.clone(),
+            cert.base64.clone(),
+            cert.serial,
             cert.expires(),
         )
     }
@@ -1555,7 +1560,7 @@ impl ManifestBuilder {
         let mft_uri = signing_cert.mft_uri();
         let crl_uri = signing_cert.crl_uri();
 
-        let aia = signing_cert.uri();
+        let aia = &signing_cert.uri;
         let aki = signing_cert.key_identifier();
         let serial_number = Serial::from(self.revision.number);
 
@@ -1580,7 +1585,7 @@ impl ManifestBuilder {
                 aia.clone(),
                 mft_uri,
             );
-            object_builder.set_issuer(Some(signing_cert.subject().clone()));
+            object_builder.set_issuer(Some(signing_cert.subject.clone()));
             object_builder.set_signing_time(Some(Time::now()));
 
             signer.sign_manifest(mft_content, object_builder, &aki)?

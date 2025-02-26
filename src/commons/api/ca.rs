@@ -1,125 +1,85 @@
-//! Common data types for Certificate Authorities, defined here so that the
-//! CLI can have access without needing to depend on the full krill_ca module.
+//! Certificate authorities.
 
 use std::{fmt, ops, str};
 use std::collections::hash_map;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
-
 use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
 use base64::engine::Engine as _;
 use bytes::Bytes;
 use chrono::{Duration, TimeZone, Utc};
-use rpki::ca::publication::{PublishDelta, PublishDeltaElement};
-use rpki::repository::x509::{Name, Validity};
-use serde::{Deserialize, Serialize};
-
-use rpki::{
-    ca::{
-        idcert::IdCert,
-        idexchange::{
-            CaHandle, ChildHandle, ParentHandle, RepoInfo, ServiceUri,
-        },
-        provisioning::{
-            IssuanceRequest, IssuedCert, RequestResourceLimit,
-            ResourceClassEntitlements, ResourceClassListResponse,
-            ResourceClassName, SigningCert,
-        },
-        publication::Base64,
-    },
-    crypto::{KeyIdentifier, PublicKey},
-    repository::{
-        aspa::Aspa,
-        cert::Cert,
-        crl::{Crl, CrlEntry},
-        manifest::Manifest,
-        resources::{Asn, ResourceSet},
-        roa::Roa,
-        x509::{Serial, Time},
-    },
-    rrdp::Hash,
-    uri,
+use rpki::uri;
+use rpki::ca::idcert::IdCert;
+use rpki::ca::idexchange::{
+    CaHandle, ChildHandle, ParentHandle, RepoInfo, ServiceUri,
 };
-
+use rpki::ca::provisioning::{
+    IssuanceRequest, IssuedCert, RequestResourceLimit,
+    ResourceClassEntitlements, ResourceClassListResponse,
+    ResourceClassName,
+};
+use rpki::ca::publication::{Base64, PublishDelta, PublishDeltaElement};
+use rpki::crypto::{KeyIdentifier, PublicKey};
+use rpki::repository::aspa::Aspa;
+use rpki::repository::cert::Cert;
+use rpki::repository::crl::{Crl, CrlEntry};
+use rpki::repository::manifest::Manifest;
+use rpki::repository::resources::{Asn, ResourceSet};
+use rpki::repository::roa::Roa;
+use rpki::repository::x509::{Name, Serial, Time, Validity};
+use rpki::rrdp::Hash;
+use serde::{Deserialize, Serialize};
 use crate::commons::crypto::CsrInfo;
 use crate::commons::error;
 use crate::daemon::ca::BgpSecCertInfo;
-use crate::{
-    commons::{
-        api::{
-            rrdp::PublishElement, AspaDefinition, ErrorResponse,
-            ParentCaContact, RepositoryContact, RoaAggregateKey, RoaPayload,
-        },
-        util::KrillVersion,
-    },
-    daemon::ca::RoaPayloadJsonMapKey,
-};
+use crate::commons::api::error::ErrorResponse;
+use crate::commons::api::roa::RoaPayload;
+use crate::commons::api::rrdp::PublishElement;
+use crate::commons::util::KrillVersion;
+use super::rrdp;
+use super::admin::{ParentCaContact, RepositoryContact};
+use super::aspa::AspaDefinition;
+use super::bgpsec::BgpSecAsnKey;
+use super::roa::RoaPayloadJsonMapKey;
 
-use super::{rrdp, BgpSecAsnKey};
 
 //------------ IdCertInfo ----------------------------------------------------
 
-/// A PEM encoded IdCert and sha256 of the encoding, for easier
+/// A encoded ID certificate and SHA256 hash of the encoding.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct IdCertInfo {
-    public_key: PublicKey,
-    base64: Base64,
-    hash: Hash,
+    /// The public key of the ID certificate.
+    pub public_key: PublicKey,
+
+    /// The enocoded ID certificate.
+    pub base64: Base64,
+
+    /// The SHA-256 hash over the ID certificate.
+    pub hash: Hash,
 }
 
 impl IdCertInfo {
-    pub fn public_key(&self) -> &PublicKey {
-        &self.public_key
-    }
-
-    pub fn base64(&self) -> &Base64 {
-        &self.base64
-    }
-
-    pub fn hash(&self) -> &Hash {
-        &self.hash
-    }
-
-    pub fn pem(&self) -> String {
-        let mut pem = "-----BEGIN CERTIFICATE-----\n".to_string();
-
-        for line in self
-            .base64
-            .as_str()
-            .as_bytes() // so we can use chunks
-            .chunks(64)
-            .map(|b| unsafe { std::str::from_utf8_unchecked(b) })
-        {
-            pem.push_str(line);
-            pem.push('\n');
-        }
-
-        pem.push_str("-----END CERTIFICATE-----\n");
-
-        pem
+    /// Returns the PEM encoding of the certificate.
+    pub fn pem(&self) -> IdCertPem {
+        IdCertPem { base64: &self.base64 }
     }
 }
 
 impl From<&IdCert> for IdCertInfo {
     fn from(cer: &IdCert) -> Self {
         let bytes = cer.to_bytes();
-
-        let public_key = cer.public_key().clone();
-        let base64 = Base64::from_content(&bytes);
-        let hash = Hash::from_data(&bytes);
-
         IdCertInfo {
-            public_key,
-            base64,
-            hash,
+            public_key: cer.public_key().clone(),
+            base64: Base64::from_content(&bytes),
+            hash: Hash::from_data(&bytes),
         }
     }
 }
 
 impl From<IdCert> for IdCertInfo {
     fn from(cer: IdCert) -> Self {
-        Self::from(&cer) // we need to encode anyhow, we can't move any data
+        Self::from(&cer)
     }
 }
 
@@ -142,63 +102,75 @@ impl fmt::Display for IdCertInfo {
     }
 }
 
+
+//------------ IdCertPem -----------------------------------------------------
+
+/// A helper type for writing a PEM-encoded ID certifiate.
+///
+/// A value of this type is returned by [`IdCertInfo::pem`].
+pub struct IdCertPem<'a> {
+    base64: &'a Base64,
+}
+
+impl fmt::Display for IdCertPem<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("-----BEGIN CERTIFICATE-----\n")?;
+
+        for line in self
+            .base64
+            .as_str()
+            .as_bytes() // so we can use chunks
+            .chunks(64)
+            .map(|b| unsafe { std::str::from_utf8_unchecked(b) })
+        {
+            f.write_str(line)?;
+            f.write_str("\n")?;
+        }
+
+        f.write_str("-----END CERTIFICATE-----\n")
+    }
+}
+
 //------------ ChildState ----------------------------------------------------
 
+/// The suspension status of a child CA.
 #[derive(
     Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize,
 )]
 #[serde(rename_all = "snake_case")]
 pub enum ChildState {
+    /// The child CA is active, i.e., not suspended.
     #[default]
     Active,
+
+    /// The child CA has been suspended.
     Suspended,
 }
 
 impl fmt::Display for ChildState {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match &self {
-            ChildState::Active => "active",
-            ChildState::Suspended => "suspended",
-        }
-        .fmt(f)
+        f.write_str(
+            match &self {
+                ChildState::Active => "active",
+                ChildState::Suspended => "suspended",
+            }
+        )
     }
 }
 
 //------------ ChildCaInfo ---------------------------------------------------
 
-/// This type represents information about a child CA that is shared through
-/// the API.
+/// Information about a child CA.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildCaInfo {
-    state: ChildState,
-    id_cert: IdCertInfo,
-    entitled_resources: ResourceSet,
-}
+    /// The child CA’s status vis-a-vis suspension.
+    pub state: ChildState,
 
-impl ChildCaInfo {
-    pub fn new(
-        state: ChildState,
-        id_cert: IdCertInfo,
-        entitled_resources: ResourceSet,
-    ) -> Self {
-        ChildCaInfo {
-            state,
-            id_cert,
-            entitled_resources,
-        }
-    }
+    /// The ID certificate used by the child CA for communication.
+    pub id_cert: IdCertInfo,
 
-    pub fn state(&self) -> ChildState {
-        self.state
-    }
-
-    pub fn id_cert(&self) -> &IdCertInfo {
-        &self.id_cert
-    }
-
-    pub fn entitled_resources(&self) -> &ResourceSet {
-        &self.entitled_resources
-    }
+    /// The resources set assigned to the child CA.
+    pub entitled_resources: ResourceSet,
 }
 
 impl fmt::Display for ChildCaInfo {
@@ -207,93 +179,111 @@ impl fmt::Display for ChildCaInfo {
         writeln!(
             f,
             "SHA256 hash of PEM encoded certificate: {}",
-            self.id_cert.hash()
+            self.id_cert.hash
         )?;
         writeln!(f, "resources: {}", self.entitled_resources)?;
         writeln!(f, "state: {}", self.state)
     }
 }
 
+
 //------------ ReceivedCert --------------------------------------------------
 
+/// A marker indicating that a certificate has been received from a parent CA.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct Received;
 
-/// A certificate which was received from a parent CA.
+/// A certificate that was received from a parent CA.
 pub type ReceivedCert = CertInfo<Received>;
+
 
 //------------ IssuedCertificate ---------------------------------------------
 
+/// A marker indicating that a certificate has been issued to a child CA.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct Issued;
 
-/// A certificate which has been issued to a delegated (child) CA
+/// A certificate which has been issued to a child CA.
 pub type IssuedCertificate = CertInfo<Issued>;
+
 
 //------------ SuspendedCertificate ------------------------------------------
 
+/// A marker indicating that a certificate has been suspended.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct Suspended;
 
-/// An issued certificate which has been (temporarily) suspended because the
-/// child is inactive.
+/// An certificate which has been suspended because the child is inactive.
 pub type SuspendedCert = CertInfo<Suspended>;
+
 
 //------------ UnsuspendedCertificate ----------------------------------------
 
+/// A marker indicating that a certificate needs to be re-activated.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct Unsuspended;
 
-/// A suspended certificate which is to be re-activated.
+/// A certificate that has been unsuspended and needs to be re-activated.
 pub type UnsuspendedCert = CertInfo<Unsuspended>;
+
 
 //------------ CertInfo ------------------------------------------------------
 
-/// Contains all relevant info about an RPKI certificate.
+/// All information about an RPKI CA certificate.
 ///
-/// Note that while it would be tempting to keep the actual rpki-rs Cert,
-/// unfortunately this causes fragility with regards to keeping these objects
-/// in history and stricter parsing and validation in future. See issue #819.
+/// For robustness, we keep all information about the certificate in this
+/// separate type rather than just storing the final certificate.
+///
+/// This type is generic over a marker type `T` indicating the status of the
+/// certificate.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CertInfo<T> {
-    // Where this certificate is published by the parent
-    uri: uri::Rsync,
+    /// Where this certificate is published by the parent
+    pub uri: uri::Rsync,
 
-    // The name of this certificate as used on a manifest
-    name: ObjectName,
+    /// The name of this certificate as used on a manifest
+    pub name: ObjectName,
 
-    // Resources contained
-    resources: ResourceSet,
+    /// The resources assigned to the CA.
+    pub resources: ResourceSet,
 
-    // the limit on the request (default limit is no limits)
-    limit: RequestResourceLimit,
+    /// The resource limit on the signing request.
+    ///
+    /// The default is to have no limit.
+    pub limit: RequestResourceLimit,
 
-    // The subject chosen by the parent. Note that Krill will
-    // derive the subject from the public key, but other parents
-    // may use a different strategy.
-    subject: Name,
+    /// The subject chosen by the parent.
+    ///
+    /// Note that Krill will derive the subject from the public key, but
+    /// other parents may use a different strategy.
+    pub subject: Name,
 
-    // The validity time for this certificate.
-    validity: Validity,
+    /// The validity time for this certificate.
+    pub validity: Validity,
 
-    // The serial number of this certificate (needed for revocation)
-    serial: Serial,
+    /// The serial number of this certificate.
+    ///
+    /// This is needed for revocatio.
+    pub serial: Serial,
 
-    // Contains the public key and SIA
+    /// The certifcate signing request for the certificate.
+    ///
+    /// This contains the public key and SIA.
     #[serde(flatten)]
-    csr_info: CsrInfo,
+    pub csr_info: CsrInfo,
 
-    // The actual certificate in base64 format.
-    base64: Base64,
+    /// The actual encoded certificate.
+    pub base64: Base64,
 
-    // The certificate's hash
-    hash: Hash,
+    /// The SHA-256 hash of the encoded certificate.
+    pub hash: Hash,
 
-    // So that we can have different types based on the same structure.
+    /// Marker for the certificate type.
     marker: std::marker::PhantomData<T>,
 }
 
 impl<T> CertInfo<T> {
+    /// Creates a new value from all parts.
     pub fn create(
         cert: Cert,
         uri: uri::Rsync,
@@ -349,67 +339,38 @@ impl<T> CertInfo<T> {
         })
     }
 
-    pub fn uri(&self) -> &uri::Rsync {
-        &self.uri
-    }
-
-    pub fn resources(&self) -> &ResourceSet {
-        &self.resources
-    }
-
-    pub fn limit(&self) -> &RequestResourceLimit {
-        &self.limit
-    }
-
-    pub fn subject(&self) -> &Name {
-        &self.subject
-    }
-
-    pub fn validity(&self) -> &Validity {
-        &self.validity
-    }
-
-    pub fn expires(&self) -> Time {
-        self.validity.not_after()
-    }
-
-    pub fn serial(&self) -> Serial {
-        self.serial
-    }
-
-    pub fn csr_info(&self) -> &CsrInfo {
-        &self.csr_info
-    }
-
+    /// Returns the key identifier for the certificate’s public key.
     pub fn key_identifier(&self) -> KeyIdentifier {
         self.csr_info.key_id()
     }
 
-    pub fn base64(&self) -> &Base64 {
-        &self.base64
+    /// Returns the expiry time of the certificate.
+    pub fn expires(&self) -> Time {
+        self.validity.not_after()
     }
 
-    pub fn hash(&self) -> Hash {
-        self.hash
+    /// Decodes the certificate.
+    pub fn to_cert(&self) -> Result<Cert, CertInfoDecodeError> {
+        Cert::decode(
+            self.to_bytes().as_ref()
+        ).map_err(|e| CertInfoDecodeError(e.to_string()))
     }
 
-    pub fn to_cert(&self) -> Result<Cert, InvalidCert> {
-        Cert::decode(self.to_bytes().as_ref())
-            .map_err(|e| InvalidCert::CannotDecode(e.to_string()))
-    }
-
-    /// Represent as an RFC 6492 IssuedCert
-    pub fn to_rfc6492_issued_cert(&self) -> Result<IssuedCert, InvalidCert> {
+    /// Converts the CA certificate to an RFC 6492 issued certificate.
+    pub fn to_rfc6492_issued_cert(
+        &self
+    ) -> Result<IssuedCert, CertInfoDecodeError> {
         let cert = self.to_cert()?;
         Ok(IssuedCert::new(self.uri.clone(), self.limit.clone(), cert))
     }
 
+    /// Returns the raw bytes of the encoded certificate.
     pub fn to_bytes(&self) -> Bytes {
         self.base64.to_bytes()
     }
 
     /// Clones and then converts this into a certificate of another type.
-    pub fn convert<Y>(&self) -> CertInfo<Y> {
+    pub fn to_converted<Y>(&self) -> CertInfo<Y> {
         CertInfo {
             uri: self.uri.clone(),
             name: self.name.clone(),
@@ -442,13 +403,15 @@ impl<T> CertInfo<T> {
         }
     }
 
-    /// Returns a (possibly empty) set of reduced applicable resources which
-    /// is the intersection of the encompassing resources and this
-    /// certificate's current resources. Returns None if the current
-    /// resource set is not overclaiming and does not need to be reduced.
+    /// Returns a set of reduced applicable resources.
+    ///
+    /// This set is the intersection of the encompassing resources and this
+    /// certificate's current resources.
+    ///
+    /// Returns `None` if the current resource set is not overclaiming and
+    /// does not need to be reduced.
     pub fn reduced_applicable_resources(
-        &self,
-        encompassing: &ResourceSet,
+        &self, encompassing: &ResourceSet,
     ) -> Option<ResourceSet> {
         if encompassing.contains(&self.resources) {
             None
@@ -457,151 +420,121 @@ impl<T> CertInfo<T> {
         }
     }
 
-    /// The name for this certificate
-    pub fn name(&self) -> &ObjectName {
-        &self.name
-    }
-
-    /// The name of the CRL published by THIS certificate.
+    /// Returns the name of the CRL published by this certificate.
     pub fn crl_name(&self) -> ObjectName {
-        ObjectName::new(&self.key_identifier(), "crl")
+        ObjectName::from_key(&self.key_identifier(), "crl")
     }
 
-    /// The URI of the CRL published BY THIS certificate, i.e. the uri to use
-    /// on certs issued by this.
+    /// Returns the URI of the CRL published by this certificate.
+    ///
+    /// This is the URI to use on certs issued by this certificate.
     pub fn crl_uri(&self) -> uri::Rsync {
         self.uri_for_object(self.crl_name())
     }
 
-    /// The name of the MFT published by THIS certificate.
+    /// Returns the name of the manifest published by this certificate.
     pub fn mft_name(&self) -> ObjectName {
-        ObjectName::new(&self.key_identifier(), "mft")
+        ObjectName::from_key(&self.key_identifier(), "mft")
     }
 
-    /// Return the CA repository URI where this certificate publishes.
-    pub fn ca_repository(&self) -> &uri::Rsync {
-        self.csr_info.ca_repository()
-    }
-
-    /// The URI of the MFT published by THIS certificate.
+    /// Returns the URI of the manifest published by this certificate.
     pub fn mft_uri(&self) -> uri::Rsync {
         self.uri_for_object(self.mft_name())
     }
 
+    /// Returns the CA repository URI where this certificate publishes.
+    pub fn ca_repository(&self) -> &uri::Rsync {
+        self.csr_info.ca_repository()
+    }
+
+    /// Returns the URI for an object published by this CA.
     pub fn uri_for_object(&self, name: impl Into<ObjectName>) -> uri::Rsync {
         self.uri_for_name(&name.into())
     }
 
+    /// Returns the URI for an object published by this CA.
     pub fn uri_for_name(&self, name: &ObjectName) -> uri::Rsync {
         // unwraps here are safe
         self.ca_repository().join(name.as_ref()).unwrap()
     }
 
-    /// Returns a Revocation for this certificate
+    /// Returns the revocation information for this certificate
     pub fn revocation(&self) -> Revocation {
         Revocation::new(self.serial, self.validity.not_after())
     }
 }
 
-#[derive(Clone, Debug)]
-pub enum InvalidCert {
-    CaRepositoryMissing,
-    RpkiManifestMissing,
-    Uri(uri::Rsync),
-    CannotDecode(String),
-}
-
-impl fmt::Display for InvalidCert {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            InvalidCert::CaRepositoryMissing => write!(
-                f,
-                "CA certificate lacks id-ad-caRepository (see section 4.8.8.1 of RFC 6487)"
-            ),
-            InvalidCert::RpkiManifestMissing => write!(
-                f,
-                "CA certificate lacks id-ad-rpkiManifest (see section 4.8.8.1 of RFC 6487)"
-            ),
-            InvalidCert::Uri(s) => write!(f, "Cannot derive filename from URI: {}", s),
-            InvalidCert::CannotDecode(s) => write!(f, "Cannot decode binary certificate: {}", s),
-        }
-    }
-}
-
-impl std::error::Error for InvalidCert {}
 
 //------------ PendingKeyInfo ------------------------------------------------
 
+/// Information about a pending key in a resource class.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PendingKeyInfo {
-    key_id: KeyIdentifier,
+    /// The key identifier of the pending key.
+    pub key_id: KeyIdentifier,
 }
 
-impl PendingKeyInfo {
-    pub fn new(key_id: KeyIdentifier) -> Self {
-        PendingKeyInfo { key_id }
-    }
-}
 
 //------------ CertifiedKeyInfo ----------------------------------------------
 
+/// Information about a certified key.
+///
+/// Such a key has received an incoming certificate and has at least a
+/// manifest and CRL.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-/// Describes a Key that is certified. I.e. it received an incoming
-/// certificate and has at least a MFT and CRL.
 pub struct CertifiedKeyInfo {
-    key_id: KeyIdentifier,
-    incoming_cert: ReceivedCert,
-    request: Option<IssuanceRequest>,
+    /// The key identifier of the key.
+    pub key_id: KeyIdentifier,
+
+    /// The certificate received from the parent CA.
+    pub incoming_cert: ReceivedCert,
+
+    /// The certification request sent to the parent if available.
+    pub request: Option<IssuanceRequest>,
 }
 
-impl CertifiedKeyInfo {
-    pub fn new(key_id: KeyIdentifier, incoming_cert: ReceivedCert) -> Self {
-        CertifiedKeyInfo {
-            key_id,
-            incoming_cert,
-            request: None,
-        }
-    }
-
-    pub fn key_id(&self) -> &KeyIdentifier {
-        &self.key_id
-    }
-    pub fn incoming_cert(&self) -> &ReceivedCert {
-        &self.incoming_cert
-    }
-    pub fn request(&self) -> Option<&IssuanceRequest> {
-        self.request.as_ref()
-    }
-}
 
 //------------ ObjectName ----------------------------------------------------
 
-/// This type is used to represent the (deterministic) file names for
-/// RPKI repository objects.
+/// Represents the (deterministic) file names of an RPKI repository object.
+///
+/// Values of this type can be cloned relatively cheaply. They contain the
+/// allocated name behind an arc.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct ObjectName(Arc<str>);
 
 impl ObjectName {
-    pub fn new(ki: &KeyIdentifier, extension: &str) -> Self {
+    /// Creates a new object.
+    pub fn new(name: impl Into<Arc<str>>) -> Self {
+        Self(name.into())
+    }
+
+    /// Creates a new object name from a key identifer and a file extension.
+    pub fn from_key(ki: &KeyIdentifier, extension: &str) -> Self {
         ObjectName(format!("{}.{}", ki, extension).into())
     }
 
-    pub fn cer_for_key(ki: &KeyIdentifier) -> Self {
-        ObjectName::new(ki, "cer")
+    /// Creates the name for a CA certificate from its key.
+    pub fn cer_from_key(ki: &KeyIdentifier) -> Self {
+        ObjectName::from_key(ki, "cer")
     }
 
-    pub fn mft_for_key(ki: &KeyIdentifier) -> Self {
-        ObjectName::new(ki, "mft")
+    /// Creates the name of a manifest from the key of its CA.
+    pub fn mft_from_ca_key(ki: &KeyIdentifier) -> Self {
+        ObjectName::from_key(ki, "mft")
     }
 
-    pub fn crl_for_key(ki: &KeyIdentifier) -> Self {
-        ObjectName::new(ki, "crl")
+    /// Creates the name of a CRL from the key of its CA.
+    pub fn crl_from_ca_key(ki: &KeyIdentifier) -> Self {
+        ObjectName::from_key(ki, "crl")
     }
 
-    pub fn aspa(customer: Asn) -> Self {
+    /// Creates the name of an ASPA object from the customer ASN.
+    pub fn aspa_from_customer(customer: Asn) -> Self {
         ObjectName(format!("{}.asa", customer).into())
     }
 
+    /// Creates the name of a router key from ASN and key identifer.
     pub fn bgpsec(asn: Asn, key: KeyIdentifier) -> Self {
         ObjectName(
             format!("ROUTER-{:08X}-{}.cer", asn.into_u32(), key).into(),
@@ -611,51 +544,37 @@ impl ObjectName {
 
 impl From<&Cert> for ObjectName {
     fn from(c: &Cert) -> Self {
-        Self::cer_for_key(&c.subject_key_identifier())
+        Self::cer_from_key(&c.subject_key_identifier())
     }
 }
 
 impl From<&Manifest> for ObjectName {
     fn from(m: &Manifest) -> Self {
-        Self::mft_for_key(&m.cert().authority_key_identifier().unwrap())
+        Self::mft_from_ca_key(&m.cert().authority_key_identifier().unwrap())
     }
 }
 
 impl From<&Crl> for ObjectName {
     fn from(c: &Crl) -> Self {
-        Self::crl_for_key(c.authority_key_identifier())
+        Self::crl_from_ca_key(c.authority_key_identifier())
     }
 }
 
-impl From<&RoaPayloadJsonMapKey> for ObjectName {
-    fn from(auth: &RoaPayloadJsonMapKey) -> Self {
+impl From<RoaPayloadJsonMapKey> for ObjectName {
+    fn from(auth: RoaPayloadJsonMapKey) -> Self {
         ObjectName(format!("{}.roa", hex::encode(auth.to_string())).into())
     }
 }
 
-impl From<&RoaPayload> for ObjectName {
-    fn from(def: &RoaPayload) -> Self {
+impl From<RoaPayload> for ObjectName {
+    fn from(def: RoaPayload) -> Self {
         ObjectName(format!("{}.roa", hex::encode(def.to_string())).into())
-    }
-}
-
-impl From<&RoaAggregateKey> for ObjectName {
-    fn from(roa_group: &RoaAggregateKey) -> Self {
-        ObjectName(
-            match roa_group.group() {
-                None => format!("AS{}.roa", roa_group.asn()),
-                Some(number) => {
-                    format!("AS{}-{}.roa", roa_group.asn(), number)
-                }
-            }
-            .into(),
-        )
     }
 }
 
 impl From<&AspaDefinition> for ObjectName {
     fn from(aspa: &AspaDefinition) -> Self {
-        Self::aspa(aspa.customer())
+        Self::aspa_from_customer(aspa.customer)
     }
 }
 
@@ -667,7 +586,7 @@ impl From<&BgpSecCertInfo> for ObjectName {
 
 impl From<&BgpSecAsnKey> for ObjectName {
     fn from(asn_key: &BgpSecAsnKey) -> Self {
-        Self::bgpsec(asn_key.asn(), asn_key.key_identifier())
+        Self::bgpsec(asn_key.asn, asn_key.key)
     }
 }
 
@@ -695,23 +614,29 @@ impl fmt::Display for ObjectName {
     }
 }
 
+
 //------------ Revocation ----------------------------------------------------
 
-/// This type represents an entry to be used on a Certificate Revocation List
-/// (CRL).
-///
-/// The "revocation_date" will be used for the "revocationDate" as described
-/// in section 5.1 of RFC 5280. The "expires" time is used to determine when a
-/// CRL entry can be deleted because it is no longer relevant.
-///
-/// The "revocation_date" is set to the time that this object is first
-/// created, but it will be persisted for future use. In other words: there is
-/// no support for future or past dating this time.
+/// Information for an entry on a CRL.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Revocation {
+    /// The serial number of the certificate to be revoked.
     serial: Serial,
+
+    /// The revocation date.
+    ///
+    /// This is the "revocationDate" as described in section 5.1 of RFC 5280.
+    ///
+    /// It is set to the time that this object was first created, but it will
+    /// be persisted for future use. There is no support for future or past
+    /// dating this time.
     #[serde(default = "Time::now")]
     revocation_date: Time,
+
+    /// The expiry time of the revoked object.
+    ///
+    /// This is used to determine when a CRL entry can be deleted because it
+    /// is no longer relevant.
     expires: Time,
 }
 
@@ -755,35 +680,43 @@ impl From<&BgpSecCertInfo> for Revocation {
     }
 }
 
+
 //------------ Revocations ---------------------------------------------------
 
+/// The list of revocation entries of a CRL.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Revocations(Vec<Revocation>);
 
 impl Revocations {
+    /// Converts the revocations to a list of CRL entries.
     pub fn to_crl_entries(&self) -> Vec<CrlEntry> {
-        self.0
-            .iter()
-            .map(|r| CrlEntry::new(r.serial, r.revocation_date))
-            .collect()
+        self.0.iter().map(|r| {
+            CrlEntry::new(r.serial, r.revocation_date)
+        }).collect()
     }
 
     /// Removes all expired revocations, and returns them.
     pub fn remove_expired(&mut self) -> Vec<Revocation> {
-        let (relevant, expired) =
-            self.0.iter().partition(|r| r.expires > Time::now());
+        let (relevant, expired) = self.0.iter().partition(|r| {
+            r.expires > Time::now()
+        });
         self.0 = relevant;
         expired
     }
 
+    /// Adds a revociation entry to the list.
+    ///
+    /// The entry is added at the end of the list.
     pub fn add(&mut self, revocation: Revocation) {
         self.0.push(revocation);
     }
 
+    /// Removes the given revocation entry from the list if present.
     pub fn remove(&mut self, revocation: &Revocation) {
         self.0.retain(|existing| existing != revocation);
     }
 
+    /// Applies a revocation delta to the list.
     pub fn apply_delta(&mut self, delta: RevocationsDelta) {
         self.0.retain(|r| !delta.dropped.contains(r));
         for r in delta.added {
@@ -792,51 +725,56 @@ impl Revocations {
     }
 }
 
+
 //------------ RevocationsDelta ----------------------------------------------
 
+/// A change to a revocation list.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RevocationsDelta {
+    /// The revocation entries to be added.
     added: Vec<Revocation>,
+
+    /// The revocation entries to be removed.
     dropped: Vec<Revocation>,
 }
 
 impl RevocationsDelta {
+    /// Adds a revocation entry to be added to the revocation list.
     pub fn add(&mut self, revocation: Revocation) {
         self.added.push(revocation);
     }
+
+    /// Adds a revocation entry to be removed from the revocation list.
     pub fn drop(&mut self, revocation: Revocation) {
         self.dropped.push(revocation);
     }
 }
 
+
 //------------ ResourceSetSummary --------------------------------------------
-/// This type defines a summary of a set of Internet Number Resources, for
-/// use in concise reporting.
+
+/// A summary of a set of Internet Number Resources.
+///
+/// This is used for concise reporting.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ResourceSetSummary {
-    asns: usize,
-    ipv4: usize,
-    ipv6: usize,
-}
+    /// The number of ASN blocks in the set.
+    pub asn_blocks: usize,
 
-impl ResourceSetSummary {
-    pub fn asn_blocks(&self) -> usize {
-        self.asns
-    }
-    pub fn ipv4_blocks(&self) -> usize {
-        self.ipv4
-    }
-    pub fn ipv6_blocks(&self) -> usize {
-        self.ipv6
-    }
+    /// The number of blocks of IPv4 prefixes in the set.
+    pub ipv4_blocks: usize,
+
+    /// The number of blocks of IPv6 prefixes in the set.
+    pub ipv6_blocks: usize,
 }
 
 impl From<&ResourceSet> for ResourceSetSummary {
     fn from(rs: &ResourceSet) -> Self {
-        let asns = rs.asn().iter().count();
-        let ipv4 = rs.ipv4().iter().count();
-        let ipv6 = rs.ipv6().iter().count();
-        ResourceSetSummary { asns, ipv4, ipv6 }
+        ResourceSetSummary {
+            asn_blocks: rs.asn().iter().count(),
+            ipv4_blocks: rs.ipv4().iter().count(),
+            ipv6_blocks: rs.ipv6().iter().count(),
+        }
     }
 }
 
@@ -845,71 +783,58 @@ impl fmt::Display for ResourceSetSummary {
         write!(
             f,
             "asn: {} blocks, v4: {} blocks, v6: {} blocks",
-            self.asns, self.ipv4, self.ipv6
+            self.asn_blocks, self.ipv4_blocks, self.ipv6_blocks
         )
     }
 }
 
+
 //------------ CertAuthList --------------------------------------------------
 
+/// A list of CA summaries.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CertAuthList {
-    // Even though we only have 1 field, we chose not to use a tuple struct
-    // here to allow for future extensions more easily.. we could then
-    // just add new fields and associated JSON members without affecting
-    // consumers of the API too much.
-    cas: Vec<CertAuthSummary>,
-}
-
-impl CertAuthList {
-    pub fn new(cas: Vec<CertAuthSummary>) -> Self {
-        CertAuthList { cas }
-    }
-
-    pub fn cas(&self) -> &Vec<CertAuthSummary> {
-        &self.cas
-    }
+    /// The list of CA summaries.
+    ///
+    /// Even though we only have one field, we chose not to use a tuple struct
+    /// here to allow for future extensions more easily.
+    pub cas: Vec<CertAuthSummary>,
 }
 
 impl fmt::Display for CertAuthList {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for ca in self.cas() {
-            writeln!(f, "{}", ca.handle())?;
+        for ca in &self.cas {
+            writeln!(f, "{}", ca.handle)?;
         }
 
         Ok(())
     }
 }
 
-impl AsRef<Vec<CertAuthSummary>> for CertAuthList {
-    fn as_ref(&self) -> &Vec<CertAuthSummary> {
-        &self.cas
-    }
-}
 
 //------------ CertAuthSummary -----------------------------------------------
 
+/// The summary of a CA.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CertAuthSummary {
-    handle: CaHandle,
+    /// The handle identifying the CA.
+    pub handle: CaHandle,
 }
 
-impl CertAuthSummary {
-    pub fn new(name: CaHandle) -> Self {
-        CertAuthSummary { handle: name }
-    }
-
-    pub fn handle(&self) -> &CaHandle {
-        &self.handle
-    }
-}
 
 //------------ ParentKindInfo ------------------------------------------------
+
+/// The kind of a parent CA.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ParentKindInfo {
+    /// The CA is a trust anchor and does not have a parent.
     Ta,
+
+    /// The parent is a CA in the same Krill instance.
     Embedded,
+
+    /// The parent is a remote CA with communication via RFC 6492.
     Rfc6492,
 }
 
@@ -925,17 +850,14 @@ impl fmt::Display for ParentKindInfo {
 
 //------------ ParentInfo ----------------------------------------------------
 
+/// Information about a parent of a CA.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ParentInfo {
-    handle: ParentHandle,
-    kind: ParentKindInfo,
-}
+    /// The handle identifying the parent CA.
+    pub handle: ParentHandle,
 
-impl ParentInfo {
-    pub fn new(handle: ParentHandle) -> Self {
-        let kind = ParentKindInfo::Rfc6492;
-        ParentInfo { handle, kind }
-    }
+    /// The kind of parent.
+    pub kind: ParentKindInfo,
 }
 
 impl fmt::Display for ParentInfo {
@@ -946,31 +868,63 @@ impl fmt::Display for ParentInfo {
 
 //------------ ParentStatuses ------------------------------------------------
 
+/// The synchronization status of all parent CAs of a CA.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ParentStatuses(HashMap<ParentHandle, ParentStatus>);
 
 impl ParentStatuses {
+    /// Returns the number of parent CAs.
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
+    /// Returns whether there are no parents.
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
+    /// Returns the status of the parent with the given handle.
     pub fn get(&self, parent: &ParentHandle) -> Option<&ParentStatus> {
         self.0.get(parent)
     }
 
+    /// Returns a mutable reference to the status adding the default if missing.
+    pub fn get_or_default_mut(
+        &mut self,
+        parent: &ParentHandle,
+    ) -> &mut ParentStatus {
+        if !self.0.contains_key(parent) {
+            self.0.insert(parent.clone(), ParentStatus::default());
+        }
+
+        self.0.get_mut(parent).unwrap()
+    }
+
+    /// Removes the given parent CA.
+    pub fn remove(&mut self, parent: &ParentHandle) {
+        self.0.remove(parent);
+    }
+
+    /// Inserts the status for the given parent CA.
+    ///
+    /// Overwrites an existing status if the parent CA is already present.
+    pub fn insert(&mut self, parent: ParentHandle, status: ParentStatus) {
+        self.0.insert(parent, status);
+    }
+
+    /// Iterates over pairs of parent handles and their status.
     pub fn iter(&self) -> hash_map::Iter<ParentHandle, ParentStatus> {
         self.0.iter()
     }
 
-    /// Get the first synchronization candidates based on the following:
-    /// - take the given ca_parents for which no current status exists first
-    /// - then sort by last exchange, minute grade granularity - oldest first
-    ///    - where failures come before success within the same minute
-    /// - then take the first N parents for this batch
+    /// Creates a sorted list of parents to be synchronized first.
+    ///
+    /// All parents given in `ca_parents` are considered as well as all
+    /// parents part of `self`.
+    ///
+    /// Parents which have no current synchronization status are first. The
+    /// remaining parents are sorted by their last exchange. Within the same
+    /// minute, parents that had a synchronization failure are sorted first.
     pub fn sync_candidates(
         &self,
         ca_parents: Vec<&ParentHandle>,
@@ -997,12 +951,15 @@ impl ParentStatuses {
         parents
     }
 
-    // Return the parents sorted by last exchange, i.e. let the parents
-    // without an exchange be first, and then from longest ago to most recent.
-    // Uses minute grade granularity and in cases where the exchanges happened
-    // in the same minute failures take precedence (come before)
-    // successful exchanges.
-    pub fn sorted_by_last_exchange(&self) -> Vec<ParentHandle> {
+    /// Return the parents sorted by last exchange.
+    ///
+    /// The parents without an exchange are sorted first. The remaining
+    /// parents are added with longest ago first.
+    ///
+    /// Uses minute grade granularity and in cases where the exchanges
+    /// happened in the same minute failures take precedence (come before)
+    /// successful exchanges.
+    fn sorted_by_last_exchange(&self) -> Vec<ParentHandle> {
         let mut sorted_parents: Vec<(&ParentHandle, &ParentStatus)> =
             self.iter().collect();
         sorted_parents.sort_by(|a, b| {
@@ -1020,10 +977,10 @@ impl ParentStatuses {
             if a_last_exchange_time == b_last_exchange_time {
                 // compare success / failure
                 let a_last_exchange_res = a_last_exchange
-                    .map(|e| e.result().was_success())
+                    .map(|e| e.result.was_success())
                     .unwrap_or(false);
                 let b_last_exchange_res = b_last_exchange
-                    .map(|e| e.result().was_success())
+                    .map(|e| e.result.was_success())
                     .unwrap_or(false);
                 a_last_exchange_res.cmp(&b_last_exchange_res)
             } else {
@@ -1036,25 +993,6 @@ impl ParentStatuses {
             .map(|(handle, _)| handle)
             .cloned()
             .collect()
-    }
-
-    pub fn get_mut_status(
-        &mut self,
-        parent: &ParentHandle,
-    ) -> &mut ParentStatus {
-        if !self.0.contains_key(parent) {
-            self.0.insert(parent.clone(), ParentStatus::default());
-        }
-
-        self.0.get_mut(parent).unwrap()
-    }
-
-    pub fn remove(&mut self, parent: &ParentHandle) {
-        self.0.remove(parent);
-    }
-
-    pub fn insert(&mut self, parent: ParentHandle, status: ParentStatus) {
-        self.0.insert(parent, status);
     }
 }
 
@@ -1088,10 +1026,10 @@ impl fmt::Display for ParentStatuses {
                     writeln!(
                         f,
                         "Last contacted: {}",
-                        exchange.timestamp().to_rfc3339()
+                        exchange.timestamp.into_rfc3339()
                     )?;
 
-                    if exchange.was_success() {
+                    if exchange.result.was_success() {
                         write!(f, "Resource Entitlements:")?;
                     } else {
                         write!(f, "LAST KNOWN Resource Entitlements:")?;
@@ -1118,32 +1056,34 @@ impl fmt::Display for ParentStatuses {
                                 class.not_after().to_rfc3339()
                             )?;
 
-                            let parent_cert: ParentStatusIssuingCert =
-                                class.signing_cert().into();
+                            let uri = class.signing_cert().url();
+                            let cert = BASE64_ENGINE.encode(
+                                class.signing_cert().cert()
+                                    .to_captured().as_slice()
+                            );
+                            writeln!(f, "  issuing cert uri: {uri}")?;
                             writeln!(
                                 f,
-                                "  issuing cert uri: {}",
-                                parent_cert.uri
-                            )?;
-                            writeln!(
-                                f,
-                                "  issuing cert PEM:\n\n{}\n",
-                                parent_cert.cert_pem
+                                "  issuing cert PEM:\n\n\
+                                 -----BEGIN CERTIFICATE-----\n\
+                                 {cert}\n\
+                                 -----END CERTIFICATE-----\n\n",
                             )?;
 
                             writeln!(f, "  received certificate(s):")?;
                             for issued in class.issued_certs().iter() {
-                                let issued: ParentStatusCert = issued.into();
+                                let uri = issued.uri();
+                                let cert = BASE64_ENGINE.encode(
+                                    issued.cert().to_captured().as_slice()
+                                );
 
+                                writeln!(f, "    published at: {uri}")?;
                                 writeln!(
                                     f,
-                                    "    published at: {}",
-                                    issued.uri
-                                )?;
-                                writeln!(
-                                    f,
-                                    "    cert PEM:\n\n{}\n",
-                                    issued.cert_pem
+                                    "    cert PEM:\n\n\
+                                     -----BEGIN CERTIFICATE-----\n\
+                                     {cert}\n\
+                                     -----END CERTIFICATE-----\n\n"
                                 )?;
                             }
                         }
@@ -1155,82 +1095,42 @@ impl fmt::Display for ParentStatuses {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ParentStatusIssuingCert {
-    uri: uri::Rsync,
-    cert_pem: String,
-}
 
-impl From<&SigningCert> for ParentStatusIssuingCert {
-    fn from(signing: &SigningCert) -> Self {
-        let cert =
-            BASE64_ENGINE.encode(signing.cert().to_captured().as_slice());
-        let cert_pem = format!(
-            "-----BEGIN CERTIFICATE-----\n\
-            {cert}\n\
-            -----END CERTIFICATE-----\n",
-        );
+//------------ ParentStatus --------------------------------------------------
 
-        ParentStatusIssuingCert {
-            uri: signing.url().clone(),
-            cert_pem,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ParentStatusCert {
-    uri: uri::Rsync,
-    cert_pem: String,
-}
-
-impl From<&IssuedCert> for ParentStatusCert {
-    fn from(issued: &IssuedCert) -> Self {
-        let cert =
-            BASE64_ENGINE.encode(issued.cert().to_captured().as_slice());
-        let cert_pem = format!(
-            "-----BEGIN CERTIFICATE-----\n\
-            {cert}\n\
-            -----END CERTIFICATE-----\n",
-        );
-        ParentStatusCert {
-            uri: issued.uri().clone(),
-            cert_pem,
-        }
-    }
-}
-
+/// The synchronization status of a parent CA.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ParentStatus {
-    last_exchange: Option<ParentExchange>,
-    last_success: Option<Timestamp>,
-    all_resources: ResourceSet,
+    /// The last synchronization exchange with the parent.
+    ///
+    /// This is `None` if there never was an exchange.
+    pub last_exchange: Option<ParentExchange>,
 
-    // The struct changed - we did not record classes in 0.9.5 and below.
-    // Just default to an empty vec in case this field is missing, and
-    // ignore the 'entitlements' field that used to be there. This will
-    // be updated as soon as the CA synchronizes with its parent again.
+    /// The time of the last successful synchronization exchange.
+    ///
+    /// This is `None` if there never was a successful exchange.
+    pub last_success: Option<Timestamp>,
+
+    /// All resources received from the parent.
+    pub all_resources: ResourceSet,
+
+    /// The list of resource classes.
+    ///
+    /// The struct changed - we did not record classes in 0.9.5 and below.
+    /// Just default to an empty vec in case this field is missing, and
+    /// ignore the 'entitlements' field that used to be there. This will
+    /// be updated as soon as the CA synchronizes with its parent again.
     #[serde(default)]
-    classes: Vec<ResourceClassEntitlements>,
+    pub classes: Vec<ResourceClassEntitlements>,
 }
 
 impl ParentStatus {
-    pub fn last_success(&self) -> Option<Timestamp> {
-        self.last_success
+    /// Returns the error response in case the last exchange failed.
+    pub fn opt_failure(&self) -> Option<ErrorResponse> {
+        self.last_exchange.as_ref().and_then(|e| e.opt_failure())
     }
 
-    pub fn last_exchange(&self) -> Option<&ParentExchange> {
-        self.last_exchange.as_ref()
-    }
-
-    pub fn classes(&self) -> &Vec<ResourceClassEntitlements> {
-        &self.classes
-    }
-
-    pub fn to_failure_opt(&self) -> Option<ErrorResponse> {
-        self.last_exchange.as_ref().and_then(|e| e.to_failure_opt())
-    }
-
+    /// Sets the last exchange to the given error response.
     pub fn set_failure(&mut self, uri: ServiceUri, error: ErrorResponse) {
         self.last_exchange = Some(ParentExchange {
             timestamp: Timestamp::now(),
@@ -1239,6 +1139,7 @@ impl ParentStatus {
         });
     }
 
+    /// Sets the entitlements from the given response.
     pub fn set_entitlements(
         &mut self,
         uri: ServiceUri,
@@ -1256,6 +1157,7 @@ impl ParentStatus {
         self.all_resources = all_resources;
     }
 
+    /// Sets the last update to now.
     pub fn set_last_updated(&mut self, uri: ServiceUri) {
         let timestamp = Timestamp::now();
         self.last_exchange = Some(ParentExchange {
@@ -1267,30 +1169,33 @@ impl ParentStatus {
     }
 }
 
+
 //------------ RepoStatus ----------------------------------------------------
 
+/// The repository synchronization status.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RepoStatus {
-    last_exchange: Option<ParentExchange>,
-    last_success: Option<Timestamp>,
-    published: Vec<PublishElement>,
+    /// The last synchronization exchange with the repository.
+    ///
+    /// This is `None` if there never was an exchange.
+    pub last_exchange: Option<ParentExchange>,
+
+    /// The time of the last successful synchronization exchange.
+    ///
+    /// This is `None` if there never was a successful exchange.
+    pub last_success: Option<Timestamp>,
+
+    /// The list of published objects.
+    pub published: Vec<PublishElement>,
 }
 
 impl RepoStatus {
-    pub fn last_exchange(&self) -> Option<&ParentExchange> {
-        self.last_exchange.as_ref()
+    /// Returns the error response in case the last exchange failed.
+    pub fn opt_failure(&self) -> Option<ErrorResponse> {
+        self.last_exchange.as_ref().and_then(|e| e.opt_failure())
     }
 
-    pub fn last_success(&self) -> Option<Timestamp> {
-        self.last_success
-    }
-
-    pub fn to_failure_opt(&self) -> Option<ErrorResponse> {
-        self.last_exchange.as_ref().and_then(|e| e.to_failure_opt())
-    }
-}
-
-impl RepoStatus {
+    /// Sets the last exchange to the given error response.
     pub fn set_failure(&mut self, uri: ServiceUri, error: ErrorResponse) {
         let timestamp = Timestamp::now();
         self.last_exchange = Some(ParentExchange {
@@ -1300,6 +1205,7 @@ impl RepoStatus {
         });
     }
 
+    /// Updates the published objects from the given delta.
     pub fn update_published(&mut self, uri: ServiceUri, delta: PublishDelta) {
         let timestamp = Timestamp::now();
         self.last_exchange = Some(ParentExchange {
@@ -1315,12 +1221,12 @@ impl RepoStatus {
                 }
                 PublishDeltaElement::Update(update) => {
                     let update = rrdp::UpdateElement::from(update);
-                    self.published.retain(|el| el.uri() != update.uri());
+                    self.published.retain(|el| el.uri != update.uri);
                     self.published.push(update.into_publish());
                 }
                 PublishDeltaElement::Withdraw(withdraw) => {
                     let (_tag, uri, _hash) = withdraw.unpack();
-                    self.published.retain(|el| el.uri() != &uri);
+                    self.published.retain(|el| el.uri != uri);
                 }
             }
         }
@@ -1328,6 +1234,7 @@ impl RepoStatus {
         self.last_success = Some(timestamp);
     }
 
+    /// Sets the last update to now.
     pub fn set_last_updated(&mut self, uri: ServiceUri) {
         let timestamp = Timestamp::now();
         self.last_exchange = Some(ParentExchange {
@@ -1346,18 +1253,18 @@ impl fmt::Display for RepoStatus {
             Some(exchange) => {
                 Time::now();
 
-                writeln!(f, "URI: {}", exchange.uri())?;
+                writeln!(f, "URI: {}", exchange.uri)?;
                 writeln!(f, "Status: {}", exchange.result)?;
                 writeln!(
                     f,
                     "Last contacted: {}",
-                    exchange.timestamp().to_rfc3339()
+                    exchange.timestamp.into_rfc3339()
                 )?;
-                if let Some(success) = self.last_success() {
+                if let Some(success) = self.last_success.as_ref() {
                     writeln!(
                         f,
                         "Last successful contact: {}",
-                        success.to_rfc3339()
+                        success.into_rfc3339()
                     )?;
                 }
             }
@@ -1366,33 +1273,24 @@ impl fmt::Display for RepoStatus {
     }
 }
 
+
 //------------ ParentExchange ------------------------------------------------
 
+/// Information about an exchange with a remote server.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ParentExchange {
-    timestamp: Timestamp,
-    uri: ServiceUri,
-    result: ExchangeResult,
+    /// The time of the exchange.
+    pub timestamp: Timestamp,
+
+    /// The service URI of the remote server.
+    pub uri: ServiceUri,
+
+    /// The result of the exchange.
+    pub result: ExchangeResult,
 }
 
 impl ParentExchange {
-    pub fn timestamp(&self) -> Timestamp {
-        self.timestamp
-    }
-
-    pub fn uri(&self) -> &ServiceUri {
-        &self.uri
-    }
-
-    pub fn result(&self) -> &ExchangeResult {
-        &self.result
-    }
-
-    pub fn was_success(&self) -> bool {
-        self.result.was_success()
-    }
-
-    pub fn to_failure_opt(&self) -> Option<ErrorResponse> {
+    pub fn opt_failure(&self) -> Option<ErrorResponse> {
         match &self.result {
             ExchangeResult::Success => None,
             ExchangeResult::Failure(error) => Some(error.clone()),
@@ -1400,16 +1298,22 @@ impl ParentExchange {
     }
 }
 
+
 //------------ ExchangeResult ------------------------------------------------
 
+/// The result of an exchange with a remote server.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum ExchangeResult {
+    /// The exchange was concluded successfully.
     Success,
+
+    /// The exchange failed with the given error response.
     Failure(ErrorResponse),
 }
 
 impl ExchangeResult {
+    /// Returns whether the exchange was a success.
     pub fn was_success(&self) -> bool {
         match self {
             ExchangeResult::Success => true,
@@ -1422,23 +1326,25 @@ impl fmt::Display for ExchangeResult {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             ExchangeResult::Success => write!(f, "success"),
-            ExchangeResult::Failure(e) => write!(f, "failure: {}", e.msg()),
+            ExchangeResult::Failure(e) => write!(f, "failure: {}", e.msg),
         }
     }
 }
 
-//------------ ChildConnectionStats ------------------------------------------
 
+//------------ ChildrenConnectionStats ---------------------------------------
+
+/// The synchronization status of all child CAs.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildrenConnectionStats {
-    children: Vec<ChildConnectionStats>,
+    /// The synchronization status of all child CAs.
+    pub children: Vec<ChildConnectionStats>,
 }
 
 impl ChildrenConnectionStats {
-    pub fn new(children: Vec<ChildConnectionStats>) -> Self {
-        ChildrenConnectionStats { children }
-    }
-
+    /// Returns a list of all the candidates for suspension.
+    ///
+    /// See [`ChildConnectionStats::is_suspension_candidate`] for details.
     pub fn suspension_candidates(
         &self,
         threshold_seconds: i64,
@@ -1473,7 +1379,7 @@ impl fmt::Display for ChildrenConnectionStats {
                             "{},{},{},{},{}",
                             child.handle,
                             agent,
-                            exchange.timestamp.to_rfc3339(),
+                            exchange.timestamp.into_rfc3339(),
                             exchange.result,
                             child.state
                         )?;
@@ -1485,52 +1391,66 @@ impl fmt::Display for ChildrenConnectionStats {
     }
 }
 
+
+//------------ ChildConnectionStats ------------------------------------------
+
+/// The synchronization status of a child CA.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildConnectionStats {
-    handle: ChildHandle,
-    last_exchange: Option<ChildExchange>,
-    state: ChildState,
+    /// The local handle of the child CA.
+    pub handle: ChildHandle,
+
+    /// The last synchronization exchange with the child CA.
+    ///
+    /// This is `None` if there never was an exchange.
+    pub last_exchange: Option<ChildExchange>,
+
+    /// The status of the child CA.
+    pub state: ChildState,
 }
 
 impl ChildConnectionStats {
-    pub fn new(
-        handle: ChildHandle,
-        last_exchange: Option<ChildExchange>,
-        state: ChildState,
-    ) -> Self {
-        ChildConnectionStats {
-            handle,
-            last_exchange,
-            state,
-        }
-    }
-
+    /// Returns whether the child is considered a candidate for suspension.
+    ///
     /// The child is considered a candidate for suspension if:
-    ///  - it is Krill 0.9.2-rc and up (see #670)
-    ///  - the last exchange is longer ago than the specified threshold hours
-    ///  - and the child is not already suspended
+    ///
+    ///  * it is Krill 0.9.2-rc and up as we only know the synchronization
+    ///    interval for those servers,
+    ///  * the last exchange is longer ago than the specified threshold, and
+    ///  * the child is not already suspended.
     pub fn is_suspension_candidate(&self, threshold_seconds: i64) -> bool {
         if self.state == ChildState::Suspended {
             false
-        } else {
-            self.last_exchange
-                .as_ref()
-                .map(|exchange| {
-                    exchange.is_krill_above_0_9_1()
-                        && exchange.more_than_seconds_ago(threshold_seconds)
-                })
-                .unwrap_or(false)
+        }
+        else {
+            self.last_exchange.as_ref().map(|exchange| {
+                exchange.is_krill_above_0_9_1()
+                    && exchange.more_than_seconds_ago(threshold_seconds)
+            }).unwrap_or(false)
         }
     }
 }
 
+
 //------------ ChildStatus ---------------------------------------------------
 
+/// The synchronization status of a child CA.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildStatus {
-    last_exchange: Option<ChildExchange>,
-    last_success: Option<Timestamp>,
-    suspended: Option<Timestamp>,
+    /// The last synchronization exchange with the child CA.
+    ///
+    /// This is `None` if there never was an exchange.
+    pub last_exchange: Option<ChildExchange>,
+
+    /// The time of the last successful synchronization exchange.
+    ///
+    /// This is `None` if there never was a successful exchange.
+    pub last_success: Option<Timestamp>,
+
+    /// The time the child CA was suspended.
+    ///
+    /// This is `None` if the child CA isn’t suspended.
+    pub suspended: Option<Timestamp>,
 }
 
 impl ChildStatus {
@@ -1562,18 +1482,6 @@ impl ChildStatus {
         self.suspended = Some(Timestamp::now())
     }
 
-    pub fn last_exchange(&self) -> Option<&ChildExchange> {
-        self.last_exchange.as_ref()
-    }
-
-    pub fn last_success(&self) -> Option<Timestamp> {
-        self.last_success
-    }
-
-    pub fn suspended(&self) -> Option<Timestamp> {
-        self.suspended
-    }
-
     pub fn child_state(&self) -> ChildState {
         if self.suspended.is_none() {
             ChildState::Active
@@ -1589,41 +1497,39 @@ impl From<ChildStatus> for Option<ChildExchange> {
     }
 }
 
+
 //------------ ChildExchange -------------------------------------------------
 
+/// A synchronization exchange with a child CA.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildExchange {
-    timestamp: Timestamp,
-    result: ExchangeResult,
-    user_agent: Option<String>,
+    /// The time of the exchange.
+    pub timestamp: Timestamp,
+
+    /// The result of the exchange.
+    pub result: ExchangeResult,
+
+    /// The user agent of the child CA’s server.
+    pub user_agent: Option<String>,
 }
 
 impl ChildExchange {
-    pub fn was_success(&self) -> bool {
-        self.result.was_success()
-    }
-
-    pub fn timestamp(&self) -> Timestamp {
-        self.timestamp
-    }
-
-    pub fn user_agent(&self) -> Option<&String> {
-        self.user_agent.as_ref()
-    }
-
+    /// Returns whether the exchange was longer than the given time ago.
     pub fn more_than_seconds_ago(&self, seconds: i64) -> bool {
         self.timestamp < Timestamp::now_minus_seconds(seconds)
     }
 
+    /// Returns whether the child used Krill 0.9.2-rc1 or above.
     pub fn is_krill_above_0_9_1(&self) -> bool {
         if let Some(agent) = &self.user_agent {
             // local-child is used by local children, it is extremely
             // unlikely that they would become suspend candidates in
-            // the real world - but.. we have to use these to test the
+            // the real world -- but we have to use these to test the
             // auto-suspend logic in the high-level "suspend.rs" test
             if agent == "local-child" {
                 return true;
-            } else if let Some(version) = agent.strip_prefix("krill/") {
+            }
+            else if let Some(version) = agent.strip_prefix("krill/") {
                 if let Ok(krill_version) = KrillVersion::from_str(version) {
                     return krill_version > KrillVersion::release(0, 9, 1);
                 }
@@ -1633,68 +1539,85 @@ impl ChildExchange {
     }
 }
 
+
 //------------ Timestamp -----------------------------------------------------
 
-/// A wrapper for unix timestamps with second precision, with some convenient
-/// stuff.
+/// A Unix timestamp with second precision in UTC.
 #[derive(
-    Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize,
+    Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd,
+    Serialize,
 )]
 pub struct Timestamp(i64);
 
 impl Timestamp {
+    /// Returns a new timestamp from the seconds since the Unix epoch.
     pub fn new(ts: i64) -> Self {
         Timestamp(ts)
     }
 
+    /// Returns a timestamp for the current time.
     pub fn now() -> Self {
         Timestamp(Time::now().timestamp())
     }
 
+    /// Returns a timestamp for the given hours from now.
     pub fn now_plus_hours(hours: i64) -> Self {
         Timestamp::now().plus_hours(hours)
     }
 
+    /// Returns a timestamp the given number of hours past this timestamp.
     pub fn plus_hours(self, hours: i64) -> Self {
         self + Duration::hours(hours)
     }
 
+    /// Returns a timestamp for the given hours ago from now.
     pub fn now_minus_hours(hours: i64) -> Self {
         Timestamp::now().minus_hours(hours)
     }
 
+    /// Returns a timestamp the given number of hours before this timestamp.
     pub fn minus_hours(self, hours: i64) -> Self {
         self - Duration::hours(hours)
     }
 
+    /// Returns a timestamp for the given minutes from now.
     pub fn now_plus_minutes(minutes: i64) -> Self {
         Timestamp::now().plus_minutes(minutes)
     }
 
+    /// Returns a timestamp the given number of minutes past this timestamp.
     pub fn plus_minutes(self, minutes: i64) -> Self {
         self + Duration::minutes(minutes)
     }
 
+    /// Returns a timestamp the given number of seconds before this timestamp.
     pub fn minus_seconds(self, seconds: i64) -> Self {
         self - Duration::seconds(seconds)
     }
 
+    /// Returns a timestamp the given number of seconds past this timestamp.
     pub fn plus_seconds(self, seconds: i64) -> Self {
         self + Duration::seconds(seconds)
     }
 
+    /// Returns a timestamp for the given seconds ago from now.
     pub fn now_minus_seconds(seconds: i64) -> Self {
         Timestamp::now().minus_seconds(seconds)
     }
 
+    /// Returns a timestamp for the given seconds from now.
     pub fn now_plus_seconds(seconds: i64) -> Self {
         Timestamp::now().plus_seconds(seconds)
     }
 
-    pub fn to_rfc3339(self) -> String {
+    /// Converts the timestamp to a string in RFC 3339 format.
+    pub fn into_rfc3339(self) -> String {
         Time::from(self).to_rfc3339()
     }
 }
+
+
+//--- From
 
 impl From<Timestamp> for Time {
     fn from(timestamp: Timestamp) -> Self {
@@ -1718,15 +1641,7 @@ impl From<Timestamp> for i64 {
     }
 }
 
-//--- Display
-
-impl fmt::Display for Timestamp {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-//--- Add
+//--- Add, AddAssign, Sub, SubAssign
 
 impl ops::Add<Duration> for Timestamp {
     type Output = Self;
@@ -1742,8 +1657,6 @@ impl ops::AddAssign<Duration> for Timestamp {
     }
 }
 
-//--- Sub
-
 impl ops::Sub<Duration> for Timestamp {
     type Output = Self;
 
@@ -1758,23 +1671,49 @@ impl ops::SubAssign<Duration> for Timestamp {
     }
 }
 
+
+//--- Display
+
+impl fmt::Display for Timestamp {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 //------------ CertAuthInfo --------------------------------------------------
 
-/// This type represents the details of a CertAuth that need
-/// to be exposed through the API/CLI/UI
+/// Detailed information of a CA.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CertAuthInfo {
-    handle: CaHandle,
-    id_cert: IdCertInfo,
-    repo_info: Option<RepoInfo>,
-    parents: Vec<ParentInfo>,
-    resources: ResourceSet,
-    resource_classes: HashMap<ResourceClassName, ResourceClassInfo>,
-    children: Vec<ChildHandle>,
-    suspended_children: Vec<ChildHandle>,
+    /// The local handle of the CA.
+    pub handle: CaHandle,
+
+    /// The identity certifcate used to communicate with the CA.
+    pub id_cert: IdCertInfo,
+
+    /// Information about the repository this CA publishes to.
+    ///
+    /// This is `None` if the CA publishes to the built-in repository.
+    pub repo_info: Option<RepoInfo>,
+
+    /// Information about the parent CAs of this CA.
+    pub parents: Vec<ParentInfo>,
+
+    /// The resources this CA is entitled to.
+    pub resources: ResourceSet,
+
+    /// The resource classes of this CA.
+    pub resource_classes: HashMap<ResourceClassName, ResourceClassInfo>,
+
+    /// The local handles of the child CAs of this CA.
+    pub children: Vec<ChildHandle>,
+
+    /// The handles fo the child CAs that are currently suspended.
+    pub suspended_children: Vec<ChildHandle>,
 }
 
 impl CertAuthInfo {
+    /// Creates a new value from various details.
     pub fn new(
         handle: CaHandle,
         id_cert: IdCertInfo,
@@ -1784,13 +1723,16 @@ impl CertAuthInfo {
         children: Vec<ChildHandle>,
         suspended_children: Vec<ChildHandle>,
     ) -> Self {
-        let parents = parents.into_keys().map(ParentInfo::new).collect();
+        let parents = parents.into_keys().map(|handle| {
+            ParentInfo { handle, kind: ParentKindInfo::Rfc6492 }
+        }).collect();
 
         let empty = ResourceSet::default();
         let resources = resource_classes.values().fold(
             ResourceSet::default(),
             |res, rci| {
-                let rc_resources = rci.current_resources().unwrap_or(&empty);
+                let rc_resources
+                    = rci.keys.current_resources().unwrap_or(&empty);
                 res.union(rc_resources)
             },
         );
@@ -1806,48 +1748,14 @@ impl CertAuthInfo {
             suspended_children,
         }
     }
-
-    pub fn handle(&self) -> &CaHandle {
-        &self.handle
-    }
-
-    pub fn id_cert(&self) -> &IdCertInfo {
-        &self.id_cert
-    }
-
-    pub fn repo_info(&self) -> Option<&RepoInfo> {
-        self.repo_info.as_ref()
-    }
-
-    pub fn parents(&self) -> &Vec<ParentInfo> {
-        &self.parents
-    }
-
-    pub fn resources(&self) -> &ResourceSet {
-        &self.resources
-    }
-
-    pub fn resource_classes(
-        &self,
-    ) -> &HashMap<ResourceClassName, ResourceClassInfo> {
-        &self.resource_classes
-    }
-
-    pub fn children(&self) -> &Vec<ChildHandle> {
-        &self.children
-    }
-
-    pub fn suspended_children(&self) -> &Vec<ChildHandle> {
-        &self.suspended_children
-    }
 }
 
 impl fmt::Display for CertAuthInfo {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "Name:     {}", self.handle())?;
+        writeln!(f, "Name:     {}", self.handle)?;
         writeln!(f)?;
 
-        if let Some(repo_info) = self.repo_info() {
+        if let Some(repo_info) = self.repo_info.as_ref() {
             let base_uri = repo_info.base_uri();
             let rrdp_uri = repo_info
                 .rpki_notify()
@@ -1861,11 +1769,11 @@ impl fmt::Display for CertAuthInfo {
         }
         writeln!(f)?;
 
-        writeln!(f, "ID cert PEM:\n{}", self.id_cert().pem())?;
-        writeln!(f, "Hash: {}", self.id_cert().hash())?;
+        writeln!(f, "ID cert PEM:\n{}", self.id_cert.pem())?;
+        writeln!(f, "Hash: {}", self.id_cert.hash)?;
         writeln!(f)?;
 
-        let resources = self.resources();
+        let resources = &self.resources;
         if resources.is_empty() {
             writeln!(f, "Total resources: <none>")?;
         } else {
@@ -1877,8 +1785,8 @@ impl fmt::Display for CertAuthInfo {
         writeln!(f)?;
 
         writeln!(f, "Parents:")?;
-        if !self.parents().is_empty() {
-            for parent in self.parents().iter() {
+        if !self.parents.is_empty() {
+            for parent in &self.parents {
                 writeln!(f, "{}", parent)?;
             }
             writeln!(f)?;
@@ -1886,15 +1794,15 @@ impl fmt::Display for CertAuthInfo {
             writeln!(f, "<none>")?;
         }
 
-        for (name, rc) in self.resource_classes() {
+        for (name, rc) in &self.resource_classes {
             writeln!(f, "Resource Class: {}", name,)?;
-            writeln!(f, "Parent: {}", rc.parent_handle())?;
-            writeln!(f, "{}", rc.keys())?;
+            writeln!(f, "Parent: {}", rc.parent_handle)?;
+            writeln!(f, "{}", rc.keys)?;
         }
 
         writeln!(f, "Children:")?;
-        if !self.children().is_empty() {
-            for child_handle in self.children() {
+        if !self.children.is_empty() {
+            for child_handle in &self.children {
                 writeln!(f, "{}", child_handle)?;
             }
         } else {
@@ -1905,122 +1813,119 @@ impl fmt::Display for CertAuthInfo {
     }
 }
 
-//------------ KeyStateInfo -------------------------------------------------
 
+//------------ ResourceClassInfo --------------------------------------------
+
+/// Information about a resource class.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ResourceClassInfo {
-    name_space: String,
-    parent_handle: ParentHandle,
-    keys: ResourceClassKeysInfo,
+    /// The name space of the resource class.
+    pub name_space: String,
+
+    /// The handle of the parent owning the resource class.
+    pub parent_handle: ParentHandle,
+
+    /// Information about the keys for the resource class.
+    pub keys: ResourceClassKeysInfo,
 }
 
-impl ResourceClassInfo {
-    pub fn new(
-        name_space: String,
-        parent_handle: ParentHandle,
-        keys: ResourceClassKeysInfo,
-    ) -> Self {
-        ResourceClassInfo {
-            name_space,
-            parent_handle,
-            keys,
-        }
-    }
-
-    pub fn name_space(&self) -> &str {
-        &self.name_space
-    }
-    pub fn parent_handle(&self) -> &ParentHandle {
-        &self.parent_handle
-    }
-    pub fn keys(&self) -> &ResourceClassKeysInfo {
-        &self.keys
-    }
-
-    pub fn current_key(&self) -> Option<&CertifiedKeyInfo> {
-        self.keys.current_key()
-    }
-
-    pub fn new_key(&self) -> Option<&CertifiedKeyInfo> {
-        self.keys.new_key()
-    }
-
-    pub fn current_resources(&self) -> Option<&ResourceSet> {
-        self.current_key().map(|k| k.incoming_cert().resources())
-    }
-}
 
 //------------ ResourceClassKeysInfo -----------------------------------------
 
-/// Contains the current key status for a resource class.
+/// The current key status for a resource class.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case")]
 pub enum ResourceClassKeysInfo {
+    /// There is a pending key.
     Pending(PendingInfo),
+
+    /// There is an active key.
     Active(ActiveInfo),
+
+    /// Phase 1 of a key roll: pending and active key.
     RollPending(RollPendingInfo),
+
+    /// Phase 2 of a key roll: new and active key.
     RollNew(RollNewInfo),
+
+    /// Phase 3 of a key roll: active and old key.
     RollOld(RollOldInfo),
 }
 
+/// Key information for the pending key status.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PendingInfo {
-    #[serde(rename = "pending_key")]
-    pub _pending_key: PendingKeyInfo,
+    /// Information about the pending key.
+    pub pending_key: PendingKeyInfo,
 }
 
+/// Key information for the active key status.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ActiveInfo {
-    #[serde(rename = "active_key")]
-    pub _active_key: CertifiedKeyInfo,
+    /// Information about the active key.
+    pub active_key: CertifiedKeyInfo,
 }
 
+
+/// Key information for phase 1 of a key roll.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RollPendingInfo {
-    #[serde(rename = "pending_key")]
-    pub _pending_key: PendingKeyInfo,
-    #[serde(rename = "active_key")]
-    pub _active_key: CertifiedKeyInfo,
+    /// Information about the pending key.
+    pub pending_key: PendingKeyInfo,
+
+    /// Information about the active key.
+    pub active_key: CertifiedKeyInfo,
 }
 
+/// Key information for phase 2 of a key roll.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RollNewInfo {
-    #[serde(rename = "new_key")]
-    pub _new_key: CertifiedKeyInfo,
-    #[serde(rename = "active_key")]
-    pub _active_key: CertifiedKeyInfo,
+    /// Information about the new key.
+    pub new_key: CertifiedKeyInfo,
+
+    /// Information about the active key.
+    pub active_key: CertifiedKeyInfo,
 }
 
+/// Key information for phase 3 of a key roll.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RollOldInfo {
-    #[serde(rename = "active_key")]
-    pub _active_key: CertifiedKeyInfo,
-    #[serde(rename = "old_key")]
-    pub _old_key: CertifiedKeyInfo,
+    /// Information about the active key.
+    pub active_key: CertifiedKeyInfo,
+
+    /// Information about the old key.
+    pub old_key: CertifiedKeyInfo,
 }
 
 impl ResourceClassKeysInfo {
+    /// Returns the currently active key if available.
     pub fn current_key(&self) -> Option<&CertifiedKeyInfo> {
         match &self {
             ResourceClassKeysInfo::Active(current) => {
-                Some(&current._active_key)
+                Some(&current.active_key)
             }
             ResourceClassKeysInfo::RollPending(pending) => {
-                Some(&pending._active_key)
+                Some(&pending.active_key)
             }
-            ResourceClassKeysInfo::RollNew(new) => Some(&new._active_key),
-            ResourceClassKeysInfo::RollOld(old) => Some(&old._active_key),
+            ResourceClassKeysInfo::RollNew(new) => Some(&new.active_key),
+            ResourceClassKeysInfo::RollOld(old) => Some(&old.active_key),
             _ => None,
         }
     }
 
+    /// Returns the new key if available.
     pub fn new_key(&self) -> Option<&CertifiedKeyInfo> {
         if let ResourceClassKeysInfo::RollNew(new) = self {
-            Some(&new._new_key)
+            Some(&new.new_key)
         } else {
             None
         }
+    }
+
+    /// Returns the resources for the currently active key.
+    pub fn current_resources(&self) -> Option<&ResourceSet> {
+        self.current_key().map(|k| &k.incoming_cert.resources)
     }
 }
 
@@ -2043,7 +1948,7 @@ impl fmt::Display for ResourceClassKeysInfo {
         }
 
         if let Some(key) = self.current_key() {
-            let resources = key.incoming_cert().resources();
+            let resources = &key.incoming_cert.resources;
             writeln!(f, "    Resources:")?;
             writeln!(f, "    ASNs: {}", resources.asn())?;
             writeln!(f, "    IPv4: {}", resources.ipv4())?;
@@ -2054,40 +1959,35 @@ impl fmt::Display for ResourceClassKeysInfo {
     }
 }
 
-/// This struct contains the API details for the configure Repository server,
-/// and objects published there, for a CA.
+
+//------------ CaRepoDetails -------------------------------------------------
+
+/// Details for the configured repository server for a CA.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CaRepoDetails {
-    contact: RepositoryContact,
-}
-
-impl CaRepoDetails {
-    pub fn new(contact: RepositoryContact) -> Self {
-        CaRepoDetails { contact }
-    }
-
-    pub fn contact(&self) -> &RepositoryContact {
-        &self.contact
-    }
+    /// Details for the configured repository server for the CA.
+    pub contact: RepositoryContact,
 }
 
 impl fmt::Display for CaRepoDetails {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let repo_info = self.contact.repo_info();
-        let server_info = self.contact.server_info();
-        let rrdp_uri = repo_info
+        let rrdp_uri = self.contact.repo_info
             .rpki_notify()
             .map(|uri| uri.as_str())
             .unwrap_or("<none>");
 
         writeln!(f, "Repository Details:")?;
-        writeln!(f, "  service uri:    {}", server_info.service_uri())?;
+        writeln!(
+            f, "  service uri:    {}", self.contact.server_info.service_uri
+        )?;
         writeln!(
             f,
             "  key identifier: {}",
-            server_info.public_key().key_identifier()
+            self.contact.server_info.public_key.key_identifier()
         )?;
-        writeln!(f, "  base_uri:       {}", repo_info.base_uri())?;
+        writeln!(
+            f, "  base_uri:       {}", self.contact.repo_info.base_uri()
+        )?;
         writeln!(f, "  rpki_notify:    {}", rrdp_uri)?;
         writeln!(f)?;
 
@@ -2095,30 +1995,23 @@ impl fmt::Display for CaRepoDetails {
     }
 }
 
+
 //------------ AllCertAuthIssues ---------------------------------------------
 
+/// All issues for all CAs.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AllCertAuthIssues {
-    cas: HashMap<CaHandle, CertAuthIssues>,
-}
-
-impl AllCertAuthIssues {
-    pub fn add(&mut self, ca: CaHandle, ca_issues: CertAuthIssues) {
-        self.cas.insert(ca, ca_issues);
-    }
-
-    pub fn cas(&self) -> &HashMap<CaHandle, CertAuthIssues> {
-        &self.cas
-    }
+    /// The issues for each CA, keyed by its handle.
+    pub cas: HashMap<CaHandle, CertAuthIssues>,
 }
 
 impl fmt::Display for AllCertAuthIssues {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let cas = self.cas();
-        if cas.is_empty() {
+        if self.cas.is_empty() {
             writeln!(f, "no issues found")?;
-        } else {
-            for (ca, issues) in cas.iter() {
+        }
+        else {
+            for (ca, issues) in &self.cas {
                 writeln!(f, "Found issue for CA '{}':", ca)?;
 
                 if let Some(repo_issue) = issues.repo_issue() {
@@ -2140,25 +2033,20 @@ impl fmt::Display for AllCertAuthIssues {
     }
 }
 
+
 //------------ CertAuthIssues ------------------------------------------------
 
+/// A report of issues happening when synchronizing a CA.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CertAuthIssues {
-    repo_issue: Option<ErrorResponse>,
-    parent_issues: Vec<CertAuthParentIssue>,
-}
+    /// An error happened when synchronizing the repository.
+    pub repo_issue: Option<ErrorResponse>,
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct CertAuthParentIssue {
-    pub parent: ParentHandle,
-    pub issue: ErrorResponse,
+    /// Errors happened when synchronizing the parent CAs..
+    pub parent_issues: Vec<CertAuthParentIssue>,
 }
 
 impl CertAuthIssues {
-    pub fn add_repo_issue(&mut self, issue: ErrorResponse) {
-        self.repo_issue = Some(issue);
-    }
-
     pub fn repo_issue(&self) -> Option<&ErrorResponse> {
         self.repo_issue.as_ref()
     }
@@ -2185,13 +2073,13 @@ impl fmt::Display for CertAuthIssues {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.is_empty() {
             writeln!(f, "no issues found")?;
-        } else {
-            if let Some(repo_issue) = self.repo_issue() {
+        }
+        else {
+            if let Some(repo_issue) = self.repo_issue.as_ref() {
                 writeln!(f, "Repository Issue: {}", repo_issue)?;
             }
-            let parent_issues = self.parent_issues();
-            if !parent_issues.is_empty() {
-                for parent_issue in parent_issues.iter() {
+            if !self.parent_issues.is_empty() {
+                for parent_issue in &self.parent_issues {
                     writeln!(
                         f,
                         "Parent '{}' has issue: {}",
@@ -2204,43 +2092,39 @@ impl fmt::Display for CertAuthIssues {
     }
 }
 
+
+//------------ CertAuthParentIssue -------------------------------------------
+
+/// An issue occured when synchronizing with a parent CA.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CertAuthParentIssue {
+    /// The local handle of the parent CA.
+    pub parent: ParentHandle,
+
+    /// The error response from the last synchronization attempt.
+    pub issue: ErrorResponse,
+}
+
+
 //------------ CertAuthStats -------------------------------------------------
 
+/// Statistics about a CA.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CertAuthStats {
-    roa_count: usize,
-    child_count: usize,
-    bgp_stats: BgpStats,
+    /// The number of ROAs published by the CA.
+    pub roa_count: usize,
+
+    /// The number of child CAs.
+    pub child_count: usize,
+
+    /// The BGP statistics for the published ROAs.
+    pub bgp_stats: BgpStats,
 }
 
-impl CertAuthStats {
-    pub fn new(
-        roa_count: usize,
-        child_count: usize,
-        bgp_stats: BgpStats,
-    ) -> Self {
-        CertAuthStats {
-            roa_count,
-            child_count,
-            bgp_stats,
-        }
-    }
-
-    pub fn roa_count(&self) -> usize {
-        self.roa_count
-    }
-
-    pub fn child_count(&self) -> usize {
-        self.child_count
-    }
-
-    pub fn bgp_stats(&self) -> &BgpStats {
-        &self.bgp_stats
-    }
-}
 
 //------------ BgpStats ------------------------------------------------------
 
+/// Statistics about the consequences of published ROAs as seen in BGP.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BgpStats {
     pub announcements_valid: usize,
@@ -2256,54 +2140,16 @@ pub struct BgpStats {
     pub roas_total: usize,
 }
 
-impl BgpStats {
-    pub fn increment_valid(&mut self) {
-        self.announcements_valid += 1;
-    }
 
-    pub fn increment_invalid_asn(&mut self) {
-        self.announcements_invalid_asn += 1;
-    }
+//------------ RtaName -------------------------------------------------------
 
-    pub fn increment_invalid_length(&mut self) {
-        self.announcements_invalid_length += 1;
-    }
-
-    pub fn increment_disallowed(&mut self) {
-        self.announcements_disallowed += 1;
-    }
-
-    pub fn increment_not_found(&mut self) {
-        self.announcements_not_found += 1;
-    }
-
-    pub fn increment_roas_too_permissive(&mut self) {
-        self.roas_too_permissive += 1;
-    }
-
-    pub fn increment_roas_redundant(&mut self) {
-        self.roas_redundant += 1;
-    }
-
-    pub fn increment_roas_not_held(&mut self) {
-        self.roas_not_held += 1;
-    }
-
-    pub fn increment_roas_stale(&mut self) {
-        self.roas_stale += 1;
-    }
-
-    pub fn increment_roas_disallowing(&mut self) {
-        self.roas_disallowing += 1;
-    }
-
-    pub fn increment_roas_total(&mut self) {
-        self.roas_total += 1;
-    }
-}
-
+/// The name of an RTA.
 pub type RtaName = String;
 
+
+//------------ RtaList -------------------------------------------------------
+
+/// A list of RTAs.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RtaList(Vec<RtaName>);
 
@@ -2322,6 +2168,10 @@ impl fmt::Display for RtaList {
     }
 }
 
+
+//------------ RtaPrepResponse -----------------------------------------------
+
+/// The response to an RTA preparation requeest.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RtaPrepResponse(Vec<KeyIdentifier>);
 
@@ -2347,18 +2197,73 @@ impl fmt::Display for RtaPrepResponse {
     }
 }
 
+
+//============ Error Types ===================================================
+
+//------------ InvalidCert ---------------------------------------------------
+
+/// A certificate cannot be processed.
+#[derive(Clone, Debug)]
+pub enum InvalidCert {
+    /// The caRepository URI is missing.
+    CaRepositoryMissing,
+
+    /// The rpkiManifest URI is missing.
+    RpkiManifestMissing,
+
+    /// The file name cannot be derived from the rsync URI.
+    Uri(uri::Rsync),
+}
+
+impl fmt::Display for InvalidCert {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::CaRepositoryMissing => {
+                f.write_str(
+                    "CA certificate lacks id-ad-caRepository \
+                     (see section 4.8.8.1 of RFC 6487)"
+                )
+            }
+            Self::RpkiManifestMissing => {
+                f.write_str(
+                    "CA certificate lacks id-ad-rpkiManifest \
+                     (see section 4.8.8.1 of RFC 6487)"
+                )
+            }
+            Self::Uri(s) => {
+                write!(f, "Cannot derive filename from URI: {}", s)
+            }
+        }
+    }
+}
+
+impl std::error::Error for InvalidCert {}
+
+
+//------------ CertInfoDecodeError -------------------------------------------
+
+/// Decoding a `CertInfo<_>` value has failed.
+#[derive(Clone, Debug)]
+pub struct CertInfoDecodeError(String);
+
+impl fmt::Display for CertInfoDecodeError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Cannot decode binary certificate: {}", self.0)
+    }
+}
+
+impl std::error::Error for CertInfoDecodeError {}
+
+
 //============ Tests =========================================================
 
 #[cfg(test)]
 mod test {
     use bytes::Bytes;
-
     use rpki::crypto::PublicKeyFormat;
-
-    use crate::{
-        commons::crypto::OpenSslSigner, ta::TrustAnchorLocator, test,
-    };
-
+    use crate::test;
+    use crate::commons::crypto::OpenSslSigner;
+    use crate::ta::TrustAnchorLocator;
     use super::*;
 
     fn base_uri() -> uri::Rsync {
@@ -2389,7 +2294,7 @@ mod test {
 
             let mft_uri = info().resolve(
                 "",
-                ObjectName::mft_for_key(&pub_key.key_identifier()).as_ref(),
+                ObjectName::mft_from_ca_key(&pub_key.key_identifier()).as_ref(),
             );
 
             let mft_path = mft_uri.relative_to(&base_uri()).unwrap();
@@ -2452,7 +2357,7 @@ mod test {
             include_str!("../../../test-resources/remote/ncc-id.pem");
         let ncc_id_pem = IdCertInfo::from(&ncc_id);
 
-        assert_eq!(ncc_id_pem.pem(), ncc_id_openssl_pem);
+        assert_eq!(ncc_id_pem.pem().to_string(), ncc_id_openssl_pem);
     }
 
     #[test]
@@ -2462,7 +2367,7 @@ mod test {
         use crate::commons::error::Error;
         use crate::commons::util::httpclient;
 
-        issues.add_repo_issue(
+        issues.repo_issue = Some(
             Error::HttpClientError(httpclient::Error::forbidden(
                 "https://example.com/",
             ))

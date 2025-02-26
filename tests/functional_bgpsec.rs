@@ -4,7 +4,8 @@ use rpki::ca::csr::BgpsecCsr;
 use rpki::ca::idexchange::CaHandle;
 use rpki::ca::provisioning::ResourceClassName;
 use rpki::repository::resources::{Asn, ResourceSet};
-use krill::commons::api::{BgpSecCsrInfo, UpdateChildRequest};
+use krill::commons::api::admin::UpdateChildRequest;
+use krill::commons::api::bgpsec::BgpSecCsrInfo;
 
 mod common;
 
@@ -61,19 +62,19 @@ async fn functional_bgpsec() {
     server.client().bgpsec_add_single(
         &ca, asn_owned, csr.clone()
     ).await.unwrap();
-    let definitions = server.client().bgpsec_list(&ca).await.unwrap().unpack();
-    assert_eq!(definitions.len(), 1);
-    assert_eq!(definitions.first().unwrap().asn(), asn_owned);
-    assert!(server.wait_for_objects(&ca, &definitions).await);
+    let definitions = server.client().bgpsec_list(&ca).await.unwrap();
+    assert_eq!(definitions.as_slice().len(), 1);
+    assert_eq!(definitions.as_slice().first().unwrap().asn, asn_owned);
+    assert!(server.wait_for_objects(&ca, definitions.as_slice()).await);
 
     eprintln!(">>>> Shrink resources: definition but no certificate.");
     server.client().child_update(
         &testbed, &ca.convert(),
         UpdateChildRequest::resources(ca_res_shrunk.clone())
     ).await.unwrap();
-    let definitions = server.client().bgpsec_list(&ca).await.unwrap().unpack();
-    assert_eq!(definitions.len(), 1);
-    assert_eq!(definitions.first().unwrap().asn(), asn_owned);
+    let definitions = server.client().bgpsec_list(&ca).await.unwrap();
+    assert_eq!(definitions.as_slice().len(), 1);
+    assert_eq!(definitions.as_slice().first().unwrap().asn, asn_owned);
     assert!(server.wait_for_objects(&ca, &[]).await);
 
     eprintln!(">>>> Grow resources: certificate comes back.");
@@ -81,17 +82,17 @@ async fn functional_bgpsec() {
         &testbed, &ca.convert(),
         UpdateChildRequest::resources(ca_res.clone())
     ).await.unwrap();
-    let definitions = server.client().bgpsec_list(&ca).await.unwrap().unpack();
-    assert_eq!(definitions.len(), 1);
-    assert_eq!(definitions.first().unwrap().asn(), asn_owned);
-    assert!(server.wait_for_objects(&ca, &definitions).await);
+    let definitions = server.client().bgpsec_list(&ca).await.unwrap();
+    assert_eq!(definitions.as_slice().len(), 1);
+    assert_eq!(definitions.as_slice().first().unwrap().asn, asn_owned);
+    assert!(server.wait_for_objects(&ca, definitions.as_slice()).await);
 
     eprintln!(">>>> Remove BGPsec definition.");
     server.client().bgpsec_delete_single(
         &ca, asn_owned, csr.public_key().key_identifier()
     ).await.unwrap();
-    let definitions = server.client().bgpsec_list(&ca).await.unwrap().unpack();
-    assert_eq!(definitions.len(), 0);
+    let definitions = server.client().bgpsec_list(&ca).await.unwrap();
+    assert_eq!(definitions.as_slice().len(), 0);
     assert!(server.wait_for_objects(&ca, &[]).await);
 }
 

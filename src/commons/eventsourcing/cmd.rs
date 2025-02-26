@@ -5,9 +5,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::commons::{
     actor::Actor,
-    api::{CommandHistoryRecord, CommandSummary},
     eventsourcing::{Event, InitEvent, Storable},
 };
+use crate::commons::api;
+use crate::commons::api::history::{CommandHistoryRecord, CommandSummary};
 
 use super::Aggregate;
 
@@ -373,6 +374,21 @@ impl<A: Aggregate> StoredCommand<A> {
             _ => None,
         }
     }
+
+    pub fn to_history_details(&self) -> api::history::CommandDetails
+    where
+        <A as Aggregate>::StorableCommandDetails: fmt::Display
+    {
+        api::history::CommandDetails {
+            actor: self.actor.clone(),
+            time: self.time,
+            handle: self.handle.clone(),
+            version: self.version,
+            msg: self.details.to_string(),
+            details: to_json_value(&self.details),
+            effect: self.effect.to_history_details(),
+        }
+    }
 }
 
 impl<A: Aggregate> From<StoredCommand<A>> for CommandHistoryRecord {
@@ -387,6 +403,7 @@ impl<A: Aggregate> From<StoredCommand<A>> for CommandHistoryRecord {
         }
     }
 }
+
 
 //------------ StoredEffect --------------------------------------------------
 
@@ -421,4 +438,43 @@ impl<E: Event, I: InitEvent> StoredEffect<E, I> {
             StoredEffect::Success { events } => Some(events),
         }
     }
+
+    fn to_history_details(&self) -> api::history::CommandEffect {
+        match self {
+            Self::Error { msg } => {
+                api::history::CommandEffect::Error { msg: msg.clone() }
+            }
+            Self::Success { events } => {
+                api::history::CommandEffect::Success {
+                    events: events.iter().map(|ev| {
+                        api::history::CommandEffectEvent {
+                            msg: ev.to_string(),
+                            details: to_json_value(ev)
+                        }
+                    }).collect(),
+                }
+            }
+            Self::Init { init } => {
+                api::history::CommandEffect::Init {
+                    init: api::history::CommandEffectEvent {
+                        msg: init.to_string(),
+                        details: to_json_value(init),
+                    }
+                }
+            }
+        }
+    }
 }
+
+
+//------------ Helper Functions ----------------------------------------------
+
+/// Unfailably creates a JSON value from a serializable object.
+///
+/// If serializing fails, creates a placeholder value with the error message.
+fn to_json_value<T: serde::Serialize>(value: T) -> serde_json::Value {
+    serde_json::to_value(value).unwrap_or_else(|err| {
+        serde_json::json!({ "serialization_error": err.to_string() })
+    })
+}
+

@@ -12,7 +12,7 @@ use rpki::{
 use serde::{Deserialize, Serialize};
 
 use crate::commons::{
-    api::{Revocation, RtaList, RtaName},
+    api::ca::{Revocation, RtaList, RtaName},
     error::Error,
     util::ext_serde,
     KrillResult,

@@ -22,10 +22,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     commons::{
-        api::{
-            IdCertInfo, IssuedCertificate, ObjectName, ReceivedCert,
-            Revocations,
-        },
         crypto::KrillSigner,
         error::Error,
         KrillResult,
@@ -35,6 +31,10 @@ use crate::{
         PublishedManifest, PublishedObject, UsedKeyState,
     },
 };
+use crate::commons::api::ca::{
+    IdCertInfo, IssuedCertificate, ObjectName, ReceivedCert, Revocations,
+};
+
 
 //------------ TrustAnchorObjects ------------------------------------------
 
@@ -90,7 +90,7 @@ impl TrustAnchorObjects {
         let revocations = Revocations::default();
 
         let signing_key = signing_cert.key_identifier();
-        let issuer = signing_cert.subject().clone();
+        let issuer = signing_cert.subject.clone();
 
         let crl = CrlBuilder::build(
             signing_key,
@@ -136,7 +136,7 @@ impl TrustAnchorObjects {
             // implementing signed TALs and TA key rollovers.
             Err(Error::custom("TA key changed when republishing"))
         } else {
-            let issuer = signing_cert.subject().clone();
+            let issuer = signing_cert.subject.clone();
 
             self.crl = CrlBuilder::build(
                 signing_key,
@@ -162,13 +162,13 @@ impl TrustAnchorObjects {
 
         let mft_uri = self
             .base_uri
-            .join(ObjectName::mft_for_key(&self.key_identifier).as_ref())
+            .join(ObjectName::mft_from_ca_key(&self.key_identifier).as_ref())
             .map_err(|e| Error::Custom(format!("Cannot make uri: {}", e)))?;
         res.push(self.manifest.publish_element(mft_uri));
 
         let crl_uri = self
             .base_uri
-            .join(ObjectName::crl_for_key(&self.key_identifier).as_ref())
+            .join(ObjectName::crl_from_ca_key(&self.key_identifier).as_ref())
             .map_err(|e| Error::Custom(format!("Cannot make uri: {}", e)))?;
         res.push(self.crl.publish_element(crl_uri));
 
@@ -187,7 +187,7 @@ impl TrustAnchorObjects {
             .iter()
             .map(|(ki, cert)| {
                 let object = PublishedObject::for_cert_info(cert);
-                let name = ObjectName::cer_for_key(ki);
+                let name = ObjectName::cer_from_key(ki);
                 (name, object)
             })
             .collect()
@@ -262,8 +262,8 @@ impl fmt::Display for TrustAnchorObjects {
         writeln!(f)?;
         writeln!(f, "Objects:",)?;
         for publish in self.publish_elements().map_err(|_| fmt::Error)? {
-            writeln!(f, "{}", publish.uri())?;
-            writeln!(f, " ({})", publish.base64().to_hash())?;
+            writeln!(f, "{}", publish.uri)?;
+            writeln!(f, " ({})", publish.base64.to_hash())?;
         }
         writeln!(f)?;
         writeln!(f, "-------------------------------------------------------")
@@ -288,7 +288,7 @@ impl TaCertDetails {
     }
 
     pub fn resources(&self) -> &ResourceSet {
-        self.cert.resources()
+        &self.cert.resources
     }
 
     pub fn tal(&self) -> &TrustAnchorLocator {
@@ -508,7 +508,7 @@ pub struct TrustAnchorSignedRequest {
 
 impl TrustAnchorSignedRequest {
     pub fn validate(&self, issuer: &IdCertInfo) -> Result<(), Error> {
-        let signed_message = self.signed.validate(issuer.public_key())?;
+        let signed_message = self.signed.validate(&issuer.public_key)?;
 
         // Verify that the content of the signed message matches the
         // clear text request as well.
@@ -628,7 +628,7 @@ pub struct TrustAnchorSignedResponse {
 
 impl TrustAnchorSignedResponse {
     pub fn validate(&self, issuer: &IdCertInfo) -> Result<(), Error> {
-        let signed_message = self.signed.validate(issuer.public_key())?;
+        let signed_message = self.signed.validate(&issuer.public_key)?;
 
         // Verify that the content of the signed message matches the
         // clear text request as well.

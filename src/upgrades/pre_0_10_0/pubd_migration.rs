@@ -2,7 +2,6 @@ use rpki::{ca::idexchange::MyHandle, repository::x509::Time};
 
 use crate::{
     commons::{
-        api::StorableRepositoryCommand,
         eventsourcing::{AggregateStore, StoredCommandBuilder},
         storage::{KeyValueStore, Scope, Segment},
         util::KrillVersion,
@@ -11,6 +10,7 @@ use crate::{
     daemon::config::Config,
     pubd::{
         RepositoryAccess, RepositoryAccessEvent, RepositoryAccessInitEvent,
+        StorableRepositoryCommand,
     },
     upgrades::pre_0_10_0::{
         Pre0_10RepositoryAccessEventDetails,

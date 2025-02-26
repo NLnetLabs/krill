@@ -18,7 +18,7 @@ use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout};
 use krill::commons::api;
-use krill::commons::api::Token;
+use krill::commons::api::admin::Token;
 use krill::commons::crypto::OpenSslSignerConfig;
 use krill::commons::util::httpclient;
 use krill::cli::client::KrillClient;
@@ -479,7 +479,7 @@ impl KrillServer {
             parent, ca.convert(), request, resources.clone()
         ).await;
         self.client.parent_add(
-            ca, api::ParentCaReq::new(parent.convert(), response)
+            ca, api::admin::ParentCaReq { handle: parent.convert(), response }
         ).await.unwrap();
         assert!(self.wait_for_ca_resources(ca, resources).await);
     }
@@ -498,26 +498,26 @@ impl KrillServer {
 
     pub async fn ca_key_for_rcn(
         &self, ca: &CaHandle, rcn: &ResourceClassName
-    ) -> api::CertifiedKeyInfo {
+    ) -> api::ca::CertifiedKeyInfo {
         self.client.ca_details(ca).await.unwrap()
-            .resource_classes().get(rcn).unwrap()
-            .current_key().unwrap().clone()
+            .resource_classes.get(rcn).unwrap()
+            .keys.current_key().unwrap().clone()
     }
 
     pub async fn ca_new_key_for_rcn(
         &self, ca: &CaHandle, rcn: &ResourceClassName,
-    ) -> api::CertifiedKeyInfo {
+    ) -> api::ca::CertifiedKeyInfo {
         self.client.ca_details(ca).await.unwrap()
-            .resource_classes().get(rcn).unwrap()
-            .new_key().unwrap().clone()
+            .resource_classes.get(rcn).unwrap()
+            .keys.new_key().unwrap().clone()
     }
 
     pub async fn current_ca_resources(&self, ca: &CaHandle) -> ResourceSet {
         let details = self.client().ca_details(ca).await.unwrap();
 
         let mut res = ResourceSet::default();
-        for rc in details.resource_classes().values() {
-            if let Some(resources) = rc.current_resources() {
+        for rc in details.resource_classes.values() {
+            if let Some(resources) = rc.keys.current_resources() {
                 res = res.union(resources)
             }
         }
@@ -525,19 +525,21 @@ impl KrillServer {
     }
 
     pub async fn check_configured_roas(
-        &self, ca: &CaHandle, expected: &[api::RoaConfiguration]
+        &self, ca: &CaHandle, expected: &[api::roa::RoaConfiguration]
     ) -> bool {
-        let roas = self.client().roas_list(ca).await.unwrap().unpack();
+        let roas = self.client().roas_list(ca).await.unwrap().into_vec();
         assert_eq!(roas.len(), expected.len());
 
         // Copy the expected configs, but convert them to an explicit max-len
         // because Krill always stores configs that way to avoid duplicate
         // equivalent entries.
         let expected = expected.iter().map(|entry| {
-            entry.clone().into_explicit_max_length()
+            let mut entry = entry.clone();
+            entry.set_explicit_max_length();
+            entry
         }).collect::<Vec<_>>();
 
-        for roa in roas.iter().map(|item| item.roa_configuration())
+        for roa in roas.iter().map(|item| &item.roa_configuration)
         {
             if !expected.contains(roa) {
                 let expected_strs: Vec<_> = expected.into_iter().map(|e| {
@@ -570,13 +572,13 @@ impl KrillServer {
             let ca = self.client().ca_details(ca).await.unwrap();
 
             // wait for ALL RCs to become state new key
-            let rc_map = ca.resource_classes();
+            let rc_map = &ca.resource_classes;
 
             let expected = rc_map.len();
             let mut found = 0;
 
             for rc in rc_map.values() {
-                if let api::ResourceClassKeysInfo::RollNew(_) = rc.keys() {
+                if let api::ca::ResourceClassKeysInfo::RollNew(_) = rc.keys {
                     found += 1;
                 }
             }
@@ -595,13 +597,13 @@ impl KrillServer {
             let ca = self.client().ca_details(ca).await.unwrap();
 
             // wait for ALL RCs to become state active key
-            let rc_map = ca.resource_classes();
+            let rc_map = &ca.resource_classes;
 
             let expected = rc_map.len();
             let mut found = 0;
 
             for rc in rc_map.values() {
-                if let api::ResourceClassKeysInfo::Active(_) = rc.keys() {
+                if let api::ca::ResourceClassKeysInfo::Active(_) = rc.keys {
                     found += 1;
                 }
             }
@@ -663,27 +665,30 @@ impl<'a> ExpectedObjects<'a> {
 
     pub async fn push_mft_and_crl(&mut self, rcn: &ResourceClassName) {
         let rc_key = self.server.ca_key_for_rcn(self.ca, rcn).await;
-        self.push(rc_key.incoming_cert().mft_name().to_string());
-        self.push(rc_key.incoming_cert().crl_name().to_string());
+        self.push(rc_key.incoming_cert.mft_name().to_string());
+        self.push(rc_key.incoming_cert.crl_name().to_string());
     }
 
     pub async fn push_new_key_mft_and_crl(&mut self, rcn: &ResourceClassName) {
         let rc_key = self.server.ca_new_key_for_rcn(self.ca, rcn).await;
-        self.push(rc_key.incoming_cert().mft_name().to_string());
-        self.push(rc_key.incoming_cert().crl_name().to_string());
+        self.push(rc_key.incoming_cert.mft_name().to_string());
+        self.push(rc_key.incoming_cert.crl_name().to_string());
     }
 
     pub async fn push_cer(&mut self, ca: &CaHandle, rcn: &ResourceClassName) {
         let rc_key = self.server.ca_key_for_rcn(ca, rcn).await;
-        self.push(api::ObjectName::new(rc_key.key_id(), "cer").to_string())
+        self.push(
+            api::ca::ObjectName::from_key(&rc_key.key_id, "cer").to_string()
+        )
     }
 
     pub fn push_roas<'b>(
-        &mut self, roas: impl IntoIterator<Item = &'b api::RoaConfiguration>
+        &mut self,
+        roas: impl IntoIterator<Item = &'b api::roa::RoaConfiguration>,
     ) {
         self.extend(roas.into_iter().map(|roa| {
-            api::ObjectName::from(
-                &roa.payload().into_explicit_max_length()
+            api::ca::ObjectName::from(
+                roa.payload.into_explicit_max_length()
             ).to_string()
         }))
     }
@@ -700,10 +705,9 @@ impl<'a> ExpectedObjects<'a> {
             let details = server.client.publisher_details(
                 &publisher
             ).await.unwrap();
-            let current_files = details.current_files();
-            if current_files.len() == self.files.len() {
+            if details.current_files.len() == self.files.len() {
                 let current_files: Vec<_> =
-                    current_files.iter().map(|p| p.uri()).collect();
+                    details.current_files.iter().map(|p| &p.uri).collect();
                 let mut all_matched = true;
                 for o in &self.files {
                     if !current_files.iter().any(|uri| uri.ends_with(o)) {
@@ -722,8 +726,8 @@ impl<'a> ExpectedObjects<'a> {
 
         eprintln!("Published files didn’t match for {}", self.ca);
         eprintln!("Found:");
-        for file in details.current_files() {
-            eprintln!("  {}", file.uri());
+        for file in &details.current_files {
+            eprintln!("  {}", file.uri);
         }
         eprintln!("Expected:");
         for file in &self.files {
@@ -763,16 +767,16 @@ pub fn ipv4_resources(v4: &str) -> ResourceSet {
     resources("", v4, "")
 }
 
-pub fn roa_conf(s: &str) -> api::RoaConfiguration {
-    api::RoaConfiguration::from_str(s).unwrap()
+pub fn roa_conf(s: &str) -> api::roa::RoaConfiguration {
+    api::roa::RoaConfiguration::from_str(s).unwrap()
 }
 
-pub fn roa_payload(s: &str) -> api::RoaPayload {
-    api::RoaPayload::from_str(s).unwrap()
+pub fn roa_payload(s: &str) -> api::roa::RoaPayload {
+    api::roa::RoaPayload::from_str(s).unwrap()
 }
 
-pub fn aspa_def(s: &str) -> api::AspaDefinition {
-    api::AspaDefinition::from_str(s).unwrap()
+pub fn aspa_def(s: &str) -> api::aspa::AspaDefinition {
+    api::aspa::AspaDefinition::from_str(s).unwrap()
 }
 
 pub async fn sleep_seconds(secs: u64) {

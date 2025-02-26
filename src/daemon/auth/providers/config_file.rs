@@ -8,7 +8,7 @@ use log::{debug, info, log_enabled, trace, warn};
 use serde::{Deserialize, Serialize};
 use unicode_normalization::UnicodeNormalization;
 use crate::commons::KrillResult;
-use crate::commons::api::Token;
+use crate::commons::api::admin::Token;
 use crate::commons::error::{ApiAuthError, Error};
 use crate::commons::util::httpclient;
 use crate::constants::{PW_HASH_LOG_N, PW_HASH_P, PW_HASH_R};

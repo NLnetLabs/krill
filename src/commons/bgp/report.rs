@@ -1,12 +1,13 @@
 use std::{cmp::Ordering, collections::HashMap, fmt};
 use serde::{Deserialize, Serialize};
 use crate::commons::{
-    api::{
-        BgpStats, ConfiguredRoa, RoaConfiguration, RoaConfigurationUpdates,
-        RoaPayload,
-    },
     bgp::Announcement,
 };
+use crate::commons::api::ca::BgpStats;
+use crate::commons::api::roa::{
+    ConfiguredRoa, RoaConfiguration, RoaConfigurationUpdates, RoaPayload,
+};
+
 
 //------------ BgpAnalysisAdvice -------------------------------------------
 
@@ -141,29 +142,32 @@ impl From<BgpAnalysisSuggestion> for RoaConfigurationUpdates {
             .chain(invalid_asn.into_iter())
             .chain(invalid_length.into_iter())
         {
-            added.push(RoaConfiguration::new(announcement.into(), None));
+            added.push(RoaConfiguration {
+                payload: announcement.into(),
+                comment: None
+            });
         }
 
         for stale in stale.into_iter() {
-            removed.push(stale.payload());
+            removed.push(stale.roa_configuration.payload);
         }
 
         for suggestion in too_permissive.into_iter() {
-            removed.push(suggestion.current.payload());
-            for roa_payload in suggestion.new.into_iter() {
-                added.push(RoaConfiguration::new(roa_payload, None));
+            removed.push(suggestion.current.roa_configuration.payload);
+            for payload in suggestion.new.into_iter() {
+                added.push(RoaConfiguration { payload, comment: None });
             }
         }
 
         for as0_redundant in as0_redundant.into_iter() {
-            removed.push(as0_redundant.payload());
+            removed.push(as0_redundant.roa_configuration.payload);
         }
 
         for redundant in redundant.into_iter() {
-            removed.push(redundant.payload());
+            removed.push(redundant.roa_configuration.payload);
         }
 
-        RoaConfigurationUpdates::new(added, removed)
+        RoaConfigurationUpdates { added, removed }
     }
 }
 
@@ -366,44 +370,46 @@ impl From<BgpAnalysisReport> for BgpStats {
         for e in r.0.iter() {
             match e.state {
                 BgpAnalysisState::AnnouncementValid => {
-                    stats.increment_valid()
+                    stats.announcements_valid += 1;
                 }
                 BgpAnalysisState::AnnouncementInvalidAsn => {
-                    stats.increment_invalid_asn()
+                    stats.announcements_invalid_asn += 1;
                 }
                 BgpAnalysisState::AnnouncementInvalidLength => {
-                    stats.increment_invalid_length()
+                    stats.announcements_invalid_length += 1;
                 }
                 BgpAnalysisState::AnnouncementDisallowed => {
-                    stats.increment_disallowed()
+                    stats.announcements_disallowed += 1;
                 }
                 BgpAnalysisState::AnnouncementNotFound => {
-                    stats.increment_not_found()
+                    stats.announcements_not_found += 1;
                 }
                 BgpAnalysisState::RoaUnseen => {
-                    stats.increment_roas_total();
-                    stats.increment_roas_stale();
+                    stats.roas_total += 1;
+                    stats.roas_stale += 1;
                 }
                 BgpAnalysisState::RoaTooPermissive => {
-                    stats.increment_roas_total();
-                    stats.increment_roas_too_permissive();
+                    stats.roas_total += 1;
+                    stats.roas_too_permissive += 1;
                 }
                 BgpAnalysisState::RoaRedundant
                 | BgpAnalysisState::RoaAs0Redundant => {
-                    stats.increment_roas_total();
-                    stats.increment_roas_redundant();
+                    stats.roas_total += 1;
+                    stats.roas_redundant += 1;
                 }
                 BgpAnalysisState::RoaNotHeld => {
-                    stats.increment_roas_total();
-                    stats.increment_roas_not_held();
+                    stats.roas_total += 1;
+                    stats.roas_not_held += 1;
                 }
                 BgpAnalysisState::RoaDisallowing => {
-                    stats.increment_roas_total();
-                    stats.increment_roas_disallowing();
+                    stats.roas_total += 1;
+                    stats.roas_disallowing += 1;
                 }
                 BgpAnalysisState::RoaAs0
                 | BgpAnalysisState::RoaNoAnnouncementInfo
-                | BgpAnalysisState::RoaSeen => stats.increment_roas_total(),
+                | BgpAnalysisState::RoaSeen => {
+                    stats.roas_total += 1
+                }
             }
         }
         stats
@@ -707,9 +713,13 @@ impl ConfiguredRoaOrAnnouncement {
     fn as_payload(&self) -> RoaPayload {
         match self {
             ConfiguredRoaOrAnnouncement::Announcement(ann) => {
-                RoaPayload::new(*ann.asn(), *ann.prefix(), None)
+                RoaPayload {
+                    asn: *ann.asn(), prefix: *ann.prefix(), max_length: None
+                }
             }
-            ConfiguredRoaOrAnnouncement::Roa(roa) => roa.payload(),
+            ConfiguredRoaOrAnnouncement::Roa(roa) => {
+                roa.roa_configuration.payload
+            }
         }
     }
 }

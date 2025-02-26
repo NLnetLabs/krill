@@ -1,46 +1,42 @@
-//! Data types used to support importing a CA structure for testing or
-//! automated set ups.
+//! Importing CA structures for testing or automated set ups.
 
-use std::{collections::HashMap, fmt};
-
+use std::fmt;
+use std::collections::HashMap;
+use rpki::uri;
+use rpki::ca::idcert::IdCert;
+use rpki::ca::idexchange::{CaHandle, ChildHandle, ParentHandle};
+use rpki::ca::provisioning::ResourceClassName;
+use rpki::repository::resources::ResourceSet;
 use serde::{Deserialize, Deserializer, Serialize};
+use crate::commons::KrillResult;
+use crate::commons::crypto::CsrInfo;
+use crate::commons::error::Error;
+use crate::commons::util::ext_serde::OneOrMany;
+use crate::ta::ta_handle;
+use super::admin::PublicationServerUris;
+use super::roa::RoaConfiguration;
 
-use rpki::{
-    ca::{
-        idcert::IdCert,
-        idexchange::{CaHandle, ChildHandle, ParentHandle},
-        provisioning::ResourceClassName,
-    },
-    repository::resources::ResourceSet,
-    uri,
-};
-
-use crate::{
-    commons::{
-        api::PublicationServerUris, crypto::CsrInfo, error::Error,
-        KrillResult,
-    },
-    daemon::config,
-    ta::ta_handle,
-};
-
-use super::RoaConfiguration;
 
 //------------ Structure -----------------------------------------------------
 
-/// This type contains the full structure of CAs and signed objects etc that
-/// is set up when the import API is used.
+/// The full structure of CAs and signed objects set up when the imported.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Structure {
+    /// Information about the trust anchor to import the CA under.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ta: Option<ImportTa>,
+
+    /// Information about the publication server to use for the CA.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub publication_server: Option<PublicationServerUris>,
+
+    /// Information about the CAs to import.
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
     pub cas: Vec<ImportCa>,
 }
 
 impl Structure {
+    /// Creates the import structure for testbed CAs.
     pub fn for_testbed(
         ta_aia: uri::Rsync,
         ta_uri: uri::Https,
@@ -59,6 +55,8 @@ impl Structure {
         }
     }
 
+    /// Checks the CA hierarchy in this strucuture.
+    ///
     /// Check that all parents are valid for the CAs in this structure
     /// in the order in which they appear, and that the parent CAs have
     /// the resources for each child CA.
@@ -90,31 +88,37 @@ impl Structure {
 
             if existing_cas.contains_key(&ca.handle.convert()) {
                 return Err(Error::Custom(format!(
-                    "CA with name {} already exists. Check import and server state!",
+                    "CA with name {} already exists. \
+                     Check import and server state!",
                     ca.handle
                 )));
             }
 
             let mut ca_resources = ResourceSet::empty();
             for ca_parent in &ca.parents {
-                if let Some(seen_parent_resources) =
-                    existing_cas.get(ca_parent.handle())
-                {
+                if let Some(seen_parent_resources) = existing_cas.get(
+                    &ca_parent.handle
+                ) {
                     if seen_parent_resources.contains(&ca_parent.resources) {
-                        ca_resources =
-                            ca_resources.union(&ca_parent.resources);
-                    } else {
+                        ca_resources = ca_resources.union(
+                            &ca_parent.resources
+                        );
+                    }
+                    else {
                         return Err(Error::Custom(format!(
-                            "CA '{}' under parent '{}' claims resources not held by parent.",
+                            "CA '{}' under parent '{}' claims resources not \
+                             held by parent.",
                             ca.handle,
-                            ca_parent.handle()
+                            ca_parent.handle
                         )));
                     }
-                } else {
+                }
+                else {
                     return Err(Error::Custom(format!(
-                        "CA '{}' wants parent '{}', but this parent CA does not appear before this CA.",
+                        "CA '{}' wants parent '{}', but this parent CA does \
+                         not appear before this CA.",
                         ca.handle,
-                        ca_parent.handle()
+                        ca_parent.handle
                     )));
                 }
             }
@@ -122,130 +126,99 @@ impl Structure {
         }
         Ok(())
     }
-
-    pub fn into_cas(self) -> Vec<ImportCa> {
-        self.cas
-    }
 }
 
-fn deserialize_parent<'de, D>(
-    deserializer: D,
-) -> Result<Vec<ImportParent>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    config::OneOrMany::<ImportParent>::deserialize(deserializer)
-        .map(|oom| oom.into())
-}
 
 //------------ ImportTa ------------------------------------------------------
 
+/// Information about the TA to import.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ImportTa {
+    /// The rsync URI for the TA certificate.
     pub ta_aia: uri::Rsync,
+
+    /// The HTTPS for the TA certificate.
     pub ta_uri: uri::Https,
+
+    /// The PEM encoded public key of the TA.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ta_key_pem: Option<String>,
+
+    /// The manifest number of the first manifest of the TA CA.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ta_mft_nr_override: Option<u64>,
 }
 
-impl ImportTa {
-    pub fn unpack(
-        self,
-    ) -> (uri::Rsync, Vec<uri::Https>, Option<String>, Option<u64>) {
-        (
-            self.ta_aia,
-            vec![self.ta_uri],
-            self.ta_key_pem,
-            self.ta_mft_nr_override,
-        )
-    }
-}
 
 //------------ ImportCa ------------------------------------------------------
 
-/// This type describes a CaStructure that needs to be imported. I.e. it
-/// describes a CA at the top of a branch and recursively includes 0 or more
-/// children of this same type.
+/// The structure of a CA to be imported.
+///
+/// The type describes a CA at the top of a branch and recursively includes 0
+/// or more/ children of this same type.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ImportCa {
-    handle: CaHandle,
+    /// The local handle identifying the CA.
+    pub handle: CaHandle,
 
-    // In the majority of cases there will only be one parent, so use that
-    // for json but allow one or more parents to be configured.
+    /// The parent CAs of the CA.
+    ///
+    /// In the majority of cases there will only be one parent, so this
+    /// field can be deserialized from a single element or a list of elements.
     #[serde(rename = "parent", deserialize_with = "deserialize_parent")]
-    parents: Vec<ImportParent>,
+    pub parents: Vec<ImportParent>,
 
+    /// The ROAs to be published by the CA.
     #[serde(default = "Vec::new")]
-    roas: Vec<RoaConfiguration>,
+    pub roas: Vec<RoaConfiguration>,
 }
 
-impl ImportCa {
-    pub fn new(
-        handle: CaHandle,
-        parents: Vec<ImportParent>,
-        roas: Vec<RoaConfiguration>,
-    ) -> Self {
-        ImportCa {
-            handle,
-            parents,
-            roas,
-        }
-    }
-
-    pub fn unpack(
-        self,
-    ) -> (CaHandle, Vec<ImportParent>, Vec<RoaConfiguration>) {
-        (self.handle, self.parents, self.roas)
-    }
-}
 
 //------------ ImportParent --------------------------------------------------
 
+/// Information about the parent CA of an imported CA.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ImportParent {
-    handle: ParentHandle,
-    resources: ResourceSet,
+    /// The local handle of the parent CA.
+    pub handle: ParentHandle,
+
+    /// The resources the new CA should be entitled to under the parent.
+    pub resources: ResourceSet,
 }
 
-impl ImportParent {
-    pub fn new(handle: ParentHandle, resources: ResourceSet) -> Self {
-        ImportParent { handle, resources }
-    }
-
-    pub fn handle(&self) -> &ParentHandle {
-        &self.handle
-    }
-
-    pub fn unpack(self) -> (ParentHandle, ResourceSet) {
-        (self.handle, self.resources)
-    }
-}
 
 //------------ ImportChild ---------------------------------------------------
 
-pub type ExportChild = ImportChild;
-
-/// Describes a child CA that can be imported from, or exported to,
-/// another parent CA instance.
+/// A child CA that can be imported from or exported to another parent CA.
 ///
 /// Only supports the simplest scenario where the child has only
-/// one certificate, in only one resource class.
+/// one certificate in only one resource class.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ImportChild {
+    /// The local handle of the child CA.
     pub name: ChildHandle,
+
+    /// The ID certificate used to communicate with the client CA.
     pub id_cert: IdCert,
+
+    /// The resource set the client CA is entitled to.
     pub resources: ResourceSet,
+
+    /// The certificate issued to the child CA.
     pub issued_cert: ImportChildCertificate,
 }
 
-pub type ChildResourceClassName = ResourceClassName;
 
+//------------ ImportChildCertificate ----------------------------------------
+
+/// A certificate to be issued to a child CA.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ImportChildCertificate {
+    /// The certificate signing request for the certificate.
     #[serde(flatten)]
     pub csr: CsrInfo,
+
+    /// The resource class name for the child resource.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub class_name: Option<ChildResourceClassName>,
 }
@@ -277,9 +250,27 @@ impl fmt::Display for ImportChild {
     }
 }
 
+
+//------------ ChildResourceClassName ----------------------------------------
+
+pub type ChildResourceClassName = ResourceClassName;
+
+
+//------------ Helper Functions ----------------------------------------------
+
+/// Deserializes for `ImportParent`.
+fn deserialize_parent<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<ImportParent>, D::Error> {
+    OneOrMany::<ImportParent>::deserialize(deserializer)
+        .map(|oom| oom.into())
+}
+
+
+//============ Tests =========================================================
+
 #[cfg(test)]
 mod tests {
-
     use super::*;
 
     #[test]

@@ -12,7 +12,6 @@ use serde::ser::Serialize;
 
 use crate::{
     commons::{
-        api::{ErrorResponse, Token},
         util::file,
     },
     constants::{
@@ -20,6 +19,8 @@ use crate::{
         KRILL_HTTPS_ROOT_CERTS_ENV,
     },
 };
+use crate::commons::api::admin::Token;
+use crate::commons::api::error::ErrorResponse;
 
 const JSON_CONTENT: &str = "application/json";
 

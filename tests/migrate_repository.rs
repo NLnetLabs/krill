@@ -17,7 +17,7 @@ async fn migrate_repository() {
     let ca1 = common::ca_handle("CA1");
     let ca1_res = common::ipv4_resources("10.0.0.0/16");
     let ca1_roa = common::roa_payload("10.0.0.0/16-16 => 65000");
-    let ca1_roa_name = api::ObjectName::from(&ca1_roa).to_string();
+    let ca1_roa_name = api::ca::ObjectName::from(ca1_roa).to_string();
 
     let rcn0 = common::rcn(0);
 
@@ -48,9 +48,10 @@ async fn migrate_repository() {
     eprintln!(">>>> Create a ROA for CA1.");
     server.client().roas_update(
         &ca1,
-        api::RoaConfigurationUpdates::new(
-            vec![ca1_roa.into()], vec![]
-        )
+        api::roa::RoaConfigurationUpdates {
+            added: vec![ca1_roa.into()],
+            removed: vec![]
+        }
     ).await.unwrap();
 
     eprintln!(">>>> Verify that the testbed published the expected objects");

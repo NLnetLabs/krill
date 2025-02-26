@@ -16,16 +16,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     commons::{
-        api::{
-            ActiveInfo, CertifiedKeyInfo, PendingInfo, PendingKeyInfo,
-            ReceivedCert, ResourceClassKeysInfo, RollNewInfo, RollOldInfo,
-            RollPendingInfo,
-        },
         crypto::KrillSigner,
         error::Error,
         KrillResult,
     },
     daemon::ca::CertAuthEvent,
+};
+use crate::commons::api::ca::{
+    ActiveInfo, CertifiedKeyInfo, PendingInfo, PendingKeyInfo, ReceivedCert,
+    ResourceClassKeysInfo, RollNewInfo, RollOldInfo, RollPendingInfo,
 };
 
 //------------ CertifiedKey --------------------------------------------------
@@ -67,7 +66,11 @@ impl CertifiedKey {
     }
 
     pub fn as_info(&self) -> CertifiedKeyInfo {
-        CertifiedKeyInfo::new(self.key_id, self.incoming_cert.clone())
+        CertifiedKeyInfo {
+            key_id: self.key_id,
+            incoming_cert: self.incoming_cert.clone(),
+            request: None
+        }
     }
 
     pub fn key_id(&self) -> &KeyIdentifier {
@@ -109,7 +112,7 @@ impl CertifiedKey {
         // If resources have changed, then we need to request a new
         // certificate.
         let resources_diff =
-            new_resources.difference(self.incoming_cert.resources());
+            new_resources.difference(&self.incoming_cert.resources);
 
         if !resources_diff.is_empty() {
             info!(
@@ -134,7 +137,7 @@ impl CertifiedKey {
         // request like above) then we still want to avoid ending up
         // in request loops. See issue #775
 
-        let not_after = self.incoming_cert().validity().not_after();
+        let not_after = self.incoming_cert().validity.not_after();
 
         let now = Time::now().timestamp();
         let remaining_seconds_on_current = not_after.timestamp() - now;
@@ -220,7 +223,7 @@ impl PendingKey {
     }
 
     pub fn as_info(&self) -> PendingKeyInfo {
-        PendingKeyInfo::new(self.key_id)
+        PendingKeyInfo { key_id: self.key_id }
     }
 
     pub fn unwrap(self) -> (KeyIdentifier, Option<IssuanceRequest>) {
@@ -603,30 +606,30 @@ impl KeyState {
         match self.clone() {
             KeyState::Pending(p) => {
                 ResourceClassKeysInfo::Pending(PendingInfo {
-                    _pending_key: p.as_info(),
+                    pending_key: p.as_info(),
                 })
             }
             KeyState::Active(c) => {
                 ResourceClassKeysInfo::Active(ActiveInfo {
-                    _active_key: c.as_info(),
+                    active_key: c.as_info(),
                 })
             }
             KeyState::RollPending(p, c) => {
                 ResourceClassKeysInfo::RollPending(RollPendingInfo {
-                    _pending_key: p.as_info(),
-                    _active_key: c.as_info(),
+                    pending_key: p.as_info(),
+                    active_key: c.as_info(),
                 })
             }
             KeyState::RollNew(n, c) => {
                 ResourceClassKeysInfo::RollNew(RollNewInfo {
-                    _new_key: n.as_info(),
-                    _active_key: c.as_info(),
+                    new_key: n.as_info(),
+                    active_key: c.as_info(),
                 })
             }
             KeyState::RollOld(c, o) => {
                 ResourceClassKeysInfo::RollOld(RollOldInfo {
-                    _old_key: o.as_info(),
-                    _active_key: c.as_info(),
+                    old_key: o.as_info(),
+                    active_key: c.as_info(),
                 })
             }
         }

@@ -14,12 +14,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     commons::{
-        api::{BgpSecAsnKey, BgpSecCsrInfo, BgpSecCsrInfoList, ObjectName},
         crypto::KrillSigner,
         KrillResult,
     },
     daemon::config::{Config, IssuanceTimingConfig},
 };
+use crate::commons::api::bgpsec::{
+    BgpSecAsnKey, BgpSecCsrInfo, BgpSecCsrInfoList
+};
+use crate::commons::api::ca::ObjectName;
 
 use super::{BgpSecCertificateUpdates, CertifiedKey};
 
@@ -59,17 +62,17 @@ impl BgpSecCertificates {
     ) -> KrillResult<BgpSecCertificateUpdates> {
         let mut updates = BgpSecCertificateUpdates::default();
 
-        let resources = certified_key.incoming_cert().resources();
+        let resources = &certified_key.incoming_cert().resources;
         let issuance_timing = &config.issuance_timing;
 
         // Issue BGPSec certificates for any ASN held by the certified key
         // for which the required router key has not yet been certified.
         for (key, csr) in definitions.iter().filter(|(k, _)| {
-            !self.0.contains_key(k) && resources.contains_asn(k.asn())
+            !self.0.contains_key(k) && resources.contains_asn(k.asn)
         }) {
             // resource held here, but BGPSec certificate was not yet issued.
             let cert = self.make_bgpsec_cert(
-                key.asn(),
+                key.asn,
                 csr.key().clone(),
                 certified_key,
                 issuance_timing,
@@ -82,7 +85,7 @@ impl BgpSecCertificates {
         // - are no longer present in the definitions; or
         // - for which the certified key no longer holds the asn.
         for (key, _) in self.0.iter().filter(|(k, _)| {
-            !definitions.has(k) || !resources.contains_asn(k.asn())
+            !definitions.has(k) || !resources.contains_asn(k.asn)
         }) {
             updates.add_removed(*key);
         }
@@ -138,10 +141,10 @@ impl BgpSecCertificates {
         let serial_number = signer.random_serial()?;
 
         let incoming_cert = certified_key.incoming_cert();
-        let issuer = incoming_cert.subject().clone();
+        let issuer = incoming_cert.subject.clone();
         let crl_uri = incoming_cert.crl_uri();
         let aki = incoming_cert.key_identifier();
-        let aia = incoming_cert.uri().clone();
+        let aia = incoming_cert.uri.clone();
 
         // Perhaps implement recommendation of 3.1.1 RFC 8209 somehow.
         // However, it is not at all clear how/why this is relevant.
@@ -217,7 +220,7 @@ impl BgpSecCertInfo {
     }
 
     pub fn asn_key(&self) -> BgpSecAsnKey {
-        BgpSecAsnKey::new(self.asn, self.public_key.key_identifier())
+        BgpSecAsnKey { asn: self.asn, key: self.public_key.key_identifier() }
     }
 
     pub fn asn(&self) -> Asn {
@@ -275,11 +278,11 @@ impl BgpSecDefinitions {
             self.0
                 .iter()
                 .map(|(key, csr)| {
-                    BgpSecCsrInfo::new(
-                        key.asn(),
-                        key.key_identifier(),
-                        csr.csr().clone(),
-                    )
+                    BgpSecCsrInfo {
+                        asn: key.asn,
+                        key_identifier: key.key,
+                        csr: csr.csr().clone(),
+                    }
                 })
                 .collect(),
         )

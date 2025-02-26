@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 use crate::commons::eventsourcing;
 use crate::commons::{Error, KrillResult};
-use crate::commons::api::Timestamp;
+use crate::commons::api::ca::Timestamp;
 use crate::commons::eventsourcing::Aggregate;
 use crate::commons::queue::{Queue, RunningTask, ScheduleMode};
 use crate::commons::storage::{Key, Segment, SegmentBuf};
@@ -730,7 +730,7 @@ impl PartialOrd for Priority {
 
 impl fmt::Display for Priority {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        Timestamp::from(self).to_rfc3339().fmt(f)
+        Timestamp::from(self).into_rfc3339().fmt(f)
     }
 }
 

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     commons::{
-        api::IdCertInfo,
+        api::ca::IdCertInfo,
         crypto::KrillSigner,
         error::Error,
         eventsourcing::{Event, InitEvent},

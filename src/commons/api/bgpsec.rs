@@ -1,35 +1,27 @@
-use std::{fmt, str::FromStr};
+//! BGPsec router keys.
 
-use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+use std::fmt;
+use std::str::FromStr;
 
-use rpki::{
-    ca::{csr::BgpsecCsr, publication::Base64},
-    crypto::KeyIdentifier,
-    repository::resources::Asn,
-};
+use rpki::ca::csr::BgpsecCsr;
+use rpki::ca::publication::Base64;
+use rpki::crypto::KeyIdentifier;
+use rpki::repository::resources::Asn;
+use serde::de;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use super::ca::ObjectName;
 
-use super::ObjectName;
 
 //------------ BgpSecDefinition --------------------------------------------
 
+/// Information for creating a BGPsec router key.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct BgpSecDefinition {
-    asn: Asn,
-    csr: BgpsecCsr,
-}
+    /// The autonomous system that uses the router key.
+    pub asn: Asn,
 
-impl BgpSecDefinition {
-    pub fn new(asn: Asn, csr: BgpsecCsr) -> Self {
-        BgpSecDefinition { asn, csr }
-    }
-
-    pub fn asn(&self) -> Asn {
-        self.asn
-    }
-
-    pub fn csr(&self) -> &BgpsecCsr {
-        &self.csr
-    }
+    /// The certificate signing request for the router key.
+    pub csr: BgpsecCsr,
 }
 
 impl PartialEq for BgpSecDefinition {
@@ -42,41 +34,24 @@ impl PartialEq for BgpSecDefinition {
 
 impl Eq for BgpSecDefinition {}
 
+
 //------------ BgpSecAsnKey ------------------------------------------------
 
+/// A BGPsec router key for a specific ASN.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct BgpSecAsnKey {
-    asn: Asn,
-    key: KeyIdentifier,
-}
+    /// The autonomous system that uses the router key.
+    pub asn: Asn,
 
-impl BgpSecAsnKey {
-    pub fn new(asn: Asn, key: KeyIdentifier) -> Self {
-        BgpSecAsnKey { asn, key }
-    }
-
-    pub fn asn(&self) -> Asn {
-        self.asn
-    }
-
-    pub fn key_identifier(&self) -> KeyIdentifier {
-        self.key
-    }
-}
-
-impl fmt::Display for BgpSecAsnKey {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // We use a format similar to the recommendation for the router
-        // certificate subject from section 3.1.1 in RFC 8209.
-        write!(f, "ROUTER-{:08X}-{}", self.asn.into_u32(), self.key)
-    }
+    /// The key identifier of the router key.
+    pub key: KeyIdentifier,
 }
 
 impl From<&BgpSecDefinition> for BgpSecAsnKey {
     fn from(def: &BgpSecDefinition) -> Self {
         BgpSecAsnKey {
-            asn: def.asn(),
-            key: def.csr().public_key().key_identifier(),
+            asn: def.asn,
+            key: def.csr.public_key().key_identifier(),
         }
     }
 }
@@ -107,99 +82,78 @@ impl FromStr for BgpSecAsnKey {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct BgpSecAsnKeyFmtError;
-
-impl std::error::Error for BgpSecAsnKeyFmtError {}
-
-impl fmt::Display for BgpSecAsnKeyFmtError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "Invalid BGPSec ASN and Key format. Expected: ROUTER-<hex-encoded-asn>-<hex-encoded-key-identifier>"
-        )
+impl fmt::Display for BgpSecAsnKey {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // We use a format similar to the recommendation for the router
+        // certificate subject from section 3.1.1 in RFC 8209.
+        write!(f, "ROUTER-{:08X}-{}", self.asn.into_u32(), self.key)
     }
 }
 
-/// We use BgpSecAsnKey as (JSON) map keys and therefore we need it
-/// to be serializable to a single simple string.
 impl Serialize for BgpSecAsnKey {
-    fn serialize<S>(&self, s: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
+    /// Serialize this value into the given Serde serializer.
+    ///
+    /// We use BgpSecAsnKey as (JSON) map keys and therefore we need it
+    /// to be serializable to a single simple string.
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         self.to_string().serialize(s)
     }
 }
 
-/// We use BgpSecAsnKey as (JSON) map keys and therefore we need it
-/// to be deserializable from a single simple string.
 impl<'de> Deserialize<'de> for BgpSecAsnKey {
-    fn deserialize<D>(d: D) -> Result<BgpSecAsnKey, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let string = String::deserialize(d)?;
-        BgpSecAsnKey::from_str(string.as_str()).map_err(de::Error::custom)
+    /// Deserialize this value from the given Serde deserializer.
+    ///
+    /// We use BgpSecAsnKey as (JSON) map keys and therefore we need it
+    /// to be deserializable from a single simple string.
+    fn deserialize<D: Deserializer<'de>>(
+        d: D
+    ) -> Result<BgpSecAsnKey, D::Error> {
+        BgpSecAsnKey::from_str(
+            String::deserialize(d)?.as_str()
+        ).map_err(de::Error::custom)
     }
 }
 
-//------------ BgpSecDefinitionUpdates -------------------------------------
 
-/// Contains BGPSec definition updates sent to the API.
+//------------ BgpSecDefinitionUpdates ---------------------------------------
+
+/// Information for updating multiple router key definitions.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BgpSecDefinitionUpdates {
-    add: Vec<BgpSecDefinition>,
-    remove: Vec<BgpSecAsnKey>,
+    /// The router key definitions to add.
+    pub add: Vec<BgpSecDefinition>,
+
+    /// The router keys to remove.
+    pub remove: Vec<BgpSecAsnKey>,
 }
 
-impl BgpSecDefinitionUpdates {
-    pub fn new(
-        add: Vec<BgpSecDefinition>,
-        remove: Vec<BgpSecAsnKey>,
-    ) -> Self {
-        BgpSecDefinitionUpdates { add, remove }
-    }
 
-    pub fn unpack(self) -> (Vec<BgpSecDefinition>, Vec<BgpSecAsnKey>) {
-        (self.add, self.remove)
-    }
-}
+//------------ BgpSecCsrInfo -------------------------------------------------
 
-/// This type is shown through the API
+/// All information for a BGPsec router key.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BgpSecCsrInfo {
-    asn: Asn,
-    key_identifier: KeyIdentifier,
-    csr: Base64,
+    /// The autonomous system that uses the router key.
+    pub asn: Asn,
+
+    /// The key identifier of the router key.
+    pub key_identifier: KeyIdentifier,
+
+    /// The certificate signing request for the router key.
+    pub csr: Base64,
 }
 
 impl BgpSecCsrInfo {
-    pub fn new(asn: Asn, key_identifier: KeyIdentifier, csr: Base64) -> Self {
-        BgpSecCsrInfo {
-            asn,
-            key_identifier,
-            csr,
-        }
-    }
-
-    pub fn asn(&self) -> Asn {
-        self.asn
-    }
-
-    pub fn key_identifier(&self) -> KeyIdentifier {
-        self.key_identifier
-    }
-
-    pub fn csr(&self) -> &Base64 {
-        &self.csr
-    }
-
+    /// Returns the object name for the router key.
     pub fn object_name(&self) -> ObjectName {
         ObjectName::bgpsec(self.asn, self.key_identifier)
     }
 }
 
+
+//------------ BgpSecCsrInfoList ---------------------------------------------
+
+/// A list with information for multiple BGPsec router keys.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BgpSecCsrInfoList(Vec<BgpSecCsrInfo>);
 
@@ -208,8 +162,8 @@ impl BgpSecCsrInfoList {
         BgpSecCsrInfoList(list)
     }
 
-    pub fn unpack(self) -> Vec<BgpSecCsrInfo> {
-        self.0
+    pub fn as_slice(&self) -> &[BgpSecCsrInfo] {
+        self.0.as_slice()
     }
 }
 
@@ -227,10 +181,33 @@ impl fmt::Display for BgpSecCsrInfoList {
     }
 }
 
+
+//============ Error Types ===================================================
+
+//------------ BgpSecAsnKeyFmtError ------------------------------------------
+
+/// An error happened while parsing an BGPsec router key definition.
+#[derive(Clone, Debug)]
+pub struct BgpSecAsnKeyFmtError;
+
+impl std::error::Error for BgpSecAsnKeyFmtError {}
+
+impl fmt::Display for BgpSecAsnKeyFmtError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Invalid BGPSec ASN and Key format. \
+             Expected: ROUTER-<hex-encoded-asn>-<hex-encoded-key-identifier>"
+        )
+    }
+}
+
+
+//============ Tests =========================================================
+
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
-
     use super::BgpSecAsnKey;
 
     #[test]

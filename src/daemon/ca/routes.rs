@@ -1,25 +1,22 @@
-use std::{collections::HashMap, fmt, ops::Deref, str::FromStr};
+use std::fmt;
+use std::cmp::Ordering;
+use std::collections::HashMap;
+use std::str::FromStr;
 
 use log::debug;
 use rpki::{
-    ca::publication::Base64,
     repository::{
         resources::ResourceSet,
         roa::{Roa, RoaBuilder},
         sigobj::SignedObjectBuilder,
-        x509::{Serial, Time, Validity},
+        x509::{Time, Validity},
     },
-    rrdp::Hash,
-    uri,
 };
-use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+use serde::de;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{
     commons::{
-        api::{
-            ObjectName, Revocation, RoaAggregateKey, RoaConfiguration,
-            RoaPayload,
-        },
         crypto::KrillSigner,
         error::Error,
         KrillResult,
@@ -30,73 +27,10 @@ use crate::{
         config::{Config, IssuanceTimingConfig},
     },
 };
-
-//------------ RoaPayloadKey -----------------------------------------------
-
-/// This type wraps a [`RoaPayload`] but implements its own serialization
-/// based on the string representation of the definition so that it can be
-/// used as a single key in json map representations.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialOrd, PartialEq)]
-pub struct RoaPayloadJsonMapKey(RoaPayload);
-
-// Display
-
-impl fmt::Display for RoaPayloadJsonMapKey {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-// Conversions
-
-impl AsRef<RoaPayload> for RoaPayloadJsonMapKey {
-    fn as_ref(&self) -> &RoaPayload {
-        &self.0
-    }
-}
-
-impl Deref for RoaPayloadJsonMapKey {
-    type Target = RoaPayload;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl From<RoaPayload> for RoaPayloadJsonMapKey {
-    fn from(def: RoaPayload) -> Self {
-        RoaPayloadJsonMapKey(def)
-    }
-}
-
-impl From<RoaPayloadJsonMapKey> for RoaPayload {
-    fn from(auth: RoaPayloadJsonMapKey) -> Self {
-        auth.0
-    }
-}
-
-// Serde
-
-impl Serialize for RoaPayloadJsonMapKey {
-    fn serialize<S>(&self, s: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        self.to_string().serialize(s)
-    }
-}
-
-impl<'de> Deserialize<'de> for RoaPayloadJsonMapKey {
-    fn deserialize<D>(d: D) -> Result<RoaPayloadJsonMapKey, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let string = String::deserialize(d)?;
-        let def = RoaPayload::from_str(string.as_str())
-            .map_err(de::Error::custom)?;
-        Ok(RoaPayloadJsonMapKey(def))
-    }
-}
+use crate::commons::api::ca::ObjectName;
+use crate::commons::api::roa::{
+    AsNumber, RoaConfiguration, RoaInfo, RoaPayload, RoaPayloadJsonMapKey,
+};
 
 //------------ Routes ------------------------------------------------------
 
@@ -112,7 +46,9 @@ impl Routes {
             .map
             .iter()
             .flat_map(|(auth, info)| {
-                if resources.contains_roa_address(&auth.as_roa_ip_address()) {
+                if resources.contains_roa_address(
+                    &auth.as_ref().as_roa_ip_address()
+                ) {
                     Some((*auth, info.clone()))
                 } else {
                     None
@@ -132,10 +68,10 @@ impl Routes {
         self.map
             .iter()
             .map(|(payload_key, route_info)| {
-                RoaConfiguration::new(
-                    payload_key.0,
-                    route_info.comment().cloned(),
-                )
+                RoaConfiguration {
+                    payload: payload_key.clone().into(),
+                    comment: route_info.comment().cloned(),
+                }
             })
             .collect()
     }
@@ -157,7 +93,7 @@ impl Routes {
             HashMap::new();
 
         for auth in self.map.keys() {
-            let key = RoaAggregateKey::new(auth.asn(), None);
+            let key = RoaAggregateKey::new(auth.as_ref().asn, None);
             if let Some(authorizations) = map.get_mut(&key) {
                 authorizations.push(*auth);
                 authorizations.sort();
@@ -250,70 +186,124 @@ impl Default for RouteInfo {
     }
 }
 
-//------------ RoaInfo -----------------------------------------------------
 
-/// This type defines information about a ROA *object*
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct RoaInfo {
-    // The route or routes authorized by this ROA
-    authorizations: Vec<RoaPayloadJsonMapKey>,
+//------------ RoaAggregateKey ---------------------------------------------
 
-    // The validity time for this ROA.
-    validity: Validity,
-
-    // The serial number (needed for revocation)
-    serial: Serial,
-
-    // The URI where this object is expected to be published
-    uri: uri::Rsync,
-
-    // The actual ROA in base64 format.
-    base64: Base64,
-
-    // The ROA's hash
-    hash: Hash,
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct RoaAggregateKey {
+    asn: AsNumber,
+    group: Option<u32>,
 }
 
-impl RoaInfo {
-    pub fn new(authorizations: Vec<RoaPayloadJsonMapKey>, roa: Roa) -> Self {
-        let validity = roa.cert().validity();
-        let serial = roa.cert().serial_number();
-        let uri = roa.cert().signed_object().unwrap().clone(); // safe for our own ROAs
-        let base64 = Base64::from(&roa);
-        let hash = base64.to_hash();
+impl RoaAggregateKey {
+    pub fn new(asn: AsNumber, group: Option<u32>) -> Self {
+        RoaAggregateKey { asn, group }
+    }
 
-        RoaInfo {
-            authorizations,
-            validity,
-            serial,
-            uri,
-            base64,
-            hash,
+    pub fn asn(&self) -> AsNumber {
+        self.asn
+    }
+
+    pub fn group(&self) -> Option<u32> {
+        self.group
+    }
+}
+
+impl fmt::Display for RoaAggregateKey {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self.group {
+            None => write!(f, "AS{}", self.asn),
+            Some(nr) => write!(f, "AS{}-{}", self.asn, nr),
         }
     }
+}
 
-    pub fn authorizations(&self) -> &Vec<RoaPayloadJsonMapKey> {
-        &self.authorizations
+impl From<&RoaAggregateKey> for ObjectName {
+    fn from(roa_group: &RoaAggregateKey) -> Self {
+        ObjectName::new(
+            match roa_group.group() {
+                None => format!("AS{}.roa", roa_group.asn()),
+                Some(number) => {
+                    format!("AS{}-{}.roa", roa_group.asn(), number)
+                }
+            }
+        )
     }
+}
 
-    pub fn serial(&self) -> Serial {
-        self.serial
+impl FromStr for RoaAggregateKey {
+    type Err = RoaAggregateKeyFmtError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut parts = s.split('-');
+
+        let asn_part = parts
+            .next()
+            .ok_or_else(|| RoaAggregateKeyFmtError::string(s))?;
+
+        if !asn_part.starts_with("AS") || asn_part.len() < 3 {
+            return Err(RoaAggregateKeyFmtError::string(s));
+        }
+
+        let asn = AsNumber::from_str(&asn_part[2..])
+            .map_err(|_| RoaAggregateKeyFmtError::string(s))?;
+
+        let group = if let Some(group) = parts.next() {
+            let group = u32::from_str(group)
+                .map_err(|_| RoaAggregateKeyFmtError::string(s))?;
+            Some(group)
+        } else {
+            None
+        };
+
+        if parts.next().is_some() {
+            Err(RoaAggregateKeyFmtError::string(s))
+        } else {
+            Ok(RoaAggregateKey { asn, group })
+        }
     }
+}
 
-    pub fn expires(&self) -> Time {
-        self.validity.not_after()
+/// We use RoaGroup as (json) map keys and therefore we need it
+/// to be serializable to a single simple string.
+impl Serialize for RoaAggregateKey {
+    fn serialize<S>(&self, s: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.to_string().serialize(s)
     }
+}
 
-    pub fn revoke(&self) -> Revocation {
-        Revocation::new(self.serial, self.validity.not_after())
+/// We use RoaGroup as (json) map keys and therefore we need it
+/// to be deserializable from a single simple string.
+impl<'de> Deserialize<'de> for RoaAggregateKey {
+    fn deserialize<D>(d: D) -> Result<RoaAggregateKey, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let string = String::deserialize(d)?;
+        RoaAggregateKey::from_str(string.as_str()).map_err(de::Error::custom)
     }
+}
 
-    pub fn base64(&self) -> &Base64 {
-        &self.base64
+/// Ordering is based on ASN first, and group second if there are
+/// multiple keys for the same ASN. Note: we don't currently use
+/// such groups. It's here in case we want to give users more
+/// options in future.
+impl Ord for RoaAggregateKey {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match self.asn.cmp(&other.asn) {
+            Ordering::Equal => self.group.cmp(&other.group),
+            Ordering::Greater => Ordering::Greater,
+            Ordering::Less => Ordering::Less,
+        }
     }
+}
 
-    pub fn hash(&self) -> Hash {
-        self.hash
+impl PartialOrd for RoaAggregateKey {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -383,12 +373,12 @@ impl Roas {
         config: &RoaConfiguration,
     ) -> Vec<RoaInfo> {
         let payload = RoaPayloadJsonMapKey::from(
-            config.payload().into_explicit_max_length(),
+            config.payload.into_explicit_max_length(),
         );
         let mut roa_infos: Vec<RoaInfo> = self
             .simple
             .values()
-            .filter(|info| info.authorizations().contains(&payload))
+            .filter(|info| info.authorizations.contains(&payload))
             .cloned()
             .collect();
 
@@ -396,7 +386,7 @@ impl Roas {
             &mut self
                 .aggregate
                 .values()
-                .filter(|info| info.authorizations().contains(&payload))
+                .filter(|info| info.authorizations.contains(&payload))
                 .cloned()
                 .collect(),
         );
@@ -459,7 +449,7 @@ impl Roas {
         // Add new ROAs
         for auth in relevant_routes.roa_payload_keys() {
             if !self.simple.contains_key(auth) {
-                let name = ObjectName::from(auth);
+                let name = ObjectName::from(*auth);
                 let authorizations = vec![*auth];
                 let roa = Self::make_roa(
                     &authorizations,
@@ -553,7 +543,7 @@ impl Roas {
             if let Some(existing) = self.aggregate.get(key) {
                 // check if we need to update
                 let mut existing_authorizations =
-                    existing.authorizations().clone();
+                    existing.authorizations.clone();
                 existing_authorizations.sort();
 
                 if authorizations != &existing_authorizations {
@@ -600,7 +590,7 @@ impl Roas {
         signer: &KrillSigner,
     ) -> KrillResult<RoaUpdates> {
         let relevant_routes =
-            all_routes.filter(certified_key.incoming_cert().resources());
+            all_routes.filter(&certified_key.incoming_cert().resources);
 
         match self.mode(
             relevant_routes.len(),
@@ -649,7 +639,7 @@ impl Roas {
         let renew_threshold = issuance_timing.new_roa_issuance_threshold();
 
         for (auth, roa_info) in self.simple.iter() {
-            let name = ObjectName::from(auth);
+            let name = ObjectName::from(*auth);
             if force || roa_info.expires() < renew_threshold {
                 let authorizations = vec![*auth];
                 let roa = Self::make_roa(
@@ -666,7 +656,7 @@ impl Roas {
 
         for (roa_key, roa_info) in self.aggregate.iter() {
             if force || roa_info.expires() < renew_threshold {
-                let authorizations = roa_info.authorizations().clone();
+                let authorizations = roa_info.authorizations.clone();
                 let name = ObjectName::from(roa_key);
                 let new_roa = Self::make_roa(
                     authorizations.as_slice(),
@@ -696,29 +686,30 @@ impl Roas {
 
         let crl_uri = incoming_cert.crl_uri();
         let roa_uri = incoming_cert.uri_for_name(name);
-        let aia = incoming_cert.uri();
+        let aia = &incoming_cert.uri;
 
         let asn = authorizations
             .first()
             .ok_or_else(|| {
                 Error::custom("Attempt to create ROA without prefixes")
             })?
-            .asn();
+            .as_ref().asn;
 
         let mut roa_builder = RoaBuilder::new(asn.into());
 
         for auth in authorizations {
-            if auth.asn() != asn {
+            let auth = RoaPayload::from(*auth);
+            if auth.asn != asn {
                 return Err(Error::custom(
                     "Attempt to create ROA for multiple ASNs",
                 ));
             }
-            let prefix = auth.prefix();
+            let prefix = auth.prefix;
             if auth.effective_max_length() > prefix.prefix().addr_len() {
                 roa_builder.push_addr(
                     prefix.ip_addr(),
                     prefix.addr_len(),
-                    auth.max_length(),
+                    auth.max_length,
                 );
             } else {
                 roa_builder.push_addr(
@@ -736,7 +727,7 @@ impl Roas {
             aia.clone(),
             roa_uri,
         );
-        object_builder.set_issuer(Some(incoming_cert.subject().clone()));
+        object_builder.set_issuer(Some(incoming_cert.subject.clone()));
         object_builder.set_signing_time(Some(Time::now()));
 
         Ok(signer.sign_roa(roa_builder, object_builder, signing_key)?)
@@ -761,17 +752,33 @@ impl Roas {
     }
 }
 
+
+//------------ AuthorizationFmtError -------------------------------------
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RoaAggregateKeyFmtError(String);
+
+impl fmt::Display for RoaAggregateKeyFmtError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Invalid ROA Group format ({})", self.0)
+    }
+}
+
+impl RoaAggregateKeyFmtError {
+    fn string(s: &str) -> Self {
+        RoaAggregateKeyFmtError(s.to_string())
+    }
+}
+
 //------------ Tests -------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
-
+    use crate::commons::api::roa::{AsNumber, RoaPayload};
     use super::*;
-    use crate::commons::api::AsNumber;
 
     fn authorization(s: &str) -> RoaPayloadJsonMapKey {
-        let def = RoaPayload::from_str(s).unwrap();
-        RoaPayloadJsonMapKey(def)
+        RoaPayload::from_str(s).unwrap().into()
     }
 
     #[test]
@@ -809,7 +816,7 @@ mod tests {
         assert_eq!(2, aggregates.keys().len());
 
         let agg_1 = aggregates
-            .get(&RoaAggregateKey::new(AsNumber::new(64496), None))
+            .get(&RoaAggregateKey::new(AsNumber::from_u32(64496), None))
             .unwrap();
 
         let mut agg_1_expected = vec![auth1_1, auth1_2, auth1_3];
@@ -818,9 +825,28 @@ mod tests {
         assert_eq!(agg_1, &agg_1_expected);
 
         let agg_2 = aggregates
-            .get(&RoaAggregateKey::new(AsNumber::new(64497), None))
+            .get(&RoaAggregateKey::new(AsNumber::from_u32(64497), None))
             .unwrap();
 
         assert_eq!(agg_2, &vec![auth2_1])
+    }
+
+    #[test]
+    fn roa_group_string() {
+        let roa_group_asn_only = RoaAggregateKey {
+            asn: AsNumber::from_u32(0),
+            group: None,
+        };
+
+        let roa_group_asn_only_expected_str = "AS0";
+        assert_eq!(
+            roa_group_asn_only.to_string().as_str(),
+            roa_group_asn_only_expected_str
+        );
+
+        let roa_group_asn_only_expected =
+            RoaAggregateKey::from_str(roa_group_asn_only_expected_str)
+                .unwrap();
+        assert_eq!(roa_group_asn_only, roa_group_asn_only_expected)
     }
 }

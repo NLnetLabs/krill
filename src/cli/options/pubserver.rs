@@ -85,7 +85,7 @@ pub struct List;
 impl List {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::PublisherList, httpclient::Error> {
+    ) -> Result<api::admin::PublisherList, httpclient::Error> {
         client.publishers_list().await
     }
 }
@@ -103,7 +103,7 @@ pub struct Stale {
 impl Stale {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::PublisherList, httpclient::Error> {
+    ) -> Result<api::admin::PublisherList, httpclient::Error> {
         client.publishers_stale(self.seconds).await
     }
 }
@@ -172,7 +172,7 @@ pub struct Show {
 impl Show {
     async fn run(
         self, client: &KrillClient
-    ) -> Result<api::PublisherDetails, httpclient::Error> {
+    ) -> Result<api::admin::PublisherDetails, httpclient::Error> {
         client.publisher_details(&self.handle.publisher).await
     }
 }
@@ -189,7 +189,7 @@ pub struct Remove {
 impl Remove {
     async fn run(
         self, client: &KrillClient
-    ) -> Result<api::Success, httpclient::Error> {
+    ) -> Result<api::admin::Success, httpclient::Error> {
         client.publisher_delete(&self.handle.publisher).await
     }
 }
@@ -205,7 +205,7 @@ pub struct DeleteFiles {
 impl DeleteFiles {
     async fn run(
         self, client: &KrillClient
-    ) -> Result<api::Success, httpclient::Error> {
+    ) -> Result<api::admin::Success, httpclient::Error> {
         client.pubserver_delete_files(self.base_uri).await
     }
 }
@@ -257,7 +257,7 @@ pub struct Init {
 impl Init {
     pub async fn run(
         mut self, client: &KrillClient
-    ) -> Result<api::Success, httpclient::Error> {
+    ) -> Result<api::admin::Success, httpclient::Error> {
         // Ensure URIs end in a slash.
         self.rrdp.path_into_dir();
         self.rsync.path_into_dir();
@@ -289,7 +289,7 @@ pub struct SessionReset;
 impl SessionReset {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::Success, httpclient::Error> {
+    ) -> Result<api::admin::Success, httpclient::Error> {
         client.pubserver_session_reset().await
     }
 }
@@ -303,7 +303,7 @@ pub struct Clear;
 impl Clear {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::Success, httpclient::Error> {
+    ) -> Result<api::admin::Success, httpclient::Error> {
         client.pubserver_clear().await
     }
 }

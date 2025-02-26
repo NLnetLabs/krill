@@ -16,9 +16,6 @@ use rpki::{
 use crate::{
     commons::{
         actor::Actor,
-        api::{
-            PublicationServerUris, PublisherDetails, RepoFileDeleteCriteria,
-        },
         crypto::KrillSigner,
         error::Error,
         util::cmslogger::CmsLogger,
@@ -30,8 +27,12 @@ use crate::{
     },
     pubd::{RepoStats, RepositoryAccessProxy, RepositoryContentProxy},
 };
+use crate::commons::api::admin::{
+    PublicationServerUris, PublisherDetails, RepoFileDeleteCriteria,
+};
 
 use super::RrdpUpdateNeeded;
+
 
 //------------ RepositoryManager
 //------------ -----------------------------------------------------
@@ -239,7 +240,7 @@ impl RepositoryManager {
 
         // delete matching files using the updated snapshot and stage a delta
         // if needed.
-        self.content.delete_matching_files(criteria.into())?;
+        self.content.delete_matching_files(criteria.base_uri)?;
 
         // update RRDP again to make the delta effective immediately.
         let content =
@@ -276,18 +277,18 @@ impl RepositoryManager {
 
     pub fn get_publisher_details(
         &self,
-        name: &PublisherHandle,
+        handle: PublisherHandle,
     ) -> KrillResult<PublisherDetails> {
-        let publisher = self.access.get_publisher(name)?;
+        let publisher = self.access.get_publisher(&handle)?;
         let id_cert = publisher.id_cert().clone();
         let base_uri = publisher.base_uri().clone();
 
-        let current = self
+        let current_files = self
             .content
-            .current_objects(name)?
+            .current_objects(&handle)?
             .try_into_publish_elements()?;
 
-        Ok(PublisherDetails::new(name, id_cert, base_uri, current))
+        Ok(PublisherDetails { handle, id_cert, base_uri, current_files })
     }
 
     /// Returns the RFC8183 Repository Response for the publisher.
@@ -363,7 +364,7 @@ mod tests {
         commons::{
             api::{
                 rrdp::{PublicationDeltaError, RrdpSession},
-                IdCertInfo,
+                ca::IdCertInfo,
             },
             crypto::{KrillSignerBuilder, OpenSslSignerConfig},
             util::file::{self, CurrentFile},
@@ -411,7 +412,7 @@ mod tests {
     ) -> idexchange::PublisherRequest {
         let handle = Handle::from_str(handle).unwrap();
         idexchange::PublisherRequest::new(
-            id_cert.base64().clone(),
+            id_cert.base64.clone(),
             handle,
             None,
         )
@@ -450,10 +451,10 @@ mod tests {
         let repository_manager =
             RepositoryManager::build(config, mq, signer).unwrap();
 
-        let rsync_base = rsync("rsync://localhost/repo/");
-        let rrdp_base = https("https://localhost/repo/rrdp/");
-
-        let uris = PublicationServerUris::new(rrdp_base, rsync_base);
+        let uris = PublicationServerUris {
+            rrdp_base_uri: https("https://localhost/repo/rrdp/"),
+            rsync_jail: rsync("rsync://localhost/repo/"),
+        };
 
         repository_manager.init(uris).unwrap();
 
@@ -476,11 +477,11 @@ mod tests {
         server.create_publisher(publisher_req, &actor).unwrap();
 
         let alice_found =
-            server.get_publisher_details(&alice_handle).unwrap();
+            server.get_publisher_details(alice_handle).unwrap();
 
-        assert_eq!(alice_found.base_uri(), alice.base_uri());
-        assert_eq!(alice_found.id_cert(), alice.id_cert());
-        assert!(alice_found.current_files().is_empty());
+        assert_eq!(alice_found.base_uri, alice.base_uri());
+        assert_eq!(alice_found.id_cert, *alice.id_cert());
+        assert!(alice_found.current_files.is_empty());
     }
 
     #[test]

@@ -23,8 +23,8 @@ use crate::{
     commons::{
         actor::Actor,
         api::{
-            rrdp::PublicationDeltaError, CustomerAsn, ErrorResponse,
-            RoaPayload,
+            error::ErrorResponse,
+            rrdp::PublicationDeltaError,
         },
         crypto::SignerError,
         eventsourcing::AggregateStoreError,
@@ -33,16 +33,19 @@ use crate::{
         storage::KeyValueError,
         util::httpclient,
     },
-    daemon::{ca::RoaPayloadJsonMapKey, http::tls_keys},
+    daemon::http::tls_keys,
     daemon::auth::Permission,
     ta,
     upgrades::UpgradeError,
 };
 
 use super::{
-    api::{BgpSecAsnKey, BgpSecDefinition, RoaConfiguration},
+    api::roa::{RoaConfiguration, RoaPayload},
     eventsourcing::WalStoreError,
 };
+use super::api::aspa::CustomerAsn;
+use super::api::bgpsec::{BgpSecAsnKey, BgpSecDefinition};
+use super::api::roa::RoaPayloadJsonMapKey;
 
 //------------ RoaDeltaError -----------------------------------------------
 
@@ -537,9 +540,23 @@ impl fmt::Display for Error {
             //-----------------------------------------------------------------
             // BGPSec
             //-----------------------------------------------------------------
-            Error::BgpSecDefinitionUnknown(_ca, key) => write!(f, "Cannot remove BGPSec CSR for unknown combination of ASN '{}' and key '{}'", key.asn(), key.key_identifier()),
-            Error::BgpSecDefinitionInvalidlySigned(_ca, def, msg) => write!(f, "Invalidly signed BGPSec CSR remove BGPSec CSR for ASN '{}' and key '{}', error: {}", def.asn(), def.csr().public_key().key_identifier(), msg),
-            Error::BgpSecDefinitionNotEntitled(_ca, key) => write!(f, "AS '{}' is not held by you", key.asn()),
+            Error::BgpSecDefinitionUnknown(_ca, key) => {
+                write!(f,
+                    "Cannot remove BGPSec CSR for unknown combination of \
+                     ASN '{}' and key '{}'",
+                    key.asn, key.key
+                )
+            }
+            Error::BgpSecDefinitionInvalidlySigned(_ca, def, msg) => {
+                write!(f,
+                    "Invalidly signed BGPsec CSR for ASN '{}' and key '{}': \
+                     {}",
+                    def.asn, def.csr.public_key().key_identifier(), msg
+                )
+            }
+            Error::BgpSecDefinitionNotEntitled(_ca, key) => {
+                write!(f, "AS '{}' is not held by you", key.asn)
+            }
 
 
             //-----------------------------------------------------------------
@@ -1078,24 +1095,24 @@ impl Error {
             Error::CaAuthorizationUnknown(ca, auth) => {
                 ErrorResponse::new("ca-roa-unknown", self)
                     .with_ca(ca)
-                    .with_auth(auth)
+                    .with_auth(*auth)
             }
             Error::CaAuthorizationDuplicate(ca, auth) => {
                 ErrorResponse::new("ca-roa-duplicate", self)
                     .with_ca(ca)
-                    .with_auth(auth)
+                    .with_auth(*auth)
             }
 
             Error::CaAuthorizationInvalidMaxLength(ca, auth) => {
                 ErrorResponse::new("ca-roa-invalid-max-length", self)
                     .with_ca(ca)
-                    .with_auth(auth)
+                    .with_auth(*auth)
             }
 
             Error::CaAuthorizationNotEntitled(ca, auth) => {
                 ErrorResponse::new("ca-roa-not-entitled", self)
                     .with_ca(ca)
-                    .with_auth(auth)
+                    .with_auth(*auth)
             }
 
             Error::RoaDeltaError(ca, roa_delta_error) => {
@@ -1144,23 +1161,23 @@ impl Error {
             Error::BgpSecDefinitionUnknown(ca, key) => {
                 ErrorResponse::new("ca-bgpsec-unknown", self)
                     .with_ca(ca)
-                    .with_asn(key.asn())
-                    .with_key_identifier(&key.key_identifier())
+                    .with_asn(key.asn)
+                    .with_key_identifier(&key.key)
             }
             Error::BgpSecDefinitionInvalidlySigned(ca, def, msg) => {
                 ErrorResponse::new("ca-bgpsec-invalidly-signed", self)
                     .with_ca(ca)
-                    .with_asn(def.asn())
+                    .with_asn(def.asn)
                     .with_key_identifier(
-                        &def.csr().public_key().key_identifier(),
+                        &def.csr.public_key().key_identifier(),
                     )
-                    .with_bgpsec_csr(def.csr())
+                    .with_bgpsec_csr(&def.csr)
                     .with_cause(msg)
             }
             Error::BgpSecDefinitionNotEntitled(ca, key) => {
                 ErrorResponse::new("ca-bgpsec-not-entitled", self)
                     .with_ca(ca)
-                    .with_asn(key.asn())
+                    .with_asn(key.asn)
             }
 
             //-----------------------------------------------------------------
@@ -1305,7 +1322,7 @@ mod tests {
 
     use std::str::FromStr;
 
-    use crate::commons::api::RoaPayload;
+    use crate::commons::api::roa::RoaPayload;
     use crate::test::roa_configuration;
 
     use super::*;

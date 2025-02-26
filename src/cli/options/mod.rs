@@ -20,7 +20,7 @@ mod server;
 
 use rpki::ca::idexchange::ServiceUri;
 use clap::Parser;
-use crate::commons::api::Token;
+use crate::commons::api::admin::Token;
 use super::client::KrillClient;
 use super::report::{Report, ReportFormat};
 

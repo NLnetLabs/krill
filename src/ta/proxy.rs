@@ -22,7 +22,6 @@ use serde::{Deserialize, Serialize};
 use crate::{
     commons::{
         actor::Actor,
-        api::{AddChildRequest, IdCertInfo, RepositoryContact},
         crypto::{CsrInfo, KrillSigner},
         error::Error,
         eventsourcing::{
@@ -32,6 +31,9 @@ use crate::{
     },
     daemon::ca::{Rfc8183Id, UsedKeyState},
 };
+use crate::commons::api::admin::{AddChildRequest, RepositoryContact};
+use crate::commons::api::ca::IdCertInfo;
+
 
 //------------ TrustAnchorProxy --------------------------------------------
 
@@ -179,7 +181,7 @@ impl fmt::Display for TrustAnchorProxyEvent {
                 write!(
                     f,
                     "Added repository with service uri: {}",
-                    repository.server_info().service_uri()
+                    repository.server_info.service_uri
                 )
             }
 
@@ -188,7 +190,7 @@ impl fmt::Display for TrustAnchorProxyEvent {
                 write!(
                     f,
                     "Added signer with ID certificate hash: {}",
-                    signer.id.hash()
+                    signer.id.hash
                 )
             }
             TrustAnchorProxyEvent::SignerRequestMade(nonce) => {
@@ -265,7 +267,7 @@ impl fmt::Display for TrustAnchorProxyCommandDetails {
                 write!(
                     f,
                     "Add repository at: {}",
-                    repository.server_info().service_uri()
+                    repository.server_info.service_uri
                 )
             }
 
@@ -274,7 +276,7 @@ impl fmt::Display for TrustAnchorProxyCommandDetails {
                 write!(
                     f,
                     "Add signer with id certificate hash: {}",
-                    signer.id.hash()
+                    signer.id.hash
                 )
             }
             TrustAnchorProxyCommandDetails::MakeSignerRequest => {
@@ -320,50 +322,50 @@ impl fmt::Display for TrustAnchorProxyCommandDetails {
 }
 
 impl eventsourcing::WithStorableDetails for TrustAnchorProxyCommandDetails {
-    fn summary(&self) -> crate::commons::api::CommandSummary {
+    fn summary(&self) -> crate::commons::api::history::CommandSummary {
         match self {
             // Initialisation
             TrustAnchorProxyCommandDetails::Init => {
-                crate::commons::api::CommandSummary::new(
+                crate::commons::api::history::CommandSummary::new(
                     "cmd-ta-proxy-init",
                     self,
                 )
             }
             // Publication Support
             TrustAnchorProxyCommandDetails::AddRepository(repository) => {
-                crate::commons::api::CommandSummary::new(
+                crate::commons::api::history::CommandSummary::new(
                     "cmd-ta-proxy-repo-add",
                     self,
                 )
-                .with_service_uri(repository.server_info().service_uri())
+                .service_uri(&repository.server_info.service_uri)
             }
 
             // Proxy -> Signer interactions
             TrustAnchorProxyCommandDetails::AddSigner(signer) => {
-                crate::commons::api::CommandSummary::new(
+                crate::commons::api::history::CommandSummary::new(
                     "cmd-ta-proxy-signer-add",
                     self,
                 )
-                .with_id_cert_hash(signer.id.hash())
+                .id_cert_hash(&signer.id.hash)
             }
             TrustAnchorProxyCommandDetails::MakeSignerRequest => {
-                crate::commons::api::CommandSummary::new(
+                crate::commons::api::history::CommandSummary::new(
                     "cmd-ta-proxy-pub-req",
                     self,
                 )
             }
             TrustAnchorProxyCommandDetails::ProcessSignerResponse(
                 response,
-            ) => crate::commons::api::CommandSummary::new(
+            ) => crate::commons::api::history::CommandSummary::new(
                 "cmd-ta-proxy-pub-res",
                 self,
             )
-            .with_arg("nonce", &response.content().nonce)
-            .with_arg(
+            .arg("nonce", &response.content().nonce)
+            .arg(
                 "manifest number",
                 response.content().objects.revision().number(),
             )
-            .with_arg(
+            .arg(
                 "this update",
                 response
                     .content()
@@ -372,7 +374,7 @@ impl eventsourcing::WithStorableDetails for TrustAnchorProxyCommandDetails {
                     .this_update()
                     .to_rfc3339(),
             )
-            .with_arg(
+            .arg(
                 "next update",
                 response
                     .content()
@@ -384,28 +386,28 @@ impl eventsourcing::WithStorableDetails for TrustAnchorProxyCommandDetails {
 
             // Children
             TrustAnchorProxyCommandDetails::AddChild(child) => {
-                crate::commons::api::CommandSummary::new(
-                    "cmd-ta-proxy-child-add",
-                    self,
-                )
-                .with_child(child.handle())
+                crate::commons::api::history::CommandSummary::new(
+                    "cmd-ta-proxy-child-add", self,
+                ).child(&child.handle)
             }
             TrustAnchorProxyCommandDetails::AddChildRequest(
                 child_handle,
                 _request,
-            ) => crate::commons::api::CommandSummary::new(
-                "cmd-ta-proxy-child-req",
-                self,
-            )
-            .with_child(child_handle),
+            ) => {
+                crate::commons::api::history::CommandSummary::new(
+                    "cmd-ta-proxy-child-req",
+                    self,
+                ).child(child_handle)
+            }
             TrustAnchorProxyCommandDetails::GiveChildResponse(
                 child_handle,
                 _response,
-            ) => crate::commons::api::CommandSummary::new(
-                "cmd-ta-proxy-child-res",
-                self,
-            )
-            .with_child(child_handle),
+            ) => {
+                crate::commons::api::history::CommandSummary::new(
+                    "cmd-ta-proxy-child-res",
+                    self,
+                ).child(child_handle)
+            }
         }
     }
 
@@ -784,15 +786,17 @@ impl TrustAnchorProxy {
         &self,
         child: AddChildRequest,
     ) -> KrillResult<Vec<TrustAnchorProxyEvent>> {
-        if self.child_details.contains_key(child.handle()) {
+        if self.child_details.contains_key(&child.handle) {
             Err(Error::CaChildDuplicate(
                 self.handle.clone(),
-                child.handle().clone(),
+                child.handle,
             ))
-        } else {
-            let (handle, resources, id_cert) = child.unpack();
+        }
+        else {
             Ok(vec![TrustAnchorProxyEvent::ChildAdded(
-                TrustAnchorChild::new(handle, id_cert.into(), resources),
+                TrustAnchorChild::new(
+                    child.handle, child.id_cert.into(), child.resources
+                ),
             )])
         }
     }
@@ -903,7 +907,7 @@ impl TrustAnchorProxy {
                 child_requests,
             }
             .sign(
-                self.id.public_key().key_identifier(),
+                self.id.public_key.key_identifier(),
                 timing.signed_message_validity_days,
                 signer,
             )
@@ -955,7 +959,7 @@ impl TrustAnchorProxy {
     /// XML to a repository for this `CertAuth`
     pub fn publisher_request(&self) -> idexchange::PublisherRequest {
         idexchange::PublisherRequest::new(
-            self.id.base64().clone(),
+            self.id.base64.clone(),
             self.handle.convert(),
             None,
         )
@@ -987,7 +991,7 @@ impl TrustAnchorProxy {
                     e
                 ))
             })?;
-            SigningCert::new(received_cert.uri().clone(), my_cert)
+            SigningCert::new(received_cert.uri.clone(), my_cert)
         };
 
         let mut issued_certs = vec![];
@@ -1011,7 +1015,7 @@ impl TrustAnchorProxy {
                     },
                 )?);
 
-                let expires = issued.validity().not_after();
+                let expires = issued.validity.not_after();
 
                 if expires > threshold {
                     not_after = expires;

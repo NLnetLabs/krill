@@ -88,7 +88,7 @@ pub struct Init;
 impl Init {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::Success, httpclient::Error> {
+    ) -> Result<api::admin::Success, httpclient::Error> {
         client.ta_proxy_init().await
     }
 }
@@ -102,7 +102,7 @@ pub struct Id;
 impl Id {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::IdCertInfo, httpclient::Error> {
+    ) -> Result<api::ca::IdCertInfo, httpclient::Error> {
         client.ta_proxy_id().await
     }
 }
@@ -155,7 +155,7 @@ pub struct RepoContact;
 impl RepoContact {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::RepositoryContact, httpclient::Error> {
+    ) -> Result<api::admin::RepositoryContact, httpclient::Error> {
         client.ta_proxy_repo_contact().await
     }
 }
@@ -173,7 +173,7 @@ pub struct RepoConfigure {
 impl RepoConfigure {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::Success, httpclient::Error> {
+    ) -> Result<api::admin::Success, httpclient::Error> {
         client.ta_proxy_repo_configure(self.response.into()).await
     }
 }
@@ -220,7 +220,7 @@ pub struct SignerInit {
 impl SignerInit {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::Success, httpclient::Error> {
+    ) -> Result<api::admin::Success, httpclient::Error> {
         client.ta_proxy_signer_add(self.info.content).await
     }
 }
@@ -275,7 +275,7 @@ pub struct SignerProcessResponse {
 impl SignerProcessResponse {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::Success, httpclient::Error> {
+    ) -> Result<api::admin::Success, httpclient::Error> {
         client.ta_proxy_signer_response(self.response.content).await
     }
 }
@@ -349,11 +349,11 @@ impl ChildrenAdd {
         self, client: &KrillClient
     ) -> Result<idexchange::ParentResponse, httpclient::Error> {
         client.ta_proxy_children_add(
-            api::AddChildRequest::new(
-                self.info.handle,
-                ResourceSet::new(self.asn, self.ipv4, self.ipv6),
-                self.info.id_cert,
-            )
+            api::admin::AddChildRequest {
+                handle: self.info.handle,
+                resources: ResourceSet::new(self.asn, self.ipv4, self.ipv6),
+                id_cert: self.info.id_cert,
+            }
         ).await
     }
 }
@@ -391,7 +391,7 @@ impl FromStr for CertAuthInfoFile {
     type Err = CertAuthInfoFileError;
 
     fn from_str(path: &str) -> Result<Self, Self::Err> {
-        let info = serde_json::from_reader::<_, api::CertAuthInfo>(
+        let info = serde_json::from_reader::<_, api::ca::CertAuthInfo>(
             BufReader::new(
                 File::open(path).map_err(|err| {
                     CertAuthInfoFileError::Io(path.into(), err)
@@ -401,8 +401,8 @@ impl FromStr for CertAuthInfoFile {
             CertAuthInfoFileError::Parse(path.into(), err)
         })?;
         Ok(Self {
-            handle: info.handle().convert(),
-            id_cert: info.id_cert().try_into().map_err(|err| {
+            handle: info.handle.convert(),
+            id_cert: (&info.id_cert).try_into().map_err(|err| {
                 CertAuthInfoFileError::Cert(path.into(), err)
             })?
         })

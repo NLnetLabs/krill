@@ -7,6 +7,7 @@ mod repository;
 
 pub use self::commands::{
     RepositoryAccessCommand, RepositoryAccessCommandDetails,
+    StorableRepositoryCommand,
 };
 pub use self::events::{RepositoryAccessEvent, RepositoryAccessInitEvent};
 pub use self::manager::RepositoryManager;

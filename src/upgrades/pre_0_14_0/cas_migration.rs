@@ -1,7 +1,7 @@
 use rpki::ca::idexchange::MyHandle;
 use rpki::repository::x509::Time;
 
-use crate::commons::api::ProviderAsn;
+use crate::commons::api::aspa::ProviderAsn;
 use crate::commons::eventsourcing::StoredCommandBuilder;
 use crate::upgrades::pre_0_14_0::Pre0_14_0CertAuthStorableCommand;
 use crate::upgrades::{
@@ -10,13 +10,15 @@ use crate::upgrades::{
 };
 use crate::{
     commons::{
-        api::CertAuthStorableCommand,
         eventsourcing::AggregateStore,
         storage::KeyValueStore,
     },
     constants::CASERVER_NS,
     daemon::{
-        ca::{CertAuth, CertAuthEvent, CertAuthInitEvent},
+        ca::{
+            CertAuth, CertAuthEvent, CertAuthInitEvent,
+            CertAuthStorableCommand,
+        },
         config::Config,
     },
     upgrades::UpgradeResult,

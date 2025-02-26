@@ -39,7 +39,7 @@ mod tests {
 
     use crate::{
         commons::{
-            api::{PublicationServerInfo, RepositoryContact},
+            api::admin::{PublicationServerInfo, RepositoryContact},
             crypto::KrillSignerBuilder,
             eventsourcing::AggregateStore,
             storage::Namespace,
@@ -104,15 +104,16 @@ mod tests {
                     )),
                 );
                 let repo_key_id = signer.create_key().unwrap();
-                let repo_key = signer.get_key_info(&repo_key_id).unwrap();
+                let public_key = signer.get_key_info(&repo_key_id).unwrap();
 
                 let service_uri = ServiceUri::Https(test::https(
                     "https://example.krill.cloud/rfc8181/ta",
                 ));
-                let server_info =
-                    PublicationServerInfo::new(repo_key, service_uri);
+                let server_info = PublicationServerInfo {
+                    public_key, service_uri
+                };
 
-                RepositoryContact::new(repo_info, server_info)
+                RepositoryContact { repo_info, server_info }
             };
 
             let add_repo_cmd = TrustAnchorProxyCommand::add_repo(
@@ -138,7 +139,7 @@ mod tests {
                     repo_info: proxy
                         .repository()
                         .unwrap()
-                        .repo_info()
+                        .repo_info
                         .clone(),
                     tal_https: tal_https.clone(),
                     tal_rsync: tal_rsync.clone(),

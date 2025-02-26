@@ -4,7 +4,7 @@ use intervaltree::IntervalTree;
 
 use rpki::repository::resources::{Addr, AddressRange, ResourceSet};
 
-use crate::commons::api::{Ipv4Prefix, Ipv6Prefix, TypedPrefix};
+use crate::commons::api::roa::{Ipv4Prefix, Ipv6Prefix, TypedPrefix};
 
 //------------ IpRange -----------------------------------------------------
 

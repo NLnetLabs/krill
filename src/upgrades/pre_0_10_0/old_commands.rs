@@ -12,17 +12,16 @@ use rpki::{
 
 use crate::{
     commons::{
-        api::{
-            CertAuthStorableCommand, RoaConfigurationUpdates, RtaName,
-            StorableParentContact, StorableRcEntitlement,
-        },
         eventsourcing::WithStorableDetails,
     },
-    daemon::ca::DropReason,
+    daemon::ca::{CertAuthStorableCommand, DropReason, StorableRcEntitlement},
     upgrades::pre_0_14_0::{
         Pre0_14_0AspaProvidersUpdate, Pre0_14_0ProviderAs,
     },
 };
+use crate::commons::api::admin::StorableParentContact;
+use crate::commons::api::ca::RtaName;
+use crate::commons::api::roa::RoaConfigurationUpdates;
 
 use super::Pre0_10_0AspaDefinition;
 
@@ -237,7 +236,7 @@ impl From<Pre0_10_0CertAuthStorableCommand> for CertAuthStorableCommand {
 }
 
 impl WithStorableDetails for Pre0_10_0CertAuthStorableCommand {
-    fn summary(&self) -> crate::commons::api::CommandSummary {
+    fn summary(&self) -> crate::commons::api::history::CommandSummary {
         CertAuthStorableCommand::from(self.clone()).summary()
     }
 

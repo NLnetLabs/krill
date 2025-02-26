@@ -115,7 +115,7 @@ pub struct Info {
 impl Info {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::ChildCaInfo, httpclient::Error> {
+    ) -> Result<api::ca::ChildCaInfo, httpclient::Error> {
         client.child_details(&self.handle.ca, &self.handle.child).await
     }
 }
@@ -139,11 +139,14 @@ pub struct Update {
 impl Update {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::Success, httpclient::Error> {
+    ) -> Result<api::admin::Success, httpclient::Error> {
         client.child_update(&self.handle.ca, &self.handle.child,
-            api::UpdateChildRequest::new(
-                self.request.map(|x| x.0), self.resources.into(), None
-            )
+            api::admin::UpdateChildRequest {
+                id_cert: self.request.map(|x| x.0),
+                resources: self.resources.into(),
+                suspend: None,
+                resource_class_name_mapping: None,
+            }
         ).await
     }
 }
@@ -177,10 +180,10 @@ pub struct Suspend {
 impl Suspend {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::Success, httpclient::Error> {
+    ) -> Result<api::admin::Success, httpclient::Error> {
         client.child_update(
             &self.handle.ca, &self.handle.child,
-            api::UpdateChildRequest::suspend(),
+            api::admin::UpdateChildRequest::suspend(),
         ).await
     }
 }
@@ -197,10 +200,10 @@ pub struct Unsuspend {
 impl Unsuspend {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::Success, httpclient::Error> {
+    ) -> Result<api::admin::Success, httpclient::Error> {
         client.child_update(
             &self.handle.ca, &self.handle.child,
-            api::UpdateChildRequest::unsuspend(),
+            api::admin::UpdateChildRequest::unsuspend(),
         ).await
     }
 }
@@ -217,7 +220,7 @@ pub struct Remove {
 impl Remove {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::Success, httpclient::Error> {
+    ) -> Result<api::admin::Success, httpclient::Error> {
         client.child_delete(&self.handle.ca, &self.handle.child).await
     }
 }
@@ -274,7 +277,7 @@ pub struct Connections {
 impl Connections {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::ChildrenConnectionStats, httpclient::Error> {
+    ) -> Result<api::ca::ChildrenConnectionStats, httpclient::Error> {
         client.child_connections(&self.ca).await
     }
 }

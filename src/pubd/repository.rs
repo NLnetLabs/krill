@@ -32,9 +32,7 @@ use crate::{
                 RrdpFileRandom, RrdpSession, SnapshotData, UpdateElement,
                 WithdrawElement,
             },
-            IdCertInfo,
         },
-        api::{PublicationServerUris, StorableRepositoryCommand},
         crypto::KrillSigner,
         error::{Error, KrillIoError},
         eventsourcing::{
@@ -60,9 +58,12 @@ use crate::{
     },
     ta::TA_NAME,
 };
+use crate::commons::api::admin::PublicationServerUris;
+use crate::commons::api::ca::IdCertInfo;
 
 use super::commands::{
     RepositoryAccessInitCommand, RepositoryAccessInitCommandDetails,
+    StorableRepositoryCommand,
 };
 
 //------------ RepositoryContentProxy ----------------------------------------
@@ -103,13 +104,11 @@ impl RepositoryContentProxy {
         } else {
             // initialize new repo content
             let repository_content = {
-                let (rrdp_base_uri, rsync_jail) = uris.unpack();
-
                 let session = RrdpSession::default();
 
                 let rrdp =
-                    RrdpServer::create(rrdp_base_uri, repo_dir, session);
-                let rsync = RsyncdStore::new(rsync_jail, repo_dir);
+                    RrdpServer::create(uris.rrdp_base_uri, repo_dir, session);
+                let rsync = RsyncdStore::new(uris.rsync_jail, repo_dir);
 
                 RepositoryContent::new(rrdp, rsync)
             };
@@ -618,7 +617,7 @@ impl RepositoryContent {
         &self,
         publisher: &PublisherHandle,
     ) -> Cow<CurrentObjects> {
-        let current = self.rrdp.snapshot.current_objects_for(publisher);
+        let current = self.rrdp.snapshot.get_publisher_objects(publisher);
         let staged = self.rrdp.staged_elements.get(publisher).cloned();
 
         match (current, staged) {
@@ -642,7 +641,7 @@ impl RepositoryContent {
         &self,
         publisher: &PublisherHandle,
     ) -> KrillResult<ListReply> {
-        self.objects_for_publisher(publisher).to_list_reply()
+        self.objects_for_publisher(publisher).get_list_reply()
     }
 
     pub fn reset_session(&self) -> KrillResult<Vec<RepositoryContentChange>> {
@@ -679,7 +678,7 @@ impl RepositoryContent {
         // withdraw objects if any
         let objects = self.objects_for_publisher(&publisher);
         if !objects.is_empty() {
-            let withdraws = objects.to_withdraw_elements()?;
+            let withdraws = objects.try_to_withdraw_elements()?;
             let delta = DeltaElements::new(vec![], vec![], withdraws);
             res.push(RepositoryContentChange::RrdpDeltaStaged {
                 publisher,
@@ -709,7 +708,7 @@ impl RepositoryContent {
 
             // withdraw objects if any
             let withdraws =
-                current_objects.make_matching_withdraws(&del_uri)?;
+                current_objects.get_matching_withdraws(&del_uri)?;
 
             if !withdraws.is_empty() {
                 info!(
@@ -738,7 +737,7 @@ impl RepositoryContent {
         if !delta.is_empty() {
             // Verifying the delta first.
             let current_objects = self.objects_for_publisher(&publisher);
-            current_objects.verify_delta(&delta, &jail)?;
+            current_objects.verify_delta_applies(&delta, &jail)?;
 
             Ok(vec![RepositoryContentChange::RrdpDeltaStaged {
                 publisher,
@@ -1008,15 +1007,15 @@ impl StagedElements {
         let general_merge_message = "Non-critical publish merge conflict resolved. Please contact rpki-team@nlnetlabs.nl if this happens more frequently.";
 
         for pbl in publishes {
-            let uri = pbl.uri().clone();
+            let uri = pbl.uri.clone();
             match self.0.get_mut(&uri) {
                 Some(DeltaElement::Publish(staged_publish)) => {
                     error!(
                         "{} Received new publish element for {} with content hash {} while another publish element with content hash {} was already staged. Expected new *update* element instead. Will use new publish.",
                         general_merge_message,
                         uri,
-                        pbl.base64().to_hash(),
-                        staged_publish.base64().to_hash()
+                        pbl.base64.to_hash(),
+                        staged_publish.base64.to_hash()
                     );
                     self.0.insert(uri, DeltaElement::Publish(pbl));
                 }
@@ -1026,20 +1025,19 @@ impl StagedElements {
                         "{} Received new publish element for {} with content hash {} while an *update* with content hash {} was already staged. Expected new *update* element instead. Will merge content of publish into staged update.",
                         general_merge_message,
                         uri,
-                        pbl.base64().to_hash(),
-                        staged_update.base64().to_hash()
+                        pbl.base64.to_hash(),
+                        staged_update.base64.to_hash()
                     );
-                    let (_, base64) = pbl.unpack();
-                    staged_update.with_updated_content(base64);
+                    staged_update.base64 = pbl.base64;
                 }
                 Some(DeltaElement::Withdraw(staged_withdraw)) => {
                     // A new publish that follows a withdraw for the same URI
                     // should be an Update of the original
                     // file.
-                    let hash = staged_withdraw.hash();
-                    let (_, base64) = pbl.unpack();
-                    let update =
-                        UpdateElement::new(uri.clone(), hash, base64);
+                    let hash = staged_withdraw.hash;
+                    let update = UpdateElement {
+                        uri: uri.clone(), hash, base64: pbl.base64
+                    };
                     self.0.insert(uri, DeltaElement::Update(update));
                 }
                 None => {
@@ -1051,7 +1049,7 @@ impl StagedElements {
         }
 
         for mut upd in updates {
-            let uri = upd.uri().clone();
+            let uri = upd.uri.clone();
             match self.0.get_mut(&uri) {
                 Some(DeltaElement::Publish(staged_publish)) => {
                     // An update that follows a *staged* publish, should be
@@ -1060,7 +1058,7 @@ impl StagedElements {
                     //
                     // To the outside world (RRDP delta in particular) this
                     // will look like a single publish.
-                    staged_publish.with_updated_content(upd.into_base64());
+                    staged_publish.base64 = upd.base64;
                 }
                 Some(DeltaElement::Update(staged_update)) => {
                     // An update that follows a *staged* update, should be
@@ -1071,18 +1069,18 @@ impl StagedElements {
                     //
                     // To the outside world (RRDP delta in particular) this
                     // will look like a single update.
-                    staged_update.with_updated_content(upd.into_base64());
+                    staged_update.base64 = upd.base64;
                 }
                 Some(DeltaElement::Withdraw(staged_withdraw)) => {
                     error!(
                         "{} Received new update element for {} with content hash {} and replacing object hash {}, while a *withdraw* for content hash {} was already staged. Expected new *update* element instead. Will stage the update instead of withdraw.",
                         general_merge_message,
                         uri,
-                        upd.base64().to_hash(),
-                        upd.hash(),
-                        staged_withdraw.hash()
+                        upd.base64.to_hash(),
+                        upd.hash,
+                        staged_withdraw.hash,
                     );
-                    upd.with_updated_hash(staged_withdraw.hash());
+                    upd.hash = staged_withdraw.hash;
                     self.0.insert(uri, DeltaElement::Update(upd));
                 }
                 None => {
@@ -1093,7 +1091,7 @@ impl StagedElements {
         }
 
         for mut wdr in withdraws {
-            let uri = wdr.uri().clone();
+            let uri = wdr.uri.clone();
             match self.0.get(&uri) {
                 Some(DeltaElement::Publish(_)) => {
                     // We had a staged fresh publish for this object. So when
@@ -1108,14 +1106,14 @@ impl StagedElements {
                     // files was never visible in public RRDP. Therefore,
                     // we should update the hash of the withdraw to the
                     // original hash.
-                    wdr.updates_staged(staged_update);
+                    wdr.hash = staged_update.hash;
                     self.0.insert(uri, DeltaElement::Withdraw(wdr));
                 }
                 Some(DeltaElement::Withdraw(staged_wdr)) => {
                     // This should never happen. But leave the original
                     // withdraw in place because
                     // that already matches the current file in public RRDP.
-                    error!("{} We received a withdraw for an object that was already withdrawn.\nExisting withdraw: {} {}\nReceived withdraw: {} {}\n", general_merge_message, staged_wdr.hash(), staged_wdr.uri(), wdr.hash(), wdr.uri())
+                    error!("{} We received a withdraw for an object that was already withdrawn.\nExisting withdraw: {} {}\nReceived withdraw: {} {}\n", general_merge_message, staged_wdr.hash, staged_wdr.uri, wdr.hash, wdr.uri)
                 }
                 None => {
                     // No staged changes for this element, so we can just add
@@ -1196,7 +1194,7 @@ impl RrdpServer {
 
         let serial = RRDP_FIRST_SERIAL;
         let last_update = Time::now();
-        let snapshot = SnapshotData::create();
+        let snapshot = SnapshotData::empty();
 
         RrdpServer {
             rrdp_base_uri,
@@ -1223,7 +1221,7 @@ impl RrdpServer {
     pub fn reset_session(&self) -> RrdpSessionReset {
         let last_update = Time::now();
         let session = RrdpSession::random();
-        let snapshot = self.snapshot.with_new_random();
+        let snapshot = self.snapshot.clone_with_new_random();
 
         RrdpSessionReset {
             last_update,
@@ -1281,7 +1279,7 @@ impl RrdpServer {
             self.snapshot.apply_delta(&publisher, delta.clone());
 
             // extend next RRDP delta with elements for this publisher.
-            rrdp_delta_elements += delta;
+            rrdp_delta_elements.append(delta);
         }
 
         let delta = DeltaData::new(
@@ -1438,7 +1436,7 @@ impl RrdpServer {
 
         if let Some(old_notification) = old_notification_opt.as_ref() {
             if old_notification.serial() == self.serial
-                && old_notification.session_id() == *self.session.as_uuid()
+                && old_notification.session_id() == *self.session.uuid()
             {
                 debug!("Existing notification file matches current session and serial. Nothing to write.");
                 return Ok(());
@@ -1478,7 +1476,7 @@ impl RrdpServer {
                 }
                 Some(mut old_notification) => {
                     if old_notification.session_id()
-                            == *self.session.as_uuid()
+                            == *self.session.uuid()
                     {
                         // Sort the deltas from lowest serial up, and make
                         // sure that there are no gaps.
@@ -1580,7 +1578,7 @@ impl RrdpServer {
         // Write new notification file to new file first.
         // Prevent that half-overwritten files are served.
         let notification = NotificationFile::new(
-            self.session.into(),
+            self.session.into_uuid(),
             self.serial,
             snapshot,
             deltas,
@@ -1888,13 +1886,11 @@ impl RepositoryAccessProxy {
         } else {
             let actor = ACTOR_DEF_KRILL;
 
-            let (rrdp_base_uri, rsync_jail) = uris.unpack();
-
             let cmd = RepositoryAccessInitCommand::new(
                 &self.key,
                 RepositoryAccessInitCommandDetails::new(
-                    rrdp_base_uri,
-                    rsync_jail,
+                    uris.rrdp_base_uri,
+                    uris.rsync_jail,
                     signer,
                 ),
                 &actor,
@@ -2000,7 +1996,7 @@ impl RepositoryAccessProxy {
     ) -> KrillResult<publication::PublicationCms> {
         let publisher = self.get_publisher(publisher)?;
         let msg = PublicationCms::decode(bytes).map_err(Error::Rfc8181)?;
-        msg.validate(publisher.id_cert().public_key())
+        msg.validate(&publisher.id_cert().public_key)
             .map_err(Error::Rfc8181)?;
         Ok(msg)
     }
@@ -2038,7 +2034,7 @@ pub struct RepositoryAccess {
 
 impl RepositoryAccess {
     pub fn key_id(&self) -> KeyIdentifier {
-        self.id_cert.public_key().key_identifier()
+        self.id_cert.public_key.key_identifier()
     }
 }
 
@@ -2197,7 +2193,7 @@ impl RepositoryAccess {
         let service_uri = idexchange::ServiceUri::Https(rfc8181_uri);
 
         Ok(idexchange::RepositoryResponse::new(
-            self.id_cert.base64().clone(),
+            self.id_cert.base64.clone(),
             publisher_handle.clone(),
             service_uri,
             rsync_base.clone(),
@@ -2393,7 +2389,7 @@ impl From<&CurrentObjects> for PublisherStats {
         for (uri_key, base64) in objects.iter() {
             // Add all manifests - as long as they are syntactically correct -
             // do not crash on incorrect objects.
-            if uri_key.ends_with("mft") {
+            if uri_key.as_str().ends_with("mft") {
                 if let Ok(mft) =
                     Manifest::decode(base64.to_bytes().as_ref(), false)
                 {

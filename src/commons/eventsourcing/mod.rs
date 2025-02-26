@@ -32,7 +32,9 @@ mod test {
     use std::sync::Arc;
     use serde::{Deserialize, Serialize};
     use rpki::ca::idexchange::MyHandle;
-    use crate::commons::api::{CommandHistoryCriteria, CommandSummary};
+    use crate::commons::api::history::{
+        CommandHistoryCriteria, CommandSummary
+    };
     use crate::commons::storage::Namespace;
     use crate::constants::ACTOR_DEF_TEST;
     use crate::test::mem_storage;
@@ -231,7 +233,7 @@ mod test {
                 }
                 PersonStorableCommand::ChangeName(name) => {
                     CommandSummary::new("person-change-name", self)
-                        .with_arg("name", name)
+                        .arg("name", name)
                 }
                 PersonStorableCommand::GoAroundTheSun => {
                     CommandSummary::new("person-around-sun", self)
@@ -431,20 +433,21 @@ mod test {
 
         // Get paginated history
         let mut crit = CommandHistoryCriteria::default();
-        crit.set_offset(3);
-        crit.set_rows(10);
+        crit.offset = 3;
+        crit.rows_limit = Some(10);
 
         let history = manager.command_history(&alice_handle, crit).unwrap();
-        assert_eq!(history.total(), 22);
-        assert_eq!(history.offset(), 3);
-        assert_eq!(history.commands().len(), 10);
-        assert_eq!(history.commands().first().unwrap().version, 4);
+        assert_eq!(history.total, 22);
+        assert_eq!(history.offset, 3);
+        assert_eq!(history.commands.len(), 10);
+        assert_eq!(history.commands.first().unwrap().version, 4);
 
         // Get history excluding 'around the sun' commands
         let mut crit = CommandHistoryCriteria::default();
-        crit.set_excludes(&["person-around-sun"]);
+        crit.rows_limit = Some(100);
+        crit.label_excludes = Some(vec!["person-around-sun".into()]);
         let history = manager.command_history(&alice_handle, crit).unwrap();
-        assert_eq!(history.total(), 1);
+        assert_eq!(history.total, 1);
         // })
     }
 }

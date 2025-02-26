@@ -6,7 +6,7 @@ use rpki::ca::idexchange::MyHandle;
 use serde::Serialize;
 use crate::commons::KrillResult;
 use crate::commons::actor::Actor;
-use crate::commons::api::Token;
+use crate::commons::api::admin::Token;
 use crate::commons::error::ApiAuthError;
 use crate::daemon::config::{AuthType, Config};
 use crate::daemon::http::{HttpResponse, HyperRequest};

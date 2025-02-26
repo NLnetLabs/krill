@@ -1,31 +1,53 @@
-//! Support for admin tasks, such as managing publishers and RFC8181 clients
+//! Support for admin tasks, such as managing publishers and RFC8181 clients.
 
-use std::{convert::TryFrom, fmt};
-
-use serde::{Deserialize, Serialize};
-
-use rpki::{
-    ca::{
-        idcert::IdCert,
-        idexchange::{self, ServiceUri},
-        idexchange::{
-            CaHandle, ChildHandle, ParentHandle, PublisherHandle, RepoInfo,
-        },
-        provisioning::ResourceClassName,
-    },
-    crypto::PublicKey,
-    repository::resources::ResourceSet,
-    uri,
+use std::fmt;
+use rpki::ca::idexchange;
+use rpki::ca::idcert::IdCert;
+use rpki::ca::idexchange::{
+    CaHandle, ChildHandle, ParentHandle, PublisherHandle, RepoInfo,
+    ServiceUri,
 };
+use rpki::ca::provisioning::ResourceClassName;
+use rpki::crypto::PublicKey;
+use rpki::repository::resources::ResourceSet;
+use rpki::uri;
+use serde::{Deserialize, Serialize, Serializer};
+use serde::ser::SerializeStruct;
+use crate::commons::error::Error;
+use crate::commons::KrillResult;
+use super::ca::{IdCertInfo, Timestamp};
+use super::rrdp::PublishElement;
 
-use crate::commons::{
-    api::{rrdp::PublishElement, IdCertInfo, Timestamp},
-    error::Error,
-    KrillResult,
-};
 
-//------------ Token ------------------------------------------------------
+//------------ Success -------------------------------------------------------
 
+/// An empty, successful API response.
+///
+/// This type needs to be used instead of `()` to make conversion into
+/// [`Report`][crate::client::report::Report] work.
+#[derive(Clone, Copy, Debug)]
+pub struct Success;
+
+impl fmt::Display for Success {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("Ok")
+    }
+}
+
+impl Serialize for Success {
+    fn serialize<S: Serializer>(
+        &self, serializer: S
+    ) -> Result<S::Ok, S::Error> {
+        let mut serializer = serializer.serialize_struct("Success", 1)?;
+        serializer.serialize_field("status", "Ok")?;
+        serializer.end()
+    }
+}
+
+
+//------------ Token ---------------------------------------------------------
+
+/// An authentication token.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct Token(String);
 
@@ -53,75 +75,52 @@ impl fmt::Display for Token {
     }
 }
 
+
 //------------ PublicationServerUris -----------------------------------------
 
-/// Contains the information needed to initialize a new Publication Server
+/// The URIs necessasry to initialise a new publication server.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PublicationServerUris {
-    rrdp_base_uri: uri::Https,
-    rsync_jail: uri::Rsync,
+    /// The base URI of the RRDP server.
+    pub rrdp_base_uri: uri::Https,
+
+    /// The base URI of the rsync server.
+    pub rsync_jail: uri::Rsync,
 }
 
-impl PublicationServerUris {
-    pub fn new(rrdp_base_uri: uri::Https, rsync_jail: uri::Rsync) -> Self {
-        PublicationServerUris {
-            rrdp_base_uri,
-            rsync_jail,
-        }
-    }
-
-    pub fn rrdp_base_uri(&self) -> &uri::Https {
-        &self.rrdp_base_uri
-    }
-
-    pub fn rsync_jail(&self) -> &uri::Rsync {
-        &self.rsync_jail
-    }
-
-    pub fn unpack(self) -> (uri::Https, uri::Rsync) {
-        (self.rrdp_base_uri, self.rsync_jail)
-    }
-}
 
 //------------ PublisherSummaryInfo ------------------------------------------
 
-/// Defines a summary of publisher information to be used in the publisher
-/// list.
+/// The summary of publisher information to be used in the publisher list.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PublisherSummary {
-    handle: PublisherHandle,
+    /// The publisher handle.
+    pub handle: PublisherHandle,
 }
 
 impl PublisherSummary {
-    pub fn handle(&self) -> &PublisherHandle {
-        &self.handle
+    fn from_handle(handle: PublisherHandle) -> Self {
+        PublisherSummary { handle }
     }
 }
 
-impl From<&PublisherHandle> for PublisherSummary {
-    fn from(h: &PublisherHandle) -> Self {
-        PublisherSummary { handle: h.clone() }
-    }
-}
 
 //------------ PublisherList -------------------------------------------------
 
-/// This type represents a list of (all) current publishers to show in the API
+/// The list of (all) current publishers.
 #[derive(Clone, Eq, Debug, Deserialize, PartialEq, Serialize)]
 pub struct PublisherList {
-    publishers: Vec<PublisherSummary>,
+    /// The list of publishers.
+    pub publishers: Vec<PublisherSummary>,
 }
 
 impl PublisherList {
-    pub fn build(publishers: &[PublisherHandle]) -> PublisherList {
-        let publishers: Vec<PublisherSummary> =
-            publishers.iter().map(|p| p.into()).collect();
-
-        PublisherList { publishers }
-    }
-
-    pub fn publishers(&self) -> &Vec<PublisherSummary> {
-        &self.publishers
+    pub fn from_slice(publishers: &[PublisherHandle]) -> PublisherList {
+        PublisherList {
+            publishers: publishers.iter().map(|p| {
+                PublisherSummary::from_handle(p.clone())
+            }).collect(),
+        }
     }
 }
 
@@ -129,167 +128,110 @@ impl fmt::Display for PublisherList {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Publishers: ")?;
         let mut first = true;
-        for p in self.publishers() {
+        for p in &self.publishers {
             if !first {
                 write!(f, ", ")?;
             } else {
                 first = false;
             }
-            write!(f, "{}", p.handle().as_str())?;
+            write!(f, "{}", p.handle.as_str())?;
         }
         Ok(())
     }
 }
 
+
 //------------ PublisherDetails ----------------------------------------------
 
-/// This type defines the publisher details for:
-/// /api/v1/publishers/{handle}
+/// The details of a single publisher.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PublisherDetails {
-    handle: PublisherHandle,
-    id_cert: IdCertInfo,
-    base_uri: uri::Rsync,
-    current_files: Vec<PublishElement>,
-}
+    /// The handle of the publisher the details are for.
+    pub handle: PublisherHandle,
 
-impl PublisherDetails {
-    pub fn new(
-        handle: &PublisherHandle,
-        id_cert: IdCertInfo,
-        base_uri: uri::Rsync,
-        current_files: Vec<PublishElement>,
-    ) -> Self {
-        PublisherDetails {
-            handle: handle.clone(),
-            id_cert,
-            base_uri,
-            current_files,
-        }
-    }
+    /// The ID certificate for this publisher.
+    pub id_cert: IdCertInfo,
 
-    pub fn handle(&self) -> &PublisherHandle {
-        &self.handle
-    }
-    pub fn id_cert(&self) -> &IdCertInfo {
-        &self.id_cert
-    }
-    pub fn base_uri(&self) -> &uri::Rsync {
-        &self.base_uri
-    }
-    pub fn current_files(&self) -> &Vec<PublishElement> {
-        &self.current_files
-    }
+    /// The base rsync URI for this publisher.
+    pub base_uri: uri::Rsync,
+
+    /// The currently published files.
+    pub current_files: Vec<PublishElement>,
 }
 
 impl fmt::Display for PublisherDetails {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "handle: {}", self.handle())?;
-        writeln!(f, "id: {}", self.id_cert.public_key().key_identifier())?;
-        writeln!(f, "base uri: {}", self.base_uri())?;
+        writeln!(f, "handle: {}", self.handle)?;
+        writeln!(f, "id: {}", self.id_cert.public_key.key_identifier())?;
+        writeln!(f, "base uri: {}", self.base_uri)?;
         writeln!(f, "objects:")?;
         for e in &self.current_files {
-            writeln!(f, "  {}", e.uri())?;
+            writeln!(f, "  {}", e.uri)?;
         }
 
         Ok(())
     }
 }
 
+
 //------------ PublicationServerInfo -----------------------------------------
 
+/// Details of a publication server.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PublicationServerInfo {
-    public_key: PublicKey,
-    service_uri: ServiceUri,
+    /// The public key used by the publication server.
+    pub public_key: PublicKey,
+
+    /// The service URI of the publication server.
+    pub service_uri: ServiceUri,
 }
 
-impl PublicationServerInfo {
-    pub fn new(public_key: PublicKey, service_uri: ServiceUri) -> Self {
-        PublicationServerInfo {
-            public_key,
-            service_uri,
-        }
-    }
-    pub fn public_key(&self) -> &PublicKey {
-        &self.public_key
-    }
-
-    pub fn service_uri(&self) -> &ServiceUri {
-        &self.service_uri
-    }
-}
 
 //------------ ApiRepositoryContact ------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+/// A repository response received from a remote contact.
+///
 /// This type is provided so that we do not need to change the the API for
-///  uploading repository responses as it was in <0.10.0
+/// uploading repository responses as it was prior to 0.10.0.
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ApiRepositoryContact {
-    repository_response: idexchange::RepositoryResponse,
+    /// The reposuitory response.
+    pub repository_response: idexchange::RepositoryResponse,
 }
 
-impl ApiRepositoryContact {
-    pub fn new(repository_response: idexchange::RepositoryResponse) -> Self {
-        ApiRepositoryContact {
-            repository_response,
-        }
-    }
-}
-
-impl TryFrom<ApiRepositoryContact> for RepositoryContact {
-    type Error = Error;
-
-    fn try_from(api_contact: ApiRepositoryContact) -> KrillResult<Self> {
-        RepositoryContact::for_response(api_contact.repository_response)
-    }
-}
 
 //------------ RepositoryContact ---------------------------------------------
 
+/// A contact with a remote repository.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RepositoryContact {
-    repo_info: RepoInfo,
-    server_info: PublicationServerInfo,
+    /// Information about the remote repository.
+    pub repo_info: RepoInfo,
+
+    /// Information about the remote publication server.
+    pub server_info: PublicationServerInfo,
 }
 
 impl RepositoryContact {
-    pub fn new(
-        repo_info: RepoInfo,
-        server_info: PublicationServerInfo,
-    ) -> Self {
-        RepositoryContact {
-            repo_info,
-            server_info,
-        }
-    }
-
-    pub fn for_response(
+    /// Tries to create a value from a remote repository response.
+    pub fn try_from_response(
         repository_response: idexchange::RepositoryResponse,
     ) -> KrillResult<Self> {
-        let id_cert =
-            repository_response.validate().map_err(Error::rfc8183)?;
-        let public_key = id_cert.public_key().clone();
-        let service_uri = repository_response.service_uri().clone();
-
-        let repo_info = repository_response.repo_info().clone();
-        let server_info = PublicationServerInfo {
-            public_key,
-            service_uri,
-        };
+        let id_cert = repository_response.validate().map_err(Error::rfc8183)?;
 
         Ok(RepositoryContact {
-            repo_info,
-            server_info,
+            repo_info: repository_response.repo_info().clone(),
+            server_info: PublicationServerInfo {
+                public_key: id_cert.public_key().clone(),
+                service_uri: repository_response.service_uri().clone(),
+            },
         })
     }
+}
 
-    pub fn repo_info(&self) -> &RepoInfo {
-        &self.repo_info
-    }
-
-    pub fn server_info(&self) -> &PublicationServerInfo {
-        &self.server_info
+impl From<RepositoryContact> for RepoInfo {
+    fn from(contact: RepositoryContact) -> Self {
+        contact.repo_info
     }
 }
 
@@ -298,6 +240,8 @@ impl fmt::Display for RepositoryContact {
         write!(f, "publication server at {}", self.server_info.service_uri)
     }
 }
+
+// XXX This impl violates the rule that if k1 == k2 -> hash(k1) == hash(k2).
 
 impl std::hash::Hash for RepositoryContact {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -315,20 +259,18 @@ impl PartialEq for RepositoryContact {
 
 impl Eq for RepositoryContact {}
 
-impl From<RepositoryContact> for RepoInfo {
-    fn from(contact: RepositoryContact) -> Self {
-        contact.repo_info
-    }
-}
 
 //------------ ParentCaReq ---------------------------------------------------
 
-/// This type defines all parent ca details needed to add a parent to a CA
+/// All the parent CA details needed to add a parent to a CA.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ParentCaReq {
-    handle: ParentHandle, // the child local name for the parent
+    /// The child local name for the parent.
+    pub handle: ParentHandle,
+
+    /// The parent’s up-down response.
     #[serde(alias = "contact")] // stay backward compatible to pre 0.10.0
-    response: idexchange::ParentResponse,
+    pub response: idexchange::ParentResponse,
 }
 
 impl fmt::Display for ParentCaReq {
@@ -337,74 +279,23 @@ impl fmt::Display for ParentCaReq {
     }
 }
 
-impl ParentCaReq {
-    pub fn new(
-        handle: ParentHandle,
-        response: idexchange::ParentResponse,
-    ) -> Self {
-        ParentCaReq { handle, response }
-    }
-
-    pub fn handle(&self) -> &ParentHandle {
-        &self.handle
-    }
-
-    pub fn response(&self) -> &idexchange::ParentResponse {
-        &self.response
-    }
-
-    pub fn unpack(self) -> (ParentHandle, idexchange::ParentResponse) {
-        (self.handle, self.response)
-    }
-}
 
 //------------ ParentServerInfo ----------------------------------------------
 
+/// Information about the server of the parent CA.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ParentServerInfo {
     /// The URI where the CA needs to send its RFC6492 messages
-    service_uri: ServiceUri,
+    pub service_uri: ServiceUri,
 
     /// The handle the parent CA likes to be called by.
-    parent_handle: ParentHandle,
+    pub parent_handle: ParentHandle,
 
     /// The handle the parent CA chose for the child CA.
-    child_handle: ChildHandle,
+    pub child_handle: ChildHandle,
 
     /// The parent's ID cert.
-    id_cert: IdCertInfo,
-}
-
-impl ParentServerInfo {
-    pub fn new(
-        service_uri: ServiceUri,
-        parent_handle: ParentHandle,
-        child_handle: ChildHandle,
-        id_cert: IdCertInfo,
-    ) -> Self {
-        ParentServerInfo {
-            service_uri,
-            parent_handle,
-            child_handle,
-            id_cert,
-        }
-    }
-
-    pub fn service_uri(&self) -> &ServiceUri {
-        &self.service_uri
-    }
-
-    pub fn parent_handle(&self) -> &ParentHandle {
-        &self.parent_handle
-    }
-
-    pub fn child_handle(&self) -> &ChildHandle {
-        &self.child_handle
-    }
-
-    pub fn id_cert(&self) -> &IdCertInfo {
-        &self.id_cert
-    }
+    pub id_cert: IdCertInfo,
 }
 
 impl fmt::Display for ParentServerInfo {
@@ -416,37 +307,35 @@ impl fmt::Display for ParentServerInfo {
         writeln!(
             f,
             "   key identifier: {}",
-            self.id_cert().public_key().key_identifier()
+            self.id_cert.public_key.key_identifier()
         )?;
-        writeln!(f, "   hash (of cert): {}", self.id_cert().hash())?;
-        writeln!(f, "   PEM:\n\n{}", self.id_cert().pem())
+        writeln!(f, "   hash (of cert): {}", self.id_cert.hash)?;
+        writeln!(f, "   PEM:\n\n{}", self.id_cert.pem())
     }
 }
 
+
 //------------ ParentCaContact -----------------------------------------------
 
-/// This type contains the information needed to contact the parent ca
-/// for resource provisioning requests (RFC6492).
+/// Information to contact the parent CA for resource provisioning requests.
+///
+/// Note that this used to include other, now deprecated, options.
+/// It is still an enum for backward compatibility without the need for
+/// a data migration of past events, and because theoretically we may
+/// need other options in future if there is an alternative to RFC 6492
+/// one day.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
 pub enum ParentCaContact {
-    // Note this used to include other, now deprecated, options.
-    // This is still an enum for backward compatibility without the need for
-    // a data migration of past events, and.. because theoretically we may
-    // need other options in future if there is an alternative to RFC 6492
-    // one day. Oh.. and having the "type" tag doesn't really hurt that
-    // much..
+    /// A parent CA contact has to be made via RFC 6492.
     Rfc6492(ParentServerInfo),
 }
 
 impl ParentCaContact {
-    pub fn for_parent_server_info(server_info: ParentServerInfo) -> Self {
-        ParentCaContact::Rfc6492(server_info)
-    }
-
-    pub fn for_rfc8183_parent_response(
+    /// Tries creating a parent CA contact from an RFC 8183 parent response.
+    pub fn try_from_rfc8183_parent_response(
         response: idexchange::ParentResponse,
     ) -> Result<Self, idexchange::Error> {
         let id_cert = response.validate()?;
@@ -464,15 +353,17 @@ impl ParentCaContact {
         }))
     }
 
+    /// Returns a reference to the parent server information.
     pub fn parent_server_info(&self) -> &ParentServerInfo {
         match &self {
             ParentCaContact::Rfc6492(info) => info,
         }
     }
 
+    /// Returns a reference to the parent server’s service URI.
     pub fn parent_uri(&self) -> &idexchange::ServiceUri {
-        match &self {
-            ParentCaContact::Rfc6492(parent) => parent.service_uri(),
+        match self {
+            ParentCaContact::Rfc6492(parent) => &parent.service_uri,
         }
     }
 }
@@ -485,7 +376,12 @@ impl fmt::Display for ParentCaContact {
     }
 }
 
-/// This type is used when saving and presenting command history
+
+//------------ StorableParentContact -----------------------------------------
+
+/// The protocol to use when contacting a parent.
+///
+/// This type is used when saving and presenting the command history.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StorableParentContact {
@@ -508,11 +404,14 @@ impl From<ParentCaContact> for StorableParentContact {
     }
 }
 
+
 //------------ CertAuthInit --------------------------------------------------
 
+/// Information to initialize a CA.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CertAuthInit {
-    handle: CaHandle,
+    /// The local handle identifying the CA.
+    pub handle: CaHandle,
 }
 
 impl fmt::Display for CertAuthInit {
@@ -521,23 +420,20 @@ impl fmt::Display for CertAuthInit {
     }
 }
 
-impl CertAuthInit {
-    pub fn new(handle: CaHandle) -> Self {
-        CertAuthInit { handle }
-    }
-
-    pub fn unpack(self) -> CaHandle {
-        self.handle
-    }
-}
 
 //------------ AddChildRequest -----------------------------------------------
 
+/// Information necessary to request adding a child CA.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AddChildRequest {
-    handle: ChildHandle,
-    resources: ResourceSet,
-    id_cert: IdCert,
+    /// The handle to identify the child with.
+    pub handle: ChildHandle,
+
+    /// The resources the child should have.
+    pub resources: ResourceSet,
+
+    /// The ID certificate the child will use for communication.
+    pub id_cert: IdCert,
 }
 
 impl fmt::Display for AddChildRequest {
@@ -546,64 +442,41 @@ impl fmt::Display for AddChildRequest {
     }
 }
 
-impl AddChildRequest {
-    pub fn new(
-        handle: ChildHandle,
-        resources: ResourceSet,
-        id_cert: IdCert,
-    ) -> Self {
-        AddChildRequest {
-            handle,
-            resources,
-            id_cert,
-        }
-    }
-
-    pub fn handle(&self) -> &ChildHandle {
-        &self.handle
-    }
-
-    pub fn unpack(self) -> (ChildHandle, ResourceSet, IdCert) {
-        (self.handle, self.resources, self.id_cert)
-    }
-}
 
 //------------ UpdateChildRequest --------------------------------------------
 
+/// Information for a request to update a child.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct UpdateChildRequest {
+    /// The new ID certificate of the child.
     #[serde(skip_serializing_if = "Option::is_none")]
-    id_cert: Option<IdCert>,
+    pub id_cert: Option<IdCert>,
 
+    /// The new resources of the child.
     #[serde(skip_serializing_if = "Option::is_none")]
-    resources: Option<ResourceSet>,
+    pub resources: Option<ResourceSet>,
 
+    /// Whether to (un)suspend a child.
     #[serde(skip_serializing_if = "Option::is_none")]
-    suspend: Option<bool>,
+    pub suspend: Option<bool>,
 
+    /// Changes to the names of a resource class.
     #[serde(skip_serializing_if = "Option::is_none")]
-    resource_class_name_mapping: Option<ResourceClassNameMapping>,
+    pub resource_class_name_mapping: Option<ResourceClassNameMapping>,
 }
 
+/// A mapping from the name of a resource class in parent and child.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ResourceClassNameMapping {
+    /// The name of the resource class at the parent.
     pub name_in_parent: ResourceClassName,
+
+    /// The name of the resource class at the child.
     pub name_for_child: ResourceClassName,
 }
 
 impl UpdateChildRequest {
-    pub fn new(
-        id_cert: Option<IdCert>,
-        resources: Option<ResourceSet>,
-        suspend: Option<bool>,
-    ) -> Self {
-        UpdateChildRequest {
-            id_cert,
-            resources,
-            suspend,
-            resource_class_name_mapping: None,
-        }
-    }
+    /// Creates a child update request that only changes the ID certificate.
     pub fn id_cert(id_cert: IdCert) -> Self {
         UpdateChildRequest {
             id_cert: Some(id_cert),
@@ -613,6 +486,7 @@ impl UpdateChildRequest {
         }
     }
 
+    /// Creates a child update request that only changes the resources.
     pub fn resources(resources: ResourceSet) -> Self {
         UpdateChildRequest {
             id_cert: None,
@@ -622,6 +496,7 @@ impl UpdateChildRequest {
         }
     }
 
+    /// Creates a child update request that suspends the client.
     pub fn suspend() -> Self {
         UpdateChildRequest {
             id_cert: None,
@@ -631,6 +506,7 @@ impl UpdateChildRequest {
         }
     }
 
+    /// Creates a child update request that unsuspends the client.
     pub fn unsuspend() -> Self {
         UpdateChildRequest {
             id_cert: None,
@@ -640,6 +516,7 @@ impl UpdateChildRequest {
         }
     }
 
+    /// Creates a child update request that changes resource name mapping.
     pub fn resource_class_name_mapping(
         mapping: ResourceClassNameMapping,
     ) -> Self {
@@ -649,22 +526,6 @@ impl UpdateChildRequest {
             suspend: None,
             resource_class_name_mapping: Some(mapping),
         }
-    }
-
-    pub fn unpack(
-        self,
-    ) -> (
-        Option<IdCert>,
-        Option<ResourceSet>,
-        Option<bool>,
-        Option<ResourceClassNameMapping>,
-    ) {
-        (
-            self.id_cert,
-            self.resources,
-            self.suspend,
-            self.resource_class_name_mapping,
-        )
     }
 }
 
@@ -683,29 +544,17 @@ impl fmt::Display for UpdateChildRequest {
     }
 }
 
+
 //------------ ServerInfo ----------------------------------------------------
 
+/// Information about this Krill server.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ServerInfo {
-    version: String,
-    started: Timestamp,
-}
+    /// The server software version.
+    pub version: String,
 
-impl ServerInfo {
-    pub fn new(version: &str, started: Timestamp) -> Self {
-        ServerInfo {
-            version: version.to_string(),
-            started,
-        }
-    }
-
-    pub fn version(&self) -> &str {
-        &self.version
-    }
-
-    pub fn started(&self) -> Timestamp {
-        self.started
-    }
+    /// The time currently running server was started.
+    pub started: Timestamp,
 }
 
 impl fmt::Display for ServerInfo {
@@ -713,44 +562,33 @@ impl fmt::Display for ServerInfo {
         write!(
             f,
             "Version: {}\nStarted: {}",
-            self.version(),
-            self.started.to_rfc3339()
+            self.version,
+            self.started.into_rfc3339()
         )
     }
 }
 
+
 //------------ RepoFileDeleteCriteria ----------------------------------------
 
-/// This is used to send criteria for purging matching files from the
+/// Criteria for selectively deleting repository files.
+///
+/// This type is used to send criteria for purging matching files from the
 /// publication server. Currently only needs to support `base_uri` but it
 /// could be extended in future and therefore we introduce a type for it now.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct RepoFileDeleteCriteria {
-    base_uri: uri::Rsync,
-}
-
-impl RepoFileDeleteCriteria {
-    pub fn new(base_uri: uri::Rsync) -> Self {
-        RepoFileDeleteCriteria { base_uri }
-    }
-}
-
-impl From<RepoFileDeleteCriteria> for uri::Rsync {
-    fn from(criteria: RepoFileDeleteCriteria) -> Self {
-        criteria.base_uri
-    }
+    /// The base rsync URI of the file to be deleted.
+    pub base_uri: uri::Rsync,
 }
 
 
-//------------ Tests ---------------------------------------------------------
+//============ Tests =========================================================
 
 #[cfg(test)]
 mod tests {
-
-    use std::convert::TryFrom;
     use std::path::PathBuf;
     use std::str::FromStr;
-
     use super::*;
 
     #[test]
@@ -782,3 +620,4 @@ mod tests {
         assert_eq!(handle, expected_handle);
     }
 }
+

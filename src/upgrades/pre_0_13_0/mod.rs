@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     commons::{
         api::rrdp::{
-            CurrentObjectUri, CurrentObjects, DeltaData, DeltaElements,
+            CurrentObjects, DeltaData, DeltaElements,
             PublishElement, RrdpFileRandom, RrdpSession, SnapshotData,
             UpdateElement, WithdrawElement,
         },
@@ -62,33 +62,25 @@ impl OldCurrentObjects {
         let (publishes, updates, withdraws) = delta.unpack();
 
         for p in publishes {
-            let hash = p.base64().to_hash();
+            let hash = p.base64.to_hash();
             self.0.insert(hash, p);
         }
 
         for u in updates {
-            let p: PublishElement = u.into();
-            let hash = p.base64().to_hash();
+            let p = u.into_publish();
+            let hash = p.base64.to_hash();
             self.0.insert(hash, p);
         }
 
         for w in withdraws {
-            self.0.remove(&w.hash());
+            self.0.remove(&w.hash);
         }
     }
 }
 
 impl From<OldCurrentObjects> for CurrentObjects {
     fn from(old: OldCurrentObjects) -> Self {
-        CurrentObjects::new(
-            old.0
-                .into_values()
-                .map(|el| {
-                    let (uri, base64) = el.unpack();
-                    (CurrentObjectUri::from(&uri), base64)
-                })
-                .collect(),
-        )
+        old.0.into_values().map(|el| (el.uri, el.base64)).collect()
     }
 }
 
@@ -182,18 +174,18 @@ impl OldRrdpServer {
     fn apply_rrdp_staged(&mut self, elements: DeltaElements) {
         let (publishes, updates, withdraws) = elements.unpack();
         for pbl in publishes {
-            let uri = pbl.uri().clone();
+            let uri = pbl.uri.clone();
             // A publish that follows a withdraw for the same URI should be
             // Update.
             if let Some(OldDeltaElement::Withdraw(staged_withdraw)) =
                 self.staged_elements.0.get(&uri)
             {
-                let hash = staged_withdraw.hash();
-                let update = UpdateElement::new(
-                    uri.clone(),
+                let hash = staged_withdraw.hash;
+                let update = UpdateElement {
+                    uri: uri.clone(),
                     hash,
-                    pbl.base64().clone(),
-                );
+                    base64: pbl.base64.clone(),
+                };
                 self.staged_elements
                     .0
                     .insert(uri, OldDeltaElement::Update(update));
@@ -212,7 +204,7 @@ impl OldRrdpServer {
         }
 
         for mut upd in updates {
-            let uri = upd.uri().clone();
+            let uri = upd.uri.clone();
             // An update that follows a staged publish, should be fresh
             // publish. An update that follows a staged update,
             // should use the hash from the previous update.
@@ -228,7 +220,7 @@ impl OldRrdpServer {
             } else if let Some(OldDeltaElement::Update(staged_update)) =
                 self.staged_elements.0.get(&uri)
             {
-                upd.with_updated_hash(staged_update.hash()); // set hash to previous update hash
+                upd.hash = staged_update.hash; // set hash to previous update hash
                 self.staged_elements
                     .0
                     .insert(uri, OldDeltaElement::Update(upd));
@@ -246,7 +238,7 @@ impl OldRrdpServer {
             // elements
             self.staged_elements
                 .0
-                .insert(wdr.uri().clone(), OldDeltaElement::Withdraw(wdr));
+                .insert(wdr.uri.clone(), OldDeltaElement::Withdraw(wdr));
         }
     }
 }
@@ -297,7 +289,7 @@ impl OldSnapshotData {
         self.current_objects
             .0
             .values()
-            .fold(0, |sum, p| sum + p.size_approx())
+            .fold(0, |sum, p| sum + p.base64.size_approx())
     }
 }
 

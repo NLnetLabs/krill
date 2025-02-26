@@ -14,15 +14,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     commons::{
-        api::{
-            CertAuthStorableCommand, CustomerAsn, RoaConfigurationUpdates,
-            RtaName, StorableParentContact, StorableRcEntitlement,
-        },
         eventsourcing::WithStorableDetails,
     },
-    daemon::ca::DropReason,
+    daemon::ca::{DropReason, CertAuthStorableCommand, StorableRcEntitlement},
     upgrades::pre_0_14_0::Pre0_14_0AspaProvidersUpdate,
 };
+use crate::commons::api::admin::StorableParentContact;
+use crate::commons::api::aspa::CustomerAsn;
+use crate::commons::api::ca::RtaName;
+use crate::commons::api::roa::RoaConfigurationUpdates;
 
 use super::Pre0_14_0AspaDefinition;
 
@@ -235,7 +235,7 @@ impl From<Pre0_14_0CertAuthStorableCommand> for CertAuthStorableCommand {
 }
 
 impl WithStorableDetails for Pre0_14_0CertAuthStorableCommand {
-    fn summary(&self) -> crate::commons::api::CommandSummary {
+    fn summary(&self) -> crate::commons::api::history::CommandSummary {
         CertAuthStorableCommand::from(self.clone()).summary()
     }
 

@@ -4,39 +4,49 @@ use chrono::Duration;
 
 use rpki::{
     ca::{
-        idexchange::{CaHandle, ChildHandle, ParentHandle},
+        idexchange::{CaHandle, ChildHandle, ParentHandle, ServiceUri},
         provisioning::{
             IssuanceRequest, ResourceClassListResponse as Entitlements,
-            ResourceClassName, RevocationRequest, RevocationResponse,
+            RequestResourceLimit, ResourceClassName, RevocationRequest,
+            RevocationResponse,
         },
     },
     repository::resources::ResourceSet,
 };
+use rpki::crypto::KeyIdentifier;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     commons::{
         actor::Actor,
-        api::{
-            import::ImportChild, AspaDefinitionUpdates, AspaProvidersUpdate,
-            BgpSecDefinitionUpdates, CertAuthStorableCommand, CustomerAsn,
-            IdCertInfo, ParentCaContact, ReceivedCert, RepositoryContact,
-            ResourceClassNameMapping, RoaConfigurationUpdates, RtaName,
-            StorableRcEntitlement,
-        },
         crypto::KrillSigner,
         eventsourcing::{
             self, InitCommandDetails, SentCommand, SentInitCommand,
-            WithStorableDetails,
+            StoredCommand, WithStorableDetails,
         },
     },
     daemon::{
         ca::{
-            CertAuthEvent, ResourceTaggedAttestation, RtaContentRequest,
-            RtaPrepareRequest,
+            CertAuth, CertAuthEvent,
+            ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest,
         },
         config::Config,
     },
 };
+use crate::commons::api::admin::{
+    ParentCaContact, RepositoryContact, ResourceClassNameMapping,
+    StorableParentContact,
+};
+use crate::commons::api::aspa::{
+    AspaDefinitionUpdates, AspaProvidersUpdate, CustomerAsn,
+};
+use crate::commons::api::bgpsec::BgpSecDefinitionUpdates;
+use crate::commons::api::ca::{
+    IdCertInfo, ReceivedCert,  ResourceSetSummary,RtaName
+};
+use crate::commons::api::history::CommandSummary;
+use crate::commons::api::import::ImportChild;
+use crate::commons::api::roa::RoaConfigurationUpdates;
 
 pub type DropReason = String;
 
@@ -299,7 +309,7 @@ impl From<CertAuthCommandDetails> for CertAuthStorableCommand {
             CertAuthCommandDetails::ChildAdd(child, id_cert, resources) => {
                 CertAuthStorableCommand::ChildAdd {
                     child,
-                    ski: id_cert.public_key().key_identifier().to_string(),
+                    ski: id_cert.public_key.key_identifier().to_string(),
                     resources,
                 }
             }
@@ -324,7 +334,7 @@ impl From<CertAuthCommandDetails> for CertAuthStorableCommand {
             CertAuthCommandDetails::ChildUpdateId(child, id_cert) => {
                 CertAuthStorableCommand::ChildUpdateId {
                     child,
-                    ski: id_cert.public_key().key_identifier().to_string(),
+                    ski: id_cert.public_key.key_identifier().to_string(),
                 }
             }
             CertAuthCommandDetails::ChildUpdateResourceClassNameMapping(
@@ -405,7 +415,7 @@ impl From<CertAuthCommandDetails> for CertAuthStorableCommand {
                 _,
             ) => CertAuthStorableCommand::UpdateRcvdCert {
                 resource_class_name,
-                resources: rcvd_cert.resources().clone(),
+                resources: rcvd_cert.resources.clone(),
             },
             CertAuthCommandDetails::DropResourceClass(
                 resource_class_name,
@@ -484,7 +494,7 @@ impl From<CertAuthCommandDetails> for CertAuthStorableCommand {
             // ------------------------------------------------------------
             CertAuthCommandDetails::RepoUpdate(contact, _) => {
                 CertAuthStorableCommand::RepoUpdate {
-                    service_uri: contact.server_info().service_uri().clone(),
+                    service_uri: contact.server_info.service_uri.clone(),
                 }
             }
 
@@ -959,3 +969,462 @@ impl CertAuthCommandDetails {
         )
     }
 }
+
+
+//------------ CaCommandDetails ----------------------------------------------
+pub type CaCommandDetails = StoredCommand<CertAuth>;
+
+
+//------------ StorableCaCommand -------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[allow(clippy::large_enum_variant)]
+#[serde(rename_all = "snake_case")]
+#[serde(tag = "type")]
+pub enum CertAuthStorableCommand {
+    Init,
+    ChildAdd {
+        child: ChildHandle,
+        ski: String,
+        resources: ResourceSet,
+    },
+    ChildImport {
+        child: ChildHandle,
+        ski: String,
+        resources: ResourceSet,
+    },
+    ChildUpdateResources {
+        child: ChildHandle,
+        resources: ResourceSet,
+    },
+    ChildUpdateId {
+        child: ChildHandle,
+        ski: String,
+    },
+    ChildUpdateResourceClassNameMapping {
+        child: ChildHandle,
+        mapping: ResourceClassNameMapping,
+    },
+    ChildCertify {
+        child: ChildHandle,
+        resource_class_name: ResourceClassName,
+        limit: RequestResourceLimit,
+        ki: KeyIdentifier,
+    },
+    ChildRevokeKey {
+        child: ChildHandle,
+        revoke_req: RevocationRequest,
+    },
+    ChildRemove {
+        child: ChildHandle,
+    },
+    ChildSuspendInactive {
+        child: ChildHandle,
+    },
+    ChildUnsuspend {
+        child: ChildHandle,
+    },
+    GenerateNewIdKey,
+    AddParent {
+        parent: ParentHandle,
+        contact: StorableParentContact,
+    },
+    UpdateParentContact {
+        parent: ParentHandle,
+        contact: StorableParentContact,
+    },
+    RemoveParent {
+        parent: ParentHandle,
+    },
+    UpdateResourceEntitlements {
+        parent: ParentHandle,
+        entitlements: Vec<StorableRcEntitlement>,
+    },
+    UpdateRcvdCert {
+        resource_class_name: ResourceClassName,
+        resources: ResourceSet,
+    },
+    DropResourceClass {
+        resource_class_name: ResourceClassName,
+        reason: DropReason,
+    },
+    KeyRollInitiate {
+        older_than_seconds: i64,
+    },
+    KeyRollActivate {
+        staged_for_seconds: i64,
+    },
+    KeyRollFinish {
+        resource_class_name: ResourceClassName,
+    },
+    RoaDefinitionUpdates {
+        updates: RoaConfigurationUpdates,
+    },
+    ReissueBeforeExpiring,
+    ForceReissue,
+    AspasUpdate {
+        updates: AspaDefinitionUpdates,
+    },
+    AspasUpdateExisting {
+        customer: CustomerAsn,
+        update: AspaProvidersUpdate,
+    },
+    AspaRemove {
+        customer: CustomerAsn,
+    },
+    BgpSecDefinitionUpdates, // details in events
+    RepoUpdate {
+        service_uri: ServiceUri,
+    },
+    RtaPrepare {
+        name: RtaName,
+    },
+    RtaSign {
+        name: RtaName,
+    },
+    RtaCoSign {
+        name: RtaName,
+    },
+    Deactivate,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct StorableRcEntitlement {
+    pub resource_class_name: ResourceClassName,
+    pub resources: ResourceSet,
+}
+
+impl WithStorableDetails for CertAuthStorableCommand {
+    fn summary(&self) -> CommandSummary {
+        match self {
+            CertAuthStorableCommand::Init => CommandSummary::new("cmd-ca-init", self),
+            CertAuthStorableCommand::ChildAdd { child, ski, resources } => {
+                CommandSummary::new("cmd-ca-child-add", self)
+                    .child(child)
+                    .id_key(ski.as_ref())
+                    .resources(resources)
+            }
+            CertAuthStorableCommand::ChildImport { child, ski, resources } => {
+                CommandSummary::new("cmd-ca-child-import", self)
+                    .child(child)
+                    .id_key(ski)
+                    .resources(resources)
+            }
+            CertAuthStorableCommand::ChildUpdateResources { child, resources } => {
+                CommandSummary::new("cmd-ca-child-update-res", self)
+                    .child(child)
+                    .resources(resources)
+            }
+            CertAuthStorableCommand::ChildUpdateId { child, ski } => {
+                CommandSummary::new("cmd-ca-child-update-id", self)
+                    .child(child)
+                    .id_key(ski)
+            }
+            CertAuthStorableCommand::ChildUpdateResourceClassNameMapping { child, mapping } => {
+                CommandSummary::new("cmd-ca-child-update-rcn-mapping", self)
+                    .child(child)
+                    .arg("parent_rcn", &mapping.name_in_parent)
+                    .arg("child_rcn", &mapping.name_for_child)
+            }
+            CertAuthStorableCommand::ChildCertify {
+                child,
+                resource_class_name,
+                ki,
+                ..
+            } => CommandSummary::new("cmd-ca-child-certify", self)
+                .child(child)
+                .rcn(resource_class_name)
+                .key(*ki),
+            CertAuthStorableCommand::ChildRemove { child } => {
+                CommandSummary::new("cmd-ca-child-remove", self).child(child)
+            }
+            CertAuthStorableCommand::ChildSuspendInactive { child } => {
+                CommandSummary::new("cmd-ca-child-suspend-inactive", self).child(child)
+            }
+            CertAuthStorableCommand::ChildUnsuspend { child } => {
+                CommandSummary::new("cmd-ca-child-unsuspend", self).child(child)
+            }
+            CertAuthStorableCommand::ChildRevokeKey { child, revoke_req } => {
+                CommandSummary::new("cmd-ca-child-revoke", self)
+                    .child(child)
+                    .rcn(revoke_req.class_name())
+                    .key(revoke_req.key())
+            }
+            CertAuthStorableCommand::GenerateNewIdKey => CommandSummary::new("cmd-ca-generate-new-id", self),
+            CertAuthStorableCommand::AddParent { parent, contact } => CommandSummary::new("cmd-ca-parent-add", self)
+                .parent(parent)
+                .parent_contact(contact),
+            CertAuthStorableCommand::UpdateParentContact { parent, contact } => {
+                CommandSummary::new("cmd-ca-parent-update", self)
+                    .parent(parent)
+                    .parent_contact(contact)
+            }
+            CertAuthStorableCommand::RemoveParent { parent } => {
+                CommandSummary::new("cmd-ca-parent-remove", self).parent(parent)
+            }
+            CertAuthStorableCommand::UpdateResourceEntitlements { parent, .. } => {
+                CommandSummary::new("cmd-ca-parent-entitlements", self).parent(parent)
+            }
+            CertAuthStorableCommand::UpdateRcvdCert {
+                resource_class_name,
+                resources,
+            } => CommandSummary::new("cmd-ca-rcn-receive", self)
+                .rcn(resource_class_name)
+                .resources(resources),
+            CertAuthStorableCommand::DropResourceClass {
+                resource_class_name,
+                reason,
+            } => CommandSummary::new("cmd-ca-rc-drop", self)
+                .rcn(resource_class_name)
+                .arg("reason", reason),
+
+            // Key rolls
+            CertAuthStorableCommand::KeyRollInitiate { older_than_seconds } => {
+                CommandSummary::new("cmd-ca-keyroll-init", self).seconds(*older_than_seconds)
+            }
+            CertAuthStorableCommand::KeyRollActivate { staged_for_seconds } => {
+                CommandSummary::new("cmd-ca-keyroll-activate", self).seconds(*staged_for_seconds)
+            }
+            CertAuthStorableCommand::KeyRollFinish { resource_class_name } => {
+                CommandSummary::new("cmd-ca-keyroll-finish", self).rcn(resource_class_name)
+            }
+
+            // ROA
+            CertAuthStorableCommand::RoaDefinitionUpdates { updates } => {
+                CommandSummary::new("cmd-ca-roas-updated", self)
+                    .added(updates.added.len())
+                    .removed(updates.removed.len())
+            }
+
+            // ASPA
+            CertAuthStorableCommand::AspasUpdate { .. } => CommandSummary::new("cmd-ca-aspas-update", self),
+            CertAuthStorableCommand::AspasUpdateExisting { .. } => {
+                CommandSummary::new("cmd-ca-aspas-update-existing", self)
+            }
+            CertAuthStorableCommand::AspaRemove { .. } => CommandSummary::new("cmd-ca-aspas-remove", self),
+
+            // BGPSec
+            CertAuthStorableCommand::BgpSecDefinitionUpdates => CommandSummary::new("cmd-bgpsec-update", self),
+
+            // REPO
+            CertAuthStorableCommand::RepoUpdate { service_uri } => {
+                CommandSummary::new("cmd-ca-repo-update", self).service_uri(service_uri)
+            }
+
+            CertAuthStorableCommand::ReissueBeforeExpiring => {
+                CommandSummary::new("cmd-ca-reissue-before-expiring", self)
+            }
+            CertAuthStorableCommand::ForceReissue => CommandSummary::new("cmd-ca-force-reissue", self),
+
+            // RTA
+            CertAuthStorableCommand::RtaPrepare { name } => {
+                CommandSummary::new("cmd-ca-rta-prepare", self).rta_name(name)
+            }
+            CertAuthStorableCommand::RtaSign { name } => {
+                CommandSummary::new("cmd-ca-rta-sign", self).rta_name(name)
+            }
+            CertAuthStorableCommand::RtaCoSign { name } => {
+                CommandSummary::new("cmd-ca-rta-cosign", self).rta_name(name)
+            }
+
+            // Deactivation
+            CertAuthStorableCommand::Deactivate => CommandSummary::new("cmd-ca-deactivate", self),
+        }
+    }
+
+    fn make_init() -> Self {
+        Self::Init
+    }
+}
+
+impl fmt::Display for CertAuthStorableCommand {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            // ------------------------------------------------------------
+            // Initialisation
+            // ------------------------------------------------------------
+            CertAuthStorableCommand::Init => write!(f, "Create CA"),
+
+            // ------------------------------------------------------------
+            // Being a parent
+            // ------------------------------------------------------------
+            CertAuthStorableCommand::ChildAdd { child, ski, resources } => {
+                let summary = ResourceSetSummary::from(resources);
+                write!(
+                    f,
+                    "Add child '{}' with RFC8183 key '{}' and resources '{}'",
+                    child, ski, summary
+                )
+            }
+            CertAuthStorableCommand::ChildImport { child, ski, resources } => {
+                let summary = ResourceSetSummary::from(resources);
+                write!(
+                    f,
+                    "Import child '{}' with RFC8183 key '{}' and resources '{}'",
+                    child, ski, summary
+                )
+            }
+            CertAuthStorableCommand::ChildUpdateResources { child, resources } => {
+                let summary = ResourceSetSummary::from(resources);
+                write!(f, "Update resources for child '{}' to: {}", child, summary)
+            }
+            CertAuthStorableCommand::ChildUpdateId { child, ski } => {
+                write!(f, "Update child '{}' RFC 8183 key '{}'", child, ski)
+            }
+            CertAuthStorableCommand::ChildUpdateResourceClassNameMapping { child, mapping } => {
+                write!(
+                    f,
+                    "Update child '{}' map parent RC '{}' to '{}' for child",
+                    child, mapping.name_in_parent, mapping.name_for_child
+                )
+            }
+            CertAuthStorableCommand::ChildCertify { child, ki, .. } => {
+                write!(f, "Issue certificate to child '{}' for key '{}'", child, ki)
+            }
+            CertAuthStorableCommand::ChildRevokeKey { child, revoke_req } => write!(
+                f,
+                "Revoke certificates for child '{}' for key '{}' in RC {}",
+                child,
+                revoke_req.key(),
+                revoke_req.class_name()
+            ),
+            CertAuthStorableCommand::ChildRemove { child } => {
+                write!(f, "Remove child '{}' and revoke & remove its certs", child)
+            }
+            CertAuthStorableCommand::ChildSuspendInactive { child } => {
+                write!(f, "Suspend inactive child '{}': stop publishing its certs", child)
+            }
+            CertAuthStorableCommand::ChildUnsuspend { child } => {
+                write!(f, "Unsuspend child '{}': publish its unexpired certs", child)
+            }
+
+            // ------------------------------------------------------------
+            // Being a child (only allowed if this CA is not self-signed)
+            // ------------------------------------------------------------
+            CertAuthStorableCommand::GenerateNewIdKey => write!(f, "Generate a new RFC8183 ID."),
+            CertAuthStorableCommand::AddParent { parent, contact } => {
+                write!(f, "Add parent '{}' as '{}'", parent, contact)
+            }
+            CertAuthStorableCommand::UpdateParentContact { parent, contact } => {
+                write!(f, "Update contact for parent '{}' to '{}'", parent, contact)
+            }
+            CertAuthStorableCommand::RemoveParent { parent } => write!(f, "Remove parent '{}'", parent),
+
+            CertAuthStorableCommand::UpdateResourceEntitlements { parent, entitlements } => {
+                write!(f, "Update entitlements under parent '{}': ", parent)?;
+
+                for entitlement in entitlements.iter() {
+                    write!(f, "{} => {} ", entitlement.resource_class_name, entitlement.resources)?;
+                }
+
+                Ok(())
+            }
+            // Process a new certificate received from a parent.
+            CertAuthStorableCommand::UpdateRcvdCert {
+                resource_class_name,
+                resources,
+            } => {
+                let summary = ResourceSetSummary::from(resources);
+                write!(
+                    f,
+                    "Update received cert in RC '{}', with resources '{}'",
+                    resource_class_name, summary
+                )
+            }
+            CertAuthStorableCommand::DropResourceClass {
+                resource_class_name,
+                reason,
+            } => write!(
+                f,
+                "Removing resource class '{}' because of reason: {}",
+                resource_class_name, reason
+            ),
+
+            // ------------------------------------------------------------
+            // Key rolls
+            // ------------------------------------------------------------
+            CertAuthStorableCommand::KeyRollInitiate { older_than_seconds } => {
+                write!(
+                    f,
+                    "Initiate key roll for keys older than '{}' seconds",
+                    older_than_seconds
+                )
+            }
+            CertAuthStorableCommand::KeyRollActivate { staged_for_seconds } => {
+                write!(
+                    f,
+                    "Activate new keys staging longer than '{}' seconds",
+                    staged_for_seconds
+                )
+            }
+
+            CertAuthStorableCommand::KeyRollFinish { resource_class_name } => {
+                write!(f, "Retire old revoked key in RC '{}'", resource_class_name)
+            }
+
+            // ------------------------------------------------------------
+            // ROA Support
+            // ------------------------------------------------------------
+            CertAuthStorableCommand::RoaDefinitionUpdates { updates } => {
+                write!(f, "Update ROAs",)?;
+                if !updates.added.is_empty() {
+                    write!(f, "  ADD:",)?;
+                    for addition in &updates.added {
+                        write!(f, " {}", addition)?;
+                    }
+                }
+                if !updates.removed.is_empty() {
+                    write!(f, "  REMOVE:",)?;
+                    for rem in &updates.removed {
+                        write!(f, " {}", rem)?;
+                    }
+                }
+                Ok(())
+            }
+            CertAuthStorableCommand::ReissueBeforeExpiring => {
+                write!(f, "Automatically re-issue objects before they would expire")
+            }
+            CertAuthStorableCommand::ForceReissue => {
+                write!(f, "Force re-issuance of objects")
+            }
+
+            // ------------------------------------------------------------
+            // ASPA Support
+            // ------------------------------------------------------------
+            CertAuthStorableCommand::AspasUpdate { updates } => {
+                write!(f, "{}", updates)
+            }
+            CertAuthStorableCommand::AspasUpdateExisting { customer, update } => {
+                write!(f, "update ASPA for customer AS: {} {}", customer, update)
+            }
+            CertAuthStorableCommand::AspaRemove { customer } => {
+                write!(f, "Remove ASPA for customer AS: {}", customer)
+            }
+
+            // ------------------------------------------------------------
+            // BGPSec Support
+            // ------------------------------------------------------------
+            CertAuthStorableCommand::BgpSecDefinitionUpdates => write!(f, "Update BGPSec definitions"),
+
+            // ------------------------------------------------------------
+            // Publishing
+            // ------------------------------------------------------------
+            CertAuthStorableCommand::RepoUpdate { service_uri } => {
+                write!(f, "Update repo to server at: {}", service_uri)
+            }
+
+            // ------------------------------------------------------------
+            // RTA
+            // ------------------------------------------------------------
+            CertAuthStorableCommand::RtaPrepare { name } => write!(f, "RTA Prepare {}", name),
+            CertAuthStorableCommand::RtaSign { name } => write!(f, "RTA Sign {}", name),
+            CertAuthStorableCommand::RtaCoSign { name } => write!(f, "RTA Co-Sign {}", name),
+
+            // ------------------------------------------------------------
+            // Deactivate
+            // ------------------------------------------------------------
+            CertAuthStorableCommand::Deactivate => write!(f, "Deactivate CA"),
+        }
+    }
+}
+

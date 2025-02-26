@@ -14,16 +14,17 @@ use rpki::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    commons::api::{
-        BgpSecAsnKey, CustomerAsn, IdCertInfo, ParentCaContact, ReceivedCert,
-        RepositoryContact, RtaName,
-    },
     daemon::ca::{
         BgpSecCertificateUpdates, CertAuthEvent, CertifiedKey,
-        ChildCertificateUpdates, PreparedRta, Rfc8183Id,
-        RoaPayloadJsonMapKey, RoaUpdates, SignedRta, StoredBgpSecCsr,
+        ChildCertificateUpdates, PreparedRta, Rfc8183Id, RoaUpdates,
+        SignedRta, StoredBgpSecCsr,
     },
 };
+use crate::commons::api::admin::{ParentCaContact, RepositoryContact};
+use crate::commons::api::aspa::CustomerAsn;
+use crate::commons::api::bgpsec::BgpSecAsnKey;
+use crate::commons::api::ca::{IdCertInfo, ReceivedCert, RtaName};
+use crate::commons::api::roa::RoaPayloadJsonMapKey;
 
 use super::{
     Pre0_14_0AspaDefinition, Pre0_14_0AspaObjectsUpdates,

@@ -4,7 +4,7 @@ use rpki::repository::x509::Time;
 use serde::{Deserialize, Serialize};
 
 use crate::commons::{
-    api::{AsNumber, RoaPayload, TypedPrefix},
+    api::roa::{AsNumber, RoaPayload, TypedPrefix},
     bgp::{IpRange, TypedPrefixTree, TypedPrefixTreeBuilder},
 };
 
@@ -74,8 +74,8 @@ impl Announcement {
             let mut same_asn_found = false;
             let mut none_as0_found = false;
             for roa in covering {
-                if roa.asn() == self.asn {
-                    if roa.prefix().matching_or_less_specific(&self.prefix)
+                if roa.asn == self.asn {
+                    if roa.prefix.matching_or_less_specific(self.prefix)
                         && roa.effective_max_length()
                             >= self.prefix.addr_len()
                     {
@@ -89,7 +89,7 @@ impl Announcement {
                         same_asn_found = true;
                     }
                 }
-                if roa.asn() != AsNumber::zero() {
+                if roa.asn != AsNumber::AS0 {
                     none_as0_found = true;
                 }
                 invalidating.push(*roa);
@@ -122,7 +122,7 @@ impl FromStr for Announcement {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let as_roa = RoaPayload::from_str(s)
             .map_err(|e| format!("Can't parse: {}, Error: {}", s, e))?;
-        if as_roa.max_length().is_some() {
+        if as_roa.max_length.is_some() {
             Err(format!(
                 "Cannot parse announcement (max length not allowed): {}",
                 s
@@ -157,15 +157,15 @@ impl PartialOrd for Announcement {
 
 impl From<Announcement> for RoaPayload {
     fn from(a: Announcement) -> Self {
-        RoaPayload::new(a.asn, a.prefix, None)
+        RoaPayload { asn: a.asn, prefix: a.prefix, max_length: None }
     }
 }
 
 impl From<RoaPayload> for Announcement {
     fn from(d: RoaPayload) -> Self {
         Announcement {
-            asn: d.asn(),
-            prefix: d.prefix(),
+            asn: d.asn,
+            prefix: d.prefix,
         }
     }
 }

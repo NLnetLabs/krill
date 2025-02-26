@@ -5,14 +5,16 @@ use serde_json::Value;
 use rpki::repository::resources::ResourceSet;
 
 use crate::commons::{
-        api::{AsNumber, ConfiguredRoa, RoaPayload, TypedPrefix},
-        bgp::{
-            make_roa_tree, make_validated_announcement_tree, Announcement,
-            AnnouncementValidity, BgpAnalysisEntry,
-            BgpAnalysisReport, BgpAnalysisState, BgpAnalysisSuggestion,
-            IpRange, ValidatedAnnouncement,
-        },
-    };
+    bgp::{
+        make_roa_tree, make_validated_announcement_tree, Announcement,
+        AnnouncementValidity, BgpAnalysisEntry,
+        BgpAnalysisReport, BgpAnalysisState, BgpAnalysisSuggestion,
+        IpRange, ValidatedAnnouncement,
+    },
+};
+use crate::commons::api::roa::{
+    AsNumber, ConfiguredRoa, RoaPayload, TypedPrefix,
+};
 
 
 //------------ BgpAnalyser -------------------------------------------------
@@ -153,7 +155,9 @@ impl BgpAnalyser {
             Some(limit) => roas
                 .iter()
                 .filter(|roa| {
-                    limit.contains_roa_address(&roa.as_roa_ip_address())
+                    limit.contains_roa_address(
+                        &roa.roa_configuration.payload.as_roa_ip_address()
+                    )
                 })
                 .cloned()
                 .collect(),
@@ -161,7 +165,9 @@ impl BgpAnalyser {
 
         let (roas_held, roas_not_held): (Vec<ConfiguredRoa>, _) =
             roas.into_iter().partition(|roa| {
-                resources_held.contains_roa_address(&roa.as_roa_ip_address())
+                resources_held.contains_roa_address(
+                    &roa.roa_configuration.payload.as_roa_ip_address()
+                )
             });
 
         for not_held in roas_not_held {
@@ -201,7 +207,7 @@ impl BgpAnalyser {
 
             let roa_payloads: Vec<_> = roas_held
                 .iter()
-                .map(|configured| configured.payload())
+                .map(|configured| configured.roa_configuration.payload)
                 .collect();
             let roa_tree = make_roa_tree(&roa_payloads);
             let validated: Vec<ValidatedAnnouncement> = scoped_announcements
@@ -214,13 +220,16 @@ impl BgpAnalyser {
             let validated_tree =
                 make_validated_announcement_tree(validated.as_slice());
             for roa in roas_held {
-                let covered =
-                    validated_tree.matching_or_more_specific(roa.prefix());
+                let covered = validated_tree.matching_or_more_specific(
+                    roa.roa_configuration.payload.prefix
+                );
 
                 let other_roas_covering_this_prefix: Vec<_> = roa_tree
-                    .matching_or_less_specific(roa.prefix())
+                    .matching_or_less_specific(
+                        roa.roa_configuration.payload.prefix
+                    )
                     .into_iter()
-                    .filter(|other| roa.payload() != **other)
+                    .filter(|other| roa.roa_configuration.payload != **other)
                     .cloned()
                     .collect();
 
@@ -228,11 +237,13 @@ impl BgpAnalyser {
                     other_roas_covering_this_prefix
                         .iter()
                         .filter(|other| {
-                            other.asn() == roa.asn()
-                                && other.prefix().addr_len()
-                                    <= roa.prefix().addr_len()
+                            other.asn == roa.roa_configuration.payload.asn
+                                && other.prefix.addr_len()
+                                    <= roa.roa_configuration.payload
+                                            .prefix.addr_len()
                                 && other.effective_max_length()
-                                    >= roa.effective_max_length()
+                                    >= roa.roa_configuration.payload
+                                            .effective_max_length()
                         })
                         .cloned()
                         .collect();
@@ -248,8 +259,10 @@ impl BgpAnalyser {
                         // valid)
                         va.validity() == AnnouncementValidity::Valid
                             && va.announcement().prefix().addr_len()
-                                <= roa.effective_max_length()
-                            && va.announcement().asn() == &roa.asn()
+                                <= roa.roa_configuration.payload
+                                        .effective_max_length()
+                            && *va.announcement().asn()
+                                == roa.roa_configuration.payload.asn
                     })
                     .map(|va| va.announcement())
                     .collect();
@@ -265,7 +278,8 @@ impl BgpAnalyser {
                     .collect();
 
                 let authorizes_excess = {
-                    let max_length = roa.effective_max_length();
+                    let max_length =
+                        roa.roa_configuration.payload.effective_max_length();
                     let nr_of_specific_ann = authorizes
                         .iter()
                         .filter(|ann| ann.prefix().addr_len() == max_length)
@@ -273,10 +287,12 @@ impl BgpAnalyser {
                         as u128;
 
                     nr_of_specific_ann > 0
-                        && nr_of_specific_ann < roa.nr_of_specific_prefixes()
+                        && nr_of_specific_ann
+                                < roa.roa_configuration.payload
+                                        .nr_of_specific_prefixes()
                 };
 
-                if roa.asn() == AsNumber::zero() {
+                if roa.roa_configuration.payload.asn == AsNumber::AS0 {
                     // see if this AS0 ROA is redundant, if it is mark it as
                     // such
                     if other_roas_covering_this_prefix.is_empty() {
@@ -471,8 +487,11 @@ mod tests {
     use rpki::repository::resources::Prefix;
 
     use crate::{
-        commons::{api::{Ipv4Prefix, Ipv6Prefix, RoaConfigurationUpdates}, bgp::BgpAnalysisState},
+        commons::bgp::BgpAnalysisState,
         test::{announcement, configured_roa},
+    };
+    use crate::commons::api::roa::{
+        Ipv4Prefix, Ipv6Prefix, RoaConfigurationUpdates
     };
 
     use super::*;
@@ -560,12 +579,12 @@ mod tests {
         let suggestion = analyser.suggest(roas, &resources_held, None).await;
         let updates = RoaConfigurationUpdates::from(suggestion);
 
-        let added = updates.added();
+        let added = &updates.added;
         for announcement in disallowed {
             assert!(!added.iter().any(|added_roa| {
-                let added_payload = added_roa.payload();
+                let added_payload = added_roa.payload;
                 let announcement_payload = RoaPayload::from(announcement);
-                added_payload.includes(&announcement_payload)
+                added_payload.includes(announcement_payload)
             }));
         }
     }
@@ -734,7 +753,7 @@ mod tests {
             let x = x.to_string();
             assert!(report.entries().iter().any(|s|
                 s.state() == z &&
-                *s.announcement().asn() == AsNumber::new(y) &&
+                *s.announcement().asn() == AsNumber::from_u32(y) &&
                 s.announcement().prefix().to_string() == x
             ));
         };

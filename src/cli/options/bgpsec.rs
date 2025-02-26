@@ -50,7 +50,7 @@ pub struct List {
 impl List {
     async fn run(
         self, client: &KrillClient
-    ) -> Result<api::BgpSecCsrInfoList, httpclient::Error> {
+    ) -> Result<api::bgpsec::BgpSecCsrInfoList, httpclient::Error> {
         client.bgpsec_list(&self.ca.ca).await
     }
 }
@@ -75,13 +75,18 @@ pub struct Add {
 impl Add {
     async fn run(
         self, client: &KrillClient
-    ) -> Result<api::Success, httpclient::Error> {
+    ) -> Result<api::admin::Success, httpclient::Error> {
         client.bgpsec_update(
             &self.ca.ca,
-            api::BgpSecDefinitionUpdates::new(
-                vec![api::BgpSecDefinition::new(self.asn, self.csr.0)],
-                vec![]
-            )
+            api::bgpsec::BgpSecDefinitionUpdates {
+                add: vec![
+                    api::bgpsec::BgpSecDefinition {
+                        asn: self.asn,
+                        csr: self.csr.0,
+                    }
+                ],
+                remove: Vec::new(),
+            }
         ).await
     }
 }
@@ -106,13 +111,17 @@ pub struct Remove {
 impl Remove {
     async fn run(
         self, client: &KrillClient
-    ) -> Result<api::Success, httpclient::Error> {
+    ) -> Result<api::admin::Success, httpclient::Error> {
         client.bgpsec_update(
             &self.ca.ca,
-            api::BgpSecDefinitionUpdates::new(
-                vec![],
-                vec![api::BgpSecAsnKey::new(self.asn, self.key)]
-            )
+            api::bgpsec::BgpSecDefinitionUpdates {
+                add: Vec::new(),
+                remove: vec![
+                    api::bgpsec::BgpSecAsnKey {
+                        asn: self.asn, key: self.key
+                    }
+                ],
+            }
         ).await
     }
 }

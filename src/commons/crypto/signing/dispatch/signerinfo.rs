@@ -12,7 +12,6 @@ use url::Url;
 
 use crate::{
     commons::{
-        api::CommandSummary,
         crypto::SignerHandle,
         error::Error,
         eventsourcing::{
@@ -24,6 +23,8 @@ use crate::{
     },
     constants::{ACTOR_DEF_KRILL, SIGNERS_NS},
 };
+use crate::commons::api::history::CommandSummary;
+
 
 //------------ SignerInfoInitCommand
 //------------ ------------------------------------------------------------------------------
@@ -194,20 +195,20 @@ impl WithStorableDetails for SignerInfoCommandDetails {
             }
             SignerInfoCommandDetails::AddKey(key_id, internal_key_id) => {
                 CommandSummary::new("signer-add-key", self)
-                    .with_arg("key_id", key_id)
-                    .with_arg("internal_key_id", internal_key_id)
+                    .arg("key_id", key_id)
+                    .arg("internal_key_id", internal_key_id)
             }
             SignerInfoCommandDetails::RemoveKey(key_id) => {
                 CommandSummary::new("signer-remove-key", self)
-                    .with_arg("key_id", key_id)
+                    .arg("key_id", key_id)
             }
             SignerInfoCommandDetails::ChangeSignerName(signer_name) => {
                 CommandSummary::new("signer-change-name", self)
-                    .with_arg("signer_name", signer_name)
+                    .arg("signer_name", signer_name)
             }
             SignerInfoCommandDetails::ChangeSignerInfo(signer_info) => {
                 CommandSummary::new("signer-change-info", self)
-                    .with_arg("signer_info", signer_info)
+                    .arg("signer_info", signer_info)
             }
         }
     }

@@ -1,27 +1,14 @@
 //! Helper functions for testing Krill.
 #![cfg(test)]
 
-use std::{
-    path::PathBuf,
-    str::FromStr,
-};
-
+use std::path::PathBuf;
+use std::str::FromStr;
 use bytes::Bytes;
-use rpki::{
-    uri,
-};
-use url::Url;
-
-use crate::{
-    commons::{
-        api::{
-            ConfiguredRoa, RoaConfiguration, RoaPayload,
-        },
-        bgp::{Announcement},
-    },
-};
-
+use rpki::uri;
 use rpki::ca::idcert::IdCert;
+use url::Url;
+use crate::commons::api::roa::{ConfiguredRoa, RoaConfiguration, RoaPayload};
+use crate::commons::bgp::Announcement;
 
 
 /// This method returns an in-memory Key-Value store and then runs the test
@@ -78,7 +65,10 @@ pub fn announcement(s: &str) -> Announcement {
 }
 
 pub fn configured_roa(s: &str) -> ConfiguredRoa {
-    ConfiguredRoa::new(roa_configuration(s), vec![])
+    ConfiguredRoa { 
+        roa_configuration: roa_configuration(s),
+        roa_objects: vec![]
+    }
 }
 
 pub fn roa_configuration(s: &str) -> RoaConfiguration {

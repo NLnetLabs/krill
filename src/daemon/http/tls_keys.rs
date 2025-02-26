@@ -19,7 +19,7 @@ use rpki::{
     repository::x509::{Time, Validity},
 };
 
-use crate::commons::{api::IdCertInfo, error::KrillIoError, util::file};
+use crate::commons::{api::ca::IdCertInfo, error::KrillIoError, util::file};
 
 const KEY_SIZE: u32 = 2048;
 pub const HTTPS_SUB_DIR: &str = "ssl";
@@ -181,7 +181,7 @@ impl HttpsSigner {
 
         let path = cert_file_path(tls_keys_dir);
 
-        file::save(id_cert_pem.pem().as_bytes(), &path)?;
+        file::save(id_cert_pem.pem().to_string().as_bytes(), &path)?;
 
         Ok(())
     }

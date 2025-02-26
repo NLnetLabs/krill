@@ -10,10 +10,11 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::commons::{
-    api::{
+    api::ca::{
         ChildConnectionStats, ChildStatus, ChildrenConnectionStats,
-        ErrorResponse, ParentStatus, ParentStatuses, RepoStatus,
+        ParentStatus, ParentStatuses, RepoStatus,
     },
+    api::error::ErrorResponse,
     error::Error,
     storage::{Key, KeyValueStore, Namespace, Scope, Segment},
     util::httpclient,
@@ -45,10 +46,14 @@ impl CaStatus {
             .into_iter()
             .map(|(handle, status)| {
                 let state = status.child_state();
-                ChildConnectionStats::new(handle, status.into(), state)
+                ChildConnectionStats {
+                    handle,
+                    last_exchange: status.into(),
+                    state
+                }
             })
             .collect();
-        ChildrenConnectionStats::new(children)
+        ChildrenConnectionStats { children }
     }
 
     pub fn repo(&self) -> &RepoStatus {
@@ -495,7 +500,7 @@ impl StatusStore {
 
             let ca_status = cache.get_mut(ca).unwrap(); // safe, we just set it if missing
 
-            let parent_status = ca_status.parents.get_mut_status(parent);
+            let parent_status = ca_status.parents.get_or_default_mut(parent);
             op(parent_status);
             parent_status.clone()
         };

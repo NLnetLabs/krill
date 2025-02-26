@@ -30,7 +30,6 @@ use serde::{Deserialize, Serialize};
 use crate::{
     commons::{
         actor::Actor,
-        api::{IdCertInfo, ObjectName, ReceivedCert},
         crypto::{CsrInfo, KrillSigner, SignSupport},
         error::Error,
         eventsourcing::{
@@ -40,6 +39,7 @@ use crate::{
     },
     daemon::ca::Rfc8183Id,
 };
+use crate::commons::api::ca::{IdCertInfo, ObjectName, ReceivedCert};
 
 //------------ TrustAnchorSigner -------------------------------------------
 
@@ -216,21 +216,21 @@ impl From<&TrustAnchorSignerCommandDetails>
 }
 
 impl eventsourcing::WithStorableDetails for TrustAnchorSignerStorableCommand {
-    fn summary(&self) -> crate::commons::api::CommandSummary {
+    fn summary(&self) -> crate::commons::api::history::CommandSummary {
         match self {
             TrustAnchorSignerStorableCommand::Init => {
-                crate::commons::api::CommandSummary::new(
+                crate::commons::api::history::CommandSummary::new(
                     "cmd-ta-signer-init",
                     self,
                 )
             }
             TrustAnchorSignerStorableCommand::TrustAnchorSignerRequest(
                 request,
-            ) => crate::commons::api::CommandSummary::new(
+            ) => crate::commons::api::history::CommandSummary::new(
                 "cmd-ta-signer-process-request",
                 self,
             )
-            .with_arg("nonce", &request.content().nonce),
+            .arg("nonce", &request.content().nonce),
         }
     }
 
@@ -427,7 +427,7 @@ impl TrustAnchorSigner {
             cert.set_ca_repository(Some(repo_info.ca_repository(ns)));
             cert.set_rpki_manifest(Some(repo_info.resolve(
                 ns,
-                ObjectName::mft_for_key(&pub_key.key_identifier()).as_ref(),
+                ObjectName::mft_from_ca_key(&pub_key.key_identifier()).as_ref(),
             )));
             cert.set_rpki_notify(repo_info.rpki_notify().cloned());
 
@@ -517,12 +517,12 @@ impl TrustAnchorSigner {
                             issue_resources,
                             validity.not_after(),
                             provisioning::IssuedCert::new(
-                                issued_cert.uri().clone(),
+                                issued_cert.uri.clone(),
                                 limit,
                                 issued_cert.to_cert().unwrap(), /* cannot fail */
                             ),
                             provisioning::SigningCert::new(
-                                signing_cert.uri().clone(),
+                                signing_cert.uri.clone(),
                                 signing_cert.to_cert().unwrap(),
                             ),
                         );
@@ -592,7 +592,7 @@ impl TrustAnchorSigner {
         }
         .sign(
             ta_timing_config.signed_message_validity_days,
-            self.id.public_key().key_identifier(),
+            self.id.public_key.key_identifier(),
             signer,
         )?;
 
@@ -692,7 +692,7 @@ impl fmt::Display for TrustAnchorProxySignerExchanges {
                 .publish_elements()
                 .unwrap()
             {
-                writeln!(f, "   {}", published.uri())?;
+                writeln!(f, "   {}", published.uri)?;
             }
 
             writeln!(f)?;

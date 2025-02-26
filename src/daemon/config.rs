@@ -24,7 +24,6 @@ use syslog::Facility;
 
 use crate::{
     commons::{
-        api::{PublicationServerUris, Token},
         crypto::{OpenSslSignerConfig, SignSupport},
         error::{Error, KrillIoError},
         storage::{KeyValueStore, Namespace},
@@ -39,6 +38,7 @@ use crate::{
     },
     ta::TaTimingConfig,
 };
+use crate::commons::api::admin::{PublicationServerUris, Token};
 
 #[cfg(feature = "multi-user")]
 use crate::daemon::auth::providers::{
@@ -432,36 +432,15 @@ impl SignerReference {
     }
 }
 
-/// Inspired by the serde_with crate. But, given that we don't need all
-/// its features - just implementing the one thing we need here.
-#[derive(Deserialize)]
-#[serde(untagged)]
-pub enum OneOrMany<'a, T> {
-    One(T),
-    Many(Vec<T>),
-    #[serde(skip)]
-    _LifeTimeMarker(std::marker::PhantomData<&'a u32>),
-}
-
-impl<T> From<OneOrMany<'_, T>> for Vec<T> {
-    fn from(one_or_many: OneOrMany<T>) -> Self {
-        match one_or_many {
-            OneOrMany::One(t) => vec![t],
-            OneOrMany::Many(vec_of_t) => vec_of_t,
-            OneOrMany::_LifeTimeMarker(_) => {
-                unreachable!("variant is never created")
-            }
-        }
-    }
-}
-
 fn deserialize_config_ips<'de, D>(
     deserializer: D,
 ) -> Result<Vec<IpAddr>, D::Error>
 where
     D: Deserializer<'de>,
 {
-    OneOrMany::<IpAddr>::deserialize(deserializer).map(|oom| oom.into())
+    ext_serde::OneOrMany::<IpAddr>::deserialize(
+        deserializer
+    ).map(|oom| oom.into())
 }
 
 pub fn deserialize_storage_uri<'de, D>(
@@ -883,10 +862,10 @@ impl TestBed {
     }
 
     pub fn publication_server_uris(&self) -> PublicationServerUris {
-        PublicationServerUris::new(
-            self.rrdp_base_uri.clone(),
-            self.rsync_jail.clone(),
-        )
+        PublicationServerUris {
+            rrdp_base_uri: self.rrdp_base_uri.clone(),
+            rsync_jail: self.rsync_jail.clone(),
+        }
     }
 }
 
@@ -2094,12 +2073,12 @@ mod tests {
 
         let uris = testbed.publication_server_uris();
         assert_eq!(
-            uris.rrdp_base_uri(),
-            &test::https("https://testbed.example.com/rrdp/")
+            uris.rrdp_base_uri,
+            test::https("https://testbed.example.com/rrdp/")
         );
         assert_eq!(
-            uris.rsync_jail(),
-            &test::rsync("rsync://testbed.example.com/repo/")
+            uris.rsync_jail,
+            test::rsync("rsync://testbed.example.com/repo/")
         );
     }
 

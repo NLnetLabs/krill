@@ -92,10 +92,13 @@ pub struct Add {
 impl Add {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::Success, httpclient::Error> {
+    ) -> Result<api::admin::Success, httpclient::Error> {
         client.parent_add(
             &self.handle.ca.ca,
-            api::ParentCaReq::new(self.handle.parent, self.response.0)
+            api::admin::ParentCaReq {
+                handle: self.handle.parent,
+                response: self.response.0,
+            }
         ).await
     }
 }
@@ -112,7 +115,7 @@ pub struct CaContact {
 impl CaContact {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::ParentCaContact, httpclient::Error> {
+    ) -> Result<api::admin::ParentCaContact, httpclient::Error> {
         client.parent_details(&self.handle.ca.ca, &self.handle.parent).await
     }
 }
@@ -129,7 +132,7 @@ pub struct Statuses {
 impl Statuses {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::ParentStatuses, httpclient::Error> {
+    ) -> Result<api::ca::ParentStatuses, httpclient::Error> {
         client.parent_list(&self.ca.ca).await
     }
 }
@@ -146,7 +149,7 @@ pub struct Remove {
 impl Remove {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::Success, httpclient::Error> {
+    ) -> Result<api::admin::Success, httpclient::Error> {
         client.parent_delete(&self.handle.ca.ca, &self.handle.parent).await
     }
 }

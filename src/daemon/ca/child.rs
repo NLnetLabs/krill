@@ -9,15 +9,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     commons::{
-        api::{
-            ChildCaInfo, ChildState, IdCertInfo, IssuedCertificate,
-            ReceivedCert, SuspendedCert, UnsuspendedCert,
-        },
         crypto::{KrillSigner, SignSupport},
         error::Error,
         KrillResult,
     },
     daemon::{ca::ChildCertificateUpdates, config::IssuanceTimingConfig},
+};
+use crate::commons::api::ca::{
+    ChildCaInfo, ChildState, IdCertInfo, IssuedCertificate, ReceivedCert,
+    SuspendedCert, UnsuspendedCert,
 };
 
 //------------ UsedKeyState ------------------------------------------------
@@ -190,7 +190,11 @@ impl ChildDetails {
 
 impl From<ChildDetails> for ChildCaInfo {
     fn from(details: ChildDetails) -> Self {
-        ChildCaInfo::new(details.state, details.id_cert, details.resources)
+        ChildCaInfo {
+            state: details.state,
+            id_cert: details.id_cert,
+            entitled_resources: details.resources
+        }
     }
 }
 
@@ -287,7 +291,7 @@ impl ChildCertificates {
         for suspended in self.suspended.values() {
             updates.suspend(
                 self.re_issue(
-                    &suspended.convert(),
+                    &suspended.to_converted(),
                     None,
                     signing_cert,
                     issuance_timing,
@@ -313,7 +317,7 @@ impl ChildCertificates {
     ) -> KrillResult<ChildCertificateUpdates> {
         let mut updates = ChildCertificateUpdates::default();
 
-        let updated_resources = received_cert.resources();
+        let updated_resources = &received_cert.resources;
 
         for issued in self.issued.values() {
             if let Some(reduced_set) =
@@ -352,7 +356,7 @@ impl ChildCertificates {
                     //       un-suspended.
                     updates.suspend(
                         self.re_issue(
-                            &suspended.convert(),
+                            &suspended.to_converted(),
                             Some(reduced_set),
                             received_cert,
                             issuance_timing,
@@ -377,10 +381,10 @@ impl ChildCertificates {
         issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<IssuedCertificate> {
-        let csr_info = previous.csr_info().clone();
+        let csr_info = previous.csr_info.clone();
         let resource_set =
-            updated_resources.unwrap_or_else(|| previous.resources().clone());
-        let limit = previous.limit().clone();
+            updated_resources.unwrap_or_else(|| previous.resources.clone());
+        let limit = previous.limit.clone();
 
         let re_issued = SignSupport::make_issued_cert(
             csr_info,
@@ -401,7 +405,7 @@ impl ChildCertificates {
         self.issued
             .values()
             .filter(|issued| {
-                issued.validity().not_after()
+                issued.validity.not_after()
                     < issuance_timing.new_child_cert_issuance_threshold()
             })
             .collect()
@@ -413,7 +417,7 @@ impl ChildCertificates {
     ) -> Vec<&IssuedCertificate> {
         self.issued
             .values()
-            .filter(|issued| !resources.contains(issued.resources()))
+            .filter(|issued| !resources.contains(&issued.resources))
             .collect()
     }
 }

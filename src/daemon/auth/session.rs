@@ -8,7 +8,7 @@ use log::{debug, trace, warn};
 use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
 use crate::commons::KrillResult;
-use crate::commons::api::Token;
+use crate::commons::api::admin::Token;
 use crate::commons::error::{ApiAuthError, Error};
 use crate::daemon::auth::crypt;
 use crate::daemon::auth::crypt::{CryptState, NonceState};

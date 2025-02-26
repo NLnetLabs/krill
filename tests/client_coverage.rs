@@ -76,7 +76,7 @@ async fn client_coverage() {
     // child_import tested in functional_delegated_ca_import
     server.client().child_details(&parent, &child.convert()).await.unwrap();
     server.client().child_update(
-        &parent, &child.convert(), api::UpdateChildRequest::unsuspend()
+        &parent, &child.convert(), api::admin::UpdateChildRequest::unsuspend()
     ).await.unwrap();
     server.client().child_contact(&parent, &child.convert()).await.unwrap();
     // child_export tested in functional_delegated_ca_import
@@ -95,16 +95,16 @@ async fn client_coverage() {
 
     let _ = server.client().roas_update(
         &child,
-        api::RoaConfigurationUpdates::new(
-            vec![common::roa_conf("10.0.0.0/16-16 => 64496")],
-            vec![]
-        )
+        api::roa::RoaConfigurationUpdates {
+            added: vec![common::roa_conf("10.0.0.0/16-16 => 64496")],
+            removed: vec![]
+        }
     ).await.unwrap();
     server.client().roas_list(&child).await.unwrap();
-    let update = api::RoaConfigurationUpdates::new(
-        vec![common::roa_conf("10.1.0.0/16-16 => 64496")],
-        vec![]
-    );
+    let update = api::roa::RoaConfigurationUpdates {
+        added: vec![common::roa_conf("10.1.0.0/16-16 => 64496")],
+        removed: vec![],
+    };
     server.client().roas_dryrun_update(
         &child, update.clone()
     ).await.unwrap();
@@ -126,14 +126,18 @@ async fn client_coverage() {
 
     server.client().aspas_add_single(
         &child,
-        api::AspaDefinition::new(
-            common::asn("AS65000"), vec![common::asn("AS64496")]
-        )
+        api::aspa::AspaDefinition {
+            customer: common::asn("AS65000"),
+            providers: vec![common::asn("AS64496")]
+        },
     ).await.unwrap();
     server.client().aspas_list(&child).await.unwrap();
     server.client().aspas_update_single(
         &child, common::asn("AS65000"),
-        api::AspaProvidersUpdate::new(vec![common::asn("AS64497")], vec![])
+        api::aspa::AspaProvidersUpdate {
+            added: vec![common::asn("AS64497")],
+            removed: vec![]
+        },
     ).await.unwrap();
 
     server.client().publishers_list().await.unwrap();

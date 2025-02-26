@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     commons::{
-        api::{AspaDefinition, CustomerAsn},
+        api::aspa::{AspaDefinition, CustomerAsn},
         crypto::dispatch::signerinfo::{
             SignerInfo, SignerInfoEvent, SignerInfoInitEvent,
         },
@@ -65,10 +65,10 @@ pub struct Pre0_14_0AspaDefinition {
 
 impl From<Pre0_14_0AspaDefinition> for AspaDefinition {
     fn from(old: Pre0_14_0AspaDefinition) -> Self {
-        AspaDefinition::new(
-            old.customer,
-            old.providers.into_iter().map(|o| o.provider).collect(),
-        )
+        AspaDefinition {
+            customer: old.customer,
+            providers: old.providers.into_iter().map(|o| o.provider).collect(),
+        }
     }
 }
 

@@ -20,10 +20,6 @@ use rpki::{
 
 use crate::{
     commons::{
-        api::{
-            IssuedCertificate, ReceivedCert, ResourceClassInfo,
-            RoaConfiguration, SuspendedCert, UnsuspendedCert,
-        },
         crypto::{CsrInfo, KrillSigner, SignSupport},
         error::Error,
         KrillResult,
@@ -39,10 +35,15 @@ use crate::{
     },
     ta::ta_handle,
 };
+use crate::commons::api::ca::{
+    IssuedCertificate, ReceivedCert, ResourceClassInfo, SuspendedCert,
+    UnsuspendedCert,
+};
+use crate::commons::api::roa::{RoaConfiguration, RoaInfo}; 
 
 use super::{
     AspaDefinitions, BgpSecCertificateUpdates, BgpSecCertificates,
-    BgpSecDefinitions, RoaInfo,
+    BgpSecDefinitions, 
 };
 
 //------------ ResourceClass -----------------------------------------------
@@ -157,7 +158,7 @@ impl ResourceClass {
 
     /// Returns the current resources for this resource class
     pub fn current_resources(&self) -> Option<&ResourceSet> {
-        self.current_certificate().map(|c| c.resources())
+        self.current_certificate().map(|c| &c.resources)
     }
 
     /// Returns a reference to current key for this RC, if there is any.
@@ -190,12 +191,12 @@ impl ResourceClass {
 
     /// Returns a ResourceClassInfo for this, which contains all the
     /// same data, but which does not have any behavior.
-    pub fn as_info(&self) -> ResourceClassInfo {
-        ResourceClassInfo::new(
-            self.name_space.clone(),
-            self.parent_handle.clone(),
-            self.key_state.as_info(),
-        )
+    pub fn to_info(&self) -> ResourceClassInfo {
+        ResourceClassInfo {
+            name_space: self.name_space.clone(),
+            parent_handle: self.parent_handle.clone(),
+            keys: self.key_state.as_info(),
+        }
     }
 }
 
@@ -233,8 +234,8 @@ impl ResourceClass {
                         "Received certificate for CA '{}' under RC '{}', with resources: '{}' valid until: '{}'",
                         handle,
                         self.name,
-                        rcvd_cert.resources(),
-                        rcvd_cert.validity().not_after().to_rfc3339()
+                        rcvd_cert.resources,
+                        rcvd_cert.validity.not_after().to_rfc3339()
                     );
 
                     let current_key = CertifiedKey::create(rcvd_cert);
@@ -373,7 +374,7 @@ impl ResourceClass {
             return Err(ca::Error::KeyUseNoMatch(ki));
         }
 
-        let rcvd_resources = rcvd_cert.resources();
+        let rcvd_resources = &rcvd_cert.resources;
 
         let mut res = vec![CertAuthEvent::CertificateReceived {
             resource_class_name: self.name.clone(),
@@ -382,7 +383,7 @@ impl ResourceClass {
         }];
 
         let rcvd_resources_diff = rcvd_resources
-            .difference(current_key.incoming_cert().resources());
+            .difference(&current_key.incoming_cert().resources);
 
         if !rcvd_resources_diff.is_empty() {
             info!(
@@ -390,7 +391,7 @@ impl ResourceClass {
                 handle,
                 self.name,
                 rcvd_resources_diff,
-                rcvd_cert.validity().not_after().to_rfc3339()
+                rcvd_cert.validity.not_after().to_rfc3339()
             );
 
             // Prep certified key for updated received certificate
@@ -467,7 +468,7 @@ impl ResourceClass {
                 "Received new certificate for CA '{}' under RC '{}', valid until: {}",
                 handle,
                 self.name,
-                rcvd_cert.validity().not_after().to_rfc3339()
+                rcvd_cert.validity.not_after().to_rfc3339()
             )
         }
 
@@ -773,7 +774,7 @@ impl ResourceClass {
         signer: &KrillSigner,
     ) -> KrillResult<IssuedCertificate> {
         let signing_cert = self.get_current_key()?.incoming_cert();
-        let parent_resources = signing_cert.resources();
+        let parent_resources = &signing_cert.resources;
         let resources = parent_resources.intersection(child_resources);
 
         let issued = SignSupport::make_issued_cert(
@@ -853,7 +854,7 @@ impl ResourceClass {
         signer: &KrillSigner,
     ) -> KrillResult<RoaUpdates> {
         if let Ok(key) = self.get_current_key() {
-            let resources = key.incoming_cert().resources();
+            let resources = &key.incoming_cert().resources;
             let routes = routes.filter(resources);
             self.roas.update(&routes, key, config, signer)
         } else {
@@ -984,7 +985,7 @@ impl ResourceClass {
             Error::custom("No current key to sign RTA with")
         })?;
 
-        if !current.incoming_cert().resources().contains(resources) {
+        if !current.incoming_cert().resources.contains(resources) {
             return Err(Error::custom("Resources for RTA not held"));
         }
 

@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     commons::{
-        api::{IssuedCertificate, ReceivedCert},
+        api::ca::{IssuedCertificate, ReceivedCert},
         crypto::KrillSigner,
         error::Error,
         util::AllowedUri,
@@ -128,7 +128,7 @@ impl SignSupport {
         signer: &KrillSigner,
     ) -> KrillResult<IssuedCertificate> {
         let resources = limit.apply_to(resources)?;
-        if !signing_cert.resources().contains(&resources) {
+        if !signing_cert.resources.contains(&resources) {
             return Err(Error::MissingResources);
         }
 
@@ -178,7 +178,7 @@ impl SignSupport {
         signer: &KrillSigner,
     ) -> KrillResult<TbsCert> {
         let serial = signer.random_serial()?;
-        let issuer = signing_cert.subject().clone();
+        let issuer = signing_cert.subject.clone();
 
         let validity = match &request {
             CertRequest::Ca(_, validity) => *validity,
@@ -221,7 +221,7 @@ impl SignSupport {
         cert.set_authority_key_identifier(Some(
             signing_cert.key_identifier(),
         ));
-        cert.set_ca_issuer(Some(signing_cert.uri().clone()));
+        cert.set_ca_issuer(Some(signing_cert.uri.clone()));
         cert.set_crl_uri(Some(signing_cert.crl_uri()));
 
         match request {

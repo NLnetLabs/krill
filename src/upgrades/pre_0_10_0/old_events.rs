@@ -24,18 +24,12 @@ use rpki::{
 
 use crate::{
     commons::{
-        api::{
-            CertInfo, IdCertInfo, IssuedCertificate, ObjectName,
-            ParentCaContact, ParentServerInfo, PublicationServerInfo,
-            ReceivedCert, RepositoryContact, Revocation, Revocations,
-            RoaAggregateKey, RtaName, SuspendedCert, UnsuspendedCert,
-        },
         util::ext_serde,
     },
     daemon::ca::{
         self, CaObjects, CertAuthEvent, CertifiedKey,
         ChildCertificateUpdates, ObjectSetRevision, PreparedRta,
-        PublishedObject, RoaInfo, RoaPayloadJsonMapKey, RoaUpdates,
+        PublishedObject, RoaAggregateKey, RoaUpdates,
         SignedRta,
     },
     pubd::{Publisher, RepositoryAccessEvent, RepositoryAccessInitEvent},
@@ -45,6 +39,15 @@ use crate::{
         UpgradeError,
     },
 };
+use crate::commons::api::admin::{
+    ParentCaContact, ParentServerInfo, PublicationServerInfo,
+    RepositoryContact,
+};
+use crate::commons::api::ca::{
+    CertInfo, IdCertInfo, IssuedCertificate, ObjectName, ReceivedCert,
+    Revocation, Revocations,  RtaName, SuspendedCert, UnsuspendedCert,
+};
+use crate::commons::api::roa::{RoaInfo, RoaPayloadJsonMapKey};
 
 use super::{Pre0_10_0AspaDefinition, Pre0_10_0AspaObjectsUpdates};
 
@@ -347,12 +350,12 @@ pub struct OldParentResponse {
 impl From<OldParentResponse> for ParentServerInfo {
     fn from(old: OldParentResponse) -> Self {
         let id_cert_info = IdCertInfo::from(&old.id_cert);
-        ParentServerInfo::new(
-            old.service_uri,
-            old.parent_handle,
-            old.child_handle,
-            id_cert_info,
-        )
+        ParentServerInfo {
+            service_uri: old.service_uri,
+            parent_handle: old.parent_handle,
+            child_handle: old.child_handle,
+            id_cert: id_cert_info,
+        }
     }
 }
 
@@ -367,14 +370,14 @@ pub struct OldRepositoryContact {
 
 impl From<OldRepositoryContact> for RepositoryContact {
     fn from(old: OldRepositoryContact) -> Self {
-        let repo_info = old.repository_response.repo_info;
-        let public_key = old.repository_response.id_cert.public_key().clone();
-        let service_uri = old.repository_response.service_uri;
-
-        RepositoryContact::new(
-            repo_info,
-            PublicationServerInfo::new(public_key, service_uri),
-        )
+        RepositoryContact {
+            repo_info: old.repository_response.repo_info,
+            server_info: PublicationServerInfo {
+                public_key:
+                    old.repository_response.id_cert.public_key().clone(),
+                service_uri: old.repository_response.service_uri,
+            }
+        }
     }
 }
 
@@ -892,12 +895,12 @@ pub enum Pre0_10CertAuthEventDetails {
         // have a 'modify' event. Modifications of e.g. the
         // max length are expressed as a 'removed' and 'added' event in a
         // single transaction.
-        auth: ca::RoaPayloadJsonMapKey,
+        auth: RoaPayloadJsonMapKey,
     },
     RouteAuthorizationRemoved {
         // Tracks a single authorization (VRP) which is removed. See remark
         // for RouteAuthorizationAdded.
-        auth: ca::RoaPayloadJsonMapKey,
+        auth: RoaPayloadJsonMapKey,
     },
     RoasUpdated {
         // Tracks ROA *objects* which are (re-)issued in a resource class.

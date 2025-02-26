@@ -11,7 +11,6 @@ use serde::{de::DeserializeOwned, Serialize};
 use url::Url;
 
 use crate::commons::{
-    api::{CommandHistory, CommandHistoryCriteria, CommandHistoryRecord},
     error::KrillIoError,
     eventsourcing::{
         cmd::Command, Aggregate,
@@ -19,6 +18,9 @@ use crate::commons::{
         StoredCommand, StoredCommandBuilder,
     },
     storage::{Key, KeyValueError, KeyValueStore, Namespace, Segment, Scope},
+};
+use crate::commons::api::history::{
+    CommandHistory, CommandHistoryCriteria, CommandHistoryRecord
 };
 
 use super::InitCommand;
@@ -472,14 +474,14 @@ where
             crit: CommandHistoryCriteria,
             records: &[CommandHistoryRecord],
         ) -> CommandHistory {
-            let offset = crit.offset();
+            let offset = crit.offset;
 
-            let rows = match crit.rows_limit() {
+            let rows = match crit.rows_limit {
                 Some(limit) => limit,
                 None => records.len(),
             };
 
-            let mut matching = Vec::with_capacity(rows);
+            let mut commands = Vec::with_capacity(rows);
             let mut skipped = 0;
             let mut total = 0;
 
@@ -489,12 +491,12 @@ where
                     if skipped < offset {
                         skipped += 1;
                     } else if total - skipped <= rows {
-                        matching.push(record.clone());
+                        commands.push(record.clone());
                     }
                 }
             }
 
-            CommandHistory::new(offset, total, matching)
+            CommandHistory { offset, total, commands }
         }
 
         match &self.history_cache {

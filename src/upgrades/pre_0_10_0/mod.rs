@@ -3,7 +3,7 @@ use rpki::ca::publication::Base64;
 use rpki::repository::x509::Time;
 use serde::{Deserialize, Serialize};
 
-use crate::commons::api::AspaDefinition;
+use crate::commons::api::aspa::AspaDefinition;
 
 pub use self::cas_migration::*;
 
@@ -29,10 +29,10 @@ pub struct Pre0_10_0AspaDefinition {
 
 impl From<Pre0_10_0AspaDefinition> for AspaDefinition {
     fn from(old: Pre0_10_0AspaDefinition) -> Self {
-        AspaDefinition::new(
-            old.customer.provider,
-            old.providers.into_iter().map(|o| o.provider).collect(),
-        )
+        AspaDefinition {
+            customer: old.customer.provider,
+            providers: old.providers.into_iter().map(|o| o.provider).collect(),
+        }
     }
 }
 

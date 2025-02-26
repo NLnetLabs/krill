@@ -69,7 +69,7 @@ pub struct Show {
 impl Show {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::CaRepoDetails, httpclient::Error> {
+    ) -> Result<api::ca::CaRepoDetails, httpclient::Error> {
         client.repo_details(&self.ca.ca).await
     }
 }
@@ -86,7 +86,7 @@ pub struct Status {
 impl Status {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::RepoStatus, httpclient::Error> {
+    ) -> Result<api::ca::RepoStatus, httpclient::Error> {
         client.repo_status(&self.ca.ca).await
     }
 }
@@ -107,7 +107,7 @@ pub struct Configure {
 impl Configure {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::Success, httpclient::Error> {
+    ) -> Result<api::admin::Success, httpclient::Error> {
         client.repo_update(&self.ca.ca, self.response.0).await
     }
 }
