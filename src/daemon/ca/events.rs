@@ -1091,7 +1091,7 @@ impl fmt::Display for CertAuthEvent {
                 if !updated.is_empty() {
                     write!(f, " added: ")?;
                     for cert in updated {
-                        write!(f, "{} ", ObjectName::from(cert))?;
+                        write!(f, "{} ", cert.name())?;
                     }
                 }
                 let removed = updates.removed();

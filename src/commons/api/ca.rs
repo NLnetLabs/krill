@@ -32,7 +32,6 @@ use rpki::rrdp::Hash;
 use serde::{Deserialize, Serialize};
 use crate::commons::crypto::CsrInfo;
 use crate::commons::error;
-use crate::daemon::ca::BgpSecCertInfo;
 use crate::commons::util::KrillVersion;
 use super::admin::{ParentCaContact, PublishedFile, RepositoryContact};
 use super::aspa::AspaDefinition;
@@ -575,12 +574,6 @@ impl From<&AspaDefinition> for ObjectName {
     }
 }
 
-impl From<&BgpSecCertInfo> for ObjectName {
-    fn from(info: &BgpSecCertInfo) -> Self {
-        Self::bgpsec(info.asn(), info.public_key().key_identifier())
-    }
-}
-
 impl From<&BgpSecAsnKey> for ObjectName {
     fn from(asn_key: &BgpSecAsnKey) -> Self {
         Self::bgpsec(asn_key.asn, asn_key.key)
@@ -668,12 +661,6 @@ impl From<&Roa> for Revocation {
 impl From<&Aspa> for Revocation {
     fn from(aspa: &Aspa) -> Self {
         Self::from(aspa.cert())
-    }
-}
-
-impl From<&BgpSecCertInfo> for Revocation {
-    fn from(info: &BgpSecCertInfo) -> Self {
-        Revocation::new(info.serial(), info.expires())
     }
 }
 
