@@ -24,9 +24,6 @@ use url::Url;
 
 use crate::{
     commons::{
-        api::{
-            rrdp::PublishElement, 
-        },
         crypto::KrillSigner,
         error::Error,
         eventsourcing::PreSaveEventListener,
@@ -42,7 +39,7 @@ use crate::{
         config::IssuanceTimingConfig,
     },
 };
-use crate::commons::api::admin::RepositoryContact;
+use crate::commons::api::admin::{PublishedFile, RepositoryContact};
 use crate::commons::api::ca::{
     CertInfo, IssuedCertificate, ObjectName, ReceivedCert, Revocation,
     Revocations,
@@ -379,7 +376,7 @@ impl CaObjects {
     /// isn't.
     pub fn repo_elements_map(
         &self,
-    ) -> HashMap<RepositoryContact, Vec<PublishElement>> {
+    ) -> HashMap<RepositoryContact, Vec<PublishedFile>> {
         let mut res = HashMap::new();
 
         if let Some(repo) = &self.repo {
@@ -396,9 +393,9 @@ impl CaObjects {
         res
     }
 
-    /// Returns all PublishElements in all repositories (if there is more than
+    /// Returns all PublishedFiles in all repositories (if there is more than
     /// one).
-    pub fn all_publish_elements(&self) -> Vec<PublishElement> {
+    pub fn all_publish_elements(&self) -> Vec<PublishedFile> {
         let mut all_elements = vec![];
 
         // slightly inefficient since we drop the RepositoryContact keys
@@ -629,7 +626,7 @@ impl ResourceClassObjects {
     /// migration.
     fn add_elements(
         &self,
-        map: &mut HashMap<RepositoryContact, Vec<PublishElement>>,
+        map: &mut HashMap<RepositoryContact, Vec<PublishedFile>>,
         dflt_repo: &RepositoryContact,
     ) {
         match &self.keys {
@@ -1108,7 +1105,7 @@ impl KeyObjectSet {
     #[allow(clippy::mutable_key_type)]
     fn add_elements(
         &self,
-        map: &mut HashMap<RepositoryContact, Vec<PublishElement>>,
+        map: &mut HashMap<RepositoryContact, Vec<PublishedFile>>,
         dflt_repo: &RepositoryContact,
     ) {
         let repo = self.old_repo.as_ref().unwrap_or(dflt_repo);
@@ -1118,11 +1115,11 @@ impl KeyObjectSet {
 
         let elements = map.entry(repo.clone()).or_default();
 
-        elements.push(self.manifest.publish_element(mft_uri));
-        elements.push(self.crl.publish_element(crl_uri));
+        elements.push(self.manifest.published_file(mft_uri));
+        elements.push(self.crl.published_file(crl_uri));
 
         for (name, object) in &self.published_objects {
-            elements.push(PublishElement {
+            elements.push(PublishedFile {
                 uri: self.signing_cert.uri_for_name(name),
                 base64: object.base64.clone(),
             });
@@ -1404,8 +1401,8 @@ impl<T> PublishedItem<T> {
         }
     }
 
-    pub fn publish_element(&self, uri: uri::Rsync) -> PublishElement {
-        PublishElement { uri, base64: self.base64.clone() }
+    pub fn published_file(&self, uri: uri::Rsync) -> PublishedFile {
+        PublishedFile { uri, base64: self.base64.clone() }
     }
 
     pub fn revoke(&self) -> Revocation {

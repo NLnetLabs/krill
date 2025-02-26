@@ -26,7 +26,6 @@ use crate::{
         actor::Actor,
         api::{
             import::ImportChild,
-            rrdp::PublishElement,
         },
         crypto::KrillSigner,
         error::Error,
@@ -59,8 +58,9 @@ use crate::{
     },
 };
 use crate::commons::api::admin::{
-    AddChildRequest, ParentCaContact, ParentServerInfo, PublicationServerInfo,
-    ParentCaReq, RepositoryContact, UpdateChildRequest,
+    AddChildRequest, ParentCaContact, ParentCaReq, ParentServerInfo,
+    PublicationServerInfo, PublishedFile, RepositoryContact,
+    UpdateChildRequest,
 };
 use crate::commons::api::aspa::{
     AspaDefinitionList, AspaDefinitionUpdates, AspaProvidersUpdate,
@@ -2600,7 +2600,7 @@ impl CaManager {
         ca_handle: &CaHandle,
         id_cert: &IdCertInfo,
         repo_contact: &RepositoryContact,
-        publish_elements: Vec<PublishElement>,
+        publish_elements: Vec<PublishedFile>,
     ) -> KrillResult<()> {
         debug!("CA '{}' sends list query to repo", ca_handle);
         let list_reply = self
@@ -2667,7 +2667,7 @@ impl CaManager {
     pub async fn ca_repo_elements(
         &self,
         ca: &CaHandle,
-    ) -> KrillResult<HashMap<RepositoryContact, Vec<PublishElement>>> {
+    ) -> KrillResult<HashMap<RepositoryContact, Vec<PublishedFile>>> {
         Ok(self.ca_objects_store.ca_objects(ca)?.repo_elements_map())
     }
 

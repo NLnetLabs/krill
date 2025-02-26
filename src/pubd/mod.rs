@@ -4,6 +4,7 @@ mod manager;
 mod publishers;
 #[allow(clippy::mutable_key_type)]
 mod repository;
+pub mod rrdp;
 
 pub use self::commands::{
     RepositoryAccessCommand, RepositoryAccessCommandDetails,

@@ -286,7 +286,7 @@ impl RepositoryManager {
         let current_files = self
             .content
             .current_objects(&handle)?
-            .try_into_publish_elements()?;
+            .try_into_published_files()?;
 
         Ok(PublisherDetails { handle, id_cert, base_uri, current_files })
     }
@@ -362,16 +362,14 @@ mod tests {
 
     use crate::{
         commons::{
-            api::{
-                rrdp::{PublicationDeltaError, RrdpSession},
-                ca::IdCertInfo,
-            },
+            api::ca::IdCertInfo,
             crypto::{KrillSignerBuilder, OpenSslSignerConfig},
             util::file::{self, CurrentFile},
         },
         constants::*,
         daemon::config::{SignerConfig, SignerType},
         pubd::{Publisher, RrdpServer},
+        pubd::rrdp::{PublicationDeltaError, RrdpSession},
         test::{self, https, rsync},
     };
 

@@ -8,6 +8,7 @@ use rpki::ca::idexchange::{
     ServiceUri,
 };
 use rpki::ca::provisioning::ResourceClassName;
+use rpki::ca::publication::Base64;
 use rpki::crypto::PublicKey;
 use rpki::repository::resources::ResourceSet;
 use rpki::uri;
@@ -16,7 +17,6 @@ use serde::ser::SerializeStruct;
 use crate::commons::error::Error;
 use crate::commons::KrillResult;
 use super::ca::{IdCertInfo, Timestamp};
-use super::rrdp::PublishElement;
 
 
 //------------ Success -------------------------------------------------------
@@ -156,7 +156,7 @@ pub struct PublisherDetails {
     pub base_uri: uri::Rsync,
 
     /// The currently published files.
-    pub current_files: Vec<PublishElement>,
+    pub current_files: Vec<PublishedFile>,
 }
 
 impl fmt::Display for PublisherDetails {
@@ -171,6 +171,19 @@ impl fmt::Display for PublisherDetails {
 
         Ok(())
     }
+}
+
+
+//------------ PublishedFile -------------------------------------------------
+
+/// Details about a published object.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct PublishedFile {
+    /// The URI identifying the object to be published.
+    pub uri: uri::Rsync,
+
+    /// The Base64 encoded content of the object to be published.
+    pub base64: Base64,
 }
 
 

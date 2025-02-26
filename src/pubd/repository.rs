@@ -26,13 +26,6 @@ use serde::{Deserialize, Serialize};
 use crate::{
     commons::{
         actor::Actor,
-        api::{
-            rrdp::{
-                CurrentObjects, DeltaData, DeltaElements, PublishElement,
-                RrdpFileRandom, RrdpSession, SnapshotData, UpdateElement,
-                WithdrawElement,
-            },
-        },
         crypto::KrillSigner,
         error::{Error, KrillIoError},
         eventsourcing::{
@@ -65,6 +58,12 @@ use super::commands::{
     RepositoryAccessInitCommand, RepositoryAccessInitCommandDetails,
     StorableRepositoryCommand,
 };
+use super::rrdp::{
+    CurrentObjects, DeltaData, DeltaElements, PublishElement,
+    RrdpFileRandom, RrdpSession, SnapshotData, UpdateElement,
+    WithdrawElement,
+};
+
 
 //------------ RepositoryContentProxy ----------------------------------------
 

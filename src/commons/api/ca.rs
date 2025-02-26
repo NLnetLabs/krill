@@ -33,15 +33,12 @@ use serde::{Deserialize, Serialize};
 use crate::commons::crypto::CsrInfo;
 use crate::commons::error;
 use crate::daemon::ca::BgpSecCertInfo;
-use crate::commons::api::error::ErrorResponse;
-use crate::commons::api::roa::RoaPayload;
-use crate::commons::api::rrdp::PublishElement;
 use crate::commons::util::KrillVersion;
-use super::rrdp;
-use super::admin::{ParentCaContact, RepositoryContact};
+use super::admin::{ParentCaContact, PublishedFile, RepositoryContact};
 use super::aspa::AspaDefinition;
 use super::bgpsec::BgpSecAsnKey;
-use super::roa::RoaPayloadJsonMapKey;
+use super::error::ErrorResponse;
+use super::roa::{RoaPayload, RoaPayloadJsonMapKey};
 
 
 //------------ IdCertInfo ----------------------------------------------------
@@ -1186,7 +1183,7 @@ pub struct RepoStatus {
     pub last_success: Option<Timestamp>,
 
     /// The list of published objects.
-    pub published: Vec<PublishElement>,
+    pub published: Vec<PublishedFile>,
 }
 
 impl RepoStatus {
@@ -1217,12 +1214,13 @@ impl RepoStatus {
         for element in delta.into_elements() {
             match element {
                 PublishDeltaElement::Publish(publish) => {
-                    self.published.push(publish.into());
+                    let (_tag, uri, base64) = publish.unpack();
+                    self.published.push(PublishedFile { uri, base64 });
                 }
                 PublishDeltaElement::Update(update) => {
-                    let update = rrdp::UpdateElement::from(update);
-                    self.published.retain(|el| el.uri != update.uri);
-                    self.published.push(update.into_publish());
+                    let (_tag, uri, base64, _hash) = update.unpack();
+                    self.published.retain(|el| el.uri != uri);
+                    self.published.push(PublishedFile { uri, base64 });
                 }
                 PublishDeltaElement::Withdraw(withdraw) => {
                     let (_tag, uri, _hash) = withdraw.unpack();

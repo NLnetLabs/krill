@@ -12,17 +12,17 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     commons::{
-        api::rrdp::{
-            CurrentObjects, DeltaData, DeltaElements,
-            PublishElement, RrdpFileRandom, RrdpSession, SnapshotData,
-            UpdateElement, WithdrawElement,
-        },
         error::Error,
         eventsourcing::{WalChange, WalSupport},
     },
     pubd::{
         RepositoryContent, RepositoryContentCommand, RrdpServer,
         RrdpSessionReset, RrdpUpdated, RsyncdStore,
+    },
+    pubd::rrdp::{
+        CurrentObjects, DeltaData, DeltaElements,
+        PublishElement, RrdpFileRandom, RrdpSession, SnapshotData,
+        UpdateElement, WithdrawElement,
     },
 };
 

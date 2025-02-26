@@ -31,6 +31,7 @@ use crate::{
         PublishedManifest, PublishedObject, UsedKeyState,
     },
 };
+use crate::commons::api::admin::PublishedFile;
 use crate::commons::api::ca::{
     IdCertInfo, IssuedCertificate, ObjectName, ReceivedCert, Revocations,
 };
@@ -155,29 +156,27 @@ impl TrustAnchorObjects {
         }
     }
 
-    pub fn publish_elements(
-        &self,
-    ) -> KrillResult<Vec<crate::commons::api::rrdp::PublishElement>> {
+    pub fn publish_elements(&self) -> KrillResult<Vec<PublishedFile>> {
         let mut res = vec![];
 
         let mft_uri = self
             .base_uri
             .join(ObjectName::mft_from_ca_key(&self.key_identifier).as_ref())
             .map_err(|e| Error::Custom(format!("Cannot make uri: {}", e)))?;
-        res.push(self.manifest.publish_element(mft_uri));
+        res.push(self.manifest.published_file(mft_uri));
 
         let crl_uri = self
             .base_uri
             .join(ObjectName::crl_from_ca_key(&self.key_identifier).as_ref())
             .map_err(|e| Error::Custom(format!("Cannot make uri: {}", e)))?;
-        res.push(self.crl.publish_element(crl_uri));
+        res.push(self.crl.published_file(crl_uri));
 
         for (name, object) in self.issued_certs_objects() {
             let cert_uri =
                 self.base_uri.join(name.as_ref()).map_err(|e| {
                     Error::Custom(format!("Cannot make uri: {}", e))
                 })?;
-            res.push(object.publish_element(cert_uri));
+            res.push(object.published_file(cert_uri));
         }
         Ok(res)
     }

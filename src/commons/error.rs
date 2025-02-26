@@ -24,7 +24,6 @@ use crate::{
         actor::Actor,
         api::{
             error::ErrorResponse,
-            rrdp::PublicationDeltaError,
         },
         crypto::SignerError,
         eventsourcing::AggregateStoreError,
@@ -35,6 +34,7 @@ use crate::{
     },
     daemon::http::tls_keys,
     daemon::auth::Permission,
+    pubd::rrdp::PublicationDeltaError,
     ta,
     upgrades::UpgradeError,
 };

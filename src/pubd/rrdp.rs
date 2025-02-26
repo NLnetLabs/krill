@@ -20,6 +20,7 @@ use serde::de;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use uuid::Uuid;
 use crate::commons::KrillResult;
+use crate::commons::api::admin::PublishedFile;
 use crate::commons::error::{Error, KrillIoError};
 use crate::commons::util::file;
 
@@ -325,13 +326,13 @@ impl CurrentObjects {
     }
 
     /// Converts the set into a list of publish elements.
-    pub fn try_into_publish_elements(
+    pub fn try_into_published_files(
         self,
-    ) -> KrillResult<Vec<PublishElement>> {
+    ) -> KrillResult<Vec<PublishedFile>> {
         let mut elements = Vec::new();
 
         for (uri_key, base64) in self.0.into_iter() {
-            elements.push(PublishElement { uri: uri_key.try_into()?, base64 });
+            elements.push(PublishedFile { uri: uri_key.try_into()?, base64 });
         }
 
         Ok(elements)
