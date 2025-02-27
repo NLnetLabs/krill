@@ -2,6 +2,7 @@
 
 pub mod admin;
 pub mod aspa;
+pub mod bgp;
 pub mod bgpsec;
 pub mod ca;
 pub mod history;

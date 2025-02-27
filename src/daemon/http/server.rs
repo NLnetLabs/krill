@@ -29,7 +29,6 @@ use tokio::sync::oneshot;
 
 use crate::{
     commons::{
-        bgp::BgpAnalysisAdvice,
         error::Error,
         eventsourcing::AggregateStoreError,
         util::file,
@@ -59,6 +58,7 @@ use crate::commons::api::admin::{
     Token,
 };
 use crate::commons::api::aspa::AspaDefinitionUpdates;
+use crate::commons::api::bgp::BgpAnalysisAdvice;
 use crate::commons::api::ca::RtaName;
 use crate::commons::api::history::CommandHistoryCriteria;
 use crate::commons::api::roa::RoaConfigurationUpdates;
@@ -1898,9 +1898,9 @@ async fn api_ca_routes_try_update(
                                 // dry run, but
                                 // hey..
                                 Ok(suggestion) => {
-                                    render_json(BgpAnalysisAdvice::new(
+                                    render_json(BgpAnalysisAdvice {
                                         effect, suggestion,
-                                    ))
+                                    })
                                 }
                             }
                         }

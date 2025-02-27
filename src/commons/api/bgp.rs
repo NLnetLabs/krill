@@ -1,37 +1,26 @@
-use std::{cmp::Ordering, collections::HashMap, fmt};
+//! The BGP analysis report. 
+
+use std::fmt;
+use std::collections::HashMap;
+use std::cmp::Ordering;
+use std::str::FromStr;
 use serde::{Deserialize, Serialize};
-use crate::commons::{
-    bgp::Announcement,
-};
 use crate::commons::api::ca::BgpStats;
 use crate::commons::api::roa::{
-    ConfiguredRoa, RoaConfiguration, RoaConfigurationUpdates, RoaPayload,
+    AsNumber, ConfiguredRoa, RoaPayload, TypedPrefix,
 };
 
 
-//------------ BgpAnalysisAdvice -------------------------------------------
+//------------ BgpAnalysisAdvice ---------------------------------------------
 
+/// Advice for ROA changes based on BGP announcemenets seen.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BgpAnalysisAdvice {
-    effect: BgpAnalysisReport,
-    suggestion: BgpAnalysisSuggestion,
-}
+    /// The effect of the suggestion.
+    pub effect: BgpAnalysisReport,
 
-impl BgpAnalysisAdvice {
-    pub fn new(
-        effect: BgpAnalysisReport,
-        suggestion: BgpAnalysisSuggestion,
-    ) -> Self {
-        BgpAnalysisAdvice { effect, suggestion }
-    }
-
-    pub fn effect(&self) -> &BgpAnalysisReport {
-        &self.effect
-    }
-
-    pub fn suggestion(&self) -> &BgpAnalysisSuggestion {
-        &self.suggestion
-    }
+    /// Suggestions from the report.
+    pub suggestion: BgpAnalysisSuggestion,
 }
 
 impl fmt::Display for BgpAnalysisAdvice {
@@ -40,9 +29,9 @@ impl fmt::Display for BgpAnalysisAdvice {
         writeln!(f)?;
         writeln!(f, "Effect would leave the following invalids:")?;
 
-        let invalid_asns = self
-            .effect()
-            .matching_announcements(BgpAnalysisState::AnnouncementInvalidAsn);
+        let invalid_asns = self.effect.matching_announcements(
+            BgpAnalysisState::AnnouncementInvalidAsn
+        );
         if !invalid_asns.is_empty() {
             writeln!(f)?;
             writeln!(f, "  Announcements from invalid ASNs:")?;
@@ -51,7 +40,7 @@ impl fmt::Display for BgpAnalysisAdvice {
             }
         }
 
-        let invalid_length = self.effect().matching_announcements(
+        let invalid_length = self.effect.matching_announcements(
             BgpAnalysisState::AnnouncementInvalidLength,
         );
         if !invalid_length.is_empty() {
@@ -64,7 +53,7 @@ impl fmt::Display for BgpAnalysisAdvice {
 
         writeln!(f)?;
         writeln!(f, "You may want to consider this alternative:")?;
-        writeln!(f, "{}", self.suggestion())?;
+        writeln!(f, "{}", self.suggestion)?;
 
         Ok(())
     }
@@ -72,157 +61,53 @@ impl fmt::Display for BgpAnalysisAdvice {
 
 //------------ BgpAnalysisSuggestion ---------------------------------------
 
+/// Suggestions for ROAs based on seen BGP announcements.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BgpAnalysisSuggestion {
+    /// Lists the stale ROAs that can be removed.
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
-    stale: Vec<ConfiguredRoa>,
+    pub stale: Vec<ConfiguredRoa>,
+
+    /// Lists announcements that are not currently covered.
+    #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
+    pub not_found: Vec<Announcement>,
+
+    /// Lists announcements that are currently invalid due to an ASN.
+    #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
+    pub invalid_asn: Vec<Announcement>,
+
+    /// Lists announcements that are too specific and therefore invalid.
+    #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
+    pub invalid_length: Vec<Announcement>,
+
+    /// List replacements for ROAs that are too permissive.
+    #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
+    pub too_permissive: Vec<ReplacementRoaSuggestion>,
+
+    /// Lists ROAs that only disallow announcements.
+    ///
+    /// They may indicate a mistake in the ASN. If intended, they should
+    /// perhaps use AS0 instead.
+    #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
+    pub disallowing: Vec<ConfiguredRoa>,
+
+    /// Lists ROAs that are made redundant by covering ROAs using max length.
+    #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
+    pub redundant: Vec<ConfiguredRoa>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
-    not_found: Vec<Announcement>,
+    pub not_held: Vec<ConfiguredRoa>,
+
+    /// Lists AS0 ROAs that are made redundant by other ROAs.
+    #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
+    pub as0_redundant: Vec<ConfiguredRoa>,
+
+    /// Lists ROAs that should be kept.
+    #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
+    pub keep: Vec<ConfiguredRoa>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
-    invalid_asn: Vec<Announcement>,
-
-    #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
-    invalid_length: Vec<Announcement>,
-
-    #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
-    too_permissive: Vec<ReplacementRoaSuggestion>,
-
-    #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
-    disallowing: Vec<ConfiguredRoa>,
-
-    #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
-    redundant: Vec<ConfiguredRoa>,
-
-    #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
-    not_held: Vec<ConfiguredRoa>,
-
-    #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
-    as0_redundant: Vec<ConfiguredRoa>,
-
-    #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
-    keep: Vec<ConfiguredRoa>,
-
-    #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
-    keep_disallowing: Vec<Announcement>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ReplacementRoaSuggestion {
-    current: ConfiguredRoa,
-    new: Vec<RoaPayload>,
-}
-
-impl From<BgpAnalysisSuggestion> for RoaConfigurationUpdates {
-    fn from(suggestion: BgpAnalysisSuggestion) -> Self {
-        let (
-            stale,
-            not_found,
-            invalid_asn,
-            invalid_length,
-            too_permissive,
-            as0_redundant,
-            redundant,
-        ) = (
-            suggestion.stale,
-            suggestion.not_found,
-            suggestion.invalid_asn,
-            suggestion.invalid_length,
-            suggestion.too_permissive,
-            suggestion.as0_redundant,
-            suggestion.redundant,
-        );
-
-        let mut added: Vec<RoaConfiguration> = vec![];
-        let mut removed: Vec<RoaPayload> = vec![];
-
-        for announcement in not_found
-            .into_iter()
-            .chain(invalid_asn.into_iter())
-            .chain(invalid_length.into_iter())
-        {
-            added.push(RoaConfiguration {
-                payload: announcement.into(),
-                comment: None
-            });
-        }
-
-        for stale in stale.into_iter() {
-            removed.push(stale.roa_configuration.payload);
-        }
-
-        for suggestion in too_permissive.into_iter() {
-            removed.push(suggestion.current.roa_configuration.payload);
-            for payload in suggestion.new.into_iter() {
-                added.push(RoaConfiguration { payload, comment: None });
-            }
-        }
-
-        for as0_redundant in as0_redundant.into_iter() {
-            removed.push(as0_redundant.roa_configuration.payload);
-        }
-
-        for redundant in redundant.into_iter() {
-            removed.push(redundant.roa_configuration.payload);
-        }
-
-        RoaConfigurationUpdates { added, removed }
-    }
-}
-
-impl BgpAnalysisSuggestion {
-    pub fn add_stale(&mut self, configured: &ConfiguredRoa) {
-        self.stale.push(configured.clone());
-    }
-
-    pub fn add_too_permissive(
-        &mut self,
-        current: &ConfiguredRoa,
-        new: Vec<RoaPayload>,
-    ) {
-        let replacement = ReplacementRoaSuggestion {
-            current: current.clone(),
-            new,
-        };
-        self.too_permissive.push(replacement);
-    }
-
-    pub fn add_not_found(&mut self, announcement: Announcement) {
-        self.not_found.push(announcement);
-    }
-
-    pub fn add_invalid_asn(&mut self, announcement: Announcement) {
-        self.invalid_asn.push(announcement);
-    }
-
-    pub fn add_invalid_length(&mut self, announcement: Announcement) {
-        self.invalid_length.push(announcement);
-    }
-
-    pub fn add_disallowing(&mut self, disallowing: &ConfiguredRoa) {
-        self.disallowing.push(disallowing.clone());
-    }
-
-    pub fn add_redundant(&mut self, redundant: &ConfiguredRoa) {
-        self.redundant.push(redundant.clone());
-    }
-
-    pub fn add_not_held(&mut self, not_held: &ConfiguredRoa) {
-        self.not_held.push(not_held.clone());
-    }
-
-    pub fn add_as0_redundant(&mut self, as0_redundant: &ConfiguredRoa) {
-        self.as0_redundant.push(as0_redundant.clone());
-    }
-
-    pub fn add_keep(&mut self, keep: &ConfiguredRoa) {
-        self.keep.push(keep.clone());
-    }
-
-    pub fn add_keep_disallowing(&mut self, announcement: Announcement) {
-        self.keep_disallowing.push(announcement);
-    }
+    pub keep_disallowing: Vec<Announcement>,
 }
 
 #[allow(clippy::cognitive_complexity)]
@@ -250,7 +135,8 @@ impl fmt::Display for BgpAnalysisSuggestion {
         if !self.as0_redundant.is_empty() {
             writeln!(
                 f,
-                "Remove the following AS0 ROAs made redundant by ROAs for the same prefix and a real ASN:"
+                "Remove the following AS0 ROAs made redundant by \
+                 ROAs for the same prefix and a real ASN:"
             )?;
             for auth in &self.as0_redundant {
                 writeln!(f, "  {}", auth)?;
@@ -261,7 +147,8 @@ impl fmt::Display for BgpAnalysisSuggestion {
         if !self.redundant.is_empty() {
             writeln!(
                 f,
-                "Remove the following ROAs made redundant by a covering ROA using max length:"
+                "Remove the following ROAs made redundant by a covering ROA \
+                 using max length:"
             )?;
             for auth in &self.redundant {
                 writeln!(f, "  {}", auth)?;
@@ -272,7 +159,9 @@ impl fmt::Display for BgpAnalysisSuggestion {
         if !self.disallowing.is_empty() {
             writeln!(
                 f,
-                "Remove the following ROAs which only disallow announcements (did you use the wrong ASN?), if this is intended you may want to use AS0 instead:"
+                "Remove the following ROAs which only disallow \
+                announcements (did you use the wrong ASN?), if this is \
+                intended you may want to use AS0 instead:"
             )?;
             for auth in &self.disallowing {
                 writeln!(f, "  {}", auth)?;
@@ -289,7 +178,10 @@ impl fmt::Display for BgpAnalysisSuggestion {
         }
 
         if !self.not_found.is_empty() {
-            writeln!(f, "Authorize these announcements which are currently not covered:")?;
+            writeln!(f,
+                "Authorize these announcements which are currently 
+                 not covered:"
+            )?;
             for auth in &self.not_found {
                 writeln!(f, "  {}", auth)?;
             }
@@ -299,7 +191,8 @@ impl fmt::Display for BgpAnalysisSuggestion {
         if !self.invalid_length.is_empty() {
             writeln!(
                 f,
-                "Authorize these announcements which are currently invalid because they are too specific:"
+                "Authorize these announcements which are currently \
+                 invalid because they are too specific:"
             )?;
             for auth in &self.invalid_length {
                 writeln!(f, "  {}", auth)?;
@@ -310,7 +203,8 @@ impl fmt::Display for BgpAnalysisSuggestion {
         if !self.invalid_asn.is_empty() {
             writeln!(
                 f,
-                "Authorize these announcements which are currently invalid because they are not allowed for these ASNs:"
+                "Authorize these announcements which are currently \
+                 invalid because they are not allowed for these ASNs:"
             )?;
             for auth in &self.invalid_asn {
                 writeln!(f, "  {}", auth)?;
@@ -322,26 +216,41 @@ impl fmt::Display for BgpAnalysisSuggestion {
     }
 }
 
+
+//------------ ReplacementRoaSuggestion ------------------------------------
+
+/// A suggestion to replace an existing ROA with a different ROA.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ReplacementRoaSuggestion {
+    pub current: ConfiguredRoa,
+    pub new: Vec<RoaPayload>,
+}
+
+
 //------------ BgpAnalysisReport -------------------------------------------
 
+/// A BGP analysis report.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BgpAnalysisReport(Vec<BgpAnalysisEntry>);
 
 impl BgpAnalysisReport {
+    /// Creates a new report from a list of entries.
     pub fn new(mut roas: Vec<BgpAnalysisEntry>) -> Self {
         roas.sort();
         BgpAnalysisReport(roas)
     }
 
-    pub fn entries(&self) -> &Vec<BgpAnalysisEntry> {
+    /// Returns a reference to the list of entries.
+    pub fn entries(&self) -> &[BgpAnalysisEntry] {
         &self.0
     }
 
+    /// Converts the report into a list of entries.
     pub fn into_entries(self) -> Vec<BgpAnalysisEntry> {
         self.0
     }
 
-    /// Panics if the given state is not an announcement state
+    /// Returns the announcements in the given RPKI state.
     pub fn matching_announcements(
         &self,
         state: BgpAnalysisState,
@@ -352,6 +261,7 @@ impl BgpAnalysisReport {
             .collect()
     }
 
+    /// Returns the entries matching the given RPKI state.
     pub fn matching_entries(
         &self,
         state: BgpAnalysisState,
@@ -359,6 +269,7 @@ impl BgpAnalysisReport {
         self.0.iter().filter(|e| e.state == state).collect()
     }
 
+    /// Returns whether the report contains invalid announcements.
     pub fn contains_invalids(&self) -> bool {
         self.0.iter().any(|el| el.state().is_invalid())
     }
@@ -421,8 +332,8 @@ impl fmt::Display for BgpAnalysisReport {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let entries = self.entries();
 
-        let mut entry_map: HashMap<BgpAnalysisState, Vec<&BgpAnalysisEntry>> =
-            HashMap::new();
+        let mut entry_map: HashMap<BgpAnalysisState, Vec<&BgpAnalysisEntry>>
+            = HashMap::new();
         for entry in entries.iter() {
             let state = entry.state();
             entry_map.entry(state).or_default();
@@ -431,13 +342,13 @@ impl fmt::Display for BgpAnalysisReport {
 
         if entry_map.contains_key(&BgpAnalysisState::RoaNoAnnouncementInfo) {
             write!(f, "no BGP announcements known")
-        } else {
-            if let Some(authorizing) =
-                entry_map.get(&BgpAnalysisState::RoaSeen)
-            {
+        }
+        else {
+            if let Some(authorizing) = entry_map.get(
+                &BgpAnalysisState::RoaSeen
+            ) {
                 writeln!(
-                    f,
-                    "ROA configurations covering seen announcements:"
+                    f, "ROA configurations covering seen announcements:"
                 )?;
                 for roa in authorizing {
                     writeln!(f)?;
@@ -464,7 +375,8 @@ impl fmt::Display for BgpAnalysisReport {
             {
                 writeln!(
                     f,
-                    "ROA configurations which are *redundant* - they are already included in full by other configurations:"
+                    "ROA configurations which are *redundant* - they are \
+                     already included in full by other configurations:"
                 )?;
                 for roa in redundant {
                     writeln!(f)?;
@@ -497,7 +409,8 @@ impl fmt::Display for BgpAnalysisReport {
             {
                 writeln!(
                     f,
-                    "ROA configurations for which no announcements are seen (you may wish to remove these):"
+                    "ROA configurations for which no announcements are seen \
+                     (you may wish to remove these):"
                 )?;
                 writeln!(f)?;
                 for roa in not_seen {
@@ -511,7 +424,8 @@ impl fmt::Display for BgpAnalysisReport {
             {
                 writeln!(
                     f,
-                    "ROA configurations for which no ROAs can be made - you do not have the prefix on your certificate(s):"
+                    "ROA configurations for which no ROAs can be made -\
+                     you do not have the prefix on your certificate(s):"
                 )?;
                 writeln!(f)?;
                 for roa in not_held {
@@ -525,7 +439,8 @@ impl fmt::Display for BgpAnalysisReport {
             {
                 writeln!(
                     f,
-                    "ROA configurations only disallowing seen announcements. You may want to use AS0 ROAs instead:"
+                    "ROA configurations only disallowing seen \
+                    announcements. You may want to use AS0 ROAs instead:"
                 )?;
                 for roa in disallowing {
                     writeln!(f)?;
@@ -573,7 +488,11 @@ impl fmt::Display for BgpAnalysisReport {
             }
 
             if let Some(as0) = entry_map.get(&BgpAnalysisState::RoaAs0) {
-                writeln!(f, "AS0 ROA configurations disallowing announcements for prefixes")?;
+                writeln!(
+                    f,
+                    "AS0 ROA configurations disallowing announcements for \
+                     prefixes"
+                )?;
                 writeln!(f)?;
                 for roa in as0 {
                     writeln!(f, "\tConfiguration: {}", roa.configured_roa())?;
@@ -586,7 +505,8 @@ impl fmt::Display for BgpAnalysisReport {
             {
                 writeln!(
                     f,
-                    "AS0 ROA configurations which are made redundant by configuration(s) for the prefix from real ASNs"
+                    "AS0 ROA configurations which are made redundant by \
+                    configuration(s) for the prefix from real ASNs"
                 )?;
                 writeln!(f)?;
                 for roa in as0_redundant {
@@ -619,7 +539,8 @@ impl fmt::Display for BgpAnalysisReport {
             {
                 writeln!(
                     f,
-                    "Announcements from an authorized ASN, which are too specific (not allowed by max length):"
+                    "Announcements from an authorized ASN, which are too \
+                    specific (not allowed by max length):"
                 )?;
                 for ann in invalid_length {
                     writeln!(f)?;
@@ -665,7 +586,8 @@ impl fmt::Display for BgpAnalysisReport {
             {
                 writeln!(
                     f,
-                    "Announcements which are 'not found' (not covered by any of your ROA configurations):"
+                    "Announcements which are 'not found' (not covered by \
+                     any of your ROA configurations):"
                 )?;
                 writeln!(f)?;
                 for ann in not_found {
@@ -679,65 +601,36 @@ impl fmt::Display for BgpAnalysisReport {
     }
 }
 
+
 //------------ BgpAnalysisEntry --------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BgpAnalysisEntry {
     #[serde(flatten)]
-    roa_or_announcement: ConfiguredRoaOrAnnouncement,
-    state: BgpAnalysisState,
+    pub roa_or_announcement: ConfiguredRoaOrAnnouncement,
+    
+    pub state: BgpAnalysisState,
+    
     #[serde(skip_serializing_if = "Option::is_none")]
-    allowed_by: Option<RoaPayload>,
+    pub allowed_by: Option<RoaPayload>,
+    
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
-    disallowed_by: Vec<RoaPayload>,
+    pub disallowed_by: Vec<RoaPayload>,
+    
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
-    made_redundant_by: Vec<RoaPayload>,
+    pub made_redundant_by: Vec<RoaPayload>,
+    
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
-    authorizes: Vec<Announcement>,
+    pub authorizes: Vec<Announcement>,
+
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
-    disallows: Vec<Announcement>,
-}
-
-/// This type is used to allow us to mix both configured ROAs
-/// and announcements in a single vector for display in the UI
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(untagged)]
-pub enum ConfiguredRoaOrAnnouncement {
-    Roa(ConfiguredRoa),
-    Announcement(Announcement),
-}
-
-impl ConfiguredRoaOrAnnouncement {
-    // Not using impl From because this is for sorting use
-    // only.
-    fn as_payload(&self) -> RoaPayload {
-        match self {
-            ConfiguredRoaOrAnnouncement::Announcement(ann) => {
-                RoaPayload {
-                    asn: *ann.asn(), prefix: *ann.prefix(), max_length: None
-                }
-            }
-            ConfiguredRoaOrAnnouncement::Roa(roa) => {
-                roa.roa_configuration.payload
-            }
-        }
-    }
-}
-
-impl Ord for ConfiguredRoaOrAnnouncement {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.as_payload().cmp(&other.as_payload())
-    }
-}
-
-impl PartialOrd for ConfiguredRoaOrAnnouncement {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
+    pub disallows: Vec<Announcement>,
 }
 
 impl BgpAnalysisEntry {
-    /// Returns a reference to the ConfiguredRoa for this entry. Panics if it
+    /// Returns a reference to the ConfiguredRoa for this entry.
+    ///
+    /// Panics if it
     /// was an announcement. Only safe to call after checking the state.
     pub fn configured_roa(&self) -> &ConfiguredRoa {
         match &self.roa_or_announcement {
@@ -1044,6 +937,47 @@ impl PartialOrd for BgpAnalysisEntry {
     }
 }
 
+
+//------------ ConfiguredRoaOrAnnouncement ---------------------------------
+
+/// This type is used to allow us to mix both configured ROAs
+/// and announcements in a single vector for display in the UI
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum ConfiguredRoaOrAnnouncement {
+    Roa(ConfiguredRoa),
+    Announcement(Announcement),
+}
+
+impl ConfiguredRoaOrAnnouncement {
+    // Not using impl From because this is for sorting use
+    // only.
+    fn as_payload(&self) -> RoaPayload {
+        match self {
+            ConfiguredRoaOrAnnouncement::Announcement(ann) => {
+                RoaPayload {
+                    asn: ann.asn, prefix: ann.prefix, max_length: None
+                }
+            }
+            ConfiguredRoaOrAnnouncement::Roa(roa) => {
+                roa.roa_configuration.payload
+            }
+        }
+    }
+}
+
+impl Ord for ConfiguredRoaOrAnnouncement {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.as_payload().cmp(&other.as_payload())
+    }
+}
+
+impl PartialOrd for ConfiguredRoaOrAnnouncement {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 //------------ BgpAnalysisState --------------------------------------------
 
 #[derive(
@@ -1083,6 +1017,84 @@ impl BgpAnalysisState {
             BgpAnalysisState::AnnouncementInvalidAsn
                 | BgpAnalysisState::AnnouncementInvalidLength
         )
+    }
+}
+
+
+//------------ Announcement --------------------------------------------------
+
+/// A BGP announcement consisting of the origin ASN and the prefix.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct Announcement {
+    /// The originating autonomous system.
+    pub asn: AsNumber,
+
+    /// The announced prefix.
+    pub prefix: TypedPrefix,
+}
+
+
+//--- From and FromStr
+
+impl From<Announcement> for RoaPayload {
+    fn from(a: Announcement) -> Self {
+        RoaPayload { asn: a.asn, prefix: a.prefix, max_length: None }
+    }
+}
+
+impl From<RoaPayload> for Announcement {
+    fn from(d: RoaPayload) -> Self {
+        Announcement {
+            asn: d.asn,
+            prefix: d.prefix,
+        }
+    }
+}
+
+impl FromStr for Announcement {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let as_roa = RoaPayload::from_str(s).map_err(|e| {
+            format!("Can't parse: {}, Error: {}", s, e)
+        })?;
+        if as_roa.max_length.is_some() {
+            Err(format!(
+                "Cannot parse announcement (max length not allowed): {}",
+                s
+            ))
+        }
+        else {
+            Ok(as_roa.into())
+        }
+    }
+}
+
+
+//--- PartialOrd and Ord
+
+impl PartialOrd for Announcement {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Announcement {
+    fn cmp(&self, other: &Self) -> Ordering {
+        let mut ordering = self.prefix.cmp(&other.prefix);
+        if ordering == Ordering::Equal {
+            ordering = self.asn.cmp(&other.asn);
+        }
+        ordering
+    }
+}
+
+
+//--- Display
+
+impl fmt::Display for Announcement {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} => {}", self.prefix, self.asn)
     }
 }
 

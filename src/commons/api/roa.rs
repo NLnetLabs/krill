@@ -14,6 +14,7 @@ use rpki::repository::x509::{Serial, Time, Validity};
 use rpki::rrdp::Hash;
 use serde::de;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use super::bgp::BgpAnalysisSuggestion;
 use super::ca::Revocation;
 
 
@@ -174,15 +175,6 @@ impl FromStr for RoaPayload {
             prefix,
             max_length,
         })
-    }
-}
-
-
-//--- AsRef
-
-impl AsRef<TypedPrefix> for RoaPayload {
-    fn as_ref(&self) -> &TypedPrefix {
-        &self.prefix
     }
 }
 
@@ -539,6 +531,45 @@ impl RoaConfigurationUpdates {
             resources = resources.union(&roa_payload.prefix.into());
         }
         resources
+    }
+}
+
+impl From<BgpAnalysisSuggestion> for RoaConfigurationUpdates {
+    fn from(suggestion: BgpAnalysisSuggestion) -> Self {
+        let mut added: Vec<RoaConfiguration> = vec![];
+        let mut removed: Vec<RoaPayload> = vec![];
+
+        for announcement in suggestion.not_found
+            .into_iter()
+            .chain(suggestion.invalid_asn.into_iter())
+            .chain(suggestion.invalid_length.into_iter())
+        {
+            added.push(RoaConfiguration {
+                payload: announcement.into(),
+                comment: None
+            });
+        }
+
+        for stale in suggestion.stale {
+            removed.push(stale.roa_configuration.payload);
+        }
+
+        for suggestion in suggestion.too_permissive.into_iter() {
+            removed.push(suggestion.current.roa_configuration.payload);
+            for payload in suggestion.new.into_iter() {
+                added.push(RoaConfiguration { payload, comment: None });
+            }
+        }
+
+        for as0_redundant in suggestion.as0_redundant.into_iter() {
+            removed.push(as0_redundant.roa_configuration.payload);
+        }
+
+        for redundant in suggestion.redundant.into_iter() {
+            removed.push(redundant.roa_configuration.payload);
+        }
+
+        RoaConfigurationUpdates { added, removed }
     }
 }
 

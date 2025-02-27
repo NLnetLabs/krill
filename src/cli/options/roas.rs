@@ -7,7 +7,7 @@ use rpki::repository::resources::{
 };
 use crate::cli::client::KrillClient;
 use crate::cli::report::Report;
-use crate::commons::{api, bgp};
+use crate::commons::api;
 use crate::commons::util::httpclient;
 use super::ca;
 
@@ -144,7 +144,7 @@ pub struct Analyze {
 impl Analyze {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<bgp::BgpAnalysisReport, httpclient::Error> {
+    ) -> Result<api::bgp::BgpAnalysisReport, httpclient::Error> {
         client.roas_analyze(&self.ca.ca).await
     }
 }
@@ -169,7 +169,7 @@ pub struct Suggest {
 impl Suggest {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<bgp::BgpAnalysisSuggestion, httpclient::Error> {
+    ) -> Result<api::bgp::BgpAnalysisSuggestion, httpclient::Error> {
         client.roas_suggest(
             &self.ca.ca,
             if self.ipv4.is_some() || self.ipv6.is_some() {

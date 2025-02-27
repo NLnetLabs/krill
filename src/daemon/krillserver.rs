@@ -22,7 +22,6 @@ use crate::daemon::auth::AuthInfo;
 use crate::{
     commons::{
         actor::Actor,
-        bgp::{BgpAnalyser, BgpAnalysisReport, BgpAnalysisSuggestion},
         crypto::KrillSignerBuilder,
         error::Error,
         KrillEmptyResult, KrillResult,
@@ -30,6 +29,7 @@ use crate::{
     constants::*,
     daemon::{
         auth::{Authorizer, LoggedInUser},
+        bgp::BgpAnalyser,
         ca::{
             self, testbed_ca_handle, CaManager, CaStatus,
             ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest,
@@ -55,6 +55,7 @@ use crate::commons::api::aspa::{
     AspaDefinitionList, AspaDefinitionUpdates, AspaProvidersUpdate,
     CustomerAsn,
 };
+use crate::commons::api::bgp::{BgpAnalysisReport, BgpAnalysisSuggestion};
 use crate::commons::api::bgpsec::{BgpSecCsrInfoList, BgpSecDefinitionUpdates};
 use crate::commons::api::ca::{
     AllCertAuthIssues, CaRepoDetails, CertAuthInfo, CertAuthIssues,

@@ -8,7 +8,6 @@ use rpki::uri;
 use rpki::ca::idcert::IdCert;
 use url::Url;
 use crate::commons::api::roa::{ConfiguredRoa, RoaConfiguration, RoaPayload};
-use crate::commons::bgp::Announcement;
 
 
 /// This method returns an in-memory Key-Value store and then runs the test
@@ -58,11 +57,6 @@ pub fn https(s: &str) -> uri::Https {
 }
 
 // Support testing announcements and ROAs etc
-
-pub fn announcement(s: &str) -> Announcement {
-    let def = roa_payload(s);
-    Announcement::from(def)
-}
 
 pub fn configured_roa(s: &str) -> ConfiguredRoa {
     ConfiguredRoa { 

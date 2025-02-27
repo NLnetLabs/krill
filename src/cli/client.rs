@@ -15,7 +15,7 @@ use rpki::repository::x509::Time;
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
 use crate::{pubd, ta};
-use crate::commons::{api, bgp};
+use crate::commons::api;
 use crate::commons::api::admin::Token;
 use crate::commons::api::status::Success;
 use crate::commons::util::httpclient;
@@ -472,7 +472,7 @@ impl KrillClient {
 
     pub async fn roas_try_update(
         &self, ca: &CaHandle, updates: api::roa::RoaConfigurationUpdates
-    ) -> Result<Option<bgp::BgpAnalysisAdvice>, Error> {
+    ) -> Result<Option<api::bgp::BgpAnalysisAdvice>, Error> {
         self.post_json_with_opt_response(
             ca_path(ca).into_iter().chain(once("routes/try")), updates
         ).await
@@ -480,7 +480,7 @@ impl KrillClient {
 
     pub async fn roas_dryrun_update(
         &self, ca: &CaHandle, updates: api::roa::RoaConfigurationUpdates
-    ) -> Result<bgp::BgpAnalysisReport, Error> {
+    ) -> Result<api::bgp::BgpAnalysisReport, Error> {
         self.post_json_with_response(
             ca_path(ca).into_iter().chain(
                 once("routes/analysis/dryrun")
@@ -491,7 +491,7 @@ impl KrillClient {
 
     pub async fn roas_analyze(
         &self, ca: &CaHandle
-    ) -> Result<bgp::BgpAnalysisReport, Error> {
+    ) -> Result<api::bgp::BgpAnalysisReport, Error> {
         self.get_json(
             ca_path(ca).into_iter().chain(once("routes/analysis/full"))
         ).await
@@ -499,7 +499,7 @@ impl KrillClient {
 
     pub async fn roas_suggest(
         &self, ca: &CaHandle, resources: Option<ResourceSet>
-    ) -> Result<bgp::BgpAnalysisSuggestion, Error> {
+    ) -> Result<api::bgp::BgpAnalysisSuggestion, Error> {
         match resources {
             Some(resources) => {
                 self.post_json_with_response(
