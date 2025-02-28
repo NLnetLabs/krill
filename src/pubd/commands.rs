@@ -105,7 +105,7 @@ impl RepositoryAccessCommandDetails {
         actor: &Actor,
     ) -> RepositoryAccessCommand {
         SentCommand::new(
-            handle,
+            handle.clone(),
             None,
             RepositoryAccessCommandDetails::AddPublisher {
                 id_cert,
@@ -122,7 +122,7 @@ impl RepositoryAccessCommandDetails {
         actor: &Actor,
     ) -> RepositoryAccessCommand {
         SentCommand::new(
-            handle,
+            handle.clone(),
             None,
             RepositoryAccessCommandDetails::RemovePublisher { name },
             actor,

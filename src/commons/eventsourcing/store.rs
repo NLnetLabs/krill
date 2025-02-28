@@ -1,118 +1,122 @@
-use std::{
-    collections::HashMap,
-    fmt,
-    str::FromStr,
-    sync::{Arc, Mutex, RwLock},
-};
+//! A store for aggregates.
+//!
+//! This is a private module. Its public items are re-exported by the parent.
 
-use log::{error, info, trace};
-use rpki::{ca::idexchange::MyHandle, repository::x509::Time};
-use serde::{de::DeserializeOwned, Serialize};
+use std::fmt;
+use std::collections::HashMap;
+use std::str::FromStr;
+use std::sync::{Arc, Mutex, RwLock};
+use log::{error, trace};
+use rpki::ca::idexchange::MyHandle;
+use rpki::repository::x509::Time;
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 use url::Url;
-
-use crate::commons::{
-    error::KrillIoError,
-    eventsourcing::{
-        cmd::Command, Aggregate,
-        PostSaveEventListener, PreSaveEventListener,
-        StoredCommand, StoredCommandBuilder,
-    },
-    storage::{Key, KeyValueError, KeyValueStore, Namespace, Segment, Scope},
-};
 use crate::commons::api::history::{
     CommandHistory, CommandHistoryCriteria, CommandHistoryRecord
 };
+use crate::commons::error::KrillIoError;
+use crate::commons::storage::{
+    Key, KeyValueError, KeyValueStore, Namespace, Segment, Scope
+};
+use super::agg::{
+    Aggregate, Command, InitCommand, StoredCommand, StoredCommandBuilder
+};
+use super::listener::{PostSaveEventListener, PreSaveEventListener};
 
-use super::InitCommand;
-
-pub type StoreResult<T> = Result<T, AggregateStoreError>;
 
 //------------ Storable ------------------------------------------------------
 
-pub trait Storable:
-    Clone + Serialize + DeserializeOwned + Sized + 'static
-{
-}
-impl<T: Clone + Serialize + DeserializeOwned + Sized + 'static> Storable
-    for T
-{
-}
+/// A type that can be stored.
+//
+//  XXX Try to get rid of this trait.
+pub trait Storable: Clone + Serialize + DeserializeOwned { }
+
+impl<T: Clone + Serialize + DeserializeOwned> Storable for T { }
+
 
 //------------ AggregateStore ------------------------------------------------
 
-/// This type is responsible for managing aggregates.
+/// A store that manages all instances of a certain aggregate type.
 pub struct AggregateStore<A: Aggregate> {
+    /// The physical store for the aggregates.
     kv: KeyValueStore,
+
+    /// A cache for the last seen version of an instance.
     cache: RwLock<HashMap<MyHandle, Arc<A>>>,
-    history_cache:
-        Option<Mutex<HashMap<MyHandle, Vec<CommandHistoryRecord>>>>,
+
+    /// A cache for the command history of an instance.
+    history_cache: Option<Mutex<HashMap<MyHandle, Vec<CommandHistoryRecord>>>>,
+
+    /// The pre-save listeners.
     pre_save_listeners: Vec<Arc<dyn PreSaveEventListener<A>>>,
+
+    /// The post-save listeners.
     post_save_listeners: Vec<Arc<dyn PostSaveEventListener<A>>>,
 }
 
 /// # Starting up
 impl<A: Aggregate> AggregateStore<A> {
-    /// Creates an AggregateStore using the given storage url
+    /// Creates a store using the given storage URL and namespace.
+    ///
+    /// If `use_history_cache` is `true`, the new store will cache any
+    /// history cache record created for any instance.
     pub fn create(
         storage_uri: &Url,
         namespace: &Namespace,
         use_history_cache: bool,
-    ) -> StoreResult<Self> {
-        let kv = KeyValueStore::create(storage_uri, namespace)?;
-        Ok(Self::create_from_kv(kv, use_history_cache))
+    ) -> Result<Self, AggregateStoreError> {
+        Ok(Self::create_from_kv(
+            KeyValueStore::create(storage_uri, namespace)?, use_history_cache
+        ))
     }
 
-    /// Creates an AggregateStore for upgrades using the given storage url
+    /// Creates a store for upgrades using the given storage URL and namespace.
+    ///
+    /// If `use_history_cache` is `true`, the new store will cache any
+    /// history cache record created for any instance.
     pub fn create_upgrade_store(
         storage_uri: &Url,
-        name_space: &Namespace,
+        namespace: &Namespace,
         use_history_cache: bool,
-    ) -> StoreResult<Self> {
-        let kv =
-            KeyValueStore::create_upgrade_store(storage_uri, name_space)?;
-        Ok(Self::create_from_kv(kv, use_history_cache))
+    ) -> Result<Self, AggregateStoreError> {
+        Ok(Self::create_from_kv(
+            KeyValueStore::create_upgrade_store(storage_uri, namespace)?,
+            use_history_cache,
+        ))
     }
 
+    /// Creates a store for upgrades using the given key-value store.
     fn create_from_kv(
         kv: KeyValueStore,
         use_history_cache: bool,
     ) -> Self {
-        let cache = RwLock::new(HashMap::new());
-        let history_cache = if !use_history_cache {
-            None
-        } else {
-            Some(Mutex::new(HashMap::new()))
-        };
-        let pre_save_listeners = vec![];
-        let post_save_listeners = vec![];
-
-        AggregateStore {
+        Self {
             kv,
-            cache,
-            history_cache,
-            pre_save_listeners,
-            post_save_listeners,
+            cache: RwLock::new(HashMap::new()),
+            history_cache: if use_history_cache {
+                Some(Mutex::new(HashMap::new()))
+            }
+            else {
+                None
+            },
+            pre_save_listeners: Vec::new(),
+            post_save_listeners: Vec::new(),
         }
     }
 
-    /// Warms up the cache, to be used after startup. Will fail if any
+    /// Warms up the cache.
+    ///
+    /// The method should be called after startup. It will fail if any
     /// aggregates fail to load.
-    pub fn warm(&self) -> StoreResult<()> {
+    pub fn warm(&self) -> Result<(), AggregateStoreError> {
         for handle in self.list()? {
-            self.warm_aggregate(&handle)?;
+            self.get_latest(&handle).map_err(|e| {
+                AggregateStoreError::WarmupFailed(
+                    handle.clone(), e.to_string()
+                )
+            })?;
         }
-        info!("Cache for CAs has been warmed.");
-        Ok(())
-    }
-
-    /// Warm the cache for a specific aggregate.
-    pub fn warm_aggregate(&self, handle: &MyHandle) -> StoreResult<()> {
-        info!("Warming the cache for: '{}'", handle);
-
-        self.get_latest(handle).map_err(|e| {
-            AggregateStoreError::WarmupFailed(handle.clone(), e.to_string())
-        })?;
-
         Ok(())
     }
 
@@ -135,18 +139,34 @@ impl<A: Aggregate> AggregateStore<A> {
 }
 
 /// # Manage Aggregates
-impl<A: Aggregate> AggregateStore<A>
-where
-    A::Error: From<AggregateStoreError>,
-{
-    /// Gets the latest version for the given aggregate. Returns
-    /// an AggregateStoreError::UnknownAggregate in case the aggregate
-    /// does not exist.
+impl<A: Aggregate> AggregateStore<A> {
+    /// Returns whether an instance with the given handle exists.
+    pub fn has(&self, id: &MyHandle) -> Result<bool, AggregateStoreError> {
+        Ok(self.kv.has(&Self::key_for_command(id, 0))?)
+    }
+
+    /// Lists all known ids.
+    pub fn list(&self) -> Result<Vec<MyHandle>, AggregateStoreError> {
+        // XXX This looks extremely inefficient.
+        let mut res = vec![];
+
+        for scope in self.kv.scopes()? {
+            if let Ok(handle) = MyHandle::from_str(&scope.to_string()) {
+                res.push(handle)
+            }
+        }
+
+        Ok(res)
+    }
+
+    /// Gets the latest version for the given aggregate.
+    ///
+    /// Returns an “unknown aggregate” in case the aggregate does not exist.
     pub fn get_latest(&self, handle: &MyHandle) -> Result<Arc<A>, A::Error> {
         self.execute_opt_command(handle, None, false)
     }
 
-    /// Updates the snapshots for all entities in this store.
+    /// Updates the snapshots for all aggregates in this store.
     pub fn update_snapshots(&self) -> Result<(), A::Error> {
         for handle in self.list()? {
             self.save_snapshot(&handle)?;
@@ -155,310 +175,328 @@ where
         Ok(())
     }
 
-    /// Gets the latest version for the given aggregate and updates the
-    /// snapshot.
+    /// Gets the latest version for the aggregate and updates the snapshot.
     pub fn save_snapshot(
-        &self,
-        handle: &MyHandle,
+        &self, handle: &MyHandle
     ) -> Result<Arc<A>, A::Error> {
         self.execute_opt_command(handle, None, true)
     }
 
-    /// Adds a new aggregate instance based on the init event.
+    /// Adds a new aggregate instance based on the init command.
     pub fn add(&self, cmd: A::InitCommand) -> Result<Arc<A>, A::Error> {
         let scope = Self::scope_for_agg(cmd.handle());
 
-        self.kv
-            .execute(&scope, move |kv| {
-                let handle = cmd.handle().clone();
+        self.kv.execute(&scope, move |kv| {
+            let init_command_key = Self::key_for_command(cmd.handle(), 0);
 
-                let init_command_key = Self::key_for_command(&handle, 0);
+            if kv.has(&init_command_key)? {
+                // This is no good.. this aggregate already exists.
+                Ok(Err(A::Error::from(
+                    AggregateStoreError::DuplicateAggregate(
+                        cmd.handle().clone()
+                    ),
+                )))
+            }
+            else {
+                let processed_command_builder = StoredCommand::<A>::builder(
+                    cmd.actor().to_string(),
+                    Time::now(),
+                    cmd.handle().clone(),
+                    0,
+                    cmd.store(),
+                );
 
-                if kv.has(&init_command_key)? {
-                    // This is no good.. this aggregate already exists.
-                    Ok(Err(A::Error::from(
-                        AggregateStoreError::DuplicateAggregate(handle),
-                    )))
-                } else {
-                    let processed_command_builder =
-                        StoredCommandBuilder::<A>::new(
-                            cmd.actor().to_string(),
-                            Time::now(),
-                            handle.clone(),
-                            0,
-                            cmd.store(),
+                // XXX cmd needs to be cloned here because of the Fn
+                //     closure of execute.
+                match A::process_init_command(cmd.clone()) {
+                    Ok(init_event) => {
+                        let aggregate = A::init(
+                            cmd.handle(), init_event.clone(),
                         );
+                        let processed_command = processed_command_builder
+                            .finish_with_init_event(init_event);
 
-                    match A::process_init_command(cmd.clone()) {
-                        Ok(init_event) => {
-                            let aggregate =
-                                A::init(handle.clone(), init_event.clone());
-                            let processed_command = processed_command_builder
-                                .finish_with_init_event(init_event);
+                        kv.store(&init_command_key, &processed_command)?;
 
-                            kv.store(&init_command_key, &processed_command)?;
+                        let arc = Arc::new(aggregate);
 
-                            let arc = Arc::new(aggregate);
+                        self.cache_update(cmd.handle(), arc.clone());
 
-                            self.cache_update(&handle, arc.clone());
-
-                            Ok(Ok(arc))
-                        }
-                        Err(e) => Ok(Err(e)),
+                        Ok(Ok(arc))
                     }
+                    Err(e) => Ok(Err(e)),
                 }
-            })
-            .map_err(|e| {
-                A::Error::from(AggregateStoreError::KeyStoreError(e))
-            })?
+            }
+        }).map_err(|e| {
+            A::Error::from(AggregateStoreError::KeyStoreError(e))
+        })?
     }
 
-    /// Send a command to the latest aggregate referenced by the handle in the
-    /// command.
+    /// Sends a command an aggregate.
     ///
-    /// This will:
-    /// - Wait for a lock for the latest aggregate for this command.
-    /// - Call the A::process_command function
+    /// This will wait for a lock for the latest aggregate for this command
+    /// and the call [`Aggregate::process_command`] method.
     ///
-    /// on success:
-    ///   - call pre-save listeners with events
-    ///   - save command and events
-    ///   - call post-save listeners with events
-    ///   - return aggregate
+    /// On success, it will:
+    /// * call pre-save listeners with events
+    /// * save command and events
+    /// * call post-save listeners with events
+    /// * return aggregate.
     ///
-    /// on no-op (empty event list):
-    ///   - do not save anything, return aggregate
+    /// If the command is a no-op, it will not save anything and return
+    /// aggregate.
     ///
-    /// on error:
-    ///   - save command and error, return error
+    /// On error, it will save the command and the error, then return the
+    /// error.
     pub fn command(&self, cmd: A::Command) -> Result<Arc<A>, A::Error> {
         self.execute_opt_command(cmd.handle(), Some(&cmd), false)
     }
 
-    /// Returns true if an instance exists for the id
-    pub fn has(&self, id: &MyHandle) -> Result<bool, AggregateStoreError> {
-        let init_command_key = Self::key_for_command(id, 0);
-        self.kv
-            .has(&init_command_key)
-            .map_err(AggregateStoreError::KeyStoreError)
-    }
-
-    /// Lists all known ids.
-    pub fn list(&self) -> Result<Vec<MyHandle>, AggregateStoreError> {
-        self.aggregates()
-    }
-
     /// Get the latest aggregate and optionally apply a command to it.
     ///
-    /// Uses `kvx::execute` to ensure that the whole operation is done inside
-    /// a transaction (postgres) or lock (disk).
+    /// This method is the heart of the whole operation.
     fn execute_opt_command(
         &self,
         handle: &MyHandle,
         cmd_opt: Option<&A::Command>,
         save_snapshot: bool,
     ) -> Result<Arc<A>, A::Error> {
-        self.kv
-            .execute(&Self::scope_for_agg(handle), |kv| {
-                // Get the aggregate from the cache, or get it from the store.
-                let mut changed_from_cached = false;
+        self.kv.execute(&Self::scope_for_agg(handle), |kv| {
+            // Do we need to update the cache when we are done?
+            let mut changed_from_cached = false;
 
-                let latest_result = match self.cache_get(handle) {
-                    Some(arc) => {
-                        trace!("found cached snapshot for {handle}");
-                        Ok(arc)
-                    }
-                    None => {
-                        // There was no cached aggregate, so try to get it
-                        // or construct it from the store, and remember that
-                        // it was changed compared to the (non-existent) cached
-                        // version so that we know that should update the cache
-                        // later.
-                        changed_from_cached = true;
+            // Try to get the latest version from the cache or snapshot, or
+            // the initial version if we have neither.
+            let mut agg = match self.cache_get(handle) {
+                Some(arc) => {
+                    trace!("found cached snapshot for {handle}");
+                    arc
+                }
+                None => {
+                    // There was no cached aggregate, so try to get it
+                    // or construct it from the store, and remember that
+                    // it was changed compared to the (non-existent) cached
+                    // version so that we know that should update the cache
+                    // later.
+                    changed_from_cached = true;
 
-                        let snapshot_key = Self::key_for_snapshot(handle);
-                        match kv.get(&snapshot_key)? {
-                            Some(agg) => {
-                                trace!("found snapshot for {handle}");
-                                Ok(Arc::new(agg))
-                            }
-                            None => {
-                                let init_key = Self::key_for_command(handle, 0);
-                                match kv.get::<StoredCommand<A>>(&init_key)? {
-                                    Some(init_command) => {
-                                        trace!("found init command for {handle}");
-                                        match init_command.into_init() {
-                                            Some(init_event) => {
-                                                let agg = A::init(handle.clone(), init_event);
-                                                Ok(Arc::new(agg))
-                                            }
-                                            None => Err(A::Error::from(AggregateStoreError::UnknownAggregate(
-                                                handle.clone(),
-                                            ))),
+                    match kv.get(&Self::key_for_snapshot(handle))? {
+                        Some(agg) => {
+                            trace!("found snapshot for {handle}");
+                            Arc::new(agg)
+                        }
+                        None => {
+                            // No snapshot either. Get the init command and
+                            // apply it.
+                            let init_key = Self::key_for_command(handle, 0);
+                            match kv.get::<StoredCommand<A>>(&init_key)? {
+                                Some(init_command) => {
+                                    trace!("found init command for {handle}");
+                                    match init_command.into_init() {
+                                        Some(init_event) => {
+                                            let agg = A::init(
+                                                &handle, init_event
+                                            );
+                                            Arc::new(agg)
+                                        }
+                                        None => {
+                                            return Ok(Err(A::Error::from(
+                                                AggregateStoreError::
+                                                    UnknownAggregate(
+                                                        handle.clone(),
+                                                )
+                                            )))
                                         }
                                     }
-                                    None => {
-                                        trace!("neither snapshot nor init command found for {handle}");
-                                        Err(A::Error::from(AggregateStoreError::UnknownAggregate(handle.clone())))
-                                    }
                                 }
-                            }
-                        }
-                    }
-                };
-
-                let mut agg = match latest_result {
-                    Err(e) => return Ok(Err(e)),
-                    Ok(agg) => agg,
-                };
-
-                // We have some version, cached or not. Now see if there are any further
-                // changes that ought to be applied. If any changes are found, be sure
-                // to mark the aggregate as changed so that the we can update the cache
-                // later.
-                let next_command = Self::key_for_command(handle, agg.version());
-                if kv.has(&next_command)? {
-                    let aggregate = Arc::make_mut(&mut agg);
-
-                    // check and apply any applicable processed commands until:
-                    // - there are no more processed commands
-                    // - the command cannot be applied (return an error)
-                    loop {
-                        let version = aggregate.version();
-
-                        let key = Self::key_for_command(handle, version);
-
-                        match kv.get::<StoredCommand<A>>(&key)? {
-                            None => break,
-                            Some(command) => {
-                                trace!("found next command found for {handle}: {}", key);
-                                aggregate.apply_command(command);
-                                changed_from_cached = true;
+                                None => {
+                                    trace!(
+                                        "neither snapshot nor init \
+                                         command found for {handle}"
+                                    );
+                                    return Ok(Err(A::Error::from(
+                                        AggregateStoreError
+                                            ::UnknownAggregate(
+                                                    handle.clone()
+                                        )
+                                    )))
+                                }
                             }
                         }
                     }
                 }
+            };
 
-                // If a command was passed in, try to apply it, and make sure that it is
-                // preserved (i.e. with events or an error).
-                let res = if let Some(cmd) = cmd_opt {
-                    trace!("apply command {} to {}", cmd, handle);
+            // Check if there are additional commands in the store that we
+            // haven’t applied yet.
+            //
+            // XXX This looks up the next version twice which can probably
+            //     be avoided.
+            let next_command = Self::key_for_command(handle, agg.version());
+            if kv.has(&next_command)? {
+                let aggregate = Arc::make_mut(&mut agg);
 
-                    let aggregate = Arc::make_mut(&mut agg);
-
+                // check and apply any applicable processed commands until:
+                // - there are no more processed commands
+                // - the command cannot be applied (return an error)
+                loop {
                     let version = aggregate.version();
 
-                    let processed_command_builder = StoredCommandBuilder::<A>::new(
-                        cmd.actor().to_string(),
-                        Time::now(),
-                        cmd.handle().clone(),
-                        version,
-                        cmd.store(),
-                    );
+                    let key = Self::key_for_command(handle, version);
 
-                    let command_key = Self::key_for_command(handle, version);
-
-                    // The new command key MUST NOT be in use. If it is in use, then this points
-                    // at a bug in Krill transaction / locking handling that we cannot recover
-                    // from. So, exit here, as there is nothing sensible we can do with this error.
-                    //
-                    // See issue: https://github.com/NLnetLabs/krill/issues/322
-                    if kv.has(&command_key)? {
-                        error!("Command key for '{handle}' version '{version}' already exists.");
-                        error!("This is a bug. Please report this issue to rpki-team@nlnetlabs.nl.");
-                        error!("Krill will exit. If this issue repeats, consider removing {}.", handle);
-                        std::process::exit(1);
-                    }
-
-                    match aggregate.process_command(cmd.clone()) {
-                        Err(e) => {
-                            // Store the processed command with the error.
-                            let processed_command = processed_command_builder.finish_with_error(&e);
-
-                            aggregate.apply_command(processed_command.clone());
-
+                    match kv.get::<StoredCommand<A>>(&key)? {
+                        None => break,
+                        Some(command) => {
+                            trace!(
+                                "found next command found for {handle}: {key}"
+                            );
+                            aggregate.apply_command(command);
                             changed_from_cached = true;
-                            kv.store(&command_key, &processed_command)?;
-
-                            Err(e)
                         }
-                        Ok(events) => {
-                            // note: An empty events vec may result from a no-op command. We don't save those.
-                            if !events.is_empty() {
-                                // The command contains some effect.
-                                let processed_command = processed_command_builder.finish_with_events(events);
+                    }
+                }
+            }
 
-                                // We will need to apply the command first because:
-                                // a) then we are really, really, sure that it can be applied (no panics)
-                                // b) more importantly, we will need to pass an updated aggregate to pre-save listeners
-                                //
-                                // Unfortunately, this means that we will need to clone the command.
-                                aggregate.apply_command(processed_command.clone());
+            // If a command was passed in, try to apply it, and make sure that
+            // it is preserved.
+            let res = if let Some(cmd) = cmd_opt {
+                let aggregate = Arc::make_mut(&mut agg);
 
-                                // If the command contained any events then we should inform the
-                                // pre-save listeners. They may still generate errors, and if
-                                // they do, then we return with an error, without saving.
-                                let mut opt_err: Option<A::Error> = None;
-                                if let Some(events) = processed_command.events() {
-                                    for pre_save_listener in &self.pre_save_listeners {
-                                        if let Err(e) = pre_save_listener.as_ref().listen(aggregate, events) {
-                                            opt_err = Some(e);
-                                            break;
-                                        }
+                let version = aggregate.version();
+
+                let processed = StoredCommand::<A>::builder(
+                    cmd.actor().to_string(),
+                    Time::now(),
+                    cmd.handle().clone(),
+                    version,
+                    cmd.store(),
+                );
+
+                let command_key = Self::key_for_command(handle, version);
+
+                // The new command key MUST NOT be in use. If it is in use,
+                // then this points to a bug in Krill transaction/locking
+                // handling that we cannot recover from. So, exit here, as
+                // there is nothing sensible we can do with this error.
+                //
+                // See issue: https://github.com/NLnetLabs/krill/issues/322
+                if kv.has(&command_key)? {
+                    error!(
+                        "Command key for '{handle}' version '{version}' \
+                         already exists."
+                    );
+                    error!(
+                        "This is a bug. Please report this issue to \
+                         rpki-team@nlnetlabs.nl."
+                    );
+                    error!(
+                        "Krill will exit. If this issue repeats, consider \
+                         removing {handle}."
+                    );
+                    std::process::exit(1);
+                }
+
+                match aggregate.process_command(cmd.clone()) {
+                    Err(e) => {
+                        // Store the processed command with the error.
+                        let processed = processed.finish_with_error(&e);
+                        aggregate.apply_command(processed.clone());
+                        changed_from_cached = true;
+                        kv.store(&command_key, &processed)?;
+                        Err(e)
+                    }
+                    Ok(events) => {
+                        // An empty events vec may result from a no-op
+                        // command. We don't save those.
+                        if !events.is_empty() {
+                            // The command contains some effect.
+                            let processed = processed.finish_with_events(
+                                events
+                            );
+
+                            // We will need to apply the command first
+                            // because:
+                            // a) then we are really, really, sure that it
+                            //    can be applied (no panics),
+                            // b) more importantly, we will need to pass an
+                            //    updated aggregate to pre-save listeners
+                            //
+                            // Unfortunately, this means that we will need
+                            // to clone the command.
+                            aggregate.apply_command(processed.clone());
+
+                            // If the command contained any events then we
+                            // should inform the pre-save listeners. They may
+                            // still generate errors, and if they do, then we
+                            // return with an error, without saving.
+                            let mut opt_err: Option<A::Error> = None;
+                            if let Some(events) = processed.events() {
+                                for pre_save_listener
+                                in &self.pre_save_listeners {
+                                    if let Err(e)
+                                        = pre_save_listener.as_ref()
+                                            .listen(aggregate, events)
+                                    {
+                                        opt_err = Some(e);
+                                        break;
                                     }
                                 }
+                            }
 
-                                if let Some(e) = opt_err {
-                                    // A pre-save listener reported and error. Return with the error
-                                    // and do not save the updated aggregate.
-                                    changed_from_cached = false;
-                                    Err(e)
-                                } else {
-                                    // Save the latest command.
-                                    kv.store(&command_key, &processed_command)?;
-
-                                    // Now send the events to the 'post-save' listeners.
-                                    if let Some(events) = processed_command.events() {
-                                        for listener in &self.post_save_listeners {
-                                            listener.as_ref().listen(aggregate, events);
-                                        }
-                                    }
-
-                                    Ok(())
-                                }
+                            if let Some(e) = opt_err {
+                                // A pre-save listener reported an error.
+                                // Return with the error and do not save the
+                                // updated aggregate.
+                                changed_from_cached = false;
+                                Err(e)
                             } else {
+                                // Save the latest command.
+                                kv.store(&command_key, &processed)?;
+
+                                // Now send the events to the 'post-save'
+                                // listeners.
+                                if let Some(events) = processed.events() {
+                                    for listener in &self.post_save_listeners {
+                                        listener.as_ref().listen(
+                                            aggregate, events
+                                        );
+                                    }
+                                }
+
                                 Ok(())
                             }
                         }
+                        else {
+                            Ok(())
+                        }
                     }
-                } else {
-                    Ok(())
-                };
-
-                if changed_from_cached {
-                    self.cache_update(handle, agg.clone());
                 }
+            }
+            else {
+                Ok(())
+            };
 
-                if save_snapshot {
-                    let key = Self::key_for_snapshot(handle);
-                    kv.store(&key, agg.as_ref())?;
-                }
+            if changed_from_cached {
+                self.cache_update(handle, agg.clone());
+            }
 
-                if let Err(e) = res {
-                    Ok(Err(e))
-                } else {
-                    Ok(Ok(agg))
-                }
-            })
-            .map_err(|e| A::Error::from(AggregateStoreError::KeyStoreError(e)))?
+            if save_snapshot {
+                kv.store(&Self::key_for_snapshot(handle), agg.as_ref())?;
+            }
+
+            if let Err(e) = res {
+                Ok(Err(e))
+            }
+            else {
+                Ok(Ok(agg))
+            }
+        })
+        .map_err(|e| A::Error::from(AggregateStoreError::KeyStoreError(e)))?
     }
 }
 
 /// # Manage Commands
-impl<A: Aggregate> AggregateStore<A>
-where
-    A::Error: From<AggregateStoreError>,
-{
+impl<A: Aggregate> AggregateStore<A> {
     /// Find all commands that fit the criteria and return history
     pub fn command_history(
         &self,
@@ -526,7 +564,7 @@ where
         };
 
         while let Ok(command) = self.get_command(id, version) {
-            records.push(CommandHistoryRecord::from(command));
+            records.push(command.into_history_record());
             version += 1;
         }
 
@@ -590,19 +628,6 @@ where
             Self::scope_for_agg(agg),
             Segment::parse(&format!("command-{}.json", version)).unwrap(), /* cannot panic as a u64 cannot contain a Scope::SEPARATOR */
         )
-    }
-
-    /// Private, should be called through `list` which takes care of locking.
-    fn aggregates(&self) -> Result<Vec<MyHandle>, AggregateStoreError> {
-        let mut res = vec![];
-
-        for scope in self.kv.scopes()? {
-            if let Ok(handle) = MyHandle::from_str(&scope.to_string()) {
-                res.push(handle)
-            }
-        }
-
-        Ok(res)
     }
 
     /// Drop an aggregate, completely. Handle with care!

@@ -20,6 +20,7 @@ use rpki::{
 
 use crate::daemon::auth::AuthInfo;
 use crate::{
+    bgp::BgpAnalyser,
     commons::{
         actor::Actor,
         crypto::KrillSignerBuilder,
@@ -29,7 +30,6 @@ use crate::{
     constants::*,
     daemon::{
         auth::{Authorizer, LoggedInUser},
-        bgp::BgpAnalyser,
         ca::{
             self, testbed_ca_handle, CaManager, CaStatus,
             ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest,
@@ -784,7 +784,7 @@ impl KrillServer {
         info!("Importing CA: '{}'", import.handle);
 
         // init CA
-        ca_manager.init_ca(&import.handle)?;
+        ca_manager.init_ca(import.handle.clone())?;
 
         // Get Publisher Request
         let pub_req = {
@@ -1090,7 +1090,7 @@ impl KrillServer {
     }
 
     pub fn ca_init(&self, init: CertAuthInit) -> KrillEmptyResult {
-        self.ca_manager.init_ca(&init.handle)
+        self.ca_manager.init_ca(init.handle)
     }
 
     /// Return the info about the CONFIGured repository server for a given Ca.

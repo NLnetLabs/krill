@@ -18,9 +18,9 @@ use crate::{
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RepositoryAccessInitEvent {
-    id_cert: IdCertInfo,
-    rrdp_base_uri: uri::Https,
-    rsync_jail: uri::Rsync,
+    pub id_cert: IdCertInfo,
+    pub rrdp_base_uri: uri::Https,
+    pub rsync_jail: uri::Rsync,
 }
 
 impl InitEvent for RepositoryAccessInitEvent {}

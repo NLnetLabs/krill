@@ -199,9 +199,9 @@ impl Aggregate for Properties {
 
     type Error = Error;
 
-    fn init(handle: MyHandle, event: PropertiesInitEvent) -> Self {
+    fn init(handle: &MyHandle, event: PropertiesInitEvent) -> Self {
         Properties {
-            handle,
+            handle: handle.clone(),
             version: 1, // init for 0 was applied
             krill_version: event.krill_version,
         }
@@ -299,7 +299,7 @@ impl PropertiesManager {
         krill_version: KrillVersion,
     ) -> KrillResult<Arc<Properties>> {
         let cmd = PropertiesInitCommand::new(
-            &self.main_key,
+            self.main_key.clone(),
             PropertiesInitCommandDetails { krill_version },
             &self.system_actor,
         );
@@ -317,7 +317,7 @@ impl PropertiesManager {
         krill_version: KrillVersion,
     ) -> KrillResult<()> {
         let cmd = PropertiesCommand::new(
-            &self.main_key,
+            self.main_key.clone(),
             None,
             PropertiesCommandDetails::UpgradeTo { krill_version },
             &self.system_actor,

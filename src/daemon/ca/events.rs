@@ -72,16 +72,10 @@ impl From<Rfc8183Id> for IdCertInfo {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CertAuthInitEvent {
-    id: Rfc8183Id,
+    pub id: Rfc8183Id,
 }
 
 impl InitEvent for CertAuthInitEvent {}
-
-impl CertAuthInitEvent {
-    pub fn unpack(self) -> Rfc8183Id {
-        self.id
-    }
-}
 
 impl CertAuthInitEvent {
     pub fn new(id: Rfc8183Id) -> CertAuthInitEvent {

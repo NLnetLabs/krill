@@ -89,7 +89,7 @@ mod tests {
 
             let proxy_handle = TrustAnchorHandle::new("proxy".into());
             let proxy_init = TrustAnchorProxyInitCommand::make(
-                &proxy_handle,
+                proxy_handle.clone(),
                 signer.clone(),
                 &actor,
             );
@@ -133,7 +133,7 @@ mod tests {
                 include_str!("../../test-resources/ta/example-pkcs1.pem");
 
             let signer_init_cmd = TrustAnchorSignerInitCommand::new(
-                &signer_handle,
+                signer_handle.clone(),
                 TrustAnchorSignerInitCommandDetails {
                     proxy_id: proxy.id().clone(),
                     repo_info: proxy

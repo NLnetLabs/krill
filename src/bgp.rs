@@ -403,7 +403,7 @@ impl BgpAnalyser {
             // When testing, the "test" URL is special. Also, unwrapping is
             // fine.
             let value = serde_json::from_str::<Value>(include_str!(
-                "../../test-resources/bgp/bgp-api.json")
+                "../test-resources/bgp/bgp-api.json")
             ).unwrap();
             let Value::Object(mut value) = value else {
                 panic!("not an object")
@@ -837,7 +837,7 @@ mod test {
             .await;
 
         let expected: BgpAnalysisReport = serde_json::from_str(include_str!(
-            "../../test-resources/bgp/expected_full_report.json"
+            "../test-resources/bgp/expected_full_report.json"
         ))
         .unwrap();
 
@@ -945,7 +945,7 @@ mod test {
 
         let expected: BgpAnalysisSuggestion =
             serde_json::from_str(include_str!(
-            "../../test-resources/bgp/expected_suggestion_some_roas.json"
+            "../test-resources/bgp/expected_suggestion_some_roas.json"
         ))
             .unwrap();
         assert_eq!(suggestion_resource_subset, expected);
@@ -955,7 +955,7 @@ mod test {
 
         let expected: BgpAnalysisSuggestion =
             serde_json::from_str(include_str!(
-            "../../test-resources/bgp/expected_suggestion_all_roas.json"
+            "../test-resources/bgp/expected_suggestion_all_roas.json"
         ))
             .unwrap();
 

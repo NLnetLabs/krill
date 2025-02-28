@@ -353,7 +353,7 @@ impl CaManager {
         } else {
             // Initialise proxy
             let proxy_init = TrustAnchorProxyInitCommand::make(
-                &ta_handle,
+                ta_handle,
                 self.signer.clone(),
                 &self.system_actor,
             );
@@ -396,7 +396,7 @@ impl CaManager {
                 signer: self.signer.clone(),
             };
             let cmd = TrustAnchorSignerInitCommand::new(
-                &handle,
+                handle,
                 details,
                 &self.system_actor,
             );
@@ -577,11 +577,11 @@ impl CaManager {
 /// # CA instances and identity
 impl CaManager {
     /// Initializes a CA without a repo, no parents, no children, no nothing
-    pub fn init_ca(&self, handle: &CaHandle) -> KrillResult<()> {
-        if handle == &ta_handle() || handle.as_str() == "version" {
+    pub fn init_ca(&self, handle: CaHandle) -> KrillResult<()> {
+        if handle == ta_handle() || handle.as_str() == "version" {
             Err(Error::TaNameReserved)
-        } else if self.ca_store.has(handle)? {
-            Err(Error::CaDuplicate(handle.clone()))
+        } else if self.ca_store.has(&handle)? {
+            Err(Error::CaDuplicate(handle))
         } else {
             // Initialize the CA in self.ca_store, but note that there is no
             // need to create a new CA entry in
@@ -3063,7 +3063,7 @@ impl CaManager {
     ) -> KrillResult<()> {
         for ca in self.ca_store.list()? {
             let cmd = CertAuthCommand::new(
-                &ca,
+                ca.clone(),
                 None,
                 CertAuthCommandDetails::RouteAuthorizationsRenew(
                     self.config.clone(),
@@ -3080,7 +3080,7 @@ impl CaManager {
             }
 
             let cmd = CertAuthCommand::new(
-                &ca,
+                ca.clone(),
                 None,
                 CertAuthCommandDetails::AspasRenew(
                     self.config.clone(),
@@ -3097,7 +3097,7 @@ impl CaManager {
             }
 
             let cmd = CertAuthCommand::new(
-                &ca,
+                ca.clone(),
                 None,
                 CertAuthCommandDetails::BgpSecRenew(
                     self.config.clone(),
@@ -3124,7 +3124,7 @@ impl CaManager {
     ) -> KrillResult<()> {
         for ca in self.ca_store.list()? {
             let cmd = CertAuthCommand::new(
-                &ca,
+                ca.clone(),
                 None,
                 CertAuthCommandDetails::RouteAuthorizationsForceRenew(
                     self.config.clone(),

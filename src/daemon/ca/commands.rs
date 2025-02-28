@@ -525,7 +525,7 @@ impl CertAuthCommandDetails {
         actor: &Actor,
     ) -> CertAuthCommand {
         eventsourcing::SentCommand::new(
-            handle,
+            handle.clone(),
             None,
             CertAuthCommandDetails::ChildAdd(
                 child_handle,
@@ -544,7 +544,7 @@ impl CertAuthCommandDetails {
         actor: &Actor,
     ) -> CertAuthCommand {
         eventsourcing::SentCommand::new(
-            handle,
+            handle.clone(),
             None,
             CertAuthCommandDetails::ChildImport(child, config, signer),
             actor,
@@ -558,7 +558,7 @@ impl CertAuthCommandDetails {
         actor: &Actor,
     ) -> CertAuthCommand {
         eventsourcing::SentCommand::new(
-            handle,
+            handle.clone(),
             None,
             CertAuthCommandDetails::ChildUpdateResources(
                 child_handle,
@@ -575,7 +575,7 @@ impl CertAuthCommandDetails {
         actor: &Actor,
     ) -> CertAuthCommand {
         eventsourcing::SentCommand::new(
-            handle,
+            handle.clone(),
             None,
             CertAuthCommandDetails::ChildUpdateId(child_handle, id_cert),
             actor,
@@ -589,7 +589,7 @@ impl CertAuthCommandDetails {
         actor: &Actor,
     ) -> CertAuthCommand {
         eventsourcing::SentCommand::new(
-            handle,
+            handle.clone(),
             None,
             CertAuthCommandDetails::ChildUpdateResourceClassNameMapping(
                 child_handle,
@@ -610,7 +610,7 @@ impl CertAuthCommandDetails {
         actor: &Actor,
     ) -> CertAuthCommand {
         eventsourcing::SentCommand::new(
-            handle,
+            handle.clone(),
             None,
             CertAuthCommandDetails::ChildCertify(
                 child_handle,
@@ -630,7 +630,7 @@ impl CertAuthCommandDetails {
         actor: &Actor,
     ) -> CertAuthCommand {
         eventsourcing::SentCommand::new(
-            handle,
+            handle.clone(),
             None,
             CertAuthCommandDetails::ChildRevokeKey(child_handle, request),
             actor,
@@ -643,7 +643,7 @@ impl CertAuthCommandDetails {
         actor: &Actor,
     ) -> CertAuthCommand {
         eventsourcing::SentCommand::new(
-            handle,
+            handle.clone(),
             None,
             CertAuthCommandDetails::ChildRemove(child_handle),
             actor,
@@ -656,7 +656,7 @@ impl CertAuthCommandDetails {
         actor: &Actor,
     ) -> CertAuthCommand {
         eventsourcing::SentCommand::new(
-            handle,
+            handle.clone(),
             None,
             CertAuthCommandDetails::ChildSuspendInactive(child_handle),
             actor,
@@ -669,7 +669,7 @@ impl CertAuthCommandDetails {
         actor: &Actor,
     ) -> CertAuthCommand {
         eventsourcing::SentCommand::new(
-            handle,
+            handle.clone(),
             None,
             CertAuthCommandDetails::ChildUnsuspend(child_handle),
             actor,
@@ -682,7 +682,7 @@ impl CertAuthCommandDetails {
         actor: &Actor,
     ) -> CertAuthCommand {
         eventsourcing::SentCommand::new(
-            handle,
+            handle.clone(),
             None,
             CertAuthCommandDetails::GenerateNewIdKey(signer),
             actor,
@@ -696,7 +696,7 @@ impl CertAuthCommandDetails {
         actor: &Actor,
     ) -> CertAuthCommand {
         eventsourcing::SentCommand::new(
-            handle,
+            handle.clone(),
             None,
             CertAuthCommandDetails::AddParent(parent, info),
             actor,
@@ -710,7 +710,7 @@ impl CertAuthCommandDetails {
         actor: &Actor,
     ) -> CertAuthCommand {
         eventsourcing::SentCommand::new(
-            handle,
+            handle.clone(),
             None,
             CertAuthCommandDetails::UpdateParentContact(parent, info),
             actor,
@@ -723,7 +723,7 @@ impl CertAuthCommandDetails {
         actor: &Actor,
     ) -> CertAuthCommand {
         eventsourcing::SentCommand::new(
-            handle,
+            handle.clone(),
             None,
             CertAuthCommandDetails::RemoveParent(parent),
             actor,
@@ -738,7 +738,7 @@ impl CertAuthCommandDetails {
         actor: &Actor,
     ) -> CertAuthCommand {
         eventsourcing::SentCommand::new(
-            handle,
+            handle.clone(),
             None,
             CertAuthCommandDetails::UpdateEntitlements(
                 parent,
@@ -758,7 +758,7 @@ impl CertAuthCommandDetails {
         actor: &Actor,
     ) -> CertAuthCommand {
         eventsourcing::SentCommand::new(
-            handle,
+            handle.clone(),
             None,
             CertAuthCommandDetails::UpdateRcvdCert(
                 class_name, cert, config, signer,
@@ -775,7 +775,7 @@ impl CertAuthCommandDetails {
         actor: &Actor,
     ) -> CertAuthCommand {
         eventsourcing::SentCommand::new(
-            handle,
+            handle.clone(),
             None,
             CertAuthCommandDetails::DropResourceClass(
                 class_name, reason, signer,
@@ -795,7 +795,7 @@ impl CertAuthCommandDetails {
         actor: &Actor,
     ) -> CertAuthCommand {
         eventsourcing::SentCommand::new(
-            handle,
+            handle.clone(),
             None,
             CertAuthCommandDetails::KeyRollInitiate(duration, signer),
             actor,
@@ -810,7 +810,7 @@ impl CertAuthCommandDetails {
         actor: &Actor,
     ) -> CertAuthCommand {
         eventsourcing::SentCommand::new(
-            handle,
+            handle.clone(),
             None,
             CertAuthCommandDetails::KeyRollActivate(staging, config, signer),
             actor,
@@ -824,7 +824,7 @@ impl CertAuthCommandDetails {
         actor: &Actor,
     ) -> CertAuthCommand {
         eventsourcing::SentCommand::new(
-            handle,
+            handle.clone(),
             None,
             CertAuthCommandDetails::KeyRollFinish(rcn, res),
             actor,
@@ -838,7 +838,7 @@ impl CertAuthCommandDetails {
         actor: &Actor,
     ) -> CertAuthCommand {
         eventsourcing::SentCommand::new(
-            handle,
+            handle.clone(),
             None,
             CertAuthCommandDetails::RepoUpdate(contact, signer),
             actor,
@@ -856,7 +856,7 @@ impl CertAuthCommandDetails {
         actor: &Actor,
     ) -> CertAuthCommand {
         eventsourcing::SentCommand::new(
-            handle,
+            handle.clone(),
             None,
             CertAuthCommandDetails::RouteAuthorizationsUpdate(
                 updates, config, signer,
@@ -876,7 +876,7 @@ impl CertAuthCommandDetails {
         actor: &Actor,
     ) -> CertAuthCommand {
         eventsourcing::SentCommand::new(
-            ca,
+            ca.clone(),
             None,
             CertAuthCommandDetails::AspasUpdate(updates, config, signer),
             actor,
@@ -892,7 +892,7 @@ impl CertAuthCommandDetails {
         actor: &Actor,
     ) -> CertAuthCommand {
         eventsourcing::SentCommand::new(
-            ca,
+            ca.clone(),
             None,
             CertAuthCommandDetails::AspasUpdateExisting(
                 customer, update, config, signer,
@@ -912,7 +912,7 @@ impl CertAuthCommandDetails {
         actor: &Actor,
     ) -> CertAuthCommand {
         eventsourcing::SentCommand::new(
-            ca,
+            ca.clone(),
             None,
             CertAuthCommandDetails::BgpSecUpdateDefinitions(
                 updates, config, signer,
@@ -932,7 +932,7 @@ impl CertAuthCommandDetails {
         actor: &Actor,
     ) -> CertAuthCommand {
         eventsourcing::SentCommand::new(
-            handle,
+            handle.clone(),
             None,
             CertAuthCommandDetails::RtaSign(name, request, signer),
             actor,
@@ -947,7 +947,7 @@ impl CertAuthCommandDetails {
         actor: &Actor,
     ) -> CertAuthCommand {
         eventsourcing::SentCommand::new(
-            handle,
+            handle.clone(),
             None,
             CertAuthCommandDetails::RtaMultiPrepare(name, request, signer),
             actor,
@@ -962,7 +962,7 @@ impl CertAuthCommandDetails {
         actor: &Actor,
     ) -> CertAuthCommand {
         eventsourcing::SentCommand::new(
-            handle,
+            handle.clone(),
             None,
             CertAuthCommandDetails::RtaCoSign(name, rta, signer),
             actor,

@@ -180,7 +180,7 @@ impl TrustAnchorSignerCommand {
         actor: &Actor,
     ) -> TrustAnchorSignerCommand {
         TrustAnchorSignerCommand::new(
-            id,
+            id.clone(),
             None,
             TrustAnchorSignerCommandDetails::TrustAnchorSignerRequest {
                 signed_request,
@@ -268,9 +268,9 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
     type InitEvent = TrustAnchorSignerInitEvent;
     type Error = Error;
 
-    fn init(handle: TrustAnchorHandle, event: Self::InitEvent) -> Self {
+    fn init(handle: &TrustAnchorHandle, event: Self::InitEvent) -> Self {
         TrustAnchorSigner {
-            handle,
+            handle: handle.clone(),
             version: 1,
             id: event.id,
             proxy_id: event.proxy_id,

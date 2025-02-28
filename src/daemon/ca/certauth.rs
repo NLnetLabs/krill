@@ -118,8 +118,9 @@ impl Aggregate for CertAuth {
 
     type Error = Error;
 
-    fn init(handle: MyHandle, event: CertAuthInitEvent) -> Self {
-        let id = event.unpack();
+    fn init(handle: &MyHandle, event: CertAuthInitEvent) -> Self {
+        let handle = handle.clone();
+        let id = event.id;
 
         let repository = None;
         let parents = HashMap::new();

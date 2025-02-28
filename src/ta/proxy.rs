@@ -102,7 +102,7 @@ pub type TrustAnchorProxyInitCommand =
 
 impl TrustAnchorProxyInitCommand {
     pub fn make(
-        id: &MyHandle,
+        id: MyHandle,
         signer: Arc<KrillSigner>,
         actor: &Actor,
     ) -> Self {
@@ -139,7 +139,7 @@ pub type TrustAnchorProxyCommand =
 // Initialisation
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TrustAnchorProxyInitEvent {
-    id: IdCertInfo,
+    pub id: IdCertInfo,
 }
 
 impl InitEvent for TrustAnchorProxyInitEvent {}
@@ -423,7 +423,7 @@ impl TrustAnchorProxyCommand {
         actor: &Actor,
     ) -> Self {
         TrustAnchorProxyCommand::new(
-            id,
+            id.clone(),
             None,
             TrustAnchorProxyCommandDetails::AddRepository(repository),
             actor,
@@ -436,7 +436,7 @@ impl TrustAnchorProxyCommand {
         actor: &Actor,
     ) -> Self {
         TrustAnchorProxyCommand::new(
-            id,
+            id.clone(),
             None,
             TrustAnchorProxyCommandDetails::AddSigner(signer),
             actor,
@@ -448,7 +448,7 @@ impl TrustAnchorProxyCommand {
         actor: &Actor,
     ) -> Self {
         TrustAnchorProxyCommand::new(
-            id,
+            id.clone(),
             None,
             TrustAnchorProxyCommandDetails::MakeSignerRequest,
             actor,
@@ -461,7 +461,7 @@ impl TrustAnchorProxyCommand {
         actor: &Actor,
     ) -> Self {
         TrustAnchorProxyCommand::new(
-            id,
+            id.clone(),
             None,
             TrustAnchorProxyCommandDetails::ProcessSignerResponse(response),
             actor,
@@ -474,7 +474,7 @@ impl TrustAnchorProxyCommand {
         actor: &Actor,
     ) -> Self {
         TrustAnchorProxyCommand::new(
-            id,
+            id.clone(),
             None,
             TrustAnchorProxyCommandDetails::AddChild(child),
             actor,
@@ -488,7 +488,7 @@ impl TrustAnchorProxyCommand {
         actor: &Actor,
     ) -> Self {
         TrustAnchorProxyCommand::new(
-            id,
+            id.clone(),
             None,
             TrustAnchorProxyCommandDetails::AddChildRequest(child, request),
             actor,
@@ -502,7 +502,7 @@ impl TrustAnchorProxyCommand {
         actor: &Actor,
     ) -> Self {
         TrustAnchorProxyCommand::new(
-            id,
+            id.clone(),
             None,
             TrustAnchorProxyCommandDetails::GiveChildResponse(child, key),
             actor,
@@ -529,11 +529,10 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
     type Error = Error;
 
     fn init(
-        handle: TrustAnchorHandle,
-        event: TrustAnchorProxyInitEvent,
+        handle: &TrustAnchorHandle, event: TrustAnchorProxyInitEvent,
     ) -> Self {
         TrustAnchorProxy {
-            handle,
+            handle: handle.clone(),
             version: 1,
             id: event.id,
             repository: None,

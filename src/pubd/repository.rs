@@ -1886,7 +1886,7 @@ impl RepositoryAccessProxy {
             let actor = ACTOR_DEF_KRILL;
 
             let cmd = RepositoryAccessInitCommand::new(
-                &self.key,
+                self.key.clone(),
                 RepositoryAccessInitCommandDetails::new(
                     uris.rrdp_base_uri,
                     uris.rsync_jail,
@@ -2047,16 +2047,14 @@ impl Aggregate for RepositoryAccess {
     type InitEvent = RepositoryAccessInitEvent;
     type Error = Error;
 
-    fn init(handle: MyHandle, event: Self::InitEvent) -> Self {
-        let (id_cert, rrdp_base, rsync_base) = event.unpack();
-
+    fn init(handle: &MyHandle, event: Self::InitEvent) -> Self {
         RepositoryAccess {
-            handle,
+            handle: handle.clone(),
             version: 1,
-            id_cert,
+            id_cert: event.id_cert,
             publishers: HashMap::new(),
-            rsync_base,
-            rrdp_base,
+            rsync_base: event.rsync_jail,
+            rrdp_base: event.rrdp_base_uri,
         }
     }
 

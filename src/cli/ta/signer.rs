@@ -136,7 +136,7 @@ impl TrustAnchorSignerManager {
             ))
         } else {
             let cmd = TrustAnchorSignerInitCommand::new(
-                &self.ta_handle,
+                self.ta_handle.clone(),
                 TrustAnchorSignerInitCommandDetails {
                     proxy_id: info.proxy_id,
                     repo_info: info.repo_info,
