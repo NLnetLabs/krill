@@ -13,6 +13,7 @@ use rpki::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    ca::{CertAuthEvent, CertAuthInitEvent},
     commons::{
         api::aspa::{AspaDefinition, CustomerAsn},
         crypto::dispatch::signerinfo::{
@@ -25,7 +26,6 @@ use crate::{
         storage::{KeyValueStore, Namespace},
     },
     daemon::{
-        ca::{CertAuthEvent, CertAuthInitEvent},
         config::Config,
         properties::Properties,
     },

@@ -13,6 +13,7 @@ use rpki::ca::{
 use url::Url;
 
 use crate::{
+    ca::{CaManager, CertAuth},
     commons::{
         actor::Actor,
         api::ca::Timestamp,
@@ -29,7 +30,6 @@ use crate::{
         SCHEDULER_USE_JITTER_CAS_THRESHOLD, SIGNERS_NS,
     },
     daemon::{
-        ca::{CaManager, CertAuth},
         config::Config,
         mq::{
             in_hours, in_minutes, in_seconds, in_weeks, now, Task, TaskQueue,

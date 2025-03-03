@@ -24,6 +24,7 @@ use rpki::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    ca::Rfc8183Id,
     commons::{
         actor::Actor,
         crypto::KrillSigner,
@@ -41,7 +42,6 @@ use crate::{
         REPOSITORY_RSYNC_DIR, RRDP_FIRST_SERIAL,
     },
     daemon::{
-        ca::Rfc8183Id,
         config::{Config, RrdpUpdatesConfig},
     },
     pubd::{

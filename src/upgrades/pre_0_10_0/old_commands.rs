@@ -11,10 +11,10 @@ use rpki::{
 };
 
 use crate::{
+    ca::{CertAuthStorableCommand, DropReason, StorableRcEntitlement},
     commons::{
         eventsourcing::WithStorableDetails,
     },
-    daemon::ca::{CertAuthStorableCommand, DropReason, StorableRcEntitlement},
     upgrades::pre_0_14_0::{
         Pre0_14_0AspaProvidersUpdate, Pre0_14_0ProviderAs,
     },

@@ -15,6 +15,7 @@ use rpki::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    ca::CertifiedKey,
     commons::{
         api::ca::{IssuedCertificate, ReceivedCert},
         crypto::KrillSigner,
@@ -22,7 +23,6 @@ use crate::{
         util::AllowedUri,
         KrillResult,
     },
-    daemon::ca::CertifiedKey,
 };
 
 //------------ CsrInfo -------------------------------------------------------

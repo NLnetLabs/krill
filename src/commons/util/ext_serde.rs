@@ -1,7 +1,7 @@
 //! Defines helper methods for serializing and deserializing external types.
 
 use std::str::FromStr;
-use std::sync::atomic::{AtomicU64, Ordering},
+use std::sync::atomic::{AtomicU64, Ordering};
 use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
 use base64::engine::Engine as _;
 use bytes::Bytes;

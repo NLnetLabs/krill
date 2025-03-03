@@ -9,16 +9,16 @@ use crate::upgrades::{
     UnconvertedEffect, UpgradeAggregateStorePre0_14, UpgradeMode,
 };
 use crate::{
+    ca::{
+        CertAuth, CertAuthEvent, CertAuthInitEvent,
+        CertAuthStorableCommand,
+    },
     commons::{
         eventsourcing::AggregateStore,
         storage::KeyValueStore,
     },
     constants::CASERVER_NS,
     daemon::{
-        ca::{
-            CertAuth, CertAuthEvent, CertAuthInitEvent,
-            CertAuthStorableCommand,
-        },
         config::Config,
     },
     upgrades::UpgradeResult,

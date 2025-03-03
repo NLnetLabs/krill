@@ -13,12 +13,13 @@ use crate::{
         error::Error,
         KrillResult,
     },
-    daemon::{ca::ChildCertificateUpdates, config::IssuanceTimingConfig},
+    daemon::config::IssuanceTimingConfig,
 };
 use crate::commons::api::ca::{
     ChildCaInfo, ChildState, IdCertInfo, IssuedCertificate, ReceivedCert,
     SuspendedCert, UnsuspendedCert,
 };
+use super::ChildCertificateUpdates;
 
 //------------ UsedKeyState ------------------------------------------------
 

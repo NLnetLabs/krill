@@ -19,10 +19,6 @@ use crate::{
         eventsourcing::{Event, InitEvent},
         KrillResult,
     },
-    daemon::ca::{
-        AspaInfo, CertifiedKey, PreparedRta,
-        SignedRta,
-    },
 };
 use crate::commons::api::admin::{
     ParentCaContact, RepositoryContact, ResourceClassNameMapping,
@@ -37,7 +33,10 @@ use crate::commons::api::ca::{
 };
 use crate::commons::api::roa::{RoaInfo, RoaPayloadJsonMapKey};
 
-use super::{BgpSecCertInfo, RoaAggregateKey, StoredBgpSecCsr};
+use super::{
+    AspaInfo, BgpSecCertInfo, RoaAggregateKey, StoredBgpSecCsr, CertifiedKey,
+    PreparedRta, SignedRta,
+};
 
 //------------ Rfc8183Id ---------------------------------------------------
 

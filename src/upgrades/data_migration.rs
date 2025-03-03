@@ -7,6 +7,7 @@ use rpki::crypto::KeyIdentifier;
 use url::Url;
 
 use crate::{
+    ca::{CaObjectsStore, CertAuth},
     commons::{
         crypto::{
             dispatch::signerinfo::SignerInfo, KrillSignerBuilder,
@@ -22,7 +23,6 @@ use crate::{
         PUBSERVER_NS, SIGNERS_NS, TA_PROXY_SERVER_NS, TA_SIGNER_SERVER_NS,
     },
     daemon::{
-        ca::{CaObjectsStore, CertAuth},
         config::Config,
         properties::{Properties, PropertiesManager},
     },

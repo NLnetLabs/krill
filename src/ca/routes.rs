@@ -22,8 +22,6 @@ use crate::{
         KrillResult,
     },
     daemon::{
-        ca::events::RoaUpdates,
-        ca::CertifiedKey,
         config::{Config, IssuanceTimingConfig},
     },
 };
@@ -31,6 +29,8 @@ use crate::commons::api::ca::ObjectName;
 use crate::commons::api::roa::{
     AsNumber, RoaConfiguration, RoaInfo, RoaPayload, RoaPayloadJsonMapKey,
 };
+use super::CertifiedKey;
+use super::events::RoaUpdates;
 
 //------------ Routes ------------------------------------------------------
 

@@ -13,10 +13,10 @@ use rpki::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    ca::{DropReason, CertAuthStorableCommand, StorableRcEntitlement},
     commons::{
         eventsourcing::WithStorableDetails,
     },
-    daemon::ca::{DropReason, CertAuthStorableCommand, StorableRcEntitlement},
     upgrades::pre_0_14_0::Pre0_14_0AspaProvidersUpdate,
 };
 use crate::commons::api::admin::StorableParentContact;

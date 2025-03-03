@@ -21,14 +21,14 @@ use rpki::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    ca::{
+        CrlBuilder, ManifestBuilder, ObjectSetRevision, PublishedCrl,
+        PublishedManifest, PublishedObject, UsedKeyState,
+    },
     commons::{
         crypto::KrillSigner,
         error::Error,
         KrillResult,
-    },
-    daemon::ca::{
-        CrlBuilder, ManifestBuilder, ObjectSetRevision, PublishedCrl,
-        PublishedManifest, PublishedObject, UsedKeyState,
     },
 };
 use crate::commons::api::admin::PublishedFile;

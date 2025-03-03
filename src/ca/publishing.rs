@@ -32,10 +32,6 @@ use crate::{
     },
     constants::CA_OBJECTS_NS,
     daemon::{
-        ca::{
-            CertAuth, CertAuthEvent, CertifiedKey, ChildCertificateUpdates,
-            RoaUpdates,
-        },
         config::IssuanceTimingConfig,
     },
 };
@@ -48,7 +44,8 @@ use crate::commons::api::roa::RoaInfo;
 
 use super::{
     AspaInfo, AspaObjectsUpdates, BgpSecCertInfo, BgpSecCertificateUpdates,
-    
+    CertAuth, CertAuthEvent, CertifiedKey, ChildCertificateUpdates,
+    RoaUpdates,
 };
 
 //------------ CaObjectsStore ----------------------------------------------

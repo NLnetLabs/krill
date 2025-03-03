@@ -14,7 +14,7 @@ use rpki::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    daemon::ca::{
+    ca::{
         BgpSecCertificateUpdates, CertAuthEvent, CertifiedKey,
         ChildCertificateUpdates, PreparedRta, Rfc8183Id, RoaUpdates,
         SignedRta, StoredBgpSecCsr,

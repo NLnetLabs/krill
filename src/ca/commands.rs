@@ -26,10 +26,6 @@ use crate::{
         },
     },
     daemon::{
-        ca::{
-            CertAuth, CertAuthEvent,
-            ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest,
-        },
         config::Config,
     },
 };
@@ -47,6 +43,10 @@ use crate::commons::api::ca::{
 use crate::commons::api::history::CommandSummary;
 use crate::commons::api::import::ImportChild;
 use crate::commons::api::roa::RoaConfigurationUpdates;
+use super::{
+    CertAuth, CertAuthEvent,
+    ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest,
+};
 
 pub type DropReason = String;
 

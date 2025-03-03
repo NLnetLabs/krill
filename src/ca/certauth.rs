@@ -35,15 +35,6 @@ use crate::{
     },
     constants::test_mode_enabled,
     daemon::{
-        ca::{
-            events::ChildCertificateUpdates, AspaDefinitions,
-            BgpSecDefinitions, CertAuthCommand, CertAuthCommandDetails,
-            CertAuthEvent, CertAuthInitEvent, CertAuthStorableCommand, 
-            ChildDetails, DropReason, PreparedRta, ResourceClass,
-            ResourceTaggedAttestation, Rfc8183Id, 
-            Routes, RtaContentRequest,
-            RtaPrepareRequest, Rtas, SignedRta, StoredBgpSecCsr,
-        },
         config::{Config, IssuanceTimingConfig},
     },
 };
@@ -68,7 +59,16 @@ use crate::commons::api::roa::{
 };
 
 
-use super::CertAuthInitCommand;
+use super::{
+    events::ChildCertificateUpdates, AspaDefinitions,
+    BgpSecDefinitions, CertAuthCommand, CertAuthCommandDetails,
+    CertAuthEvent, CertAuthInitCommand, CertAuthInitEvent,
+    CertAuthStorableCommand, 
+    ChildDetails, DropReason, PreparedRta, ResourceClass,
+    ResourceTaggedAttestation, Rfc8183Id, 
+    Routes, RtaContentRequest,
+    RtaPrepareRequest, Rtas, SignedRta, StoredBgpSecCsr,
+};
 
 //------------ CertAuth ----------------------------------------------------
 

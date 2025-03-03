@@ -23,14 +23,14 @@ use rpki::{
 };
 
 use crate::{
-    commons::{
-        util::ext_serde,
-    },
-    daemon::ca::{
+    ca::{
         self, CaObjects, CertAuthEvent, CertifiedKey,
         ChildCertificateUpdates, ObjectSetRevision, PreparedRta,
         PublishedObject, RoaAggregateKey, RoaUpdates,
         SignedRta,
+    },
+    commons::{
+        util::ext_serde,
     },
     pubd::{Publisher, RepositoryAccessEvent, RepositoryAccessInitEvent},
     ta::{TaCertDetails, TrustAnchorLocator},

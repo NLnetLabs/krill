@@ -2,24 +2,24 @@ use log::{debug, info};
 use rpki::ca::idexchange::MyHandle;
 use rpki::{ca::idexchange::CaHandle, repository::x509::Time};
 
+use crate::ca::CaObjects;
 use crate::commons::api::aspa::ProviderAsn;
 use crate::commons::eventsourcing::StoredCommandBuilder;
-use crate::daemon::ca::CaObjects;
 use crate::upgrades::{
     AspaMigrationConfigUpdates, AspaMigrationConfigs, CommandMigrationEffect,
     UnconvertedEffect,
 };
 use crate::{
+    ca::{
+        CertAuth, CertAuthEvent, CertAuthInitEvent,
+        CertAuthStorableCommand
+    },
     commons::{
         eventsourcing::AggregateStore,
         storage::{Key, KeyValueStore, Segment},
     },
     constants::{CASERVER_NS, CA_OBJECTS_NS},
     daemon::{
-        ca::{
-            CertAuth, CertAuthEvent, CertAuthInitEvent,
-            CertAuthStorableCommand
-        },
         config::Config,
     },
     upgrades::{

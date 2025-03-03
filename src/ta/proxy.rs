@@ -20,6 +20,7 @@ use rpki::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    ca::{Rfc8183Id, UsedKeyState},
     commons::{
         actor::Actor,
         crypto::{CsrInfo, KrillSigner},
@@ -29,7 +30,6 @@ use crate::{
         },
         KrillResult,
     },
-    daemon::ca::{Rfc8183Id, UsedKeyState},
 };
 use crate::commons::api::admin::{AddChildRequest, RepositoryContact};
 use crate::commons::api::ca::IdCertInfo;

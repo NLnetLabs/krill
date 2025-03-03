@@ -21,6 +21,10 @@ use rpki::{
 use crate::daemon::auth::AuthInfo;
 use crate::{
     bgp::BgpAnalyser,
+    ca::{
+        self, testbed_ca_handle, CaManager, CaStatus,
+        ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest,
+    },
     commons::{
         actor::Actor,
         crypto::KrillSignerBuilder,
@@ -30,10 +34,6 @@ use crate::{
     constants::*,
     daemon::{
         auth::{Authorizer, LoggedInUser},
-        ca::{
-            self, testbed_ca_handle, CaManager, CaStatus,
-            ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest,
-        },
         config::Config,
         http::{HttpResponse, HyperRequest},
         mq::{now, Task, TaskQueue},

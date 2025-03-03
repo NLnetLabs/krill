@@ -1,6 +1,6 @@
 //! Logging of CMS protocol messages for auditing purposes.
 
-use std::fmt
+use std::fmt;
 use std::path::PathBuf;
 use bytes::Bytes;
 use rpki::ca::idexchange::{

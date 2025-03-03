@@ -38,12 +38,6 @@ use crate::{
     },
     daemon::{
         auth::{AuthInfo, Permission},
-        ca::{
-            CaObjectsStore, CaStatus, CertAuth,
-            CertAuthCommand, CertAuthCommandDetails, DeprecatedRepository,
-            ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest,
-            StatusStore,
-        },
         config::Config,
         mq::{now, Task, TaskQueue},
     },
@@ -76,7 +70,12 @@ use crate::commons::api::history::{
 };
 use crate::commons::api::roa::RoaConfigurationUpdates;
 
-use super::{CertAuthInitCommand, CertAuthInitCommandDetails};
+use super::{
+    CaObjectsStore, CaStatus, CertAuth, CertAuthCommand,
+    CertAuthCommandDetails, CertAuthInitCommand, CertAuthInitCommandDetails,
+    DeprecatedRepository, ResourceTaggedAttestation, RtaContentRequest,
+    RtaPrepareRequest, StatusStore,
+};
 
 //------------ CaManager -----------------------------------------------------
 

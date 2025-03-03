@@ -20,12 +20,13 @@ use crate::{
         error::Error,
         KrillResult,
     },
-    daemon::ca::CertAuthEvent,
 };
 use crate::commons::api::ca::{
     ActiveInfo, CertifiedKeyInfo, PendingInfo, PendingKeyInfo, ReceivedCert,
     ResourceClassKeysInfo, RollNewInfo, RollOldInfo, RollPendingInfo,
 };
+use super::CertAuthEvent;
+
 
 //------------ CertifiedKey --------------------------------------------------
 

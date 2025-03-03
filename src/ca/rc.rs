@@ -25,12 +25,6 @@ use crate::{
         KrillResult,
     },
     daemon::{
-        ca::events::RoaUpdates,
-        ca::{
-            self, AspaObjects, AspaObjectsUpdates, CertAuthEvent,
-            CertifiedKey, ChildCertificates, CurrentKey, KeyState, NewKey,
-            OldKey, PendingKey, Roas, Routes,
-        },
         config::{Config, IssuanceTimingConfig},
     },
     ta::ta_handle,
@@ -44,7 +38,12 @@ use crate::commons::api::roa::{RoaConfiguration, RoaInfo};
 use super::{
     AspaDefinitions, BgpSecCertificateUpdates, BgpSecCertificates,
     BgpSecDefinitions, 
+    AspaObjects, AspaObjectsUpdates, CertAuthEvent,
+    CertifiedKey, ChildCertificates, CurrentKey, KeyState, NewKey,
+    OldKey, PendingKey, Roas, Routes,
 };
+use super::events::RoaUpdates;
+
 
 //------------ ResourceClass -----------------------------------------------
 
@@ -371,7 +370,7 @@ impl ResourceClass {
     ) -> KrillResult<Vec<CertAuthEvent>> {
         let ki = rcvd_cert.key_identifier();
         if ki != current_key.key_id() {
-            return Err(ca::Error::KeyUseNoMatch(ki));
+            return Err(super::Error::KeyUseNoMatch(ki));
         }
 
         let rcvd_resources = &rcvd_cert.resources;

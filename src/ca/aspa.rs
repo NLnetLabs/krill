@@ -26,7 +26,6 @@ use crate::{
         KrillResult,
     },
     daemon::{
-        ca::{AspaObjectsUpdates, CertifiedKey},
         config::{Config, IssuanceTimingConfig},
     },
 };
@@ -34,6 +33,7 @@ use crate::commons::api::aspa::{
     AspaDefinition, AspaProvidersUpdate, CustomerAsn
 };
 use crate::commons::api::ca::ObjectName;
+use super::{AspaObjectsUpdates, CertifiedKey};
 
 pub fn make_aspa_object(
     aspa_def: AspaDefinition,
