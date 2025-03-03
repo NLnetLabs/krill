@@ -1,17 +1,15 @@
-//! Defines helper methods for Serializing and Deserializing external types.
-use std::{
-    str::FromStr,
-    sync::atomic::{AtomicU64, Ordering},
-};
+//! Defines helper methods for serializing and deserializing external types.
 
+use std::str::FromStr;
+use std::sync::atomic::{AtomicU64, Ordering},
 use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
 use base64::engine::Engine as _;
 use bytes::Bytes;
 use log::LevelFilter;
+use rpki::repository::resources::{AsBlocks, IpBlocks};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use syslog::Facility;
 
-use rpki::repository::resources::{AsBlocks, IpBlocks};
 
 //------------ Bytes ---------------------------------------------------------
 
@@ -30,6 +28,7 @@ where
 {
     BASE64_ENGINE.encode(b).serialize(s)
 }
+
 
 //------------ AsBlocks ------------------------------------------------------
 
@@ -59,6 +58,7 @@ where
 
     Ok(Some(blocks))
 }
+
 
 //------------ IpBlocks ------------------------------------------------------
 
@@ -168,6 +168,7 @@ where
     }
 }
 
+
 //------------ LevelFilter ---------------------------------------------------
 
 pub fn de_level_filter<'de, D>(d: D) -> Result<LevelFilter, D::Error>
@@ -177,6 +178,7 @@ where
     let string = String::deserialize(d)?;
     LevelFilter::from_str(&string).map_err(de::Error::custom)
 }
+
 
 //------------ Facility ------------------------------------------------------
 
@@ -193,7 +195,9 @@ where
     })
 }
 
+
 //------------- AtomicU64 -----------------------------------------------------
+//
 // Implemented automatically by Serde derive but only for x86_64
 // architectures, for other architectures (such as armv7 for the Raspberry Pi
 // 4b) it has to be implemented manually.
@@ -212,6 +216,11 @@ where
     s.serialize_u64(v.load(Ordering::SeqCst))
 }
 
+
+//------------- OneOrMany -----------------------------------------------------
+
+/// Helper type for deserializing a vec from a single item or an array.
+///
 /// Inspired by the serde_with crate. But, given that we don't need all
 /// its features - just implementing the one thing we need here.
 #[derive(Deserialize)]

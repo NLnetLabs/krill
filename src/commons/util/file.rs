@@ -1,25 +1,22 @@
-use std::{
-    borrow::Cow,
-    fmt, fs,
-    fs::File,
-    io::{self, Read, Write},
-    path::Path,
-    path::PathBuf,
-    str::FromStr,
-};
+//! Utilities for accessing files.
+//!
+//! The functions in here primarily provide convenient error conversion.
 
+use std::{fmt, fs, io};
+use std::borrow::Cow;
+use std::fs::File;
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use bytes::Bytes;
 use log::trace;
 use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
-
-use rpki::{
-    ca::publication::{Base64, ListElement, Publish, Update, Withdraw},
-    rrdp::Hash,
-    uri,
-};
-
+use rpki::uri;
+use rpki::ca::publication::{Base64, ListElement, Publish, Update, Withdraw};
+use rpki::rrdp::Hash;
 use crate::commons::error::KrillIoError;
+
 
 /// Creates a sub dir if needed, return full path to it
 pub fn sub_dir(base: &Path, name: &str) -> Result<PathBuf, KrillIoError> {
