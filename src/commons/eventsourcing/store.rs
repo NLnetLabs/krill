@@ -2,7 +2,7 @@
 //!
 //! This is a private module. Its public items are re-exported by the parent.
 
-use std::fmt;
+use std::{error, fmt};
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, RwLock};
@@ -20,9 +20,9 @@ use crate::commons::storage::{
     Key, KeyValueError, KeyValueStore, Namespace, Segment, Scope
 };
 use super::agg::{
-    Aggregate, Command, InitCommand, StoredCommand, StoredCommandBuilder
+    Aggregate, Command, InitCommand, PostSaveEventListener,
+    PreSaveEventListener, StoredCommand
 };
-use super::listener::{PostSaveEventListener, PreSaveEventListener};
 
 
 //------------ Storable ------------------------------------------------------
@@ -107,8 +107,10 @@ impl<A: Aggregate> AggregateStore<A> {
 
     /// Warms up the cache.
     ///
-    /// The method should be called after startup. It will fail if any
-    /// aggregates fail to load.
+    /// The method loads all instances and places them in the cache.
+    /// It should be called after startup.
+    ///
+    /// It will fail if any aggregate fails to load.
     pub fn warm(&self) -> Result<(), AggregateStoreError> {
         for handle in self.list()? {
             self.get_latest(&handle).map_err(|e| {
@@ -164,6 +166,20 @@ impl<A: Aggregate> AggregateStore<A> {
     /// Returns an “unknown aggregate” in case the aggregate does not exist.
     pub fn get_latest(&self, handle: &MyHandle) -> Result<Arc<A>, A::Error> {
         self.execute_opt_command(handle, None, false)
+    }
+
+    /// Returns the command for the given key and version.
+    pub fn get_command(
+        &self,
+        id: &MyHandle,
+        version: u64,
+    ) -> Result<StoredCommand<A>, AggregateStoreError> {
+        match self.kv.get(&Self::key_for_command(id, version))? {
+            Some(cmd) => Ok(cmd),
+            None => {
+                Err(AggregateStoreError::CommandNotFound(id.clone(), version))
+            }
+        }
     }
 
     /// Updates the snapshots for all aggregates in this store.
@@ -493,70 +509,53 @@ impl<A: Aggregate> AggregateStore<A> {
         })
         .map_err(|e| A::Error::from(AggregateStoreError::KeyStoreError(e)))?
     }
+
+    /// Drops the aggregate with the given ID completely.
+    ///
+    /// Handle with care!
+    pub fn drop_aggregate(
+        &self,
+        id: &MyHandle,
+    ) -> Result<(), AggregateStoreError> {
+        let scope = Self::scope_for_agg(id);
+        self.kv.execute(&scope, |kv| kv.delete_scope(&scope))?;
+        self.cache_remove(id);
+        Ok(())
+    }
 }
 
-/// # Manage Commands
+
+//--- Command History
+
 impl<A: Aggregate> AggregateStore<A> {
-    /// Find all commands that fit the criteria and return history
+    /// Find all commands that fit the criteria and return them as a history.
     pub fn command_history(
         &self,
         id: &MyHandle,
-        crit: CommandHistoryCriteria,
+        criteria: CommandHistoryCriteria,
     ) -> Result<CommandHistory, AggregateStoreError> {
         // If we have history cache, then first update it, and use that.
         // Otherwise parse *all* commands in history.
-
-        // Little local helper so we can use borrowed records without keeping
-        // the lock longer than it wants to live.
-        fn command_history_for_records(
-            crit: CommandHistoryCriteria,
-            records: &[CommandHistoryRecord],
-        ) -> CommandHistory {
-            let offset = crit.offset;
-
-            let rows = match crit.rows_limit {
-                Some(limit) => limit,
-                None => records.len(),
-            };
-
-            let mut commands = Vec::with_capacity(rows);
-            let mut skipped = 0;
-            let mut total = 0;
-
-            for record in records.iter() {
-                if record.matches(&crit) {
-                    total += 1;
-                    if skipped < offset {
-                        skipped += 1;
-                    } else if total - skipped <= rows {
-                        commands.push(record.clone());
-                    }
-                }
-            }
-
-            CommandHistory { offset, total, commands }
-        }
-
         match &self.history_cache {
             Some(mutex) => {
                 let mut cache_lock = mutex.lock().unwrap();
                 let records = cache_lock.entry(id.clone()).or_default();
-                self.update_history_records(records, id)?;
-                Ok(command_history_for_records(crit, records))
+                self.update_history_records(id, records)?;
+                Ok(Self::command_history_for_records(criteria, records))
             }
             None => {
                 let mut records = vec![];
-                self.update_history_records(&mut records, id)?;
-                Ok(command_history_for_records(crit, &records))
+                self.update_history_records(id, &mut records)?;
+                Ok(Self::command_history_for_records(criteria, &records))
             }
         }
     }
 
-    /// Updates history records for a given aggregate
+    /// Updates history records for a given aggregate.
     fn update_history_records(
         &self,
-        records: &mut Vec<CommandHistoryRecord>,
         id: &MyHandle,
+        records: &mut Vec<CommandHistoryRecord>,
     ) -> Result<(), AggregateStoreError> {
         let mut version = match records.last() {
             Some(record) => record.version + 1,
@@ -571,51 +570,71 @@ impl<A: Aggregate> AggregateStore<A> {
         Ok(())
     }
 
-    /// Get the command for this key, if it exists
-    pub fn get_command(
-        &self,
-        id: &MyHandle,
-        version: u64,
-    ) -> Result<StoredCommand<A>, AggregateStoreError> {
-        let key = Self::key_for_command(id, version);
+    /// Creates the command history from criteria and records.
+    fn command_history_for_records(
+        criteria: CommandHistoryCriteria,
+        records: &[CommandHistoryRecord],
+    ) -> CommandHistory {
+        let offset = criteria.offset;
 
-        match self.kv.get(&key)? {
-            Some(cmd) => Ok(cmd),
-            None => {
-                Err(AggregateStoreError::CommandNotFound(id.clone(), version))
+        let rows = match criteria.rows_limit {
+            Some(limit) => limit,
+            None => records.len(),
+        };
+
+        let mut commands = Vec::with_capacity(rows);
+        let mut skipped = 0;
+        let mut total = 0;
+
+        for record in records.iter() {
+            if record.matches(&criteria) {
+                total += 1;
+                if skipped < offset {
+                    skipped += 1;
+                } else if total - skipped <= rows {
+                    commands.push(record.clone());
+                }
             }
         }
+
+        CommandHistory { offset, total, commands }
     }
 }
 
-impl<A: Aggregate> AggregateStore<A>
-where
-    A::Error: From<AggregateStoreError>,
-{
+
+//--- Cache Management
+
+impl<A: Aggregate> AggregateStore<A> {
+    /// Retrieves the aggregate with the given ID from the cache.
     fn cache_get(&self, id: &MyHandle) -> Option<Arc<A>> {
         self.cache.read().unwrap().get(id).cloned()
     }
 
+    /// Removes the aggregate with the given ID from the cache.
     fn cache_remove(&self, id: &MyHandle) {
         self.cache.write().unwrap().remove(id);
     }
 
+    /// Sets the aggregate with the given ID to the given value.
     fn cache_update(&self, id: &MyHandle, arc: Arc<A>) {
         self.cache.write().unwrap().insert(id.clone(), arc);
     }
 }
 
-/// # Manage values in the KeyValue store
-impl<A: Aggregate> AggregateStore<A>
-where
-    A::Error: From<AggregateStoreError>,
-{
-    fn scope_for_agg(agg: &MyHandle) -> Scope {
-        Scope::from_segment(Segment::parse_lossy(agg.as_str())) // agg should
-                                                                // always be a
-                                                                // valid Segment
+
+//--- Keys and Scopes
+
+impl<A: Aggregate> AggregateStore<A> {
+    /// Returns the scope for the aggregate with the given ID.
+    fn scope_for_agg(id: &MyHandle) -> Scope {
+        // id should always be a valid segment.
+        //
+        // XXX I’m not sure this is actually true. There is something with
+        //     forward slashes.
+        Scope::from_segment(Segment::parse_lossy(id.as_str())) 
     }
 
+    /// Returns the key for the snapshot of the aggregate with the given ID.
     fn key_for_snapshot(agg: &MyHandle) -> Key {
         Key::new_scoped(
             Self::scope_for_agg(agg),
@@ -623,30 +642,22 @@ where
         )
     }
 
+    /// Returns the key for the command for an aggregate and version.
     fn key_for_command(agg: &MyHandle, version: u64) -> Key {
         Key::new_scoped(
             Self::scope_for_agg(agg),
-            Segment::parse(&format!("command-{}.json", version)).unwrap(), /* cannot panic as a u64 cannot contain a Scope::SEPARATOR */
+            // Cannot panic as a u64 cannot contain a Scope::SEPARATOR.
+            Segment::parse(
+                &format!("command-{}.json", version)
+            ).unwrap(), 
         )
-    }
-
-    /// Drop an aggregate, completely. Handle with care!
-    pub fn drop_aggregate(
-        &self,
-        id: &MyHandle,
-    ) -> Result<(), AggregateStoreError> {
-        let scope = Self::scope_for_agg(id);
-
-        self.kv.execute(&scope, |kv| kv.delete_scope(&scope))?;
-
-        self.cache_remove(id);
-        Ok(())
     }
 }
 
+
 //------------ AggregateStoreError -------------------------------------------
 
-/// This type defines possible Errors for the AggregateStore
+/// An error happened while accessing the aggregate store.
 #[derive(Debug)]
 pub enum AggregateStoreError {
     IoError(KrillIoError),
@@ -662,6 +673,12 @@ pub enum AggregateStoreError {
     CouldNotArchive(MyHandle, String),
     CommandCorrupt(MyHandle, u64),
     CommandNotFound(MyHandle, u64),
+}
+
+impl From<KeyValueError> for AggregateStoreError {
+    fn from(e: KeyValueError) -> Self {
+        AggregateStoreError::KeyStoreError(e)
+    }
 }
 
 impl fmt::Display for AggregateStoreError {
@@ -730,8 +747,5 @@ impl fmt::Display for AggregateStoreError {
     }
 }
 
-impl From<KeyValueError> for AggregateStoreError {
-    fn from(e: KeyValueError) -> Self {
-        AggregateStoreError::KeyStoreError(e)
-    }
-}
+impl error::Error for AggregateStoreError { }
+

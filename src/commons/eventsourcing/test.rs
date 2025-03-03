@@ -5,7 +5,7 @@
 
 use std::fmt;
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use serde::{Deserialize, Serialize};
 use rpki::ca::idexchange::MyHandle;
 use crate::commons::api::history::{CommandHistoryCriteria, CommandSummary};
@@ -354,6 +354,41 @@ impl Aggregate for Person {
         }
     }
 }
+
+
+//------------ EventCounter --------------------------------------------------
+
+/// Example listener that simply counts all events
+struct EventCounter {
+    counter: RwLock<Counter>,
+}
+
+struct Counter {
+    total: usize,
+}
+
+impl Default for EventCounter {
+    fn default() -> Self {
+        EventCounter {
+            counter: RwLock::new(Counter { total: 0 }),
+        }
+    }
+}
+
+impl EventCounter {
+    pub fn total(&self) -> usize {
+        self.counter.read().unwrap().total
+    }
+}
+
+impl<A: Aggregate> PostSaveEventListener<A> for EventCounter {
+    fn listen(&self, _agg: &A, events: &[A::Event]) {
+        self.counter.write().unwrap().total += events.len();
+    }
+}
+
+
+//------------ Test Function -------------------------------------------------
 
 #[test]
 fn event_sourcing_framework() {

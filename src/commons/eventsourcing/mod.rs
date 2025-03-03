@@ -286,23 +286,28 @@
 //! actually uses the same underlying function as above to retrieve the
 //! snapshot, this time setting the `save_snapshot` parameter to true to
 //! ensure that the snapshot is saved.
+//!
+//!
+//! ## WAL Store
+//!
+//! The [`WalStore`] – WAL being short for write-ahead log – is a simplified
+//! version of the full aggregate store. It doesn’t store the full command
+//! history of an instance but only the changes since the last snapshot was
+//! created. Listeners aren’t supported either.
 
 mod agg;
+mod store;
+mod test;
+mod wal;
 
 pub use self::agg::{
     Aggregate, Command, CommandDetails, Event, InitCommand,
-    InitCommandDetails, InitEvent, SentCommand, SentInitCommand,
-    StoredCommand, StoredCommandBuilder, StoredEffect, WithStorableDetails
+    InitCommandDetails, InitEvent, PostSaveEventListener,
+    PreSaveEventListener, SentCommand, SentInitCommand, StoredCommand,
+    StoredCommandBuilder, StoredEffect, WithStorableDetails
 };
-
-mod wal;
-pub use self::wal::*;
-
-mod store;
-pub use self::store::*;
-
-mod listener;
-pub use self::listener::*;
-
-mod test;
+pub use self::store::{AggregateStore, AggregateStoreError, Storable};
+pub use self::wal::{
+    WalCommand, WalChange, WalSet, WalStore, WalStoreError, WalSupport,
+};
 

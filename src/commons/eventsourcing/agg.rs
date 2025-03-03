@@ -674,6 +674,26 @@ impl<E: Event, I: InitEvent> StoredEffect<E, I> {
 }
 
 
+//------------ PreSaveEventListener ------------------------------------------
+
+/// A listener that receives events before the aggregate is saved.
+///
+/// The listener is allowed to return an error in case of issues, which will
+/// will result in rolling back the intended change to an aggregate.
+pub trait PreSaveEventListener<A: Aggregate>: Send + Sync + 'static {
+    fn listen(&self, agg: &A, events: &[A::Event]) -> Result<(), A::Error>;
+}
+
+//------------ PostSaveEventListener -----------------------------------------
+
+/// A listener that receives events after the aggregate is saved.
+///
+/// The listener is not allowed to fail.
+pub trait PostSaveEventListener<A: Aggregate>: Send + Sync + 'static {
+    fn listen(&self, agg: &A, events: &[A::Event]);
+}
+
+
 //------------ Helper Functions ----------------------------------------------
 
 /// Unfailably creates a JSON value from a serializable object.
