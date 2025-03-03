@@ -38,6 +38,20 @@ impl<T: Clone + Serialize + DeserializeOwned> Storable for T { }
 //------------ AggregateStore ------------------------------------------------
 
 /// A store that manages all instances of a certain aggregate type.
+///
+/// # Key-value store usage
+///
+/// Each aggregate store uses its own namespace. The first element of the
+/// scope is the handle of the instance. The second element of the handle
+/// is either `snapshot.json` for the snapshot or `command-N.json` where
+/// `N` is the version the command is taking the instance to.
+/// `command-0.json` therefore is the name of the init command.
+///
+/// # Use within Krill
+///
+/// Within Krill, aggregate stores are used by the trust anchor proxy and
+/// signer, by the properties, by the publication repository, the CA manager,
+/// and signer info.
 pub struct AggregateStore<A: Aggregate> {
     /// The physical store for the aggregates.
     kv: KeyValueStore,

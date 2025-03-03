@@ -32,6 +32,17 @@ use super::store::Storable;
 /// changes are stored in a [`WalSet<_>`] and can be applied to a value.
 /// Consequently, these types do not have an audit log.
 ///
+///
+/// # Key-value store usage
+///
+/// Each aggregate store uses its own namespace. The first element of the
+/// scope is the handle of the instance. The second element of the handle
+/// is either `snapshot.json` for the snapshot or `wal-N.json` where
+/// `N` is the version the command is taking the instance to.
+///
+///
+/// # Use within Krill
+///
 /// Within Krill, write-ahead logging is currently used by the
 /// [`Scheduler`][crate::daemon::scheduler::Scheduler] and
 /// [`RepositoryContent`][crate::pubd::RepositoryContent].

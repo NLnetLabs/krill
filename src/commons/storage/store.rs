@@ -15,6 +15,15 @@ use crate::commons::storage::{
 //------------ KeyValueStore -------------------------------------------------
 
 /// A key-value store.
+///
+/// # Use within Krill
+///
+/// The following components use the key-value store directly:
+///
+/// * aggregate store, WAL store,
+/// * queue,
+/// * CA objects, CA status,
+/// * OpenSSL signer.
 #[derive(Debug)]
 pub struct KeyValueStore {
     inner: Backend,
