@@ -1,13 +1,10 @@
-//! Certificate Authority related code.
-use rpki::ca::idexchange::CaHandle;
-
-use crate::commons::error::Error;
+//! RPKI Certificate Authority.
 
 mod aspa;
-pub use self::aspa::*;
+pub mod upgrades;
 
-mod bgpsec;
-pub use self::bgpsec::*;
+
+pub mod bgpsec; // pub temporary for upgrades.
 
 mod certauth;
 pub use self::certauth::CertAuth;
@@ -42,6 +39,11 @@ pub use self::rta::*;
 
 mod status;
 pub use self::status::*;
+
+
+use rpki::ca::idexchange::CaHandle;
+
+use crate::commons::error::Error;
 
 pub const TESTBED_CA_NAME: &str = "testbed"; // reserved for testbed mode
 

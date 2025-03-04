@@ -43,10 +43,13 @@ use crate::commons::api::ca::{
 use crate::commons::api::roa::RoaInfo;
 
 use super::{
-    AspaInfo, AspaObjectsUpdates, BgpSecCertInfo, BgpSecCertificateUpdates,
+    AspaObjectsUpdates, BgpSecCertificateUpdates,
     CertAuth, CertAuthEvent, CertifiedKey, ChildCertificateUpdates,
     RoaUpdates,
 };
+use super::aspa::AspaInfo;
+use super::bgpsec::BgpSecCertInfo;
+
 
 //------------ CaObjectsStore ----------------------------------------------
 

@@ -34,9 +34,12 @@ use crate::commons::api::ca::{
 use crate::commons::api::roa::{RoaInfo, RoaPayloadJsonMapKey};
 
 use super::{
-    AspaInfo, BgpSecCertInfo, RoaAggregateKey, StoredBgpSecCsr, CertifiedKey,
+    RoaAggregateKey, CertifiedKey,
     PreparedRta, SignedRta,
 };
+use super::aspa::AspaInfo;
+use super::bgpsec::{BgpSecCertInfo, StoredBgpSecCsr};
+
 
 //------------ Rfc8183Id ---------------------------------------------------
 

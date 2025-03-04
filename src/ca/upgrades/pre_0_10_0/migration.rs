@@ -23,14 +23,16 @@ use crate::{
         config::Config,
     },
     upgrades::{
-        pre_0_10_0::{Pre0_10CertAuthEvent, Pre0_10CertAuthInitEvent},
         pre_0_14_0::OldStoredCommand,
         UpgradeAggregateStorePre0_14, UpgradeError, UpgradeMode,
         UpgradeResult,
     },
 };
 
-use super::{OldCaObjects, Pre0_10_0CertAuthStorableCommand};
+use super::old_events::{
+    OldCaObjects, Pre0_10CertAuthEvent, Pre0_10CertAuthInitEvent
+};
+use super::old_commands::Pre0_10_0CertAuthStorableCommand;
 
 /// Migrates the CaObjects for a given CA.
 ///

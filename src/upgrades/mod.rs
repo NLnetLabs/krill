@@ -41,6 +41,7 @@ use crate::{
         OldStoredCommand, OldStoredEffect, OldStoredEvent,
     },
 };
+use crate::ca::upgrades as ca;
 use crate::commons::api::aspa::{
     AspaDefinition, AspaDefinitionUpdates, CustomerAsn, ProviderAsn,
 };
@@ -893,7 +894,7 @@ pub fn prepare_upgrade_data_migrations(
                 // Complex migrations involving command / event conversions
                 pre_0_10_0::PublicationServerRepositoryAccessMigration::upgrade(mode, config, &versions)?;
                 let aspa_configs =
-                    pre_0_10_0::CasMigration::upgrade(mode, config)?;
+                    ca::pre_0_10_0::CasMigration::upgrade(mode, config)?;
 
                 // The way that pubd objects were stored was changed as well
                 // (since 0.13.0)
@@ -928,7 +929,7 @@ pub fn prepare_upgrade_data_migrations(
                     SIGNERS_NS, mode, config,
                 )?;
                 let aspa_configs =
-                    pre_0_14_0::CasMigration::upgrade(mode, config)?;
+                    ca::pre_0_14_0::CasMigration::upgrade(mode, config)?;
                 pre_0_14_0::UpgradeAggregateStoreRepositoryAccess::upgrade(
                     PUBSERVER_NS,
                     mode,
@@ -946,7 +947,7 @@ pub fn prepare_upgrade_data_migrations(
                     SIGNERS_NS, mode, config,
                 )?;
                 let aspa_configs =
-                    pre_0_14_0::CasMigration::upgrade(mode, config)?;
+                    ca::pre_0_14_0::CasMigration::upgrade(mode, config)?;
                 pre_0_14_0::UpgradeAggregateStoreRepositoryAccess::upgrade(
                     PUBSERVER_NS,
                     mode,
@@ -959,7 +960,7 @@ pub fn prepare_upgrade_data_migrations(
                 // in 0.14.0 where we combine commands and
                 // events into a single key-value pair.
                 let aspa_configs =
-                    pre_0_14_0::CasMigration::upgrade(mode, config)?;
+                    ca::pre_0_14_0::CasMigration::upgrade(mode, config)?;
                 pre_0_14_0::UpgradeAggregateStoreRepositoryAccess::upgrade(
                     PUBSERVER_NS,
                     mode,

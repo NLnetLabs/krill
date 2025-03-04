@@ -36,13 +36,15 @@ use crate::commons::api::ca::{
 use crate::commons::api::roa::{RoaConfiguration, RoaInfo}; 
 
 use super::{
-    AspaDefinitions, BgpSecCertificateUpdates, BgpSecCertificates,
-    BgpSecDefinitions, 
-    AspaObjects, AspaObjectsUpdates, CertAuthEvent,
+    AspaObjectsUpdates, BgpSecCertificateUpdates, 
+    CertAuthEvent,
     CertifiedKey, ChildCertificates, CurrentKey, KeyState, NewKey,
     OldKey, PendingKey, Roas, Routes,
 };
+use super::aspa::{AspaDefinitions, AspaObjects};
+use super::bgpsec::{BgpSecCertificates, BgpSecDefinitions};
 use super::events::RoaUpdates;
+
 
 
 //------------ ResourceClass -----------------------------------------------

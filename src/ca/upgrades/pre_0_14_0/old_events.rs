@@ -17,16 +17,17 @@ use crate::{
     ca::{
         BgpSecCertificateUpdates, CertAuthEvent, CertifiedKey,
         ChildCertificateUpdates, PreparedRta, Rfc8183Id, RoaUpdates,
-        SignedRta, StoredBgpSecCsr,
+        SignedRta, 
     },
 };
+use crate::ca::bgpsec::StoredBgpSecCsr;
 use crate::commons::api::admin::{ParentCaContact, RepositoryContact};
 use crate::commons::api::aspa::CustomerAsn;
 use crate::commons::api::bgpsec::BgpSecAsnKey;
 use crate::commons::api::ca::{IdCertInfo, ReceivedCert, RtaName};
 use crate::commons::api::roa::RoaPayloadJsonMapKey;
 
-use super::{
+use super::aspa::{
     Pre0_14_0AspaDefinition, Pre0_14_0AspaObjectsUpdates,
     Pre0_14_0AspaProvidersUpdate,
 };

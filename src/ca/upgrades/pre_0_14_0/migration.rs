@@ -3,7 +3,6 @@ use rpki::repository::x509::Time;
 
 use crate::commons::api::aspa::ProviderAsn;
 use crate::commons::eventsourcing::StoredCommandBuilder;
-use crate::upgrades::pre_0_14_0::Pre0_14_0CertAuthStorableCommand;
 use crate::upgrades::{
     AspaMigrationConfigUpdates, AspaMigrationConfigs, CommandMigrationEffect,
     UnconvertedEffect, UpgradeAggregateStorePre0_14, UpgradeMode,
@@ -24,7 +23,9 @@ use crate::{
     upgrades::UpgradeResult,
 };
 
-use super::{OldStoredCommand, Pre0_14_0CertAuthEvent};
+use crate::upgrades::pre_0_14_0::OldStoredCommand;
+use super::old_events::Pre0_14_0CertAuthEvent;
+use super::old_commands::Pre0_14_0CertAuthStorableCommand;
 
 /// Migrates the CAs:
 /// - The events, snapshots and info in the AggregateStore

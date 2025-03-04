@@ -60,15 +60,18 @@ use crate::commons::api::roa::{
 
 
 use super::{
-    events::ChildCertificateUpdates, AspaDefinitions,
-    BgpSecDefinitions, CertAuthCommand, CertAuthCommandDetails,
+    events::ChildCertificateUpdates, 
+    CertAuthCommand, CertAuthCommandDetails,
     CertAuthEvent, CertAuthInitCommand, CertAuthInitEvent,
     CertAuthStorableCommand, 
     ChildDetails, DropReason, PreparedRta, ResourceClass,
     ResourceTaggedAttestation, Rfc8183Id, 
     Routes, RtaContentRequest,
-    RtaPrepareRequest, Rtas, SignedRta, StoredBgpSecCsr,
+    RtaPrepareRequest, Rtas, SignedRta,
 };
+use super::aspa::AspaDefinitions;
+use super::bgpsec::{BgpSecDefinitions,  StoredBgpSecCsr};
+
 
 //------------ CertAuth ----------------------------------------------------
 
