@@ -99,11 +99,11 @@ impl InitCommandDetails for TrustAnchorSignerInitCommandDetails {
 
 
 
-pub type TrustAnchorSignerReinitCommand =
-    eventsourcing::SentCommand<TrustAnchorSignerReinitCommandDetails>;
+pub type TrustAnchorSignerReissueCommand =
+    eventsourcing::SentCommand<TrustAnchorSignerReissueCommandDetails>;
 
 #[derive(Clone, Debug)]
-pub struct TrustAnchorSignerReinitCommandDetails {
+pub struct TrustAnchorSignerReissueCommandDetails {
     pub proxy_id: IdCertInfo,
     pub repo_info: RepoInfo,
     pub tal_https: Vec<uri::Https>,
@@ -112,13 +112,13 @@ pub struct TrustAnchorSignerReinitCommandDetails {
     pub signer: Arc<KrillSigner>,
 }
 
-impl fmt::Display for TrustAnchorSignerReinitCommandDetails {
+impl fmt::Display for TrustAnchorSignerReissueCommandDetails {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.store().fmt(f)
     }
 }
 
-impl CommandDetails for TrustAnchorSignerReinitCommandDetails {
+impl CommandDetails for TrustAnchorSignerReissueCommandDetails {
     type StorableDetails = TrustAnchorSignerStorableCommand;
     type Event = TrustAnchorSignerEvent;
 
@@ -154,7 +154,7 @@ impl fmt::Display for TrustAnchorSignerInitEvent {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum TrustAnchorSignerEvent {
     ProxySignerExchangeDone(TrustAnchorProxySignerExchange),
-    SignerReinitDone(TaCertDetails)
+    SignerReissueDone(TaCertDetails)
 }
 
 impl Event for TrustAnchorSignerEvent {}
@@ -170,10 +170,10 @@ impl fmt::Display for TrustAnchorSignerEvent {
                     exchange.request.content().nonce
                 )
             },
-            TrustAnchorSignerEvent::SignerReinitDone(ta_cert_details) => {
+            TrustAnchorSignerEvent::SignerReissueDone(ta_cert_details) => {
                 write!(
                     f,
-                    "Signer reinit done with serial {}",
+                    "Signer reissue done with serial {}",
                     ta_cert_details.cert().serial()
                 )
             }
@@ -190,7 +190,7 @@ pub enum TrustAnchorSignerCommandDetails {
         ta_mft_number_override: Option<u64>,
         signer: Arc<KrillSigner>,
     },
-    TrustAnchorSignerReinitRequest {
+    TrustAnchorSignerReissueRequest {
         proxy_id: IdCertInfo,
         repo_info: RepoInfo,
         tal_https: Vec<uri::Https>,
@@ -238,7 +238,7 @@ impl TrustAnchorSignerCommand {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn make_reinit_command(
+    pub fn make_reissue_command(
         id: &TrustAnchorHandle,
         proxy_id: IdCertInfo,
         repo_info: RepoInfo,
@@ -251,7 +251,7 @@ impl TrustAnchorSignerCommand {
         TrustAnchorSignerCommand::new(
             id,
             None,
-            TrustAnchorSignerCommandDetails::TrustAnchorSignerReinitRequest {
+            TrustAnchorSignerCommandDetails::TrustAnchorSignerReissueRequest {
                 proxy_id,
                 repo_info,
                 tal_https,
@@ -269,7 +269,7 @@ impl TrustAnchorSignerCommand {
 pub enum TrustAnchorSignerStorableCommand {
     Init,
     TrustAnchorSignerRequest(TrustAnchorSignedRequest),
-    TrustAnchorSignerReinitRequest
+    TrustAnchorSignerReissueRequest
 }
 
 impl From<&TrustAnchorSignerCommandDetails>
@@ -283,9 +283,9 @@ impl From<&TrustAnchorSignerCommandDetails>
             } => TrustAnchorSignerStorableCommand::TrustAnchorSignerRequest(
                 signed_request.clone(),
             ),
-            TrustAnchorSignerCommandDetails::TrustAnchorSignerReinitRequest { 
+            TrustAnchorSignerCommandDetails::TrustAnchorSignerReissueRequest { 
                 ..
-            } => TrustAnchorSignerStorableCommand::TrustAnchorSignerReinitRequest
+            } => TrustAnchorSignerStorableCommand::TrustAnchorSignerReissueRequest
             // TODO: Make it store something sensible
         }
     }
@@ -307,9 +307,9 @@ impl eventsourcing::WithStorableDetails for TrustAnchorSignerStorableCommand {
                 self,
             )
             .with_arg("nonce", &request.content().nonce),
-            TrustAnchorSignerStorableCommand::TrustAnchorSignerReinitRequest => {
+            TrustAnchorSignerStorableCommand::TrustAnchorSignerReissueRequest => {
                 crate::commons::api::CommandSummary::new(
-                    "cmd-ta-signer-reinit", 
+                    "cmd-ta-signer-reissue", 
                     self
                 )
             }
@@ -337,8 +337,8 @@ impl fmt::Display for TrustAnchorSignerStorableCommand {
                     req.content().nonce
                 )
             },
-            TrustAnchorSignerStorableCommand::TrustAnchorSignerReinitRequest => {
-                write!(f, "Reinitialise TA signer")
+            TrustAnchorSignerStorableCommand::TrustAnchorSignerReissueRequest => {
+                write!(f, "Reissue the TA signer")
             }
         }
     }
@@ -421,7 +421,7 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
                 self.objects = exchange.response.content().objects.clone();
                 self.exchanges.0.push(exchange);
             },
-            TrustAnchorSignerEvent::SignerReinitDone(ta_cert_details) => {
+            TrustAnchorSignerEvent::SignerReissueDone(ta_cert_details) => {
                 self.ta_cert_details = ta_cert_details;
             }
         }
@@ -452,7 +452,7 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
                 ta_mft_number_override,
                 &signer,
             ),
-            TrustAnchorSignerCommandDetails::TrustAnchorSignerReinitRequest { 
+            TrustAnchorSignerCommandDetails::TrustAnchorSignerReissueRequest { 
                 proxy_id: _, 
                 repo_info, 
                 tal_https, 
@@ -471,7 +471,7 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
                 match res {
                     Err(r) => Err(r),
                     Ok(r) => Ok(vec![
-                            TrustAnchorSignerEvent::SignerReinitDone(r)])
+                            TrustAnchorSignerEvent::SignerReissueDone(r)])
                 }
             }
         }

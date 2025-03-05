@@ -96,9 +96,9 @@ pub struct SignerInitInfo {
 }
 
 
-//------------ SignerReinitInfo ----------------------------------------------
+//------------ SignerReissueInfo ----------------------------------------------
 #[derive(Debug)]
-pub struct SignerReinitInfo {
+pub struct SignerReissueInfo {
     pub proxy_id: IdCertInfo,
     pub repo_info: idexchange::RepoInfo,
     pub tal_https: Vec<uri::Https>,
@@ -167,13 +167,13 @@ impl TrustAnchorSignerManager {
         }
     }
 
-    pub fn reinit(
+    pub fn reissue(
         &self,
-        info: SignerReinitInfo,
+        info: SignerReissueInfo,
     ) -> Result<Success, SignerClientError> {
         let _ = self.get_signer()?;
 
-        let cmd = TrustAnchorSignerCommand::make_reinit_command(
+        let cmd = TrustAnchorSignerCommand::make_reissue_command(
         &self.ta_handle,
             info.proxy_id,
             info.repo_info,

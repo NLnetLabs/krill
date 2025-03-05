@@ -8,7 +8,7 @@ use crate::constants;
 use crate::cli::options::args::JsonFile;
 use crate::cli::report::{Report, ReportFormat};
 use crate::cli::ta::signer::{
-    SignerClientError, SignerInitInfo, SignerReinitInfo, TrustAnchorSignerManager
+    SignerClientError, SignerInitInfo, SignerReissueInfo, TrustAnchorSignerManager
 };
 use crate::commons::api;
 use crate::ta::{
@@ -56,7 +56,7 @@ pub enum Subcommand {
     Init(Init),
 
     /// Reissue the TA certificate
-    Reinit(Reinit),
+    Reissue(Reissue),
 
     /// Show the signer info
     Show(Show),
@@ -76,7 +76,7 @@ impl Subcommand {
     pub fn run(self, manager: &TrustAnchorSignerManager) -> Report {
         match self {
             Self::Init(cmd) => cmd.run(manager).into(),
-            Self::Reinit(cmd) => cmd.run(manager).into(),
+            Self::Reissue(cmd) => cmd.run(manager).into(),
             Self::Show(cmd) => cmd.run(manager).into(),
             Self::Process(cmd) => cmd.run(manager).into(),
             Self::Last(cmd) => cmd.run(manager).into(),
@@ -152,10 +152,10 @@ impl fmt::Display for RcMsg {
     }
 }
 
-//------------ Reinit ----------------------------------------------------------
+//------------ Reissue -------------------------------------------------------
 
 #[derive(clap::Args)]
-pub struct Reinit {
+pub struct Reissue {
     /// Path to the proxy ID JSON file.
     #[arg(long, short = 'i', value_name = "path")]
     proxy_id: JsonFile<api::IdCertInfo, IdiMsg>,
@@ -173,12 +173,12 @@ pub struct Reinit {
     tal_https: Vec<uri::Https>,
 }
 
-impl Reinit {
+impl Reissue {
     pub fn run(
         self, manager: &TrustAnchorSignerManager
     ) -> Result<api::Success, SignerClientError> {
-        manager.reinit(
-            SignerReinitInfo {
+        manager.reissue(
+            SignerReissueInfo {
                 proxy_id: self.proxy_id.content,
                 repo_info: self.proxy_repository_contact.content.into(),
                 tal_https: self.tal_https,

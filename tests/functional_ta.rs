@@ -3,7 +3,7 @@
 use std::str::FromStr;
 use rpki::uri;
 use rpki::repository::resources::ResourceSet;
-use krill::cli::ta::signer::{SignerInitInfo, SignerReinitInfo, TrustAnchorSignerManager};
+use krill::cli::ta::signer::{SignerInitInfo, SignerReissueInfo, TrustAnchorSignerManager};
 use krill::commons::api;
 
 mod common;
@@ -111,9 +111,9 @@ async fn functional_at() {
     let response = signer.show_last_response().unwrap();
     server.client().ta_proxy_signer_response(response).await.unwrap();
 
-    eprintln!(">>>> Reinitialise the TA signer.");
-        signer.reinit(
-            SignerReinitInfo {
+    eprintln!(">>>> Reissue the the TA signer.");
+        signer.reissue(
+            SignerReissueInfo {
                 proxy_id: server.client().ta_proxy_id().await.unwrap(),
                 repo_info: {
                     server.client().ta_proxy_repo_contact().await.unwrap().into()
