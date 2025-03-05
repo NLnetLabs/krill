@@ -8,7 +8,7 @@ use crate::constants;
 use crate::cli::options::args::JsonFile;
 use crate::cli::report::{Report, ReportFormat};
 use crate::cli::ta::signer::{
-    SignerClientError, SignerInitInfo, TrustAnchorSignerManager,
+    SignerClientError, SignerInitInfo, SignerReinitInfo, TrustAnchorSignerManager
 };
 use crate::commons::api;
 use crate::ta::{
@@ -55,6 +55,8 @@ pub enum Subcommand {
     /// Initialise the signer
     Init(Init),
 
+    Reinit(Reinit),
+
     /// Show the signer info
     Show(Show),
 
@@ -73,6 +75,7 @@ impl Subcommand {
     pub fn run(self, manager: &TrustAnchorSignerManager) -> Report {
         match self {
             Self::Init(cmd) => cmd.run(manager).into(),
+            Self::Reinit(cmd) => cmd.run(manager).into(),
             Self::Show(cmd) => cmd.run(manager).into(),
             Self::Process(cmd) => cmd.run(manager).into(),
             Self::Last(cmd) => cmd.run(manager).into(),
@@ -145,6 +148,42 @@ struct RcMsg;
 impl fmt::Display for RcMsg {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str("repository contact")
+    }
+}
+
+//------------ Reinit ----------------------------------------------------------
+
+#[derive(clap::Args)]
+pub struct Reinit {
+    /// Path to the proxy ID JSON file.
+    #[arg(long, short = 'i', value_name = "path")]
+    proxy_id: JsonFile<api::IdCertInfo, IdiMsg>,
+
+    /// Path to the proxy repository contact JSON file.
+    #[arg(long, short = 'r', value_name = "path")]
+    proxy_repository_contact: JsonFile<api::RepositoryContact, RcMsg>,
+
+    /// The rsync URI used for TA certificate on TAL and AIA
+    #[arg(long, value_name = "rsync URI")]
+    tal_rsync: uri::Rsync,
+
+    /// The HTTPS URI used for the TAL.
+    #[arg(long, value_name = "HTTPS URI")]
+    tal_https: Vec<uri::Https>,
+}
+
+impl Reinit {
+    pub fn run(
+        self, manager: &TrustAnchorSignerManager
+    ) -> Result<api::Success, SignerClientError> {
+        manager.reinit(
+            SignerReinitInfo {
+                proxy_id: self.proxy_id.content,
+                repo_info: self.proxy_repository_contact.content.into(),
+                tal_https: self.tal_https,
+                tal_rsync: self.tal_rsync,
+            }
+        )
     }
 }
 

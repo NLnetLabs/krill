@@ -313,10 +313,10 @@ endpoints for the TA certificate.
 
 .. code-block:: bash
 
-  krillta signer init --proxy_id ./proxy-id.json \
-                      --proxy_repository_contact ./proxy-repo.json \
-                      --tal_https <HTTPS URI for TA cert on TAL> \
-                      --tal_rsync <RSYNC URI for TA cert on TAL>
+  krillta signer init --proxy-id ./proxy-id.json \
+                      --proxy-repository-contact ./proxy-repo.json \
+                      --tal-https <HTTPS URI for TA cert on TAL> \
+                      --tal-rsync <RSYNC URI for TA cert on TAL>
 
 
 Associate the TA Signer with the Proxy

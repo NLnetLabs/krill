@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use rpki::ca::idexchange;
 use rpki::uri;
-use crate::ta;
+use crate::ta::{self};
 use crate::commons::actor::Actor;
 use crate::commons::api::{IdCertInfo, Success};
 use crate::commons::crypto::KrillSigner;
@@ -96,6 +96,16 @@ pub struct SignerInitInfo {
 }
 
 
+//------------ SignerReinitInfo ----------------------------------------------
+#[derive(Debug)]
+pub struct SignerReinitInfo {
+    pub proxy_id: IdCertInfo,
+    pub repo_info: idexchange::RepoInfo,
+    pub tal_https: Vec<uri::Https>,
+    pub tal_rsync: uri::Rsync,
+}
+
+
 //------------ TrustAnchorSignerManager --------------------------------------
 
 pub struct TrustAnchorSignerManager {
@@ -155,6 +165,28 @@ impl TrustAnchorSignerManager {
 
             Ok(Success)
         }
+    }
+
+    pub fn reinit(
+        &self,
+        info: SignerReinitInfo,
+    ) -> Result<Success, SignerClientError> {
+        let _ = self.get_signer()?;
+
+        let cmd = TrustAnchorSignerCommand::make_reinit_command(
+        &self.ta_handle,
+            info.proxy_id,
+            info.repo_info,
+            info.tal_https,
+            info.tal_rsync,
+            self.config.ta_timing,
+            self.signer.clone(),
+            &self.actor,
+        );
+
+        self.store.command(cmd)?;
+
+        Ok(Success)
     }
 
     pub fn show(&self) -> Result<TrustAnchorSignerInfo, SignerClientError> {
