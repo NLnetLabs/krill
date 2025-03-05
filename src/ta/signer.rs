@@ -32,7 +32,7 @@ use crate::{
         crypto::{CsrInfo, KrillSigner, SignSupport},
         error::Error,
         eventsourcing::{
-            self, Event, InitCommandDetails, InitEvent, WithStorableDetails,
+            self, CommandDetails, Event, InitCommandDetails, InitEvent, WithStorableDetails
         },
         KrillResult,
     },
@@ -97,6 +97,37 @@ impl InitCommandDetails for TrustAnchorSignerInitCommandDetails {
     }
 }
 
+
+
+pub type TrustAnchorSignerReissueCommand =
+    eventsourcing::SentCommand<TrustAnchorSignerReissueCommandDetails>;
+
+#[derive(Clone, Debug)]
+pub struct TrustAnchorSignerReissueCommandDetails {
+    pub proxy_id: IdCertInfo,
+    pub repo_info: RepoInfo,
+    pub tal_https: Vec<uri::Https>,
+    pub tal_rsync: uri::Rsync,
+    pub timing: TaTimingConfig,
+    pub signer: Arc<KrillSigner>,
+}
+
+impl fmt::Display for TrustAnchorSignerReissueCommandDetails {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.store().fmt(f)
+    }
+}
+
+impl CommandDetails for TrustAnchorSignerReissueCommandDetails {
+    type StorableDetails = TrustAnchorSignerStorableCommand;
+    type Event = TrustAnchorSignerEvent;
+
+    fn store(&self) -> Self::StorableDetails {
+        TrustAnchorSignerStorableCommand::make_init()
+    }
+    
+}
+
 pub type TrustAnchorSignerCommand =
     eventsourcing::SentCommand<TrustAnchorSignerCommandDetails>;
 
@@ -123,6 +154,7 @@ impl fmt::Display for TrustAnchorSignerInitEvent {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum TrustAnchorSignerEvent {
     ProxySignerExchangeDone(TrustAnchorProxySignerExchange),
+    SignerReissueDone(TaCertDetails)
 }
 
 impl Event for TrustAnchorSignerEvent {}
@@ -137,6 +169,13 @@ impl fmt::Display for TrustAnchorSignerEvent {
                     exchange.time.to_rfc3339(),
                     exchange.request.content().nonce
                 )
+            },
+            TrustAnchorSignerEvent::SignerReissueDone(ta_cert_details) => {
+                write!(
+                    f,
+                    "Signer reissue done with serial {}",
+                    ta_cert_details.cert().serial()
+                )
             }
         }
     }
@@ -149,6 +188,14 @@ pub enum TrustAnchorSignerCommandDetails {
         signed_request: TrustAnchorSignedRequest,
         ta_timing_config: TaTimingConfig,
         ta_mft_number_override: Option<u64>,
+        signer: Arc<KrillSigner>,
+    },
+    TrustAnchorSignerReissueRequest {
+        proxy_id: IdCertInfo,
+        repo_info: RepoInfo,
+        tal_https: Vec<uri::Https>,
+        tal_rsync: uri::Rsync,
+        timing: TaTimingConfig,
         signer: Arc<KrillSigner>,
     },
 }
@@ -189,6 +236,32 @@ impl TrustAnchorSignerCommand {
             actor,
         )
     }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn make_reissue_command(
+        id: &TrustAnchorHandle,
+        proxy_id: IdCertInfo,
+        repo_info: RepoInfo,
+        tal_https: Vec<uri::Https>,
+        tal_rsync: uri::Rsync,
+        ta_timing_config: TaTimingConfig,
+        signer: Arc<KrillSigner>,
+        actor: &Actor,
+    ) -> TrustAnchorSignerCommand {
+        TrustAnchorSignerCommand::new(
+            id,
+            None,
+            TrustAnchorSignerCommandDetails::TrustAnchorSignerReissueRequest {
+                proxy_id,
+                repo_info,
+                tal_https,
+                tal_rsync,
+                timing: ta_timing_config,
+                signer,
+            }, 
+            actor
+        )
+    }
 }
 
 // Storable Commands (KrillSigner cannot be de-/serialized)
@@ -196,6 +269,7 @@ impl TrustAnchorSignerCommand {
 pub enum TrustAnchorSignerStorableCommand {
     Init,
     TrustAnchorSignerRequest(TrustAnchorSignedRequest),
+    TrustAnchorSignerReissueRequest
 }
 
 impl From<&TrustAnchorSignerCommandDetails>
@@ -209,6 +283,10 @@ impl From<&TrustAnchorSignerCommandDetails>
             } => TrustAnchorSignerStorableCommand::TrustAnchorSignerRequest(
                 signed_request.clone(),
             ),
+            TrustAnchorSignerCommandDetails::TrustAnchorSignerReissueRequest { 
+                ..
+            } => TrustAnchorSignerStorableCommand::TrustAnchorSignerReissueRequest
+            // TODO: Make it store something sensible
         }
     }
 }
@@ -229,6 +307,12 @@ impl eventsourcing::WithStorableDetails for TrustAnchorSignerStorableCommand {
                 self,
             )
             .with_arg("nonce", &request.content().nonce),
+            TrustAnchorSignerStorableCommand::TrustAnchorSignerReissueRequest => {
+                crate::commons::api::CommandSummary::new(
+                    "cmd-ta-signer-reissue", 
+                    self
+                )
+            }
         }
     }
 
@@ -252,6 +336,9 @@ impl fmt::Display for TrustAnchorSignerStorableCommand {
                     "Process signer request with nonce: {}",
                     req.content().nonce
                 )
+            },
+            TrustAnchorSignerStorableCommand::TrustAnchorSignerReissueRequest => {
+                write!(f, "Reissue the TA signer")
             }
         }
     }
@@ -333,6 +420,9 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
             TrustAnchorSignerEvent::ProxySignerExchangeDone(exchange) => {
                 self.objects = exchange.response.content().objects.clone();
                 self.exchanges.0.push(exchange);
+            },
+            TrustAnchorSignerEvent::SignerReissueDone(ta_cert_details) => {
+                self.ta_cert_details = ta_cert_details;
             }
         }
     }
@@ -362,6 +452,28 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
                 ta_mft_number_override,
                 &signer,
             ),
+            TrustAnchorSignerCommandDetails::TrustAnchorSignerReissueRequest { 
+                proxy_id: _, 
+                repo_info, 
+                tal_https, 
+                tal_rsync, 
+                timing, 
+                signer 
+            } => {
+                let years = timing.certificate_validity_years;
+                let res = self.update_ta_cert_details(
+                    repo_info, 
+                    tal_https, 
+                    tal_rsync, 
+                    years, 
+                    &signer
+                );
+                match res {
+                    Err(r) => Err(r),
+                    Ok(r) => Ok(vec![
+                            TrustAnchorSignerEvent::SignerReissueDone(r)])
+                }
+            }
         }
     }
 }
@@ -395,6 +507,75 @@ impl TrustAnchorSigner {
         }?;
 
         let resources = ResourceSet::all();
+
+        let cert = {
+            let serial: Serial = signer.random_serial()?;
+
+            let pub_key = signer.get_key_info(&key).map_err(Error::signer)?;
+            let name = pub_key.to_subject_name();
+
+            let mut cert = TbsCert::new(
+                serial,
+                name.clone(),
+                SignSupport::sign_validity_years(years),
+                Some(name),
+                pub_key.clone(),
+                KeyUsage::Ca,
+                Overclaim::Refuse,
+            );
+
+            cert.set_basic_ca(Some(true));
+
+            // The TA will publish directly in its root. It only has 1
+            // resource class so it does not use namespaces
+            // (sub-folders). Furthermore, this should facilitate
+            // a structure where the TA can publish to the root of the
+            // rsync repository, and other CAs get their own folders under it.
+            // This will help recursive rsync fetches.
+            let ns = "";
+
+            cert.set_ca_repository(Some(repo_info.ca_repository(ns)));
+            cert.set_rpki_manifest(Some(repo_info.resolve(
+                ns,
+                ObjectName::mft_for_key(&pub_key.key_identifier()).as_ref(),
+            )));
+            cert.set_rpki_notify(repo_info.rpki_notify().cloned());
+
+            cert.set_as_resources(resources.to_as_resources());
+            cert.set_v4_resources(resources.to_ip_resources_v4());
+            cert.set_v6_resources(resources.to_ip_resources_v6());
+
+            signer.sign_cert(cert, &key)?
+        };
+
+        let tal = TrustAnchorLocator::new(
+            tal_https,
+            tal_rsync.clone(),
+            cert.subject_public_key_info(),
+        );
+
+        let rcvd_cert = ReceivedCert::create(
+            cert,
+            tal_rsync,
+            resources,
+            RequestResourceLimit::default(),
+        )
+        .map_err(Error::custom)?;
+
+        Ok(TaCertDetails::new(rcvd_cert, tal))
+    }
+    
+    fn update_ta_cert_details(
+        &self,
+        repo_info: RepoInfo,
+        tal_https: Vec<uri::Https>,
+        tal_rsync: uri::Rsync,
+        years: i32,
+        signer: &KrillSigner,
+    ) -> KrillResult<TaCertDetails> {
+        let resources = ResourceSet::all();
+
+        let key = self.ta_cert_details.cert().key_identifier();
 
         let cert = {
             let serial: Serial = signer.random_serial()?;

@@ -716,11 +716,17 @@ impl TrustAnchorProxy {
         &self,
         signer: TrustAnchorSignerInfo,
     ) -> KrillResult<Vec<TrustAnchorProxyEvent>> {
-        if self.signer.is_none() {
-            Ok(vec![TrustAnchorProxyEvent::SignerAdded(signer)])
-        } else {
-            Err(Error::TaProxyAlreadyHasSigner)
+        if let Some(s) = &self.signer {
+            if  s.ta_cert_details.cert().key_identifier() != 
+                signer.ta_cert_details.cert().key_identifier() {
+                    // It is not possible to add a signer that has a different
+                    // public key
+                    return Err(Error::TaProxyAlreadyHasSigner);
+            }
         }
+        Ok(vec![
+            TrustAnchorProxyEvent::SignerAdded(signer)
+        ])
     }
 
     fn process_make_signer_request(
