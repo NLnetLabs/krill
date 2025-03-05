@@ -55,6 +55,7 @@ pub enum Subcommand {
     /// Initialise the signer
     Init(Init),
 
+    /// Reissue the TA certificate
     Reinit(Reinit),
 
     /// Show the signer info
