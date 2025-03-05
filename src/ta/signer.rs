@@ -237,6 +237,7 @@ impl TrustAnchorSignerCommand {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn make_reinit_command(
         id: &TrustAnchorHandle,
         proxy_id: IdCertInfo,
@@ -452,7 +453,7 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
                 &signer,
             ),
             TrustAnchorSignerCommandDetails::TrustAnchorSignerReinitRequest { 
-                proxy_id, 
+                proxy_id: _, 
                 repo_info, 
                 tal_https, 
                 tal_rsync, 
