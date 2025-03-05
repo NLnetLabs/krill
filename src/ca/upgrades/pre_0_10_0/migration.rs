@@ -2,7 +2,6 @@ use log::{debug, info};
 use rpki::ca::idexchange::MyHandle;
 use rpki::{ca::idexchange::CaHandle, repository::x509::Time};
 
-use crate::ca::CaObjects;
 use crate::commons::api::aspa::ProviderAsn;
 use crate::commons::eventsourcing::StoredCommandBuilder;
 use crate::upgrades::{
@@ -10,10 +9,6 @@ use crate::upgrades::{
     UnconvertedEffect,
 };
 use crate::{
-    ca::{
-        CertAuth, CertAuthEvent, CertAuthInitEvent,
-        CertAuthStorableCommand
-    },
     commons::{
         eventsourcing::AggregateStore,
         storage::{Key, KeyValueStore, Segment},
@@ -29,6 +24,10 @@ use crate::{
     },
 };
 
+use crate::ca::certauth::CertAuth;
+use crate::ca::commands::CertAuthStorableCommand;
+use crate::ca::events::{CertAuthEvent, CertAuthInitEvent};
+use crate::ca::publishing::CaObjects;
 use super::old_events::{
     OldCaObjects, Pre0_10CertAuthEvent, Pre0_10CertAuthInitEvent
 };
@@ -138,7 +137,7 @@ impl UpgradeAggregateStorePre0_14 for CasMigration {
         crate::commons::eventsourcing::StoredCommand<Self::Aggregate>,
     > {
         let details = CertAuthStorableCommand::Init;
-        let init_event = CertAuthInitEvent::new(old_init.into());
+        let init_event = CertAuthInitEvent { id: old_init.into() };
 
         let builder = StoredCommandBuilder::<CertAuth>::new(
             actor, time, handle, 0, details,

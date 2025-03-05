@@ -23,8 +23,7 @@ use crate::{
     bgp::BgpAnalyser,
     ca::{
         self, testbed_ca_handle, CaManager, CaStatus,
-        ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest,
-    },
+            },
     commons::{
         actor::Actor,
         crypto::KrillSignerBuilder,
@@ -44,6 +43,9 @@ use crate::{
         ta_handle, TaCertDetails, TrustAnchorSignedRequest,
         TrustAnchorSignedResponse, TrustAnchorSignerInfo, TA_NAME,
     },
+};
+use crate::ca::{
+    ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest,
 };
 use crate::commons::api;
 use crate::commons::api::admin::{

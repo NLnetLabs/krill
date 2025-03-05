@@ -1,5 +1,3 @@
-use std::ops::{Deref, DerefMut};
-
 use log::{debug, info, warn};
 use rpki::{
     ca::{
@@ -25,7 +23,7 @@ use crate::commons::api::ca::{
     ActiveInfo, CertifiedKeyInfo, PendingInfo, PendingKeyInfo, ReceivedCert,
     ResourceClassKeysInfo, RollNewInfo, RollOldInfo, RollPendingInfo,
 };
-use super::CertAuthEvent;
+use super::events::CertAuthEvent;
 
 
 //------------ CertifiedKey --------------------------------------------------
@@ -227,21 +225,16 @@ impl PendingKey {
         PendingKeyInfo { key_id: self.key_id }
     }
 
-    pub fn unwrap(self) -> (KeyIdentifier, Option<IssuanceRequest>) {
-        (self.key_id, self.request)
-    }
-
     pub fn key_id(&self) -> &KeyIdentifier {
         &self.key_id
     }
+
     pub fn request(&self) -> Option<&IssuanceRequest> {
         self.request.as_ref()
     }
+
     pub fn add_request(&mut self, req: IssuanceRequest) {
         self.request = Some(req)
-    }
-    pub fn clear_request(&mut self) {
-        self.request = None
     }
 }
 
@@ -261,24 +254,16 @@ impl OldKey {
     pub fn key(&self) -> &CertifiedKey {
         &self.key
     }
+
+    pub fn key_mut(&mut self) -> &mut CertifiedKey {
+        &mut self.key
+    }
+
     pub fn revoke_req(&self) -> &RevocationRequest {
         &self.revoke_req
     }
 }
 
-impl Deref for OldKey {
-    type Target = CertifiedKey;
-
-    fn deref(&self) -> &Self::Target {
-        &self.key
-    }
-}
-
-impl DerefMut for OldKey {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.key
-    }
-}
 
 //------------ KeyState ------------------------------------------------------
 
@@ -326,7 +311,7 @@ impl KeyState {
                 if current.key_id() == &key_id {
                     current.add_request(req)
                 } else {
-                    old.add_request(req)
+                    old.key_mut().add_request(req)
                 }
             }
         }
@@ -445,13 +430,13 @@ impl KeyState {
                     let repo = current.old_repo.as_ref().unwrap_or(base_repo);
                     keys_for_requests.push((repo, current.key_id()));
                 }
-                if old.wants_update(
+                if old.key().wants_update(
                     handle,
                     &rcn,
                     entitlement.resource_set(),
                     entitlement.not_after(),
                 ) {
-                    let repo = old.old_repo.as_ref().unwrap_or(base_repo);
+                    let repo = old.key().old_repo.as_ref().unwrap_or(base_repo);
                     keys_for_requests.push((repo, current.key_id()));
                 }
             }
@@ -495,6 +480,7 @@ impl KeyState {
         Ok(res)
     }
 
+    /* Unused but maybe we need it again later?
     pub fn request_certs_new_repo(
         &self,
         rcn: ResourceClassName,
@@ -535,6 +521,7 @@ impl KeyState {
 
         Ok(res)
     }
+    */
 
     /// Returns all open certificate requests
     pub fn cert_requests(&self) -> Vec<IssuanceRequest> {
@@ -570,7 +557,7 @@ impl KeyState {
                 if let Some(r) = current.request() {
                     res.push(r.clone())
                 }
-                if let Some(r) = old.request() {
+                if let Some(r) = old.key().request() {
                     res.push(r.clone())
                 }
             }
@@ -629,7 +616,7 @@ impl KeyState {
             }
             KeyState::RollOld(c, o) => {
                 ResourceClassKeysInfo::RollOld(RollOldInfo {
-                    old_key: o.as_info(),
+                    old_key: o.key().as_info(),
                     active_key: c.as_info(),
                 })
             }
@@ -726,7 +713,7 @@ impl KeyState {
                 new.key_id == key_id || current.key_id == key_id
             }
             KeyState::RollOld(current, old) => {
-                current.key_id == key_id || old.key_id == key_id
+                current.key_id == key_id || old.key().key_id == key_id
             }
         }
     }

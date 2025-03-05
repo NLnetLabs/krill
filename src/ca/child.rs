@@ -19,7 +19,7 @@ use crate::commons::api::ca::{
     ChildCaInfo, ChildState, IdCertInfo, IssuedCertificate, ReceivedCert,
     SuspendedCert, UnsuspendedCert,
 };
-use super::ChildCertificateUpdates;
+
 
 //------------ UsedKeyState ------------------------------------------------
 
@@ -266,10 +266,6 @@ impl ChildCertificates {
         self.suspended.get(ki)
     }
 
-    pub fn current(&self) -> impl Iterator<Item = &IssuedCertificate> {
-        self.issued.values()
-    }
-
     /// Re-issue everything when activating a new key
     pub fn activate_key(
         &self,
@@ -398,27 +394,102 @@ impl ChildCertificates {
 
         Ok(re_issued)
     }
+}
 
-    pub fn expiring(
-        &self,
-        issuance_timing: &IssuanceTimingConfig,
-    ) -> Vec<&IssuedCertificate> {
-        self.issued
-            .values()
-            .filter(|issued| {
-                issued.validity.not_after()
-                    < issuance_timing.new_child_cert_issuance_threshold()
-            })
-            .collect()
+
+//------------ ChildCertificateUpdates -------------------------------------
+
+/// Describes an update to the set of ROAs under a ResourceClass.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ChildCertificateUpdates {
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    issued: Vec<IssuedCertificate>,
+
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    removed: Vec<KeyIdentifier>,
+
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    suspended: Vec<SuspendedCert>,
+
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    unsuspended: Vec<UnsuspendedCert>,
+}
+
+impl ChildCertificateUpdates {
+    pub fn new(
+        issued: Vec<IssuedCertificate>,
+        removed: Vec<KeyIdentifier>,
+        suspended: Vec<SuspendedCert>,
+        unsuspended: Vec<UnsuspendedCert>,
+    ) -> Self {
+        ChildCertificateUpdates {
+            issued,
+            removed,
+            suspended,
+            unsuspended,
+        }
     }
 
-    pub fn overclaiming(
-        &self,
-        resources: &ResourceSet,
-    ) -> Vec<&IssuedCertificate> {
-        self.issued
-            .values()
-            .filter(|issued| !resources.contains(&issued.resources))
-            .collect()
+    pub fn is_empty(&self) -> bool {
+        self.issued.is_empty()
+            && self.removed.is_empty()
+            && self.suspended.is_empty()
+            && self.unsuspended.is_empty()
+    }
+
+    /// Add an issued certificate to the current set of issued certificates.
+    /// Note that this is typically a newly issued certificate, but it can
+    /// also be a previously issued certificate which had been suspended and
+    /// is now unsuspended.
+    pub fn issue(&mut self, new: IssuedCertificate) {
+        self.issued.push(new);
+    }
+
+    /// Remove certificates for a key identifier. This will ensure that they
+    /// are revoked.
+    pub fn remove(&mut self, ki: KeyIdentifier) {
+        self.removed.push(ki);
+    }
+
+    /// List all currently issued (not suspended) certificates.
+    pub fn issued(&self) -> &Vec<IssuedCertificate> {
+        &self.issued
+    }
+
+    /// List all removals (revocations).
+    pub fn removed(&self) -> &Vec<KeyIdentifier> {
+        &self.removed
+    }
+
+    /// Suspend a certificate
+    pub fn suspend(&mut self, suspended_cert: SuspendedCert) {
+        self.suspended.push(suspended_cert);
+    }
+
+    /// List all suspended certificates in this update.
+    pub fn suspended(&self) -> &Vec<SuspendedCert> {
+        &self.suspended
+    }
+
+    /// Unsuspend a certificate
+    pub fn unsuspend(&mut self, unsuspended_cert: UnsuspendedCert) {
+        self.unsuspended.push(unsuspended_cert);
+    }
+
+    /// List all unsuspended certificates in this update.
+    pub fn unsuspended(&self) -> &Vec<UnsuspendedCert> {
+        &self.unsuspended
+    }
+
+    pub fn unpack(
+        self,
+    ) -> (
+        Vec<IssuedCertificate>,
+        Vec<KeyIdentifier>,
+        Vec<SuspendedCert>,
+        Vec<UnsuspendedCert>,
+    ) {
+        (self.issued, self.removed, self.suspended, self.unsuspended)
     }
 }
+

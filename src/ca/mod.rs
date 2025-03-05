@@ -1,53 +1,36 @@
 //! RPKI Certificate Authority.
 
 mod aspa;
+mod bgpsec;
+mod certauth;
+mod child;
+mod commands;
+mod events;
+mod keys;
+mod manager;
+mod parent;
+pub mod publishing; // Temporary for ta.
+mod rc;
+mod roa;
+mod rta;
+mod status;
 pub mod upgrades;
 
-
-pub mod bgpsec; // pub temporary for upgrades.
-
-mod certauth;
-pub use self::certauth::CertAuth;
-
-mod child;
-pub use self::child::*;
-
-mod rc;
-pub use self::rc::ResourceClass;
-
-mod keys;
-pub use self::keys::*;
-
-mod publishing;
-pub use self::publishing::*;
-
-mod routes;
-pub use self::routes::*;
-
-mod commands;
-pub use self::commands::*;
-
-mod events;
-pub use self::events::Rfc8183Id;
-pub use self::events::*;
-
-mod manager;
 pub use self::manager::CaManager;
-
-mod rta;
-pub use self::rta::*;
-
-mod status;
-pub use self::status::*;
+pub use self::manager::testbed_ca_handle;
 
 
-use rpki::ca::idexchange::CaHandle;
+// Temporary public re-exports for other modules. They should be refactored
+// away.
 
-use crate::commons::error::Error;
+pub use self::certauth::CertAuth;
+pub use self::child::UsedKeyState;
+pub use self::events::CertAuthEvent;
+pub use self::keys::CertifiedKey;
+pub use self::parent::Rfc8183Id;
+pub use self::publishing::CaObjectsStore;
+pub use self::rta::{
+    ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest,
+};
+pub use self::status::CaStatus;
 
-pub const TESTBED_CA_NAME: &str = "testbed"; // reserved for testbed mode
-
-pub fn testbed_ca_handle() -> CaHandle {
-    use std::str::FromStr;
-    CaHandle::from_str(TESTBED_CA_NAME).unwrap()
-}

@@ -27,23 +27,21 @@ use crate::{
     daemon::{
         config::{Config, IssuanceTimingConfig},
     },
-    ta::ta_handle,
 };
 use crate::commons::api::ca::{
     IssuedCertificate, ReceivedCert, ResourceClassInfo, SuspendedCert,
     UnsuspendedCert,
 };
 use crate::commons::api::roa::{RoaConfiguration, RoaInfo}; 
-
-use super::{
-    AspaObjectsUpdates, BgpSecCertificateUpdates, 
-    CertAuthEvent,
-    CertifiedKey, ChildCertificates, CurrentKey, KeyState, NewKey,
-    OldKey, PendingKey, Roas, Routes,
+use crate::commons::error::KrillError;
+use super::aspa::{AspaDefinitions, AspaObjects, AspaObjectsUpdates};
+use super::bgpsec::{
+    BgpSecCertificates, BgpSecCertificateUpdates, BgpSecDefinitions
 };
-use super::aspa::{AspaDefinitions, AspaObjects};
-use super::bgpsec::{BgpSecCertificates, BgpSecDefinitions};
-use super::events::RoaUpdates;
+use super::child::ChildCertificates;
+use super::events::{CertAuthEvent};
+use super::keys::{CertifiedKey, CurrentKey, KeyState, OldKey, PendingKey};
+use super::roa::{Roas, RoaUpdates, Routes};
 
 
 
@@ -108,6 +106,7 @@ impl ResourceClass {
         }
     }
 
+    /* Unused but maybe we need it later again?
     pub fn for_ta(
         parent_rc_name: ResourceClassName,
         pending_key: KeyIdentifier,
@@ -125,14 +124,11 @@ impl ResourceClass {
             key_state: KeyState::create(pending_key),
         }
     }
+    */
 }
 
 /// # Data Access
 impl ResourceClass {
-    pub fn name_space(&self) -> &str {
-        &self.name_space
-    }
-
     /// Returns the name of the parent where we got this RC from.
     pub fn parent_handle(&self) -> &ParentHandle {
         &self.parent_handle
@@ -179,15 +175,6 @@ impl ResourceClass {
 
     pub fn key_roll_possible(&self) -> bool {
         matches!(&self.key_state, KeyState::Active(_))
-    }
-
-    /// Gets the new key for a key roll, or returns an error if there is none.
-    pub fn get_new_key(&self) -> KrillResult<&NewKey> {
-        if let KeyState::RollNew(new_key, _) = &self.key_state {
-            Ok(new_key)
-        } else {
-            Err(Error::KeyUseNoNewKey)
-        }
     }
 
     /// Returns a ResourceClassInfo for this, which contains all the
@@ -372,7 +359,7 @@ impl ResourceClass {
     ) -> KrillResult<Vec<CertAuthEvent>> {
         let ki = rcvd_cert.key_identifier();
         if ki != current_key.key_id() {
-            return Err(super::Error::KeyUseNoMatch(ki));
+            return Err(KrillError::KeyUseNoMatch(ki));
         }
 
         let rcvd_resources = &rcvd_cert.resources;
@@ -500,20 +487,6 @@ impl ResourceClass {
         )
     }
 
-    /// Request new certificates for all keys when the base repo changes.
-    pub fn make_request_events_new_repo(
-        &self,
-        base_repo: &RepoInfo,
-        signer: &KrillSigner,
-    ) -> KrillResult<Vec<CertAuthEvent>> {
-        self.key_state.request_certs_new_repo(
-            self.name.clone(),
-            base_repo,
-            &self.name_space,
-            signer,
-        )
-    }
-
     /// This function returns all current certificate requests.
     pub fn cert_requests(&self) -> Vec<IssuanceRequest> {
         self.key_state.cert_requests()
@@ -571,7 +544,7 @@ impl ResourceClass {
                 if current.key_id() == &key_id {
                     current.set_incoming_cert(cert);
                 } else {
-                    old.set_incoming_cert(cert);
+                    old.key_mut().set_incoming_cert(cert);
                 }
             }
         }
@@ -837,16 +810,6 @@ impl ResourceClass {
         }
     }
 
-    /// Publish all ROAs under the new key
-    pub fn active_key_roas(
-        &self,
-        issuance_timing: &IssuanceTimingConfig,
-        signer: &KrillSigner,
-    ) -> KrillResult<RoaUpdates> {
-        let key = self.get_new_key()?;
-        self.roas.renew(true, key, issuance_timing, signer)
-    }
-
     /// Updates the ROAs in accordance with the current authorizations
     pub fn update_roas(
         &self,
@@ -915,7 +878,7 @@ impl ResourceClass {
 
     /// Apply ASPA object changes from events
     pub fn aspa_objects_updated(&mut self, updates: AspaObjectsUpdates) {
-        self.aspas.updated(updates)
+        self.aspas.apply_updates(updates)
     }
 }
 
@@ -965,7 +928,7 @@ impl ResourceClass {
         &mut self,
         updates: BgpSecCertificateUpdates,
     ) {
-        self.bgpsec_certificates.updated(updates)
+        self.bgpsec_certificates.apply_updates(updates)
     }
 }
 
@@ -998,3 +961,8 @@ impl ResourceClass {
         Ok(ee)
     }
 }
+
+
+//------------ DropReason ----------------------------------------------------
+
+pub type DropReason = String;

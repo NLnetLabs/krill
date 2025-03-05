@@ -8,10 +8,6 @@ use crate::upgrades::{
     UnconvertedEffect, UpgradeAggregateStorePre0_14, UpgradeMode,
 };
 use crate::{
-    ca::{
-        CertAuth, CertAuthEvent, CertAuthInitEvent,
-        CertAuthStorableCommand,
-    },
     commons::{
         eventsourcing::AggregateStore,
         storage::KeyValueStore,
@@ -23,6 +19,9 @@ use crate::{
     upgrades::UpgradeResult,
 };
 
+use crate::ca::certauth::CertAuth;
+use crate::ca::commands::CertAuthStorableCommand;
+use crate::ca::events::{CertAuthEvent, CertAuthInitEvent};
 use crate::upgrades::pre_0_14_0::OldStoredCommand;
 use super::old_events::Pre0_14_0CertAuthEvent;
 use super::old_commands::Pre0_14_0CertAuthStorableCommand;

@@ -1,58 +1,48 @@
+//! BGPsec router keys.
+
 use std::collections::HashMap;
-
-use rpki::{
-    ca::{csr::BgpsecCsr, publication::Base64},
-    crypto::PublicKey,
-    repository::{
-        cert::{ExtendedKeyUsage, KeyUsage, Overclaim, TbsCert},
-        resources::Asn,
-        x509::{Serial, Time},
-        Cert,
-    },
+use rpki::ca::csr::BgpsecCsr;
+use rpki::ca::publication::Base64;
+use rpki::crypto::PublicKey;
+use rpki::repository::cert::{
+    Cert, ExtendedKeyUsage, KeyUsage, Overclaim, TbsCert
 };
+use rpki::repository::resources::Asn;
+use rpki::repository::x509::{Serial, Time};
 use serde::{Deserialize, Serialize};
-
-use crate::{
-    commons::{
-        crypto::KrillSigner,
-        KrillResult,
-    },
-    daemon::config::{Config, IssuanceTimingConfig},
-};
+use crate::commons::KrillResult;
 use crate::commons::api::bgpsec::{
     BgpSecAsnKey, BgpSecCsrInfo, BgpSecCsrInfoList
 };
 use crate::commons::api::ca::ObjectName;
+use crate::commons::crypto::KrillSigner;
+use crate::daemon::config::{Config, IssuanceTimingConfig};
+use super::keys::CertifiedKey;
 
-use super::{BgpSecCertificateUpdates, CertifiedKey};
 
 //------------ BgpSecCertificates ------------------------------------------
 
-/// The issued BGPSec certificates under a resource class in a CA.
+/// The issued BGPsec certificates under a resource class in a CA.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BgpSecCertificates(HashMap<BgpSecAsnKey, BgpSecCertInfo>);
 
 impl BgpSecCertificates {
+    /// Returns whether aren’t any BGPsec router keys.
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    /// Update issued BGPSec certificates
+    /// Update issued BGPsec certificates.
     ///
-    /// Will issue new BGPSec certificates for definitions using the resources
-    /// of this certified key which did not yet exist.
+    /// The method will issue new BGPsec certificates for definitions using
+    /// the resources of this certified key which did not yet exist.
     ///
-    /// Will remove any existing BGPSec certificates which:
-    /// - are no longer present in the definitions; or
-    /// - for which the certified key no longer holds the asn.
+    /// It will remove any existing BGPSec certificates which are no longer
+    /// present in the definitions or for which the certified key no longer
+    /// holds the asn.
     ///
-    ///
-    /// Note that we pass in ALL BGPSec definitions, including definitions
-    /// that may only be eligible under another owning RC.
+    /// Note that we pass in ALL BGPsec definitions, including definitions
+    /// that may only be eligible under another owning resource class.
     pub fn update(
         &self,
         definitions: &BgpSecDefinitions,
@@ -65,7 +55,7 @@ impl BgpSecCertificates {
         let resources = &certified_key.incoming_cert().resources;
         let issuance_timing = &config.issuance_timing;
 
-        // Issue BGPSec certificates for any ASN held by the certified key
+        // Issue BGPsec certificates for any ASN held by the certified key
         // for which the required router key has not yet been certified.
         for (key, csr) in definitions.iter().filter(|(k, _)| {
             !self.0.contains_key(k) && resources.contains_asn(k.asn)
@@ -81,7 +71,7 @@ impl BgpSecCertificates {
             updates.add_updated(cert);
         }
 
-        // Will remove any existing BGPSec certificates which:
+        // Remove any existing BGPSec certificates which:
         // - are no longer present in the definitions; or
         // - for which the certified key no longer holds the asn.
         for (key, _) in self.0.iter().filter(|(k, _)| {
@@ -93,13 +83,14 @@ impl BgpSecCertificates {
         Ok(updates)
     }
 
-    /// Re-new BGPSec certificates
+    /// Renew BGPsec certificates.
     ///
     /// Used to renew certificates which would expire, in which case the
-    /// renew_threshold should be specified. Or, to re-issue all existing
-    /// certificates during a key rollover activation of a new
-    /// certified_key - in which case the renew_threshold is expected to
-    /// be None, and the certified_key is expected to have changed.
+    /// `renew_threshold` should be specified. Alternatively, it the method
+    /// can be used to re-issue all existing certificates during a key
+    /// rollover activation of a new certified_key – in which case the
+    /// `renew_threshold` is expected to be `None` and the certified_key is
+    /// expected to have changed.
     pub fn renew(
         &self,
         certified_key: &CertifiedKey,
@@ -130,6 +121,7 @@ impl BgpSecCertificates {
         Ok(updates)
     }
 
+    /// Creates a BGPsec router key certificate.
     fn make_bgpsec_cert(
         &self,
         asn: Asn,
@@ -179,7 +171,7 @@ impl BgpSecCertificates {
     }
 
     /// Applies updates from an event.
-    pub fn updated(&mut self, updates: BgpSecCertificateUpdates) {
+    pub fn apply_updates(&mut self, updates: BgpSecCertificateUpdates) {
         let (updated, removed) = updates.unpack();
         for info in updated {
             let key = info.asn_key();
@@ -191,19 +183,30 @@ impl BgpSecCertificates {
     }
 }
 
+
 //------------ BgpSecCertInfo ----------------------------------------------
 
-/// An issued BGPSec certificate under a resource class
+/// An issued BGPsec certificate under a resource class
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BgpSecCertInfo {
+    /// The ASN of the autonomous system that uses this router key.
     asn: Asn,
+
+    /// The router key.
     public_key: PublicKey,
+
+    /// The serial number of the BGPsec certificate.
     serial: Serial,
+
+    /// The expiry time of the certificate.
     expires: Time,
+
+    /// The encoded certficate.
     base64: Base64,
 }
 
 impl BgpSecCertInfo {
+    /// Creates a new value from the ASN and BGPsec certificate.
     fn new(asn: Asn, cert: Cert) -> Self {
         let public_key = cert.subject_public_key_info().clone();
         let serial = cert.serial_number();
@@ -219,30 +222,37 @@ impl BgpSecCertInfo {
         }
     }
 
+    /// Returns the BGPsec router key payload.
     pub fn asn_key(&self) -> BgpSecAsnKey {
         BgpSecAsnKey { asn: self.asn, key: self.public_key.key_identifier() }
     }
 
+    /// Returns the ASN of the autonomous system using the router key.
     pub fn asn(&self) -> Asn {
         self.asn
     }
 
+    /// Returns the router key.
     pub fn public_key(&self) -> &PublicKey {
         &self.public_key
     }
 
+    /// Returns the serial number of the certificate.
     pub fn serial(&self) -> Serial {
         self.serial
     }
 
+    /// Returns the expiry time of the certicate.
     pub fn expires(&self) -> Time {
         self.expires
     }
 
+    /// Returns the encoded certificate.
     pub fn base64(&self) -> &Base64 {
         &self.base64
     }
 
+    /// Returns the file name of the certificate.
     pub fn name(&self) -> ObjectName {
         ObjectName::bgpsec(self.asn, self.public_key.key_identifier())
     }
@@ -259,10 +269,6 @@ impl BgpSecCertInfo {
 pub struct BgpSecDefinitions(HashMap<BgpSecAsnKey, StoredBgpSecCsr>);
 
 impl BgpSecDefinitions {
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
@@ -350,3 +356,49 @@ impl From<&BgpsecCsr> for StoredBgpSecCsr {
         }
     }
 }
+
+
+//------------ BgpSecCertificateUpdates ------------------------------------
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct BgpSecCertificateUpdates {
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    updated: Vec<BgpSecCertInfo>,
+
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    removed: Vec<BgpSecAsnKey>,
+}
+
+impl BgpSecCertificateUpdates {
+    pub fn is_empty(&self) -> bool {
+        self.updated.is_empty() && self.removed.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.updated.len() + self.removed.len()
+    }
+
+    pub fn contains_changes(&self) -> bool {
+        !self.is_empty()
+    }
+
+    pub fn updated(&self) -> &Vec<BgpSecCertInfo> {
+        &self.updated
+    }
+
+    pub fn removed(&self) -> &Vec<BgpSecAsnKey> {
+        &self.removed
+    }
+
+    pub fn unpack(self) -> (Vec<BgpSecCertInfo>, Vec<BgpSecAsnKey>) {
+        (self.updated, self.removed)
+    }
+
+    pub fn add_updated(&mut self, update: BgpSecCertInfo) {
+        self.updated.push(update);
+    }
+
+    pub fn add_removed(&mut self, remove: BgpSecAsnKey) {
+        self.removed.push(remove);
+    }
+}
+

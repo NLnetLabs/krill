@@ -220,6 +220,11 @@ impl<I> SentInitCommand<I> {
         }
     }
 
+    /// Returns a reference to the details.
+    pub fn details(&self) -> &I {
+        &self.details
+    }
+
     /// Converts the command into the details.
     pub fn into_details(self) -> I {
         self.details

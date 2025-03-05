@@ -57,20 +57,23 @@ use crate::commons::api::roa::{
     ConfiguredRoa, RoaConfiguration, RoaConfigurationUpdates, RoaInfo,
     RoaPayloadJsonMapKey, 
 };
-
-
-use super::{
-    events::ChildCertificateUpdates, 
-    CertAuthCommand, CertAuthCommandDetails,
-    CertAuthEvent, CertAuthInitCommand, CertAuthInitEvent,
-    CertAuthStorableCommand, 
-    ChildDetails, DropReason, PreparedRta, ResourceClass,
-    ResourceTaggedAttestation, Rfc8183Id, 
-    Routes, RtaContentRequest,
+use crate::ca::aspa::AspaDefinitions;
+use crate::ca::bgpsec::{BgpSecDefinitions,  StoredBgpSecCsr};
+use super::child::{ChildDetails, ChildCertificateUpdates};
+use super::commands::{
+    CertAuthCommand, CertAuthCommandDetails, CertAuthInitCommand, 
+    CertAuthStorableCommand,
+};
+use super::events::{
+    CertAuthEvent, CertAuthInitEvent, 
+};
+use super::parent::Rfc8183Id;
+use super::rc::{DropReason, ResourceClass};
+use super::roa::Routes;
+use super::rta::{
+    PreparedRta, ResourceTaggedAttestation, RtaContentRequest,
     RtaPrepareRequest, Rtas, SignedRta,
 };
-use super::aspa::AspaDefinitions;
-use super::bgpsec::{BgpSecDefinitions,  StoredBgpSecCsr};
 
 
 //------------ CertAuth ----------------------------------------------------
@@ -638,8 +641,9 @@ impl Aggregate for CertAuth {
     fn process_init_command(
         command: CertAuthInitCommand,
     ) -> Result<CertAuthInitEvent, Error> {
-        Rfc8183Id::generate(command.into_details().signer())
-            .map(CertAuthInitEvent::new)
+        Rfc8183Id::generate(
+            &command.details().signer
+        ).map(|id| CertAuthInitEvent { id })
     }
 }
 
@@ -1023,7 +1027,7 @@ impl CertAuth {
                 self.handle, child, resources
             );
 
-            Ok(vec![CertAuthEvent::child_added(child, id_cert, resources)])
+            Ok(vec![CertAuthEvent::ChildAdded { child, id_cert, resources }])
         }
     }
 
@@ -1085,10 +1089,11 @@ impl CertAuth {
                 };
 
                 events.push(
-                    CertAuthEvent::child_updated_resource_class_name_mapping(
-                        child_handle.clone(),
-                        mapping,
-                    ),
+                    CertAuthEvent::ChildUpdatedResourceClassNameMapping {
+                        child: child_handle.clone(),
+                        name_in_parent: mapping.name_in_parent,
+                        name_for_child: mapping.name_for_child,
+                    },
                 );
             }
         }
@@ -1174,16 +1179,18 @@ impl CertAuth {
             self.handle, cert_name, child_handle
         );
 
-        let issued_event = CertAuthEvent::child_certificate_issued(
-            child_handle,
-            my_rcn.clone(),
-            issued.key_identifier(),
-        );
+        let issued_event = CertAuthEvent::ChildCertificateIssued {
+            child: child_handle,
+            resource_class_name: my_rcn.clone(),
+            ki: issued.key_identifier(),
+        };
 
         let mut cert_updates = ChildCertificateUpdates::default();
         cert_updates.issue(issued);
-        let child_certs_updated =
-            CertAuthEvent::child_certificates_updated(my_rcn, cert_updates);
+        let child_certs_updated = CertAuthEvent::ChildCertificatesUpdated {
+            resource_class_name: my_rcn,
+            updates: cert_updates
+        };
 
         Ok(vec![issued_event, child_certs_updated])
     }
@@ -1213,11 +1220,12 @@ impl CertAuth {
                     self.handle, child_handle, resources_diff
                 );
 
-                Ok(vec![CertAuthEvent::child_updated_resources(
-                    child_handle.clone(),
+                Ok(vec![CertAuthEvent::ChildUpdatedResources {
+                    child: child_handle.clone(),
                     resources,
-                )])
-            } else {
+                }])
+            }
+            else {
                 // Using 'debug' here, because there are possible use cases
                 // where updating the child resources to some expected
                 // resource set should be considered a no-op without
@@ -1248,11 +1256,12 @@ impl CertAuth {
                 id_cert.public_key.key_identifier()
             );
 
-            Ok(vec![CertAuthEvent::child_updated_cert(
-                child_handle.clone(),
+            Ok(vec![CertAuthEvent::ChildUpdatedIdCert {
+                child: child_handle.clone(),
                 id_cert,
-            )])
-        } else {
+            }])
+        }
+        else {
             // Using 'debug' here, because of possible no-op use cases where
             // the API is called from a background job.
             debug!(
@@ -1284,10 +1293,11 @@ impl CertAuth {
         }
 
         Ok(vec![
-            CertAuthEvent::child_updated_resource_class_name_mapping(
-                child_handle,
-                mapping,
-            ),
+            CertAuthEvent::ChildUpdatedResourceClassNameMapping {
+                child: child_handle,
+                name_in_parent: mapping.name_in_parent,
+                name_for_child: mapping.name_for_child,
+            },
         ])
     }
 
@@ -1326,15 +1336,15 @@ impl CertAuth {
             self.handle, cert_name, child_handle
         );
 
-        let rev = CertAuthEvent::child_revoke_key(
-            child_handle,
-            my_rcn.clone(),
-            key,
-        );
-        let upd = CertAuthEvent::child_certificates_updated(
-            my_rcn,
-            child_certificate_updates,
-        );
+        let rev = CertAuthEvent::ChildKeyRevoked {
+            child: child_handle,
+            resource_class_name: my_rcn.clone(),
+            ki: key,
+        };
+        let upd = CertAuthEvent::ChildCertificatesUpdated {
+            resource_class_name: my_rcn,
+            updates: child_certificate_updates,
+        };
 
         Ok(vec![rev, upd])
     }
@@ -1373,14 +1383,14 @@ impl CertAuth {
                 );
                 cert_updates.remove(issued.key_identifier())
             }
-            res.push(CertAuthEvent::child_certificates_updated(
-                rcn.clone(),
-                cert_updates,
-            ));
+            res.push(CertAuthEvent::ChildCertificatesUpdated {
+                resource_class_name: rcn.clone(),
+                updates: cert_updates,
+            });
         }
 
         info!("CA '{}' removed child '{}'", self.handle, child_handle);
-        res.push(CertAuthEvent::child_removed(child_handle.clone()));
+        res.push(CertAuthEvent::ChildRemoved { child: child_handle.clone() });
 
         Ok(res)
     }
@@ -1420,10 +1430,10 @@ impl CertAuth {
                 }
             }
 
-            res.push(CertAuthEvent::child_certificates_updated(
-                rcn.clone(),
-                cert_updates,
-            ));
+            res.push(CertAuthEvent::ChildCertificatesUpdated {
+                resource_class_name: rcn.clone(),
+                updates: cert_updates,
+            });
         }
 
         // Only mark the child as suspended if there was at least one
@@ -1435,7 +1445,9 @@ impl CertAuth {
                 "CA '{}' suspended inactive child '{}'",
                 self.handle, child_handle
             );
-            res.push(CertAuthEvent::child_suspended(child_handle.clone()));
+            res.push(
+                CertAuthEvent::ChildSuspended { child: child_handle.clone() }
+            );
         }
 
         Ok(res)
@@ -1499,14 +1511,16 @@ impl CertAuth {
                 }
             }
 
-            res.push(CertAuthEvent::child_certificates_updated(
-                rcn.clone(),
-                cert_updates,
-            ));
+            res.push(CertAuthEvent::ChildCertificatesUpdated {
+                resource_class_name: rcn.clone(),
+                updates: cert_updates,
+            });
         }
 
         info!("CA '{}' unsuspended child '{}'", self.handle, child_handle);
-        res.push(CertAuthEvent::child_unsuspended(child_handle.clone()));
+        res.push(
+            CertAuthEvent::ChildUnsuspended { child: child_handle.clone() }
+        );
 
         Ok(res)
     }
@@ -1531,7 +1545,7 @@ impl CertAuth {
             self.handle,
             id.cert().public_key.key_identifier()
         );
-        Ok(vec![CertAuthEvent::id_updated(id)])
+        Ok(vec![CertAuthEvent::IdUpdated { id }])
     }
 
     /// List all parents
@@ -1588,18 +1602,18 @@ impl CertAuth {
     fn add_parent(
         &self,
         parent: ParentHandle,
-        info: ParentCaContact,
+        contact: ParentCaContact,
     ) -> KrillResult<Vec<CertAuthEvent>> {
         if self.parent_known(&parent) {
             Err(Error::CaParentDuplicateName(self.handle.clone(), parent))
-        } else if let Some(other) = self.parent_for_info(&info) {
+        } else if let Some(other) = self.parent_for_info(&contact) {
             Err(Error::CaParentDuplicateInfo(
                 self.handle.clone(),
                 other.clone(),
             ))
         } else {
             info!("CA '{}' added parent '{}'", self.handle, parent);
-            Ok(vec![CertAuthEvent::parent_added(parent, info)])
+            Ok(vec![CertAuthEvent::ParentAdded { parent, contact }])
         }
     }
 
@@ -1639,7 +1653,7 @@ impl CertAuth {
     fn update_parent(
         &self,
         parent: ParentHandle,
-        info: ParentCaContact,
+        contact: ParentCaContact,
     ) -> KrillResult<Vec<CertAuthEvent>> {
         if !self.parent_known(&parent) {
             Err(Error::CaParentUnknown(self.handle.clone(), parent))
@@ -1648,7 +1662,7 @@ impl CertAuth {
                 "CA '{}' updated contact info for parent '{}'",
                 self.handle, parent
             );
-            Ok(vec![CertAuthEvent::parent_updated(parent, info)])
+            Ok(vec![CertAuthEvent::ParentUpdated { parent, contact }])
         }
     }
 
@@ -2211,7 +2225,7 @@ impl CertAuth {
 impl CertAuth {
     /// Show current AspaDefinitions
     pub fn aspas_definitions_show(&self) -> AspaDefinitionList {
-        AspaDefinitionList::new(self.aspas.all().cloned().collect())
+        AspaDefinitionList::new(self.aspas.iter().cloned().collect())
     }
 
     /// Process AspaDefinitionUpdates:

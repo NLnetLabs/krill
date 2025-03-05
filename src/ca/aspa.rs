@@ -6,104 +6,50 @@
 //! https://datatracker.ietf.org/doc/draft-ietf-sidrops-aspa-verification/
 
 use std::{collections::HashMap, fmt::Debug};
-
-use rpki::{
-    ca::publication::Base64,
-    repository::{
-        aspa::{Aspa, AspaBuilder},
-        sigobj::SignedObjectBuilder,
-        x509::{Serial, Time, Validity},
-    },
-    rrdp::Hash,
-    uri,
-};
+use rpki::{uri, rrdp};
+use rpki::ca::publication::Base64;
+use rpki::repository::aspa::{Aspa, AspaBuilder};
+use rpki::repository::sigobj::SignedObjectBuilder;
+use rpki::repository::x509::{Serial, Time, Validity};
 use serde::{Deserialize, Serialize};
-
-use crate::{
-    commons::{
-        crypto::KrillSigner,
-        error::Error,
-        KrillResult,
-    },
-    daemon::{
-        config::{Config, IssuanceTimingConfig},
-    },
-};
+use crate::commons::KrillResult;
+use crate::commons::crypto::KrillSigner;
+use crate::commons::error::Error;
+use crate::daemon::config::{Config, IssuanceTimingConfig};
 use crate::commons::api::aspa::{
     AspaDefinition, AspaProvidersUpdate, CustomerAsn
 };
 use crate::commons::api::ca::ObjectName;
-use super::{AspaObjectsUpdates, CertifiedKey};
+use super::keys::CertifiedKey;
 
-pub fn make_aspa_object(
-    aspa_def: AspaDefinition,
-    certified_key: &CertifiedKey,
-    validity: Validity,
-    signer: &KrillSigner,
-) -> KrillResult<Aspa> {
-    let name = ObjectName::from(&aspa_def);
-
-    let aspa_builder = {
-        AspaBuilder::new(
-            aspa_def.customer,
-            aspa_def.providers
-        ).map_err(|e| {
-            Error::Custom(format!("Cannot use aspa config: {}", e))
-        })
-    }?;
-
-    let object_builder = {
-        let incoming_cert = certified_key.incoming_cert();
-
-        let crl_uri = incoming_cert.crl_uri();
-        let aspa_uri = incoming_cert.uri_for_name(&name);
-        let ca_issuer = incoming_cert.uri.clone();
-
-        let mut object_builder = SignedObjectBuilder::new(
-            signer.random_serial()?,
-            validity,
-            crl_uri,
-            ca_issuer,
-            aspa_uri,
-        );
-        object_builder.set_issuer(Some(incoming_cert.subject.clone()));
-        object_builder.set_signing_time(Some(Time::now()));
-
-        object_builder
-    };
-
-    Ok(signer.sign_aspa(
-        aspa_builder,
-        object_builder,
-        certified_key.key_id(),
-    )?)
-}
 
 //------------ AspaDefinitions ---------------------------------------------
 
-/// This type contains the ASPA definitions for a CA. Generally speaking
-/// the [`AspaCustomer`] ASN will be held in a single [`ResourceClass`] only,
-/// but at least in theory the CA could issue ASPA objects in each RC that
-/// holds the ASN.
+/// All ASPA objects defined for a CA.
+///
+/// The [`AspaCustomer`] ASN will be held in a single
+/// [`ResourceClass`] only, but at least in theory the CA could issue ASPA
+/// objects in each RC that holds the ASN.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AspaDefinitions {
+    /// The definitions for each customer ASN.
     attestations: HashMap<CustomerAsn, AspaDefinition>,
 }
 
 impl AspaDefinitions {
-    // Add or replace a new definition
+    /// Adds or replaces a definition.
     pub fn add_or_replace(&mut self, aspa_def: AspaDefinition) {
-        let customer = aspa_def.customer;
-        self.attestations.insert(customer, aspa_def);
+        self.attestations.insert(aspa_def.customer, aspa_def);
     }
 
-    // Remove an existing definition (if it is present)
+    /// Removes an definition for the given customer ASN.
     pub fn remove(&mut self, customer: CustomerAsn) {
         self.attestations.remove(&customer);
     }
 
-    // Applies an update. This assumes that the update was verified
-    // beforehand.
+    /// Applies an ASPA definitions update.
+    ///
+    /// Assumes that the update was verified beforehand.
     pub fn apply_update(
         &mut self,
         customer: CustomerAsn,
@@ -118,7 +64,8 @@ impl AspaDefinitions {
             if current.providers.is_empty() {
                 self.attestations.remove(&customer);
             }
-        } else {
+        }
+        else {
             // There was no AspaDefinition. So create an empty definition,
             // apply the update and then add it.
             let mut def = AspaDefinition { customer, providers: vec![] };
@@ -128,7 +75,8 @@ impl AspaDefinitions {
         }
     }
 
-    pub fn all(&self) -> impl Iterator<Item = &AspaDefinition> {
+    /// Returns an iterator over all ASPA definitions.
+    pub fn iter(&self) -> impl Iterator<Item = &AspaDefinition> {
         self.attestations.values()
     }
 }
@@ -143,14 +91,11 @@ impl AspaDefinitions {
         self.attestations.contains_key(&customer)
     }
 
-    pub fn len(&self) -> usize {
-        self.attestations.len()
-    }
-
     pub fn is_empty(&self) -> bool {
         self.attestations.is_empty()
     }
 }
+
 
 //------------ AspaObjects -------------------------------------------------
 
@@ -159,20 +104,9 @@ impl AspaDefinitions {
 pub struct AspaObjects(HashMap<CustomerAsn, AspaInfo>);
 
 impl AspaObjects {
-    pub fn make_aspa(
-        &self,
-        aspa_def: AspaDefinition,
-        certified_key: &CertifiedKey,
-        issuance_timing: &IssuanceTimingConfig,
-        signer: &KrillSigner,
-    ) -> KrillResult<AspaInfo> {
-        let aspa = make_aspa_object(
-            aspa_def.clone(),
-            certified_key,
-            issuance_timing.new_aspa_validity(),
-            signer,
-        )?;
-        Ok(AspaInfo::new_aspa(aspa_def, aspa))
+    /// Returns whether the ASPA definitions are empty.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 
     /// Issue new ASPA objects based on configuration, and remove
@@ -194,7 +128,7 @@ impl AspaObjects {
         // Issue new and updated ASPAs for definitions relevant to the
         // resources in scope
         for relevant_aspa in all_aspa_defs
-            .all()
+            .iter()
             .filter(|aspa| resources.contains_asn(aspa.customer))
         {
             let need_to_issue = self
@@ -227,9 +161,10 @@ impl AspaObjects {
         Ok(object_updates)
     }
 
-    // Re-new ASPAs, if the renew_threshold is specified, then
-    // only objects which will expire before that time will be
-    // renewed.
+    /// Renews ASPAs.
+    ///
+    /// If the renew_threshold is specified, then only objects which will
+    /// expire before that time will be renewed.
     pub fn renew(
         &self,
         certified_key: &CertifiedKey,
@@ -260,50 +195,97 @@ impl AspaObjects {
         Ok(updates)
     }
 
-    pub fn updated(&mut self, updates: AspaObjectsUpdates) {
-        let (updated, removed) = updates.unpack();
-        for aspa_info in updated {
+    /// Creates a new signed ASPA object.
+    fn make_aspa(
+        &self,
+        aspa_def: AspaDefinition,
+        certified_key: &CertifiedKey,
+        issuance_timing: &IssuanceTimingConfig,
+        signer: &KrillSigner,
+    ) -> KrillResult<AspaInfo> {
+        let name = ObjectName::from(&aspa_def);
+
+        let aspa_builder = {
+            AspaBuilder::new(
+                aspa_def.customer,
+                aspa_def.providers.clone(),
+            ).map_err(|e| {
+                Error::Custom(format!("Cannot use aspa config: {}", e))
+            })
+        }?;
+
+        let object_builder = {
+            let incoming_cert = certified_key.incoming_cert();
+
+            let crl_uri = incoming_cert.crl_uri();
+            let aspa_uri = incoming_cert.uri_for_name(&name);
+            let ca_issuer = incoming_cert.uri.clone();
+
+            let mut object_builder = SignedObjectBuilder::new(
+                signer.random_serial()?,
+                issuance_timing.new_aspa_validity(),
+                crl_uri,
+                ca_issuer,
+                aspa_uri,
+            );
+            object_builder.set_issuer(Some(incoming_cert.subject.clone()));
+            object_builder.set_signing_time(Some(Time::now()));
+
+            object_builder
+        };
+
+        let aspa = signer.sign_aspa(
+            aspa_builder,
+            object_builder,
+            certified_key.key_id(),
+        )?;
+        Ok(AspaInfo::new(aspa_def, aspa))
+    }
+
+    /// Applies the updates to the ASPA definitions.
+    pub fn apply_updates(&mut self, updates: AspaObjectsUpdates) {
+        for aspa_info in updates.updated {
             let customer = aspa_info.customer();
             self.0.insert(customer, aspa_info);
         }
-        for customer in removed {
+        for customer in updates.removed {
             self.0.remove(&customer);
         }
     }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
 }
+
 
 //------------ AspaInfo ----------------------------------------------------
 
+/// Information about a single ASPA obejct.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AspaInfo {
-    // The customer ASN and all Provider ASNs
+    /// The customer ASN and all Provider ASNs
     definition: AspaDefinition,
 
-    // The validity time for this ASPA.
+    /// The validity time for this ASPA.
     validity: Validity,
 
-    // The serial number (needed for revocation)
+    /// The serial number (needed for revocation)
     serial: Serial,
 
-    // The URI where this object is expected to be published
+    /// The URI where this object is expected to be published
     uri: uri::Rsync,
 
-    // The actual ASPA object in base64 format.
+    /// The actual ASPA object in base64 format.
     base64: Base64,
 
-    // The ASPA object's hash
-    hash: Hash,
+    /// The ASPA object's hash
+    hash: rrdp::Hash,
 }
 
 impl AspaInfo {
+    /// Creates a new value from an ASPA definition and the ASPA.
     pub fn new(definition: AspaDefinition, aspa: Aspa) -> Self {
         let validity = aspa.cert().validity();
         let serial = aspa.cert().serial_number();
-        let uri = aspa.cert().signed_object().unwrap().clone(); // safe for our own ROAs
+        // unwrapping is safe for our own objects
+        let uri = aspa.cert().signed_object().unwrap().clone(); 
         let base64 = Base64::from(&aspa);
         let hash = base64.to_hash();
 
@@ -317,35 +299,92 @@ impl AspaInfo {
         }
     }
 
-    pub fn new_aspa(definition: AspaDefinition, aspa: Aspa) -> Self {
-        AspaInfo::new(definition, aspa)
-    }
-
+    /// Returns the ASPA definition.
     pub fn definition(&self) -> &AspaDefinition {
         &self.definition
     }
 
+    /// Returns the customer ASN of the ASPA.
     pub fn customer(&self) -> CustomerAsn {
         self.definition.customer
     }
 
+    /// Returns the expiry time of the ASPA object.
     pub fn expires(&self) -> Time {
         self.validity.not_after()
     }
 
+    /// Returns the serial number of the ASPA object’s certificate.
     pub fn serial(&self) -> Serial {
         self.serial
     }
 
+    /// Returns the rsync URI identifying the ASPA object.
     pub fn uri(&self) -> &uri::Rsync {
         &self.uri
     }
 
+    /// Returns the encoded ASPA object.
     pub fn base64(&self) -> &Base64 {
         &self.base64
     }
 
-    pub fn hash(&self) -> Hash {
+    /// Returns the RRDP hash of the ASPA object.
+    pub fn hash(&self) -> rrdp::Hash {
         self.hash
     }
 }
+
+
+//------------ AspaObjectsUpdates --------------------------------------------
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AspaObjectsUpdates {
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub updated: Vec<AspaInfo>,
+
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub removed: Vec<CustomerAsn>,
+}
+
+impl AspaObjectsUpdates {
+    pub fn new(updated: Vec<AspaInfo>, removed: Vec<CustomerAsn>) -> Self {
+        AspaObjectsUpdates { updated, removed }
+    }
+
+    pub fn for_new_aspa_info(new_aspa: AspaInfo) -> Self {
+        AspaObjectsUpdates {
+            updated: vec![new_aspa],
+            removed: vec![],
+        }
+    }
+
+    pub fn add_updated(&mut self, update: AspaInfo) {
+        self.updated.push(update)
+    }
+
+    pub fn add_removed(&mut self, customer: CustomerAsn) {
+        self.removed.push(customer)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.updated.is_empty() && self.removed.is_empty()
+    }
+
+    pub fn contains_changes(&self) -> bool {
+        !self.is_empty()
+    }
+
+    pub fn unpack(self) -> (Vec<AspaInfo>, Vec<CustomerAsn>) {
+        (self.updated, self.removed)
+    }
+
+    pub fn updated(&self) -> &Vec<AspaInfo> {
+        &self.updated
+    }
+
+    pub fn removed(&self) -> &Vec<CustomerAsn> {
+        &self.removed
+    }
+}
+

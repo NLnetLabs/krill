@@ -35,20 +35,20 @@ use crate::{
         config::IssuanceTimingConfig,
     },
 };
+
 use crate::commons::api::admin::{PublishedFile, RepositoryContact};
 use crate::commons::api::ca::{
     CertInfo, IssuedCertificate, ObjectName, ReceivedCert, Revocation,
     Revocations,
 };
 use crate::commons::api::roa::RoaInfo;
-
-use super::{
-    AspaObjectsUpdates, BgpSecCertificateUpdates,
-    CertAuth, CertAuthEvent, CertifiedKey, ChildCertificateUpdates,
-    RoaUpdates,
-};
-use super::aspa::AspaInfo;
-use super::bgpsec::BgpSecCertInfo;
+use super::aspa::{AspaInfo, AspaObjectsUpdates};
+use super::bgpsec::{BgpSecCertInfo, BgpSecCertificateUpdates};
+use super::certauth::CertAuth;
+use super::child::ChildCertificateUpdates;
+use super::events::CertAuthEvent;
+use super::keys::CertifiedKey; 
+use super::roa::RoaUpdates;
 
 
 //------------ CaObjectsStore ----------------------------------------------
@@ -107,21 +107,21 @@ impl PreSaveEventListener<CertAuth> for CaObjectsStore {
 
             for event in events {
                 match event {
-                    super::CertAuthEvent::RoasUpdated {
+                    CertAuthEvent::RoasUpdated {
                         resource_class_name,
                         updates,
                     } => {
                         objects.update_roas(resource_class_name, updates)?;
                         force_reissue = true;
                     }
-                    super::CertAuthEvent::AspaObjectsUpdated {
+                    CertAuthEvent::AspaObjectsUpdated {
                         resource_class_name,
                         updates,
                     } => {
                         objects.update_aspas(resource_class_name, updates)?;
                         force_reissue = true;
                     }
-                    super::CertAuthEvent::BgpSecCertificatesUpdated {
+                    CertAuthEvent::BgpSecCertificatesUpdated {
                         resource_class_name,
                         updates,
                     } => {
@@ -131,14 +131,14 @@ impl PreSaveEventListener<CertAuth> for CaObjectsStore {
                         )?;
                         force_reissue = true;
                     }
-                    super::CertAuthEvent::ChildCertificatesUpdated {
+                    CertAuthEvent::ChildCertificatesUpdated {
                         resource_class_name,
                         updates,
                     } => {
                         objects.update_certs(resource_class_name, updates)?;
                         force_reissue = true;
                     }
-                    super::CertAuthEvent::KeyPendingToActive {
+                    CertAuthEvent::KeyPendingToActive {
                         resource_class_name,
                         current_key,
                     } => {
@@ -149,7 +149,7 @@ impl PreSaveEventListener<CertAuth> for CaObjectsStore {
                             signer,
                         )?;
                     }
-                    super::CertAuthEvent::KeyPendingToNew {
+                    CertAuthEvent::KeyPendingToNew {
                         resource_class_name,
                         new_key,
                     } => {
@@ -160,19 +160,19 @@ impl PreSaveEventListener<CertAuth> for CaObjectsStore {
                             signer,
                         )?;
                     }
-                    super::CertAuthEvent::KeyRollActivated {
+                    CertAuthEvent::KeyRollActivated {
                         resource_class_name,
                         ..
                     } => {
                         objects.keyroll_activate(resource_class_name)?;
                         force_reissue = true;
                     }
-                    super::CertAuthEvent::KeyRollFinished {
+                    CertAuthEvent::KeyRollFinished {
                         resource_class_name,
                     } => {
                         objects.keyroll_finish(resource_class_name)?;
                     }
-                    super::CertAuthEvent::CertificateReceived {
+                    CertAuthEvent::CertificateReceived {
                         resource_class_name,
                         rcvd_cert,
                         ..
@@ -189,14 +189,14 @@ impl PreSaveEventListener<CertAuth> for CaObjectsStore {
                         // event for that which *will* result in forcing
                         // re-issuance.
                     }
-                    super::CertAuthEvent::ResourceClassRemoved {
+                    CertAuthEvent::ResourceClassRemoved {
                         resource_class_name,
                         ..
                     } => {
                         objects.remove_class(resource_class_name);
                         force_reissue = true;
                     }
-                    super::CertAuthEvent::RepoUpdated { contact } => {
+                    CertAuthEvent::RepoUpdated { contact } => {
                         objects.update_repo(contact);
                         force_reissue = true;
                     }

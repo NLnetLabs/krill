@@ -9,7 +9,6 @@ use rpki::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ca::{CertAuthEvent, CertAuthInitEvent},
     commons::{
         crypto::dispatch::signerinfo::{
             SignerInfo, SignerInfoEvent, SignerInfoInitEvent,
@@ -45,9 +44,6 @@ use super::{
 
 pub type OldInitSignerInfoEvent = OldStoredEvent<SignerInfoInitEvent>;
 pub type OldSignerInfoEvent = OldStoredEvent<SignerInfoEvent>;
-
-pub type OldCertAuthInitEvent = OldStoredEvent<CertAuthInitEvent>;
-pub type OldCertAuthEvent = OldStoredEvent<CertAuthEvent>;
 
 pub type OldTrustAnchorProxyInitEvent =
     OldStoredEvent<TrustAnchorProxyInitEvent>;

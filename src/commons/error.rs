@@ -218,6 +218,9 @@ impl fmt::Display for FatalError {
 
 //------------ Error -------------------------------------------------------
 
+// Transitional type alias.
+pub type KrillError = Error;
+
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum Error {

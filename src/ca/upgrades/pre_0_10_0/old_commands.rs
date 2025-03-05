@@ -10,12 +10,9 @@ use rpki::{
     repository::resources::ResourceSet,
 };
 
-use crate::{
-    ca::{CertAuthStorableCommand, DropReason, StorableRcEntitlement},
-    commons::{
-        eventsourcing::WithStorableDetails,
-    },
-};
+use crate::ca::commands::{CertAuthStorableCommand, StorableRcEntitlement};
+use crate::ca::rc::DropReason;
+use crate::commons::eventsourcing::WithStorableDetails;
 use crate::ca::upgrades::pre_0_14_0::aspa::{
     Pre0_14_0AspaProvidersUpdate, Pre0_14_0ProviderAs,
 };

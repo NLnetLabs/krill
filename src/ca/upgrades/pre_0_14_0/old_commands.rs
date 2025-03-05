@@ -12,18 +12,15 @@ use rpki::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    ca::{DropReason, CertAuthStorableCommand, StorableRcEntitlement},
-    commons::{
-        eventsourcing::WithStorableDetails,
-    },
-};
+use crate::ca::commands::{CertAuthStorableCommand, StorableRcEntitlement};
+use crate::ca::rc::DropReason;
 use crate::commons::api::admin::StorableParentContact;
 use crate::commons::api::aspa::CustomerAsn;
 use crate::commons::api::ca::RtaName;
 use crate::commons::api::roa::RoaConfigurationUpdates;
-
+use crate::commons::eventsourcing::WithStorableDetails;
 use super::aspa::{Pre0_14_0AspaProvidersUpdate, Pre0_14_0AspaDefinition};
+
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]

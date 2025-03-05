@@ -23,12 +23,6 @@ use rpki::{
 };
 
 use crate::{
-    ca::{
-        self, CaObjects, CertAuthEvent, CertifiedKey,
-        ChildCertificateUpdates, ObjectSetRevision, PreparedRta,
-        PublishedObject, RoaAggregateKey, RoaUpdates,
-        SignedRta,
-    },
     commons::{
         util::ext_serde,
     },
@@ -38,6 +32,19 @@ use crate::{
         UpgradeError,
     },
 };
+
+use crate::ca::child::ChildCertificateUpdates;
+use crate::ca::events::CertAuthEvent;
+use crate::ca::keys::CertifiedKey;
+use crate::ca::parent::Rfc8183Id;
+use crate::ca::publishing::{
+    CaObjects, ResourceClassObjects, CurrentKeyState, DeprecatedRepository,
+    KeyObjectSet, ObjectSetRevision, OldKeyState,
+    PublishedCrl, PublishedManifest, PublishedObject, ResourceClassKeyState,
+    StagingKeyState,
+};
+use crate::ca::roa::{RoaAggregateKey, RoaUpdates};
+use crate::ca::rta::{PreparedRta, SignedRta}; 
 use crate::ca::upgrades::pre_0_14_0::aspa::{
     Pre0_14_0AspaProvidersUpdate, Pre0_14_0ProviderAs
 };
@@ -50,7 +57,6 @@ use crate::commons::api::ca::{
     Revocation, Revocations,  RtaName, SuspendedCert, UnsuspendedCert,
 };
 use crate::commons::api::roa::{RoaInfo, RoaPayloadJsonMapKey};
-
 use super::aspa::{Pre0_10_0AspaDefinition, Pre0_10_0AspaObjectsUpdates};
 
 
@@ -61,9 +67,9 @@ pub struct Pre0_10Rfc8183Id {
     cert: IdCert,
 }
 
-impl From<Pre0_10Rfc8183Id> for ca::Rfc8183Id {
+impl From<Pre0_10Rfc8183Id> for Rfc8183Id {
     fn from(old: Pre0_10Rfc8183Id) -> Self {
-        ca::Rfc8183Id::new(old.cert.into())
+        Rfc8183Id::new(old.cert.into())
     }
 }
 
@@ -716,7 +722,7 @@ pub struct Pre0_10CaIniDet {
     id: Pre0_10Rfc8183Id,
 }
 
-impl From<Pre0_10CaIniDet> for ca::Rfc8183Id {
+impl From<Pre0_10CaIniDet> for Rfc8183Id {
     fn from(old: Pre0_10CaIniDet) -> Self {
         old.id.into()
     }
@@ -1183,7 +1189,7 @@ pub struct OldCaObjects {
     deprecated_repos: Vec<OldDeprecatedRepository>,
 }
 
-impl TryFrom<OldCaObjects> for ca::CaObjects {
+impl TryFrom<OldCaObjects> for CaObjects {
     type Error = UpgradeError;
 
     fn try_from(old: OldCaObjects) -> Result<Self, Self::Error> {
@@ -1193,7 +1199,7 @@ impl TryFrom<OldCaObjects> for ca::CaObjects {
 
         let mut classes: HashMap<
             ResourceClassName,
-            ca::ResourceClassObjects,
+            ResourceClassObjects,
         > = HashMap::new();
         for (rcn, old_objects) in old.classes.into_iter() {
             classes.insert(rcn, old_objects.try_into()?);
@@ -1262,9 +1268,9 @@ pub struct OldDeprecatedRepository {
     clean_attempts: usize,
 }
 
-impl From<OldDeprecatedRepository> for ca::DeprecatedRepository {
+impl From<OldDeprecatedRepository> for DeprecatedRepository {
     fn from(old: OldDeprecatedRepository) -> Self {
-        ca::DeprecatedRepository::new(old.contact.into(), old.clean_attempts)
+        DeprecatedRepository::new(old.contact.into(), old.clean_attempts)
     }
 }
 
@@ -1273,11 +1279,11 @@ pub struct OldResourceClassObjects {
     keys: OldResourceClassKeyState,
 }
 
-impl TryFrom<OldResourceClassObjects> for ca::ResourceClassObjects {
+impl TryFrom<OldResourceClassObjects> for ResourceClassObjects {
     type Error = UpgradeError;
 
     fn try_from(old: OldResourceClassObjects) -> Result<Self, Self::Error> {
-        old.keys.try_into().map(ca::ResourceClassObjects::new)
+        old.keys.try_into().map(ResourceClassObjects::new)
     }
 }
 
@@ -1289,19 +1295,19 @@ pub enum OldResourceClassKeyState {
     Old(OldOldKeyState),
 }
 
-impl TryFrom<OldResourceClassKeyState> for ca::ResourceClassKeyState {
+impl TryFrom<OldResourceClassKeyState> for ResourceClassKeyState {
     type Error = UpgradeError;
 
     fn try_from(old: OldResourceClassKeyState) -> Result<Self, Self::Error> {
         Ok(match old {
             OldResourceClassKeyState::Current(state) => {
-                ca::ResourceClassKeyState::Current(state.try_into()?)
+                ResourceClassKeyState::Current(state.try_into()?)
             }
             OldResourceClassKeyState::Staging(state) => {
-                ca::ResourceClassKeyState::Staging(state.try_into()?)
+                ResourceClassKeyState::Staging(state.try_into()?)
             }
             OldResourceClassKeyState::Old(state) => {
-                ca::ResourceClassKeyState::Old(state.try_into()?)
+                ResourceClassKeyState::Old(state.try_into()?)
             }
         })
     }
@@ -1312,11 +1318,11 @@ pub struct OldCurrentKeyState {
     current_set: OldCurrentKeyObjectSet,
 }
 
-impl TryFrom<OldCurrentKeyState> for ca::CurrentKeyState {
+impl TryFrom<OldCurrentKeyState> for CurrentKeyState {
     type Error = UpgradeError;
 
     fn try_from(old: OldCurrentKeyState) -> Result<Self, Self::Error> {
-        Ok(ca::CurrentKeyState::new(old.current_set.try_into()?))
+        Ok(CurrentKeyState::new(old.current_set.try_into()?))
     }
 }
 
@@ -1326,11 +1332,11 @@ pub struct OldStagingKeyState {
     current_set: OldCurrentKeyObjectSet,
 }
 
-impl TryFrom<OldStagingKeyState> for ca::StagingKeyState {
+impl TryFrom<OldStagingKeyState> for StagingKeyState {
     type Error = UpgradeError;
 
     fn try_from(old: OldStagingKeyState) -> Result<Self, Self::Error> {
-        Ok(ca::StagingKeyState::new(
+        Ok(StagingKeyState::new(
             old.staging_set.try_into()?,
             old.current_set.try_into()?,
         ))
@@ -1343,11 +1349,11 @@ pub struct OldOldKeyState {
     old_set: OldBasicKeyObjectSet,
 }
 
-impl TryFrom<OldOldKeyState> for ca::OldKeyState {
+impl TryFrom<OldOldKeyState> for OldKeyState {
     type Error = UpgradeError;
 
     fn try_from(old: OldOldKeyState) -> Result<Self, Self::Error> {
-        Ok(ca::OldKeyState::new(
+        Ok(OldKeyState::new(
             old.current_set.try_into()?,
             old.old_set.try_into()?,
         ))
@@ -1366,7 +1372,7 @@ pub struct OldCurrentKeyObjectSet {
     certs: HashMap<ObjectName, OldPublishedCert>,
 }
 
-impl TryFrom<OldCurrentKeyObjectSet> for ca::KeyObjectSet {
+impl TryFrom<OldCurrentKeyObjectSet> for KeyObjectSet {
     type Error = UpgradeError;
 
     fn try_from(old: OldCurrentKeyObjectSet) -> Result<Self, Self::Error> {
@@ -1403,7 +1409,7 @@ impl TryFrom<OldCurrentKeyObjectSet> for ca::KeyObjectSet {
             published_objects.insert(name, published_object);
         }
 
-        Ok(ca::KeyObjectSet::new(
+        Ok(KeyObjectSet::new(
             signing_cert,
             revision,
             revocations,
@@ -1513,7 +1519,7 @@ pub struct OldBasicKeyObjectSet {
     old_repo: Option<OldRepositoryContact>,
 }
 
-impl TryFrom<OldBasicKeyObjectSet> for ca::KeyObjectSet {
+impl TryFrom<OldBasicKeyObjectSet> for KeyObjectSet {
     type Error = UpgradeError;
 
     fn try_from(old: OldBasicKeyObjectSet) -> Result<Self, Self::Error> {
@@ -1532,7 +1538,7 @@ impl TryFrom<OldBasicKeyObjectSet> for ca::KeyObjectSet {
         let empty_object_set = HashMap::new();
         let old_repo = old.old_repo.map(|repo| repo.into());
 
-        Ok(ca::KeyObjectSet::new(
+        Ok(KeyObjectSet::new(
             signing_cert,
             revision,
             revocations,
@@ -1574,7 +1580,7 @@ impl OldPublishedManifest {
     }
 }
 
-impl From<OldPublishedManifest> for ca::PublishedManifest {
+impl From<OldPublishedManifest> for PublishedManifest {
     fn from(old: OldPublishedManifest) -> Self {
         old.0.into()
     }
@@ -1592,7 +1598,7 @@ impl Eq for OldPublishedManifest {}
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct OldPublishedCrl(Crl);
 
-impl From<OldPublishedCrl> for ca::PublishedCrl {
+impl From<OldPublishedCrl> for PublishedCrl {
     fn from(old: OldPublishedCrl) -> Self {
         old.0.into()
     }

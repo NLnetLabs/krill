@@ -29,8 +29,8 @@ use crate::commons::api::ca::ObjectName;
 use crate::commons::api::roa::{
     AsNumber, RoaConfiguration, RoaInfo, RoaPayload, RoaPayloadJsonMapKey,
 };
-use super::CertifiedKey;
-use super::events::RoaUpdates;
+use super::keys::CertifiedKey;
+
 
 //------------ Routes ------------------------------------------------------
 
@@ -340,10 +340,6 @@ pub struct Roas {
 impl Roas {
     pub fn is_empty(&self) -> bool {
         self.simple.is_empty() && self.aggregate.is_empty()
-    }
-
-    pub fn get(&self, auth: &RoaPayloadJsonMapKey) -> Option<&RoaInfo> {
-        self.simple.get(auth)
     }
 
     pub fn updated(&mut self, updates: RoaUpdates) {
@@ -749,6 +745,151 @@ impl Roas {
             signer,
         )?;
         Ok(RoaInfo::new(authorizations, roa))
+    }
+}
+
+
+//------------ RoaUpdates --------------------------------------------------
+
+/// Describes an update to the set of ROAs under a ResourceClass.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RoaUpdates {
+    #[serde(
+        skip_serializing_if = "HashMap::is_empty",
+        default = "HashMap::new"
+    )]
+    pub updated: HashMap<RoaPayloadJsonMapKey, RoaInfo>,
+
+    #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
+    pub removed: Vec<RoaPayloadJsonMapKey>,
+
+    #[serde(
+        skip_serializing_if = "HashMap::is_empty",
+        default = "HashMap::new"
+    )]
+    pub aggregate_updated: HashMap<RoaAggregateKey, RoaInfo>,
+
+    #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
+    pub aggregate_removed: Vec<RoaAggregateKey>,
+}
+
+impl RoaUpdates {
+    pub fn new(
+        updated: HashMap<RoaPayloadJsonMapKey, RoaInfo>,
+        removed: Vec<RoaPayloadJsonMapKey>,
+        aggregate_updated: HashMap<RoaAggregateKey, RoaInfo>,
+        aggregate_removed: Vec<RoaAggregateKey>,
+    ) -> Self {
+        RoaUpdates {
+            updated,
+            removed,
+            aggregate_updated,
+            aggregate_removed,
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.updated.is_empty()
+            && self.removed.is_empty()
+            && self.aggregate_updated.is_empty()
+            && self.aggregate_removed.is_empty()
+    }
+
+    pub fn contains_changes(&self) -> bool {
+        !self.is_empty()
+    }
+
+    pub fn update(&mut self, auth: RoaPayloadJsonMapKey, roa: RoaInfo) {
+        self.updated.insert(auth, roa);
+    }
+
+    pub fn remove(&mut self, auth: RoaPayloadJsonMapKey) {
+        self.removed.push(auth);
+    }
+
+    pub fn remove_aggregate(&mut self, key: RoaAggregateKey) {
+        self.aggregate_removed.push(key);
+    }
+
+    pub fn update_aggregate(&mut self, key: RoaAggregateKey, info: RoaInfo) {
+        self.aggregate_updated.insert(key, info);
+    }
+
+    pub fn added_roas(&self) -> HashMap<ObjectName, RoaInfo> {
+        let mut res = HashMap::new();
+
+        for (auth, info) in &self.updated {
+            let name = ObjectName::from(*auth);
+            res.insert(name, info.clone());
+        }
+
+        for (agg_key, info) in &self.aggregate_updated {
+            let name = ObjectName::from(agg_key);
+            res.insert(name, info.clone());
+        }
+
+        res
+    }
+
+    pub fn removed_roas(&self) -> Vec<ObjectName> {
+        let mut res = vec![];
+
+        for simple in &self.removed {
+            res.push(ObjectName::from(*simple))
+        }
+
+        for agg in &self.aggregate_removed {
+            res.push(ObjectName::from(agg))
+        }
+
+        res
+    }
+
+    #[allow(clippy::type_complexity)]
+    pub fn unpack(
+        self,
+    ) -> (
+        HashMap<RoaPayloadJsonMapKey, RoaInfo>,
+        Vec<RoaPayloadJsonMapKey>,
+        HashMap<RoaAggregateKey, RoaInfo>,
+        Vec<RoaAggregateKey>,
+    ) {
+        (
+            self.updated,
+            self.removed,
+            self.aggregate_updated,
+            self.aggregate_removed,
+        )
+    }
+}
+
+impl fmt::Display for RoaUpdates {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if !self.updated.is_empty() {
+            write!(f, "Updated single VRP ROAs: ")?;
+            for roa in self.updated.keys() {
+                write!(f, "{} ", ObjectName::from(*roa))?;
+            }
+        }
+        if !self.removed.is_empty() {
+            write!(f, "Removed single VRP ROAs: ")?;
+            for roa in &self.removed {
+                write!(f, "{} ", ObjectName::from(*roa))?;
+            }
+        }
+        if !self.aggregate_updated.is_empty() {
+            write!(f, "Updated ASN aggregated ROAs: ")?;
+            for roa in self.aggregate_updated.keys() {
+                write!(f, "{} ", ObjectName::from(roa))?;
+            }
+        }
+        if !self.aggregate_removed.is_empty() {
+            write!(f, "Removed ASN aggregated ROAs: ")?;
+            for roa in &self.aggregate_removed {
+                write!(f, "{} ", ObjectName::from(roa))?;
+            }
+        }
+        Ok(())
     }
 }
 
