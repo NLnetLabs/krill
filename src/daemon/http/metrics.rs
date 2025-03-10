@@ -65,7 +65,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
             let mut ca_status_map = HashMap::new();
 
             for ca in cas_stats.keys() {
-                if let Ok(ca_status) = server.ca_status(ca).await {
+                if let Ok(ca_status) = server.ca_status(ca) {
                     ca_status_map.insert(ca.clone(), ca_status);
                 }
             }

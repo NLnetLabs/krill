@@ -38,7 +38,6 @@ use crate::{
         KrillResult,
     },
 };
-use crate::ca::Rfc8183Id;
 use crate::commons::api::ca::{IdCertInfo, ObjectName, ReceivedCert};
 
 //------------ TrustAnchorSigner -------------------------------------------
@@ -288,7 +287,7 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
 
         let signer = cmd.signer;
 
-        let id = Rfc8183Id::generate(&signer)?.into();
+        let id = signer.create_self_signed_id_cert()?.into();
         let proxy_id = cmd.proxy_id;
         let ta_cert_details = Self::create_ta_cert_details(
             cmd.repo_info,

@@ -1463,8 +1463,8 @@ impl PublishedObject {
     pub fn for_aspa(name: ObjectName, aspa_info: &AspaInfo) -> Self {
         PublishedObject::new(
             name,
-            aspa_info.base64().clone(),
-            aspa_info.serial(),
+            aspa_info.base64.clone(),
+            aspa_info.serial,
             aspa_info.expires(),
         )
     }
@@ -1481,9 +1481,9 @@ impl PublishedObject {
     pub fn for_bgpsec_cert_info(cert: &BgpSecCertInfo) -> Self {
         PublishedObject::new(
             cert.name(),
-            cert.base64().clone(),
-            cert.serial(),
-            cert.expires(),
+            cert.base64.clone(),
+            cert.serial,
+            cert.expires,
         )
     }
 }

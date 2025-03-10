@@ -26,6 +26,9 @@ use crate::commons::api::ca::{
 use crate::commons::api::history::CommandSummary;
 use crate::commons::api::import::ImportChild;
 use crate::commons::api::roa::RoaConfigurationUpdates;
+use crate::commons::api::rta::{
+    ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest,
+};
 use crate::commons::crypto::KrillSigner;
 use crate::commons::eventsourcing::{
     self, InitCommandDetails, SentCommand, SentInitCommand,
@@ -34,9 +37,6 @@ use crate::commons::eventsourcing::{
 use crate::daemon::config::Config;
 use super::events::CertAuthEvent;
 use super::rc::DropReason;
-use super::rta::{
-    ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest,
-};
 
 
 //------------ CertAuthInitCommand -----------------------------------------

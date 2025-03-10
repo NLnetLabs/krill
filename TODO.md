@@ -24,6 +24,9 @@ Follow-up:
 * Store no-op commands for auditing reasons.
 * Remove event listeners.
 * Shift httpclient to a stored reqwest::Client.
+* Applying events can panic if events are inconsistent. Given that we
+  are working on stored data which can be manipulated outside of our
+  control, we should probably deal with that more gracefully.
 
 Notes
 

@@ -1331,7 +1331,6 @@ async fn api_ca_my_parent_statuses(
         render_json_res(
             req.state()
                 .ca_status(&ca)
-                .await
                 .map(|s| s.parents().clone())
         )
     )
@@ -1608,7 +1607,6 @@ async fn api_ca_repo_status(req: Request, ca: CaHandle) -> RoutingResult {
             render_json_res(
                 req.state()
                     .ca_status(&ca)
-                    .await
                     .map(|status| status.repo().clone())
             )
         ),

@@ -8,5 +8,6 @@ pub mod ca;
 pub mod history;
 pub mod import;
 pub mod roa;
+pub mod rta;
 pub mod status;
 

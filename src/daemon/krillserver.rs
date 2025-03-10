@@ -44,9 +44,6 @@ use crate::{
         TrustAnchorSignedResponse, TrustAnchorSignerInfo, TA_NAME,
     },
 };
-use crate::ca::{
-    ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest,
-};
 use crate::commons::api;
 use crate::commons::api::admin::{
     AddChildRequest, CertAuthInit, ParentCaContact, ParentCaReq,
@@ -62,7 +59,8 @@ use crate::commons::api::bgpsec::{BgpSecCsrInfoList, BgpSecDefinitionUpdates};
 use crate::commons::api::ca::{
     AllCertAuthIssues, CaRepoDetails, CertAuthInfo, CertAuthIssues,
     CertAuthList, CertAuthStats, ChildCaInfo, ChildrenConnectionStats,
-    IdCertInfo, ReceivedCert, RtaList, RtaName, RtaPrepResponse, Timestamp,
+    IdCertInfo, ReceivedCert, RtaList, RtaName,
+    RtaPrepResponse, Timestamp,
 };
 use crate::commons::api::history::{
     CommandDetails, CommandHistory, CommandHistoryCriteria
@@ -70,6 +68,9 @@ use crate::commons::api::history::{
 use crate::commons::api::import::ImportChild;
 use crate::commons::api::roa::{
     ConfiguredRoa, RoaConfiguration, RoaConfigurationUpdates, RoaPayload,
+};
+use crate::commons::api::rta::{
+    ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest,
 };
 
 
@@ -341,6 +342,13 @@ impl KrillServer {
     }
 }
 
+/// # Access to components
+impl KrillServer {
+    pub fn ca_manager(&self) -> &CaManager {
+        &self.ca_manager
+    }
+}
+
 /// # Configure publishers
 impl KrillServer {
     /// Returns the repository server stats
@@ -604,7 +612,6 @@ impl KrillServer {
     ) -> KrillResult<ChildrenConnectionStats> {
         self.ca_manager
             .get_ca_status(ca)
-            .await
             .map(|status| status.get_children_connection_stats())
     }
 }
@@ -961,21 +968,7 @@ impl KrillServer {
         &self,
         ca: &CaHandle,
     ) -> KrillResult<CertAuthIssues> {
-        let mut issues = CertAuthIssues::default();
-
-        let ca_status = self.ca_manager.get_ca_status(ca).await?;
-
-        if let Some(error) = ca_status.repo().opt_failure() {
-            issues.repo_issue = Some(error)
-        }
-
-        for (parent, status) in ca_status.parents().iter() {
-            if let Some(error) = status.opt_failure() {
-                issues.add_parent_issue(parent.clone(), error)
-            }
-        }
-
-        Ok(issues)
+        self.ca_manager.get_ca_issues(ca)
     }
 }
 
@@ -1032,9 +1025,8 @@ impl KrillServer {
         self.ca_manager.get_ca(ca).await.map(|ca| ca.as_ca_info())
     }
 
-    /// Returns the CA status, or an error if none can be found.
-    pub async fn ca_status(&self, ca: &CaHandle) -> KrillResult<CaStatus> {
-        self.ca_manager.get_ca_status(ca).await
+    pub fn ca_status(&self, ca: &CaHandle) -> KrillResult<CaStatus> {
+        self.ca_manager.get_ca_status(ca)
     }
 
     /// Delete a CA. Let it do best effort revocation requests and withdraw

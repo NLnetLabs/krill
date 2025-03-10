@@ -787,28 +787,9 @@ impl fmt::Display for CertAuthEvent {
                 updates,
             } => {
                 write!(f,
-                    "updated ASPA objects under resource class '{}'",
-                    resource_class_name
-                )?;
-                if !updates.updated().is_empty() {
-                    write!(f, " updated:")?;
-                    for upd in updates.updated() {
-                        write!(
-                            f, " {}",
-                            ObjectName::aspa_from_customer(upd.customer())
-                        )?;
-                    }
-                }
-                if !updates.removed().is_empty() {
-                    write!(f, " removed:")?;
-                    for rem in updates.removed() {
-                        write!(f,
-                            " {}",
-                            ObjectName::aspa_from_customer(*rem)
-                        )?;
-                    }
-                }
-                Ok(())
+                    "updated ASPA objects under resource class '{}'{}",
+                    resource_class_name, updates,
+                )
             }
             CertAuthEvent::BgpSecDefinitionAdded { key, .. } => {
                 write!(
@@ -837,24 +818,9 @@ impl fmt::Display for CertAuthEvent {
                 updates,
             } => {
                 write!(f,
-                    "updated BGPSec certificates under resource class '{}'",
-                    resource_class_name
-                )?;
-                let updated = updates.updated();
-                if !updated.is_empty() {
-                    write!(f, " added: ")?;
-                    for cert in updated {
-                        write!(f, "{} ", cert.name())?;
-                    }
-                }
-                let removed = updates.removed();
-                if !removed.is_empty() {
-                    write!(f, " removed: ")?;
-                    for key in removed {
-                        write!(f, "{} ", ObjectName::from(key))?;
-                    }
-                }
-                Ok(())
+                    "updated BGPSec certificates under resource class \
+                    '{resource_class_name}{updates}'",
+                )
             }
             CertAuthEvent::RepoUpdated { contact } => {
                 write!(

@@ -62,13 +62,16 @@ use crate::commons::api::aspa::{
 };
 use crate::commons::api::bgpsec::{BgpSecCsrInfoList, BgpSecDefinitionUpdates};
 use crate::commons::api::ca::{
-    CertAuthList, CertAuthSummary, ChildCaInfo, IdCertInfo, Timestamp,
-    ReceivedCert, RtaName,
+    CertAuthIssues, CertAuthList, CertAuthSummary, ChildCaInfo, IdCertInfo,
+    ParentStatuses, ReceivedCert, RepoStatus, RtaName, Timestamp,
 };
 use crate::commons::api::history::{
     CommandDetails, CommandHistory, CommandHistoryCriteria
 };
 use crate::commons::api::roa::RoaConfigurationUpdates;
+use crate::commons::api::rta::{
+    ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest,
+};
 
 use super::certauth::CertAuth;
 use super::commands::{
@@ -76,9 +79,6 @@ use super::commands::{
     CertAuthInitCommandDetails,
 };
 use super::publishing::{CaObjectsStore, DeprecatedRepository};
-use super::rta::{
-    ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest,
-};
 use super::status::{CaStatus, StatusStore};
 
 
@@ -687,16 +687,48 @@ impl CaManager {
             .map_err(Error::AggregateStoreError)
     }
 
-    /// Gets current CA status
-    pub async fn get_ca_status(
-        &self,
-        ca: &CaHandle,
+    pub fn get_ca_status(
+        &self, ca: &CaHandle
     ) -> KrillResult<CaStatus> {
         if self.has_ca(ca)? {
             Ok(self.status_store.get_ca_status(ca))
-        } else {
+        }
+        else {
             Err(Error::CaUnknown(ca.clone()))
         }
+    }
+
+    pub fn get_repo_status(
+        &self,
+        ca: &CaHandle
+    ) -> KrillResult<RepoStatus> {
+        Ok(self.get_ca_status(ca)?.repo().clone())
+    }
+
+    pub fn get_parent_statuses(
+        &self,
+        ca: &CaHandle
+    ) -> KrillResult<ParentStatuses> {
+        Ok(self.get_ca_status(ca)?.parents().clone())
+    }
+
+    pub fn get_ca_issues(
+        &self, ca: &CaHandle
+    ) -> KrillResult<CertAuthIssues> {
+        let ca_status = self.get_ca_status(ca)?;
+        let mut issues = CertAuthIssues::default();
+
+        if let Some(error) = ca_status.repo().opt_failure() {
+            issues.repo_issue = Some(error)
+        }
+
+        for (parent, status) in ca_status.parents().iter() {
+            if let Some(error) = status.opt_failure() {
+                issues.add_parent_issue(parent.clone(), error)
+            }
+        }
+
+        Ok(issues)
     }
 
     /// Delete a CA. Let it do best effort revocation requests and withdraw
@@ -831,7 +863,7 @@ impl CaManager {
     ) -> KrillResult<ChildCaInfo> {
         trace!("Finding details for CA: {} under parent: {}", child, ca);
         let ca = self.get_ca(ca).await?;
-        ca.get_child(child).map(|details| details.clone().into())
+        ca.get_child(child).map(|details| details.to_info())
     }
 
     /// Export a child. Fails if:
@@ -1074,7 +1106,7 @@ impl CaManager {
             let ca = self.get_ca(ca_handle).await?;
 
             let child_ca = ca.get_child(&child_handle)?;
-            if child_ca.is_suspended() {
+            if child_ca.state.is_suspended() {
                 info!(
                     "Child '{}' under CA '{}' became active again, will unsuspend it.",
                     child_handle,
@@ -1452,7 +1484,7 @@ impl CaManager {
 
         // suspend inactive children, if so configured
         if let Some(threshold_seconds) = threshold_seconds {
-            if let Ok(ca_status) = self.get_ca_status(ca_handle).await {
+            if let Ok(ca_status) = self.get_ca_status(ca_handle) {
                 let connections = ca_status.get_children_connection_stats();
 
                 for child in

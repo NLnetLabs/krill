@@ -11,6 +11,7 @@ use rpki::{
     ca::{
         idexchange::{ChildHandle, RecipientHandle, SenderHandle},
         provisioning,
+        provisioning::ResourceClassName,
         publication::Base64,
         sigmsg::SignedMessage,
     },
@@ -27,7 +28,6 @@ use crate::{
         KrillResult,
     },
 };
-use crate::ca::UsedKeyState;
 use crate::ca::publishing::{
     CrlBuilder, ManifestBuilder, ObjectSetRevision, PublishedCrl,
     PublishedManifest, PublishedObject, 
@@ -756,6 +756,21 @@ impl TrustAnchorChild {
             open_responses: HashMap::new(),
         }
     }
+}
+
+
+//------------ UsedKeyState ------------------------------------------------
+
+/// Tracks the state of a key used by a child CA. This is needed because
+/// RFC 6492 dictates that keys cannot be re-used across resource classes.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[allow(clippy::large_enum_variant)]
+#[serde(rename_all = "snake_case")]
+pub enum UsedKeyState {
+    #[serde(alias = "current")]
+    InUse(ResourceClassName), /* Multiple keys are possible during a key
+                               * rollover. */
+    Revoked,
 }
 
 //------------ ProvisioningRequest -----------------------------------------

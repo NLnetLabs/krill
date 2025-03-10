@@ -1,59 +1,77 @@
+//! Managing child CAs.
+
 use std::collections::HashMap;
-
-use rpki::{
-    ca::{idexchange::ChildHandle, provisioning::ResourceClassName},
-    crypto::KeyIdentifier,
-    repository::resources::ResourceSet,
-};
+use rpki::ca::provisioning::ResourceClassName;
+use rpki::crypto::KeyIdentifier;
+use rpki::repository::resources::ResourceSet;
 use serde::{Deserialize, Serialize};
-
-use crate::{
-    commons::{
-        crypto::{KrillSigner, SignSupport},
-        error::Error,
-        KrillResult,
-    },
-    daemon::config::IssuanceTimingConfig,
-};
+use crate::commons::KrillResult;
+use crate::commons::crypto::{KrillSigner, SignSupport};
+use crate::commons::error::Error;
+use crate::daemon::config::IssuanceTimingConfig;
 use crate::commons::api::ca::{
     ChildCaInfo, ChildState, IdCertInfo, IssuedCertificate, ReceivedCert,
     SuspendedCert, UnsuspendedCert,
 };
 
 
-//------------ UsedKeyState ------------------------------------------------
+//------------ UsedKeyState --------------------------------------------------
 
-/// Tracks the state of a key used by a child CA. This is needed because
-/// RFC 6492 dictates that keys cannot be re-used across resource classes.
+/// Tracks the state of a key used by a child CA.
+///
+/// This is needed because RFC 6492 dictates that keys cannot be re-used
+/// across resource classes.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case")]
 pub enum UsedKeyState {
+    /// The key is used by the given resource class.
+    ///
+    /// Multiple keys are possible during a key rollover.
     #[serde(alias = "current")]
-    InUse(ResourceClassName), /* Multiple keys are possible during a key
-                               * rollover. */
+    InUse(ResourceClassName),
+
+    /// The key has been revoked.
     Revoked,
 }
 
-//------------ ChildInfo ---------------------------------------------------
 
-/// Contains information about a child CA needed by a parent
-/// [CertAuth](ca.CertAuth).
+//------------ ChildInfo -----------------------------------------------------
+
+/// Information about a child CA needed by a parent CA.
 ///
-/// Note that the actual [IssuedCert] corresponding to the [KeyIdentifier]
-/// and [ResourceClassName] are kept in the parent's [ResourceClass].
+/// Note that the actual [`IssuedCert`] corresponding to the [`KeyIdentifier`]
+/// and [`ResourceClassName`] are kept in the parent's resource class.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildDetails {
+    /// The state of the child.
     #[serde(default)]
-    state: ChildState,
-    id_cert: IdCertInfo,
-    resources: ResourceSet,
-    used_keys: HashMap<KeyIdentifier, UsedKeyState>,
+    pub state: ChildState,
+
+    /// The ID certificate to communicate with the child CA.
+    pub id_cert: IdCertInfo,
+
+    /// The resources the child CA is entitled to.
+    pub resources: ResourceSet,
+
+    /// The set of keys used by the child.
+    pub used_keys: HashMap<KeyIdentifier, UsedKeyState>,
+
+    /// Mapping of the resource class names used by the child to the parents.
+    ///
+    /// Parent and child usually use the same name, but
+    /// we need this mapping in case a delegated child CA was exported
+    /// somewhere and then imported into Krill. In such cases the
+    /// resource class names that were used for the child may not match
+    /// the internal resource class names used. See issue: 1133
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    rcn_map: HashMap<ResourceClassName, ResourceClassName>,
+    pub rcn_map: HashMap<ResourceClassName, ResourceClassName>,
 }
 
 impl ChildDetails {
+    /// Creates the child details from the ID certificate and resources.
+    ///
+    /// Sets the state to active and both the used keys and RCN map to empty.
     pub fn new(id_cert: IdCertInfo, resources: ResourceSet) -> Self {
         ChildDetails {
             state: ChildState::Active,
@@ -64,79 +82,44 @@ impl ChildDetails {
         }
     }
 
-    pub fn is_suspended(&self) -> bool {
-        self.state == ChildState::Suspended
+    /// Returns the child info for this child.
+    pub fn to_info(&self) -> ChildCaInfo {
+        ChildCaInfo {
+            state: self.state,
+            id_cert: self.id_cert.clone(),
+            entitled_resources: self.resources.clone(),
+        }
     }
 
-    pub fn suspend(&mut self) {
-        self.state = ChildState::Suspended;
-    }
-
-    pub fn unsuspend(&mut self) {
-        self.state = ChildState::Active;
-    }
-
-    pub fn id_cert(&self) -> &IdCertInfo {
-        &self.id_cert
-    }
-
-    pub fn set_id_cert(&mut self, id_cert: IdCertInfo) {
-        self.id_cert = id_cert;
-    }
-
-    pub fn resources(&self) -> &ResourceSet {
-        &self.resources
-    }
-
-    pub fn set_resources(&mut self, resources: ResourceSet) {
-        self.resources = resources;
-    }
-
-    pub fn add_mapping(
-        &mut self,
-        name_in_parent: ResourceClassName,
-        name_for_child: ResourceClassName,
-    ) {
-        self.rcn_map.insert(name_in_parent, name_for_child);
-    }
-
-    /// Resolve the resource class name used by the child, to the
-    /// internal name used by its parent.
+    /// Convert the internal resource class name to that used by the parent.
     ///
-    /// Note that the parent and child usually use the same name, but
-    /// we need this mapping in case a delegated child CA was exported
-    /// from somewhere and then imported into Krill. In such cases the
-    /// resource class names that were used for the child may not match
-    /// the internal resource class names used. See issue: 1133
-    pub(super) fn name_for_parent_rcn(
-        &self,
-        name_in_parent: &ResourceClassName,
+    /// The method takes the resource class name used internally and returns
+    /// the name to be used when talking to the parent. If the internal name
+    /// is part of the `rcn_map`, this name is used. Otherwise the internal
+    /// name is also the parent name.
+    pub fn name_for_parent_rcn(
+        &self, name_in_parent: &ResourceClassName,
     ) -> ResourceClassName {
-        self.rcn_map
-            .get(name_in_parent)
-            .unwrap_or(name_in_parent)
-            .clone()
+        self.rcn_map.get(name_in_parent).unwrap_or(name_in_parent).clone()
     }
 
-    /// Resolve the resource class name used by the parent, to the
-    /// name used by the child in request and responses.
+    /// Convert the parent’s resource class name to that used internally.
     ///
-    /// Note that the parent and child usually use the same name, but
-    /// we need this mapping in case a delegated child CA was exported
-    /// from somewhere and then imported into Krill. In such cases the
-    /// resource class names that were used for the child may not match
-    /// the internal resource class names used. See issue: 1133
-    pub(super) fn parent_name_for_rcn(
+    /// The method thakes the resource class name as used by the parent and
+    /// returns the name we use internally. If the parent name is part of the
+    /// `rcn_map`, this name is used. Otherwise the parent name is also the
+    /// internal name.
+    pub fn parent_name_for_rcn(
         &self,
         name_in_child: &ResourceClassName,
     ) -> ResourceClassName {
-        self.rcn_map
-            .iter()
+        self.rcn_map.iter()
             .find(|(_k, v)| *v == name_in_child)
             .map(|(k, _v)| k.clone())
             .unwrap_or_else(|| name_in_child.clone())
     }
 
+    /// Returns all keys that ae issued for the given parent resource class.
     pub fn issued(
         &self,
         parent_rcn: &ResourceClassName,
@@ -154,20 +137,9 @@ impl ChildDetails {
         res
     }
 
+    /// Returns whether the given key is currently issued.
     pub fn is_issued(&self, ki: &KeyIdentifier) -> bool {
         matches!(self.used_keys.get(ki), Some(UsedKeyState::InUse(_)))
-    }
-
-    pub fn add_issue_response(
-        &mut self,
-        parent_rcn: ResourceClassName,
-        ki: KeyIdentifier,
-    ) {
-        self.used_keys.insert(ki, UsedKeyState::InUse(parent_rcn));
-    }
-
-    pub fn add_revoke_response(&mut self, ki: KeyIdentifier) {
-        self.used_keys.insert(ki, UsedKeyState::Revoked);
     }
 
     /// Returns an error in case the key is already in use in another class.
@@ -189,28 +161,10 @@ impl ChildDetails {
     }
 }
 
-impl From<ChildDetails> for ChildCaInfo {
-    fn from(details: ChildDetails) -> Self {
-        ChildCaInfo {
-            state: details.state,
-            id_cert: details.id_cert,
-            entitled_resources: details.resources
-        }
-    }
-}
-
-//------------ Children ----------------------------------------------------
-
-/// The collection of children under a parent [`CertAuth`].
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct Children {
-    inner: HashMap<ChildHandle, ChildDetails>,
-}
 
 //------------ ChildCertificates -------------------------------------------
 
-/// The collection of certificates issued under a
-/// [ResourceClass](ca.ResourceClass).
+/// The collection of certificates issued under a resource class.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildCertificates {
     #[serde(alias = "inner")]
@@ -403,16 +357,16 @@ impl ChildCertificates {
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildCertificateUpdates {
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    issued: Vec<IssuedCertificate>,
+    pub issued: Vec<IssuedCertificate>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    removed: Vec<KeyIdentifier>,
+    pub removed: Vec<KeyIdentifier>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    suspended: Vec<SuspendedCert>,
+    pub suspended: Vec<SuspendedCert>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    unsuspended: Vec<UnsuspendedCert>,
+    pub unsuspended: Vec<UnsuspendedCert>,
 }
 
 impl ChildCertificateUpdates {

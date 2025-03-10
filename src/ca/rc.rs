@@ -234,18 +234,19 @@ impl ResourceClass {
                         config,
                         signer,
                     )?;
-                    let aspa_updates = self.aspas.update(
+                    let aspa_updates = self.aspas.create_updates(
                         all_aspas,
                         &current_key,
                         config,
                         signer,
                     )?;
-                    let bgpsec_updates = self.bgpsec_certificates.update(
-                        all_bgpsecs,
-                        &current_key,
-                        config,
-                        signer,
-                    )?;
+                    let bgpsec_updates
+                        = self.bgpsec_certificates.create_updates(
+                            all_bgpsecs,
+                            &current_key,
+                            config,
+                            signer,
+                        )?;
 
                     let mut events =
                         vec![CertAuthEvent::KeyPendingToActive {
@@ -260,14 +261,14 @@ impl ResourceClass {
                         })
                     }
 
-                    if aspa_updates.contains_changes() {
+                    if !aspa_updates.is_empty() {
                         events.push(CertAuthEvent::AspaObjectsUpdated {
                             resource_class_name: self.name.clone(),
                             updates: aspa_updates,
                         })
                     }
 
-                    if bgpsec_updates.contains_changes() {
+                    if !bgpsec_updates.is_empty() {
                         events.push(
                             CertAuthEvent::BgpSecCertificatesUpdated {
                                 resource_class_name: self.name.clone(),
@@ -420,7 +421,7 @@ impl ResourceClass {
             // Note that aspa definitions will not have changed in this case,
             // but the decision logic is all the same.
             {
-                let updates = self.aspas.update(
+                let updates = self.aspas.create_updates(
                     all_aspas,
                     &updated_key,
                     config,
@@ -438,7 +439,7 @@ impl ResourceClass {
             // Note that definitions will not have changed in this case, but
             // the decision logic is all the same.
             {
-                let updates = self.bgpsec_certificates.update(
+                let updates = self.bgpsec_certificates.create_updates(
                     all_bgpsecs,
                     &updated_key,
                     config,
@@ -667,7 +668,7 @@ impl ResourceClass {
                     events.push(roas_updated);
                 }
 
-                let aspa_updates = self.aspas.renew(
+                let aspa_updates = self.aspas.create_renewal(
                     new_key,
                     None,
                     issuance_timing,
@@ -695,7 +696,7 @@ impl ResourceClass {
                     events.push(certs_updated);
                 }
 
-                let bgpsec_updates = self.bgpsec_certificates.renew(
+                let bgpsec_updates = self.bgpsec_certificates.create_renewal(
                     new_key,
                     None,
                     issuance_timing,
@@ -853,8 +854,9 @@ impl ResourceClass {
         if let Ok(key) = self.get_current_key() {
             let renew_threshold =
                 Some(issuance_timing.new_aspa_issuance_threshold());
-            self.aspas
-                .renew(key, renew_threshold, issuance_timing, signer)
+            self.aspas.create_renewal(
+                key, renew_threshold, issuance_timing, signer
+            )
         } else {
             debug!("no ASPAs to renew - resource class has no current key");
             Ok(AspaObjectsUpdates::default())
@@ -869,7 +871,7 @@ impl ResourceClass {
         signer: &KrillSigner,
     ) -> KrillResult<AspaObjectsUpdates> {
         if let Ok(key) = self.get_current_key() {
-            self.aspas.update(all_aspas, key, config, signer)
+            self.aspas.create_updates(all_aspas, key, config, signer)
         } else {
             debug!("no ASPAs to update - resource class has no current key");
             Ok(AspaObjectsUpdates::default())
@@ -894,7 +896,7 @@ impl ResourceClass {
     ) -> KrillResult<BgpSecCertificateUpdates> {
         if let Ok(key) = self.get_current_key() {
             self.bgpsec_certificates
-                .update(definitions, key, config, signer)
+                .create_updates(definitions, key, config, signer)
         } else {
             debug!("no BGPSec certificates to update - resource class has no current key");
             Ok(BgpSecCertificateUpdates::default())
@@ -911,7 +913,7 @@ impl ResourceClass {
             let renew_threshold =
                 Some(issuance_timing.new_bgpsec_issuance_threshold());
 
-            self.bgpsec_certificates.renew(
+            self.bgpsec_certificates.create_renewal(
                 key,
                 renew_threshold,
                 issuance_timing,
@@ -955,7 +957,9 @@ impl ResourceClass {
 
         let pub_key = signer.get_key_info(&key).map_err(Error::signer)?;
         let ee = SignSupport::make_rta_ee_cert(
-            resources, current, validity, pub_key, signer,
+            resources,
+            current.incoming_cert(), current.key_id(),
+            validity, pub_key, signer,
         )?;
 
         Ok(ee)

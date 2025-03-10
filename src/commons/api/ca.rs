@@ -33,7 +33,7 @@ use serde::{Deserialize, Serialize};
 use crate::commons::crypto::CsrInfo;
 use crate::commons::error;
 use crate::commons::util::KrillVersion;
-use super::admin::{ParentCaContact, PublishedFile, RepositoryContact};
+use super::admin::{PublishedFile, RepositoryContact};
 use super::aspa::AspaDefinition;
 use super::bgpsec::BgpSecAsnKey;
 use super::status::ErrorResponse;
@@ -141,6 +141,13 @@ pub enum ChildState {
 
     /// The child CA has been suspended.
     Suspended,
+}
+
+impl ChildState {
+    /// Returns whether the state is suspended.
+    pub fn is_suspended(self) -> bool {
+        matches!(self, Self::Suspended)
+    }
 }
 
 impl fmt::Display for ChildState {
@@ -1697,43 +1704,6 @@ pub struct CertAuthInfo {
     pub suspended_children: Vec<ChildHandle>,
 }
 
-impl CertAuthInfo {
-    /// Creates a new value from various details.
-    pub fn new(
-        handle: CaHandle,
-        id_cert: IdCertInfo,
-        repo_info: Option<RepoInfo>,
-        parents: HashMap<ParentHandle, ParentCaContact>,
-        resource_classes: HashMap<ResourceClassName, ResourceClassInfo>,
-        children: Vec<ChildHandle>,
-        suspended_children: Vec<ChildHandle>,
-    ) -> Self {
-        let parents = parents.into_keys().map(|handle| {
-            ParentInfo { handle, kind: ParentKindInfo::Rfc6492 }
-        }).collect();
-
-        let empty = ResourceSet::default();
-        let resources = resource_classes.values().fold(
-            ResourceSet::default(),
-            |res, rci| {
-                let rc_resources
-                    = rci.keys.current_resources().unwrap_or(&empty);
-                res.union(rc_resources)
-            },
-        );
-
-        CertAuthInfo {
-            handle,
-            id_cert,
-            repo_info,
-            parents,
-            resources,
-            resource_classes,
-            children,
-            suspended_children,
-        }
-    }
-}
 
 impl fmt::Display for CertAuthInfo {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

@@ -15,7 +15,6 @@ use rpki::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ca::CertifiedKey,
     commons::{
         api::ca::{IssuedCertificate, ReceivedCert},
         crypto::KrillSigner,
@@ -157,17 +156,17 @@ impl SignSupport {
     /// EE certificate is created by the rpki.rs library instead.
     pub fn make_rta_ee_cert(
         resources: &ResourceSet,
-        signing_key: &CertifiedKey,
+        signing_cert: &ReceivedCert,
+        key_id: &KeyIdentifier,
         validity: Validity,
         pub_key: PublicKey,
         signer: &KrillSigner,
     ) -> KrillResult<Cert> {
-        let signing_cert = signing_key.incoming_cert();
         let request = CertRequest::Ee(pub_key, validity);
         let tbs =
             Self::make_tbs_cert(resources, signing_cert, request, signer)?;
 
-        let cert = signer.sign_cert(tbs, signing_key.key_id())?;
+        let cert = signer.sign_cert(tbs, key_id)?;
         Ok(cert)
     }
 

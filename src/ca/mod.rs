@@ -18,19 +18,12 @@ pub mod upgrades;
 
 pub use self::manager::CaManager;
 pub use self::manager::testbed_ca_handle;
+pub use self::status::CaStatus;
 
 
 // Temporary public re-exports for other modules. They should be refactored
 // away.
 
-pub use self::certauth::CertAuth;
-pub use self::child::UsedKeyState;
-pub use self::events::CertAuthEvent;
-pub use self::keys::CertifiedKey;
-pub use self::parent::Rfc8183Id;
-pub use self::publishing::CaObjectsStore;
-pub use self::rta::{
-    ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest,
-};
-pub use self::status::CaStatus;
+pub use self::certauth::CertAuth; // mq and scheduler
+pub use self::events::CertAuthEvent; // mq
 

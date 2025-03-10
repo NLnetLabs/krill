@@ -50,7 +50,6 @@ use crate::{
     },
     ta::TA_NAME,
 };
-use crate::ca::Rfc8183Id;
 use crate::commons::api::admin::PublicationServerUris;
 use crate::commons::api::ca::IdCertInfo;
 
@@ -2064,7 +2063,7 @@ impl Aggregate for RepositoryAccess {
         let details = command.into_details();
         let (rrdp_base_uri, rsync_jail, signer) = details.unpack();
 
-        let id_cert_info = Rfc8183Id::generate(&signer)?.into();
+        let id_cert_info = signer.create_self_signed_id_cert()?.into();
 
         Ok(RepositoryAccessInitEvent::new(
             id_cert_info,

@@ -20,7 +20,6 @@ use rpki::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ca::UsedKeyState,
     commons::{
         actor::Actor,
         crypto::{CsrInfo, KrillSigner},
@@ -31,7 +30,6 @@ use crate::{
         KrillResult,
     },
 };
-use crate::ca::Rfc8183Id;
 use crate::commons::api::admin::{AddChildRequest, RepositoryContact};
 use crate::commons::api::ca::IdCertInfo;
 
@@ -546,8 +544,12 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
     fn process_init_command(
         command: TrustAnchorProxyInitCommand,
     ) -> Result<TrustAnchorProxyInitEvent, Error> {
-        Rfc8183Id::generate(&command.into_details().signer)
-            .map(|id| TrustAnchorProxyInitEvent { id: id.into() })
+        Ok(TrustAnchorProxyInitEvent {
+            id: {
+                command.into_details().signer.create_self_signed_id_cert()?
+                    .into()
+            }
+        })
     }
 
     fn version(&self) -> u64 {
