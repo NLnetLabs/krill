@@ -14,10 +14,10 @@ use rpki::{
 
 use serde::{Deserialize, Serialize};
 use crate::ca::bgpsec::{BgpSecCertificateUpdates, StoredBgpSecCsr};
+use crate::ca::certauth::Rfc8183Id;
 use crate::ca::child::ChildCertificateUpdates;
 use crate::ca::events::CertAuthEvent;
 use crate::ca::keys::CertifiedKey;
-use crate::ca::parent::Rfc8183Id;
 use crate::ca::roa::RoaUpdates;
 use crate::ca::rta::{PreparedRta, SignedRta};
 use crate::commons::api::admin::{ParentCaContact, RepositoryContact};

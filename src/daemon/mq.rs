@@ -674,8 +674,9 @@ impl eventsourcing::PostSaveEventListener<TrustAnchorProxy> for TaskQueue {
 
 //------------ Priority ------------------------------------------------------
 
-/// Can be used as a priority value for [`PriorityQueue`]. Meaning that the
-/// time value which is soonest has the highest priority.
+/// Can be used as a priority value.
+///
+/// Meaning that the time value which is soonest has the highest priority.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Priority(i64);
 

@@ -3,21 +3,24 @@
 use std::fmt;
 use std::collections::HashMap;
 use rpki::ca::csr::BgpsecCsr;
+use rpki::ca::idexchange::CaHandle;
 use rpki::ca::publication::Base64;
 use rpki::crypto::PublicKey;
 use rpki::repository::cert::{
     Cert, ExtendedKeyUsage, KeyUsage, Overclaim, TbsCert
 };
-use rpki::repository::resources::Asn;
+use rpki::repository::resources::{Asn, ResourceSet};
 use rpki::repository::x509::{Serial, Time};
 use serde::{Deserialize, Serialize};
 use crate::commons::KrillResult;
 use crate::commons::api::bgpsec::{
-    BgpSecAsnKey, BgpSecCsrInfo, BgpSecCsrInfoList
+    BgpSecAsnKey, BgpSecCsrInfo, BgpSecCsrInfoList, BgpSecDefinitionUpdates,
 };
 use crate::commons::api::ca::ObjectName;
+use crate::commons::error::Error;
 use crate::commons::crypto::KrillSigner;
 use crate::daemon::config::{Config, IssuanceTimingConfig};
+use super::events::CertAuthEvent;
 use super::keys::CertifiedKey;
 
 
@@ -88,6 +91,81 @@ impl BgpSecDefinitions {
     /// Removes the given BGPsec router key.
     pub fn remove(&mut self, key: &BgpSecAsnKey) -> bool {
         self.0.remove(key).is_some()
+    }
+
+    /// Proceses updates.
+    ///
+    /// Returns both the new definition and the events leading to it.
+    ///
+    /// Returns an error if the updates cannot be applied cleanly.
+    pub fn process_updates(
+        &self,
+        handle: &CaHandle,
+        all_resources: &ResourceSet,
+        updates: BgpSecDefinitionUpdates,
+    ) -> KrillResult<(Self, Vec<CertAuthEvent>)> {
+        let mut events = vec![];
+
+        // We keep a copy of the definitions so that we can:
+        // a. remove and then re-add definitions
+        // b. use the updated definitions to generate objects in
+        //    applicable RCs
+        //
+        // (note: actual modifications of self are done when the events are
+        // applied)
+        let mut definitions = self.clone();
+
+        for key in updates.remove {
+            if !definitions.remove(&key) {
+                return Err(Error::BgpSecDefinitionUnknown(
+                    handle.clone(),
+                    key,
+                ));
+            } else {
+                events.push(CertAuthEvent::BgpSecDefinitionRemoved { key });
+            }
+        }
+
+        // Verify that the CSR in each 'addition' is valid. Then either add
+        // a new or update an existing definition.
+        for definition in updates.add {
+            // ensure the CSR is validly signed
+            definition.csr.verify_signature().map_err(|e| {
+                Error::BgpSecDefinitionInvalidlySigned(
+                    handle.clone(),
+                    definition.clone(),
+                    e.to_string(),
+                )
+            })?;
+
+            let key = BgpSecAsnKey::from(&definition);
+            let csr = StoredBgpSecCsr::from_csr(&definition.csr);
+
+            // ensure this CA holds the AS
+            if !all_resources.contains_asn(key.asn) {
+                return Err(Error::BgpSecDefinitionNotEntitled(
+                    handle.clone(),
+                    key,
+                ));
+            }
+
+            if let Some(stored_csr) = definitions.get_stored_csr(&key) {
+                if stored_csr != &csr {
+                    events.push(CertAuthEvent::BgpSecDefinitionUpdated {
+                        key,
+                        csr: csr.clone(),
+                    });
+                    definitions.add_or_replace(key, csr);
+                }
+            } else {
+                events.push(CertAuthEvent::BgpSecDefinitionAdded {
+                    key,
+                    csr: csr.clone(),
+                });
+                definitions.add_or_replace(key, csr);
+            }
+        }
+        Ok((definitions, events))
     }
 }
 
@@ -233,11 +311,10 @@ impl BgpSecCertificates {
     ) -> KrillResult<BgpSecCertInfo> {
         let serial_number = signer.random_serial()?;
 
-        let incoming_cert = certified_key.incoming_cert();
-        let issuer = incoming_cert.subject.clone();
-        let crl_uri = incoming_cert.crl_uri();
-        let aki = incoming_cert.key_identifier();
-        let aia = incoming_cert.uri.clone();
+        let issuer = certified_key.incoming_cert().subject.clone();
+        let crl_uri = certified_key.incoming_cert().crl_uri();
+        let aki = certified_key.incoming_cert().key_identifier();
+        let aia = certified_key.incoming_cert().uri.clone();
 
         // Perhaps implement recommendation of 3.1.1 RFC 8209 somehow.
         // However, it is not at all clear how/why this is relevant.
@@ -265,9 +342,7 @@ impl BgpSecCertificates {
         router_cert.set_crl_uri(Some(crl_uri));
         router_cert.build_as_resource_blocks(|b| b.push(asn));
 
-        let signing_key = certified_key.key_id();
-
-        let cert = signer.sign_cert(router_cert, signing_key)?;
+        let cert = signer.sign_cert(router_cert, &certified_key.key_id())?;
 
         Ok(BgpSecCertInfo::new(asn, cert))
     }

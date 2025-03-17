@@ -972,7 +972,8 @@ impl TrustAnchorProxy {
 impl TrustAnchorProxy {
     /// Get the entitlements for a child.
     ///
-    /// This is a simplified version of similar code in [`CertAuth`]. There is
+    /// This is a simplified version of similar code in
+    /// `CertAuth`. There is
     /// no apparent easy abstraction over these two types (a normal CA and
     /// a TA proxy). Things are similar, but then.. the details are quite
     /// different. So, we accept some re-implementation of similar logic

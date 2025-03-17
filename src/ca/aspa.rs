@@ -3,8 +3,10 @@
 use std::fmt;
 use std::{collections::HashMap, fmt::Debug};
 use rpki::{uri, rrdp};
+use rpki::ca::idexchange::CaHandle;
 use rpki::ca::publication::Base64;
 use rpki::repository::aspa::{Aspa, AspaBuilder};
+use rpki::repository::resources::ResourceSet;
 use rpki::repository::sigobj::SignedObjectBuilder;
 use rpki::repository::x509::{Serial, Time, Validity};
 use serde::{Deserialize, Serialize};
@@ -13,9 +15,10 @@ use crate::commons::crypto::KrillSigner;
 use crate::commons::error::Error;
 use crate::daemon::config::{Config, IssuanceTimingConfig};
 use crate::commons::api::aspa::{
-    AspaDefinition, AspaProvidersUpdate, CustomerAsn
+    AspaDefinition, AspaDefinitionUpdates, AspaProvidersUpdate, CustomerAsn
 };
 use crate::commons::api::ca::ObjectName;
+use super::events::CertAuthEvent;
 use super::keys::CertifiedKey;
 
 
@@ -76,6 +79,106 @@ impl AspaDefinitions {
     /// Returns an iterator over all ASPA definitions.
     pub fn iter(&self) -> impl Iterator<Item = &AspaDefinition> {
         self.attestations.values()
+    }
+
+    /// Proceses updates and returns events leading to the updated definitions.
+    ///
+    /// Returns an error if the update cannot be applied cleanly.
+    pub fn process_updates(
+        &self,
+        handle: &CaHandle,
+        all_resources: &ResourceSet,
+        updates: AspaDefinitionUpdates,
+    ) -> KrillResult<(Self, Vec<CertAuthEvent>)> {
+        let mut events = Vec::new();
+
+        // Keep track of a copy of the AspaDefinitions so we can use to update
+        // ASPA objects
+        let mut all_aspas = self.clone();
+
+        for customer in updates.remove {
+            if !all_aspas.has(customer) {
+                return Err(Error::AspaCustomerUnknown(
+                    handle.clone(),
+                    customer,
+                ));
+            }
+            events.push(CertAuthEvent::AspaConfigRemoved { customer });
+            all_aspas.remove(customer);
+        }
+
+        for aspa_config in updates.add_or_replace {
+            let customer = aspa_config.customer;
+            if aspa_config.providers.is_empty() {
+                return Err(Error::AspaProvidersEmpty(
+                    handle.clone(),
+                    customer,
+                ));
+            }
+
+            if aspa_config.customer_used_as_provider() {
+                return Err(Error::AspaCustomerAsProvider(
+                    handle.clone(),
+                    customer,
+                ));
+            }
+
+            if aspa_config.contains_duplicate_providers() {
+                return Err(Error::AspaProvidersDuplicates(
+                    handle.clone(),
+                    customer,
+                ));
+            }
+
+            if !all_resources.contains_asn(customer) {
+                return Err(Error::AspaCustomerAsNotEntitled(
+                    handle.clone(),
+                    customer,
+                ));
+            }
+
+            // Update the aspas copy so we can update ASPA objects for the
+            // events
+            all_aspas.add_or_replace(aspa_config.clone());
+
+            match self.get(customer) {
+                None => {
+                    events.push(
+                        CertAuthEvent::AspaConfigAdded { aspa_config }
+                    )
+                }
+                Some(existing) => {
+                    // Determine the update from existing to (new) aspa_config
+                    let added = aspa_config
+                        .providers
+                        .iter()
+                        .filter(|new_provider| {
+                            !existing.providers.contains(new_provider)
+                        })
+                        .copied()
+                        .collect();
+
+                    let removed = existing
+                        .providers
+                        .iter()
+                        .filter(|existing| {
+                            !aspa_config.providers.contains(existing)
+                        })
+                        .copied()
+                        .collect();
+
+                    let update = AspaProvidersUpdate { added, removed };
+
+                    if !update.is_empty() {
+                        events.push(CertAuthEvent::AspaConfigUpdated {
+                            customer, update
+                        })
+                    }
+                }
+            }
+        }
+
+        Ok((all_aspas, events))
     }
 }
 
@@ -217,20 +320,15 @@ impl AspaObjects {
         })?;
 
         let object_builder = {
-            let incoming_cert = certified_key.incoming_cert();
-
-            let crl_uri = incoming_cert.crl_uri();
-            let aspa_uri = incoming_cert.uri_for_name(&name);
-            let ca_issuer = incoming_cert.uri.clone();
-
             let mut object_builder = SignedObjectBuilder::new(
                 signer.random_serial()?,
                 issuance_timing.new_aspa_validity(),
-                crl_uri,
-                ca_issuer,
-                aspa_uri,
+                certified_key.incoming_cert().crl_uri(),
+                certified_key.incoming_cert().uri.clone(),
+                certified_key.incoming_cert().uri_for_name(&name),
             );
-            object_builder.set_issuer(Some(incoming_cert.subject.clone()));
+            object_builder.set_issuer(
+                Some(certified_key.incoming_cert().subject.clone()));
             object_builder.set_signing_time(Some(Time::now()));
 
             object_builder
@@ -239,7 +337,7 @@ impl AspaObjects {
         let aspa = signer.sign_aspa(
             aspa_builder,
             object_builder,
-            certified_key.key_id(),
+            &certified_key.key_id(),
         )?;
         Ok(AspaInfo::new(aspa_def, aspa))
     }

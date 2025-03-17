@@ -21,7 +21,7 @@ use super::roa::RoaPayload;
 /// An empty, successful API response.
 ///
 /// This type needs to be used instead of `()` to make conversion into
-/// [`Report`][crate::client::report::Report] work.
+/// [`Report`][crate::cli::report::Report] work.
 #[derive(Clone, Copy, Debug)]
 pub struct Success;
 

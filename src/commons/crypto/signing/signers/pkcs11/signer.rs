@@ -825,7 +825,7 @@ impl Pkcs11Signer {
 
     /// Perform some operation using a PKCS#11 connection.
     ///
-    /// Fails if the PKCS#11 server is not [Usable]. If the operation fails
+    /// Fails if the PKCS#11 server is not usable. If the operation fails
     /// due to a transient connection error, retry with backoff upto a
     /// defined retry limit.
     fn with_conn<T, F>(

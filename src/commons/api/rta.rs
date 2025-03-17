@@ -17,21 +17,8 @@ use crate::commons::util::ext_serde;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RtaPrepareRequest {
-    resources: ResourceSet,
-    validity: Validity,
-}
-
-impl RtaPrepareRequest {
-    pub fn new(resources: ResourceSet, validity: Validity) -> Self {
-        RtaPrepareRequest {
-            resources,
-            validity,
-        }
-    }
-
-    pub fn unpack(self) -> (ResourceSet, Validity) {
-        (self.resources, self.validity)
-    }
+    pub resources: ResourceSet,
+    pub validity: Validity,
 }
 
 
@@ -39,41 +26,14 @@ impl RtaPrepareRequest {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RtaContentRequest {
-    resources: ResourceSet,
-    validity: Validity,
-    subject_keys: Vec<KeyIdentifier>,
+    pub resources: ResourceSet,
+    pub validity: Validity,
+    pub subject_keys: Vec<KeyIdentifier>,
     #[serde(
         deserialize_with = "ext_serde::de_bytes",
         serialize_with = "ext_serde::ser_bytes"
     )]
-    content: Bytes,
-}
-
-impl RtaContentRequest {
-    pub fn new(
-        resources: ResourceSet,
-        validity: Validity,
-        subject_keys: Vec<KeyIdentifier>,
-        content: Bytes,
-    ) -> Self {
-        RtaContentRequest {
-            resources,
-            validity,
-            subject_keys,
-            content,
-        }
-    }
-
-    pub fn unpack(
-        self,
-    ) -> (ResourceSet, Validity, Vec<KeyIdentifier>, Bytes) {
-        (
-            self.resources,
-            self.validity,
-            self.subject_keys,
-            self.content,
-        )
-    }
+    pub content: Bytes,
 }
 
 impl fmt::Display for RtaContentRequest {
@@ -106,7 +66,7 @@ impl fmt::Display for RtaContentRequest {
 
 /// Resource Tagged Attestations
 ///
-/// See: https://tools.ietf.org/id/draft-michaelson-rpki-rta-01.html
+/// See: <https://tools.ietf.org/id/draft-michaelson-rpki-rta-01.html>
 #[derive(Clone, Debug, Deserialize, Eq, Serialize, PartialEq)]
 pub struct ResourceTaggedAttestation {
     #[serde(

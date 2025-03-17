@@ -1459,8 +1459,10 @@ async fn api_ca_history_commands(
             aa!(req, Permission::CaRead, handle, {
                 // /api/v1/cas/{ca}/history/commands
                 // /<rows>/<offset>/<after>/<before>
-                let mut crit = CommandHistoryCriteria::default();
-                crit.rows_limit = Some(path.path_arg().unwrap_or(100));
+                let mut crit = CommandHistoryCriteria {
+                    rows_limit: Some(path.path_arg().unwrap_or(100)),
+                    .. Default::default()
+                };
                 if let Some(offset) = path.path_arg() {
                     crit.offset = offset
                 }

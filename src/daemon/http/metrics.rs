@@ -256,8 +256,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
                         if let Some(exchange) = status.last_exchange.as_ref() {
 
                             let agent = exchange
-                                .user_agent.as_ref()
-                                .map(|s| s.as_str())
+                                .user_agent.as_deref()
                                 .unwrap_or("<none>");
                             if let Some(item) =
                                 user_agent_totals.get_mut(agent)

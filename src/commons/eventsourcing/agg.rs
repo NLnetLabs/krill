@@ -170,8 +170,8 @@ pub trait WithStorableDetails: Storable {
 pub trait InitCommand: Clone {
     /// The type representing the storable components of this command.
     ///
-    /// Commands may contain short-lived things (e.g. an Arc<Signer>) or even
-    /// secrets which should not be persisted.
+    /// Commands may contain short-lived things (e.g. an `Arc<Signer>`) or
+    /// even secrets which should not be persisted.
     type StorableDetails: WithStorableDetails;
 
     /// Returns an identifier for this instance.
@@ -263,8 +263,8 @@ impl<I> fmt::Display for SentInitCommand<I> {
 pub trait InitCommandDetails: Clone {
     /// The type representing the storable components of this command.
     ///
-    /// Commands may contain short-lived things (e.g. an Arc<Signer>) or even
-    /// secrets which should not be persisted.
+    /// Commands may contain short-lived things (e.g. an `Arc<Signer>`) or
+    /// even secrets which should not be persisted.
     type StorableDetails: WithStorableDetails;
 
     /// Returns the storable information for this command
@@ -282,8 +282,8 @@ pub trait InitCommandDetails: Clone {
 pub trait Command: Clone {
     /// The type representing the storable components of this command.
     ///
-    /// Commands may contain short-lived things (e.g. an Arc<Signer>) or even
-    /// secrets which should not be persisted.
+    /// Commands may contain short-lived things (e.g. an `Arc<Signer>`) or
+    /// even secrets which should not be persisted.
     type StorableDetails: WithStorableDetails;
 
     /// Identifies the aggregate the command is applied to.

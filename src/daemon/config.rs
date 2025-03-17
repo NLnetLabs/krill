@@ -374,9 +374,10 @@ impl ConfigDefaults {
 
 #[derive(Clone, Debug)]
 pub enum SignerReference {
-    /// The name of the [[signers]] block being referred to. If supplied it
-    /// must match the name field of one of the [[signers]] blocks defined in
-    /// the configuration.
+    /// The name of the `\[signers\]` block being referred to.
+    ///
+    /// If supplied it must match the name field of one of the `\[signers\]`
+    /// blocks defined in the configuration.
     Name(Option<String>),
 
     /// The index into Config.signers vector that the name was resolved to.

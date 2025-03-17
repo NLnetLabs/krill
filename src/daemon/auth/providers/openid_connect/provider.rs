@@ -221,9 +221,10 @@ impl AuthProvider {
     }
 
     /// Discover the OpenID Connect: identity provider details via the
-    /// https://openid.net/specs/openid-connect-discovery-1_0.html spec defined
+    /// <https://openid.net/specs/openid-connect-discovery-1_0.html>
+    /// spec defined
     /// discovery endpoint of the provider, e.g.
-    ///   https://<provider.domain>/<something/.well-known/openid-configuration
+    /// <https://<provider.domain>/<something/.well-known/openid-configuration>
     /// Via which we can discover both endpoint URIs and capability flags.
     async fn discover(&self) -> KrillResult<WantedMeta> {
         // Read from config the OpenID Connect identity provider discovery

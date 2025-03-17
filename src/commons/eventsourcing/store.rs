@@ -41,11 +41,12 @@ impl<T: Clone + Serialize + DeserializeOwned> Storable for T { }
 ///
 /// # Key-value store usage
 ///
-/// Each aggregate store uses its own namespace. The first element of the
-/// scope is the handle of the instance. The second element of the handle
-/// is either `snapshot.json` for the snapshot or `command-N.json` where
-/// `N` is the version the command is taking the instance to.
-/// `command-0.json` therefore is the name of the init command.
+/// Each aggregate store uses its own namespace. The scope of the key
+/// consists of a single element comprised of the handle of the aggregate
+/// instance in question. The name of the key is either `snapshot.json` for
+/// the snapshot or `command-N.json` where `N` is the version the command is
+/// taking the instance to. `command-0.json` therefore is the name of the
+/// init command.
 ///
 /// # Use within Krill
 ///
@@ -325,7 +326,7 @@ impl<A: Aggregate> AggregateStore<A> {
                                     match init_command.into_init() {
                                         Some(init_event) => {
                                             let agg = A::init(
-                                                &handle, init_event
+                                                handle, init_event
                                             );
                                             Arc::new(agg)
                                         }

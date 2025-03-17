@@ -232,6 +232,13 @@ impl fmt::Debug for RoaPayload {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialOrd, PartialEq)]
 pub struct RoaPayloadJsonMapKey(RoaPayload);
 
+impl RoaPayloadJsonMapKey {
+    pub fn asn(self) -> AsNumber {
+        self.0.asn
+    }
+}
+
+
 impl From<RoaPayload> for RoaPayloadJsonMapKey {
     fn from(def: RoaPayload) -> Self {
         RoaPayloadJsonMapKey(def)

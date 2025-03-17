@@ -566,7 +566,7 @@ impl KmipSigner {
 
     /// Perform some operation using a KMIP server pool connection.
     ///
-    /// Fails if the KMIP server is not [KmipSignerStatus::Usable]. If the
+    /// Fails if the KMIP server is not usable. If the
     /// operation fails due to a transient connection error, retry with
     /// backoff upto a defined retry limit.
     fn with_conn<T, F>(

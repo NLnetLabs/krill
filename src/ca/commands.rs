@@ -1,4 +1,4 @@
-/// The commands issued to an RPKI CA.
+//! The commands issued to an RPKI CA.
 
 use std::fmt;
 use std::sync::Arc;

@@ -1784,7 +1784,7 @@ impl RrdpServer {
     }
 
     /// Expects files (like delta.xml or snapshot.xml) under dir structure
-    /// like: <session_path>/<serial>/<some random>/<filename>
+    /// like: `<session_path>/<serial>/<some random>/<filename>`.
     pub fn find_in_serial_dir(
         session_path: &Path,
         serial: u64,

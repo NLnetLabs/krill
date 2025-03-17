@@ -456,9 +456,11 @@ fn event_sourcing_framework() {
     assert_eq!(22, counter.total());
 
     // Get paginated history
-    let mut crit = CommandHistoryCriteria::default();
-    crit.offset = 3;
-    crit.rows_limit = Some(10);
+    let crit = CommandHistoryCriteria {
+        offset: 3,
+        rows_limit: Some(10),
+        .. Default::default()
+    };
 
     let history = manager.command_history(&alice_handle, crit).unwrap();
     assert_eq!(history.total, 22);
@@ -467,9 +469,11 @@ fn event_sourcing_framework() {
     assert_eq!(history.commands.first().unwrap().version, 4);
 
     // Get history excluding 'around the sun' commands
-    let mut crit = CommandHistoryCriteria::default();
-    crit.rows_limit = Some(100);
-    crit.label_excludes = Some(vec!["person-around-sun".into()]);
+    let crit = CommandHistoryCriteria {
+        rows_limit: Some(100),
+        label_excludes: Some(vec!["person-around-sun".into()]),
+        .. Default::default()
+    };
     let history = manager.command_history(&alice_handle, crit).unwrap();
     assert_eq!(history.total, 1);
 }

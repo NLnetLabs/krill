@@ -1,116 +1,71 @@
+//! Data mgigration for CAs from versions before 0.10.0.
+
 use log::{debug, info};
-use rpki::ca::idexchange::MyHandle;
-use rpki::{ca::idexchange::CaHandle, repository::x509::Time};
-
-use crate::commons::api::aspa::ProviderAsn;
-use crate::commons::eventsourcing::StoredCommandBuilder;
-use crate::upgrades::{
-    AspaMigrationConfigUpdates, AspaMigrationConfigs, CommandMigrationEffect,
-    UnconvertedEffect,
-};
-use crate::{
-    commons::{
-        eventsourcing::AggregateStore,
-        storage::{Key, KeyValueStore, Segment},
-    },
-    constants::{CASERVER_NS, CA_OBJECTS_NS},
-    daemon::{
-        config::Config,
-    },
-    upgrades::{
-        pre_0_14_0::OldStoredCommand,
-        UpgradeAggregateStorePre0_14, UpgradeError, UpgradeMode,
-        UpgradeResult,
-    },
-};
-
+use rpki::ca::idexchange::{CaHandle, MyHandle};
+use rpki::repository::x509::Time;
 use crate::ca::certauth::CertAuth;
 use crate::ca::commands::CertAuthStorableCommand;
 use crate::ca::events::{CertAuthEvent, CertAuthInitEvent};
 use crate::ca::publishing::CaObjects;
+use crate::commons::api::aspa::ProviderAsn;
+use crate::commons::eventsourcing::{
+    AggregateStore, StoredCommand, StoredCommandBuilder
+};
+use crate::commons::storage::{Key, KeyValueStore, Segment};
+use crate::constants::{CASERVER_NS, CA_OBJECTS_NS};
+use crate::daemon::config::Config;
+use crate::upgrades::{
+    AspaMigrationConfigUpdates, AspaMigrationConfigs, CommandMigrationEffect,
+    UpgradeAggregateStorePre0_14, UpgradeError, UpgradeMode, UpgradeResult,
+    UnconvertedEffect,
+};
+use crate::upgrades::pre_0_14_0::OldStoredCommand;
 use super::old_events::{
     OldCaObjects, Pre0_10CertAuthEvent, Pre0_10CertAuthInitEvent
 };
 use super::old_commands::Pre0_10_0CertAuthStorableCommand;
 
-/// Migrates the CaObjects for a given CA.
+
+//------------ CaMigration ---------------------------------------------------
+
+/// Migrates the CAs.
 ///
-/// i.e. the CA content which is NOT event-sourced.
-struct CaObjectsMigration {
-    current_store: KeyValueStore,
-    new_store: KeyValueStore,
-}
-
-impl CaObjectsMigration {
-    fn create(config: &Config) -> Result<Self, UpgradeError> {
-        let current_store =
-            KeyValueStore::create(&config.storage_uri, CA_OBJECTS_NS)?;
-        let new_store = KeyValueStore::create_upgrade_store(
-            &config.storage_uri,
-            CA_OBJECTS_NS,
-        )?;
-        Ok(CaObjectsMigration {
-            current_store,
-            new_store,
-        })
-    }
-
-    fn prepare_new_data_for(
-        &self,
-        ca: &CaHandle,
-    ) -> Result<(), UpgradeError> {
-        let key =
-            Key::new_global(Segment::parse_lossy(&format!("{}.json", ca))); // ca should always be a valid Segment
-
-        if let Some(old_objects) =
-            self.current_store.get::<OldCaObjects>(&key)?
-        {
-            let converted: CaObjects = old_objects.try_into()?;
-            self.new_store.store(&key, &converted)?;
-            debug!(
-                "Stored updated objects for CA {} in {:?}",
-                ca, self.new_store
-            );
-        }
-
-        Ok(())
-    }
-}
-
-/// Migrates the CAs:
-/// - The events, snapshots and info in the AggregateStore
-/// - The mutable CaObjects structure
+/// It migrates both the `CertAuth` aggregates and the CA objects stored
+/// separatedly..
 pub struct CasMigration {
+    /// The old key-value store for the aggregate.
     current_kv_store: KeyValueStore,
+
+    /// The new key-value store for the aggregate.
     new_kv_store: KeyValueStore,
+
+    /// The new `CertAuth` aggregate store.
     new_agg_store: AggregateStore<CertAuth>,
+
+    /// The mogrations for the CA object store.
     ca_objects_migration: CaObjectsMigration,
 }
 
 impl CasMigration {
+    /// Upgrades the CAs based on the upgrade mode and config.
     pub fn upgrade(
         mode: UpgradeMode,
         config: &Config,
     ) -> UpgradeResult<AspaMigrationConfigs> {
-        let current_kv_store =
-            KeyValueStore::create(&config.storage_uri, CASERVER_NS)?;
-        let new_kv_store = KeyValueStore::create_upgrade_store(
-            &config.storage_uri,
-            CASERVER_NS,
-        )?;
-
-        let new_agg_store = AggregateStore::<CertAuth>::create_upgrade_store(
-            &config.storage_uri,
-            CASERVER_NS,
-            config.use_history_cache,
-        )?;
-        let ca_objects_migration = CaObjectsMigration::create(config)?;
-
-        CasMigration {
-            current_kv_store,
-            new_kv_store,
-            new_agg_store,
-            ca_objects_migration,
+        Self {
+            current_kv_store: KeyValueStore::create(
+                &config.storage_uri, CASERVER_NS
+            )?,
+            new_kv_store: KeyValueStore::create_upgrade_store(
+                &config.storage_uri,
+                CASERVER_NS,
+            )?,
+            new_agg_store: AggregateStore::<CertAuth>::create_upgrade_store(
+                &config.storage_uri,
+                CASERVER_NS,
+                config.use_history_cache,
+            )?,
+            ca_objects_migration: CaObjectsMigration::create(config)?,
         }
         .upgrade(mode)
     }
@@ -133,9 +88,7 @@ impl UpgradeAggregateStorePre0_14 for CasMigration {
         handle: MyHandle,
         actor: String,
         time: Time,
-    ) -> UpgradeResult<
-        crate::commons::eventsourcing::StoredCommand<Self::Aggregate>,
-    > {
+    ) -> UpgradeResult<StoredCommand<Self::Aggregate>> {
         let details = CertAuthStorableCommand::Init;
         let init_event = CertAuthInitEvent { id: old_init.into() };
 
@@ -285,3 +238,52 @@ impl UpgradeAggregateStorePre0_14 for CasMigration {
         self.ca_objects_migration.prepare_new_data_for(handle)
     }
 }
+
+
+//------------ CaObjectMigration ---------------------------------------------
+
+/// Migrates the CA objects store for a given CA.
+struct CaObjectsMigration {
+    /// The store with the old data.
+    current_store: KeyValueStore,
+
+    /// The store with the converted data.
+    new_store: KeyValueStore,
+}
+
+impl CaObjectsMigration {
+    /// Creates a new migration from the configuration.
+    fn create(config: &Config) -> Result<Self, UpgradeError> {
+        Ok(CaObjectsMigration {
+            current_store: KeyValueStore::create(
+                &config.storage_uri, CA_OBJECTS_NS
+            )?,
+            new_store: KeyValueStore::create_upgrade_store(
+                &config.storage_uri,
+                CA_OBJECTS_NS,
+            )?
+        })
+    }
+
+    fn prepare_new_data_for(
+        &self,
+        ca: &CaHandle,
+    ) -> Result<(), UpgradeError> {
+        let key =
+            Key::new_global(Segment::parse_lossy(&format!("{}.json", ca))); // ca should always be a valid Segment
+
+        if let Some(old_objects) =
+            self.current_store.get::<OldCaObjects>(&key)?
+        {
+            let converted: CaObjects = old_objects.try_into()?;
+            self.new_store.store(&key, &converted)?;
+            debug!(
+                "Stored updated objects for CA {} in {:?}",
+                ca, self.new_store
+            );
+        }
+
+        Ok(())
+    }
+}
+

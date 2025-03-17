@@ -17,13 +17,13 @@ use crate::commons::api::aspa::{
     AspaDefinition, AspaProvidersUpdate, CustomerAsn,
 };
 use crate::commons::api::bgpsec::BgpSecAsnKey;
-use crate::commons::api::ca::{IdCertInfo, ObjectName, ReceivedCert, RtaName};
+use crate::commons::api::ca::{IdCertInfo, ReceivedCert, RtaName};
 use crate::commons::api::roa::RoaPayloadJsonMapKey;
 use super::aspa::AspaObjectsUpdates;
 use super::bgpsec::{BgpSecCertificateUpdates, StoredBgpSecCsr};
+use super::certauth::Rfc8183Id;
 use super::child::ChildCertificateUpdates;
 use super::keys::CertifiedKey;
-use super::parent::Rfc8183Id;
 use super::roa::RoaUpdates;
 use super::rta::{PreparedRta, SignedRta};
 
@@ -531,31 +531,27 @@ impl fmt::Display for CertAuthEvent {
                     "updated child certificates in resource class {}",
                     resource_class_name
                 )?;
-                let issued = updates.issued();
-                if !issued.is_empty() {
+                if !updates.issued.is_empty() {
                     write!(f, " issued keys: ")?;
-                    for iss in issued {
+                    for iss in &updates.issued {
                         write!(f, " {}", iss.key_identifier())?;
                     }
                 }
-                let revoked = updates.removed();
-                if !revoked.is_empty() {
+                if !updates.removed.is_empty() {
                     write!(f, " revoked keys: ")?;
-                    for rev in revoked {
+                    for rev in &updates.removed {
                         write!(f, " {}", rev)?;
                     }
                 }
-                let suspended = updates.suspended();
-                if !suspended.is_empty() {
+                if !updates.suspended.is_empty() {
                     write!(f, " suspended keys: ")?;
-                    for cert in suspended {
+                    for cert in &updates.suspended {
                         write!(f, " {}", cert.key_identifier())?;
                     }
                 }
-                let unsuspended = updates.unsuspended();
-                if !unsuspended.is_empty() {
+                if !updates.unsuspended.is_empty() {
                     write!(f, " unsuspended keys: ")?;
-                    for cert in unsuspended {
+                    for cert in &updates.unsuspended {
                         write!(f, " {}", cert.key_identifier())?;
                     }
                 }
@@ -743,29 +739,7 @@ impl fmt::Display for CertAuthEvent {
                     "updated ROA objects under resource class '{}'",
                     resource_class_name
                 )?;
-                if !updates.updated.is_empty()
-                    || !updates.aggregate_updated.is_empty()
-                {
-                    write!(f, " added: ")?;
-                    for auth in updates.updated.keys() {
-                        write!(f, "{} ", ObjectName::from(*auth))?;
-                    }
-                    for agg_key in updates.aggregate_updated.keys() {
-                        write!(f, "{} ", ObjectName::from(agg_key))?;
-                    }
-                }
-                if !updates.removed.is_empty()
-                    || !updates.aggregate_removed.is_empty()
-                {
-                    write!(f, " removed: ")?;
-                    for auth in &updates.removed {
-                        write!(f, "{} ", ObjectName::from(*auth))?;
-                    }
-                    for agg_key in &updates.aggregate_removed {
-                        write!(f, "{} ", ObjectName::from(agg_key))?;
-                    }
-                }
-                Ok(())
+                updates.fmt_event(f)
             }
             CertAuthEvent::AspaConfigAdded { aspa_config: addition } => {
                 write!(f, "{}", addition)

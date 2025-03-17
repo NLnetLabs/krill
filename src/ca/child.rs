@@ -40,8 +40,9 @@ pub enum UsedKeyState {
 
 /// Information about a child CA needed by a parent CA.
 ///
-/// Note that the actual [`IssuedCert`] corresponding to the [`KeyIdentifier`]
-/// and [`ResourceClassName`] are kept in the parent's resource class.
+/// Note that the actual [`IssuedCertificate`] corresponding to the
+/// [`KeyIdentifier`] and [`ResourceClassName`] are kept in the parent's
+/// resource class.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildDetails {
     /// The state of the child.
@@ -167,11 +168,14 @@ impl ChildDetails {
 /// The collection of certificates issued under a resource class.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildCertificates {
-    #[serde(alias = "inner")]
-    // Note: we cannot remove this unless we migrate existing json on
+    /// The certificates for active CAs.
+    //
+    // Note: we cannot remove the alias unless we migrate existing json on
     // upgrade.
+    #[serde(alias = "inner")]
     issued: HashMap<KeyIdentifier, IssuedCertificate>,
 
+    /// The certificates for suspeneded child CAs.
     #[serde(
         skip_serializing_if = "HashMap::is_empty",
         default = "HashMap::new"
@@ -180,32 +184,38 @@ pub struct ChildCertificates {
 }
 
 impl ChildCertificates {
+    /// Returns whether the set of keys is empty.
     pub fn is_empty(&self) -> bool {
         self.issued.is_empty() && self.suspended.is_empty()
     }
 
-    pub fn certificate_issued(&mut self, issued: IssuedCertificate) {
+    /// Adds a new issued certificate.
+    pub fn add_issued_certificate(&mut self, issued: IssuedCertificate) {
         let ki = issued.key_identifier();
         self.issued.insert(ki, issued);
     }
 
-    pub fn certificate_unsuspended(&mut self, unsuspended: UnsuspendedCert) {
+    /// Unsuspends a certificate and move it to the issued certificates.
+    pub fn unsuspend_certificate(&mut self, unsuspended: UnsuspendedCert) {
         let ki = unsuspended.key_identifier();
         self.suspended.remove(&ki);
         self.issued.insert(ki, unsuspended.into_converted());
     }
 
-    pub fn certificate_suspended(&mut self, suspended: SuspendedCert) {
+    /// Suspends a certificate and moves it to the suspended certificates.
+    pub fn suspend_certificate(&mut self, suspended: SuspendedCert) {
         let ki = suspended.key_identifier();
         self.issued.remove(&ki);
         self.suspended.insert(ki, suspended);
     }
 
-    pub fn key_revoked(&mut self, key: &KeyIdentifier) {
+    /// Removes the certificate for a revoke a key.
+    pub fn remove_revoked_key(&mut self, key: &KeyIdentifier) {
         self.issued.remove(key);
         self.suspended.remove(key);
     }
 
+    /// Returns the issued certificate for the given key if available.
     pub fn get_issued(
         &self,
         ki: &KeyIdentifier,
@@ -213,6 +223,7 @@ impl ChildCertificates {
         self.issued.get(ki)
     }
 
+    /// Returns the suspended certificate for the given key if available.
     pub fn get_suspended(
         &self,
         ki: &KeyIdentifier,
@@ -229,7 +240,7 @@ impl ChildCertificates {
     ) -> KrillResult<ChildCertificateUpdates> {
         let mut updates = ChildCertificateUpdates::default();
         for issued in self.issued.values() {
-            updates.issue(self.re_issue(
+            updates.issued.push(self.re_issue(
                 issued,
                 None,
                 signing_cert,
@@ -240,7 +251,7 @@ impl ChildCertificates {
         // Also re-issue suspended certificates, they may yet become
         // unsuspended at some point
         for suspended in self.suspended.values() {
-            updates.suspend(
+            updates.suspended.push(
                 self.re_issue(
                     &suspended.to_converted(),
                     None,
@@ -256,10 +267,9 @@ impl ChildCertificates {
 
     /// Shrink any overclaiming certificates.
     ///
-    /// NOTE: We need to pro-actively shrink child certificates to avoid
-    /// invalidating them.       But, if we gain additional resources it
-    /// is up to child to request a new certificate       with those
-    /// resources.
+    /// Note: We need to pro-actively shrink child certificates to avoid
+    /// invalidating them. But, if we gain additional resources it is up to
+    /// child to request a new certificate with those resources.
     pub fn shrink_overclaiming(
         &self,
         received_cert: &ReceivedCert,
@@ -276,10 +286,11 @@ impl ChildCertificates {
             {
                 if reduced_set.is_empty() {
                     // revoke
-                    updates.remove(issued.key_identifier());
-                } else {
+                    updates.removed.push(issued.key_identifier());
+                }
+                else {
                     // re-issue
-                    updates.issue(self.re_issue(
+                    updates.issued.push(self.re_issue(
                         issued,
                         Some(reduced_set),
                         received_cert,
@@ -297,23 +308,22 @@ impl ChildCertificates {
             {
                 if reduced_set.is_empty() {
                     // revoke
-                    updates.remove(suspended.key_identifier());
-                } else {
+                    updates.removed.push(suspended.key_identifier());
+                }
+                else {
                     // re-issue shrunk suspended
                     //
                     // Note: this will not be published yet, but remain
-                    // suspended       until the child
-                    // contacts us again, or is manually
-                    //       un-suspended.
-                    updates.suspend(
+                    // suspended until the child contacts us again, or is
+                    // manually un-suspended.
+                    updates.suspended.push(
                         self.re_issue(
                             &suspended.to_converted(),
                             Some(reduced_set),
                             received_cert,
                             issuance_timing,
                             signer,
-                        )?
-                        .into_converted(),
+                        )?.into_converted(),
                     );
                 }
             }
@@ -322,8 +332,10 @@ impl ChildCertificates {
         Ok(updates)
     }
 
-    /// Re-issue an issued certificate to replace an earlier
-    /// one which is about to be outdated or has changed resources.
+    /// Return a re-issued certficate for an issued certificate.
+    ///
+    /// The returned certificate should be used to replace the previous
+    /// certificat if it has become outdated or has changed resources.
     fn re_issue(
         &self,
         previous: &IssuedCertificate,
@@ -333,8 +345,9 @@ impl ChildCertificates {
         signer: &KrillSigner,
     ) -> KrillResult<IssuedCertificate> {
         let csr_info = previous.csr_info.clone();
-        let resource_set =
-            updated_resources.unwrap_or_else(|| previous.resources.clone());
+        let resource_set = updated_resources.unwrap_or_else(|| {
+            previous.resources.clone()
+        });
         let limit = previous.limit.clone();
 
         let re_issued = SignSupport::make_issued_cert(
@@ -356,94 +369,36 @@ impl ChildCertificates {
 /// Describes an update to the set of ROAs under a ResourceClass.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildCertificateUpdates {
+    /// Issued certificates that have been added.
+    ///
+    /// Note that these are typically newly issued certificates, but can
+    /// also be a previously issued certificates which have been suspended
+    /// and are now unsuspended.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub issued: Vec<IssuedCertificate>,
 
+    /// Key identifiers of certificates that have been removed.
+    ///
+    /// Added keys will be revoked.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub removed: Vec<KeyIdentifier>,
 
+    /// The certificates that have been suspended.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub suspended: Vec<SuspendedCert>,
 
+    /// The certificats that have been unsuspended.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub unsuspended: Vec<UnsuspendedCert>,
 }
 
 impl ChildCertificateUpdates {
-    pub fn new(
-        issued: Vec<IssuedCertificate>,
-        removed: Vec<KeyIdentifier>,
-        suspended: Vec<SuspendedCert>,
-        unsuspended: Vec<UnsuspendedCert>,
-    ) -> Self {
-        ChildCertificateUpdates {
-            issued,
-            removed,
-            suspended,
-            unsuspended,
-        }
-    }
-
+    /// Returns whether there are no updates.
     pub fn is_empty(&self) -> bool {
         self.issued.is_empty()
             && self.removed.is_empty()
             && self.suspended.is_empty()
             && self.unsuspended.is_empty()
-    }
-
-    /// Add an issued certificate to the current set of issued certificates.
-    /// Note that this is typically a newly issued certificate, but it can
-    /// also be a previously issued certificate which had been suspended and
-    /// is now unsuspended.
-    pub fn issue(&mut self, new: IssuedCertificate) {
-        self.issued.push(new);
-    }
-
-    /// Remove certificates for a key identifier. This will ensure that they
-    /// are revoked.
-    pub fn remove(&mut self, ki: KeyIdentifier) {
-        self.removed.push(ki);
-    }
-
-    /// List all currently issued (not suspended) certificates.
-    pub fn issued(&self) -> &Vec<IssuedCertificate> {
-        &self.issued
-    }
-
-    /// List all removals (revocations).
-    pub fn removed(&self) -> &Vec<KeyIdentifier> {
-        &self.removed
-    }
-
-    /// Suspend a certificate
-    pub fn suspend(&mut self, suspended_cert: SuspendedCert) {
-        self.suspended.push(suspended_cert);
-    }
-
-    /// List all suspended certificates in this update.
-    pub fn suspended(&self) -> &Vec<SuspendedCert> {
-        &self.suspended
-    }
-
-    /// Unsuspend a certificate
-    pub fn unsuspend(&mut self, unsuspended_cert: UnsuspendedCert) {
-        self.unsuspended.push(unsuspended_cert);
-    }
-
-    /// List all unsuspended certificates in this update.
-    pub fn unsuspended(&self) -> &Vec<UnsuspendedCert> {
-        &self.unsuspended
-    }
-
-    pub fn unpack(
-        self,
-    ) -> (
-        Vec<IssuedCertificate>,
-        Vec<KeyIdentifier>,
-        Vec<SuspendedCert>,
-        Vec<UnsuspendedCert>,
-    ) {
-        (self.issued, self.removed, self.suspended, self.unsuspended)
     }
 }
 

@@ -60,7 +60,7 @@ use crate::commons::crypto::{
 ///
 /// KrillSigner:
 ///   - Delegates Signer management and dispatch to [SignerRouter].
-///   - Maps Result<SignerError> to KrillResult.
+///   - Maps `Result<_, SignerError>` to `KrillResult`.
 ///   - Directs signers to use the RPKI standard key format (RSA).
 ///   - Directs signers to use the RPKI standard signature algorithm (RSA PKCS
 ///     #1 v1.5 with SHA-256).

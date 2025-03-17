@@ -273,7 +273,7 @@ pub async fn post_binary_with_full_ua(
     let mut headers = HeaderMap::new();
 
     let ua_string = concat!("krill/{}", crate_version!());
-    let user_agent_value = HeaderValue::from_str(&ua_string)
+    let user_agent_value = HeaderValue::from_str(ua_string)
         .map_err(|e| Error::request_build(uri, e))?;
     let content_type_value = HeaderValue::from_str(content_type)
         .map_err(|e| Error::request_build(uri, e))?;

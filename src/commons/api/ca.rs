@@ -1483,12 +1483,6 @@ impl ChildStatus {
     }
 }
 
-impl From<ChildStatus> for Option<ChildExchange> {
-    fn from(status: ChildStatus) -> Self {
-        status.last_exchange
-    }
-}
-
 
 //------------ ChildExchange -------------------------------------------------
 

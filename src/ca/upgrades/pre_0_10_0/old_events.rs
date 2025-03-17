@@ -33,10 +33,10 @@ use crate::{
     },
 };
 
+use crate::ca::certauth::Rfc8183Id;
 use crate::ca::child::ChildCertificateUpdates;
 use crate::ca::events::CertAuthEvent;
 use crate::ca::keys::CertifiedKey;
-use crate::ca::parent::Rfc8183Id;
 use crate::ca::publishing::{
     CaObjects, ResourceClassObjects, CurrentKeyState, DeprecatedRepository,
     KeyObjectSet, ObjectSetRevision, OldKeyState,
@@ -195,12 +195,12 @@ impl TryFrom<OldChildCertificateUpdates> for ChildCertificateUpdates {
             unsuspended.push(old_unsuspended.try_into()?);
         }
 
-        Ok(ChildCertificateUpdates::new(
+        Ok(ChildCertificateUpdates {
             issued,
-            old.removed,
+            removed: old.removed,
             suspended,
             unsuspended,
-        ))
+        })
     }
 }
 
@@ -1211,7 +1211,7 @@ impl TryFrom<OldCaObjects> for CaObjects {
             .map(|deprecated| deprecated.into())
             .collect();
 
-        Ok(CaObjects::new(ca, repo, classes, deprecated_repos))
+        Ok(CaObjects::from_parts(ca, repo, classes, deprecated_repos))
     }
 }
 

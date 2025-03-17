@@ -27,6 +27,10 @@ Follow-up:
 * Applying events can panic if events are inconsistent. Given that we
   are working on stored data which can be manipulated outside of our
   control, we should probably deal with that more gracefully.
+* Split a TA Manager off the CA Manager.
+* Use Cows in API structs to avoid cloning on the server side. This will
+  also allow removing quite a few temporary vecs and replace them with
+  iterators.
 
 Notes
 

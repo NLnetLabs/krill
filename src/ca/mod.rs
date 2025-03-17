@@ -8,7 +8,6 @@ mod commands;
 mod events;
 mod keys;
 mod manager;
-mod parent;
 pub mod publishing; // Temporary for ta.
 mod rc;
 mod roa;

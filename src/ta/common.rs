@@ -29,7 +29,7 @@ use crate::{
     },
 };
 use crate::ca::publishing::{
-    CrlBuilder, ManifestBuilder, ObjectSetRevision, PublishedCrl,
+    ManifestBuilder, ObjectSetRevision, PublishedCrl,
     PublishedManifest, PublishedObject, 
 };
 use crate::commons::api::admin::PublishedFile;
@@ -94,7 +94,7 @@ impl TrustAnchorObjects {
         let signing_key = signing_cert.key_identifier();
         let issuer = signing_cert.subject.clone();
 
-        let crl = CrlBuilder::build(
+        let crl = PublishedCrl::build(
             signing_key,
             issuer,
             &revocations,
@@ -140,7 +140,7 @@ impl TrustAnchorObjects {
         } else {
             let issuer = signing_cert.subject.clone();
 
-            self.crl = CrlBuilder::build(
+            self.crl = PublishedCrl::build(
                 signing_key,
                 issuer,
                 &self.revocations,

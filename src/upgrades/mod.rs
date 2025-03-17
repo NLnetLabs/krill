@@ -828,7 +828,7 @@ pub trait UpgradeAggregateStorePre0_14 {
 
 /// Prepares a Krill upgrade related data migration. If no data migration is
 /// needed then this will simply be a no-op. Returns the
-/// [`KrillUpgradeVersions`] if the currently deployed Krill version differs
+/// `KrillUpgradeVersions` if the currently deployed Krill version differs
 /// from the code version. Note that the version may have increased even if
 /// there is no data migration needed.
 ///

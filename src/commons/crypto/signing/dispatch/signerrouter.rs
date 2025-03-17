@@ -35,7 +35,8 @@ use crate::commons::crypto::dispatch::error::ErrorString;
 ///     a different [Signer] than handles new key creation).
 ///
 /// Note: If the `hsm` feature is not enabled all requests are routed to an
-/// instance of the [OpenSslSigner] for backward compatibility with the
+/// instance of the [`OpenSslSigner`][crate::commons::crypto::OpenSslSigner]
+/// for backward compatibility with the
 /// behaviour of Krill before the introduction of the feature and the
 /// [SignerMapper] is not created.
 ///
@@ -56,8 +57,8 @@ use crate::commons::crypto::dispatch::error::ErrorString;
 /// from the trait and so we will be able to remove these locks and instead
 /// use interior mutability inside the [Signer] implementations as
 /// appropriate/necessary rather than lock the entire [Signer]. Even if that
-/// is released we will not make those changes in the current code however as that will introduce too many changes in one PR. See https://github.com/NLnetLabs/rpki-rs/issues/161 and
-/// https://github.com/NLnetLabs/rpki-rs/pull/162 for more information.
+/// is released we will not make those changes in the current code however as that will introduce too many changes in one PR. See <https://github.com/NLnetLabs/rpki-rs/issues/161> and
+/// <https://github.com/NLnetLabs/rpki-rs/pull/162> for more information.
 ///
 /// Further, a signer may not be available at the time we wish to use it,
 /// perhaps it is down or being slow or a network or configuration issue
@@ -65,7 +66,7 @@ use crate::commons::crypto::dispatch::error::ErrorString;
 /// maintained in two distinct sets: pending and active. Signers start in the
 /// pending set and are promoted to the active set once we are able to
 /// verify that we can connect to and use them and determine which
-/// [SignerMapper] [Handle] they should be assigned.
+/// [SignerMapper] [SignerHandle] they should be assigned.
 #[derive(Debug)]
 pub struct SignerRouter {
     /// The signer to use for creating new keys.
@@ -79,24 +80,24 @@ pub struct SignerRouter {
     /// The signer to create, sign with and destroy a one-off key.
     ///
     /// As the security of a HSM isn't needed for one-off keys, and HSMs are
-    /// slow, by default this should be an instance of [OpenSslSigner].
-    /// However, if users think the perceived extra security is warranted let
-    /// them use a different signer for one-off keys if that's what they
-    /// want.
+    /// slow, by default this should be an instance of
+    /// `OpenSslSigner`, However, if users think the perceived extra security
+    /// is warranted let them use a different signer for one-off keys if
+    /// that's what they want.
     one_off_signer: Arc<SignerProvider>,
 
-    /// A mechanism for identifying the signer [Handle] that owns the key
+    /// A mechanism for identifying the [`SignerHandle`] that owns the key
     /// with a particular [KeyIdentifier].
     ///
     /// Used to route requests to the signer that possesses the key. If a key
     /// was created using a signer that is no longer present in the
-    /// config file then the [SignerMapper] may return a [Handle] which is
-    /// not present in the `active_signers` set (see below) and thus for
-    /// which we thus have no way of using the key.
+    /// config file then the [SignerMapper] may return a [`SignerHandle`]
+    /// which is not present in the `active_signers` set (see below) and thus
+    /// for which we thus have no way of using the key.
     ///
     /// Conversely, if a key was deleted from the signer/HSM by an external
     /// entity without our knowledge then the [SignerMapper] may return a
-    /// [Handle] for a signer which no longer possesses the key.
+    /// [`SignerHandle`] for a signer which no longer possesses the key.
     ///
     /// A reference to the [SignerMapper] is also given to each [Signer] so
     /// that it can register the mapping of newly created keys by their
@@ -105,7 +106,7 @@ pub struct SignerRouter {
     /// identifier from A given [KeyIdentifier].
     signer_mapper: Option<Arc<SignerMapper>>,
 
-    /// A lookup table for resolving a signer [Handle] to its associated
+    /// A lookup table for resolving a [`SignerHandle`] to its associated
     /// [SignerProvider] instance.
     ///
     /// Used for any operation which must be routed to the signer that owns
@@ -135,7 +136,7 @@ pub struct SignerRouter {
     ///
     /// [SignerProvider] instances are moved to this set from the
     /// `pending_signers` set once we are able to confirm that
-    /// we can connect to them and can identify the correct signer [Handle]
+    /// we can connect to them and can identify the correct [`SignerHandle`]
     /// used by the [SignerMapper] to associate with keys created by that
     /// signer.
     active_signers: RwLock<HashMap<SignerHandle, Arc<SignerProvider>>>,
@@ -275,8 +276,8 @@ impl SignerRouter {
 /// immediately and always available as was the case without the "hsm" feature
 /// when only the OpenSslSigner was supported. We therefore keep created
 /// signers on standby in a "pending" set until we can verify that they are
-/// reachable and usable and can determine which [SignerMapper] [Handle] to
-/// assign to them.
+/// reachable and usable and can determine which [SignerMapper]
+/// [SignerHandle] to assign to them.
 ///
 /// The Krill configuration file defines named signers with a type (openssl,
 /// kmip or pkcs#11) and type specific settings (key dir path, hostname, port
@@ -296,19 +297,19 @@ impl SignerRouter {
 ///
 /// Binding is done by asking the signer on first use to create a new key pair
 /// for which we save the public key and the signer specific internal private
-/// key identifier and combine them into a unique [Handle] for use by the
+/// key identifier and combine them into a unique [SignerHandle] for use by the
 /// signer with the [SignerMapper]. We also store some metadata about the
-/// signer backend with the [Handle] in the [SignerMapper] which allows us to
-/// see if the configuration and/or backend properties change over time.
+/// signer backend with the [SignerHandle] in the [SignerMapper] which allows
+/// us to see if the configuration and/or backend properties change over time.
 ///
 /// On subsequent bindings we determine which signer maps to which
-/// [SignerMapper] [Handle] by extracting the private key signer specific
-/// internal id from the [Handle] and asking each signer to sign a challenge
+/// [SignerMapper] [SignerHandle] by extracting the private key signer specific
+/// internal id from the handle and asking each signer to sign a challenge
 /// using that key. We then verify the signature using the saved public key.
 /// If the signer doesn't know the internal private key id or produces
 /// an incorrect signature we know that the signer doesn't possess the binding
 /// key and thus likely isn't the signer we should go to for the keys mapped
-/// to the [SignerMapper] [Handle] corresponding to the binding key.
+/// to the [SignerMapper] handle corresponding to the binding key.
 ///
 /// By binding this way we both verify that the signer is usable (at least for
 /// key pair creation and signing) and that we are using a signer that should

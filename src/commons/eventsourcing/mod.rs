@@ -110,7 +110,7 @@
 //! should be called “aggregate root,” but because this a bit wordy Krill
 //! just calls it 'Aggregate' instead. The trait [`Aggregate`] is defined for
 //! this that is implemented by, for instance,
-//! [`CertAuth`][crate::daemon::ca::CertAuth] and
+//! [`CertAuth`][crate::ca::CertAuth] and
 //! [`RepositoryAccess`][crate::pubd::RepositoryAccess]. 
 //! 
 //! As we will see further down, when we get to describe the
@@ -146,18 +146,16 @@
 //! 
 //! As mentioned above an [`Aggregate`] must specify which type of event it
 //! uses. Events must implement the [`Event`] trait. They are stored in
-//! a [`StoredEvent`] structure.
+//! a [`StoredCommand`] structure.
 //! 
 //! > **Important:** We can change the internal implementation of an
 //! > [`Aggregate`] pretty freely. As long as we keep backwards compatibility
 //! > with regards to past events, we can just delete the snapshots and
-//! > rebuild the current state based on past events. If you look closely at
-//! > the migration code in [`upgrades::v0_9_0`][crate::upgrades::v0_9_0],
-//! > you will find that it is of course possible to add code to parse all
-//! > past commands and events, and reformat them. But, it's a major amount
-//! > of work to do so, so it's better to avoid this if we can. Also note,
-//! > that we can never add new information to past events. They already
-//! > happened, so we have to deal with that.
+//! > rebuild the current state based on past events. It is of course possible
+//! > to add code to parse all > past commands and events, and reformat them.
+//! > But, it's a major amount of work to do so, so it's better to avoid this
+//! > if we can. Also note, that we can never add new information to past
+//! > events. They already happened, so we have to deal with that.
 //! 
 //!
 //! ## Hybrid Model
@@ -176,13 +174,13 @@
 //! events from scratch, i.e., without using snapshots.
 //! 
 //! Therefore we decided to implement a hybrid model in Krill. The Krill
-//! [`CertAuth`][crate::daemon::ca::CertAuth] is still in charge of *almost*
+//! [`CertAuth`][crate::ca::CertAuth] is still in charge of *almost*
 //! all changes, and in particular all *semantic* changes that users made.
 //! But, the generation of Manifests and CRLs is offloaded to an associated
-//! component [`CaObjects`][crate::daemon::ca::CaObjects] that just keeps the
-//! latest Manifest and CRL. It can re-sign these because it has access to a
-//! [`KrillSigner`][crate::commons::crypto::KrillSigner] and it can get the
-//! public key identifier needed for signing from the `CertAuth`.
+//! component [`CaObjects`][crate::ca::publishing::CaObjects] that just keeps
+//! the latest Manifest and CRL. It can re-sign these because it has access
+//! to a [`KrillSigner`][crate::commons::crypto::KrillSigner] and it can get
+//! the public key identifier needed for signing from the `CertAuth`.
 //! 
 //! This is relevant here, because under the hood we use a
 //! [`PreSaveEventListener`] to ensure that a new Manifest and CRL are
@@ -201,12 +199,13 @@
 //! 
 //! In a nutshell, we use the event listeners for two things:
 //!
-//! * a pre-save trigger that the [`CaObjects`][crate::daemon::ca::CaObjects]
+//! * a pre-save trigger that the
+//!   [`CaObjects`][crate::ca::publishing::CaObjects]
 //!   for a CA gets an updated Manifest and CRL, and
 //! * triggers that follow-up tasks are put on the scheduler, based on events.
 //! 
 //! As discussed in issue
-//! [1182][https://github.com/NLnetLabs/krill/issues/1182], it would be best
+//! [1182](https://github.com/NLnetLabs/krill/issues/1182), it would be best
 //! to remove the `PreSaveEventListener` trait and do everything through
 //! (idempotent) triggered tasks on the queue in the scheduler. Note that
 //! Krill will add any missing tasks on this queue at startup, so this means
