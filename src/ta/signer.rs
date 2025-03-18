@@ -161,7 +161,6 @@ pub enum TrustAnchorSignerCommandDetails {
         signer: Arc<KrillSigner>,
     },
     TrustAnchorSignerReissueRequest {
-        proxy_id: IdCertInfo,
         repo_info: RepoInfo,
         tal_https: Vec<uri::Https>,
         tal_rsync: uri::Rsync,
@@ -207,10 +206,8 @@ impl TrustAnchorSignerCommand {
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn make_reissue_command(
         id: &TrustAnchorHandle,
-        proxy_id: IdCertInfo,
         repo_info: RepoInfo,
         tal_https: Vec<uri::Https>,
         tal_rsync: uri::Rsync,
@@ -222,7 +219,6 @@ impl TrustAnchorSignerCommand {
             id,
             None,
             TrustAnchorSignerCommandDetails::TrustAnchorSignerReissueRequest {
-                proxy_id,
                 repo_info,
                 tal_https,
                 tal_rsync,
@@ -240,7 +236,6 @@ pub enum TrustAnchorSignerStorableCommand {
     Init,
     TrustAnchorSignerRequest(TrustAnchorSignedRequest),
     TrustAnchorSignerReissueRequest {
-        proxy_id: IdCertInfo,
         repo_info: RepoInfo,
         tal_https: Vec<uri::Https>,
         tal_rsync: uri::Rsync,
@@ -259,10 +254,9 @@ impl From<&TrustAnchorSignerCommandDetails>
                 signed_request.clone(),
             ),
             TrustAnchorSignerCommandDetails::TrustAnchorSignerReissueRequest { 
-                proxy_id, repo_info, tal_https, tal_rsync, ..
+                repo_info, tal_https, tal_rsync, ..
             } => {
                 Self::TrustAnchorSignerReissueRequest {
-                    proxy_id: proxy_id.clone(),
                     repo_info: repo_info.clone(),
                     tal_https: tal_https.clone(),
                     tal_rsync: tal_rsync.clone(),
@@ -276,13 +270,13 @@ impl From<&TrustAnchorSignerCommandDetails>
 impl eventsourcing::WithStorableDetails for TrustAnchorSignerStorableCommand {
     fn summary(&self) -> crate::commons::api::CommandSummary {
         match self {
-            TrustAnchorSignerStorableCommand::Init => {
+            Self::Init => {
                 crate::commons::api::CommandSummary::new(
                     "cmd-ta-signer-init",
                     self,
                 )
             }
-            TrustAnchorSignerStorableCommand::TrustAnchorSignerRequest(
+            Self::TrustAnchorSignerRequest(
                 request,
             ) => {
                 crate::commons::api::CommandSummary::new(
@@ -290,7 +284,11 @@ impl eventsourcing::WithStorableDetails for TrustAnchorSignerStorableCommand {
                     self,
                 ).with_arg("nonce", &request.content().nonce)
             }
-            Self::TrustAnchorSignerReissueRequest { .. } => {
+            Self::TrustAnchorSignerReissueRequest {
+                repo_info: _,
+                tal_https: _,
+                tal_rsync: _,
+            } => {
                 crate::commons::api::CommandSummary::new(
                     "cmd-ta-signer-reissue", 
                     self
@@ -440,7 +438,6 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
                 &signer,
             ),
             TrustAnchorSignerCommandDetails::TrustAnchorSignerReissueRequest { 
-                proxy_id: _, 
                 repo_info, 
                 tal_https, 
                 tal_rsync, 

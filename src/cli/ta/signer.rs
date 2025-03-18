@@ -175,7 +175,6 @@ impl TrustAnchorSignerManager {
 
         let cmd = TrustAnchorSignerCommand::make_reissue_command(
         &self.ta_handle,
-            info.proxy_id,
             info.repo_info,
             info.tal_https,
             info.tal_rsync,
