@@ -131,7 +131,7 @@ async fn functional_at() {
 
         eprintln!(">>>> Reassociate the TA signer with the proxy.");
         let signer_info = signer.show().unwrap();
-        server.client().ta_proxy_signer_add(signer_info).await.unwrap();
+        server.client().ta_proxy_signer_update(signer_info).await.unwrap();
 
         eprintln!(">>>> Refetch TAL and check it isn’t empty.");
         assert!(!server.client().testbed_tal().await.unwrap().is_empty());
