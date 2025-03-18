@@ -32,7 +32,7 @@ use crate::{
         crypto::{CsrInfo, KrillSigner, SignSupport},
         error::Error,
         eventsourcing::{
-            self, CommandDetails, Event, InitCommandDetails, InitEvent, WithStorableDetails
+            self, Event, InitCommandDetails, InitEvent, WithStorableDetails
         },
         KrillResult,
     },
@@ -97,36 +97,6 @@ impl InitCommandDetails for TrustAnchorSignerInitCommandDetails {
     }
 }
 
-
-
-pub type TrustAnchorSignerReissueCommand =
-    eventsourcing::SentCommand<TrustAnchorSignerReissueCommandDetails>;
-
-#[derive(Clone, Debug)]
-pub struct TrustAnchorSignerReissueCommandDetails {
-    pub proxy_id: IdCertInfo,
-    pub repo_info: RepoInfo,
-    pub tal_https: Vec<uri::Https>,
-    pub tal_rsync: uri::Rsync,
-    pub timing: TaTimingConfig,
-    pub signer: Arc<KrillSigner>,
-}
-
-impl fmt::Display for TrustAnchorSignerReissueCommandDetails {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.store().fmt(f)
-    }
-}
-
-impl CommandDetails for TrustAnchorSignerReissueCommandDetails {
-    type StorableDetails = TrustAnchorSignerStorableCommand;
-    type Event = TrustAnchorSignerEvent;
-
-    fn store(&self) -> Self::StorableDetails {
-        TrustAnchorSignerStorableCommand::make_init()
-    }
-    
-}
 
 pub type TrustAnchorSignerCommand =
     eventsourcing::SentCommand<TrustAnchorSignerCommandDetails>;
@@ -269,7 +239,12 @@ impl TrustAnchorSignerCommand {
 pub enum TrustAnchorSignerStorableCommand {
     Init,
     TrustAnchorSignerRequest(TrustAnchorSignedRequest),
-    TrustAnchorSignerReissueRequest
+    TrustAnchorSignerReissueRequest {
+        proxy_id: IdCertInfo,
+        repo_info: RepoInfo,
+        tal_https: Vec<uri::Https>,
+        tal_rsync: uri::Rsync,
+    }
 }
 
 impl From<&TrustAnchorSignerCommandDetails>
@@ -284,12 +259,19 @@ impl From<&TrustAnchorSignerCommandDetails>
                 signed_request.clone(),
             ),
             TrustAnchorSignerCommandDetails::TrustAnchorSignerReissueRequest { 
-                ..
-            } => TrustAnchorSignerStorableCommand::TrustAnchorSignerReissueRequest
-            // TODO: Make it store something sensible
+                proxy_id, repo_info, tal_https, tal_rsync, ..
+            } => {
+                Self::TrustAnchorSignerReissueRequest {
+                    proxy_id: proxy_id.clone(),
+                    repo_info: repo_info.clone(),
+                    tal_https: tal_https.clone(),
+                    tal_rsync: tal_rsync.clone(),
+                }
+            }
         }
     }
 }
+
 
 impl eventsourcing::WithStorableDetails for TrustAnchorSignerStorableCommand {
     fn summary(&self) -> crate::commons::api::CommandSummary {
@@ -302,16 +284,18 @@ impl eventsourcing::WithStorableDetails for TrustAnchorSignerStorableCommand {
             }
             TrustAnchorSignerStorableCommand::TrustAnchorSignerRequest(
                 request,
-            ) => crate::commons::api::CommandSummary::new(
-                "cmd-ta-signer-process-request",
-                self,
-            )
-            .with_arg("nonce", &request.content().nonce),
-            TrustAnchorSignerStorableCommand::TrustAnchorSignerReissueRequest => {
+            ) => {
+                crate::commons::api::CommandSummary::new(
+                    "cmd-ta-signer-process-request",
+                    self,
+                ).with_arg("nonce", &request.content().nonce)
+            }
+            Self::TrustAnchorSignerReissueRequest { .. } => {
                 crate::commons::api::CommandSummary::new(
                     "cmd-ta-signer-reissue", 
                     self
                 )
+                // XXX This should probably include the stored values.
             }
         }
     }
@@ -337,8 +321,11 @@ impl fmt::Display for TrustAnchorSignerStorableCommand {
                     req.content().nonce
                 )
             },
-            TrustAnchorSignerStorableCommand::TrustAnchorSignerReissueRequest => {
+            Self::TrustAnchorSignerReissueRequest {
+                ..
+            } => {
                 write!(f, "Reissue the TA signer")
+                // XXX This should probably print all the values.
             }
         }
     }
