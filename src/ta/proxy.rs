@@ -242,6 +242,7 @@ pub enum TrustAnchorProxyCommandDetails {
 
     // Proxy -> Signer interactions
     AddSigner(TrustAnchorSignerInfo),
+    UpdateSigner(TrustAnchorSignerInfo),
     MakeSignerRequest,
     ProcessSignerResponse(TrustAnchorSignedResponse),
 
@@ -275,7 +276,14 @@ impl fmt::Display for TrustAnchorProxyCommandDetails {
                     signer.id.hash()
                 )
             }
-            TrustAnchorProxyCommandDetails::MakeSignerRequest => {
+            TrustAnchorProxyCommandDetails::UpdateSigner(signer) => {
+                write!(
+                    f,
+                    "Update signer with id certificate hash: {}",
+                    signer.id.hash()
+                )
+            }
+                        TrustAnchorProxyCommandDetails::MakeSignerRequest => {
                 write!(f, "Create new publish request for signer")
             }
             TrustAnchorProxyCommandDetails::ProcessSignerResponse(
@@ -340,6 +348,13 @@ impl eventsourcing::WithStorableDetails for TrustAnchorProxyCommandDetails {
             TrustAnchorProxyCommandDetails::AddSigner(signer) => {
                 crate::commons::api::CommandSummary::new(
                     "cmd-ta-proxy-signer-add",
+                    self,
+                )
+                .with_id_cert_hash(signer.id.hash())
+            }
+            TrustAnchorProxyCommandDetails::UpdateSigner(signer) => {
+                crate::commons::api::CommandSummary::new(
+                    "cmd-ta-proxy-signer-update",
                     self,
                 )
                 .with_id_cert_hash(signer.id.hash())
@@ -435,6 +450,19 @@ impl TrustAnchorProxyCommand {
             id,
             None,
             TrustAnchorProxyCommandDetails::AddSigner(signer),
+            actor,
+        )
+    }
+
+    pub fn update_signer(
+        id: &TrustAnchorHandle,
+        signer: TrustAnchorSignerInfo,
+        actor: &Actor,
+    ) -> Self {
+        TrustAnchorProxyCommand::new(
+            id,
+            None,
+            TrustAnchorProxyCommandDetails::UpdateSigner(signer),
             actor,
         )
     }
@@ -676,6 +704,9 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
             TrustAnchorProxyCommandDetails::AddSigner(signer) => {
                 self.process_add_signer(signer)
             }
+            TrustAnchorProxyCommandDetails::UpdateSigner(signer) => {
+                self.process_update_signer(signer)
+            }
             TrustAnchorProxyCommandDetails::MakeSignerRequest => {
                 self.process_make_signer_request()
             }
@@ -716,17 +747,28 @@ impl TrustAnchorProxy {
         &self,
         signer: TrustAnchorSignerInfo,
     ) -> KrillResult<Vec<TrustAnchorProxyEvent>> {
+        if self.signer.is_none() {
+            Ok(vec![TrustAnchorProxyEvent::SignerAdded(signer)])
+        } else {
+            Err(Error::TaProxyAlreadyHasSigner)
+        }
+    }
+
+    fn process_update_signer(
+        &self,
+        signer: TrustAnchorSignerInfo,
+    ) -> KrillResult<Vec<TrustAnchorProxyEvent>> {
         if let Some(s) = &self.signer {
-            if  s.ta_cert_details.cert().key_identifier() != 
+            if s.ta_cert_details.cert().key_identifier() == 
                 signer.ta_cert_details.cert().key_identifier() {
-                    // It is not possible to add a signer that has a different
-                    // public key
-                    return Err(Error::TaProxyAlreadyHasSigner);
+                // It is not possible to add a signer that has a different
+                // public key
+                return Ok(vec![
+                    TrustAnchorProxyEvent::SignerAdded(signer)
+                ]);
             }
         }
-        Ok(vec![
-            TrustAnchorProxyEvent::SignerAdded(signer)
-        ])
+        Err(Error::TaProxyHasDifferentSigner)
     }
 
     fn process_make_signer_request(

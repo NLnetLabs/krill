@@ -2170,6 +2170,7 @@ async fn api_ta(req: Request, path: &mut RequestPath) -> RoutingResult {
     //    GET  /proxy/repo                     get repository contact
     //    POST /proxy/repo                     add pub server
     //    POST /proxy/signer/add               add initialised signer to proxy
+    //    POST /proxy/signer/update            update initialised signer to proxy
     //    POST /proxy/signer/request           create sign request for signer
     // (returns request)    GET  /proxy/signer/request           show open
     // sign request if any    POST /proxy/signer/response          process
@@ -2241,6 +2242,18 @@ async fn api_ta(req: Request, path: &mut RequestPath) -> RoutingResult {
                         Ok(ta_signer_info) => render_empty_res(
                             server
                                 .ta_proxy_signer_add(ta_signer_info, &actor)
+                                .await,
+                        ),
+                        Err(e) => render_error(e),
+                    }
+                }
+                Some("update") => {
+                    let server = req.state().clone();
+                    let actor = req.actor();
+                    match req.json().await {
+                        Ok(ta_signer_info) => render_empty_res(
+                            server
+                                .ta_proxy_signer_update(ta_signer_info, &actor)
                                 .await,
                         ),
                         Err(e) => render_error(e),

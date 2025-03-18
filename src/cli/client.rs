@@ -789,6 +789,12 @@ impl KrillClient {
         self.post_json(once("api/v1/ta/proxy/signer/add"), info).await
     }
 
+    pub async fn ta_proxy_signer_update(
+        &self, info: ta::TrustAnchorSignerInfo
+    ) -> Result<Success, Error> {
+        self.post_json(once("api/v1/ta/proxy/signer/update"), info).await
+    }
+
     pub async fn ta_proxy_signer_make_request(
         &self
     ) -> Result<ta::TrustAnchorSignedRequest, Error> {

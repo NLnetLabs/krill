@@ -375,6 +375,7 @@ pub enum Error {
     TaProxyHasNoRepository,
     TaProxyHasNoSigner,
     TaProxyAlreadyHasSigner,
+    TaProxyHasDifferentSigner,
     TaProxyHasNoRequest,
     TaProxyHasRequest,
     TaProxyRequestNonceMismatch(ta::Nonce, ta::Nonce),
@@ -567,6 +568,7 @@ impl fmt::Display for Error {
             Error::TaProxyHasNoRepository => write!(f, "Trust Anchor Proxy has no repository"),
             Error::TaProxyHasNoSigner => write!(f, "Trust Anchor Proxy has no associated signer"),
             Error::TaProxyAlreadyHasSigner => write!(f, "Trust Anchor Proxy already has associated signer"),
+            Error::TaProxyHasDifferentSigner => write!(f, "Trust Anchor Proxy already has a different associated signer"),
             Error::TaProxyHasNoRequest => write!(f, "Trust Anchor Proxy has no signer request"),
             Error::TaProxyHasRequest => write!(f, "Trust Anchor Proxy already has signer request"),
             Error::TaProxyRequestNonceMismatch(rcvd, expected) => write!(f, "Trust Anchor Response nonce '{}' does not match open Request nonce '{}'", rcvd, expected),
@@ -1209,6 +1211,9 @@ impl Error {
             }
             Error::TaProxyAlreadyHasSigner => {
                 ErrorResponse::new("ta-has-signer", self)
+            }
+            Error::TaProxyHasDifferentSigner => {
+                ErrorResponse::new("ta-has-different-signer", self)
             }
             Error::TaProxyHasNoRequest => {
                 ErrorResponse::new("ta-has-no-signer-req", self)
