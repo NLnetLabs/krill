@@ -50,7 +50,7 @@ tokio           = { version = "1", features = [ "macros", "rt", "rt-multi-thread
 tokio-rustls    = { version = "0.26", default-features = false, features = [ "ring", "logging", "tls12" ] }
 toml            = "0.8.19"
 url             = { version = "2.5.4", features = ["serde"] }
-uuid            = { version = "1.11", features = ["v4"] }
+uuid            = { version = "1.11", features = ["serde", "v4"] }
 
 # Dependencies used by the "hsm" feature
 backoff         = { version = "0.4.0", optional = true }

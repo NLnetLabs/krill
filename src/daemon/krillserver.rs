@@ -38,7 +38,7 @@ use crate::{
         mq::{now, Task, TaskQueue},
         scheduler::Scheduler,
     },
-    pubd::{RepoStats, RepositoryManager},
+    pubd::RepositoryManager,
     ta::{
         ta_handle, TaCertDetails, TrustAnchorSignedRequest,
         TrustAnchorSignedResponse, TrustAnchorSignerInfo, TA_NAME,
@@ -66,6 +66,7 @@ use crate::commons::api::history::{
     CommandDetails, CommandHistory, CommandHistoryCriteria
 };
 use crate::commons::api::import::ImportChild;
+use crate::commons::api::pubd::RepoStats;
 use crate::commons::api::roa::{
     ConfiguredRoa, RoaConfiguration, RoaConfigurationUpdates, RoaPayload,
 };

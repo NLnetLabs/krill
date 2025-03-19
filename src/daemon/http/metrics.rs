@@ -382,17 +382,15 @@ pub async fn metrics(req: Request) -> RoutingResult {
     }
 
     if let Ok(stats) = server.repo_stats() {
-        let publishers = stats.get_publishers();
-
         target.single(
             Metric::gauge(
                 "repo_publisher",
                 "number of publishers in repository"
             ),
-            publishers.len(),
+            stats.publishers.len(),
         );
 
-        if let Some(last_update) = stats.last_update() {
+        if let Some(last_update) = stats.last_update {
             target.single(
                 Metric::gauge(
                     "repo_rrdp_last_update",
@@ -407,7 +405,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 "repo_rrdp_serial",
                 "RRDP serial"
             ),
-            stats.serial()
+            stats.serial
         );
 
         if !server.config.metrics.metrics_hide_publisher_details {
@@ -416,10 +414,10 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 "number of objects in repository for publisher"
             );
             target.header(metric);
-            for (publisher, stats) in publishers {
+            for (publisher, stats) in &stats.publishers {
                 target.multi(metric)
                     .label("publisher", publisher)
-                    .value(stats.objects())
+                    .value(stats.objects)
             }
 
             let metric = Metric::gauge(
@@ -427,10 +425,10 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 "size of objects in bytes in repository for publisher"
             );
             target.header(metric);
-            for (publisher, stats) in publishers {
+            for (publisher, stats) in &stats.publishers {
                 target.multi(metric)
                     .label("publisher", publisher)
-                    .value(stats.size());
+                    .value(stats.size);
             }
 
             let metric = Metric::gauge(
@@ -438,7 +436,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 "unix timestamp of last update for publisher"
             );
             target.header(metric);
-            for (publisher, stats) in publishers {
+            for (publisher, stats) in &stats.publishers {
                 if let Some(last_update) = stats.last_update() {
                     target.multi(metric)
                         .label("publisher", publisher)

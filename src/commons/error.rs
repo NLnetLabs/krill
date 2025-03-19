@@ -32,7 +32,7 @@ use crate::{
     },
     daemon::http::tls_keys,
     daemon::auth::Permission,
-    pubd::rrdp::PublicationDeltaError,
+    pubd::PublicationDeltaError,
     ta,
     upgrades::UpgradeError,
 };

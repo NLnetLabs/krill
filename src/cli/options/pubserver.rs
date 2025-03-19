@@ -6,7 +6,6 @@ use std::io::BufReader;
 use std::str::FromStr;
 use rpki::uri;
 use rpki::ca::idexchange;
-use crate::pubd;
 use crate::cli::client::KrillClient;
 use crate::cli::report::Report;
 use crate::commons::api;
@@ -275,7 +274,7 @@ pub struct Stats;
 impl Stats {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<pubd::RepoStats, httpclient::Error> {
+    ) -> Result<api::pubd::RepoStats, httpclient::Error> {
         client.pubserver_stats().await
     }
 }

@@ -1,16 +1,16 @@
-mod commands;
-mod events;
+/// The publication server component.
+
+mod access;
+mod content;
 mod manager;
 mod publishers;
-#[allow(clippy::mutable_key_type)]
-mod repository;
-pub mod rrdp;
+mod rrdp;
+mod rsync;
+pub mod upgrades;
 
-pub use self::commands::{
-    RepositoryAccessCommand, RepositoryAccessCommandDetails,
-    StorableRepositoryCommand,
-};
-pub use self::events::{RepositoryAccessEvent, RepositoryAccessInitEvent};
+pub use self::access::{RepositoryAccess, RepositoryAccessProxy};
+pub use self::content::{RepositoryContent, RepositoryContentProxy};
 pub use self::manager::RepositoryManager;
 pub use self::publishers::Publisher;
-pub use self::repository::*;
+pub use self::rrdp::PublicationDeltaError;
+

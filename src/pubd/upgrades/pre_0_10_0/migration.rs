@@ -1,27 +1,24 @@
-use rpki::{ca::idexchange::MyHandle, repository::x509::Time};
-
-use crate::{
-    commons::{
-        eventsourcing::{AggregateStore, StoredCommandBuilder},
-        storage::{KeyValueStore, Scope, Segment},
-        util::KrillVersion,
-    },
-    constants::PUBSERVER_NS,
-    daemon::config::Config,
-    pubd::{
-        RepositoryAccess, RepositoryAccessEvent, RepositoryAccessInitEvent,
-        StorableRepositoryCommand,
-    },
-    upgrades::pre_0_10_0::{
-        Pre0_10RepositoryAccessEventDetails,
-        Pre0_10RepositoryAccessInitDetails,
-    },
-    upgrades::{pre_0_14_0::OldStoredCommand, CommandMigrationEffect},
-    upgrades::{
-        UnconvertedEffect, UpgradeAggregateStorePre0_14, UpgradeMode,
-        UpgradeResult, UpgradeVersions,
-    },
+use rpki::ca::idexchange::MyHandle;
+use rpki::repository::x509::Time;
+use crate::commons::eventsourcing::{AggregateStore, StoredCommandBuilder};
+use crate::commons::storage::{KeyValueStore, Scope, Segment};
+use crate::commons::util::KrillVersion;
+use crate::constants::PUBSERVER_NS;
+use crate::daemon::config::Config;
+use crate::pubd::access::{
+    RepositoryAccess, RepositoryAccessEvent, RepositoryAccessInitEvent,
+    StorableRepositoryCommand,
 };
+use crate::upgrades::{pre_0_14_0::OldStoredCommand, CommandMigrationEffect};
+use crate::upgrades::{
+    UnconvertedEffect, UpgradeAggregateStorePre0_14, UpgradeMode,
+    UpgradeResult, UpgradeVersions,
+};
+use super::old_events::{
+    Pre0_10RepositoryAccessEventDetails,
+    Pre0_10RepositoryAccessInitDetails,
+};
+
 
 /// Migrates the events, snapshots and info for the event-sourced
 /// RepositoryAccess. There is no need to migrate the mutable

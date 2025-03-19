@@ -1,69 +1,65 @@
+//! The manager for the publication server.
+
 use std::sync::Arc;
-
 use bytes::Bytes;
-
 use log::{debug, info};
-use rpki::{
-    ca::{
-        idexchange,
-        idexchange::{PublisherHandle, RepoInfo},
-        publication,
-        publication::{ListReply, PublishDelta},
-    },
-    repository::x509::Time,
+use rpki::ca::publication;
+use rpki::ca::idexchange::{
+    PublisherHandle, PublisherRequest, RepositoryResponse
 };
-
-use crate::{
-    commons::{
-        actor::Actor,
-        crypto::KrillSigner,
-        error::Error,
-        util::cmslogger::CmsLogger,
-        KrillResult,
-    },
-    daemon::{
-        config::Config,
-        mq::{now, Task, TaskQueue},
-    },
-    pubd::{RepoStats, RepositoryAccessProxy, RepositoryContentProxy},
-};
+use rpki::ca::publication::{ListReply, PublishDelta};
+use rpki::repository::x509::Time;
+use crate::commons::KrillResult;
+use crate::commons::actor::Actor;
 use crate::commons::api::admin::{
     PublicationServerUris, PublisherDetails, RepoFileDeleteCriteria,
 };
+use crate::commons::api::pubd::RepoStats;
+use crate::commons::crypto::KrillSigner;
+use crate::commons::error::Error;
+use crate::commons::util::cmslogger::CmsLogger;
+use crate::daemon::config::Config;
+use crate::daemon::mq::{now, Task, TaskQueue};
+use super::access::RepositoryAccessProxy;
+use super::content::RepositoryContentProxy;
+use super::rrdp::RrdpUpdateNeeded;
 
-use super::RrdpUpdateNeeded;
 
-
-//------------ RepositoryManager
-//------------ -----------------------------------------------------
+//------------ RepositoryManager ---------------------------------------------
 
 /// RepositoryManager is responsible for:
 /// * verifying that a publisher is allowed to publish
 /// * publish content to RRDP and rsync
 pub struct RepositoryManager {
+    /// The repository access manager portion.
     access: Arc<RepositoryAccessProxy>,
+
+    /// The repository content manager portion.
     content: Arc<RepositoryContentProxy>,
 
-    // shared task queue, use to schedule RRDP updates when content is
-    // updated.
+    /// Shared task queue.
+    ///
+    /// Used to schedule RRDP updates when content is updated.
     tasks: Arc<TaskQueue>,
 
+    /// Shared server config.
     config: Arc<Config>,
+
+    /// Shared signer.
     signer: Arc<KrillSigner>,
 }
 
-/// # Constructing
 impl RepositoryManager {
-    /// Builds a RepositoryManager. This will use a KeyValueStore using the
-    /// the storage uri specified in the supplied `Config`.
+    /// Builds the repository manager.
     pub fn build(
         config: Arc<Config>,
         tasks: Arc<TaskQueue>,
         signer: Arc<KrillSigner>,
     ) -> Result<Self, Error> {
         let access_proxy = Arc::new(RepositoryAccessProxy::create(&config)?);
-        let content_proxy =
-            Arc::new(RepositoryContentProxy::create(&config)?);
+        let content_proxy = Arc::new(
+            RepositoryContentProxy::create(&config)?
+        );
 
         Ok(RepositoryManager {
             access: access_proxy,
@@ -73,11 +69,10 @@ impl RepositoryManager {
             signer,
         })
     }
-}
-/// # Repository Server Management
-impl RepositoryManager {
-    pub fn initialized(&self) -> KrillResult<bool> {
-        self.access.initialized()
+
+    /// Returns whether repository access has been initialized.
+    pub fn is_initialized(&self) -> KrillResult<bool> {
+        self.access.is_initialized()
     }
 
     /// Create the publication server, will fail if it was already created.
@@ -104,9 +99,10 @@ impl RepositoryManager {
     }
 }
 
-/// # Publication Protocol support
+/// # Publication protocol support.
+///
 impl RepositoryManager {
-    /// Handle an RFC8181 request and sign the response.
+    /// Handles a publication protocol request and returns a signed response.
     pub fn rfc8181(
         &self,
         publisher_handle: PublisherHandle,
@@ -117,15 +113,14 @@ impl RepositoryManager {
             &publisher_handle,
         );
 
-        let cms = self
-            .access
-            .decode_and_validate(&publisher_handle, &msg_bytes)
-            .map_err(|e| {
-                Error::Custom(format!(
-                    "Issue with publication request by publisher '{}': {}",
-                    publisher_handle, e
-                ))
-            })?;
+        let cms = self.access.decode_and_validate(
+            &publisher_handle, &msg_bytes
+        ).map_err(|e| {
+            Error::Custom(format!(
+                "Issue with publication request by publisher '{}': {}",
+                publisher_handle, e
+            ))
+        })?;
         let message = cms.into_message();
         let query = message.as_query()?;
 
@@ -148,8 +143,9 @@ impl RepositoryManager {
             }
         };
 
-        let response_bytes =
-            self.access.respond(response, &self.signer)?.to_bytes();
+        let response_bytes = self.access.create_response(
+            response, &self.signer
+        )?.to_bytes();
 
         if should_log_cms {
             cms_logger.received(&msg_bytes)?;
@@ -159,6 +155,7 @@ impl RepositoryManager {
         Ok(response_bytes)
     }
 
+    /// Processes a publication protocol message and returns a response.
     pub fn rfc8181_message(
         &self,
         publisher_handle: &PublisherHandle,
@@ -184,12 +181,12 @@ impl RepositoryManager {
         }
     }
 
-    /// Do an RRDP session reset.
+    /// Performs an RRDP session reset.
     pub fn rrdp_session_reset(&self) -> KrillResult<()> {
         self.content.session_reset(self.config.rrdp_updates_config)
     }
 
-    /// Let a known publisher publish in a repository.
+    /// Lets a known publisher publish in a repository.
     pub fn publish(
         &self,
         publisher_handle: &PublisherHandle,
@@ -206,31 +203,29 @@ impl RepositoryManager {
         self.tasks.schedule(Task::RrdpUpdateIfNeeded, now())
     }
 
-    /// Update RRDP (make new delta) if needed. If there are staged changes,
-    /// but the rrdp update interval since last_update has not passed,
-    /// then no update is done, but the eligible time for the next update
-    /// is returned.
+    /// Updates RRDP and makes new delta if needed.
+    ///
+    /// If there are staged changes, but the rrdp update interval since
+    /// last_update has not passed, then no update is done, but the eligible
+    /// time for the next update is returned.
     pub fn update_rrdp_if_needed(&self) -> KrillResult<Option<Time>> {
-        // See if an update is needed
+        match self.content.rrdp_update_needed(
+            self.config.rrdp_updates_config)?
         {
-            match self
-                .content
-                .rrdp_update_needed(self.config.rrdp_updates_config)?
-            {
-                RrdpUpdateNeeded::No => return Ok(None),
-                RrdpUpdateNeeded::Later(time) => return Ok(Some(time)),
-                RrdpUpdateNeeded::Yes => {} // proceed
-            }
+            RrdpUpdateNeeded::No => return Ok(None),
+            RrdpUpdateNeeded::Later(time) => return Ok(Some(time)),
+            RrdpUpdateNeeded::Yes => {} // proceed
         }
 
-        let content =
-            self.content.update_rrdp(self.config.rrdp_updates_config)?;
+        let content = self.content.update_rrdp(
+            self.config.rrdp_updates_config
+        )?;
         content.write_repository(self.config.rrdp_updates_config)?;
 
         Ok(None)
     }
 
-    /// Purge URI(s) from the server.
+    /// Purges URI(s) from the server.
     pub fn delete_matching_files(
         &self,
         criteria: RepoFileDeleteCriteria,
@@ -252,29 +247,23 @@ impl RepositoryManager {
         Ok(())
     }
 
+    /// Returns the repository stats.
     pub fn repo_stats(&self) -> KrillResult<RepoStats> {
         self.content.stats()
     }
 
     /// Returns a list reply for a known publisher in a repository.
     pub fn list(
-        &self,
-        publisher: &PublisherHandle,
+        &self, publisher: &PublisherHandle,
     ) -> KrillResult<ListReply> {
         self.content.list_reply(publisher)
     }
 }
 
-/// # Manage publishers
+/// # Manage publishers.
+///
 impl RepositoryManager {
-    /// Returns the repository URI information for a publisher.
-    pub fn repo_info_for(
-        &self,
-        name: &PublisherHandle,
-    ) -> KrillResult<RepoInfo> {
-        self.access.repo_info_for(name)
-    }
-
+    /// Returns details of a publisher.
     pub fn get_publisher_details(
         &self,
         handle: PublisherHandle,
@@ -295,16 +284,18 @@ impl RepositoryManager {
     pub fn repository_response(
         &self,
         publisher: &PublisherHandle,
-    ) -> KrillResult<idexchange::RepositoryResponse> {
+    ) -> KrillResult<RepositoryResponse> {
         let rfc8181_uri = self.config.rfc8181_uri(publisher);
         self.access.repository_response(rfc8181_uri, publisher)
     }
 
-    /// Adds a publisher. This will fail if a publisher already exists for the
-    /// handle in the request.
+    /// Adds a publisher.
+    ///
+    /// This will fail if a publisher already exists for the handle in the
+    /// request.
     pub fn create_publisher(
         &self,
-        req: idexchange::PublisherRequest,
+        req: PublisherRequest,
         actor: &Actor,
     ) -> KrillResult<()> {
         let name = req.publisher_handle().clone();
@@ -328,50 +319,40 @@ impl RepositoryManager {
 
 /// # Publishing RRDP and rsync
 impl RepositoryManager {
-    /// Update the RRDP files and rsync content on disk.
+    /// Updates the RRDP files and rsync content on disk.
     pub fn write_repository(&self) -> KrillResult<()> {
         self.content
             .write_repository(self.config.rrdp_updates_config)
     }
 }
 
-//------------ Tests ---------------------------------------------------------
+
+//============ Tests =========================================================
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        fs,
-        path::{Path, PathBuf},
-        str::{from_utf8, FromStr},
-        time::Duration,
-    };
-    use url::Url;
-
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::str::{from_utf8, FromStr};
+    use std::time::Duration;
     use bytes::Bytes;
     use tokio::time::sleep;
-
-    use rpki::{
-        ca::{
-            idexchange::Handle,
-            publication::{ListElement, PublishDelta},
-        },
-        uri,
+    use url::Url;
+    use rpki::uri;
+    use rpki::ca::idexchange::Handle;
+    use rpki::ca::publication::{ListElement, PublishDelta};
+    use crate::commons::api::ca::IdCertInfo;
+    use crate::commons::crypto::{KrillSignerBuilder, OpenSslSignerConfig};
+    use crate::commons::util::file;
+    use crate::commons::util::file::CurrentFile;
+    use crate::constants::{
+        ACTOR_DEF_TEST, RRDP_FIRST_SERIAL, enable_test_mode
     };
-
+    use crate::daemon::config::{SignerConfig, SignerType};
+    use crate::pubd::Publisher;
+    use crate::pubd::rrdp::{PublicationDeltaError, RrdpServer};
+    use crate::test::{self, https, rsync};
     use super::*;
-
-    use crate::{
-        commons::{
-            api::ca::IdCertInfo,
-            crypto::{KrillSignerBuilder, OpenSslSignerConfig},
-            util::file::{self, CurrentFile},
-        },
-        constants::*,
-        daemon::config::{SignerConfig, SignerType},
-        pubd::{Publisher, RrdpServer},
-        pubd::rrdp::{PublicationDeltaError, RrdpSession},
-        test::{self, https, rsync},
-    };
 
     fn publisher_alice(storage_uri: &Url) -> Publisher {
         // When the "hsm" feature is enabled we could be running the tests
@@ -407,9 +388,9 @@ mod tests {
     fn make_publisher_req(
         handle: &str,
         id_cert: &IdCertInfo,
-    ) -> idexchange::PublisherRequest {
+    ) -> PublisherRequest {
         let handle = Handle::from_str(handle).unwrap();
-        idexchange::PublisherRequest::new(
+        PublisherRequest::new(
             id_cert.base64.clone(),
             handle,
             None,
@@ -826,10 +807,10 @@ mod tests {
 
         // Find RRDP files on disk
         let stats_before = server.repo_stats().unwrap();
-        let session_before = stats_before.session();
+        let session_before = stats_before.session;
         let snapshot_before_session_reset = find_in_session_and_serial_dir(
             data_dir.path(),
-            &session_before,
+            session_before,
             RRDP_FIRST_SERIAL + 1,
             "snapshot.xml",
         );
@@ -841,11 +822,11 @@ mod tests {
 
         // Should write new session and snapshot
         let stats_after = server.repo_stats().unwrap();
-        let session_after = stats_after.session();
+        let session_after = stats_after.session;
 
         let snapshot_after_session_reset = find_in_session_and_serial_dir(
             data_dir.path(),
-            &session_after,
+            session_after,
             RRDP_FIRST_SERIAL,
             "snapshot.xml",
         );
@@ -859,7 +840,7 @@ mod tests {
         // and clean up old dir
         let snapshot_before_session_reset = find_in_session_and_serial_dir(
             data_dir.path(),
-            &session_before,
+            session_before,
             RRDP_FIRST_SERIAL + 1,
             "snapshot.xml",
         );
@@ -906,7 +887,7 @@ mod tests {
 
     fn find_in_session_and_serial_dir(
         base_dir: &Path,
-        session: &RrdpSession,
+        session: uuid::Uuid,
         serial: u64,
         filename: &str,
     ) -> Option<PathBuf> {

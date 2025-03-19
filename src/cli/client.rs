@@ -14,9 +14,10 @@ use rpki::repository::resources::{Asn, ResourceSet};
 use rpki::repository::x509::Time;
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
-use crate::{pubd, ta};
+use crate::ta;
 use crate::commons::api;
 use crate::commons::api::admin::Token;
+use crate::commons::api::pubd::RepoStats;
 use crate::commons::api::status::Success;
 use crate::commons::util::httpclient;
 use crate::commons::util::httpclient::Error;
@@ -673,7 +674,7 @@ impl KrillClient {
         ).await
     }
 
-    pub async fn pubserver_stats(&self) -> Result<pubd::RepoStats, Error> {
+    pub async fn pubserver_stats(&self) -> Result<RepoStats, Error> {
         self.get_json(once("stats/repo")).await
     }
 

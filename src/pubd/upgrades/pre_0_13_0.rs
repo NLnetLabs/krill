@@ -15,15 +15,14 @@ use crate::{
         error::Error,
         eventsourcing::{WalChange, WalSupport},
     },
-    pubd::{
-        RepositoryContent, RepositoryContentCommand, RrdpServer,
-        RrdpSessionReset, RrdpUpdated, RsyncdStore,
-    },
+    pubd::content::{RepositoryContent, RepositoryContentCommand},
     pubd::rrdp::{
         CurrentObjects, DeltaData, DeltaElements,
-        PublishElement, RrdpFileRandom, RrdpSession, SnapshotData,
-        UpdateElement, WithdrawElement,
+        PublishElement, RrdpFileRandom, RrdpServer, RrdpSession,
+        RrdpSessionReset, RrdpUpdated, SnapshotData, UpdateElement,
+        WithdrawElement,
     },
+    pubd::rsync::RsyncdStore,
 };
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

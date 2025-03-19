@@ -1,24 +1,12 @@
 use std::fmt;
 use serde::{Deserialize, Serialize};
-use rpki::{
-    ca::{
-        idcert::IdCert,
-        idexchange::{
-            PublisherHandle,
-        },
-    },
-    uri,
-};
+use rpki::uri;
+use rpki::ca::idcert::IdCert;
+use rpki::ca::idexchange::PublisherHandle;
+use crate::pubd::access::{RepositoryAccessEvent, RepositoryAccessInitEvent};
+use crate::pubd::publishers::Publisher;
 
-use crate::{
-    pubd::{Publisher, RepositoryAccessEvent, RepositoryAccessInitEvent},
-};
-
-
-// Repository
-
-//------------ OldRepositoryAccessIni
-//------------ -------------------------------------------
+//------------ Pre0_10RepositoryAccessInitDetails ---------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Pre0_10RepositoryAccessInitDetails {
@@ -29,26 +17,25 @@ pub struct Pre0_10RepositoryAccessInitDetails {
 
 impl From<Pre0_10RepositoryAccessInitDetails> for RepositoryAccessInitEvent {
     fn from(old: Pre0_10RepositoryAccessInitDetails) -> Self {
-        RepositoryAccessInitEvent::new(
-            old.id_cert.into(),
-            old.rrdp_base_uri,
-            old.rsync_jail,
-        )
+        RepositoryAccessInitEvent {
+            id_cert: old.id_cert.into(),
+            rrdp_base_uri: old.rrdp_base_uri,
+            rsync_jail: old.rsync_jail,
+        }
     }
 }
 
 impl fmt::Display for Pre0_10RepositoryAccessInitDetails {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "Initialized publication server. RRDP base uri: {}, Rsync Jail: {}",
+        write!(f,
+            "Initialized publication server. RRDP base uri: {}, \
+             Rsync Jail: {}",
             self.rrdp_base_uri, self.rsync_jail
         )
     }
 }
 
-//------------ OldRepositoryAccessEvent
-//------------ -----------------------------------------
+//------------ Pre0_10RepositoryAccessEventDetails ---------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
@@ -86,7 +73,7 @@ impl fmt::Display for Pre0_10RepositoryAccessEventDetails {
     }
 }
 
-//------------ Publisher -----------------------------------------------------
+//------------ OldPublisher --------------------------------------------------
 
 /// This type defines Publisher CAs that are allowed to publish.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -103,3 +90,4 @@ impl From<OldPublisher> for Publisher {
         Publisher::new(old.id_cert.into(), old.base_uri)
     }
 }
+

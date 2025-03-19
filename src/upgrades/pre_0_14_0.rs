@@ -23,9 +23,6 @@ use crate::{
         config::Config,
         properties::Properties,
     },
-    pubd::{
-        RepositoryAccess, RepositoryAccessEvent, RepositoryAccessInitEvent,
-    },
     ta::{
         TrustAnchorProxy, TrustAnchorProxyEvent, TrustAnchorProxyInitEvent,
         TrustAnchorSigner, TrustAnchorSignerEvent,
@@ -52,10 +49,6 @@ pub type OldTrustAnchorProxyEvent = OldStoredEvent<TrustAnchorProxyEvent>;
 pub type OldTrustAnchorSignerInitEvent =
     OldStoredEvent<TrustAnchorSignerInitEvent>;
 pub type OldTrustAnchorSignerEvent = OldStoredEvent<TrustAnchorSignerEvent>;
-
-pub type OldRepositoryAccessInitEvent =
-    OldStoredEvent<RepositoryAccessInitEvent>;
-pub type OldRepositoryAccessEvent = OldStoredEvent<RepositoryAccessEvent>;
 
 pub trait OldEvent:
     fmt::Display + Eq + PartialEq + Storable + 'static
@@ -266,8 +259,6 @@ pub type UpgradeAggregateStoreTrustAnchorSigner =
     GenericUpgradeAggregateStore<TrustAnchorSigner>;
 pub type UpgradeAggregateStoreTrustAnchorProxy =
     GenericUpgradeAggregateStore<TrustAnchorProxy>;
-pub type UpgradeAggregateStoreRepositoryAccess =
-    GenericUpgradeAggregateStore<RepositoryAccess>;
 
 //------------ GenericUpgradeAggrateStore ------------------------------------
 
