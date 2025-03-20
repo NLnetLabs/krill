@@ -6,7 +6,7 @@ use rpki::repository::resources::Asn;
 use crate::cli::client::KrillClient;
 use crate::cli::report::Report;
 use crate::api;
-use crate::commons::util::httpclient;
+use crate::commons::httpclient;
 use super::ca;
 
 

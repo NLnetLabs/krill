@@ -14,13 +14,16 @@ use rpki::repository::resources::{Asn, ResourceSet};
 use rpki::repository::x509::Time;
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
-use crate::ta;
 use crate::api;
 use crate::api::admin::Token;
 use crate::api::pubd::RepoStats;
 use crate::api::status::Success;
-use crate::commons::util::httpclient;
-use crate::commons::util::httpclient::Error;
+use crate::api::ta::{
+    TrustAnchorSignedRequest, TrustAnchorSignedResponse,
+    TrustAnchorSignerInfo,
+};
+use crate::commons::httpclient;
+use crate::commons::httpclient::Error;
 
 
 //------------ KrillClient ---------------------------------------------------
@@ -807,14 +810,14 @@ impl KrillClient {
     }
 
     pub async fn ta_proxy_signer_add(
-        &self, info: ta::TrustAnchorSignerInfo
+        &self, info: TrustAnchorSignerInfo
     ) -> Result<Success, Error> {
         self.post_json(once("api/v1/ta/proxy/signer/add"), info).await
     }
 
     pub async fn ta_proxy_signer_make_request(
         &self
-    ) -> Result<ta::TrustAnchorSignedRequest, Error> {
+    ) -> Result<TrustAnchorSignedRequest, Error> {
         self.post_empty_with_response(
             once("api/v1/ta/proxy/signer/request")
         ).await
@@ -822,12 +825,12 @@ impl KrillClient {
 
     pub async fn ta_proxy_signer_show_request(
         &self
-    ) -> Result<ta::TrustAnchorSignedRequest, Error> {
+    ) -> Result<TrustAnchorSignedRequest, Error> {
         self.get_json(once("api/v1/ta/proxy/signer/request")).await
     }
 
     pub async fn ta_proxy_signer_response(
-        &self, response: ta::TrustAnchorSignedResponse
+        &self, response: TrustAnchorSignedResponse
     ) -> Result<Success, Error> {
         self.post_json(
             once("api/v1/ta/proxy/signer/response"),

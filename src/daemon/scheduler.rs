@@ -14,14 +14,13 @@ use url::Url;
 
 use crate::{
     api::ca::Timestamp,
-    ca::{CaManager, CertAuth},
     commons::{
         actor::Actor,
         crypto::dispatch::signerinfo::SignerInfo,
         error::FatalError,
         eventsourcing::{Aggregate, AggregateStore, WalStore, WalSupport},
         storage::{Key, Namespace},
-        util::KrillVersion,
+        version::KrillVersion,
     },
     constants::{
         CASERVER_NS, PROPERTIES_NS, PUBSERVER_CONTENT_NS, PUBSERVER_NS,
@@ -30,13 +29,14 @@ use crate::{
         SCHEDULER_USE_JITTER_CAS_THRESHOLD, SIGNERS_NS,
     },
     daemon::{
+        ca::{CaManager, CertAuth},
         config::Config,
         mq::{
             in_hours, in_minutes, in_seconds, in_weeks, now, Task, TaskQueue,
         },
         properties::Properties,
+        pubd::{RepositoryAccess, RepositoryContent, RepositoryManager},
     },
-    pubd::{RepositoryAccess, RepositoryContent, RepositoryManager},
 };
 
 #[cfg(feature = "multi-user")]

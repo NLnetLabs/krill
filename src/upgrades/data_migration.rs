@@ -7,7 +7,6 @@ use rpki::crypto::KeyIdentifier;
 use url::Url;
 
 use crate::{
-    ca::upgrades::data_migration::check_ca_objects,
     commons::{
         crypto::{
             dispatch::signerinfo::SignerInfo,
@@ -23,15 +22,17 @@ use crate::{
         PUBSERVER_NS, SIGNERS_NS, TA_PROXY_SERVER_NS, TA_SIGNER_SERVER_NS,
     },
     daemon::{
+        ca::upgrades::data_migration::check_ca_objects,
         config::Config,
         properties::{Properties, PropertiesManager},
+        pubd::{RepositoryAccess, RepositoryContent},
     },
-    pubd::{RepositoryAccess, RepositoryContent},
-    ta::{TrustAnchorProxy, TrustAnchorSigner},
+    daemon::taproxy::TrustAnchorProxy,
     upgrades::{
         finalise_data_migration, prepare_upgrade_data_migrations,
         UpgradeError,
     },
+    tasigner::TrustAnchorSigner,
 };
 
 use super::UpgradeResult;
@@ -230,13 +231,9 @@ fn copy_data_for_migration(
 
 #[cfg(test)]
 pub mod tests {
-
     use std::path::PathBuf;
-
     use log::LevelFilter;
-
-    use crate::test;
-
+    use crate::commons::test;
     use super::*;
 
     #[test]

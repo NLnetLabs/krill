@@ -1,5 +1,6 @@
 //! Various Krill-wide constants.
 
+use rpki::ca::idexchange::CaHandle;
 use crate::commons::storage::Namespace;
 use crate::commons::actor::Actor;
 
@@ -257,6 +258,23 @@ pub const ACTOR_DEF_TESTBED: Actor = Actor::system("testbed");
 /// The actor used by tests.
 #[cfg(test)]
 pub const ACTOR_DEF_TEST: Actor = Actor::system("test");
+
+
+//------------ Trust Anchor --------------------------------------------------
+
+/// The name of the handle to be used for the TA.
+pub const TA_NAME: &str = "ta";
+
+/// Returns a CA handle for the trust anchor CA.
+pub fn ta_handle() -> CaHandle {
+    use std::str::FromStr;
+    CaHandle::from_str(TA_NAME).unwrap()
+}
+
+/// The resource class name to be used by the trust anchor.
+pub fn ta_resource_class_name() -> rpki::ca::provisioning::ResourceClassName {
+    "default".into()
+}
 
 
 //------------ Config File Auth Provider Defaults ----------------------------

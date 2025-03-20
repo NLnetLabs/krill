@@ -15,7 +15,7 @@ use rpki::repository::resources::{
 use crate::api;
 use crate::cli::client::KrillClient;
 use crate::cli::report::Report;
-use crate::commons::util::httpclient;
+use crate::commons::httpclient;
 
 
 //------------ Command -------------------------------------------------------

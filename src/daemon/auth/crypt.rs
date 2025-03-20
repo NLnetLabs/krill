@@ -23,10 +23,10 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use serde::{Deserialize, Serialize};
+use crate::commons::ext_serde;
 use crate::commons::KrillResult;
 use crate::commons::error::{ApiAuthError, Error};
 use crate::commons::storage::{Key, Namespace, Segment};
-use crate::commons::util::ext_serde;
 use crate::daemon::config::Config;
 
 const CHACHA20_KEY_BIT_LEN: usize = 256;

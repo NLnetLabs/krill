@@ -9,14 +9,18 @@ use rpki::ca::idcert::IdCert;
 use rpki::repository::resources::{
     AsBlocks, Ipv4Blocks, Ipv6Blocks, ResourceSet,
 };
-use crate::{api, constants, ta};
+use crate::{api, constants};
+use crate::api::ta::{
+    TrustAnchorSignedRequest, TrustAnchorSignerInfo,
+    TrustAnchorSignedResponse,
+};
 use crate::cli::client::KrillClient;
 use crate::cli::options::GeneralOptions;
 use crate::cli::options::args::JsonFile;
 use crate::cli::options::repo::RepositoryResponseFile;
 use crate::cli::report::Report;
 use crate::commons::error::Error as KrillError;
-use crate::commons::util::httpclient;
+use crate::commons::httpclient;
 
 
 //------------ Command -------------------------------------------------------
@@ -213,7 +217,7 @@ impl Signer {
 pub struct SignerInit {
     /// Path to the the Trust Anchor Signer info file (as 'signer show')
     #[arg(long, short, value_name="path")]
-    info: JsonFile<ta::TrustAnchorSignerInfo, TasiMsg>,
+    info: JsonFile<TrustAnchorSignerInfo, TasiMsg>,
 }
 
 impl SignerInit {
@@ -242,7 +246,7 @@ pub struct SignerMakeRequest;
 impl SignerMakeRequest {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<ta::TrustAnchorSignedRequest, httpclient::Error> {
+    ) -> Result<TrustAnchorSignedRequest, httpclient::Error> {
         client.ta_proxy_signer_make_request().await
     }
 }
@@ -256,7 +260,7 @@ pub struct SignerShowRequest;
 impl SignerShowRequest {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<ta::TrustAnchorSignedRequest, httpclient::Error> {
+    ) -> Result<TrustAnchorSignedRequest, httpclient::Error> {
         client.ta_proxy_signer_show_request().await
     }
 }
@@ -268,7 +272,7 @@ impl SignerShowRequest {
 pub struct SignerProcessResponse {
     /// Path to the the Trust Anchor Signer info file (as 'signer show')
     #[arg(long, short, value_name="path")]
-    response: JsonFile<ta::TrustAnchorSignedResponse, TasrMsg>,
+    response: JsonFile<TrustAnchorSignedResponse, TasrMsg>,
 }
 
 impl SignerProcessResponse {

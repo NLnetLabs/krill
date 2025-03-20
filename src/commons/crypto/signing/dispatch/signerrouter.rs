@@ -802,7 +802,7 @@ pub mod tests {
                 MockSignerCallCounts, SignRegistrationChallengeErrorCb,
             },
         },
-        test,
+        commons::test,
     };
 
     use super::*;

@@ -11,8 +11,8 @@ use serde::{Deserialize, Deserializer, Serialize};
 use crate::commons::KrillResult;
 use crate::commons::crypto::CsrInfo;
 use crate::commons::error::Error;
-use crate::commons::util::ext_serde::OneOrMany;
-use crate::ta::ta_handle;
+use crate::commons::ext_serde::OneOrMany;
+use crate::constants::ta_handle;
 use super::admin::PublicationServerUris;
 use super::roa::RoaConfiguration;
 

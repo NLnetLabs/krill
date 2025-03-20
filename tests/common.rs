@@ -19,8 +19,8 @@ use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout};
 use krill::api;
 use krill::api::admin::Token;
+use krill::commons::httpclient;
 use krill::commons::crypto::OpenSslSignerConfig;
-use krill::commons::util::httpclient;
 use krill::cli::client::KrillClient;
 use krill::constants::REPOSITORY_DIR;
 use krill::daemon::config::{
@@ -30,7 +30,7 @@ use krill::daemon::config::{
 };
 use krill::daemon::http::tls_keys::HTTPS_SUB_DIR;
 use krill::daemon::http::server;
-use krill::ta::TaTimingConfig;
+use krill::tasigner::TaTimingConfig;
 
 
 //------------ TestConfig ----------------------------------------------------

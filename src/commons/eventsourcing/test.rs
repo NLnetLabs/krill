@@ -11,7 +11,7 @@ use rpki::ca::idexchange::MyHandle;
 use crate::api::history::{CommandHistoryCriteria, CommandSummary};
 use crate::commons::storage::Namespace;
 use crate::constants::ACTOR_DEF_TEST;
-use crate::test::mem_storage;
+use crate::commons::test::mem_storage;
 use super::*;
 
 

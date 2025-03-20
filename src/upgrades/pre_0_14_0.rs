@@ -23,8 +23,10 @@ use crate::{
         config::Config,
         properties::Properties,
     },
-    ta::{
+    daemon::taproxy::{
         TrustAnchorProxy, TrustAnchorProxyEvent, TrustAnchorProxyInitEvent,
+    },
+    tasigner::{
         TrustAnchorSigner, TrustAnchorSignerEvent,
         TrustAnchorSignerInitEvent,
     },

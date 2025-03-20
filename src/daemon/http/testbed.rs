@@ -3,9 +3,10 @@ use hyper::Method;
 use rpki::ca::idexchange::PublisherHandle;
 
 use crate::{
-    ca::testbed_ca_handle,
+    constants::ta_handle,
     daemon::{
         auth::AuthInfo,
+        ca::testbed_ca_handle,
         http::{
             server::{
                 api_add_pbl, api_ca_add_child, api_ca_child_remove,
@@ -16,7 +17,6 @@ use crate::{
             HttpResponse, Request, RequestPath, RoutingResult,
         },
     },
-    ta::ta_handle,
 };
 
 //------------ Support acting as a testbed

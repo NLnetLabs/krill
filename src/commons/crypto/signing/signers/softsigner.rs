@@ -383,7 +383,7 @@ impl OpenSslKeyPair {
 
 #[cfg(test)]
 pub mod tests {
-    use crate::test;
+    use crate::commons::test;
 
     use super::*;
 

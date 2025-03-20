@@ -3,9 +3,9 @@
 use std::sync::Arc;
 use log::{info, log_enabled, trace};
 use crate::api::admin::Token;
+use crate::commons::httpclient;
 use crate::commons::KrillResult;
 use crate::commons::error::{ApiAuthError, Error};
-use crate::commons::util::httpclient;
 use crate::daemon::auth::{AuthInfo, LoggedInUser, Role};
 use crate::daemon::config::Config;
 use crate::daemon::http::{HttpResponse, HyperRequest};

@@ -997,7 +997,7 @@ impl error::Error for AuthorizationFmtError { }
 
 #[cfg(test)]
 mod tests {
-    use crate::test::{roa_configuration, roa_payload};
+    use crate::commons::test::{roa_configuration, roa_payload};
     use super::*;
 
 

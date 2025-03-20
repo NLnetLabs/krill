@@ -11,4 +11,5 @@ pub mod pubd;
 pub mod roa;
 pub mod rta;
 pub mod status;
+pub mod ta;
 

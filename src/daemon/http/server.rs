@@ -29,12 +29,12 @@ use tokio::sync::oneshot;
 
 use crate::{
     commons::{
+        file,
         error::Error,
         eventsourcing::AggregateStoreError,
-        util::file,
     },
     constants::{
-        KRILL_ENV_HTTP_LOG_INFO, KRILL_ENV_UPGRADE_ONLY,
+        KRILL_ENV_HTTP_LOG_INFO, KRILL_ENV_UPGRADE_ONLY, ta_handle,
     },
     daemon::{
         auth::Permission,
@@ -47,7 +47,6 @@ use crate::{
         krillserver::KrillServer,
         properties::PropertiesManager,
     },
-    ta,
     upgrades::{
         finalise_data_migration, post_start_upgrade,
         prepare_upgrade_data_migrations, UpgradeError, UpgradeMode,
@@ -2207,7 +2206,7 @@ async fn api_ta(req: Request, path: &mut RequestPath) -> RoutingResult {
                 ),
                 None => match *req.method() {
                     Method::POST => {
-                        let ta_handle = ta::ta_handle();
+                        let ta_handle = ta_handle();
                         let server = req.state().clone();
                         let actor = req.actor();
 
@@ -2280,13 +2279,13 @@ async fn api_ta(req: Request, path: &mut RequestPath) -> RoutingResult {
                 Some(child) => match path.next() {
                     Some("parent_response.json") => render_json_res(
                         req.state()
-                            .ca_parent_response(&ta::ta_handle(), child)
+                            .ca_parent_response(&ta_handle(), child)
                             .await,
                     ),
                     Some("parent_response.xml") => {
                         match req
                             .state()
-                            .ca_parent_response(&ta::ta_handle(), child)
+                            .ca_parent_response(&ta_handle(), child)
                             .await
                         {
                             Ok(parent_response) => Ok(HttpResponse::xml(

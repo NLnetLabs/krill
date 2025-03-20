@@ -21,24 +21,24 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     commons::{
+        httpclient,
         actor::Actor,
         crypto::SignerError,
         eventsourcing::{AggregateStoreError, WalStoreError},
         queue,
         storage,
         storage::KeyValueError,
-        util::httpclient,
     },
-    daemon::http::tls_keys,
     daemon::auth::Permission,
-    pubd::PublicationDeltaError,
-    ta,
+    daemon::http::tls_keys,
+    daemon::pubd::PublicationDeltaError,
     upgrades::UpgradeError,
 };
 use crate::api::status::ErrorResponse;
 use crate::api::aspa::CustomerAsn;
 use crate::api::bgpsec::{BgpSecAsnKey, BgpSecDefinition};
 use crate::api::roa::{RoaConfiguration, RoaPayload, RoaPayloadJsonMapKey};
+use crate::api::ta::{Nonce as TaNonce};
 
 
 //------------ RoaDeltaError -----------------------------------------------
@@ -382,7 +382,7 @@ pub enum Error {
     TaProxyAlreadyHasSigner,
     TaProxyHasNoRequest,
     TaProxyHasRequest,
-    TaProxyRequestNonceMismatch(ta::Nonce, ta::Nonce),
+    TaProxyRequestNonceMismatch(TaNonce, TaNonce),
 
     //-----------------------------------------------------------------
     // Resource Tagged Attestation issues
@@ -1316,15 +1316,12 @@ impl fmt::Display for KrillIoError {
 
 #[cfg(test)]
 mod tests {
-
     use std::str::FromStr;
-
     use crate::api::roa::RoaPayload;
-    use crate::test::roa_configuration;
-
+    use crate::commons::test::roa_configuration;
+    use crate::commons::test::roa_payload;
+    use crate::commons::test::test_id_certificate;
     use super::*;
-    use crate::test::roa_payload;
-    use crate::test::test_id_certificate;
 
     fn verify(expected_json: &str, e: Error) {
         let actual = e.to_error_response();

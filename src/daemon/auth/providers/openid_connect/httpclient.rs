@@ -5,7 +5,7 @@ use reqwest::Response;
 
 use crate::{
     commons::error::Error,
-    commons::util::httpclient,
+    commons::httpclient,
     constants::{test_mode_enabled, OPENID_CONNECT_HTTP_CLIENT_TIMEOUT_SECS},
 };
 

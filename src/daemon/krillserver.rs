@@ -20,10 +20,6 @@ use rpki::{
 
 use crate::daemon::auth::AuthInfo;
 use crate::{
-    bgp::BgpAnalyser,
-    ca::{
-        self, testbed_ca_handle, CaManager, CaStatus,
-            },
     commons::{
         actor::Actor,
         crypto::KrillSignerBuilder,
@@ -33,15 +29,14 @@ use crate::{
     constants::*,
     daemon::{
         auth::{Authorizer, LoggedInUser},
+        ca::{
+            self, testbed_ca_handle, CaManager, CaStatus,
+        },
         config::Config,
         http::{HttpResponse, HyperRequest},
         mq::{now, Task, TaskQueue},
+        pubd::RepositoryManager,
         scheduler::Scheduler,
-    },
-    pubd::RepositoryManager,
-    ta::{
-        ta_handle, TaCertDetails, TrustAnchorSignedRequest,
-        TrustAnchorSignedResponse, TrustAnchorSignerInfo, TA_NAME,
     },
 };
 use crate::api;
@@ -73,6 +68,12 @@ use crate::api::roa::{
 use crate::api::rta::{
     ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest,
 };
+use crate::api::ta::{
+    TaCertDetails, TrustAnchorSignedRequest, TrustAnchorSignedResponse,
+    TrustAnchorSignerInfo,
+};
+use crate::constants::{TA_NAME, ta_handle};
+use crate::daemon::bgp::BgpAnalyser;
 
 
 //------------ KrillServer ---------------------------------------------------

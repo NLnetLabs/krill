@@ -5,15 +5,16 @@ use std::str::FromStr;
 use std::sync::Arc;
 use rpki::uri;
 use crate::{api, constants};
+use crate::api::ta::{
+    TrustAnchorSignedRequest, TrustAnchorSignedResponse,
+    TrustAnchorSignerInfo,
+};
 use crate::cli::options::args::JsonFile;
 use crate::cli::report::{Report, ReportFormat};
 use crate::cli::ta::signer::{
     SignerClientError, SignerInitInfo, TrustAnchorSignerManager,
 };
-use crate::ta::{
-    Config, ConfigError, TrustAnchorSignedRequest, TrustAnchorSignedResponse,
-    TrustAnchorProxySignerExchanges, TrustAnchorSignerInfo,
-};
+use crate::tasigner::{Config, ConfigError, TrustAnchorProxySignerExchanges};
 
 
 //------------ Command -------------------------------------------------------

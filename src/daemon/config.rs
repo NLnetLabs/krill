@@ -24,10 +24,10 @@ use syslog::Facility;
 
 use crate::{
     commons::{
+        ext_serde,
         crypto::{OpenSslSignerConfig, SignSupport},
         error::{Error, KrillIoError},
         storage::{KeyValueStore, Namespace},
-        util::ext_serde,
         KrillResult,
     },
     constants::*,
@@ -36,7 +36,7 @@ use crate::{
         http::tls_keys::{self, HTTPS_SUB_DIR},
         mq::{in_seconds, Priority},
     },
-    ta::TaTimingConfig,
+    tasigner::TaTimingConfig,
 };
 use crate::api::admin::{PublicationServerUris, Token};
 
@@ -1075,7 +1075,7 @@ impl Config {
         enable_suspend: bool,
         #[allow(unused_variables)] second_signer: bool,
     ) -> Self {
-        use crate::test;
+        use crate::commons::test;
 
         let ip = ConfigDefaults::ip();
         let port = ConfigDefaults::port();
@@ -2022,9 +2022,8 @@ impl SignerConfig {
 
 #[cfg(test)]
 mod tests {
-    use crate::test;
     use std::env;
-
+    use crate::commons::test;
     use super::*;
 
     fn assert_err_msg(

@@ -42,7 +42,7 @@ async fn functional_at() {
 
     eprintln!(">>>> Configure the TA signer.");
     let signer = TrustAnchorSignerManager::create(
-        krill::ta::Config::parse_str(
+        krill::tasigner::Config::parse_str(
             include_str!("../test-resources/ta/ta.conf")
         ).unwrap()
     ).unwrap();

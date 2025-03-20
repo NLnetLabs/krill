@@ -12,14 +12,14 @@ use rpki::repository::x509::Time;
 use serde::{Deserialize, Serialize};
 use url::Url;
 use crate::api::ca::Timestamp;
-use crate::ca::{CertAuth, CertAuthEvent};
 use crate::commons::eventsourcing;
 use crate::commons::{Error, KrillResult};
 use crate::commons::eventsourcing::Aggregate;
 use crate::commons::queue::{Queue, RunningTask, ScheduleMode};
 use crate::commons::storage::{Key, Segment, SegmentBuf};
-use crate::constants::TASK_QUEUE_NS;
-use crate::ta::{ta_handle, TrustAnchorProxy, TrustAnchorProxyEvent};
+use crate::constants::{TASK_QUEUE_NS, ta_handle};
+use crate::daemon::ca::{CertAuth, CertAuthEvent};
+use crate::daemon::taproxy::{TrustAnchorProxy, TrustAnchorProxyEvent};
 
 
 //------------ Task ---------------------------------------------------------

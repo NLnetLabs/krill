@@ -32,7 +32,7 @@ use rpki::rrdp::Hash;
 use serde::{Deserialize, Serialize};
 use crate::commons::crypto::CsrInfo;
 use crate::commons::error;
-use crate::commons::util::KrillVersion;
+use crate::commons::version::KrillVersion;
 use super::admin::{PublishedFile, RepositoryContact};
 use super::aspa::AspaDefinition;
 use super::bgpsec::BgpSecAsnKey;
@@ -2210,9 +2210,9 @@ impl std::error::Error for CertInfoDecodeError {}
 mod test {
     use bytes::Bytes;
     use rpki::crypto::PublicKeyFormat;
-    use crate::test;
+    use crate::api::ta::TrustAnchorLocator;
     use crate::commons::crypto::OpenSslSigner;
-    use crate::ta::TrustAnchorLocator;
+    use crate::commons::test;
     use super::*;
 
     fn base_uri() -> uri::Rsync {
@@ -2313,8 +2313,8 @@ mod test {
     fn serde_cert_auth_issues() {
         let mut issues = CertAuthIssues::default();
 
+        use crate::commons::httpclient;
         use crate::commons::error::Error;
-        use crate::commons::util::httpclient;
 
         issues.repo_issue = Some(
             Error::HttpClientError(httpclient::Error::forbidden(

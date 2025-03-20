@@ -11,7 +11,7 @@ use krill::api::aspa::{
     ProviderAsn,
 };
 use krill::api::ca::ObjectName;
-use krill::commons::util::httpclient;
+use krill::commons::httpclient;
 
 mod common;
 

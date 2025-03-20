@@ -24,7 +24,7 @@ use crate::{
             WithStorableDetails,
         },
         storage::{Key, KeyValueError, KeyValueStore, Scope, Segment},
-        util::KrillVersion,
+        version::KrillVersion,
         KrillResult,
     },
     constants::{
@@ -40,11 +40,11 @@ use crate::{
         OldStoredCommand, OldStoredEffect, OldStoredEvent,
     },
 };
-use crate::ca::upgrades as ca;
 use crate::api::aspa::{
     AspaDefinition, AspaDefinitionUpdates, CustomerAsn, ProviderAsn,
 };
-use crate::pubd::upgrades as pubd;
+use crate::daemon::ca::upgrades as ca;
+use crate::daemon::pubd::upgrades as pubd;
 
 #[cfg(feature = "hsm")]
 use rpki::crypto::KeyIdentifier;
@@ -1268,13 +1268,10 @@ fn upgrade_versions(
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
-
     use log::LevelFilter;
     use url::Url;
-
     use crate::commons::storage::Namespace;
-    use crate::test;
-
+    use crate::commons::test;
     use super::*;
 
     fn test_upgrade(base_dir: &str, namespaces: &[&str]) {

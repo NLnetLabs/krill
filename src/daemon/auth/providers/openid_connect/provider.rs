@@ -58,8 +58,9 @@ use crate::daemon::http::{HttpResponse, HyperRequest};
 use crate::{
     api::admin::Token,
     commons::{
+        httpclient,
         error::{ApiAuthError, Error},
-        util::{httpclient, sha256},
+        util::sha256,
         KrillResult,
     },
     daemon::{

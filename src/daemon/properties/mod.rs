@@ -30,7 +30,7 @@ use crate::{
             self, Aggregate, AggregateStore, Event, InitCommandDetails,
             InitEvent, SentCommand, SentInitCommand, WithStorableDetails,
         },
-        util::KrillVersion,
+        version::KrillVersion,
         KrillResult,
     },
     constants::{ACTOR_DEF_KRILL, PROPERTIES_DFLT_NAME, PROPERTIES_NS},
@@ -334,10 +334,8 @@ impl PropertiesManager {
 //--------- Tests
 #[cfg(test)]
 mod tests {
-
+    use crate::commons::test;
     use super::*;
-
-    use crate::test;
 
     #[test]
     fn init_properties() {

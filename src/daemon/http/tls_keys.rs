@@ -20,7 +20,8 @@ use rpki::{
 };
 
 use crate::api::ca::IdCertInfo;
-use crate::commons::{error::KrillIoError, util::file};
+use crate::commons::file;
+use crate::commons::error::KrillIoError;
 
 const KEY_SIZE: u32 = 2048;
 pub const HTTPS_SUB_DIR: &str = "ssl";
@@ -253,9 +254,8 @@ impl std::error::Error for Error {}
 
 #[cfg(test)]
 mod tests {
+    use crate::commons::test;
     use super::*;
-
-    use crate::test;
 
     #[test]
     fn should_create_key_and_cert() {

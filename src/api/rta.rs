@@ -9,8 +9,8 @@ use rpki::repository::resources::ResourceSet;
 use rpki::repository::sigobj::MessageDigest;
 use rpki::repository::x509::Validity;
 use serde::{Deserialize, Serialize};
+use crate::commons::ext_serde;
 use crate::commons::error::KrillError;
-use crate::commons::util::ext_serde;
 
 
 //------------ RtaPrepareRequest --------------------------------------------
