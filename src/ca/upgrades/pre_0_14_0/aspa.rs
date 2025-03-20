@@ -7,7 +7,7 @@ use rpki::repository::x509::{Serial, Validity};
 use rpki::resources::Asn;
 use rpki::rrdp::Hash;
 use serde::{Deserialize, Serialize};
-use crate::commons::api::aspa::{AspaDefinition, CustomerAsn};
+use crate::api::aspa::{AspaDefinition, CustomerAsn};
 
 
 //------------ Pre0_14_0AspaDefinition

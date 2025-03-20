@@ -8,7 +8,7 @@ use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 use serde::{Deserialize, Serialize};
 use rpki::ca::idexchange::MyHandle;
-use crate::commons::api::history::{CommandHistoryCriteria, CommandSummary};
+use crate::api::history::{CommandHistoryCriteria, CommandSummary};
 use crate::commons::storage::Namespace;
 use crate::constants::ACTOR_DEF_TEST;
 use crate::test::mem_storage;

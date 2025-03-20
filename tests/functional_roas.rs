@@ -2,9 +2,9 @@
 
 use rpki::ca::idexchange::CaHandle;
 use rpki::repository::resources::ResourceSet;
-use krill::commons::api::admin::UpdateChildRequest;
-use krill::commons::api::ca::ObjectName;
-use krill::commons::api::roa::{RoaConfiguration, RoaConfigurationUpdates};
+use krill::api::admin::UpdateChildRequest;
+use krill::api::ca::ObjectName;
+use krill::api::roa::{RoaConfiguration, RoaConfigurationUpdates};
 
 mod common;
 

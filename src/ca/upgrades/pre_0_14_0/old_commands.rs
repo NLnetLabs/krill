@@ -12,12 +12,12 @@ use rpki::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::api::admin::StorableParentContact;
+use crate::api::aspa::CustomerAsn;
+use crate::api::ca::RtaName;
+use crate::api::roa::RoaConfigurationUpdates;
 use crate::ca::commands::{CertAuthStorableCommand, StorableRcEntitlement};
 use crate::ca::rc::DropReason;
-use crate::commons::api::admin::StorableParentContact;
-use crate::commons::api::aspa::CustomerAsn;
-use crate::commons::api::ca::RtaName;
-use crate::commons::api::roa::RoaConfigurationUpdates;
 use crate::commons::eventsourcing::WithStorableDetails;
 use super::aspa::{Pre0_14_0AspaProvidersUpdate, Pre0_14_0AspaDefinition};
 
@@ -231,7 +231,7 @@ impl From<Pre0_14_0CertAuthStorableCommand> for CertAuthStorableCommand {
 }
 
 impl WithStorableDetails for Pre0_14_0CertAuthStorableCommand {
-    fn summary(&self) -> crate::commons::api::history::CommandSummary {
+    fn summary(&self) -> crate::api::history::CommandSummary {
         CertAuthStorableCommand::from(self.clone()).summary()
     }
 

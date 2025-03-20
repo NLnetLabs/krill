@@ -9,12 +9,12 @@ use rpki::ca::idexchange::{
 };
 use rpki::ca::publication::{ListReply, PublishDelta};
 use rpki::repository::x509::Time;
-use crate::commons::KrillResult;
-use crate::commons::actor::Actor;
-use crate::commons::api::admin::{
+use crate::api::admin::{
     PublicationServerUris, PublisherDetails, RepoFileDeleteCriteria,
 };
-use crate::commons::api::pubd::RepoStats;
+use crate::api::pubd::RepoStats;
+use crate::commons::KrillResult;
+use crate::commons::actor::Actor;
 use crate::commons::crypto::KrillSigner;
 use crate::commons::error::Error;
 use crate::commons::util::cmslogger::CmsLogger;
@@ -341,7 +341,7 @@ mod tests {
     use rpki::uri;
     use rpki::ca::idexchange::Handle;
     use rpki::ca::publication::{ListElement, PublishDelta};
-    use crate::commons::api::ca::IdCertInfo;
+    use crate::api::ca::IdCertInfo;
     use crate::commons::crypto::{KrillSignerBuilder, OpenSslSignerConfig};
     use crate::commons::util::file;
     use crate::commons::util::file::CurrentFile;

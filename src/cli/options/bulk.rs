@@ -1,8 +1,8 @@
 //! Commands triggering events for all CAs.
 
+use crate::api;
 use crate::cli::client::KrillClient;
 use crate::cli::report::Report;
-use crate::commons::api;
 use crate::commons::util::httpclient;
 
 

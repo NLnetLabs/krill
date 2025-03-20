@@ -22,9 +22,8 @@ use serde::{Deserialize, Serialize};
 use crate::{
     commons::{
         actor::Actor,
-        api::status::ErrorResponse,
         crypto::SignerError,
-        eventsourcing::AggregateStoreError,
+        eventsourcing::{AggregateStoreError, WalStoreError},
         queue,
         storage,
         storage::KeyValueError,
@@ -36,14 +35,11 @@ use crate::{
     ta,
     upgrades::UpgradeError,
 };
+use crate::api::status::ErrorResponse;
+use crate::api::aspa::CustomerAsn;
+use crate::api::bgpsec::{BgpSecAsnKey, BgpSecDefinition};
+use crate::api::roa::{RoaConfiguration, RoaPayload, RoaPayloadJsonMapKey};
 
-use super::{
-    api::roa::{RoaConfiguration, RoaPayload},
-    eventsourcing::WalStoreError,
-};
-use super::api::aspa::CustomerAsn;
-use super::api::bgpsec::{BgpSecAsnKey, BgpSecDefinition};
-use super::api::roa::RoaPayloadJsonMapKey;
 
 //------------ RoaDeltaError -----------------------------------------------
 
@@ -1323,7 +1319,7 @@ mod tests {
 
     use std::str::FromStr;
 
-    use crate::commons::api::roa::RoaPayload;
+    use crate::api::roa::RoaPayload;
     use crate::test::roa_configuration;
 
     use super::*;

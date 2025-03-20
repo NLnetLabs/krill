@@ -6,11 +6,11 @@ use reqwest::StatusCode;
 use rpki::ca::idexchange::CaHandle;
 use rpki::ca::provisioning::ResourceClassName;
 use rpki::repository::resources::ResourceSet;
-use krill::commons::api::aspa::{
+use krill::api::aspa::{
     AspaDefinition, AspaDefinitionList, AspaProvidersUpdate, CustomerAsn,
     ProviderAsn,
 };
-use krill::commons::api::ca::ObjectName;
+use krill::api::ca::ObjectName;
 use krill::commons::util::httpclient;
 
 mod common;

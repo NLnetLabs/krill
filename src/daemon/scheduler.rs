@@ -13,10 +13,10 @@ use rpki::ca::{
 use url::Url;
 
 use crate::{
+    api::ca::Timestamp,
     ca::{CaManager, CertAuth},
     commons::{
         actor::Actor,
-        api::ca::Timestamp,
         crypto::dispatch::signerinfo::SignerInfo,
         error::FatalError,
         eventsourcing::{Aggregate, AggregateStore, WalStore, WalSupport},

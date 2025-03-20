@@ -1,5 +1,6 @@
 //! The _Krill_ library crate.
 
+pub mod api;
 pub mod bgp;
 pub mod ca;
 pub mod cli;

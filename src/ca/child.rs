@@ -5,14 +5,14 @@ use rpki::ca::provisioning::ResourceClassName;
 use rpki::crypto::KeyIdentifier;
 use rpki::repository::resources::ResourceSet;
 use serde::{Deserialize, Serialize};
+use crate::api::ca::{
+    ChildCaInfo, ChildState, IdCertInfo, IssuedCertificate, ReceivedCert,
+    SuspendedCert, UnsuspendedCert,
+};
 use crate::commons::KrillResult;
 use crate::commons::crypto::{KrillSigner, SignSupport};
 use crate::commons::error::Error;
 use crate::daemon::config::IssuanceTimingConfig;
-use crate::commons::api::ca::{
-    ChildCaInfo, ChildState, IdCertInfo, IssuedCertificate, ReceivedCert,
-    SuspendedCert, UnsuspendedCert,
-};
 
 
 //------------ UsedKeyState --------------------------------------------------

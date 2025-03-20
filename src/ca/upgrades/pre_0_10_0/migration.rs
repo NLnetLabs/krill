@@ -3,11 +3,11 @@
 use log::{debug, info};
 use rpki::ca::idexchange::{CaHandle, MyHandle};
 use rpki::repository::x509::Time;
+use crate::api::aspa::ProviderAsn;
 use crate::ca::certauth::CertAuth;
 use crate::ca::commands::CertAuthStorableCommand;
 use crate::ca::events::{CertAuthEvent, CertAuthInitEvent};
 use crate::ca::publishing::CaObjects;
-use crate::commons::api::aspa::ProviderAsn;
 use crate::commons::eventsourcing::{
     AggregateStore, StoredCommand, StoredCommandBuilder
 };

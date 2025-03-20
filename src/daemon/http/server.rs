@@ -53,15 +53,15 @@ use crate::{
         prepare_upgrade_data_migrations, UpgradeError, UpgradeMode,
     },
 };
-use crate::commons::api::admin::{
+use crate::api::admin::{
     ApiRepositoryContact, ParentCaReq, PublisherList, RepositoryContact,
     Token,
 };
-use crate::commons::api::aspa::AspaDefinitionUpdates;
-use crate::commons::api::bgp::BgpAnalysisAdvice;
-use crate::commons::api::ca::RtaName;
-use crate::commons::api::history::CommandHistoryCriteria;
-use crate::commons::api::roa::RoaConfigurationUpdates;
+use crate::api::aspa::AspaDefinitionUpdates;
+use crate::api::bgp::BgpAnalysisAdvice;
+use crate::api::ca::RtaName;
+use crate::api::history::CommandHistoryCriteria;
+use crate::api::roa::RoaConfigurationUpdates;
 
 
 //------------ State -----------------------------------------------------

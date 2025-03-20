@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use std::cmp::Ordering;
 use std::str::FromStr;
 use serde::{Deserialize, Serialize};
-use crate::commons::api::ca::BgpStats;
-use crate::commons::api::roa::{
+use super::ca::BgpStats;
+use super::roa::{
     AsNumber, ConfiguredRoa, RoaPayload, TypedPrefix,
 };
 
@@ -1107,12 +1107,12 @@ mod tests {
     #[test]
     fn print_bgp_report_full() {
         let json = include_str!(
-            "../../../test-resources/bgp/expected_full_report.json"
+            "../../test-resources/bgp/expected_full_report.json"
         );
         let report: BgpAnalysisReport = serde_json::from_str(json).unwrap();
 
         let expected = include_str!(
-            "../../../test-resources/bgp/expected_full_report.txt"
+            "../../test-resources/bgp/expected_full_report.txt"
         );
         let found = report.to_string();
 

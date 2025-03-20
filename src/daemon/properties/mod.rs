@@ -35,7 +35,7 @@ use crate::{
     },
     constants::{ACTOR_DEF_KRILL, PROPERTIES_DFLT_NAME, PROPERTIES_NS},
 };
-use crate::commons::api::history::CommandSummary;
+use crate::api::history::CommandSummary;
 
 
 //------------ PropertiesInitCommand ---------------------------------------
@@ -124,7 +124,7 @@ impl From<&PropertiesCommandDetails> for StorablePropertiesCommand {
 }
 
 impl eventsourcing::WithStorableDetails for StorablePropertiesCommand {
-    fn summary(&self) -> crate::commons::api::history::CommandSummary {
+    fn summary(&self) -> crate::api::history::CommandSummary {
         match self {
             StorablePropertiesCommand::Init => {
                 CommandSummary::new("cmd-properties-init", self)

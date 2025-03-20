@@ -12,14 +12,14 @@ use rpki::repository::sigobj::SignedObjectBuilder;
 use rpki::repository::x509::{Time, Validity};
 use serde::de;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use crate::commons::KrillResult;
-use crate::commons::crypto::KrillSigner;
-use crate::commons::error::{Error, RoaDeltaError};
-use crate::commons::api::ca::ObjectName;
-use crate::commons::api::roa::{
+use crate::api::ca::ObjectName;
+use crate::api::roa::{
     AsNumber, RoaConfiguration, RoaConfigurationUpdates, RoaInfo, RoaPayload,
     RoaPayloadJsonMapKey,
 };
+use crate::commons::KrillResult;
+use crate::commons::crypto::KrillSigner;
+use crate::commons::error::{Error, RoaDeltaError};
 use crate::daemon::config::{Config, IssuanceTimingConfig};
 use super::events::CertAuthEvent;
 use super::keys::CertifiedKey;
@@ -1033,7 +1033,7 @@ impl fmt::Display for RoaAggregateKeyFmtError {
 
 #[cfg(test)]
 mod tests {
-    use crate::commons::api::roa::{AsNumber, RoaPayload};
+    use crate::api::roa::{AsNumber, RoaPayload};
     use super::*;
 
     fn authorization(s: &str) -> RoaPayloadJsonMapKey {

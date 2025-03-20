@@ -12,7 +12,7 @@ use rpki::repository::x509::Time;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use url::Url;
-use crate::commons::api::history::{
+use crate::api::history::{
     CommandHistory, CommandHistoryCriteria, CommandHistoryRecord
 };
 use crate::commons::error::KrillIoError;

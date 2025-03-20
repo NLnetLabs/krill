@@ -7,7 +7,7 @@ use bytes::Bytes;
 use rpki::uri;
 use rpki::ca::idcert::IdCert;
 use url::Url;
-use crate::commons::api::roa::{ConfiguredRoa, RoaConfiguration, RoaPayload};
+use crate::api::roa::{ConfiguredRoa, RoaConfiguration, RoaPayload};
 
 
 /// This method returns an in-memory Key-Value store and then runs the test

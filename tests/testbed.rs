@@ -2,8 +2,8 @@
 
 use rpki::ca::idexchange;
 use rpki::repository::resources::ResourceSet;
-use krill::commons::api::admin::ParentCaReq;
-use krill::commons::api::ca::{ParentInfo, ParentKindInfo};
+use krill::api::admin::ParentCaReq;
+use krill::api::ca::{ParentInfo, ParentKindInfo};
 
 mod common;
 

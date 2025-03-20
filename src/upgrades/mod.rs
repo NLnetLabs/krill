@@ -41,7 +41,7 @@ use crate::{
     },
 };
 use crate::ca::upgrades as ca;
-use crate::commons::api::aspa::{
+use crate::api::aspa::{
     AspaDefinition, AspaDefinitionUpdates, CustomerAsn, ProviderAsn,
 };
 use crate::pubd::upgrades as pubd;

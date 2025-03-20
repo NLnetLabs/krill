@@ -6,9 +6,9 @@ use rpki::crypto::KeyIdentifier;
 use rpki::repository::resources::ResourceSet;
 use rpki::repository::x509::Validity;
 use serde::{Deserialize, Serialize};
+use crate::api::ca::{Revocation, RtaList, RtaName};
+use crate::api::rta::ResourceTaggedAttestation; 
 use crate::commons::KrillResult;
-use crate::commons::api::ca::{Revocation, RtaList, RtaName};
-use crate::commons::api::rta::ResourceTaggedAttestation; 
 use crate::commons::error::Error;
 
 

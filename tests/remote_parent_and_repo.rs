@@ -1,9 +1,9 @@
 //! Tests running a CA under a remote parent and repo
 
 use rpki::repository::resources::ResourceSet;
-use krill::commons::api::admin::ParentCaReq;
-use krill::commons::api::ca::ObjectName;
-use krill::commons::api::roa::RoaConfigurationUpdates;
+use krill::api::admin::ParentCaReq;
+use krill::api::ca::ObjectName;
+use krill::api::roa::RoaConfigurationUpdates;
 
 mod common;
 

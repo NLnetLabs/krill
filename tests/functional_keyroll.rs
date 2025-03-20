@@ -5,8 +5,8 @@ use rpki::ca::idexchange::CaHandle;
 use rpki::repository::Manifest;
 use rpki::repository::resources::{Asn, ResourceSet};
 use rpki::repository::x509::Serial;
-use krill::commons::api::ca::{ObjectName, ReceivedCert};
-use krill::commons::api::roa::RoaConfigurationUpdates;
+use krill::api::ca::{ObjectName, ReceivedCert};
+use krill::api::roa::RoaConfigurationUpdates;
 
 mod common;
 

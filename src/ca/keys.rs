@@ -9,13 +9,13 @@ use rpki::ca::provisioning::{
 use rpki::crypto::KeyIdentifier;
 use rpki::repository::{resources::ResourceSet, x509::Time};
 use serde::{Deserialize, Serialize};
-use crate::commons::KrillResult;
-use crate::commons::crypto::KrillSigner;
-use crate::commons::error::Error;
-use crate::commons::api::ca::{
+use crate::api::ca::{
     ActiveInfo, CertifiedKeyInfo, PendingInfo, PendingKeyInfo, ReceivedCert,
     ResourceClassKeysInfo, RollNewInfo, RollOldInfo, RollPendingInfo,
 };
+use crate::commons::KrillResult;
+use crate::commons::crypto::KrillSigner;
+use crate::commons::error::Error;
 use super::events::CertAuthEvent;
 
 

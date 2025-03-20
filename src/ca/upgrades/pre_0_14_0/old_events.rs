@@ -13,6 +13,11 @@ use rpki::{
 };
 
 use serde::{Deserialize, Serialize};
+use crate::api::admin::{ParentCaContact, RepositoryContact};
+use crate::api::aspa::CustomerAsn;
+use crate::api::bgpsec::BgpSecAsnKey;
+use crate::api::ca::{IdCertInfo, ReceivedCert, RtaName};
+use crate::api::roa::RoaPayloadJsonMapKey;
 use crate::ca::bgpsec::{BgpSecCertificateUpdates, StoredBgpSecCsr};
 use crate::ca::certauth::Rfc8183Id;
 use crate::ca::child::ChildCertificateUpdates;
@@ -20,11 +25,6 @@ use crate::ca::events::CertAuthEvent;
 use crate::ca::keys::CertifiedKey;
 use crate::ca::roa::RoaUpdates;
 use crate::ca::rta::{PreparedRta, SignedRta};
-use crate::commons::api::admin::{ParentCaContact, RepositoryContact};
-use crate::commons::api::aspa::CustomerAsn;
-use crate::commons::api::bgpsec::BgpSecAsnKey;
-use crate::commons::api::ca::{IdCertInfo, ReceivedCert, RtaName};
-use crate::commons::api::roa::RoaPayloadJsonMapKey;
 
 use super::aspa::{
     Pre0_14_0AspaDefinition, Pre0_14_0AspaObjectsUpdates,

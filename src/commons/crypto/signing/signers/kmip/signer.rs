@@ -28,8 +28,8 @@ use rpki::{
 };
 use serde::Deserialize;
 
+use crate::api::ca::Timestamp;
 use crate::commons::{
-    api::ca::Timestamp,
     crypto::{
         dispatch::signerinfo::SignerMapper,
         signers::{

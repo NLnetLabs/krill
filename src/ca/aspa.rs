@@ -10,14 +10,14 @@ use rpki::repository::resources::ResourceSet;
 use rpki::repository::sigobj::SignedObjectBuilder;
 use rpki::repository::x509::{Serial, Time, Validity};
 use serde::{Deserialize, Serialize};
+use crate::api::aspa::{
+    AspaDefinition, AspaDefinitionUpdates, AspaProvidersUpdate, CustomerAsn
+};
+use crate::api::ca::ObjectName;
 use crate::commons::KrillResult;
 use crate::commons::crypto::KrillSigner;
 use crate::commons::error::Error;
 use crate::daemon::config::{Config, IssuanceTimingConfig};
-use crate::commons::api::aspa::{
-    AspaDefinition, AspaDefinitionUpdates, AspaProvidersUpdate, CustomerAsn
-};
-use crate::commons::api::ca::ObjectName;
 use super::events::CertAuthEvent;
 use super::keys::CertifiedKey;
 

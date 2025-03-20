@@ -4,8 +4,8 @@ use rpki::ca::csr::BgpsecCsr;
 use rpki::ca::idexchange::CaHandle;
 use rpki::ca::provisioning::ResourceClassName;
 use rpki::repository::resources::{Asn, ResourceSet};
-use krill::commons::api::admin::UpdateChildRequest;
-use krill::commons::api::bgpsec::BgpSecCsrInfo;
+use krill::api::admin::UpdateChildRequest;
+use krill::api::bgpsec::BgpSecCsrInfo;
 
 mod common;
 

@@ -2,7 +2,7 @@
 
 use rpki::rrdp;
 use rpki::repository::resources::ResourceSet;
-use krill::commons::api;
+use krill::api;
 use krill::commons::util::httpclient;
 
 mod common;

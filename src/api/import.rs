@@ -276,7 +276,7 @@ mod tests {
     #[test]
     fn parse_cas_only() {
         let json = include_str!(
-            "../../../test-resources/bulk-ca-import/structure.json"
+            "../../test-resources/bulk-ca-import/structure.json"
         );
 
         let structure: Structure = serde_json::from_str(json).unwrap();
@@ -286,7 +286,7 @@ mod tests {
     #[test]
     fn parse_import_delegated_child() {
         let json = include_str!(
-            "../../../test-resources/bulk-ca-import/import-nicbr.json"
+            "../../test-resources/bulk-ca-import/import-nicbr.json"
         );
 
         let _child: ImportChild = serde_json::from_str(json).unwrap();

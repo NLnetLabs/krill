@@ -4,7 +4,7 @@
 
 use rpki::ca::idexchange::CaHandle;
 use rpki::ca::provisioning::ResourceClassName;
-use krill::commons::api;
+use krill::api;
 use rpki::repository::resources::ResourceSet;
 
 mod common;

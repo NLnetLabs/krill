@@ -3,7 +3,7 @@
 use std::{fmt, io};
 use std::io::{stderr, stdout};
 use serde::ser::{Serialize, SerializeStruct};
-use crate::commons::api::status::Success;
+use crate::api::status::Success;
 
 //------------ Report --------------------------------------------------------
 

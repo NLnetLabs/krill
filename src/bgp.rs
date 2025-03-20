@@ -8,11 +8,11 @@ use intervaltree::IntervalTree;
 use rpki::repository::resources::{Addr, AddressRange, ResourceSet};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use crate::commons::api::bgp::{
+use crate::api::bgp::{
     Announcement, BgpAnalysisEntry, BgpAnalysisReport, BgpAnalysisState,
     BgpAnalysisSuggestion, ReplacementRoaSuggestion,
 };
-use crate::commons::api::roa::{
+use crate::api::roa::{
     AsNumber, ConfiguredRoa, Ipv4Prefix, Ipv6Prefix, RoaPayload, TypedPrefix,
 };
 
@@ -768,8 +768,8 @@ impl error::Error for BgpApiError { }
 #[cfg(test)]
 mod test {
     use rpki::repository::resources::Prefix;
-    use crate::commons::api::bgp::BgpAnalysisState;
-    use crate::commons::api::roa::{
+    use crate::api::bgp::BgpAnalysisState;
+    use crate::api::roa::{
         Ipv4Prefix, Ipv6Prefix, RoaConfigurationUpdates
     };
     use crate::test::{configured_roa, roa_payload};

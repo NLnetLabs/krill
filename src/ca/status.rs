@@ -9,12 +9,12 @@ use rpki::ca::provisioning::ResourceClassListResponse as Entitlements;
 use rpki::ca::publication::PublishDelta;
 use serde::{Deserialize, Serialize};
 use url::Url;
-use crate::commons::KrillResult;
-use crate::commons::api::ca::{
+use crate::api::ca::{
     ChildConnectionStats, ChildStatus, ChildrenConnectionStats, ParentStatus,
     ParentStatuses, RepoStatus,
 };
-use crate::commons::api::status::ErrorResponse;
+use crate::api::status::ErrorResponse;
+use crate::commons::KrillResult;
 use crate::commons::error::Error;
 use crate::commons::storage::{Key, KeyValueStore, Namespace, Scope, Segment};
 use crate::commons::util::httpclient;

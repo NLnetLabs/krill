@@ -12,9 +12,9 @@ use rpki::ca::idexchange::{
 use rpki::repository::resources::{
     AsBlocks, Ipv4Blocks, Ipv6Blocks, ResourceSet
 };
+use crate::api;
 use crate::cli::client::KrillClient;
 use crate::cli::report::Report;
-use crate::commons::api;
 use crate::commons::util::httpclient;
 
 

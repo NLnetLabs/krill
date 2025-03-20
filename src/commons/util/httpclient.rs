@@ -19,8 +19,8 @@ use crate::{
         KRILL_HTTPS_ROOT_CERTS_ENV,
     },
 };
-use crate::commons::api::admin::Token;
-use crate::commons::api::status::ErrorResponse;
+use crate::api::admin::Token;
+use crate::api::status::ErrorResponse;
 
 const JSON_CONTENT: &str = "application/json";
 

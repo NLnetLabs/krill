@@ -4,7 +4,7 @@ use std::str::FromStr;
 use rpki::uri;
 use rpki::repository::resources::ResourceSet;
 use rpki::repository::x509::Time;
-use krill::commons::api;
+use krill::api;
 
 mod common;
 

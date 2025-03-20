@@ -19,7 +19,8 @@ use rpki::{
     repository::x509::{Time, Validity},
 };
 
-use crate::commons::{api::ca::IdCertInfo, error::KrillIoError, util::file};
+use crate::api::ca::IdCertInfo;
+use crate::commons::{error::KrillIoError, util::file};
 
 const KEY_SIZE: u32 = 2048;
 pub const HTTPS_SUB_DIR: &str = "ssl";

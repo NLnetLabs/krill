@@ -32,6 +32,14 @@ use crate::{
     },
 };
 
+use crate::api::admin::{
+    ParentCaContact, ParentServerInfo, PublicationServerInfo,
+    RepositoryContact,
+};
+use crate::api::ca::{
+    CertInfo, IdCertInfo, IssuedCertificate, ObjectName, ReceivedCert,
+    Revocation, Revocations,  RtaName, SuspendedCert, UnsuspendedCert,
+};
 use crate::ca::certauth::Rfc8183Id;
 use crate::ca::child::ChildCertificateUpdates;
 use crate::ca::events::CertAuthEvent;
@@ -47,15 +55,7 @@ use crate::ca::rta::{PreparedRta, SignedRta};
 use crate::ca::upgrades::pre_0_14_0::aspa::{
     Pre0_14_0AspaProvidersUpdate, Pre0_14_0ProviderAs
 };
-use crate::commons::api::admin::{
-    ParentCaContact, ParentServerInfo, PublicationServerInfo,
-    RepositoryContact,
-};
-use crate::commons::api::ca::{
-    CertInfo, IdCertInfo, IssuedCertificate, ObjectName, ReceivedCert,
-    Revocation, Revocations,  RtaName, SuspendedCert, UnsuspendedCert,
-};
-use crate::commons::api::roa::{RoaInfo, RoaPayloadJsonMapKey};
+use crate::api::roa::{RoaInfo, RoaPayloadJsonMapKey};
 use super::aspa::{Pre0_10_0AspaDefinition, Pre0_10_0AspaObjectsUpdates};
 
 

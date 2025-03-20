@@ -12,11 +12,11 @@ use rpki::repository::cert::{
 use rpki::repository::resources::{Asn, ResourceSet};
 use rpki::repository::x509::{Serial, Time};
 use serde::{Deserialize, Serialize};
-use crate::commons::KrillResult;
-use crate::commons::api::bgpsec::{
+use crate::api::bgpsec::{
     BgpSecAsnKey, BgpSecCsrInfo, BgpSecCsrInfoList, BgpSecDefinitionUpdates,
 };
-use crate::commons::api::ca::ObjectName;
+use crate::api::ca::ObjectName;
+use crate::commons::KrillResult;
 use crate::commons::error::Error;
 use crate::commons::crypto::KrillSigner;
 use crate::daemon::config::{Config, IssuanceTimingConfig};

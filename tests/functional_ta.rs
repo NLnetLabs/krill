@@ -3,8 +3,8 @@
 use std::str::FromStr;
 use rpki::uri;
 use rpki::repository::resources::ResourceSet;
+use krill::api;
 use krill::cli::ta::signer::{SignerInitInfo, TrustAnchorSignerManager};
-use krill::commons::api;
 
 mod common;
 

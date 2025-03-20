@@ -9,7 +9,7 @@ use rpki::dep::bcder::decode::DecodeError;
 use rpki::repository::resources::Asn;
 use crate::cli::client::KrillClient;
 use crate::cli::report::Report;
-use crate::commons::api;
+use crate::api;
 use crate::commons::util::httpclient;
 use super::ca;
 

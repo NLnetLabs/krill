@@ -23,7 +23,7 @@ use crate::{
     },
     constants::{ACTOR_DEF_KRILL, SIGNERS_NS},
 };
-use crate::commons::api::history::CommandSummary;
+use crate::api::history::CommandSummary;
 
 
 //------------ SignerInfoInitCommand

@@ -38,8 +38,8 @@ mod tests {
     use std::{sync::Arc, time::Duration};
 
     use crate::{
+        api::admin::{PublicationServerInfo, RepositoryContact},
         commons::{
-            api::admin::{PublicationServerInfo, RepositoryContact},
             crypto::KrillSignerBuilder,
             eventsourcing::AggregateStore,
             storage::Namespace,

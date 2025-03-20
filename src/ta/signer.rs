@@ -38,7 +38,7 @@ use crate::{
         KrillResult,
     },
 };
-use crate::commons::api::ca::{IdCertInfo, ObjectName, ReceivedCert};
+use crate::api::ca::{IdCertInfo, ObjectName, ReceivedCert};
 
 //------------ TrustAnchorSigner -------------------------------------------
 
@@ -215,17 +215,17 @@ impl From<&TrustAnchorSignerCommandDetails>
 }
 
 impl eventsourcing::WithStorableDetails for TrustAnchorSignerStorableCommand {
-    fn summary(&self) -> crate::commons::api::history::CommandSummary {
+    fn summary(&self) -> crate::api::history::CommandSummary {
         match self {
             TrustAnchorSignerStorableCommand::Init => {
-                crate::commons::api::history::CommandSummary::new(
+                crate::api::history::CommandSummary::new(
                     "cmd-ta-signer-init",
                     self,
                 )
             }
             TrustAnchorSignerStorableCommand::TrustAnchorSignerRequest(
                 request,
-            ) => crate::commons::api::history::CommandSummary::new(
+            ) => crate::api::history::CommandSummary::new(
                 "cmd-ta-signer-process-request",
                 self,
             )

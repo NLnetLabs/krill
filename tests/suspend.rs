@@ -1,7 +1,7 @@
 //! Test suspension and un-suspension logic.
 use rpki::ca::idexchange::CaHandle;
 use rpki::repository::resources::ResourceSet;
-use krill::commons::api::admin::UpdateChildRequest;
+use krill::api::admin::UpdateChildRequest;
 
 mod common;
 

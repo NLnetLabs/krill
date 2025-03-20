@@ -15,10 +15,10 @@ use rpki::repository::x509::Time;
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
 use crate::ta;
-use crate::commons::api;
-use crate::commons::api::admin::Token;
-use crate::commons::api::pubd::RepoStats;
-use crate::commons::api::status::Success;
+use crate::api;
+use crate::api::admin::Token;
+use crate::api::pubd::RepoStats;
+use crate::api::status::Success;
 use crate::commons::util::httpclient;
 use crate::commons::util::httpclient::Error;
 

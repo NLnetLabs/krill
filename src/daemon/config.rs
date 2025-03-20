@@ -38,7 +38,7 @@ use crate::{
     },
     ta::TaTimingConfig,
 };
-use crate::commons::api::admin::{PublicationServerUris, Token};
+use crate::api::admin::{PublicationServerUris, Token};
 
 #[cfg(feature = "multi-user")]
 use crate::daemon::auth::providers::{

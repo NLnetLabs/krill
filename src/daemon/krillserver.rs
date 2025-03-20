@@ -44,33 +44,33 @@ use crate::{
         TrustAnchorSignedResponse, TrustAnchorSignerInfo, TA_NAME,
     },
 };
-use crate::commons::api;
-use crate::commons::api::admin::{
+use crate::api;
+use crate::api::admin::{
     AddChildRequest, CertAuthInit, ParentCaContact, ParentCaReq,
     PublicationServerUris, PublisherDetails, RepoFileDeleteCriteria,
     RepositoryContact, ServerInfo, UpdateChildRequest, 
 };
-use crate::commons::api::aspa::{
+use crate::api::aspa::{
     AspaDefinitionList, AspaDefinitionUpdates, AspaProvidersUpdate,
     CustomerAsn,
 };
-use crate::commons::api::bgp::{BgpAnalysisReport, BgpAnalysisSuggestion};
-use crate::commons::api::bgpsec::{BgpSecCsrInfoList, BgpSecDefinitionUpdates};
-use crate::commons::api::ca::{
+use crate::api::bgp::{BgpAnalysisReport, BgpAnalysisSuggestion};
+use crate::api::bgpsec::{BgpSecCsrInfoList, BgpSecDefinitionUpdates};
+use crate::api::ca::{
     AllCertAuthIssues, CaRepoDetails, CertAuthInfo, CertAuthIssues,
     CertAuthList, CertAuthStats, ChildCaInfo, ChildrenConnectionStats,
     IdCertInfo, ReceivedCert, RtaList, RtaName,
     RtaPrepResponse, Timestamp,
 };
-use crate::commons::api::history::{
+use crate::api::history::{
     CommandDetails, CommandHistory, CommandHistoryCriteria
 };
-use crate::commons::api::import::ImportChild;
-use crate::commons::api::pubd::RepoStats;
-use crate::commons::api::roa::{
+use crate::api::import::ImportChild;
+use crate::api::pubd::RepoStats;
+use crate::api::roa::{
     ConfiguredRoa, RoaConfiguration, RoaConfigurationUpdates, RoaPayload,
 };
-use crate::commons::api::rta::{
+use crate::api::rta::{
     ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest,
 };
 

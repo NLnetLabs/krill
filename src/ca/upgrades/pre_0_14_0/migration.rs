@@ -1,7 +1,7 @@
 use rpki::ca::idexchange::MyHandle;
 use rpki::repository::x509::Time;
 
-use crate::commons::api::aspa::ProviderAsn;
+use crate::api::aspa::ProviderAsn;
 use crate::commons::eventsourcing::StoredCommandBuilder;
 use crate::upgrades::{
     AspaMigrationConfigUpdates, AspaMigrationConfigs, CommandMigrationEffect,

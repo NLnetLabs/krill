@@ -15,8 +15,8 @@ use rpki::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    api::ca::{IssuedCertificate, ReceivedCert},
     commons::{
-        api::ca::{IssuedCertificate, ReceivedCert},
         crypto::KrillSigner,
         error::Error,
         util::AllowedUri,

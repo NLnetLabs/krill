@@ -2277,7 +2277,7 @@ mod test {
 
     #[test]
     fn create_and_display_tal() {
-        let der = include_bytes!("../../../test-resources/ta.cer");
+        let der = include_bytes!("../../test-resources/ta.cer");
         let cert = Cert::decode(Bytes::from_static(der)).unwrap();
         let uri = test::https("https://localhost/ta.cer");
         let rsync_uri = test::rsync("rsync://localhost/ta/ta.cer");
@@ -2288,7 +2288,7 @@ mod test {
             cert.subject_public_key_info(),
         );
 
-        let expected_tal = include_str!("../../../test-resources/test.tal");
+        let expected_tal = include_str!("../../test-resources/test.tal");
         let found_tal = tal.to_string();
 
         assert_eq!(expected_tal, &found_tal);
@@ -2298,12 +2298,12 @@ mod test {
     fn id_cert_pem_match_openssl() {
         let ncc_id = {
             let bytes =
-                include_bytes!("../../../test-resources/remote/ncc-id.der");
+                include_bytes!("../../test-resources/remote/ncc-id.der");
             IdCert::decode(bytes.as_ref()).unwrap()
         };
 
         let ncc_id_openssl_pem =
-            include_str!("../../../test-resources/remote/ncc-id.pem");
+            include_str!("../../test-resources/remote/ncc-id.pem");
         let ncc_id_pem = IdCertInfo::from(&ncc_id);
 
         assert_eq!(ncc_id_pem.pem().to_string(), ncc_id_openssl_pem);

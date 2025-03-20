@@ -45,7 +45,7 @@ use crate::{
     constants::ID_CERTIFICATE_VALIDITY_YEARS,
     daemon::config::{SignerConfig, SignerType},
 };
-use crate::commons::api::ca::ObjectName;
+use crate::api::ca::ObjectName;
 
 #[cfg(feature = "hsm")]
 use std::collections::HashMap;

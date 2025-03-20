@@ -3,7 +3,7 @@
 use rpki::ca::idexchange::CaHandle;
 use crate::cli::client::KrillClient;
 use crate::cli::report::Report;
-use crate::commons::api;
+use crate::api;
 use crate::commons::util::httpclient;
 
 

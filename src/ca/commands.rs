@@ -12,21 +12,21 @@ use rpki::ca::provisioning::{
 use rpki::crypto::KeyIdentifier;
 use rpki::repository::resources::ResourceSet;
 use serde::{Deserialize, Serialize};
-use crate::commons::api::admin::{
+use crate::api::admin::{
     ParentCaContact, RepositoryContact, ResourceClassNameMapping,
     StorableParentContact,
 };
-use crate::commons::api::aspa::{
+use crate::api::aspa::{
     AspaDefinitionUpdates, AspaProvidersUpdate, CustomerAsn,
 };
-use crate::commons::api::bgpsec::BgpSecDefinitionUpdates;
-use crate::commons::api::ca::{
+use crate::api::bgpsec::BgpSecDefinitionUpdates;
+use crate::api::ca::{
     IdCertInfo, ReceivedCert,  ResourceSetSummary,RtaName
 };
-use crate::commons::api::history::CommandSummary;
-use crate::commons::api::import::ImportChild;
-use crate::commons::api::roa::RoaConfigurationUpdates;
-use crate::commons::api::rta::{
+use crate::api::history::CommandSummary;
+use crate::api::import::ImportChild;
+use crate::api::roa::RoaConfigurationUpdates;
+use crate::api::rta::{
     ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest,
 };
 use crate::commons::crypto::KrillSigner;

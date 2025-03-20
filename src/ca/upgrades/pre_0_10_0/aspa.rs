@@ -3,7 +3,7 @@
 use rpki::ca::publication::Base64;
 use rpki::repository::x509::Time;
 use serde::{Deserialize, Serialize};
-use crate::commons::api::aspa::AspaDefinition;
+use crate::api::aspa::AspaDefinition;
 use crate::ca::upgrades::pre_0_14_0::aspa::Pre0_14_0ProviderAs;
 
 

@@ -30,8 +30,8 @@ use crate::{
         KrillResult,
     },
 };
-use crate::commons::api::admin::{AddChildRequest, RepositoryContact};
-use crate::commons::api::ca::IdCertInfo;
+use crate::api::admin::{AddChildRequest, RepositoryContact};
+use crate::api::ca::IdCertInfo;
 
 
 //------------ TrustAnchorProxy --------------------------------------------
@@ -321,18 +321,18 @@ impl fmt::Display for TrustAnchorProxyCommandDetails {
 }
 
 impl eventsourcing::WithStorableDetails for TrustAnchorProxyCommandDetails {
-    fn summary(&self) -> crate::commons::api::history::CommandSummary {
+    fn summary(&self) -> crate::api::history::CommandSummary {
         match self {
             // Initialisation
             TrustAnchorProxyCommandDetails::Init => {
-                crate::commons::api::history::CommandSummary::new(
+                crate::api::history::CommandSummary::new(
                     "cmd-ta-proxy-init",
                     self,
                 )
             }
             // Publication Support
             TrustAnchorProxyCommandDetails::AddRepository(repository) => {
-                crate::commons::api::history::CommandSummary::new(
+                crate::api::history::CommandSummary::new(
                     "cmd-ta-proxy-repo-add",
                     self,
                 )
@@ -341,21 +341,21 @@ impl eventsourcing::WithStorableDetails for TrustAnchorProxyCommandDetails {
 
             // Proxy -> Signer interactions
             TrustAnchorProxyCommandDetails::AddSigner(signer) => {
-                crate::commons::api::history::CommandSummary::new(
+                crate::api::history::CommandSummary::new(
                     "cmd-ta-proxy-signer-add",
                     self,
                 )
                 .id_cert_hash(&signer.id.hash)
             }
             TrustAnchorProxyCommandDetails::MakeSignerRequest => {
-                crate::commons::api::history::CommandSummary::new(
+                crate::api::history::CommandSummary::new(
                     "cmd-ta-proxy-pub-req",
                     self,
                 )
             }
             TrustAnchorProxyCommandDetails::ProcessSignerResponse(
                 response,
-            ) => crate::commons::api::history::CommandSummary::new(
+            ) => crate::api::history::CommandSummary::new(
                 "cmd-ta-proxy-pub-res",
                 self,
             )
@@ -385,7 +385,7 @@ impl eventsourcing::WithStorableDetails for TrustAnchorProxyCommandDetails {
 
             // Children
             TrustAnchorProxyCommandDetails::AddChild(child) => {
-                crate::commons::api::history::CommandSummary::new(
+                crate::api::history::CommandSummary::new(
                     "cmd-ta-proxy-child-add", self,
                 ).child(&child.handle)
             }
@@ -393,7 +393,7 @@ impl eventsourcing::WithStorableDetails for TrustAnchorProxyCommandDetails {
                 child_handle,
                 _request,
             ) => {
-                crate::commons::api::history::CommandSummary::new(
+                crate::api::history::CommandSummary::new(
                     "cmd-ta-proxy-child-req",
                     self,
                 ).child(child_handle)
@@ -402,7 +402,7 @@ impl eventsourcing::WithStorableDetails for TrustAnchorProxyCommandDetails {
                 child_handle,
                 _response,
             ) => {
-                crate::commons::api::history::CommandSummary::new(
+                crate::api::history::CommandSummary::new(
                     "cmd-ta-proxy-child-res",
                     self,
                 ).child(child_handle)

@@ -4,13 +4,12 @@ use std::{error, fmt, fs, io};
 use std::str::FromStr;
 use std::sync::Arc;
 use rpki::uri;
-use crate::constants;
+use crate::{api, constants};
 use crate::cli::options::args::JsonFile;
 use crate::cli::report::{Report, ReportFormat};
 use crate::cli::ta::signer::{
     SignerClientError, SignerInitInfo, TrustAnchorSignerManager,
 };
-use crate::commons::api;
 use crate::ta::{
     Config, ConfigError, TrustAnchorSignedRequest, TrustAnchorSignedResponse,
     TrustAnchorProxySignerExchanges, TrustAnchorSignerInfo,
