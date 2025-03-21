@@ -516,8 +516,8 @@ pub mod tests {
         commons::crypto::signers::mocksigner::{
             MockSigner, MockSignerCallCounts,
         },
+        commons::test,
         daemon::config::Config,
-        test,
     };
 
     use super::*;
