@@ -3,7 +3,7 @@
 name = "krill"
 version = "0.14.5-dev"
 edition = "2021"
-rust-version = "1.74"
+rust-version = "1.79"
 authors = ["NLnet Labs <rpki-team@nlnetlabs.nl>"]
 description = "Resource Public Key Infrastructure (RPKI) daemon"
 homepage = "https://www.nlnetlabs.nl/projects/rpki/krill/"
@@ -28,6 +28,7 @@ bytes           = "1"
 chrono          = { version = "0.4", features = ["serde"] }
 clap            = { version = "4.5.23", features = ["cargo", "derive", "env",  "wrap_help"]}
 cryptoki        = { version = "0.7", optional = true }
+fd-lock         = "4.0.1"
 fern            = { version = "0.6.2", features = ["syslog-6"] }
 futures-util    = "0.3"
 hex             = "0.4"
@@ -36,7 +37,7 @@ hyper           = { version = "1.5.2", features = ["server"] }
 hyper-util      = { version = "0.1", features = [ "server" ] }
 intervaltree    = "0.2.7"
 kmip            = { version = "0.4.3", package = "kmip-protocol", features = [ "tls-with-openssl" ], optional = true }
-kvx             = { version = "0.9.3", features = ["macros"] }
+lazy_static     = "1.5"
 log             = "0.4"
 openidconnect   = { version = "3.5.0", optional = true, default-features = false }
 openssl         = { version = "0.10", features = ["v110"] }
@@ -53,6 +54,7 @@ scrypt          = { version = "0.11", optional = true, default-features = false 
 secrecy         = { version = "0.8", features = ["serde"] }
 serde           = { version = "1.0", features = ["derive", "rc"] }
 serde_json      = "1.0"
+tempfile        = "3.14.0"
 tokio           = { version = "1", features = [ "macros", "rt", "rt-multi-thread", "signal", "time" ] }
 tokio-rustls    = { version = "0.26", default-features = false, features = [ "ring", "logging", "tls12" ] }
 toml            = "0.8.19"
