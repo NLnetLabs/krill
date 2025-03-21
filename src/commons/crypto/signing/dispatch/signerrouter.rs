@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::{collections::HashMap, sync::RwLock};
 
+#[cfg(feature = "hsm")]
 use log::{debug, error, info, trace};
 use rpki::crypto::{
     signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature,

@@ -29,7 +29,7 @@ async fn functional_ca_import() {
 
     let ca_imports_json =
         include_str!("../test-resources/bulk-ca-import/structure.json");
-    let ca_imports: krill::commons::api::import::Structure =
+    let ca_imports: krill::api::import::Structure =
         serde_json::from_str(ca_imports_json).unwrap();
 
     let parent = common::ca_handle("parent");
