@@ -424,7 +424,7 @@ impl fmt::Display for BgpAnalysisReport {
             {
                 writeln!(
                     f,
-                    "ROA configurations for which no ROAs can be made -\
+                    "ROA configurations for which no ROAs can be made - \
                      you do not have the prefix on your certificate(s):"
                 )?;
                 writeln!(f)?;
