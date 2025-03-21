@@ -1,4 +1,4 @@
-/// The publication server component.
+//! The publication server component.
 
 mod access;
 mod content;
