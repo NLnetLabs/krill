@@ -1,14 +1,15 @@
 //! Support data migrations from one KV storage type to another.
 
-use std::{str::FromStr, sync::Arc};
+use std::{str::FromStr};
 
+use log::info;
 use rpki::crypto::KeyIdentifier;
 use url::Url;
 
 use crate::{
     commons::{
         crypto::{
-            dispatch::signerinfo::SignerInfo, KrillSignerBuilder,
+            dispatch::signerinfo::SignerInfo,
             OpenSslSigner,
         },
         eventsourcing::{
@@ -17,20 +18,21 @@ use crate::{
         storage::{KeyValueStore, Namespace, Scope},
     },
     constants::{
-        CASERVER_NS, KEYS_NS, PROPERTIES_NS, PUBSERVER_CONTENT_NS,
+        KEYS_NS, PROPERTIES_NS, PUBSERVER_CONTENT_NS,
         PUBSERVER_NS, SIGNERS_NS, TA_PROXY_SERVER_NS, TA_SIGNER_SERVER_NS,
     },
     daemon::{
-        ca::{CaObjectsStore, CertAuth},
+        ca::upgrades::data_migration::check_ca_objects,
         config::Config,
         properties::{Properties, PropertiesManager},
+        pubd::{RepositoryAccess, RepositoryContent},
     },
-    pubd::{RepositoryAccess, RepositoryContent},
-    ta::{TrustAnchorProxy, TrustAnchorSigner},
+    daemon::taproxy::TrustAnchorProxy,
     upgrades::{
         finalise_data_migration, prepare_upgrade_data_migrations,
         UpgradeError,
     },
+    tasigner::TrustAnchorSigner,
 };
 
 use super::UpgradeResult;
@@ -97,8 +99,7 @@ fn verify_target_data(config: &Config) -> UpgradeResult<()> {
     check_agg_store::<Properties>(config, PROPERTIES_NS, "Properties")?;
     check_agg_store::<SignerInfo>(config, SIGNERS_NS, "Signer")?;
 
-    let ca_store = check_agg_store::<CertAuth>(config, CASERVER_NS, "CAs")?;
-    check_ca_objects(config, ca_store)?;
+    check_ca_objects(config)?;
 
     check_agg_store::<RepositoryAccess>(
         config,
@@ -160,7 +161,7 @@ fn check_openssl_keys(config: &Config) -> UpgradeResult<()> {
     Ok(())
 }
 
-fn check_agg_store<A: Aggregate>(
+pub fn check_agg_store<A: Aggregate>(
     config: &Config,
     ns: &Namespace,
     name: &str,
@@ -192,49 +193,6 @@ fn check_wal_store<W: WalSupport>(
     } else {
         info!("not applicable");
     }
-    Ok(())
-}
-
-fn check_ca_objects(
-    config: &Config,
-    ca_store: AggregateStore<CertAuth>,
-) -> UpgradeResult<()> {
-    // make a dummy Signer to use for the CaObjectsStore - it won't be used,
-    // but it's needed for construction.
-    let probe_interval =
-        std::time::Duration::from_secs(config.signer_probe_retry_seconds);
-    let signer = Arc::new(
-        KrillSignerBuilder::new(
-            &config.storage_uri,
-            probe_interval,
-            &config.signers,
-        )
-        .with_default_signer(config.default_signer())
-        .with_one_off_signer(config.one_off_signer())
-        .build()?,
-    );
-
-    let ca_objects_store = CaObjectsStore::create(
-        &config.storage_uri,
-        config.issuance_timing.clone(),
-        signer,
-    )?;
-
-    let cas_with_objects = ca_objects_store.cas()?;
-
-    for ca in &cas_with_objects {
-        ca_objects_store.ca_objects(ca)?;
-        if !ca_store.has(ca)? {
-            warn!("  Objects found for CA '{}' which no longer exists.", ca);
-        }
-    }
-
-    for ca in ca_store.list()? {
-        if !cas_with_objects.contains(&ca) {
-            debug!("  CA '{}' did not have any CA objects yet.", ca);
-        }
-    }
-
     Ok(())
 }
 
@@ -273,13 +231,9 @@ fn copy_data_for_migration(
 
 #[cfg(test)]
 pub mod tests {
-
     use std::path::PathBuf;
-
     use log::LevelFilter;
-
-    use crate::test;
-
+    use crate::commons::test;
     use super::*;
 
     #[test]

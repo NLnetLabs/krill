@@ -12,16 +12,16 @@ use rpki::{
     },
     uri,
 };
+use serde::{Deserialize, Serialize};
 
 use crate::{
+    api::ca::{IssuedCertificate, ReceivedCert},
     commons::{
-        api::{IssuedCertificate, ReceivedCert},
         crypto::KrillSigner,
         error::Error,
         util::AllowedUri,
         KrillResult,
     },
-    daemon::ca::CertifiedKey,
 };
 
 //------------ CsrInfo -------------------------------------------------------
@@ -127,7 +127,7 @@ impl SignSupport {
         signer: &KrillSigner,
     ) -> KrillResult<IssuedCertificate> {
         let resources = limit.apply_to(resources)?;
-        if !signing_cert.resources().contains(&resources) {
+        if !signing_cert.resources.contains(&resources) {
             return Err(Error::MissingResources);
         }
 
@@ -156,17 +156,17 @@ impl SignSupport {
     /// EE certificate is created by the rpki.rs library instead.
     pub fn make_rta_ee_cert(
         resources: &ResourceSet,
-        signing_key: &CertifiedKey,
+        signing_cert: &ReceivedCert,
+        key_id: &KeyIdentifier,
         validity: Validity,
         pub_key: PublicKey,
         signer: &KrillSigner,
     ) -> KrillResult<Cert> {
-        let signing_cert = signing_key.incoming_cert();
         let request = CertRequest::Ee(pub_key, validity);
         let tbs =
             Self::make_tbs_cert(resources, signing_cert, request, signer)?;
 
-        let cert = signer.sign_cert(tbs, signing_key.key_id())?;
+        let cert = signer.sign_cert(tbs, key_id)?;
         Ok(cert)
     }
 
@@ -177,7 +177,7 @@ impl SignSupport {
         signer: &KrillSigner,
     ) -> KrillResult<TbsCert> {
         let serial = signer.random_serial()?;
-        let issuer = signing_cert.subject().clone();
+        let issuer = signing_cert.subject.clone();
 
         let validity = match &request {
             CertRequest::Ca(_, validity) => *validity,
@@ -220,7 +220,7 @@ impl SignSupport {
         cert.set_authority_key_identifier(Some(
             signing_cert.key_identifier(),
         ));
-        cert.set_ca_issuer(Some(signing_cert.uri().clone()));
+        cert.set_ca_issuer(Some(signing_cert.uri.clone()));
         cert.set_crl_uri(Some(signing_cert.crl_uri()));
 
         match request {

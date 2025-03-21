@@ -1,9 +1,9 @@
 //! Commands triggering events for all CAs.
 
+use crate::api;
 use crate::cli::client::KrillClient;
 use crate::cli::report::Report;
-use crate::commons::api;
-use crate::commons::util::httpclient;
+use crate::commons::httpclient;
 
 
 //------------ Command -------------------------------------------------------
@@ -40,7 +40,7 @@ pub struct Refresh;
 impl Refresh {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::Success, httpclient::Error> {
+    ) -> Result<api::status::Success, httpclient::Error> {
         client.bulk_sync_parents().await
     }
 }
@@ -54,7 +54,7 @@ pub struct Publish;
 impl Publish {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::Success, httpclient::Error> {
+    ) -> Result<api::status::Success, httpclient::Error> {
         client.bulk_publish().await
     }
 }
@@ -68,7 +68,7 @@ pub struct SyncRepo;
 impl SyncRepo {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::Success, httpclient::Error> {
+    ) -> Result<api::status::Success, httpclient::Error> {
         client.bulk_sync_repo().await
     }
 }

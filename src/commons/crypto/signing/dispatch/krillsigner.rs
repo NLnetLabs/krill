@@ -1,6 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use bytes::Bytes;
+use log::info;
 use rpki::{
     ca::{
         csr::{Csr, RpkiCaCsr},
@@ -29,7 +30,6 @@ use url::Url;
 
 use crate::{
     commons::{
-        api::ObjectName,
         crypto::{
             self,
             dispatch::{
@@ -45,6 +45,7 @@ use crate::{
     constants::ID_CERTIFICATE_VALIDITY_YEARS,
     daemon::config::{SignerConfig, SignerType},
 };
+use crate::api::ca::ObjectName;
 
 #[cfg(feature = "hsm")]
 use std::collections::HashMap;
@@ -59,7 +60,7 @@ use crate::commons::crypto::{
 ///
 /// KrillSigner:
 ///   - Delegates Signer management and dispatch to [SignerRouter].
-///   - Maps Result<SignerError> to KrillResult.
+///   - Maps `Result<_, SignerError>` to `KrillResult`.
 ///   - Directs signers to use the RPKI standard key format (RSA).
 ///   - Directs signers to use the RPKI standard signature algorithm (RSA PKCS
 ///     #1 v1.5 with SHA-256).
@@ -295,7 +296,7 @@ impl KrillSigner {
             .get_key_info(key)
             .map_err(crypto::Error::key_error)?;
         let mft_file_name =
-            ObjectName::mft_for_key(&signing_key_id.key_identifier());
+            ObjectName::mft_from_ca_key(&signing_key_id.key_identifier());
 
         // The rpki-rs library returns a signed and encoded CSR for a CA
         // certificate.
@@ -515,8 +516,8 @@ pub mod tests {
         commons::crypto::signers::mocksigner::{
             MockSigner, MockSignerCallCounts,
         },
+        commons::test,
         daemon::config::Config,
-        test,
     };
 
     use super::*;

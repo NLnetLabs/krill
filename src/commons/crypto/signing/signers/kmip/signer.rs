@@ -8,6 +8,7 @@ use std::{
 
 use backoff::ExponentialBackoff;
 use bytes::Bytes;
+use log::{debug, error, info, warn};
 use kmip::{
     client::{Client, ClientCertificate},
     types::{
@@ -25,9 +26,10 @@ use rpki::{
         RpkiSignatureAlgorithm, Signature, SignatureAlgorithm, SigningError,
     },
 };
+use serde::Deserialize;
 
+use crate::api::ca::Timestamp;
 use crate::commons::{
-    api::Timestamp,
     crypto::{
         dispatch::signerinfo::SignerMapper,
         signers::{
@@ -564,7 +566,7 @@ impl KmipSigner {
 
     /// Perform some operation using a KMIP server pool connection.
     ///
-    /// Fails if the KMIP server is not [KmipSignerStatus::Usable]. If the
+    /// Fails if the KMIP server is not usable. If the
     /// operation fails due to a transient connection error, retry with
     /// backoff upto a defined retry limit.
     fn with_conn<T, F>(

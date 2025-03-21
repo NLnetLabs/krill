@@ -17,7 +17,7 @@
 //!   - `signer`: The public signer trait implementation. Delegates to
 //!     `internal`.
 //!
-//! [OpenSslSigner]: crate::commons::util::softsigner::OpenSslSigner
+//! [OpenSslSigner]: crate::commons::crypto::OpenSslSigner
 //! [PyKMIP]: https://github.com/OpenKMIP/PyKMIP
 pub mod connpool;
 pub mod signer;

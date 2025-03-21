@@ -1,152 +1,157 @@
-use std::{
-    collections::HashMap,
-    fmt,
-    str::FromStr,
-    sync::{Arc, RwLock},
-};
+//! Support for Write-ahead logging.
+//!
+//! This is a private module. Its public items are re-exported by the parent.
 
+use std::{error, fmt};
+use std::collections::HashMap;
+use std::str::FromStr;
+use std::sync::{Arc, RwLock};
+use log::{error, warn, trace};
 use rpki::ca::idexchange::MyHandle;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use url::Url;
-
-use crate::commons::eventsourcing::Storable;
 use crate::commons::storage::{
     Key, KeyValueError, KeyValueStore,Namespace, Scope, Segment
 };
+use super::store::Storable;
+
 
 //------------ WalSupport ----------------------------------------------------
 
-/// Implement this trait to get write-ahead logging support for a type.
+/// A type that supports write-ahead logging.
 ///
-/// We achieve write-ahead logging support by insisting that implementing
-/// types define the following:
+/// Write-ahead logging is used to store a version of a type on disk and then
+/// collect a number of events that update the value. This is similar to an
+/// aggregate with the exception that you can only replay the value from the
+/// last stored version. Thus, write-ahead logging is a simplified version
+/// of the more complete event-sourcing model implemented by
+/// [`Aggregate`][super::agg::Aggregate].
 ///
-/// - commands
+/// As with aggregates, all updates are made through “commands” which, when
+/// applied create a number of events, called “changes” here. Only the
+/// changes are stored in a [`WalSet<_>`] and can be applied to a value.
+/// Consequently, these types do not have an audit log.
 ///
-/// Commands are used to send an intent to change the state. However, rather
-/// than changing the state, they return a result which can either be an
-/// error or a list of 'events'.
 ///
-/// - events
+/// # Key-value store usage
 ///
-/// Events contain the data that can be applied to a type to change its
-/// state. We do this as a separate step, because this will allow us to
-/// replay events - from write-ahead logs - to get a stored snapshot to
-/// a current state.
+/// Each aggregate store uses its own namespace. The first element of the
+/// scope is the handle of the instance. The second element of the handle
+/// is either `snapshot.json` for the snapshot or `wal-N.json` where
+/// `N` is the version the command is taking the instance to.
 ///
-/// The following caveats apply to this:
-///   -- Events MUST NOT cause side-effects
-///   -- Events MUST NOT return errors when applied
-///   -- All state changes MUST use events
 ///
-/// - errors
+/// # Use within Krill
 ///
-/// So that we can have type specific errors.
-///
-/// This is similar to how the [`Aggregate`] trait works, and in fact
-/// we re-use some its definitions here - such as [`Event`] and [`Command`].
-///
-/// But, there is a key difference which is that in this case there are
-/// no guarantees that all past events are kept - or rather they are very
-/// likely NOT kept. And we have no "init" event.
-///
-/// While there are similar concepts being used, the concerns here are
-/// somewhat different.. we use this type to achieve atomicity and durability
-/// by way of the [`WalStore`] defined below, but we can keep things a bit
-/// simpler here compared to the fully event-sourced [`Aggregate`] types.
+/// Within Krill, write-ahead logging is currently used by the
+/// [`Scheduler`][crate::daemon::scheduler::Scheduler] and
+/// [`RepositoryContent`][crate::pubd::RepositoryContent].
 pub trait WalSupport: Storable {
+    /// The type representing a command.
     type Command: WalCommand;
+
+    /// The type representing a single change.
     type Change: WalChange;
+
+    /// The type returned when applying a command fails.
     type Error: std::error::Error + From<WalStoreError>;
 
     /// Returns the current version.
     fn revision(&self) -> u64;
 
-    /// Applies the event to this. This MUST not result in any errors, and
-    /// this MUST be side-effect free. Applying the event just updates the
-    /// internal data of the aggregate.
+    /// Applies the event.
     ///
-    /// Note the event is moved. This is done because we want to avoid
-    /// doing additional allocations where we can.
+    /// This must not result in any errors, and must be side-effect free.
+    /// Applying the changes just updates the internal data of the aggregate.
     fn apply(&mut self, set: WalSet<Self>);
 
-    /// Processes a command. I.e. validate the command, and return a list of
-    /// events that will result in the desired new state, but do not apply
-    /// these events here.
+    /// Processes a command and converts it into a change set.
     ///
-    /// The command is moved, because we want to enable moving its data
-    /// without reallocating.
+    /// Validates the command and, if successful, returns a list of
+    /// changes that will result in the desired new state. The changes are
+    /// not applied to the value.
     fn process_command(
         &self,
         command: Self::Command,
     ) -> Result<Vec<Self::Change>, Self::Error>;
 }
 
+
 //------------ WalCommand ----------------------------------------------------
 
+/// A type representing a command for a write-ahead logging type.
+///
+/// The `Display` impl is used to generate the summary for the command.
 pub trait WalCommand: Clone + fmt::Display {
+    /// Returns the identifier of the entity.
     fn handle(&self) -> &MyHandle;
 }
 
-//------------ WalEvent ------------------------------------------------------
 
-pub trait WalChange:
-    fmt::Display + Eq + PartialEq + Send + Sync + Storable
-{
+//------------ WalChange -----------------------------------------------------
+
+/// A change to the state of a write-ahead logging type.
+pub trait WalChange: fmt::Display + Eq + PartialEq + Send + Sync + Storable {
 }
+
 
 //------------ WalSet --------------------------------------------------------
 
-/// Describes a set of "write-ahead" changes affecting the specified revision.
-/// Meaning that it can only be applied if the type is of the given revision,
-/// and it will get this revision + 1 after it has been applied.
+/// The set of “write-ahead” changes affecting a specific revision of a value.
+///
+/// The set can only be applied to a given revision of the value. If applied,
+/// it will change its revision to that revision plus 1.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WalSet<T: WalSupport> {
+    /// The revision this set should be applied to.
     revision: u64,
+
+    /// A summary of the changes made by the set.
     summary: String,
+
+    /// The individual changes of the set.
     changes: Vec<T::Change>,
 }
 
 impl<T: WalSupport> WalSet<T> {
+    /// Converts the set into a list of changes.
     pub fn into_changes(self) -> Vec<T::Change> {
         self.changes
     }
 }
 
+
 //------------ WalStore ------------------------------------------------------
 
-/// This type is responsible for loading / saving and updating [`WalSupport`]
-/// capable types.
-///
-/// This is similar to how [`AggregateStore`] is used to manage [`Aggregate`]
-/// types. However, there are some important differences:
-/// - Commands and events for a change are saved as a single file.
-/// - Old commands and events are no longer relevant and will be removed. (we
-///   may want to support archiving those in future).
-/// - We do not have any listeners in this case.
-/// - We cannot replay [`WriteAheadSupport`] types from just events, we
-///   *always* need to start with an existing snapshot.
+/// A store that manages all instances of a write-ahear logging type.
 #[derive(Debug)]
 pub struct WalStore<T: WalSupport> {
+    /// The physical store for the aggregates.
     kv: KeyValueStore,
+
+    /// A cache for the last seen version of an instance.
     cache: RwLock<HashMap<MyHandle, Arc<T>>>,
 }
 
 impl<T: WalSupport> WalStore<T> {
-    /// Creates a new store using a disk based keystore for the given data
-    /// directory and namespace (directory).
+    /// Creates a new store using the given storage URL and namespace.
     pub fn create(
         storage_uri: &Url,
-        name_space: &Namespace,
-    ) -> WalStoreResult<Self> {
-        let kv = KeyValueStore::create(storage_uri, name_space)?;
-        let cache = RwLock::new(HashMap::new());
-
-        Ok(WalStore { kv, cache })
+        namespace: &Namespace,
+    ) -> Result<Self, WalStoreError> {
+        Ok(WalStore {
+            kv: KeyValueStore::create(storage_uri, namespace)?,
+            cache: RwLock::new(HashMap::new()),
+        })
     }
 
-    /// Warms up the store: caches all instances.
-    pub fn warm(&self) -> WalStoreResult<()> {
+    /// Warms up the cache.
+    ///
+    /// The method loads all instances and places them in the cache.
+    /// It should be called after startup.
+    ///
+    /// It will fail if any instance fails to load.
+    pub fn warm(&self) -> Result<(), WalStoreError> {
         for handle in self.list()? {
             let latest = self.get_latest(&handle).map_err(|e| {
                 WalStoreError::WarmupFailed(handle.clone(), e.to_string())
@@ -157,32 +162,33 @@ impl<T: WalSupport> WalStore<T> {
         Ok(())
     }
 
-    /// Add a new entity for the given handle. Fails if the handle is in use.
-    pub fn add(&self, handle: &MyHandle, instance: T) -> WalStoreResult<()> {
+    /// Add a new instance with the given handle.
+    ///
+    /// Fails if the handle is in use.
+    pub fn add(
+        &self, handle: &MyHandle, instance: T
+    ) -> Result<(), WalStoreError> {
         let scope = Self::scope_for_handle(handle);
         let instance = Arc::new(instance);
 
-        self.kv
-            .execute(&scope, |kv| {
-                let key = Self::key_for_snapshot(handle);
-                kv.store(&key, instance.as_ref())?;
+        self.kv.execute(&scope, |kv| {
+            let key = Self::key_for_snapshot(handle);
+            kv.store(&key, instance.as_ref())?;
 
-                self.cache_update(handle, instance.clone());
+            self.cache_update(handle, instance.clone());
 
-                Ok(())
-            })
-            .map_err(WalStoreError::KeyStoreError)
+            Ok(())
+        }).map_err(WalStoreError::KeyStoreError)
     }
 
-    /// Checks whether there is an instance for the given handle.
-    pub fn has(&self, handle: &MyHandle) -> WalStoreResult<bool> {
-        let scope = Self::scope_for_handle(handle);
-        self.kv
-            .has_scope(&scope)
-            .map_err(WalStoreError::KeyStoreError)
+    /// Checks whether there is an instance with the given handle.
+    pub fn has(&self, handle: &MyHandle) -> Result<bool, WalStoreError> {
+        self.kv.has_scope(
+            &Self::scope_for_handle(handle)
+        ).map_err(WalStoreError::KeyStoreError)
     }
 
-    /// Get the latest revision for the given handle.
+    /// Returns the latest revision for the given handle.
     ///
     /// This will use the cache if it's available and otherwise get a snapshot
     /// from the keystore. Then it will check whether there are any further
@@ -191,25 +197,25 @@ impl<T: WalSupport> WalStore<T> {
         self.execute_opt_command(handle, None, false)
     }
 
-    /// Remove an instance from this store. Irrevocable.
-    pub fn remove(&self, handle: &MyHandle) -> WalStoreResult<()> {
-        if !self.has(handle)? {
+    /// Removes an instance from this store.
+    ///
+    /// This operation is irrevocable.
+    pub fn remove(&self, handle: &MyHandle) -> Result<(), WalStoreError> {
+        let scope = Self::scope_for_handle(handle);
+        if !self.kv.has_scope(&scope)? {
             Err(WalStoreError::Unknown(handle.clone()))
-        } else {
-            let scope = Self::scope_for_handle(handle);
-
-            self.kv
-                .execute(&scope, |kv| {
-                    kv.delete_scope(&scope)?;
-                    self.cache_remove(handle);
-                    Ok(())
-                })
-                .map_err(WalStoreError::KeyStoreError)
+        }
+        else {
+            self.kv.execute(&scope, |kv| {
+                kv.delete_scope(&scope)
+            }).map_err(WalStoreError::KeyStoreError)?;
+            self.cache_remove(handle);
+            Ok(())
         }
     }
 
     /// Returns a list of all instances managed in this store.
-    pub fn list(&self) -> WalStoreResult<Vec<MyHandle>> {
+    pub fn list(&self) -> Result<Vec<MyHandle>, WalStoreError> {
         let mut res = vec![];
 
         for scope in self.kv.scopes()? {
@@ -221,165 +227,21 @@ impl<T: WalSupport> WalStore<T> {
         Ok(res)
     }
 
-    /// Process a command:
-    /// - gets the instance for the command
-    /// - sends the command
-    /// - in case the command is successful
-    ///     - apply the wal set locally
-    ///     - save the wal set
-    ///     - if saved properly update the cache
+    /// Processes a command.
+    ///
+    /// The method:
+    /// * gets the instance for the command,
+    /// * sends the command,
+    /// * in case the command is successful:
+    ///     * applies the wal set locally,
+    ///     * saves the wal set
+    ///     * if saving succeeds, updates the cache.
     pub fn send_command(
         &self,
         command: T::Command,
     ) -> Result<Arc<T>, T::Error> {
         let handle = command.handle().clone();
         self.execute_opt_command(&handle, Some(command), false)
-    }
-
-    fn execute_opt_command(
-        &self,
-        handle: &MyHandle,
-        cmd_opt: Option<T::Command>,
-        save_snapshot: bool,
-    ) -> Result<Arc<T>, T::Error> {
-        self.kv
-            .execute(&Self::scope_for_handle(handle), |kv| {
-                // Track whether anything has changed compared to the cached
-                // instance (if any) so that we will know whether the cache
-                // should be updated.
-                let mut changed_from_cached = false;
-
-                // Get the instance from the cache, or get it from the store.
-                let latest_option = match self.cache_get(handle) {
-                    Some(t) => {
-                        trace!("Found cached instance for '{handle}', at revision: {}", t.revision());
-                        Some(t)
-                    }
-                    None => {
-                        trace!("No cached instance found for '{handle}'");
-                        changed_from_cached = true;
-
-                        let key = Self::key_for_snapshot(handle);
-
-                        match kv.get(&key)? {
-                            Some(value) => {
-                                trace!("Deserializing stored instance for '{handle}'");
-                                Some(Arc::new(value))
-                            }
-                            None => {
-                                trace!("No instance found instance for '{handle}'");
-                                None
-                            }
-                        }
-                    }
-                };
-
-                // Get a mutable instance to work with, or return with an
-                // inner Err informing the caller that there is no instance.
-                let mut latest = match latest_option {
-                    Some(latest) => latest,
-                    None => return Ok(Err(T::Error::from(WalStoreError::Unknown(handle.clone())))),
-                };
-
-                // Check for updates and apply changes
-                {
-                    // Check if there any new changes that ought to be applied.
-                    // If so, apply them and remember that the instance was changed
-                    // compared to the (possible) cached version.
-
-                    let latest_inner = Arc::make_mut(&mut latest);
-
-                    // Check for changes and apply them until:
-                    // - there are no more changes
-                    // - or we encountered an error
-                    loop {
-                        let revision = latest_inner.revision();
-                        let key = Self::key_for_wal_set(handle, revision);
-
-                        if let Some(value) = kv.get(&key)? {
-                            trace!("applying revision '{revision}' to '{handle}'");
-                            latest_inner.apply(value);
-                            changed_from_cached = true;
-                        } else {
-                            break;
-                        }
-                    }
-
-                    // Process the command
-                    if let Some(command) = cmd_opt.clone() {
-                        let summary = command.to_string();
-                        let revision = latest_inner.revision();
-
-                        trace!("Applying command {command} to {handle}");
-                        match latest_inner.process_command(command) {
-                            Err(e) => {
-                                warn!("Command '{summary}' for '{handle}' failed. Error: '{e}'");
-                                return Ok(Err(e));
-                            }
-                            Ok(changes) => {
-                                if changes.is_empty() {
-                                    trace!(
-                                        "No changes needed for '{}' when processing command: {}",
-                                        handle,
-                                        summary
-                                    );
-                                } else {
-                                    trace!(
-                                        "{} changes resulted for '{}' when processing command: {}",
-                                        changes.len(),
-                                        handle,
-                                        summary
-                                    );
-                                    changed_from_cached = true;
-
-                                    let set: WalSet<T> = WalSet {
-                                        revision,
-                                        summary,
-                                        changes,
-                                    };
-
-                                    let key_for_wal_set = Self::key_for_wal_set(handle, revision);
-
-                                    if kv.has(&key_for_wal_set)? {
-                                        error!("Change set for '{handle}' version '{revision}' already exists.");
-                                        error!("This is a bug. Please report this issue to rpki-team@nlnetlabs.nl.");
-                                        error!("Krill will exit. If this issue repeats, consider removing {}.", handle);
-                                        std::process::exit(1);
-                                    }
-
-                                    latest_inner.apply(set.clone());
-
-                                    kv.store(&key_for_wal_set, &set)?;
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if changed_from_cached {
-                    self.cache_update(handle, latest.clone());
-                }
-
-                if save_snapshot {
-                    // Save the latest version as snapshot
-                    let key = Self::key_for_snapshot(handle);
-                    kv.store(&key, latest.as_ref())?;
-
-                    // Delete all wal sets (changes), since we are doing
-                    // this inside a transaction or locked scope we can
-                    // assume that all changes were applied, and there
-                    // are no other threads creating additional changes
-                    // that we were not aware of.
-                    for key in kv.list_keys(&Self::scope_for_handle(handle))? {
-                        if key.name().as_str().starts_with("wal-") {
-                            kv.delete(&key)?;
-                        }
-                    }
-                }
-
-                Ok(Ok(latest))
-            })
-            .map_err(|e| T::Error::from(WalStoreError::KeyStoreError(e)))?
     }
 
     pub fn update_snapshots(&self) -> Result<(), T::Error> {
@@ -397,23 +259,197 @@ impl<T: WalSupport> WalStore<T> {
         self.execute_opt_command(handle, None, true)
     }
 
+    /// Get the latest version of an instance and optionally apply a command.
+    ///
+    /// This method is the heart of the whole operation.
+    fn execute_opt_command(
+        &self,
+        handle: &MyHandle,
+        cmd_opt: Option<T::Command>,
+        save_snapshot: bool,
+    ) -> Result<Arc<T>, T::Error> {
+        self.kv.execute(&Self::scope_for_handle(handle), |kv| {
+            // Do we need to update the cache when we are done?
+            let mut changed_from_cached = false;
+
+            // Get the instance from the cache or from the store. Error out
+            // if we don’t find it there either.
+            let mut latest = match self.cache_get(handle) {
+                Some(t) => {
+                    trace!(
+                        "Found cached instance for '{handle}', \
+                         at revision: {}",
+                         t.revision()
+                    );
+                    t
+                }
+                None => {
+                    trace!("No cached instance found for '{handle}'");
+                    changed_from_cached = true;
+
+                    let key = Self::key_for_snapshot(handle);
+
+                    match kv.get(&key)? {
+                        Some(value) => {
+                            trace!(
+                                "Deserializing stored instance for '{handle}'"
+                            );
+                            Arc::new(value)
+                        }
+                        None => {
+                            trace!(
+                                "No instance found instance for '{handle}'"
+                            );
+                            return Ok(Err(T::Error::from(
+                                WalStoreError::Unknown(handle.clone())
+                            )));
+                        }
+                    }
+                }
+            };
+
+            // Check for updates and apply changes.
+            {
+                // Check if there any new changes that ought to be applied.
+                // If so, apply them and remember that the instance was
+                // changed compared to the (possible) cached version.
+
+                let latest_inner = Arc::make_mut(&mut latest);
+
+                // Check for changes and apply them until:
+                // - there are no more changes
+                // - or we encountered an error
+                while let Some(value) = kv.get(
+                    &Self::key_for_wal_set(handle, latest_inner.revision())
+                )? {
+                    trace!("applying revision '{handle}'");
+                    latest_inner.apply(value);
+                    changed_from_cached = true;
+                }
+
+                // Process the command
+                if let Some(command) = cmd_opt.clone() {
+                    let summary = command.to_string();
+                    let revision = latest_inner.revision();
+
+                    trace!("Applying command {command} to {handle}");
+                    match latest_inner.process_command(command) {
+                        Err(e) => {
+                            warn!(
+                                "Command '{summary}' for '{handle}' \
+                                 failed. Error: '{e}'"
+                            );
+                            return Ok(Err(e));
+                        }
+                        Ok(changes) => {
+                            if changes.is_empty() {
+                                trace!(
+                                    "No changes needed for '{}' when \
+                                     processing command: {}",
+                                    handle, summary,
+                                );
+                            }
+                            else {
+                                trace!(
+                                    "{} changes resulted for '{}' when \
+                                     processing command: {}",
+                                    changes.len(), handle, summary,
+                                );
+                                changed_from_cached = true;
+
+                                let set: WalSet<T> = WalSet {
+                                    revision, summary, changes,
+                                };
+
+                                let key_for_wal_set = Self::key_for_wal_set(
+                                    handle, revision
+                                );
+
+                                if kv.has(&key_for_wal_set)? {
+                                    error!(
+                                        "Change set for '{handle}' version \
+                                         '{revision}' already exists."
+                                    );
+                                    error!(
+                                        "This is a bug. Please report this \
+                                         issue to rpki-team@nlnetlabs.nl."
+                                    );
+                                    error!(
+                                        "Krill will exit. If this issue \
+                                        repeats, consider removing {handle}."
+                                    );
+                                    std::process::exit(1);
+                                }
+
+                                latest_inner.apply(set.clone());
+
+                                kv.store(&key_for_wal_set, &set)?;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if changed_from_cached {
+                self.cache_update(handle, latest.clone());
+            }
+
+            if save_snapshot {
+                // Save the latest version as snapshot
+                let key = Self::key_for_snapshot(handle);
+                kv.store(&key, latest.as_ref())?;
+
+                // Delete all wal sets (changes), since we are doing
+                // this inside a transaction or locked scope we can
+                // assume that all changes were applied, and there
+                // are no other threads creating additional changes
+                // that we were not aware of.
+                for key in kv.list_keys(&Self::scope_for_handle(handle))? {
+                    if key.name().as_str().starts_with("wal-") {
+                        kv.delete(&key)?;
+                    }
+                }
+            }
+
+            Ok(Ok(latest))
+        }).map_err(|e| T::Error::from(WalStoreError::KeyStoreError(e)))?
+    }
+}
+
+
+//--- Cache
+
+impl<T: WalSupport> WalStore<T> {
+    /// Returns the instance with the given handle from the cache.
     fn cache_get(&self, id: &MyHandle) -> Option<Arc<T>> {
         self.cache.read().unwrap().get(id).cloned()
     }
 
+    /// Removes the instance with the given handle from the cache.
     fn cache_remove(&self, id: &MyHandle) {
         self.cache.write().unwrap().remove(id);
     }
 
+    /// Updates the instance with the given handle in the cache.
     fn cache_update(&self, id: &MyHandle, arc: Arc<T>) {
         self.cache.write().unwrap().insert(id.clone(), arc);
     }
+}
 
+
+//--- Keys and Scopes
+
+impl<T: WalSupport> WalStore<T> {
+    /// Returns the scope for the instance with the given ID.
     fn scope_for_handle(handle: &MyHandle) -> Scope {
         // handle should always be a valid Segment
+        //
+        // XXX I’m not sure this is actually true. There may be something with
+        //     forward slashes.
         Scope::from_segment(Segment::parse_lossy(handle.as_str()))
     }
 
+    /// Returns the key for the snapshot of the aggregate with the given ID.
     fn key_for_snapshot(handle: &MyHandle) -> Key {
         Key::new_scoped(
             Self::scope_for_handle(handle),
@@ -421,21 +457,22 @@ impl<T: WalSupport> WalStore<T> {
         )
     }
 
+    /// Returns the key for the command for an aggregate and version.
     fn key_for_wal_set(handle: &MyHandle, revision: u64) -> Key {
         Key::new_scoped(
             Self::scope_for_handle(handle),
-            Segment::parse(&format!("wal-{}.json", revision)).unwrap(), /* cannot panic as a u64 cannot contain a Scope::SEPARATOR */
+            // Cannot panic as a u64 cannot contain a Scope::SEPARATOR.
+            Segment::parse(
+                &format!("wal-{}.json", revision)
+            ).unwrap(),
         )
     }
 }
 
-//------------ WalStoreResult-------------------------------------------------
-
-pub type WalStoreResult<T> = Result<T, WalStoreError>;
 
 //------------ WalStoreError -------------------------------------------------
 
-/// This type defines possible Errors for the AggregateStore
+/// An error happened while accessing the write-ahead log store.
 #[derive(Debug)]
 pub enum WalStoreError {
     KeyStoreError(KeyValueError),
@@ -466,3 +503,6 @@ impl fmt::Display for WalStoreError {
         }
     }
 }
+
+impl error::Error for WalStoreError { }
+

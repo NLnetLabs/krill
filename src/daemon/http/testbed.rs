@@ -3,8 +3,8 @@ use hyper::Method;
 use rpki::ca::idexchange::PublisherHandle;
 
 use crate::{
+    constants::ta_handle,
     daemon::{
-        auth::AuthInfo,
         ca::testbed_ca_handle,
         http::{
             server::{
@@ -13,10 +13,11 @@ use crate::{
                 api_repository_response_xml, render_ok,
                 render_unknown_method,
             },
-            HttpResponse, Request, RequestPath, RoutingResult,
         },
+        http::auth::AuthInfo,
+        http::request::{Request, RequestPath},
+        http::response::HttpResponse,
     },
-    ta::ta_handle,
 };
 
 //------------ Support acting as a testbed
@@ -44,7 +45,7 @@ use crate::{
 // This feature assumes the existence of a built-in "testbed" CA and publisher
 // when testbed mode is enabled.
 
-pub async fn testbed(mut req: Request) -> RoutingResult {
+pub async fn testbed(mut req: Request) -> Result<HttpResponse, Request> {
     if !req.path().full().starts_with("/testbed") {
         Err(req) // Not for us
     } else if !req.state().testbed_enabled() {
@@ -69,7 +70,7 @@ pub async fn testbed(mut req: Request) -> RoutingResult {
 
 // Is the testbed feature enabled or not? used by the web-UI to conditionally
 // enable the testbed web-UI.
-async fn testbed_enabled(req: Request) -> RoutingResult {
+async fn testbed_enabled(req: Request) -> Result<HttpResponse, Request> {
     match *req.method() {
         Method::GET => render_ok(),
         _ => render_unknown_method(),
@@ -83,7 +84,7 @@ async fn testbed_enabled(req: Request) -> RoutingResult {
 async fn testbed_children(
     req: Request,
     path: &mut RequestPath,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     match (req.method().clone(), path.path_arg()) {
         (Method::GET, Some(child)) => match path.next() {
             Some("parent_response.xml") => {
@@ -107,7 +108,7 @@ async fn testbed_children(
 async fn testbed_publishers(
     req: Request,
     path: &mut RequestPath,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     match (req.method().clone(), path.path_arg()) {
         (Method::GET, Some(publisher)) => match path.next() {
             Some("response.xml") => {
@@ -127,7 +128,7 @@ async fn testbed_publishers(
 async fn testbed_remove_pbl(
     req: Request,
     publisher: PublisherHandle,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     if publisher.as_str() == ta_handle().as_str()
         || publisher.as_str() == testbed_ca_handle().as_str()
     {

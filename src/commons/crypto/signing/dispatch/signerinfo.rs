@@ -7,11 +7,11 @@ use rpki::{
     ca::idexchange::MyHandle,
     crypto::{KeyIdentifier, PublicKey},
 };
+use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::{
     commons::{
-        api::CommandSummary,
         crypto::SignerHandle,
         error::Error,
         eventsourcing::{
@@ -23,6 +23,8 @@ use crate::{
     },
     constants::{ACTOR_DEF_KRILL, SIGNERS_NS},
 };
+use crate::api::history::CommandSummary;
+
 
 //------------ SignerInfoInitCommand
 //------------ ------------------------------------------------------------------------------
@@ -193,20 +195,20 @@ impl WithStorableDetails for SignerInfoCommandDetails {
             }
             SignerInfoCommandDetails::AddKey(key_id, internal_key_id) => {
                 CommandSummary::new("signer-add-key", self)
-                    .with_arg("key_id", key_id)
-                    .with_arg("internal_key_id", internal_key_id)
+                    .arg("key_id", key_id)
+                    .arg("internal_key_id", internal_key_id)
             }
             SignerInfoCommandDetails::RemoveKey(key_id) => {
                 CommandSummary::new("signer-remove-key", self)
-                    .with_arg("key_id", key_id)
+                    .arg("key_id", key_id)
             }
             SignerInfoCommandDetails::ChangeSignerName(signer_name) => {
                 CommandSummary::new("signer-change-name", self)
-                    .with_arg("signer_name", signer_name)
+                    .arg("signer_name", signer_name)
             }
             SignerInfoCommandDetails::ChangeSignerInfo(signer_info) => {
                 CommandSummary::new("signer-change-info", self)
-                    .with_arg("signer_info", signer_info)
+                    .arg("signer_info", signer_info)
             }
         }
     }
@@ -236,7 +238,7 @@ impl SignerInfoCommand {
             *key_id,
             internal_key_id.to_string(),
         );
-        Self::new(id, version, details, &ACTOR_DEF_KRILL)
+        Self::new(id.clone(), version, details, &ACTOR_DEF_KRILL)
     }
 
     pub fn remove_key(
@@ -245,7 +247,7 @@ impl SignerInfoCommand {
         key_id: &KeyIdentifier,
     ) -> Self {
         let details = SignerInfoCommandDetails::RemoveKey(*key_id);
-        Self::new(id, version, details, &ACTOR_DEF_KRILL)
+        Self::new(id.clone(), version, details, &ACTOR_DEF_KRILL)
     }
 
     pub fn change_signer_name(
@@ -256,7 +258,7 @@ impl SignerInfoCommand {
         let details = SignerInfoCommandDetails::ChangeSignerName(
             signer_name.to_string(),
         );
-        Self::new(id, version, details, &ACTOR_DEF_KRILL)
+        Self::new(id.clone(), version, details, &ACTOR_DEF_KRILL)
     }
 
     pub fn change_signer_info(
@@ -267,7 +269,7 @@ impl SignerInfoCommand {
         let details = SignerInfoCommandDetails::ChangeSignerInfo(
             signer_info.to_string(),
         );
-        Self::new(id, version, details, &ACTOR_DEF_KRILL)
+        Self::new(id.clone(), version, details, &ACTOR_DEF_KRILL)
     }
 }
 
@@ -323,10 +325,10 @@ impl Aggregate for SignerInfo {
 
     type Error = Error;
 
-    fn init(handle: MyHandle, init: SignerInfoInitEvent) -> Self {
+    fn init(handle: &MyHandle, init: SignerInfoInitEvent) -> Self {
         SignerInfo {
             version: 0,
-            id: handle,
+            id: handle.clone(),
             signer_name: init.signer_name,
             signer_info: init.signer_info,
             signer_identity: init.signer_identity,
@@ -490,7 +492,7 @@ impl SignerMapper {
                 })?;
 
         let cmd = SignerInfoInitCommand::new(
-            &signer_handle,
+            signer_handle.clone(),
             SignerInfoInitCommandDetails {
                 id: signer_handle.clone(),
                 signer_name: signer_name.to_string(),

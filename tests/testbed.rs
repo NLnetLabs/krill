@@ -2,7 +2,8 @@
 
 use rpki::ca::idexchange;
 use rpki::repository::resources::ResourceSet;
-use krill::commons::api::{ParentCaReq, ParentInfo};
+use krill::api::admin::ParentCaReq;
+use krill::api::ca::{ParentInfo, ParentKindInfo};
 
 mod common;
 
@@ -29,7 +30,7 @@ async fn add_and_remove_certificate_authority() {
     assert_eq!(
         testbed,
         server.client().publisher_details(&testbed.convert()).await.unwrap()
-            .handle().convert()
+            .handle.convert()
     );
 
     // verify that the testbed REST API is enabled.
@@ -42,7 +43,7 @@ async fn add_and_remove_certificate_authority() {
 
     // Verify that the child CA doesn't have a parent.
     assert_eq!(
-        server.client().ca_details(&ca).await.unwrap().parents().len(),
+        server.client().ca_details(&ca).await.unwrap().parents.len(),
         0
     );
 
@@ -61,13 +62,13 @@ async fn add_and_remove_certificate_authority() {
         
     // verify that the testbed shows that it now has the expected child CA
     let testbed_ca = server.client().ca_details(&testbed).await.unwrap();
-    let testbed_children = testbed_ca.children();
+    let testbed_children = &testbed_ca.children;
     assert_eq!(testbed_children.len(), 1);
     assert_eq!(testbed_children[0].convert(), ca);
 
     // verify that the child CA still doesn't have a parent
     assert_eq!(
-        server.client().ca_details(&ca).await.unwrap().parents().len(),
+        server.client().ca_details(&ca).await.unwrap().parents.len(),
         0
     );
 
@@ -83,26 +84,31 @@ async fn add_and_remove_certificate_authority() {
     // complete the RFC 8183 child registration process on the "client" side
     server.client().parent_add(
         &ca,
-        ParentCaReq::new(testbed.convert(), response.clone())
+        ParentCaReq { handle: testbed.convert(), response: response.clone() }
     ).await.unwrap();
 
     // verify that the child CA now has the correct parent
     assert_eq!(
-        *server.client().ca_details(&ca).await.unwrap().parents(),
-        vec![ParentInfo::new(testbed.convert())]
+        server.client().ca_details(&ca).await.unwrap().parents,
+        vec![
+            ParentInfo {
+                handle: testbed.convert(),
+                kind: ParentKindInfo::Rfc6492,
+            }
+        ]
     );
 
     eprintln!(">>>> Verify registration of child publisher with testbed.");
 
     // Verify that the child CA isn't configured to publish to a repository
     assert!(
-        server.client().ca_details(&ca).await.unwrap().repo_info().is_none()
+        server.client().ca_details(&ca).await.unwrap().repo_info.is_none()
     );
 
     // Verify that the testbed doesn't have a publisher for the child CA yet
     let publishers = server.client().publishers_list().await.unwrap();
-    let publisher_found = publishers.publishers().iter().any(|ps| {
-        ps.handle().as_str() == ca.as_str()
+    let publisher_found = publishers.publishers.iter().any(|ps| {
+        ps.handle.as_str() == ca.as_str()
     });
     assert!(!publisher_found);
 
@@ -125,15 +131,15 @@ async fn add_and_remove_certificate_authority() {
 
     // verify that the testbed now has a publisher for the child CA
     let publishers = server.client().publishers_list().await.unwrap();
-    let publisher_found = publishers.publishers().iter().any(|ps| {
-        ps.handle().as_str() == ca.as_str()
+    let publisher_found = publishers.publishers.iter().any(|ps| {
+        ps.handle.as_str() == ca.as_str()
     });
     assert!(publisher_found);
 
     // Verify that the child CA still isn't configured to publish to a
     // repository
     assert!(
-        server.client().ca_details(&ca).await.unwrap().repo_info().is_none()
+        server.client().ca_details(&ca).await.unwrap().repo_info.is_none()
     );
 
     // Complete the RFC 8183 publisher registration process on the "client"
@@ -142,7 +148,7 @@ async fn add_and_remove_certificate_authority() {
 
     // verify that the child CA is now configured to publish to a repository
     assert!(
-        server.client().ca_details(&ca).await.unwrap().repo_info().is_some()
+        server.client().ca_details(&ca).await.unwrap().repo_info.is_some()
     );
 
     eprintln!(">>>> Verify unregistration of the child CA with the testbed.");
@@ -150,8 +156,8 @@ async fn add_and_remove_certificate_authority() {
 
     // Verify that the testbed shows that it no longer has the child publisher
     let publishers = server.client().publishers_list().await.unwrap();
-    let publisher_found = publishers.publishers().iter().any(|ps| {
-        ps.handle().as_str() == ca.as_str()
+    let publisher_found = publishers.publishers.iter().any(|ps| {
+        ps.handle.as_str() == ca.as_str()
     });
     assert!(!publisher_found);
 
@@ -160,7 +166,7 @@ async fn add_and_remove_certificate_authority() {
 
     // Verify that the testbed shows that it no longer has any children
     assert_eq!(
-        server.client().ca_details(&testbed).await.unwrap().children().len(),
+        server.client().ca_details(&testbed).await.unwrap().children.len(),
         0
     );
 

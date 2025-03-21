@@ -4,7 +4,7 @@
 
 use rpki::ca::idexchange::CaHandle;
 use rpki::ca::provisioning::ResourceClassName;
-use krill::commons::api;
+use krill::api;
 use rpki::repository::resources::ResourceSet;
 
 mod common;
@@ -56,7 +56,8 @@ async fn functional_delegated_ca_import() {
         &parent_2, &child.convert()
     ).await.unwrap();
     server1.client().parent_add(
-        &child, api::ParentCaReq::new(parent_2.convert(), response)
+        &child,
+        api::admin::ParentCaReq { handle: parent_2.convert(), response }
     ).await.unwrap();
 
     eprintln!(">>>> Remove the child from the original parent.");
@@ -65,7 +66,7 @@ async fn functional_delegated_ca_import() {
     eprintln!(">>>> Update the resources for the child in parent2.");
     server2.client().child_update(
         &parent_2, &child.convert(),
-        api::UpdateChildRequest::resources(child_res_2.clone())
+        api::admin::UpdateChildRequest::resources(child_res_2.clone())
     ).await.unwrap();
 
     eprintln!(">>>> Verify that the resources are received.");
@@ -89,8 +90,8 @@ impl common::KrillServer {
         if let Some(rcn) = child_rcn {
             self.client().child_update(
                 &parent.convert(), &ca.convert(),
-                api::UpdateChildRequest::resource_class_name_mapping(
-                    api::ResourceClassNameMapping {
+                api::admin::UpdateChildRequest::resource_class_name_mapping(
+                    api::admin::ResourceClassNameMapping {
                         name_in_parent: common::rcn(0),
                         name_for_child: rcn.clone(),
                     }
@@ -99,7 +100,7 @@ impl common::KrillServer {
         }
 
         self.client().parent_add(
-            ca, api::ParentCaReq::new(parent.convert(), response)
+            ca, api::admin::ParentCaReq { handle: parent.convert(), response }
         ).await.unwrap();
         assert!(self.wait_for_ca_resources(ca, resources).await);
     }

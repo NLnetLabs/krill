@@ -1,20 +1,9 @@
-//! All actions performed by Krill are authorized by and attributed to an
-//! Actor.
+//! The entity initiating all actions in Krill.
 //!
-//! An Actor either represents Krill itself or an external client of Krill.
-//! Actors can only be created by the
-//! [Authorizer](crate::daemon::auth::Authorizer).
-//!
-//! An [ActorDef] defines an Actor that can be created later.
-//!
-//! ActorDefs allows special internal actors to be described once as Rust
-//! constants and turned into actual Actors at the point where they are
-//! needed.
-//!
-//! ActorDefs also allow
-//! [AuthProvider](crate::daemon::auth::authorizer::AuthProvider)s
-//! to define the Actor that should be created without needing any knowledge
-//! of the Authorizer.
+//! All actors are represented by the type [`Actor`] defined in this module.
+//! An actor can be anonymous, a system actor representing Krill’s own
+//! subsytems, or a user identified by the server’s
+//! [`Authorizer`](crate::daemon::auth::Authorizer).
 
 use std::fmt;
 use std::sync::Arc;
@@ -22,6 +11,26 @@ use std::sync::Arc;
 
 //------------ Actor ---------------------------------------------------------
 
+/// An entity intiating an action in Krill.
+///
+/// Every action performed by Krill are attributed to an actor. This type
+/// represents such an actor.
+///
+/// There are three types of actors, each created through a dedicated
+/// associated function:
+///
+/// * an anonymous actor, created via [`Actor::anonymous`], is used in cases
+///   where a request could not be authenticated;
+/// * a system actor, created via [`Actor::system`], represents a named
+///   component of Krill itself; and
+/// * a user, created via [`Actor::user`], represent an authenticated user.
+///
+/// A value of the `Actor` does not make any claims about the authenticity of
+/// the actor it represents. It is thus primarily used to print or store the
+/// name of an actor.
+///
+/// Values of this type can be cloned relatively cheaply. At worst, they
+/// contain an arced reference to an allocated string.
 #[derive(Clone, Debug)]
 pub struct Actor(ActorName);
 

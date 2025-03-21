@@ -1,13 +1,9 @@
-#[macro_use]
-extern crate log;
-#[macro_use]
-extern crate serde;
+//! The _Krill_ library crate.
 
+pub mod api;
 pub mod cli;
 pub mod commons;
 pub mod constants;
 pub mod daemon;
-pub mod pubd;
-pub mod ta;
-pub(crate) mod test;
+pub mod tasigner;
 pub mod upgrades;

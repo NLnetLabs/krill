@@ -7,8 +7,8 @@ use rpki::repository::resources::{
 };
 use crate::cli::client::KrillClient;
 use crate::cli::report::Report;
-use crate::commons::{api, bgp};
-use crate::commons::util::httpclient;
+use crate::api;
+use crate::commons::httpclient;
 use super::ca;
 
 
@@ -49,7 +49,7 @@ pub struct List {
 impl List {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::ConfiguredRoas, httpclient::Error> {
+    ) -> Result<api::roa::ConfiguredRoas, httpclient::Error> {
         client.roas_list(&self.ca.ca).await
     }
 }
@@ -68,11 +68,11 @@ pub struct Update{
 
     /// One or more ROAs to add
     #[arg(long, value_name = "ROA definitions", conflicts_with = "delta")]
-    pub add: Vec<api::RoaConfiguration>,
+    pub add: Vec<api::roa::RoaConfiguration>,
 
     /// One or more ROAs to remove
     #[arg(long, value_name = "ROA definitions", conflicts_with = "delta")]
-    pub remove: Vec<api::RoaPayload>,
+    pub remove: Vec<api::roa::RoaPayload>,
 
     /// Perform a dry run of the update, return the BGP analysis
     #[arg(long)]
@@ -89,7 +89,12 @@ impl Update{
     ) -> Report {
         let updates = match self.delta {
             Some(updates) => updates.0,
-            None => api::RoaConfigurationUpdates::new(self.add, self.remove),
+            None => {
+                api::roa::RoaConfigurationUpdates {
+                    added: self.add,
+                    removed: self.remove
+                }
+            }
         };
 
         if self.dryrun {
@@ -139,7 +144,7 @@ pub struct Analyze {
 impl Analyze {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<bgp::BgpAnalysisReport, httpclient::Error> {
+    ) -> Result<api::bgp::BgpAnalysisReport, httpclient::Error> {
         client.roas_analyze(&self.ca.ca).await
     }
 }
@@ -164,7 +169,7 @@ pub struct Suggest {
 impl Suggest {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<bgp::BgpAnalysisSuggestion, httpclient::Error> {
+    ) -> Result<api::bgp::BgpAnalysisSuggestion, httpclient::Error> {
         client.roas_suggest(
             &self.ca.ca,
             if self.ipv4.is_some() || self.ipv6.is_some() {
@@ -187,14 +192,14 @@ impl Suggest {
 //------------ RoaUpdatesFile ------------------------------------------------
 
 #[derive(Clone, Debug)]
-pub struct RoaUpdatesFile(api::RoaConfigurationUpdates);
+pub struct RoaUpdatesFile(api::roa::RoaConfigurationUpdates);
 
 impl FromStr for RoaUpdatesFile {
     type Err = RoaUpdatesFileError;
 
     fn from_str(path: &str) -> Result<Self, Self::Err> {
         Ok(Self(
-            api::RoaConfigurationUpdates::from_str(
+            api::roa::RoaConfigurationUpdates::from_str(
                 &fs::read_to_string(path).map_err(|err| {
                     RoaUpdatesFileError::Io(path.into(), err)
                 })?
@@ -213,7 +218,7 @@ impl FromStr for RoaUpdatesFile {
 #[derive(Debug)]
 pub enum RoaUpdatesFileError {
     Io(String, io::Error),
-    Parse(String, api::AuthorizationFmtError),
+    Parse(String, api::roa::AuthorizationFmtError),
 }
 
 impl fmt::Display for RoaUpdatesFileError {

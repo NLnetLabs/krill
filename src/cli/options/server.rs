@@ -3,8 +3,8 @@
 use rpki::ca::idexchange::CaHandle;
 use crate::cli::client::KrillClient;
 use crate::cli::report::Report;
-use crate::commons::api;
-use crate::commons::util::httpclient;
+use crate::api;
+use crate::commons::httpclient;
 
 
 //------------ Health --------------------------------------------------------
@@ -15,7 +15,7 @@ pub struct Health;
 impl Health {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::Success, httpclient::Error> {
+    ) -> Result<api::status::Success, httpclient::Error> {
         client.authorized().await
     }
 }
@@ -29,7 +29,7 @@ pub struct Info;
 impl Info {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::ServerInfo, httpclient::Error> {
+    ) -> Result<api::admin::ServerInfo, httpclient::Error> {
         client.info().await
     }
 }

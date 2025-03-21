@@ -5,19 +5,21 @@
 
 use std::fmt;
 use std::str::FromStr;
+use log::{debug, error, trace, warn};
 use rpki::ca::idexchange::{CaHandle, ParentHandle};
 use rpki::ca::provisioning::{ResourceClassName, RevocationRequest};
 use rpki::repository::x509::Time;
+use serde::{Deserialize, Serialize};
 use url::Url;
+use crate::api::ca::Timestamp;
 use crate::commons::eventsourcing;
 use crate::commons::{Error, KrillResult};
-use crate::commons::api::Timestamp;
 use crate::commons::eventsourcing::Aggregate;
 use crate::commons::queue::{Queue, RunningTask, ScheduleMode};
 use crate::commons::storage::{Key, Segment, SegmentBuf};
-use crate::constants::TASK_QUEUE_NS;
+use crate::constants::{TASK_QUEUE_NS, ta_handle};
 use crate::daemon::ca::{CertAuth, CertAuthEvent};
-use crate::ta::{ta_handle, TrustAnchorProxy, TrustAnchorProxyEvent};
+use crate::daemon::taproxy::{TrustAnchorProxy, TrustAnchorProxyEvent};
 
 
 //------------ Task ---------------------------------------------------------
@@ -672,8 +674,9 @@ impl eventsourcing::PostSaveEventListener<TrustAnchorProxy> for TaskQueue {
 
 //------------ Priority ------------------------------------------------------
 
-/// Can be used as a priority value for [`PriorityQueue`]. Meaning that the
-/// time value which is soonest has the highest priority.
+/// Can be used as a priority value.
+///
+/// Meaning that the time value which is soonest has the highest priority.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Priority(i64);
 
@@ -728,7 +731,7 @@ impl PartialOrd for Priority {
 
 impl fmt::Display for Priority {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        Timestamp::from(self).to_rfc3339().fmt(f)
+        Timestamp::from(self).into_rfc3339().fmt(f)
     }
 }
 

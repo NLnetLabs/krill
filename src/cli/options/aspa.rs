@@ -5,8 +5,8 @@ use std::str::FromStr;
 use rpki::repository::resources::Asn;
 use crate::cli::client::KrillClient;
 use crate::cli::report::Report;
-use crate::commons::api;
-use crate::commons::util::httpclient;
+use crate::api;
+use crate::commons::httpclient;
 use super::ca;
 
 
@@ -50,7 +50,7 @@ pub struct List {
 impl List {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::AspaDefinitionList, httpclient::Error> {
+    ) -> Result<api::aspa::AspaDefinitionList, httpclient::Error> {
         client.aspas_list(&self.ca.ca).await
     }
 }
@@ -71,10 +71,13 @@ pub struct Add {
 impl Add {
     async fn run(
         self, client: &KrillClient
-    ) -> Result<api::Success, httpclient::Error> {
+    ) -> Result<api::status::Success, httpclient::Error> {
         client.aspas_update(
             &self.ca.ca,
-            api::AspaDefinitionUpdates::new(vec![self.aspa.0], vec![])
+            api::aspa::AspaDefinitionUpdates {
+                add_or_replace: vec![self.aspa.0],
+                remove: Vec::new(),
+            }
         ).await
     }
 }
@@ -95,10 +98,13 @@ pub struct Remove {
 impl Remove {
     async fn run(
         self, client: &KrillClient
-    ) -> Result<api::Success, httpclient::Error> {
+    ) -> Result<api::status::Success, httpclient::Error> {
         client.aspas_update(
             &self.ca.ca,
-            api::AspaDefinitionUpdates::new(vec![], vec![self.customer])
+            api::aspa::AspaDefinitionUpdates {
+                add_or_replace: Vec::new(),
+                remove: vec![self.customer]
+            },
         ).await
     }
 }
@@ -127,10 +133,13 @@ pub struct Update {
 impl Update {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::Success, httpclient::Error> {
+    ) -> Result<api::status::Success, httpclient::Error> {
         client.aspas_update_single(
             &self.ca.ca, self.customer,
-            api::AspaProvidersUpdate::new(self.add, self.remove)
+            api::aspa::AspaProvidersUpdate {
+                added: self.add,
+                removed: self.remove
+            },
         ).await
     }
 }
@@ -141,19 +150,19 @@ impl Update {
 //------------ CleanAspaDefinition -------------------------------------------
 
 #[derive(Clone, Debug)]
-pub struct CleanAspaDefinition(api::AspaDefinition);
+pub struct CleanAspaDefinition(api::aspa::AspaDefinition);
 
 impl FromStr for CleanAspaDefinition {
     type Err = CleanAspaDefinitionError;
 
     fn from_str(src: &str) -> Result<Self, Self::Err> {
-        let aspa = api::AspaDefinition::from_str(src).map_err(
+        let aspa = api::aspa::AspaDefinition::from_str(src).map_err(
             CleanAspaDefinitionError::Format
         )?;
         if aspa.customer_used_as_provider() {
             Err(CleanAspaDefinitionError::CustomerAsProvider)
         }
-        else if aspa.providers().is_empty() {
+        else if aspa.providers.is_empty() {
             Err(CleanAspaDefinitionError::EmptyProviders)
         }
         else {
@@ -169,7 +178,7 @@ impl FromStr for CleanAspaDefinition {
 
 #[derive(Debug)]
 pub enum CleanAspaDefinitionError {
-    Format(api::AspaDefinitionFormatError),
+    Format(api::aspa::AspaDefinitionFormatError),
     CustomerAsProvider,
     EmptyProviders,
 }

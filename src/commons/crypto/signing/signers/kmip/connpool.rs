@@ -9,6 +9,7 @@
 use std::{sync::Arc, time::Duration};
 
 use kmip::client::ConnectionSettings;
+use log::warn;
 
 use crate::commons::crypto::signers::{
     error::SignerError, kmip::signer::KmipTlsClient,

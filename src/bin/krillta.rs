@@ -1,5 +1,10 @@
+//! The Krill trust anchor manager.
+
 use std::process;
 use krill::cli::ta::options::Command;
+
+
+//------------ main ----------------------------------------------------------
 
 #[tokio::main]
 async fn main() {

@@ -1,27 +1,13 @@
-extern crate krill;
+//! The Krill daemon binary.
 
 use std::path::PathBuf;
 use std::sync::Arc;
 use clap::Parser;
+use clap::crate_version;
 use log::error;
-use krill::constants::{
-    KRILL_DEFAULT_CONFIG_FILE, KRILL_SERVER_APP, KRILL_VERSION
-};
-use krill::daemon::{config::Config, http::server};
-
-
-//------------ Args ----------------------------------------------------------
-
-#[derive(clap::Parser)]
-#[command(
-    version = KRILL_VERSION, name = KRILL_SERVER_APP,
-    about, long_about = None,
-)]
-struct Args {
-    /// Override the path to the config file
-    #[arg(short, long, default_value = KRILL_DEFAULT_CONFIG_FILE)]
-    config: PathBuf,
-}
+use krill::constants::{KRILL_DEFAULT_CONFIG_FILE, KRILL_SERVER_APP};
+use krill::daemon::config::Config;
+use krill::daemon::http::server;
 
 
 //------------ main ----------------------------------------------------------
@@ -45,3 +31,18 @@ async fn main() {
         }
     }
 }
+
+
+//------------ Args ----------------------------------------------------------
+
+#[derive(clap::Parser)]
+#[command(
+    version = crate_version!(), name = KRILL_SERVER_APP,
+    about, long_about = None,
+)]
+struct Args {
+    /// Override the path to the config file
+    #[arg(short, long, default_value = KRILL_DEFAULT_CONFIG_FILE)]
+    config: PathBuf,
+}
+

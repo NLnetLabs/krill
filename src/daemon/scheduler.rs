@@ -5,6 +5,7 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use tokio::time::sleep;
 
+use log::{debug, error, info, warn};
 use rpki::ca::{
     idexchange::{CaHandle, ParentHandle},
     provisioning::{ResourceClassName, RevocationRequest},
@@ -12,14 +13,14 @@ use rpki::ca::{
 use url::Url;
 
 use crate::{
+    api::ca::Timestamp,
     commons::{
         actor::Actor,
-        api::Timestamp,
         crypto::dispatch::signerinfo::SignerInfo,
         error::FatalError,
         eventsourcing::{Aggregate, AggregateStore, WalStore, WalSupport},
         storage::{Key, Namespace},
-        util::KrillVersion,
+        version::KrillVersion,
     },
     constants::{
         CASERVER_NS, PROPERTIES_NS, PUBSERVER_CONTENT_NS, PUBSERVER_NS,
@@ -34,12 +35,12 @@ use crate::{
             in_hours, in_minutes, in_seconds, in_weeks, now, Task, TaskQueue,
         },
         properties::Properties,
+        pubd::{RepositoryAccess, RepositoryContent, RepositoryManager},
     },
-    pubd::{RepositoryAccess, RepositoryContent, RepositoryManager},
 };
 
 #[cfg(feature = "multi-user")]
-use crate::daemon::auth::Authorizer;
+use crate::daemon::http::auth::Authorizer;
 
 use super::mq::TaskResult;
 
@@ -240,7 +241,6 @@ impl Scheduler {
             let ca = self
                 .ca_manager
                 .get_ca(handle)
-                .await
                 .map_err(FatalError)?;
             let ca_handle = ca.handle();
             let ca_version = ca.version();
@@ -415,7 +415,7 @@ impl Scheduler {
 
     /// Resync the testbed TA signer and proxy
     async fn renew_testbed_ta(&self) -> Result<TaskResult, FatalError> {
-        if let Err(e) = self.ca_manager.ta_renew_testbed_ta().await {
+        if let Err(e) = self.ca_manager.ta_renew_testbed_ta() {
             error!("There was an issue renewing the testbed TA: {}", e);
         }
         let weeks_to_resync = self.config.ta_timing.mft_next_update_weeks / 2;
@@ -432,7 +432,7 @@ impl Scheduler {
     ) -> Result<TaskResult, FatalError> {
         debug!("Synchronise Trust Anchor Proxy with Signer - if Signer is local.");
         if let Err(e) =
-            self.ca_manager.sync_ta_proxy_signer_if_possible().await
+            self.ca_manager.sync_ta_proxy_signer_if_possible()
         {
             error!("There was an issue synchronising the TA Proxy and Signer: {}", e);
         }
@@ -449,13 +449,9 @@ impl Scheduler {
                 "Verify if CA '{}' has children that need to be suspended",
                 ca_handle
             );
-            self.ca_manager
-                .ca_suspend_inactive_children(
-                    &ca_handle,
-                    self.started,
-                    &self.system_actor,
-                )
-                .await;
+            self.ca_manager.ca_suspend_inactive_children(
+                &ca_handle, self.started, &self.system_actor,
+            );
 
             Ok(TaskResult::FollowUp(
                 Task::SuspendChildrenIfNeeded { ca_handle },
@@ -513,10 +509,9 @@ impl Scheduler {
     async fn renew_objects_if_needed(
         &self,
     ) -> Result<TaskResult, FatalError> {
-        self.ca_manager
-            .renew_objects_all(&self.system_actor)
-            .await
-            .map_err(FatalError)?;
+        self.ca_manager.renew_objects_all(&self.system_actor).map_err(
+            FatalError
+        )?;
 
         // check again in a short while.. note that this is usually a cheap
         // no-op
@@ -664,7 +659,6 @@ impl Scheduler {
             let ca = self
                 .ca_manager
                 .get_ca(&ca_handle)
-                .await
                 .map_err(FatalError)?;
             if ca.version() < ca_version {
                 // premature, we need to wait for the CA to be committed.
@@ -706,7 +700,6 @@ impl Scheduler {
             let ca = self
                 .ca_manager
                 .get_ca(&ca_handle)
-                .await
                 .map_err(FatalError)?;
 
             if ca.version() < ca_version {

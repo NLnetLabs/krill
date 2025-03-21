@@ -20,7 +20,7 @@ mod server;
 
 use rpki::ca::idexchange::ServiceUri;
 use clap::Parser;
-use crate::commons::api::Token;
+use crate::api::admin::Token;
 use super::client::KrillClient;
 use super::report::{Report, ReportFormat};
 
@@ -29,7 +29,10 @@ use super::report::{Report, ReportFormat};
 
 /// The command line options for the Krill client.
 #[derive(clap::Parser)]
-#[command(version)]
+#[command(
+    version,
+    about = "The Krill command line client.",
+)]
 pub struct Options {
     #[command(flatten)]
     pub general: GeneralOptions,

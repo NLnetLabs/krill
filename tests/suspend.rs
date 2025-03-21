@@ -1,7 +1,7 @@
 //! Test suspension and un-suspension logic.
 use rpki::ca::idexchange::CaHandle;
 use rpki::repository::resources::ResourceSet;
-use krill::commons::api::UpdateChildRequest;
+use krill::api::admin::UpdateChildRequest;
 
 mod common;
 
@@ -84,8 +84,8 @@ impl common::KrillServer {
         assert!(files.wait_for_published().await);
 
         let ca_info = self.client().ca_details(ca).await.unwrap();
-        assert!(ca_info.children().contains(&child_handle));
-        assert!(!ca_info.suspended_children().contains(&child_handle));
+        assert!(ca_info.children.contains(&child_handle));
+        assert!(!ca_info.suspended_children.contains(&child_handle));
     }
 
     async fn expect_suspended(&self, ca: &CaHandle, child: &CaHandle) {
@@ -97,8 +97,8 @@ impl common::KrillServer {
         assert!(files.wait_for_published().await);
         
         let ca_info = self.client().ca_details(ca).await.unwrap();
-        assert!(ca_info.children().contains(&child_handle));
-        assert!(ca_info.suspended_children().contains(&child_handle));
+        assert!(ca_info.children.contains(&child_handle));
+        assert!(ca_info.suspended_children.contains(&child_handle));
     }
 
 }

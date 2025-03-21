@@ -1,8 +1,12 @@
+//! The Krill command line client.
+
 use std::{env, process};
 use krill::cli::client::KrillClient;
 use krill::cli::options::Options;
 use krill::constants;
 
+
+//------------ main ----------------------------------------------------------
 
 #[tokio::main]
 async fn main() {
@@ -17,3 +21,4 @@ async fn main() {
     let status = report.report(options.general.format);
     process::exit(status);
 }
+

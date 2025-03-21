@@ -1,51 +1,28 @@
-//! Certificate Authority related code.
-use rpki::ca::idexchange::CaHandle;
-
-use crate::commons::error::Error;
+//! RPKI Certificate Authority.
 
 mod aspa;
-pub use self::aspa::*;
-
 mod bgpsec;
-pub use self::bgpsec::*;
-
 mod certauth;
-pub use self::certauth::CertAuth;
-
 mod child;
-pub use self::child::*;
-
-mod rc;
-pub use self::rc::ResourceClass;
-
-mod keys;
-pub use self::keys::*;
-
-mod publishing;
-pub use self::publishing::*;
-
-mod routes;
-pub use self::routes::*;
-
 mod commands;
-pub use self::commands::*;
-
 mod events;
-pub use self::events::Rfc8183Id;
-pub use self::events::*;
-
+mod keys;
 mod manager;
-pub use self::manager::CaManager;
-
+pub mod publishing; // Temporary for ta.
+mod rc;
+mod roa;
 mod rta;
-pub use self::rta::*;
-
 mod status;
-pub use self::status::*;
+pub mod upgrades;
 
-pub const TESTBED_CA_NAME: &str = "testbed"; // reserved for testbed mode
+pub use self::manager::CaManager;
+pub use self::manager::testbed_ca_handle;
+pub use self::status::CaStatus;
 
-pub fn testbed_ca_handle() -> CaHandle {
-    use std::str::FromStr;
-    CaHandle::from_str(TESTBED_CA_NAME).unwrap()
-}
+
+// Temporary public re-exports for other modules. They should be refactored
+// away.
+
+pub use self::certauth::CertAuth; // mq and scheduler
+pub use self::events::CertAuthEvent; // mq
+

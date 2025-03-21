@@ -32,7 +32,7 @@ async fn wait_for_nr_cas_under_testbed(
 ) {
     let handle = common::ca_handle("testbed");
     for _ in 0..300 {
-        if client.ca_details(&handle).await.unwrap().children().len() == nr {
+        if client.ca_details(&handle).await.unwrap().children.len() == nr {
             return;
         }
         common::sleep_seconds(1).await
@@ -46,14 +46,14 @@ async fn wait_for_nr_cas_under_publication_server(
     publishers_expected: usize,
 ) {
     let mut publishers_found = client.publishers_list().await.unwrap()
-        .publishers().len();
+        .publishers.len();
     for _ in 0..300 {
         if publishers_found == publishers_expected {
             return;
         }
         common::sleep_seconds(1).await;
         publishers_found = client.publishers_list().await.unwrap()
-            .publishers().len();
+            .publishers.len();
     }
 
     panic!(

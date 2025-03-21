@@ -24,9 +24,9 @@ use std::{
     path::Path,
     sync::{Arc, Mutex, RwLock},
 };
+use std::sync::OnceLock;
 
 use cryptoki::error::Error as Pkcs11Error;
-
 use cryptoki::{
     context::{CInitializeArgs, Info, Pkcs11},
     mechanism::Mechanism,
@@ -35,7 +35,7 @@ use cryptoki::{
     slot::{Slot, SlotInfo, TokenInfo},
     types::AuthPin,
 };
-use std::sync::OnceLock;
+use log::{error, trace};
 
 use crate::commons::crypto::SignerError;
 

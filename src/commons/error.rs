@@ -17,31 +17,29 @@ use rpki::{
     repository::error::ValidationError,
     uri,
 };
+use serde::{Deserialize, Serialize};
 
 use crate::{
     commons::{
+        httpclient,
         actor::Actor,
-        api::{
-            rrdp::PublicationDeltaError, CustomerAsn, ErrorResponse,
-            RoaPayload,
-        },
         crypto::SignerError,
-        eventsourcing::AggregateStoreError,
+        eventsourcing::{AggregateStoreError, WalStoreError},
         queue,
         storage,
         storage::KeyValueError,
-        util::httpclient,
     },
-    daemon::{ca::RoaPayloadJsonMapKey, http::tls_keys},
-    daemon::auth::Permission,
-    ta,
+    daemon::http::tls_keys,
+    daemon::http::auth::Permission,
+    daemon::pubd::PublicationDeltaError,
     upgrades::UpgradeError,
 };
+use crate::api::status::ErrorResponse;
+use crate::api::aspa::CustomerAsn;
+use crate::api::bgpsec::{BgpSecAsnKey, BgpSecDefinition};
+use crate::api::roa::{RoaConfiguration, RoaPayload, RoaPayloadJsonMapKey};
+use crate::api::ta::{Nonce as TaNonce};
 
-use super::{
-    api::{BgpSecAsnKey, BgpSecDefinition, RoaConfiguration},
-    eventsourcing::WalStoreError,
-};
 
 //------------ RoaDeltaError -----------------------------------------------
 
@@ -202,7 +200,7 @@ impl From<Error> for ApiAuthError {
 /// Wraps an error so horrible to contemplate that it should result in
 /// a server crash, as it would have lost its reason to live.
 ///
-/// Note that we do not provide any From<Error> for this in an attempt
+/// Note that we do not provide any `From<Error>` for this in an attempt
 /// to ensure that this is only ever used explicitly and when it is
 /// appropriate.
 #[derive(Debug)]
@@ -215,6 +213,9 @@ impl fmt::Display for FatalError {
 }
 
 //------------ Error -------------------------------------------------------
+
+// Transitional type alias.
+pub type KrillError = Error;
 
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
@@ -381,7 +382,7 @@ pub enum Error {
     TaProxyAlreadyHasSigner,
     TaProxyHasNoRequest,
     TaProxyHasRequest,
-    TaProxyRequestNonceMismatch(ta::Nonce, ta::Nonce),
+    TaProxyRequestNonceMismatch(TaNonce, TaNonce),
 
     //-----------------------------------------------------------------
     // Resource Tagged Attestation issues
@@ -536,9 +537,23 @@ impl fmt::Display for Error {
             //-----------------------------------------------------------------
             // BGPSec
             //-----------------------------------------------------------------
-            Error::BgpSecDefinitionUnknown(_ca, key) => write!(f, "Cannot remove BGPSec CSR for unknown combination of ASN '{}' and key '{}'", key.asn(), key.key_identifier()),
-            Error::BgpSecDefinitionInvalidlySigned(_ca, def, msg) => write!(f, "Invalidly signed BGPSec CSR remove BGPSec CSR for ASN '{}' and key '{}', error: {}", def.asn(), def.csr().public_key().key_identifier(), msg),
-            Error::BgpSecDefinitionNotEntitled(_ca, key) => write!(f, "AS '{}' is not held by you", key.asn()),
+            Error::BgpSecDefinitionUnknown(_ca, key) => {
+                write!(f,
+                    "Cannot remove BGPSec CSR for unknown combination of \
+                     ASN '{}' and key '{}'",
+                    key.asn, key.key
+                )
+            }
+            Error::BgpSecDefinitionInvalidlySigned(_ca, def, msg) => {
+                write!(f,
+                    "Invalidly signed BGPsec CSR for ASN '{}' and key '{}': \
+                     {}",
+                    def.asn, def.csr.public_key().key_identifier(), msg
+                )
+            }
+            Error::BgpSecDefinitionNotEntitled(_ca, key) => {
+                write!(f, "AS '{}' is not held by you", key.asn)
+            }
 
 
             //-----------------------------------------------------------------
@@ -1077,24 +1092,24 @@ impl Error {
             Error::CaAuthorizationUnknown(ca, auth) => {
                 ErrorResponse::new("ca-roa-unknown", self)
                     .with_ca(ca)
-                    .with_auth(auth)
+                    .with_auth(*auth)
             }
             Error::CaAuthorizationDuplicate(ca, auth) => {
                 ErrorResponse::new("ca-roa-duplicate", self)
                     .with_ca(ca)
-                    .with_auth(auth)
+                    .with_auth(*auth)
             }
 
             Error::CaAuthorizationInvalidMaxLength(ca, auth) => {
                 ErrorResponse::new("ca-roa-invalid-max-length", self)
                     .with_ca(ca)
-                    .with_auth(auth)
+                    .with_auth(*auth)
             }
 
             Error::CaAuthorizationNotEntitled(ca, auth) => {
                 ErrorResponse::new("ca-roa-not-entitled", self)
                     .with_ca(ca)
-                    .with_auth(auth)
+                    .with_auth(*auth)
             }
 
             Error::RoaDeltaError(ca, roa_delta_error) => {
@@ -1143,23 +1158,23 @@ impl Error {
             Error::BgpSecDefinitionUnknown(ca, key) => {
                 ErrorResponse::new("ca-bgpsec-unknown", self)
                     .with_ca(ca)
-                    .with_asn(key.asn())
-                    .with_key_identifier(&key.key_identifier())
+                    .with_asn(key.asn)
+                    .with_key_identifier(&key.key)
             }
             Error::BgpSecDefinitionInvalidlySigned(ca, def, msg) => {
                 ErrorResponse::new("ca-bgpsec-invalidly-signed", self)
                     .with_ca(ca)
-                    .with_asn(def.asn())
+                    .with_asn(def.asn)
                     .with_key_identifier(
-                        &def.csr().public_key().key_identifier(),
+                        &def.csr.public_key().key_identifier(),
                     )
-                    .with_bgpsec_csr(def.csr())
+                    .with_bgpsec_csr(&def.csr)
                     .with_cause(msg)
             }
             Error::BgpSecDefinitionNotEntitled(ca, key) => {
                 ErrorResponse::new("ca-bgpsec-not-entitled", self)
                     .with_ca(ca)
-                    .with_asn(key.asn())
+                    .with_asn(key.asn)
             }
 
             //-----------------------------------------------------------------
@@ -1301,15 +1316,12 @@ impl fmt::Display for KrillIoError {
 
 #[cfg(test)]
 mod tests {
-
     use std::str::FromStr;
-
-    use crate::commons::api::RoaPayload;
-    use crate::test::roa_configuration;
-
+    use crate::api::roa::RoaPayload;
+    use crate::commons::test::roa_configuration;
+    use crate::commons::test::roa_payload;
+    use crate::commons::test::test_id_certificate;
     use super::*;
-    use crate::test::roa_payload;
-    use crate::test::test_id_certificate;
 
     fn verify(expected_json: &str, e: Error) {
         let actual = e.to_error_response();
