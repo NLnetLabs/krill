@@ -54,7 +54,8 @@ use openidconnect::{
 use serde::{Deserialize, Serialize};
 use urlparse::{urlparse, GetQuery};
 
-use crate::daemon::http::{HttpResponse, HyperRequest};
+use crate::daemon::http::request::HyperRequest;
+use crate::daemon::http::response::HttpResponse;
 use crate::{
     api::admin::Token,
     commons::{
@@ -64,7 +65,8 @@ use crate::{
         KrillResult,
     },
     daemon::{
-        auth::{
+        config::Config,
+        http::auth::{
             crypt::{self, CryptState},
             providers::openid_connect::{
                 httpclient::logging_http_client,
@@ -77,8 +79,7 @@ use crate::{
             session::*,
             AuthInfo, LoggedInUser, Permission,
         },
-        config::Config,
-        http::auth::{url_encode, AUTH_CALLBACK_ENDPOINT},
+        http::server::{url_encode, AUTH_CALLBACK_ENDPOINT},
     },
 };
 use super::claims::Claims;

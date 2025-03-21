@@ -4,10 +4,11 @@ use std::fmt;
 use std::collections::HashMap;
 use std::fmt::Write;
 use crate::constants::TA_NAME;
-use super::{HttpResponse, Request, RoutingResult};
+use super::request::Request;
+use super::response::HttpResponse;
 
 
-pub async fn metrics(req: Request) -> RoutingResult {
+pub async fn metrics(req: Request) -> Result<HttpResponse, Request> {
     if !req.is_get() || !req.path().segment().starts_with("metrics") {
         return Err(req)
     }

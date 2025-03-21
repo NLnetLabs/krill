@@ -32,7 +32,7 @@ use crate::{
     },
     constants::*,
     daemon::{
-        auth::{Role, RoleMap},
+        http::auth::{Role, RoleMap},
         http::tls_keys::{self, HTTPS_SUB_DIR},
         mq::{in_seconds, Priority},
     },
@@ -41,7 +41,7 @@ use crate::{
 use crate::api::admin::{PublicationServerUris, Token};
 
 #[cfg(feature = "multi-user")]
-use crate::daemon::auth::providers::{
+use crate::daemon::http::auth::providers::{
     config_file::ConfigAuthUsers,
     openid_connect::ConfigAuthOpenIDConnect,
 };

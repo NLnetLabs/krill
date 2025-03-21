@@ -29,8 +29,8 @@ use crate::{
         storage,
         storage::KeyValueError,
     },
-    daemon::auth::Permission,
     daemon::http::tls_keys,
+    daemon::http::auth::Permission,
     daemon::pubd::PublicationDeltaError,
     upgrades::UpgradeError,
 };

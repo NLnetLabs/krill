@@ -37,13 +37,13 @@ use crate::{
         KRILL_ENV_HTTP_LOG_INFO, KRILL_ENV_UPGRADE_ONLY, ta_handle,
     },
     daemon::{
-        auth::Permission,
         config::Config,
         http::{
-            auth::auth, statics::statics, testbed::testbed, tls, tls_keys,
-            HttpResponse, HyperRequest, HyperResponse, Request, RequestPath,
-            RoutingResult,
+            statics::statics, testbed::testbed, tls, tls_keys,
         },
+        http::auth::Permission,
+        http::request::{HyperRequest, Request, RequestPath},
+        http::response::{HttpResponse, HyperResponse},
         krillserver::KrillServer,
         properties::PropertiesManager,
     },
@@ -415,7 +415,7 @@ async fn map_requests(
 /// HTTP redirects cannot have a response body and so we cannot render the
 /// error to be displayed in Lagosta as a JSON body, instead we must package
 /// the JSON as a query parameter.
-pub fn render_error_redirect(err: Error) -> RoutingResult {
+pub fn render_error_redirect(err: Error) -> Result<HttpResponse, Request> {
     let response = err.to_error_response();
     let json = serde_json::to_string(&response).or_else(|err| {
         Ok(format!(
@@ -428,7 +428,7 @@ pub fn render_error_redirect(err: Error) -> RoutingResult {
     Ok(HttpResponse::found(&location))
 }
 
-pub fn render_empty_res(res: Result<(), Error>) -> RoutingResult {
+pub fn render_empty_res(res: Result<(), Error>) -> Result<HttpResponse, Request> {
     match res {
         Ok(()) => render_ok(),
         Err(e) => render_error(e),
@@ -436,17 +436,17 @@ pub fn render_empty_res(res: Result<(), Error>) -> RoutingResult {
 }
 
 #[allow(clippy::unnecessary_wraps)]
-fn render_error(e: Error) -> RoutingResult {
+fn render_error(e: Error) -> Result<HttpResponse, Request> {
     debug!("Server Error: {}", e);
     Ok(HttpResponse::response_from_error(e))
 }
 
 #[allow(clippy::unnecessary_wraps)]
-fn render_json<O: Serialize>(obj: O) -> RoutingResult {
+fn render_json<O: Serialize>(obj: O) -> Result<HttpResponse, Request> {
     Ok(HttpResponse::json(&obj))
 }
 
-fn render_json_res<O: Serialize>(res: Result<O, Error>) -> RoutingResult {
+fn render_json_res<O: Serialize>(res: Result<O, Error>) -> Result<HttpResponse, Request> {
     match res {
         Ok(o) => render_json(o),
         Err(e) => render_error(e),
@@ -455,29 +455,29 @@ fn render_json_res<O: Serialize>(res: Result<O, Error>) -> RoutingResult {
 
 /// A clean 404 result for the API (no content, not for humans)
 #[allow(clippy::unnecessary_wraps)]
-fn render_unknown_resource() -> RoutingResult {
+fn render_unknown_resource() -> Result<HttpResponse, Request> {
     Ok(HttpResponse::response_from_error(Error::ApiUnknownResource))
 }
 
 /// A clean 200 result for the API (no content, not for humans)
 #[allow(clippy::unnecessary_wraps)]
-pub fn render_ok() -> RoutingResult {
+pub fn render_ok() -> Result<HttpResponse, Request> {
     Ok(HttpResponse::ok())
 }
 
 #[allow(clippy::unnecessary_wraps)]
-pub fn render_unknown_method() -> RoutingResult {
+pub fn render_unknown_method() -> Result<HttpResponse, Request> {
     Ok(HttpResponse::response_from_error(Error::ApiUnknownMethod))
 }
 
 /// A clean 404 response
 #[allow(clippy::unnecessary_wraps)]
-pub async fn render_not_found(_req: Request) -> RoutingResult {
+pub async fn render_not_found(_req: Request) -> Result<HttpResponse, Request> {
     Ok(HttpResponse::not_found())
 }
 
 /// Returns the server health.
-pub async fn health(req: Request) -> RoutingResult {
+pub async fn health(req: Request) -> Result<HttpResponse, Request> {
     if req.is_get() && req.path().segment() == "health" {
         render_ok()
     } else {
@@ -488,7 +488,7 @@ pub async fn health(req: Request) -> RoutingResult {
 //------------ Publication ---------------------------------------------------
 
 /// Handle RFC8181 queries and return the appropriate response.
-pub async fn rfc8181(req: Request) -> RoutingResult {
+pub async fn rfc8181(req: Request) -> Result<HttpResponse, Request> {
     if req.path().segment() == "rfc8181" {
         let mut path = req.path().clone();
         let publisher = match path.path_arg() {
@@ -513,9 +513,9 @@ pub async fn rfc8181(req: Request) -> RoutingResult {
 }
 
 //------------ Embedded TA  --------------------------------------------------
-async fn ta(req: Request) -> RoutingResult {
+async fn ta(req: Request) -> Result<HttpResponse, Request> {
     match *req.method() {
-        Method::GET => match req.path.full() {
+        Method::GET => match req.path().full() {
             "/ta/ta.tal" => tal(req).await,
             "/testbed.tal" => tal(req).await,
             "/ta/ta.cer" => ta_cer(req).await,
@@ -525,7 +525,7 @@ async fn ta(req: Request) -> RoutingResult {
     }
 }
 
-pub async fn tal(req: Request) -> RoutingResult {
+pub async fn tal(req: Request) -> Result<HttpResponse, Request> {
     match req.state().ta_cert_details().await {
         Ok(ta) => {
             Ok(HttpResponse::text(format!("{}", ta.tal()).into_bytes()))
@@ -534,7 +534,7 @@ pub async fn tal(req: Request) -> RoutingResult {
     }
 }
 
-pub async fn ta_cer(req: Request) -> RoutingResult {
+pub async fn ta_cer(req: Request) -> Result<HttpResponse, Request> {
     match req.state().trust_anchor_cert().await {
         Some(cert) => Ok(HttpResponse::cert(cert.to_bytes().to_vec())),
         None => render_unknown_resource(),
@@ -544,7 +544,7 @@ pub async fn ta_cer(req: Request) -> RoutingResult {
 //------------ Provisioning (RFC6492) ----------------------------------------
 
 /// Process an RFC 6492 request
-pub async fn rfc6492(req: Request) -> RoutingResult {
+pub async fn rfc6492(req: Request) -> Result<HttpResponse, Request> {
     if req.path().segment() == "rfc6492" {
         let mut path = req.path().clone();
         let ca = match path.path_arg() {
@@ -571,7 +571,7 @@ pub async fn rfc6492(req: Request) -> RoutingResult {
 }
 
 /// Return various stats as json
-async fn stats(req: Request) -> RoutingResult {
+async fn stats(req: Request) -> Result<HttpResponse, Request> {
     match *req.method() {
         Method::GET => match req.path().full() {
             "/stats/info" => render_json(req.state().server_info()),
@@ -688,7 +688,7 @@ macro_rules! aa {
 }
 
 /// Maps the API methods
-async fn api(req: Request) -> RoutingResult {
+async fn api(req: Request) -> Result<HttpResponse, Request> {
     if !req.path().full().starts_with("/api/v1") {
         Err(req) // Not for us
     } else {
@@ -722,7 +722,7 @@ async fn api(req: Request) -> RoutingResult {
     }
 }
 
-async fn api_authorized(req: Request) -> RoutingResult {
+async fn api_authorized(req: Request) -> Result<HttpResponse, Request> {
     // Use 'no_warn' to prevent the log being filled with warnings about
     // insufficient user rights as this API endpoint is invoked by Lagosta on
     // every view transition, and not being authorized is a valid state that
@@ -737,7 +737,7 @@ async fn api_authorized(req: Request) -> RoutingResult {
     )
 }
 
-async fn api_bulk(req: Request, path: &mut RequestPath) -> RoutingResult {
+async fn api_bulk(req: Request, path: &mut RequestPath) -> Result<HttpResponse, Request> {
     match path.full() {
         "/api/v1/bulk/cas/import" => api_cas_import(req).await,
         "/api/v1/bulk/cas/issues" => api_all_ca_issues(req).await,
@@ -752,7 +752,7 @@ async fn api_bulk(req: Request, path: &mut RequestPath) -> RoutingResult {
     }
 }
 
-async fn api_cas(req: Request, path: &mut RequestPath) -> RoutingResult {
+async fn api_cas(req: Request, path: &mut RequestPath) -> Result<HttpResponse, Request> {
     match path.path_arg::<CaHandle>() {
         Some(ca) => aa!(req, Permission::CaRead, ca, {
             match path.next() {
@@ -792,7 +792,7 @@ async fn api_ca_keys(
     req: Request,
     path: &mut RequestPath,
     ca: CaHandle,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     match *req.method() {
         Method::POST => match path.next() {
             Some("roll_init") => api_ca_kr_init(req, ca).await,
@@ -807,7 +807,7 @@ async fn api_ca_parents(
     req: Request,
     path: &mut RequestPath,
     ca: CaHandle,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     if let Some(parent) = path.path_arg() {
         match *req.method() {
             Method::GET => api_ca_my_parent_contact(req, ca, parent).await,
@@ -830,7 +830,7 @@ async fn api_ca_repo(
     req: Request,
     path: &mut RequestPath,
     ca: CaHandle,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     match path.next() {
         None => match *req.method() {
             Method::GET => api_ca_repo_details(req, ca).await,
@@ -846,7 +846,7 @@ async fn api_ca_routes(
     req: Request,
     path: &mut RequestPath,
     ca: CaHandle,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     match path.next() {
         None => match *req.method() {
             Method::GET => api_ca_routes_show(req, ca).await,
@@ -866,7 +866,7 @@ async fn api_ca_stats(
     req: Request,
     path: &mut RequestPath,
     ca: CaHandle,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     match path.next() {
         Some("children") => match path.next() {
             Some("connections") => {
@@ -882,7 +882,7 @@ async fn api_ca_sync(
     req: Request,
     path: &mut RequestPath,
     ca: CaHandle,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     aa!(req, Permission::CaUpdate, ca, {
         if req.is_post() {
             match path.next() {
@@ -903,12 +903,12 @@ async fn api_ca_sync(
 async fn api_publication_server(
     req: Request,
     path: &mut RequestPath,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     match path.next() {
         Some("publishers") => api_publishers(req, path).await,
         Some("delete") => match *req.method() {
             Method::POST => {
-                let state = req.state.clone();
+                let state = req.state().clone();
 
                 match req.json().await {
                     Ok(criteria) => render_empty_res(
@@ -922,13 +922,13 @@ async fn api_publication_server(
         Some("stale") => api_stale_publishers(req, path.next()).await,
         Some("init") => match *req.method() {
             Method::POST => {
-                let state = req.state.clone();
+                let state = req.state().clone();
                 match req.json().await {
                     Ok(uris) => render_empty_res(state.repository_init(uris)),
                     Err(e) => render_error(e),
                 }
             }
-            Method::DELETE => render_empty_res(req.state.repository_clear()),
+            Method::DELETE => render_empty_res(req.state().repository_clear()),
             _ => render_unknown_method(),
         },
         Some("session_reset") => match *req.method() {
@@ -944,7 +944,7 @@ async fn api_publication_server(
 async fn api_publishers(
     req: Request,
     path: &mut RequestPath,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     match *req.method() {
         Method::GET => match path.path_arg() {
             Some(publisher) => match path.next() {
@@ -979,7 +979,7 @@ async fn api_publishers(
 pub async fn api_stale_publishers(
     req: Request,
     seconds: Option<&str>,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     aa!(req, Permission::PubList, {
         let seconds = seconds.unwrap_or("");
         match i64::from_str(seconds) {
@@ -994,7 +994,7 @@ pub async fn api_stale_publishers(
 }
 
 /// Returns a json structure with all publishers in it.
-pub async fn api_list_pbl(req: Request) -> RoutingResult {
+pub async fn api_list_pbl(req: Request) -> Result<HttpResponse, Request> {
     aa!(req, Permission::PubList, {
         render_json_res(
             req.state()
@@ -1005,7 +1005,7 @@ pub async fn api_list_pbl(req: Request) -> RoutingResult {
 }
 
 /// Adds a publisher
-pub async fn api_add_pbl(req: Request) -> RoutingResult {
+pub async fn api_add_pbl(req: Request) -> Result<HttpResponse, Request> {
     aa!(req, Permission::PubCreate, {
         let actor = req.actor();
         let server = req.state().clone();
@@ -1022,7 +1022,7 @@ pub async fn api_add_pbl(req: Request) -> RoutingResult {
 pub async fn api_remove_pbl(
     req: Request,
     publisher: PublisherHandle,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     aa!(req, Permission::PubDelete, {
         let actor = req.actor();
         render_empty_res(req.state().remove_publisher(publisher, &actor))
@@ -1034,7 +1034,7 @@ pub async fn api_remove_pbl(
 pub async fn api_show_pbl(
     req: Request,
     publisher: PublisherHandle,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     aa!(
         req,
         Permission::PubRead,
@@ -1049,7 +1049,7 @@ pub async fn api_show_pbl(
 pub async fn api_repository_response_xml(
     req: Request,
     publisher: PublisherHandle,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     aa!(req, Permission::PubRead, {
         match repository_response(&req, &publisher).await {
             Ok(repository_response) => {
@@ -1064,7 +1064,7 @@ pub async fn api_repository_response_xml(
 pub async fn api_repository_response_json(
     req: Request,
     publisher: PublisherHandle,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     aa!(req, Permission::PubRead, {
         match repository_response(&req, &publisher).await {
             Ok(res) => render_json(res),
@@ -1080,7 +1080,7 @@ async fn repository_response(
     req.state().repository_response(publisher)
 }
 
-pub async fn api_ca_add_child(req: Request, ca: CaHandle) -> RoutingResult {
+pub async fn api_ca_add_child(req: Request, ca: CaHandle) -> Result<HttpResponse, Request> {
     aa!(req, Permission::CaUpdate, ca, {
         let actor = req.actor();
         let server = req.state().clone();
@@ -1097,7 +1097,7 @@ async fn api_ca_child_update(
     req: Request,
     ca: CaHandle,
     child: ChildHandle,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     aa!(req, Permission::CaUpdate, ca, {
         let actor = req.actor();
         let server = req.state().clone();
@@ -1114,7 +1114,7 @@ pub async fn api_ca_child_remove(
     req: Request,
     ca: CaHandle,
     child: ChildHandle,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     aa!(req, Permission::CaUpdate, ca, {
         let actor = req.actor();
         render_empty_res(
@@ -1127,7 +1127,7 @@ async fn api_ca_child_show(
     req: Request,
     ca: CaHandle,
     child: ChildHandle,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     aa!(
         req,
         Permission::CaRead,
@@ -1140,7 +1140,7 @@ async fn api_ca_child_export(
     req: Request,
     ca: CaHandle,
     child: ChildHandle,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     aa!(
         req,
         Permission::CaRead,
@@ -1149,7 +1149,7 @@ async fn api_ca_child_export(
     )
 }
 
-async fn api_ca_child_import(req: Request, ca: CaHandle) -> RoutingResult {
+async fn api_ca_child_import(req: Request, ca: CaHandle) -> Result<HttpResponse, Request> {
     aa!(req, Permission::CaAdmin, ca, {
         let actor = req.actor();
         let server = req.state().clone();
@@ -1165,7 +1165,7 @@ async fn api_ca_child_import(req: Request, ca: CaHandle) -> RoutingResult {
 async fn api_ca_stats_child_connections(
     req: Request,
     ca: CaHandle,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     aa!(
         req,
         Permission::CaRead,
@@ -1178,7 +1178,7 @@ async fn api_ca_parent_res_json(
     req: Request,
     ca: CaHandle,
     child: ChildHandle,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     aa!(
         req,
         Permission::CaRead,
@@ -1193,7 +1193,7 @@ pub async fn api_ca_parent_res_xml(
     req: Request,
     ca: CaHandle,
     child: ChildHandle,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     aa!(req, Permission::CaRead, ca, {
         match req.state().ca_parent_response(&ca, child.clone()).await {
             Ok(res) => Ok(HttpResponse::xml(res.to_xml_vec())),
@@ -1204,7 +1204,7 @@ pub async fn api_ca_parent_res_xml(
 
 //------------ Admin: CertAuth -----------------------------------------------
 
-async fn api_cas_import(req: Request) -> RoutingResult {
+async fn api_cas_import(req: Request) -> Result<HttpResponse, Request> {
     match *req.method() {
         Method::POST => aa!(req, Permission::CaAdmin, {
             let server = req.state().clone();
@@ -1219,7 +1219,7 @@ async fn api_cas_import(req: Request) -> RoutingResult {
     }
 }
 
-async fn api_all_ca_issues(req: Request) -> RoutingResult {
+async fn api_all_ca_issues(req: Request) -> Result<HttpResponse, Request> {
     match *req.method() {
         Method::GET => aa!(req, Permission::CaRead, {
             render_json_res(
@@ -1231,7 +1231,7 @@ async fn api_all_ca_issues(req: Request) -> RoutingResult {
 }
 
 /// Returns the health (state) for a given CA.
-async fn api_ca_issues(req: Request, ca: CaHandle) -> RoutingResult {
+async fn api_ca_issues(req: Request, ca: CaHandle) -> Result<HttpResponse, Request> {
     match *req.method() {
         Method::GET => aa!(
             req,
@@ -1243,13 +1243,13 @@ async fn api_ca_issues(req: Request, ca: CaHandle) -> RoutingResult {
     }
 }
 
-async fn api_cas_list(req: Request) -> RoutingResult {
+async fn api_cas_list(req: Request) -> Result<HttpResponse, Request> {
     aa!(req, Permission::CaList, {
         render_json_res(req.state().ca_list(req.auth_info()))
     })
 }
 
-pub async fn api_ca_init(req: Request) -> RoutingResult {
+pub async fn api_ca_init(req: Request) -> Result<HttpResponse, Request> {
     aa!(req, Permission::CaCreate, {
         let state = req.state().clone();
 
@@ -1264,7 +1264,7 @@ async fn api_ca_id(
     req: Request,
     path: &mut RequestPath,
     ca: CaHandle,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     match *req.method() {
         Method::POST => aa!(req, Permission::CaUpdate, ca, {
             let actor = req.actor();
@@ -1287,7 +1287,7 @@ async fn api_ca_id(
     }
 }
 
-async fn api_ca_info(req: Request, handle: CaHandle) -> RoutingResult {
+async fn api_ca_info(req: Request, handle: CaHandle) -> Result<HttpResponse, Request> {
     aa!(
         req,
         Permission::CaRead,
@@ -1296,7 +1296,7 @@ async fn api_ca_info(req: Request, handle: CaHandle) -> RoutingResult {
     )
 }
 
-async fn api_ca_delete(req: Request, handle: CaHandle) -> RoutingResult {
+async fn api_ca_delete(req: Request, handle: CaHandle) -> Result<HttpResponse, Request> {
     let actor = req.actor();
     aa!(
         req,
@@ -1310,7 +1310,7 @@ async fn api_ca_my_parent_contact(
     req: Request,
     ca: CaHandle,
     parent: ParentHandle,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     aa!(
         req,
         Permission::CaRead,
@@ -1322,7 +1322,7 @@ async fn api_ca_my_parent_contact(
 async fn api_ca_my_parent_statuses(
     req: Request,
     ca: CaHandle,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     aa!(
         req,
         Permission::CaRead,
@@ -1339,7 +1339,7 @@ async fn api_ca_aspas(
     req: Request,
     path: &mut RequestPath,
     ca: CaHandle,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     match path.next() {
         None => match *req.method() {
             Method::GET => api_ca_aspas_definitions_show(req, ca).await,
@@ -1377,7 +1377,7 @@ async fn api_ca_bgpsec(
     req: Request,
     path: &mut RequestPath,
     ca: CaHandle,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     // Handles /api/v1/cas/{ca}/bgpsec/:
     //    GET  /api/v1/cas/{ca}/bgpsec/ -> List BGPSec Definitions
     //    POST /api/v1/cas/{ca}/bgpsec/ -> Send BgpSecDefinitionUpdates
@@ -1394,7 +1394,7 @@ async fn api_ca_bgpsec(
 async fn api_ca_bgpsec_definitions_show(
     req: Request,
     ca: CaHandle,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     aa!(req, Permission::BgpsecRead, ca, {
         render_json_res(req.state().ca_bgpsec_definitions_show(ca).await)
     })
@@ -1403,7 +1403,7 @@ async fn api_ca_bgpsec_definitions_show(
 async fn api_ca_bgpsec_definitions_update(
     req: Request,
     ca: CaHandle,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     aa!(req, Permission::BgpsecUpdate, ca, {
         let actor = req.actor();
         let server = req.state().clone();
@@ -1422,7 +1422,7 @@ async fn api_ca_children(
     req: Request,
     path: &mut RequestPath,
     ca: CaHandle,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     match path.path_arg() {
         Some(child) => match path.next() {
             None => match *req.method() {
@@ -1452,7 +1452,7 @@ async fn api_ca_history_commands(
     req: Request,
     path: &mut RequestPath,
     handle: CaHandle,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     match *req.method() {
         Method::GET => {
             aa!(req, Permission::CaRead, handle, {
@@ -1482,7 +1482,7 @@ async fn api_ca_history(
     req: Request,
     path: &mut RequestPath,
     ca: CaHandle,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     match path.next() {
         Some("details") => api_ca_command_details(req, path, ca).await,
         Some("commands") => api_ca_history_commands(req, path, ca).await,
@@ -1495,7 +1495,7 @@ async fn api_ca_command_details(
     req: Request,
     path: &mut RequestPath,
     ca: CaHandle,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     // /api/v1/cas/{ca}/command/<command-key>
     match path.path_arg() {
         Some(key) => match *req.method() {
@@ -1518,7 +1518,7 @@ async fn api_ca_command_details(
     }
 }
 
-async fn api_ca_child_req_xml(req: Request, ca: CaHandle) -> RoutingResult {
+async fn api_ca_child_req_xml(req: Request, ca: CaHandle) -> Result<HttpResponse, Request> {
     match *req.method() {
         Method::GET => aa!(
             req,
@@ -1534,7 +1534,7 @@ async fn api_ca_child_req_xml(req: Request, ca: CaHandle) -> RoutingResult {
     }
 }
 
-async fn api_ca_child_req_json(req: Request, ca: CaHandle) -> RoutingResult {
+async fn api_ca_child_req_json(req: Request, ca: CaHandle) -> Result<HttpResponse, Request> {
     match *req.method() {
         Method::GET => aa!(
             req,
@@ -1559,7 +1559,7 @@ async fn ca_child_req(
 async fn api_ca_publisher_req_json(
     req: Request,
     ca: CaHandle,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     match *req.method() {
         Method::GET => aa!(
             req,
@@ -1574,7 +1574,7 @@ async fn api_ca_publisher_req_json(
 async fn api_ca_publisher_req_xml(
     req: Request,
     ca: CaHandle,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     match *req.method() {
         Method::GET => aa!(
             req,
@@ -1590,7 +1590,7 @@ async fn api_ca_publisher_req_xml(
     }
 }
 
-async fn api_ca_repo_details(req: Request, ca: CaHandle) -> RoutingResult {
+async fn api_ca_repo_details(req: Request, ca: CaHandle) -> Result<HttpResponse, Request> {
     aa!(
         req,
         Permission::CaRead,
@@ -1599,7 +1599,7 @@ async fn api_ca_repo_details(req: Request, ca: CaHandle) -> RoutingResult {
     )
 }
 
-async fn api_ca_repo_status(req: Request, ca: CaHandle) -> RoutingResult {
+async fn api_ca_repo_status(req: Request, ca: CaHandle) -> Result<HttpResponse, Request> {
     match *req.method() {
         Method::GET => aa!(
             req,
@@ -1649,7 +1649,7 @@ fn extract_repository_contact(
     }
 }
 
-async fn api_ca_repo_update(req: Request, ca: CaHandle) -> RoutingResult {
+async fn api_ca_repo_update(req: Request, ca: CaHandle) -> Result<HttpResponse, Request> {
     aa!(req, Permission::CaUpdate, ca, {
         let actor = req.actor();
         let server = req.state().clone();
@@ -1671,7 +1671,7 @@ async fn api_ca_parent_add_or_update(
     req: Request,
     ca: CaHandle,
     parent_override: Option<ParentHandle>,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     aa!(req, Permission::CaUpdate, ca, {
         let actor = req.actor();
         let server = req.state().clone();
@@ -1740,7 +1740,7 @@ async fn api_ca_remove_parent(
     req: Request,
     ca: CaHandle,
     parent: ParentHandle,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     aa!(req, Permission::CaUpdate, ca, {
         let actor = req.actor();
         render_empty_res(
@@ -1750,7 +1750,7 @@ async fn api_ca_remove_parent(
 }
 
 /// Force a key roll for a CA, i.e. use a max key age of 0 seconds.
-async fn api_ca_kr_init(req: Request, ca: CaHandle) -> RoutingResult {
+async fn api_ca_kr_init(req: Request, ca: CaHandle) -> Result<HttpResponse, Request> {
     aa!(req, Permission::CaUpdate, ca, {
         let actor = req.actor();
         render_empty_res(req.state().ca_keyroll_init(ca, &actor).await)
@@ -1759,7 +1759,7 @@ async fn api_ca_kr_init(req: Request, ca: CaHandle) -> RoutingResult {
 
 /// Force key activation for all new keys, i.e. use a staging period of 0
 /// seconds.
-async fn api_ca_kr_activate(req: Request, ca: CaHandle) -> RoutingResult {
+async fn api_ca_kr_activate(req: Request, ca: CaHandle) -> Result<HttpResponse, Request> {
     aa!(req, Permission::CaUpdate, ca, {
         let actor = req.actor();
         render_empty_res(req.state().ca_keyroll_activate(ca, &actor).await)
@@ -1772,7 +1772,7 @@ async fn api_ca_kr_activate(req: Request, ca: CaHandle) -> RoutingResult {
 async fn api_ca_aspas_definitions_show(
     req: Request,
     ca: CaHandle,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     aa!(req, Permission::AspasRead, ca, {
         let state = req.state().clone();
         render_json_res(state.ca_aspas_definitions_show(ca).await)
@@ -1783,7 +1783,7 @@ async fn api_ca_aspas_definitions_show(
 async fn api_ca_aspas_definitions_update(
     req: Request,
     ca: CaHandle,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     aa!(req, Permission::AspasUpdate, ca, {
         let actor = req.actor();
         let state = req.state().clone();
@@ -1803,7 +1803,7 @@ async fn api_ca_aspas_update_aspa(
     req: Request,
     ca: CaHandle,
     customer: Asn,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     aa!(req, Permission::AspasUpdate, ca, {
         let actor = req.actor();
         let state = req.state().clone();
@@ -1824,7 +1824,7 @@ async fn api_ca_aspas_delete(
     req: Request,
     ca: CaHandle,
     customer: Asn,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     aa!(req, Permission::AspasUpdate, ca, {
         let actor = req.actor();
         let state = req.state().clone();
@@ -1840,7 +1840,7 @@ async fn api_ca_aspas_delete(
 }
 
 /// Update the route authorizations for this CA
-async fn api_ca_routes_update(req: Request, ca: CaHandle) -> RoutingResult {
+async fn api_ca_routes_update(req: Request, ca: CaHandle) -> Result<HttpResponse, Request> {
     aa!(req, Permission::RoutesUpdate, ca, {
         let actor = req.actor();
         let state = req.state().clone();
@@ -1860,7 +1860,7 @@ async fn api_ca_routes_update(req: Request, ca: CaHandle) -> RoutingResult {
 async fn api_ca_routes_try_update(
     req: Request,
     ca: CaHandle,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     aa!(req, Permission::RoutesUpdate, ca, {
         let actor = req.actor();
         let state = req.state().clone();
@@ -1911,7 +1911,7 @@ async fn api_ca_routes_try_update(
 }
 
 /// show the route authorizations for this CA
-async fn api_ca_routes_show(req: Request, ca: CaHandle) -> RoutingResult {
+async fn api_ca_routes_show(req: Request, ca: CaHandle) -> Result<HttpResponse, Request> {
     aa!(req, Permission::RoutesRead, ca, {
         match req.state().ca_routes_show(&ca).await {
             Ok(roas) => render_json(roas),
@@ -1925,7 +1925,7 @@ async fn api_ca_routes_analysis(
     req: Request,
     path: &mut RequestPath,
     ca: CaHandle,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     aa!(req, Permission::RoutesAnalysis, ca, {
         match path.next() {
             Some("full") => {
@@ -1933,7 +1933,7 @@ async fn api_ca_routes_analysis(
             }
             Some("dryrun") => match *req.method() {
                 Method::POST => {
-                    let state = req.state.clone();
+                    let state = req.state().clone();
                     match req.json().await {
                         Err(e) => render_error(e),
                         Ok(updates) => render_json_res(
@@ -1967,7 +1967,7 @@ async fn api_ca_routes_analysis(
 
 //------------ Admin: Force republish ----------------------------------------
 
-async fn api_republish_all(req: Request, force: bool) -> RoutingResult {
+async fn api_republish_all(req: Request, force: bool) -> Result<HttpResponse, Request> {
     match *req.method() {
         Method::POST => aa!(req, Permission::CaAdmin, {
             render_empty_res(req.state().republish_all(force).await)
@@ -1976,7 +1976,7 @@ async fn api_republish_all(req: Request, force: bool) -> RoutingResult {
     }
 }
 
-async fn api_resync_all(req: Request) -> RoutingResult {
+async fn api_resync_all(req: Request) -> Result<HttpResponse, Request> {
     match *req.method() {
         Method::POST => aa!(req, Permission::CaAdmin, {
             render_empty_res(req.state().cas_repo_sync_all(req.auth_info()))
@@ -1986,7 +1986,7 @@ async fn api_resync_all(req: Request) -> RoutingResult {
 }
 
 /// Refresh all CAs
-async fn api_refresh_all(req: Request) -> RoutingResult {
+async fn api_refresh_all(req: Request) -> Result<HttpResponse, Request> {
     match *req.method() {
         Method::POST => aa!(req, Permission::CaAdmin, {
             render_empty_res(req.state().cas_refresh_all().await)
@@ -1996,7 +1996,7 @@ async fn api_refresh_all(req: Request) -> RoutingResult {
 }
 
 /// Schedule check suspend for all CAs
-async fn api_suspend_all(req: Request) -> RoutingResult {
+async fn api_suspend_all(req: Request) -> Result<HttpResponse, Request> {
     match *req.method() {
         Method::POST => aa!(req, Permission::CaAdmin, {
             render_empty_res(req.state().cas_schedule_suspend_all())
@@ -2007,12 +2007,12 @@ async fn api_suspend_all(req: Request) -> RoutingResult {
 
 //------------ Serve RRDP Files ----------------------------------------------
 
-async fn rrdp(req: Request) -> RoutingResult {
+async fn rrdp(req: Request) -> Result<HttpResponse, Request> {
     if !req.path().full().starts_with("/rrdp/") {
         Err(req) // Not for us
     } else {
-        let mut full_path: PathBuf = req.state.rrdp_base_path();
-        let (_, path) = req.path.remaining().split_at(1);
+        let mut full_path: PathBuf = req.state().rrdp_base_path();
+        let (_, path) = req.path().remaining().split_at(1);
         let cache_seconds = if path.ends_with("notification.xml") {
             60
         } else {
@@ -2043,7 +2043,7 @@ async fn api_ca_rta(
     req: Request,
     path: &mut RequestPath,
     ca: CaHandle,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     match path.path_arg() {
         Some(name) => match *req.method() {
             Method::POST => match path.next() {
@@ -2075,7 +2075,7 @@ async fn api_ca_rta(
     }
 }
 
-async fn api_ca_rta_list(req: Request, ca: CaHandle) -> RoutingResult {
+async fn api_ca_rta_list(req: Request, ca: CaHandle) -> Result<HttpResponse, Request> {
     aa!(
         req,
         Permission::RtaList,
@@ -2088,7 +2088,7 @@ async fn api_ca_rta_show(
     req: Request,
     ca: CaHandle,
     name: RtaName,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     aa!(
         req,
         Permission::RtaRead,
@@ -2101,7 +2101,7 @@ async fn api_ca_rta_sign(
     req: Request,
     ca: CaHandle,
     name: RtaName,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     aa!(req, Permission::RtaUpdate, ca, {
         let actor = req.actor();
         let state = req.state().clone();
@@ -2118,7 +2118,7 @@ async fn api_ca_rta_multi_prep(
     req: Request,
     ca: CaHandle,
     name: RtaName,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     aa!(req, Permission::RtaUpdate, ca, {
         let actor = req.actor();
         let state = req.state().clone();
@@ -2136,7 +2136,7 @@ async fn api_ca_rta_multi_sign(
     req: Request,
     ca: CaHandle,
     name: RtaName,
-) -> RoutingResult {
+) -> Result<HttpResponse, Request> {
     aa!(req, Permission::RtaUpdate, ca, {
         let actor = req.actor();
         let state = req.state().clone();
@@ -2152,7 +2152,7 @@ async fn api_ca_rta_multi_sign(
 }
 
 //-------------------------------- API TA --------------------------------------------------
-async fn api_ta(req: Request, path: &mut RequestPath) -> RoutingResult {
+async fn api_ta(req: Request, path: &mut RequestPath) -> Result<HttpResponse, Request> {
     //
     // krillta proxy --server .. --token ..
     //
@@ -2329,6 +2329,88 @@ async fn api_ta(req: Request, path: &mut RequestPath) -> RoutingResult {
         _ => render_unknown_method(),
     }
 }
+
+
+//----------- Auth-related ---------------------------------------------------
+
+pub const AUTH_CALLBACK_ENDPOINT: &str = "/auth/callback";
+pub const AUTH_LOGIN_ENDPOINT: &str = "/auth/login";
+pub const AUTH_LOGOUT_ENDPOINT: &str = "/auth/logout";
+
+#[cfg(feature = "multi-user")]
+pub fn url_encode<S: AsRef<str>>(s: S) -> Result<String, Error> {
+    urlparse::quote(s, b"").map_err(|err| Error::custom(err.to_string()))
+}
+
+#[cfg(feature = "multi-user")]
+fn build_auth_redirect_location(
+    user: crate::daemon::http::auth::LoggedInUser
+) -> Result<String, Error> {
+    fn b64_encode_attributes_with_mapped_error(
+        a: &impl serde::Serialize,
+    ) -> Result<String, Error> {
+        use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
+        use base64::engine::Engine as _;
+
+        Ok(BASE64_ENGINE.encode(
+            serde_json::to_string(a)
+                .map_err(|err| Error::custom(err.to_string()))?,
+        ))
+    }
+
+    let attributes = b64_encode_attributes_with_mapped_error(
+        user.attributes()
+    )?;
+
+    Ok(format!(
+        "/ui/login?token={}&id={}&attributes={}",
+        &url_encode(user.token())?,
+        &url_encode(user.id())?,
+        &url_encode(attributes)?,
+    ))
+}
+
+pub async fn auth(req: Request) -> Result<HttpResponse, Request> {
+    match req.path().full() {
+        #[cfg(feature = "multi-user")]
+        AUTH_CALLBACK_ENDPOINT if *req.method() == Method::GET => {
+            if log_enabled!(log::Level::Trace) {
+                trace!(
+                    "Authentication callback invoked: {:?}", &req.request()
+                );
+            }
+
+            req.login()
+                .await
+                .and_then(|user| {
+                    build_auth_redirect_location(user).map_err(|err| {
+                        Error::custom(format!(
+                            "Unable to build redirect with logged in user details: {:?}",
+                            err
+                        ))
+                    })
+                })
+                .map(|location| HttpResponse::found(&location))
+                .or_else(render_error_redirect)
+        }
+        AUTH_LOGIN_ENDPOINT if *req.method() == Method::GET => {
+            req.get_login_url().await.or_else(render_error)
+        }
+        AUTH_LOGIN_ENDPOINT if *req.method() == Method::POST => {
+            match req.login().await {
+                Ok(logged_in_user) => Ok(HttpResponse::json(&logged_in_user)),
+                Err(err) => render_error(err),
+            }
+        }
+        AUTH_LOGOUT_ENDPOINT if *req.method() == Method::POST => {
+            req.logout().await.or_else(render_error)
+        }
+        _ => Err(req),
+    }
+}
+
+
+
 
 /* XXX The server is extensively tested in the integration tests so I don’t
  *     think we need it to start it here.

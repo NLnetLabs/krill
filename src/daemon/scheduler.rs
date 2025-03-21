@@ -40,7 +40,7 @@ use crate::{
 };
 
 #[cfg(feature = "multi-user")]
-use crate::daemon::auth::Authorizer;
+use crate::daemon::http::auth::Authorizer;
 
 use super::mq::TaskResult;
 

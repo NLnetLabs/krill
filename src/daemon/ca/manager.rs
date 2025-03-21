@@ -58,7 +58,7 @@ use crate::constants::{
     CASERVER_NS, STATUS_NS, TA_PROXY_SERVER_NS, TA_SIGNER_SERVER_NS, TA_NAME,
     ta_handle,
 };
-use crate::daemon::auth::{AuthInfo, Permission};
+use crate::daemon::http::auth::{AuthInfo, Permission}; // XXX remove
 use crate::daemon::config::Config;
 use crate::daemon::mq::{now, Task, TaskQueue};
 use crate::daemon::pubd::RepositoryManager;

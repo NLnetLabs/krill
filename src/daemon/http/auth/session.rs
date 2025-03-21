@@ -10,8 +10,8 @@ use serde::de::DeserializeOwned;
 use crate::api::admin::Token;
 use crate::commons::KrillResult;
 use crate::commons::error::{ApiAuthError, Error};
-use crate::daemon::auth::crypt;
-use crate::daemon::auth::crypt::{CryptState, NonceState};
+use super::crypt;
+use super::crypt::{CryptState, NonceState};
 
 
 const MAX_CACHE_SECS: u64 = 30;

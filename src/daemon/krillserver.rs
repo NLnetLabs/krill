@@ -18,7 +18,7 @@ use rpki::{
     uri,
 };
 
-use crate::daemon::auth::AuthInfo;
+use crate::daemon::http::auth::AuthInfo;
 use crate::{
     commons::{
         actor::Actor,
@@ -28,12 +28,13 @@ use crate::{
     },
     constants::*,
     daemon::{
-        auth::{Authorizer, LoggedInUser},
         ca::{
             self, testbed_ca_handle, CaManager, CaStatus,
         },
         config::Config,
-        http::{HttpResponse, HyperRequest},
+        http::auth::{Authorizer, LoggedInUser},
+        http::request::HyperRequest,
+        http::response::HttpResponse,
         mq::{now, Task, TaskQueue},
         pubd::RepositoryManager,
         scheduler::Scheduler,
