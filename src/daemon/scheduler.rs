@@ -39,18 +39,12 @@ use crate::{
     },
 };
 
-#[cfg(feature = "multi-user")]
-use crate::daemon::http::auth::Authorizer;
-
 use super::mq::TaskResult;
 
 pub struct Scheduler {
     tasks: Arc<TaskQueue>,
     ca_manager: Arc<CaManager>,
     repo_manager: Arc<RepositoryManager>,
-    #[cfg(feature = "multi-user")]
-    // Responsible for purging expired cached login tokens
-    authorizer: Arc<Authorizer>,
     config: Arc<Config>,
     system_actor: Actor,
     started: Timestamp,
@@ -61,7 +55,6 @@ impl Scheduler {
         tasks: Arc<TaskQueue>,
         ca_manager: Arc<CaManager>,
         repo_manager: Arc<RepositoryManager>,
-        #[cfg(feature = "multi-user")] authorizer: Arc<Authorizer>,
         config: Arc<Config>,
         system_actor: Actor,
     ) -> Self {
@@ -69,8 +62,6 @@ impl Scheduler {
             tasks,
             ca_manager,
             repo_manager,
-            #[cfg(feature = "multi-user")]
-            authorizer,
             config,
             system_actor,
             started: Timestamp::now(),
@@ -171,8 +162,11 @@ impl Scheduler {
                 self.renew_objects_if_needed().await
             }
 
-            #[cfg(feature = "multi-user")]
-            Task::SweepLoginCache => self.sweep_login_cache(),
+            Task::SweepLoginCache => {
+                // Don’t do anything. The authorizer now takes care of
+                // sweeping itself.
+                Ok(TaskResult::Done)
+            }
 
             Task::UpdateSnapshots => self.update_snapshots(),
 
@@ -306,11 +300,6 @@ impl Scheduler {
             .map_err(FatalError)?;
         self.tasks
             .schedule_missing(Task::RenewObjectsIfNeeded, now())
-            .map_err(FatalError)?;
-
-        #[cfg(feature = "multi-user")]
-        self.tasks
-            .schedule_missing(Task::SweepLoginCache, in_minutes(1))
             .map_err(FatalError)?;
 
         // Plan updating snapshots soon after a restart.
@@ -519,18 +508,6 @@ impl Scheduler {
             Task::RenewObjectsIfNeeded,
             in_minutes(SCHEDULER_INTERVAL_RENEW_MINS),
         ))
-    }
-
-    #[cfg(feature = "multi-user")]
-    fn sweep_login_cache(&self) -> Result<TaskResult, FatalError> {
-        if let Err(e) = self.authorizer.sweep() {
-            error!(
-                "Background sweep of session decryption cache failed: {}",
-                e
-            );
-        }
-
-        Ok(TaskResult::FollowUp(Task::SweepLoginCache, in_minutes(1)))
     }
 
     // Call update_snapshots on all AggregateStores and WalStores
