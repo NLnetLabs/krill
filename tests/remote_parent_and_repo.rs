@@ -1,7 +1,9 @@
 //! Tests running a CA under a remote parent and repo
 
 use rpki::repository::resources::ResourceSet;
-use krill::commons::api::{ObjectName, ParentCaReq, RoaConfigurationUpdates};
+use krill::api::admin::ParentCaReq;
+use krill::api::ca::ObjectName;
+use krill::api::roa::RoaConfigurationUpdates;
 
 mod common;
 
@@ -19,7 +21,7 @@ async fn remote_parent_and_repo() {
     let ca1 = common::ca_handle("CA1");
     let ca1_res = common::ipv4_resources("10.0.0.0/16");
     let ca1_roa = common::roa_payload("10.0.0.0/16-16 => 65000");
-    let ca1_roa_name = ObjectName::from(&ca1_roa).to_string();
+    let ca1_roa_name = ObjectName::from(ca1_roa).to_string();
     let rcn0 = common::rcn(0);
 
     // Wait for the *testbed* CA to get its certificate, this means
@@ -40,7 +42,7 @@ async fn remote_parent_and_repo() {
     ).await.unwrap();
     server2.client().parent_add(
         &ca1,
-        ParentCaReq::new(testbed.convert(), response)
+        ParentCaReq { handle: testbed.convert(), response }
     ).await.unwrap();
 
     eprintln!(">>>> Set up CA1 as a publisher.");
@@ -54,9 +56,9 @@ async fn remote_parent_and_repo() {
     eprintln!(">>>> Create a ROA for CA1.");
     server2.client().roas_update(
         &ca1,
-        RoaConfigurationUpdates::new(
-            vec![ca1_roa.into()], vec![]
-        )
+        RoaConfigurationUpdates {
+            added: vec![ca1_roa.into()], removed: vec![]
+        }
     ).await.unwrap();
 
     eprintln!(">>>> Verify that CA1 publishes.");

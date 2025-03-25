@@ -1,8 +1,10 @@
-pub mod auth;
+pub mod bgp;
 pub mod ca;
 pub mod config;
 pub mod http;
 pub mod krillserver;
 pub mod mq;
 pub mod properties;
+pub mod pubd;
 pub mod scheduler;
+pub mod taproxy;

@@ -2,7 +2,7 @@
 //! REST API requires a valid bearer token.
 
 use hyper::StatusCode;
-use krill::commons::util::httpclient;
+use krill::commons::httpclient;
 
 mod common;
 

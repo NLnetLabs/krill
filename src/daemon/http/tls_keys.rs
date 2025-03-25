@@ -19,7 +19,9 @@ use rpki::{
     repository::x509::{Time, Validity},
 };
 
-use crate::commons::{api::IdCertInfo, error::KrillIoError, util::file};
+use crate::api::ca::IdCertInfo;
+use crate::commons::file;
+use crate::commons::error::KrillIoError;
 
 const KEY_SIZE: u32 = 2048;
 pub const HTTPS_SUB_DIR: &str = "ssl";
@@ -181,7 +183,7 @@ impl HttpsSigner {
 
         let path = cert_file_path(tls_keys_dir);
 
-        file::save(id_cert_pem.pem().as_bytes(), &path)?;
+        file::save(id_cert_pem.pem().to_string().as_bytes(), &path)?;
 
         Ok(())
     }
@@ -252,9 +254,8 @@ impl std::error::Error for Error {}
 
 #[cfg(test)]
 mod tests {
+    use crate::commons::test;
     use super::*;
-
-    use crate::test;
 
     #[test]
     fn should_create_key_and_cert() {

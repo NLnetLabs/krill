@@ -13,7 +13,10 @@ use clap::Parser;
 //------------ Command -------------------------------------------------------
 
 #[derive(clap::Parser)]
-#[command(version)]
+#[command(
+    version,
+    about = "Manage the Krill trust anchor proxy and signer.",
+)]
 pub enum Command {
     /// Manage the Trust Anchor Proxy
     Proxy(proxy::Command),

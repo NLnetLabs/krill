@@ -6,11 +6,12 @@ use reqwest::StatusCode;
 use rpki::ca::idexchange::CaHandle;
 use rpki::ca::provisioning::ResourceClassName;
 use rpki::repository::resources::ResourceSet;
-use krill::commons::api::{
+use krill::api::aspa::{
     AspaDefinition, AspaDefinitionList, AspaProvidersUpdate, CustomerAsn,
-    ObjectName, ProviderAsn,
+    ProviderAsn,
 };
-use krill::commons::util::httpclient;
+use krill::api::ca::ObjectName;
+use krill::commons::httpclient;
 
 mod common;
 
@@ -51,20 +52,20 @@ async fn functional_aspa() {
     let aspa = aspa_definition("AS65000 => <none>");
     assert!(!server.try_add_aspa(&ca, aspa.clone()).await);
     assert!(server.wait_for_objects(&ca, &[]).await);
-    assert_eq!(server.aspa_definitions(&ca).await.as_ref(), &[]);
+    assert_eq!(server.aspa_definitions(&ca).await.as_slice(), &[]);
 
     eprintln!(">>>> Reject ASPA using customer as provider.");
     let aspa = aspa_definition("AS65000 => AS65000, AS65003, AS65005");
     assert!(!server.try_add_aspa(&ca, aspa.clone()).await);
     assert!(server.wait_for_objects(&ca, &[]).await);
-    assert_eq!(server.aspa_definitions(&ca).await.as_ref(), &[]);
+    assert_eq!(server.aspa_definitions(&ca).await.as_slice(), &[]);
 
     eprintln!(">>>> Add an ASPA under CA.");
     let aspa = aspa_definition("AS65000 => AS65002, AS65003, AS65005");
     assert!(server.try_add_aspa(&ca, aspa.clone()).await);
     let aspas = slice::from_ref(&aspa);
     assert!(server.wait_for_objects(&ca, aspas).await);
-    assert_eq!(server.aspa_definitions(&ca).await.as_ref(), aspas);
+    assert_eq!(server.aspa_definitions(&ca).await.as_slice(), aspas);
 
     eprintln!(">>>> Update an existing ASPA.");
     assert!(server.try_update_aspa(
@@ -73,20 +74,20 @@ async fn functional_aspa() {
     let aspa = aspa_definition("AS65000 => AS65003, AS65005, AS65006");
     let aspas = slice::from_ref(&aspa);
     assert!(server.wait_for_objects(&ca, aspas).await);
-    assert_eq!(server.aspa_definitions(&ca).await.as_ref(), aspas);
+    assert_eq!(server.aspa_definitions(&ca).await.as_slice(), aspas);
 
     eprintln!(">>>> Reject update that adds customer as provider.");
     assert!(!server.try_update_aspa(&ca, "AS65000", ["AS65000"], []).await);
     // Use `aspas` from before.
     assert!(server.wait_for_objects(&ca, aspas).await);
-    assert_eq!(server.aspa_definitions(&ca).await.as_ref(), aspas);
+    assert_eq!(server.aspa_definitions(&ca).await.as_slice(), aspas);
 
     eprintln!(">>>> Removing all providers should result in delete.");
     assert!(server.try_update_aspa(
         &ca, "AS65000", [], ["AS65003", "AS65005", "AS65006"]
     ).await);
     assert!(server.wait_for_objects(&ca, &[]).await);
-    assert_eq!(server.aspa_definitions(&ca).await.as_ref(), &[]);
+    assert_eq!(server.aspa_definitions(&ca).await.as_slice(), &[]);
 
     eprintln!(">>>> Adding provider to non-existing customer should add it.");
     // This is useful for two reasons:
@@ -101,7 +102,7 @@ async fn functional_aspa() {
     let aspa = aspa_definition("AS65000 => AS65003, AS65005, AS65006");
     let aspas = slice::from_ref(&aspa);
     assert!(server.wait_for_objects(&ca, aspas).await);
-    assert_eq!(server.aspa_definitions(&ca).await.as_ref(), aspas);
+    assert_eq!(server.aspa_definitions(&ca).await.as_slice(), aspas);
 
     eprintln!(">>>> Add existing and remove nonexisting provider.");
     assert!(server.try_update_aspa(
@@ -112,14 +113,14 @@ async fn functional_aspa() {
     let aspa = aspa_definition("AS65000 => AS65002, AS65003, AS65005");
     let aspas = slice::from_ref(&aspa);
     assert!(server.wait_for_objects(&ca, aspas).await);
-    assert_eq!(server.aspa_definitions(&ca).await.as_ref(), aspas);
+    assert_eq!(server.aspa_definitions(&ca).await.as_slice(), aspas);
 
     eprintln!(">>>> Delete an existing ASPA.");
     server.client().aspas_delete_single(
         &ca, customer("AS65000")
     ).await.unwrap();
     assert!(server.wait_for_objects(&ca, &[]).await);
-    assert_eq!(server.aspa_definitions(&ca).await.as_ref(), &[]);
+    assert_eq!(server.aspa_definitions(&ca).await.as_slice(), &[]);
 }
 
 
@@ -161,10 +162,10 @@ impl common::KrillServer {
         match self.client().aspas_update_single(
             ca,
             customer(customer_str),
-            AspaProvidersUpdate::new(
-                add.into_iter().map(provider).collect(),
-                remove.into_iter().map(provider).collect(),
-            )
+            AspaProvidersUpdate {
+                added: add.into_iter().map(provider).collect(),
+                removed: remove.into_iter().map(provider).collect(),
+            }
         ).await {
             Ok(_) => true,
             Err(err) => {
@@ -186,7 +187,7 @@ impl common::KrillServer {
         let mut files = self.expected_objects(ca);
         files.push_mft_and_crl(&ResourceClassName::from(0)).await;
         files.extend(aspas.iter().map(|aspa| {
-            ObjectName::aspa(aspa.customer()).to_string()
+            ObjectName::aspa_from_customer(aspa.customer).to_string()
         }));
         files.wait_for_published().await
     }

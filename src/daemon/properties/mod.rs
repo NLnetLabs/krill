@@ -17,23 +17,26 @@
 
 use std::{fmt, str::FromStr, sync::Arc};
 
+use log::{log_enabled, trace};
 use rpki::ca::idexchange::MyHandle;
+use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::{
     commons::{
         actor::Actor,
-        api::CommandSummary,
         error::Error,
         eventsourcing::{
             self, Aggregate, AggregateStore, Event, InitCommandDetails,
             InitEvent, SentCommand, SentInitCommand, WithStorableDetails,
         },
-        util::KrillVersion,
+        version::KrillVersion,
         KrillResult,
     },
     constants::{ACTOR_DEF_KRILL, PROPERTIES_DFLT_NAME, PROPERTIES_NS},
 };
+use crate::api::history::CommandSummary;
+
 
 //------------ PropertiesInitCommand ---------------------------------------
 pub type PropertiesInitCommand =
@@ -121,14 +124,14 @@ impl From<&PropertiesCommandDetails> for StorablePropertiesCommand {
 }
 
 impl eventsourcing::WithStorableDetails for StorablePropertiesCommand {
-    fn summary(&self) -> crate::commons::api::CommandSummary {
+    fn summary(&self) -> crate::api::history::CommandSummary {
         match self {
             StorablePropertiesCommand::Init => {
                 CommandSummary::new("cmd-properties-init", self)
             }
             StorablePropertiesCommand::UpgradeTo { krill_version } => {
                 CommandSummary::new("cmd-properties-krill-upgrade", self)
-                    .with_arg("version", krill_version)
+                    .arg("version", krill_version)
             }
         }
     }
@@ -196,9 +199,9 @@ impl Aggregate for Properties {
 
     type Error = Error;
 
-    fn init(handle: MyHandle, event: PropertiesInitEvent) -> Self {
+    fn init(handle: &MyHandle, event: PropertiesInitEvent) -> Self {
         Properties {
-            handle,
+            handle: handle.clone(),
             version: 1, // init for 0 was applied
             krill_version: event.krill_version,
         }
@@ -296,7 +299,7 @@ impl PropertiesManager {
         krill_version: KrillVersion,
     ) -> KrillResult<Arc<Properties>> {
         let cmd = PropertiesInitCommand::new(
-            &self.main_key,
+            self.main_key.clone(),
             PropertiesInitCommandDetails { krill_version },
             &self.system_actor,
         );
@@ -314,7 +317,7 @@ impl PropertiesManager {
         krill_version: KrillVersion,
     ) -> KrillResult<()> {
         let cmd = PropertiesCommand::new(
-            &self.main_key,
+            self.main_key.clone(),
             None,
             PropertiesCommandDetails::UpgradeTo { krill_version },
             &self.system_actor,
@@ -331,10 +334,8 @@ impl PropertiesManager {
 //--------- Tests
 #[cfg(test)]
 mod tests {
-
+    use crate::commons::test;
     use super::*;
-
-    use crate::test;
 
     #[test]
     fn init_properties() {

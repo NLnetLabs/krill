@@ -3,31 +3,24 @@
 //! signed material, or asking a newly added parent for resource
 //! entitlements.
 
-use std::{fmt, str::FromStr};
-
+use std::fmt;
+use std::str::FromStr;
+use log::{debug, error, trace, warn};
+use rpki::ca::idexchange::{CaHandle, ParentHandle};
+use rpki::ca::provisioning::{ResourceClassName, RevocationRequest};
+use rpki::repository::x509::Time;
+use serde::{Deserialize, Serialize};
 use url::Url;
+use crate::api::ca::Timestamp;
+use crate::commons::eventsourcing;
+use crate::commons::{Error, KrillResult};
+use crate::commons::eventsourcing::Aggregate;
+use crate::commons::queue::{Queue, RunningTask, ScheduleMode};
+use crate::commons::storage::{Key, Segment, SegmentBuf};
+use crate::constants::{TASK_QUEUE_NS, ta_handle};
+use crate::daemon::ca::{CertAuth, CertAuthEvent};
+use crate::daemon::taproxy::{TrustAnchorProxy, TrustAnchorProxyEvent};
 
-use kvx::{
-    queue::{Queue, RunningTask, ScheduleMode},
-    segment, Segment, SegmentBuf,
-};
-
-use rpki::{
-    ca::{
-        idexchange::{CaHandle, ParentHandle},
-        provisioning::{ResourceClassName, RevocationRequest},
-    },
-    repository::x509::Time,
-};
-
-use crate::{
-    commons::api::Timestamp,
-    commons::eventsourcing,
-    commons::{eventsourcing::Aggregate, Error, KrillResult},
-    constants::TASK_QUEUE_NS,
-    daemon::ca::{CertAuth, CertAuthEvent},
-    ta::{ta_handle, TrustAnchorProxy, TrustAnchorProxyEvent},
-};
 
 //------------ Task ---------------------------------------------------------
 
@@ -118,10 +111,10 @@ impl Task {
                 ))
             }
             Task::RepublishIfNeeded => {
-                Ok(segment!("all_cas_republish_if_needed").to_owned())
+                Ok(Segment::make("all_cas_republish_if_needed").to_owned())
             }
             Task::RenewObjectsIfNeeded => {
-                Ok(segment!("all_cas_renew_objects_if_needed").to_owned())
+                Ok(Segment::make("all_cas_renew_objects_if_needed").to_owned())
             }
             Task::ResourceClassRemoved {
                 ca_handle: ca,
@@ -144,23 +137,23 @@ impl Task {
                 rcn
             )),
             Task::UpdateSnapshots => {
-                Ok(segment!("update_stored_snapshots").to_owned())
+                Ok(Segment::make("update_stored_snapshots").to_owned())
             }
             Task::RrdpUpdateIfNeeded => {
-                Ok(segment!("update_rrdp_if_needed").to_owned())
+                Ok(Segment::make("update_rrdp_if_needed").to_owned())
             }
             #[cfg(feature = "multi-user")]
             Task::SweepLoginCache => {
-                Ok(segment!("sweep_login_cache").to_owned())
+                Ok(Segment::make("sweep_login_cache").to_owned())
             }
             Task::RenewTestbedTa => {
-                Ok(segment!("renew_testbed_ta").to_owned())
+                Ok(Segment::make("renew_testbed_ta").to_owned())
             }
             Task::SyncTrustAnchorProxySignerIfPossible => {
-                Ok(segment!("sync_ta_proxy_signer").to_owned())
+                Ok(Segment::make("sync_ta_proxy_signer").to_owned())
             }
             Task::QueueStartTasks => {
-                Ok(segment!("queue_start_tasks").to_owned())
+                Ok(Segment::make("queue_start_tasks").to_owned())
             }
         }
         .map_err(|e| Error::Custom(format!("could not create name: {}", e)))
@@ -229,14 +222,14 @@ pub enum TaskResult {
 
 #[derive(Debug)]
 pub struct TaskQueue {
-    q: kvx::KeyValueStore,
+    q: Queue,
 }
 
 impl TaskQueue {
     pub fn new(storage_uri: &Url) -> KrillResult<Self> {
-        kvx::KeyValueStore::new(storage_uri, TASK_QUEUE_NS)
-            .map(|q| TaskQueue { q })
-            .map_err(Error::from)
+        Ok(TaskQueue {
+            q: Queue::create(storage_uri, TASK_QUEUE_NS)?,
+        })
     }
 }
 impl TaskQueue {
@@ -333,7 +326,7 @@ impl TaskQueue {
     }
 
     /// Finish a running task, without rescheduling it.
-    pub fn finish(&self, task: &kvx::Key) -> KrillResult<()> {
+    pub fn finish(&self, task: &Key) -> KrillResult<()> {
         debug!("Finish task: {}", task);
         self.q.finish_running_task(task).map_err(Error::from)
     }
@@ -341,7 +334,7 @@ impl TaskQueue {
     /// Reschedule a running task, without finishing it.
     pub fn reschedule(
         &self,
-        task: &kvx::Key,
+        task: &Key,
         priority: Priority,
     ) -> KrillResult<()> {
         debug!("Reschedule task: {} to: {}", task, priority);
@@ -681,8 +674,9 @@ impl eventsourcing::PostSaveEventListener<TrustAnchorProxy> for TaskQueue {
 
 //------------ Priority ------------------------------------------------------
 
-/// Can be used as a priority value for [`PriorityQueue`]. Meaning that the
-/// time value which is soonest has the highest priority.
+/// Can be used as a priority value.
+///
+/// Meaning that the time value which is soonest has the highest priority.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Priority(i64);
 
@@ -737,7 +731,7 @@ impl PartialOrd for Priority {
 
 impl fmt::Display for Priority {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        Timestamp::from(self).to_rfc3339().fmt(f)
+        Timestamp::from(self).into_rfc3339().fmt(f)
     }
 }
 

@@ -2,9 +2,9 @@
 
 use rpki::ca::idexchange::CaHandle;
 use rpki::repository::resources::ResourceSet;
-use krill::commons::api::{
-    UpdateChildRequest, ObjectName, RoaConfiguration, RoaConfigurationUpdates,
-};
+use krill::api::admin::UpdateChildRequest;
+use krill::api::ca::ObjectName;
+use krill::api::roa::{RoaConfiguration, RoaConfigurationUpdates};
 
 mod common;
 
@@ -60,14 +60,14 @@ async fn functional_roas() {
     eprintln!(">>>> Add ROAs to CA.");
     server.client().roas_update(
         &ca,
-        RoaConfigurationUpdates::new(
-            vec![
+        RoaConfigurationUpdates {
+            added: vec![
                 route_resource_set_10_0_0_0_def_1.clone(),
                 route_resource_set_10_0_0_0_def_2.clone(),
                 route_resource_set_10_1_0_0_def_1.clone(),
             ],
-            vec![]
-        )
+            removed: vec![],
+        }
     ).await.unwrap();
     assert!(
         server.check_configured_roas(
@@ -125,13 +125,13 @@ async fn functional_roas() {
     eprintln!(">>>> Add ROAs beyond aggregation limit and they aggregate.");
     server.client().roas_update(
         &ca,
-        RoaConfigurationUpdates::new(
-            vec![
+        RoaConfigurationUpdates {
+            added: vec![
                 route_resource_set_10_0_0_0_def_3.clone(),
                 route_resource_set_10_0_0_0_def_4.clone()
             ],
-            vec![]
-        )
+            removed: vec![],
+        }
     ).await.unwrap();
     let mut files = server.expected_objects(&ca);
     files.push_mft_and_crl(&rcn0).await;
@@ -142,15 +142,15 @@ async fn functional_roas() {
     eprintln!(">>>> Remove ROAs below the de-aggregation threshold again.");
     server.client().roas_update(
         &ca,
-        RoaConfigurationUpdates::new(
-            vec![],
-            vec![
-                route_resource_set_10_0_0_0_def_2.payload(),
-                route_resource_set_10_0_0_0_def_3.payload(),
-                route_resource_set_10_0_0_0_def_4.payload(),
-                route_resource_set_10_1_0_0_def_1.payload(),
+        RoaConfigurationUpdates {
+            added: vec![],
+            removed: vec![
+                route_resource_set_10_0_0_0_def_2.payload,
+                route_resource_set_10_0_0_0_def_3.payload,
+                route_resource_set_10_0_0_0_def_4.payload,
+                route_resource_set_10_1_0_0_def_1.payload,
             ],
-        )
+        }
     ).await.unwrap();
     assert!(
         server.wait_for_objects(
@@ -179,7 +179,7 @@ impl common::KrillServer {
         let mut files = self.expected_objects(ca);
         files.push_mft_and_crl(&common::rcn(0)).await;
         for roa in roas {
-            files.push(ObjectName::from(&roa.payload()).to_string());
+            files.push(ObjectName::from(roa.payload).to_string());
         }
         files.wait_for_published().await
     }

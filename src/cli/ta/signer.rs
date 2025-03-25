@@ -2,21 +2,25 @@
 
 use std::sync::Arc;
 use rpki::ca::idexchange;
+use rpki::ca::idexchange::CaHandle;
 use rpki::uri;
-use crate::ta::{self};
-use crate::commons::actor::Actor;
-use crate::commons::api::{IdCertInfo, Success};
-use crate::commons::crypto::KrillSigner;
-use crate::commons::error::Error as KrillError;
-use crate::commons::eventsourcing::{
-    namespace, AggregateStore, AggregateStoreError, Namespace,
-};
-use crate::commons::util::httpclient;
-use crate::ta::{
-    Config, TrustAnchorHandle, TrustAnchorProxySignerExchanges,
+use crate::tasigner;
+use crate::api::status::Success;
+use crate::api::ca::IdCertInfo;
+use crate::api::ta::{
     TrustAnchorSignedRequest, TrustAnchorSignedResponse,
-    TrustAnchorSigner, TrustAnchorSignerCommand, TrustAnchorSignerInfo,
-    TrustAnchorSignerInitCommand, TrustAnchorSignerInitCommandDetails,
+    TrustAnchorSignerInfo,
+};
+use crate::commons::crypto::KrillSigner;
+use crate::commons::actor::Actor;
+use crate::commons::error::Error as KrillError;
+use crate::commons::eventsourcing::{AggregateStore, AggregateStoreError};
+use crate::commons::storage::Namespace;
+use crate::commons::httpclient;
+use crate::tasigner::{
+    Config, TrustAnchorProxySignerExchanges,
+    TrustAnchorSigner, TrustAnchorSignerCommand, TrustAnchorSignerInitCommand,
+    TrustAnchorSignerInitCommandDetails,
 };
 
 
@@ -30,7 +34,7 @@ pub enum SignerClientError {
     HttpClientError(httpclient::Error),
     KrillError(KrillError),
     StorageError(AggregateStoreError),
-    ConfigError(ta::ConfigError),
+    ConfigError(tasigner::ConfigError),
     Other(String),
 }
 
@@ -64,8 +68,8 @@ impl std::fmt::Display for SignerClientError {
     }
 }
 
-impl From<ta::ConfigError> for SignerClientError {
-    fn from(e: ta::ConfigError) -> Self {
+impl From<tasigner::ConfigError> for SignerClientError {
+    fn from(e: tasigner::ConfigError) -> Self {
         Self::ConfigError(e)
     }
 }
@@ -110,7 +114,7 @@ pub struct SignerReissueInfo {
 
 pub struct TrustAnchorSignerManager {
     store: AggregateStore<TrustAnchorSigner>,
-    ta_handle: TrustAnchorHandle,
+    ta_handle: CaHandle,
     config: Config,
     signer: Arc<KrillSigner>,
     actor: Actor,
@@ -120,11 +124,10 @@ impl TrustAnchorSignerManager {
     pub fn create(config: Config) -> Result<Self, SignerClientError> {
         let store = AggregateStore::create(
             &config.storage_uri,
-            namespace!("signer"),
+            const { Namespace::make("signer") },
             config.use_history_cache,
-        )
-        .map_err(KrillError::AggregateStoreError)?;
-        let ta_handle = TrustAnchorHandle::new("ta".into());
+        ).map_err(SignerClientError::other)?;
+        let ta_handle = CaHandle::new("ta".into());
         let signer = config.signer()?;
         let actor = crate::constants::ACTOR_DEF_KRILLTA;
 
@@ -147,7 +150,7 @@ impl TrustAnchorSignerManager {
             ))
         } else {
             let cmd = TrustAnchorSignerInitCommand::new(
-                &self.ta_handle,
+                self.ta_handle.clone(),
                 TrustAnchorSignerInitCommandDetails {
                     proxy_id: info.proxy_id,
                     repo_info: info.repo_info,

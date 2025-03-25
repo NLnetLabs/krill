@@ -3,14 +3,12 @@
 use std::fmt;
 use std::collections::HashMap;
 use std::fmt::Write;
-use crate::constants::{
-    KRILL_VERSION_MAJOR, KRILL_VERSION_MINOR, KRILL_VERSION_PATCH,
-};
-use crate::ta::TA_NAME;
-use super::{HttpResponse, Request, RoutingResult};
+use crate::constants::TA_NAME;
+use super::request::Request;
+use super::response::HttpResponse;
 
 
-pub async fn metrics(req: Request) -> RoutingResult {
+pub async fn metrics(req: Request) -> Result<HttpResponse, Request> {
     if !req.is_get() || !req.path().segment().starts_with("metrics") {
         return Err(req)
     }
@@ -23,7 +21,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
             "server_start",
             "Unix timestamp of the last Krill server start",
         ),
-        server.server_info().started()
+        server.server_info().started
     );
 
     target.single(
@@ -31,21 +29,21 @@ pub async fn metrics(req: Request) -> RoutingResult {
             "version_major",
             "Krill server major version number",
         ),
-        KRILL_VERSION_MAJOR
+        env!("CARGO_PKG_VERSION_MAJOR"),
     );
     target.single(
         Metric::gauge(
             "version_minor",
             "Krill server minor version number",
         ),
-        KRILL_VERSION_MINOR
+        env!("CARGO_PKG_VERSION_MINOR"),
     );
     target.single(
         Metric::gauge(
             "version_patch",
             "Krill server patch version number",
         ),
-        KRILL_VERSION_PATCH
+        env!("CARGO_PKG_VERSION_PATCH"),
     );
 
     #[cfg(feature = "multi-user")]
@@ -68,7 +66,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
             let mut ca_status_map = HashMap::new();
 
             for ca in cas_stats.keys() {
-                if let Ok(ca_status) = server.ca_status(ca).await {
+                if let Ok(ca_status) = server.ca_status(ca) {
                     ca_status_map.insert(ca.clone(), ca_status);
                 }
             }
@@ -84,11 +82,11 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 }
 
                 for (parent, status) in status.parents() {
-                    if let Some(exchange) = status.last_exchange() {
+                    if let Some(exchange) = status.last_exchange.as_ref() {
                         target.multi(metric)
                             .label("ca", ca)
                             .label("parent", parent)
-                            .value(i32::from(exchange.was_success()))
+                            .value(i32::from(exchange.result.was_success()))
                     }
                 }
             }
@@ -108,7 +106,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
                     // (in which case it will come) - or were never successful
                     // in which case the metric above will say that the status
                     // is 0
-                    if let Some(last_success) = status.last_success() {
+                    if let Some(last_success) = status.last_success.as_ref() {
                         target.multi(metric)
                             .label("ca", ca)
                             .label("parent", parent)
@@ -127,10 +125,10 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 // Skip the ones for which we have no status yet, i.e
                 // it was really only just added
                 // and no attempt to connect has yet been made.
-                if let Some(exchange) = status.repo().last_exchange() {
+                if let Some(exchange) = status.repo().last_exchange.as_ref() {
                     target.multi(metric)
                         .label("ca", ca)
-                        .value(i32::from(exchange.was_success()))
+                        .value(i32::from(exchange.result.was_success()))
                 }
             }
 
@@ -144,8 +142,8 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 // Skip the ones for which we have no status yet, i.e
                 // it was really only just added
                 // and no attempt to connect has yet been made.
-                if let Some(last_success) = status.repo().last_success() {
-                    target.multi(metric).label("ca", ca).value(last_success);
+                if let Some(success) = status.repo().last_success.as_ref() {
+                    target.multi(metric).label("ca", ca).value(success);
                 }
             }
 
@@ -153,7 +151,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
             // children.. Many users do not delegate so,
             // showing these metrics would just be confusing.
             let any_children = cas_stats.values().any(|ca| {
-                ca.child_count() > 0
+                ca.child_count > 0
             });
 
             if any_children
@@ -167,7 +165,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 for (ca, status) in &cas_stats {
                     target.multi(metric)
                         .label("ca", ca)
-                        .value(status.child_count())
+                        .value(status.child_count)
                 }
 
                 let metric = Metric::gauge(
@@ -180,11 +178,13 @@ pub async fn metrics(req: Request) -> RoutingResult {
                     // it was really only just added
                     // and no attempt to connect has yet been made.
                     for (child, status) in status.children() {
-                        if let Some(exchange) = status.last_exchange() {
+                        if let Some(exchange) = status.last_exchange.as_ref() {
                             target.multi(metric)
                                 .label("ca", ca)
                                 .label("child", child)
-                                .value(i32::from(exchange.was_success()))
+                                .value(
+                                    i32::from(exchange.result.was_success())
+                                )
                         }
                     }
                 }
@@ -199,7 +199,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
                         target.multi(metric)
                             .label("ca", ca)
                             .label("child", child)
-                            .value(i32::from(status.suspended().is_none()))
+                            .value(i32::from(status.suspended.is_none()))
                    }
                 }
 
@@ -213,11 +213,11 @@ pub async fn metrics(req: Request) -> RoutingResult {
                     // it was really only just added
                     // and no attempt to connect has yet been made.
                     for (child, status) in status.children() {
-                        if let Some(exchange) = status.last_exchange() {
+                        if let Some(exchange) = status.last_exchange.as_ref() {
                             target.multi(metric)
                                 .label("ca", ca)
                                 .label("child", child)
-                                .value(exchange.timestamp());
+                                .value(exchange.timestamp);
                         }
                     }
                 }
@@ -232,7 +232,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
                     // it was really only just added
                     // and no attempt to connect has yet been made.
                     for (child, status) in status.children() {
-                        if let Some(time) = status.last_success() {
+                        if let Some(time) = status.last_success.as_ref() {
                             target.multi(metric)
                                 .label("ca", ca)
                                 .label("child", child)
@@ -254,11 +254,10 @@ pub async fn metrics(req: Request) -> RoutingResult {
 
                     let mut user_agent_totals = HashMap::new();
                     for status in status.children().values() {
-                        if let Some(exchange) = status.last_exchange() {
+                        if let Some(exchange) = status.last_exchange.as_ref() {
 
                             let agent = exchange
-                                .user_agent().as_ref()
-                                .map(|s| s.as_str())
+                                .user_agent.as_deref()
                                 .unwrap_or("<none>");
                             if let Some(item) =
                                 user_agent_totals.get_mut(agent)
@@ -290,7 +289,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 for (ca, stats) in &cas_stats {
                     target.multi(metric)
                         .label("ca", ca)
-                        .value(stats.bgp_stats().announcements_valid);
+                        .value(stats.bgp_stats.announcements_valid);
                 }
 
                 let metric = Metric::gauge(
@@ -302,7 +301,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 for (ca, stats) in &cas_stats {
                     target.multi(metric)
                         .label("ca", ca)
-                        .value(stats.bgp_stats().announcements_invalid_asn);
+                        .value(stats.bgp_stats.announcements_invalid_asn);
                 }
 
                 let metric = Metric::gauge(
@@ -315,7 +314,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
                     target.multi(metric)
                         .label("ca", ca)
                         .value(
-                            stats.bgp_stats().announcements_invalid_length
+                            stats.bgp_stats.announcements_invalid_length
                         );
                 }
 
@@ -328,7 +327,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 for (ca, stats) in &cas_stats {
                     target.multi(metric)
                         .label("ca", ca)
-                        .value(stats.bgp_stats().announcements_not_found);
+                        .value(stats.bgp_stats.announcements_not_found);
                 }
 
                 let metric = Metric::gauge(
@@ -341,7 +340,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 for (ca, stats) in &cas_stats {
                     target.multi(metric)
                         .label("ca", ca)
-                        .value(stats.bgp_stats().roas_too_permissive);
+                        .value(stats.bgp_stats.roas_too_permissive);
                 }
 
                 let metric = Metric::gauge(
@@ -353,7 +352,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 for (ca, stats) in &cas_stats {
                     target.multi(metric)
                         .label("ca", ca)
-                        .value(stats.bgp_stats().roas_redundant);
+                        .value(stats.bgp_stats.roas_redundant);
                 }
 
                 let metric = Metric::gauge(
@@ -366,7 +365,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 for (ca, stats) in &cas_stats {
                     target.multi(metric)
                         .label("ca", ca)
-                        .value(stats.bgp_stats().roas_stale);
+                        .value(stats.bgp_stats.roas_stale);
                 }
 
                 let metric = Metric::gauge(
@@ -377,24 +376,22 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 for (ca, stats) in &cas_stats {
                     target.multi(metric)
                         .label("ca", ca)
-                        .value(stats.bgp_stats().roas_total);
+                        .value(stats.bgp_stats.roas_total);
                 }
             }
         }
     }
 
     if let Ok(stats) = server.repo_stats() {
-        let publishers = stats.get_publishers();
-
         target.single(
             Metric::gauge(
                 "repo_publisher",
                 "number of publishers in repository"
             ),
-            publishers.len(),
+            stats.publishers.len(),
         );
 
-        if let Some(last_update) = stats.last_update() {
+        if let Some(last_update) = stats.last_update {
             target.single(
                 Metric::gauge(
                     "repo_rrdp_last_update",
@@ -409,7 +406,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 "repo_rrdp_serial",
                 "RRDP serial"
             ),
-            stats.serial()
+            stats.serial
         );
 
         if !server.config.metrics.metrics_hide_publisher_details {
@@ -418,10 +415,10 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 "number of objects in repository for publisher"
             );
             target.header(metric);
-            for (publisher, stats) in publishers {
+            for (publisher, stats) in &stats.publishers {
                 target.multi(metric)
                     .label("publisher", publisher)
-                    .value(stats.objects())
+                    .value(stats.objects)
             }
 
             let metric = Metric::gauge(
@@ -429,10 +426,10 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 "size of objects in bytes in repository for publisher"
             );
             target.header(metric);
-            for (publisher, stats) in publishers {
+            for (publisher, stats) in &stats.publishers {
                 target.multi(metric)
                     .label("publisher", publisher)
-                    .value(stats.size());
+                    .value(stats.size);
             }
 
             let metric = Metric::gauge(
@@ -440,7 +437,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 "unix timestamp of last update for publisher"
             );
             target.header(metric);
-            for (publisher, stats) in publishers {
+            for (publisher, stats) in &stats.publishers {
                 if let Some(last_update) = stats.last_update() {
                     target.multi(metric)
                         .label("publisher", publisher)

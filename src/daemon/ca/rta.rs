@@ -1,50 +1,52 @@
-use std::{collections::HashMap, fmt};
+//! Resource Tagged Attestations.
 
-use bytes::Bytes;
+use std::collections::HashMap;
+use rpki::ca::provisioning::ResourceClassName;
+use rpki::crypto::KeyIdentifier;
+use rpki::repository::resources::ResourceSet;
+use rpki::repository::x509::Validity;
+use serde::{Deserialize, Serialize};
+use crate::api::ca::{Revocation, RtaList, RtaName};
+use crate::api::rta::ResourceTaggedAttestation; 
+use crate::commons::KrillResult;
+use crate::commons::error::Error;
 
-use rpki::{
-    ca::{provisioning::ResourceClassName, publication::Base64},
-    crypto::{DigestAlgorithm, KeyIdentifier},
-    repository::{
-        resources::ResourceSet, rta, sigobj::MessageDigest, x509::Validity,
-    },
-};
-
-use crate::commons::{
-    api::{Revocation, RtaList, RtaName},
-    error::Error,
-    util::ext_serde,
-    KrillResult,
-};
 
 //------------ Rtas ---------------------------------------------------------
 
+/// The set of RTAs held by a CA.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Rtas {
+    /// The RTAs keyed by their name.
     map: HashMap<RtaName, RtaState>,
 }
 
 impl Rtas {
+    /// Returns whether the set of RTAs is empty.
     pub fn is_empty(&self) -> bool {
         self.map.is_empty()
     }
 
+    /// Returns a list of all current RTAs.
     pub fn list(&self) -> RtaList {
         RtaList::new(self.map.keys().cloned().collect())
     }
 
+    /// Returns whether the set has an RTA with the given name.
     pub fn has(&self, name: &str) -> bool {
         self.map.contains_key(name)
     }
 
+    /// Returns the RTA with the given name if it is already signed.
+    ///
+    /// Returns an error if there is no such RTA or if it is currently in
+    /// prepared state.
     pub fn signed_rta(
-        &self,
-        name: &str,
+        &self, name: &str,
     ) -> KrillResult<ResourceTaggedAttestation> {
-        let state = self
-            .map
-            .get(name)
-            .ok_or_else(|| Error::custom("Unknown RTA"))?;
+        let state = self.map.get(name).ok_or_else(|| {
+            Error::custom("Unknown RTA")
+        })?;
         match state {
             RtaState::Signed(signed) => Ok(signed.rta.clone()),
             RtaState::Prepared(_) => {
@@ -53,11 +55,13 @@ impl Rtas {
         }
     }
 
+    /// Returns the prepare RTA with the given name.
+    ///
+    /// Returns an error if there is no such RTA or if it is already signed.
     pub fn prepared_rta(&self, name: &str) -> KrillResult<&PreparedRta> {
-        let state = self
-            .map
-            .get(name)
-            .ok_or_else(|| Error::custom("Unknown RTA"))?;
+        let state = self.map.get(name).ok_or_else(|| {
+            Error::custom("Unknown RTA")
+        })?;
         match state {
             RtaState::Signed(_) => {
                 Err(Error::custom("RTA was already signed"))
@@ -66,33 +70,48 @@ impl Rtas {
         }
     }
 
+    /// Adds a prepared RTA with the given name.
     pub fn add_prepared(&mut self, name: RtaName, prepared: PreparedRta) {
         self.map.insert(name, RtaState::Prepared(prepared));
     }
 
+    /// Adds a signed RTA with the given name.
     pub fn add_signed(&mut self, name: RtaName, signed: SignedRta) {
         self.map.insert(name, RtaState::Signed(signed));
     }
 }
 
+
 //------------ RtaState -----------------------------------------------------
 
+/// The state of an RTA.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 enum RtaState {
+    /// The RTA is currently being prepared.
     Prepared(PreparedRta),
+
+    /// The RTA is signed and ready to go.
     Signed(SignedRta),
 }
 
+
 //------------ PreparedRta --------------------------------------------------
 
+/// An RTA currently being prepared.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PreparedRta {
+    /// The resources contained in the RTA.
     resources: ResourceSet,
+
+    /// The validity of the RTA.
     validity: Validity,
+
+    /// The keys used to sign the RTA from the various resource classes.
     keys: HashMap<ResourceClassName, KeyIdentifier>,
 }
 
 impl PreparedRta {
+    /// Creates a new prepared RTA.
     pub fn new(
         resources: ResourceSet,
         validity: Validity,
@@ -105,33 +124,47 @@ impl PreparedRta {
         }
     }
 
+    /// Returns the validity of the RTA.
     pub fn validity(&self) -> Validity {
         self.validity
     }
 
+    /// Returns the resources of the RTA.
     pub fn resources(&self) -> &ResourceSet {
         &self.resources
     }
 
-    pub fn keys(&self) -> Vec<KeyIdentifier> {
-        self.keys.values().cloned().collect()
+    /// Returns an iterator over the keys of the RTA.
+    pub fn keys(&self) -> impl Iterator<Item = KeyIdentifier> + '_ {
+        self.keys.values().copied()
     }
 
-    pub fn key_map(&self) -> &HashMap<ResourceClassName, KeyIdentifier> {
-        &self.keys
+    /// Returns an iterator over the keys and their resource classes.
+    pub fn rcn_keys(
+        &self
+    ) -> impl Iterator<Item = (&ResourceClassName, KeyIdentifier)> + '_ {
+        self.keys.iter().map(|(rcn, key)| (rcn, *key))
     }
 }
 
+
 //------------ SignedRta -----------------------------------------------------
 
+/// An RTA having been signed.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct SignedRta {
+    /// The resources of the RTA.
     resources: ResourceSet,
+
+    /// Revocation information for the various resource classes.
     revocation_info: HashMap<ResourceClassName, Revocation>,
+
+    /// The actual RTA.
     rta: ResourceTaggedAttestation,
 }
 
 impl SignedRta {
+    /// Creats a new signed RTA.
     pub fn new(
         resources: ResourceSet,
         revocation_info: HashMap<ResourceClassName, Revocation>,
@@ -144,178 +177,9 @@ impl SignedRta {
         }
     }
 
+    /// Returns the resources of the RTA.
     pub fn resources(&self) -> &ResourceSet {
         &self.resources
     }
 }
 
-//------------ RtaPrepareRequest --------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct RtaPrepareRequest {
-    resources: ResourceSet,
-    validity: Validity,
-}
-
-impl RtaPrepareRequest {
-    pub fn new(resources: ResourceSet, validity: Validity) -> Self {
-        RtaPrepareRequest {
-            resources,
-            validity,
-        }
-    }
-
-    pub fn unpack(self) -> (ResourceSet, Validity) {
-        (self.resources, self.validity)
-    }
-}
-
-//------------ RtaContentRequest --------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct RtaContentRequest {
-    resources: ResourceSet,
-    validity: Validity,
-    subject_keys: Vec<KeyIdentifier>,
-    #[serde(
-        deserialize_with = "ext_serde::de_bytes",
-        serialize_with = "ext_serde::ser_bytes"
-    )]
-    content: Bytes,
-}
-
-impl RtaContentRequest {
-    pub fn new(
-        resources: ResourceSet,
-        validity: Validity,
-        subject_keys: Vec<KeyIdentifier>,
-        content: Bytes,
-    ) -> Self {
-        RtaContentRequest {
-            resources,
-            validity,
-            subject_keys,
-            content,
-        }
-    }
-
-    pub fn unpack(
-        self,
-    ) -> (ResourceSet, Validity, Vec<KeyIdentifier>, Bytes) {
-        (
-            self.resources,
-            self.validity,
-            self.subject_keys,
-            self.content,
-        )
-    }
-}
-
-impl fmt::Display for RtaContentRequest {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "resources: {}", &self.resources)?;
-        writeln!(
-            f,
-            "validity, {}-{}",
-            self.validity.not_before().to_rfc3339(),
-            self.validity.not_after().to_rfc3339()
-        )?;
-
-        write!(f, "keys: ")?;
-        for key in self.subject_keys.iter() {
-            write!(f, "{} ", key)?;
-        }
-        writeln!(f)?;
-        writeln!(
-            f,
-            "content (base64): {}",
-            Base64::from_content(self.content.as_ref())
-        )?;
-
-        Ok(())
-    }
-}
-
-//------------ ResourceTaggedAttestation ------------------------------------
-
-/// Resource Tagged Attestations
-///
-/// See: https://tools.ietf.org/id/draft-michaelson-rpki-rta-01.html
-#[derive(Clone, Debug, Deserialize, Eq, Serialize, PartialEq)]
-pub struct ResourceTaggedAttestation {
-    #[serde(
-        deserialize_with = "ext_serde::de_bytes",
-        serialize_with = "ext_serde::ser_bytes"
-    )]
-    bytes: Bytes,
-}
-
-impl AsRef<Bytes> for ResourceTaggedAttestation {
-    fn as_ref(&self) -> &Bytes {
-        &self.bytes
-    }
-}
-
-impl ResourceTaggedAttestation {
-    pub fn new(bytes: Bytes) -> Self {
-        ResourceTaggedAttestation { bytes }
-    }
-
-    pub fn to_builder(&self) -> KrillResult<rta::RtaBuilder> {
-        let rta = rta::Rta::decode(self.bytes.as_ref(), true)
-            .map_err(|_| Error::custom("Cannot decode existing RTA"))?;
-        Ok(rta::RtaBuilder::from_rta(rta))
-    }
-
-    pub fn rta_builder(
-        resources: &ResourceSet,
-        content: Bytes,
-        keys: Vec<KeyIdentifier>,
-    ) -> KrillResult<rta::RtaBuilder> {
-        let algo = DigestAlgorithm::default();
-        let digest = algo.digest(content.as_ref());
-        let mut attestation_builder =
-            rta::AttestationBuilder::new(algo, MessageDigest::from(digest));
-
-        for key in keys.into_iter() {
-            attestation_builder.push_key(key);
-        }
-
-        for asn in resources.asn().iter() {
-            attestation_builder.push_as(asn);
-        }
-
-        let v4_resources = resources.to_ip_resources_v4();
-        let v4_blocks = v4_resources
-            .to_blocks()
-            .map_err(|_| Error::custom("Cannot inherit IPv4 on RTA"))?;
-        for v4 in v4_blocks.iter() {
-            attestation_builder.push_v4(v4)
-        }
-
-        let v6_resources = resources.to_ip_resources_v6();
-        let v6_blocks = v6_resources
-            .to_blocks()
-            .map_err(|_| Error::custom("Cannot inherit IPv6 on RTA"))?;
-        for v6 in v6_blocks.iter() {
-            attestation_builder.push_v6(v6)
-        }
-
-        Ok(rta::RtaBuilder::from_attestation(
-            attestation_builder.into_attestation(),
-        ))
-    }
-
-    pub fn finalize(rta_builder: rta::RtaBuilder) -> Self {
-        let rta = rta_builder.finalize();
-        ResourceTaggedAttestation {
-            bytes: rta.to_captured().into_bytes(),
-        }
-    }
-}
-
-impl fmt::Display for ResourceTaggedAttestation {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", Base64::from_content(self.as_ref()))
-    }
-}

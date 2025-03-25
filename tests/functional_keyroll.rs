@@ -5,17 +5,8 @@ use rpki::ca::idexchange::CaHandle;
 use rpki::repository::Manifest;
 use rpki::repository::resources::{Asn, ResourceSet};
 use rpki::repository::x509::Serial;
-use krill::commons::api::{ObjectName, ReceivedCert, RoaConfigurationUpdates};
-/*
-use std::str::FromStr;
-
-use krill::{
-    commons::api::{
-        AspaDefinition, ReceivedCert,
-        RoaConfiguration, RoaPayload,
-    },
-};
-*/
+use krill::api::ca::{ObjectName, ReceivedCert};
+use krill::api::roa::RoaConfigurationUpdates;
 
 mod common;
 
@@ -51,8 +42,10 @@ async fn functional_keyroll() {
         include_bytes!("../test-resources/bgpsec/router-csr.der").as_ref()
     ).unwrap();
 
-    let roa_file = ObjectName::from(&roa_conf.payload()).to_string();
-    let aspa_file = ObjectName::aspa(aspa_def.customer()).to_string();
+    let roa_file = ObjectName::from(roa_conf.payload).to_string();
+    let aspa_file = ObjectName::aspa_from_customer(
+        aspa_def.customer
+    ).to_string();
     let bgpsec_file = ObjectName::bgpsec(
         bgpsec_asn,
         bgpsec_csr.public_key().key_identifier(),
@@ -83,7 +76,7 @@ async fn functional_keyroll() {
     eprintln!(">>>> Set up ROAs, ASPA and BGPSec under testbed.");
     server.client().roas_update(
         &testbed,
-        RoaConfigurationUpdates::new(vec![roa_conf], vec![])
+        RoaConfigurationUpdates { added: vec![roa_conf], removed: vec![] }
     ).await.unwrap();
     assert!(server.wait_manifest_number_current_key(&testbed, 3).await);
     server.client().aspas_add_single(
@@ -164,7 +157,7 @@ impl common::KrillServer {
     ) -> bool {
         let current_key = self.ca_key_for_rcn(ca, &common::rcn(0)).await;
         self.wait_manifest_number_key(
-            ca, current_key.incoming_cert(), nr
+            ca, &current_key.incoming_cert, nr
         ).await
     }
 
@@ -172,7 +165,7 @@ impl common::KrillServer {
         &self, ca: &CaHandle, nr: u64
     ) -> bool {
         let new_key = self.ca_new_key_for_rcn(ca, &common::rcn(0)).await;
-        self.wait_manifest_number_key(ca, new_key.incoming_cert(), nr).await
+        self.wait_manifest_number_key(ca, &new_key.incoming_cert, nr).await
     }
 
     async fn wait_manifest_number_key(
@@ -184,11 +177,11 @@ impl common::KrillServer {
                 &ca.convert()
             ).await.unwrap();
             if let Some(mft) = published
-                .current_files()
+                .current_files
                 .iter()
-                .find(|file| file.uri() == &incoming.mft_uri())
+                .find(|file| file.uri == incoming.mft_uri())
                 .map(|file| {
-                    Manifest::decode(file.base64().to_bytes().as_ref(), true)
+                    Manifest::decode(file.base64.to_bytes().as_ref(), true)
                         .unwrap()
                 })
             {
@@ -214,14 +207,14 @@ impl common::ExpectedObjects<'_> {
         let current_key = self.server.ca_key_for_rcn(
             self.ca, &common::rcn(0)
         ).await;
-        self.wait_manifest_files_key(current_key.incoming_cert()) .await
+        self.wait_manifest_files_key(&current_key.incoming_cert) .await
     }
 
     pub async fn wait_for_manifest_new_key(&self) -> bool {
         let new_key = self.server.ca_new_key_for_rcn(
             self.ca, &common::rcn(0)
         ).await;
-        self.wait_manifest_files_key(new_key.incoming_cert()).await
+        self.wait_manifest_files_key(&new_key.incoming_cert).await
     }
 
     // Will ignore any .mft files on the expected files - to make it easier
@@ -237,11 +230,11 @@ impl common::ExpectedObjects<'_> {
                 &self.ca.convert()
             ).await.unwrap();
             if let Some(mft) = published
-                .current_files()
+                .current_files
                 .iter()
-                .find(|file| file.uri() == &incoming.mft_uri())
+                .find(|file| file.uri == incoming.mft_uri())
                 .map(|file| {
-                    Manifest::decode(file.base64().to_bytes().as_ref(), true)
+                    Manifest::decode(file.base64.to_bytes().as_ref(), true)
                         .unwrap()
                 })
             {

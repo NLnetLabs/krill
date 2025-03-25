@@ -1,12 +1,12 @@
 use http_body_util::{Either, Empty};
 use hyper::{Method, StatusCode};
 
-use crate::daemon::http::RoutingResult;
-use crate::daemon::http::{HttpResponse, Request};
+use crate::daemon::http::request::Request;
+use crate::daemon::http::response::HttpResponse;
 
-pub async fn statics(req: Request) -> RoutingResult {
+pub async fn statics(req: Request) -> Result<HttpResponse, Request> {
     let res = match *req.method() {
-        Method::GET => match req.path.full() {
+        Method::GET => match req.path().full() {
             "/" => Ok(HttpResponse::new(
                 hyper::Response::builder()
                     .status(StatusCode::FOUND)

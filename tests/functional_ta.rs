@@ -3,8 +3,12 @@
 use std::str::FromStr;
 use rpki::uri;
 use rpki::repository::resources::ResourceSet;
-use krill::cli::ta::signer::{SignerInitInfo, SignerReissueInfo, TrustAnchorSignerManager};
-use krill::commons::api;
+use krill::api;
+use krill::cli::ta::signer::{
+    SignerInitInfo, 
+    SignerReissueInfo, 
+    TrustAnchorSignerManager
+};
 
 mod common;
 
@@ -42,7 +46,7 @@ async fn functional_at() {
 
     eprintln!(">>>> Configure the TA signer.");
     let signer = TrustAnchorSignerManager::create(
-        krill::ta::Config::parse_str(
+        krill::tasigner::Config::parse_str(
             include_str!("../test-resources/ta/ta.conf")
         ).unwrap()
     ).unwrap();
@@ -84,11 +88,11 @@ async fn functional_at() {
     // Add “online” as a child of “ta”
     let details = server.client().ca_details(&ca).await.unwrap();
     server.client().ta_proxy_children_add(
-        api::AddChildRequest::new(
-            details.handle().convert(),
-            ResourceSet::all(),
-            details.id_cert().try_into().unwrap(),
-        )
+        api::admin::AddChildRequest {
+            handle: details.handle.convert(),
+            resources: ResourceSet::all(),
+            id_cert: (&details.id_cert).try_into().unwrap(),
+        }
     ).await.unwrap();
 
     // Add “ta” as a parent of “online”
@@ -96,7 +100,7 @@ async fn functional_at() {
         &ca.convert()
     ).await.unwrap();
     server.client().parent_add(
-        &ca, api::ParentCaReq::new(ta.convert(), response)
+        &ca, api::admin::ParentCaReq { handle: ta.convert(), response }
     ).await.unwrap();
 
     // Add “online” as a Publisher

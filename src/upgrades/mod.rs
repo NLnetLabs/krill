@@ -6,30 +6,29 @@ use std::collections::HashMap;
 use std::fmt;
 use std::str::FromStr;
 
-use serde::{de::DeserializeOwned, Deserialize};
-
+use clap::crate_version;
+use log::{debug, error, info, trace, warn};
 use rpki::{
     ca::idexchange::{CaHandle, MyHandle},
     repository::x509::Time,
 };
+use serde::{Deserialize, Serialize};
+use serde::de::DeserializeOwned;
 
 use crate::{
     commons::{
-        api::{
-            AspaDefinition, AspaDefinitionUpdates, CustomerAsn, ProviderAsn,
-        },
         error::KrillIoError,
         eventsourcing::{
-            segment, Aggregate, AggregateStore, AggregateStoreError, Key,
-            KeyValueError, KeyValueStore, Scope, Segment, SegmentExt,
-            Storable, StoredCommand, WalStore, WalStoreError,
+            Aggregate, AggregateStore, AggregateStoreError,
+            Storable, StoredCommand, WalStoreError,
             WithStorableDetails,
         },
-        util::KrillVersion,
+        storage::{Key, KeyValueError, KeyValueStore, Scope, Segment},
+        version::KrillVersion,
         KrillResult,
     },
     constants::{
-        ACTOR_DEF_KRILL, CASERVER_NS, CA_OBJECTS_NS, KEYS_NS, KRILL_VERSION,
+        ACTOR_DEF_KRILL, CASERVER_NS, CA_OBJECTS_NS, KEYS_NS,
         PUBSERVER_CONTENT_NS, PUBSERVER_NS, SIGNERS_NS, STATUS_NS,
         TA_PROXY_SERVER_NS, TA_SIGNER_SERVER_NS,
     },
@@ -37,11 +36,15 @@ use crate::{
         config::Config, krillserver::KrillServer,
         properties::PropertiesManager,
     },
-    pubd,
     upgrades::pre_0_14_0::{
         OldStoredCommand, OldStoredEffect, OldStoredEvent,
     },
 };
+use crate::api::aspa::{
+    AspaDefinition, AspaDefinitionUpdates, CustomerAsn, ProviderAsn,
+};
+use crate::daemon::ca::upgrades as ca;
+use crate::daemon::pubd::upgrades as pubd;
 
 #[cfg(feature = "hsm")]
 use rpki::crypto::KeyIdentifier;
@@ -49,14 +52,9 @@ use rpki::crypto::KeyIdentifier;
 #[cfg(feature = "hsm")]
 use crate::commons::crypto::SignerHandle;
 
-use self::{pre_0_13_0::OldRepositoryContent, pre_0_14_0::OldCommandKey};
+use self::pre_0_14_0::OldCommandKey;
 
 pub mod data_migration;
-
-pub mod pre_0_10_0;
-
-#[allow(clippy::mutable_key_type)]
-pub mod pre_0_13_0;
 
 pub mod pre_0_14_0;
 
@@ -140,8 +138,8 @@ impl UpgradeReport {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct UpgradeVersions {
-    from: KrillVersion,
-    to: KrillVersion,
+    pub from: KrillVersion,
+    pub to: KrillVersion,
 }
 
 impl UpgradeVersions {
@@ -384,7 +382,7 @@ pub trait UpgradeAggregateStorePre0_14 {
         info!(
             "Prepare upgrading {} to Krill version {}",
             self.store_name(),
-            KRILL_VERSION
+            crate_version!(),
         );
 
         // Migrate the event sourced data for each scope and create new
@@ -606,7 +604,7 @@ pub trait UpgradeAggregateStorePre0_14 {
             UpgradeMode::PrepareOnly => {
                 info!(
                     "Prepared migrating data to Krill version {}. Will save progress for final upgrade when Krill restarts.",
-                    KRILL_VERSION
+                    crate_version!(),
                 );
                 Ok(AspaMigrationConfigs::default())
             }
@@ -632,7 +630,7 @@ pub trait UpgradeAggregateStorePre0_14 {
                         .aspa_configs
                         .into_iter()
                         .map(|(customer, providers)| {
-                            AspaDefinition::new(customer, providers)
+                            AspaDefinition { customer, providers }
                         })
                         .collect();
 
@@ -643,7 +641,7 @@ pub trait UpgradeAggregateStorePre0_14 {
                 self.clean_migration_help_files()?;
                 info!(
                     "Prepared migrating data to Krill version {}.",
-                    KRILL_VERSION
+                    crate_version!(),
                 );
 
                 Ok(aspa_configs)
@@ -658,7 +656,9 @@ pub trait UpgradeAggregateStorePre0_14 {
     /// another version set as the target.
     fn preparation_store_prepare(&self) -> UpgradeResult<()> {
         let code_version = KrillVersion::code_version();
-        let version_key = Key::new_global(segment!("version"));
+        let version_key = Key::new_global(
+            const { Segment::make("version") }
+        );
 
         if let Ok(Some(existing_migration_version)) = self
             .preparation_key_value_store()
@@ -719,7 +719,7 @@ pub trait UpgradeAggregateStorePre0_14 {
     }
 
     fn data_upgrade_info_key(scope: Scope) -> Key {
-        Key::new_scoped(scope, segment!("upgrade_info.json"))
+        Key::new_scoped(scope, const { Segment::make("upgrade_info.json") })
     }
 
     /// Return the DataUpgradeInfo telling us to where we got to with this
@@ -747,7 +747,9 @@ pub trait UpgradeAggregateStorePre0_14 {
 
     /// Clean up keys used for tracking migration progress
     fn clean_migration_help_files(&self) -> UpgradeResult<()> {
-        let version_key = Key::new_global(segment!("version"));
+        let version_key = Key::new_global(
+            const { Segment::make("version")
+        });
         self.preparation_key_value_store()
             .drop_key(&version_key)
             .map_err(UpgradeError::KeyStoreError)?;
@@ -821,7 +823,7 @@ pub trait UpgradeAggregateStorePre0_14 {
 
 /// Prepares a Krill upgrade related data migration. If no data migration is
 /// needed then this will simply be a no-op. Returns the
-/// [`KrillUpgradeVersions`] if the currently deployed Krill version differs
+/// `KrillUpgradeVersions` if the currently deployed Krill version differs
 /// from the code version. Note that the version may have increased even if
 /// there is no data migration needed.
 ///
@@ -869,7 +871,9 @@ pub fn prepare_upgrade_data_migrations(
             // case to put in the effort, but there really isn't.
             let ca_kv_store =
                 KeyValueStore::create(&config.storage_uri, CASERVER_NS)?;
-            if ca_kv_store.has_scope(&Scope::from_segment(segment!("ta")))? {
+            if ca_kv_store.has_scope(&Scope::from_segment(
+                    const { Segment::make("ta") }
+                ))? {
                 return Err(UpgradeError::OldTaMigration);
             }
 
@@ -883,13 +887,13 @@ pub fn prepare_upgrade_data_migrations(
                 Err(UpgradeError::custom(msg))
             } else if versions.from < KrillVersion::candidate(0, 10, 0, 1) {
                 // Complex migrations involving command / event conversions
-                pre_0_10_0::PublicationServerRepositoryAccessMigration::upgrade(mode, config, &versions)?;
+                pubd::pre_0_10_0::PublicationServerRepositoryAccessMigration::upgrade(mode, config, &versions)?;
                 let aspa_configs =
-                    pre_0_10_0::CasMigration::upgrade(mode, config)?;
+                    ca::pre_0_10_0::CasMigration::upgrade(mode, config)?;
 
                 // The way that pubd objects were stored was changed as well
                 // (since 0.13.0)
-                migrate_pre_0_12_pubd_objects(config)?;
+                pubd::migrate_pre_0_12_pubd_objects(config)?;
 
                 // Migrate remaining aggregate stores used in < 0.10.0 to the
                 // new format in 0.14.0 where we combine
@@ -911,7 +915,7 @@ pub fn prepare_upgrade_data_migrations(
                 );
 
                 // The pubd objects storage changed in 0.13.0
-                migrate_pre_0_12_pubd_objects(config)?;
+                pubd::migrate_pre_0_12_pubd_objects(config)?;
 
                 // Migrate aggregate stores used in < 0.12.0 to the new format
                 // in 0.14.0 where we combine commands and
@@ -920,8 +924,8 @@ pub fn prepare_upgrade_data_migrations(
                     SIGNERS_NS, mode, config,
                 )?;
                 let aspa_configs =
-                    pre_0_14_0::CasMigration::upgrade(mode, config)?;
-                pre_0_14_0::UpgradeAggregateStoreRepositoryAccess::upgrade(
+                    ca::pre_0_14_0::CasMigration::upgrade(mode, config)?;
+                pubd::pre_0_14_0::UpgradeAggregateStoreRepositoryAccess::upgrade(
                     PUBSERVER_NS,
                     mode,
                     config,
@@ -929,7 +933,7 @@ pub fn prepare_upgrade_data_migrations(
 
                 Ok(Some(UpgradeReport::new(aspa_configs, true, versions)))
             } else if versions.from < KrillVersion::candidate(0, 13, 0, 0) {
-                migrate_0_12_pubd_objects(config)?;
+                pubd::migrate_0_12_pubd_objects(config)?;
 
                 // Migrate aggregate stores used in < 0.13.0 to the new format
                 // in 0.14.0 where we combine commands and
@@ -938,8 +942,8 @@ pub fn prepare_upgrade_data_migrations(
                     SIGNERS_NS, mode, config,
                 )?;
                 let aspa_configs =
-                    pre_0_14_0::CasMigration::upgrade(mode, config)?;
-                pre_0_14_0::UpgradeAggregateStoreRepositoryAccess::upgrade(
+                    ca::pre_0_14_0::CasMigration::upgrade(mode, config)?;
+                pubd::pre_0_14_0::UpgradeAggregateStoreRepositoryAccess::upgrade(
                     PUBSERVER_NS,
                     mode,
                     config,
@@ -951,8 +955,8 @@ pub fn prepare_upgrade_data_migrations(
                 // in 0.14.0 where we combine commands and
                 // events into a single key-value pair.
                 let aspa_configs =
-                    pre_0_14_0::CasMigration::upgrade(mode, config)?;
-                pre_0_14_0::UpgradeAggregateStoreRepositoryAccess::upgrade(
+                    ca::pre_0_14_0::CasMigration::upgrade(mode, config)?;
+                pubd::pre_0_14_0::UpgradeAggregateStoreRepositoryAccess::upgrade(
                     PUBSERVER_NS,
                     mode,
                     config,
@@ -981,60 +985,6 @@ pub fn prepare_upgrade_data_migrations(
             }
         }
     }
-}
-
-/// Migrate v0.12.x RepositoryContent to the new 0.13.0+ format.
-/// Apply any open WAL changes to the source first.
-fn migrate_0_12_pubd_objects(config: &Config) -> KrillResult<bool> {
-    let old_store: WalStore<OldRepositoryContent> =
-        WalStore::create(&config.storage_uri, PUBSERVER_CONTENT_NS)?;
-    let repo_content_handle = MyHandle::new("0".into());
-
-    if old_store.has(&repo_content_handle)? {
-        let old_repo_content =
-            old_store.get_latest(&repo_content_handle)?.as_ref().clone();
-        let repo_content: pubd::RepositoryContent =
-            old_repo_content.try_into()?;
-        let new_key = Key::new_scoped(
-            Scope::from_segment(segment!("0")),
-            segment!("snapshot.json"),
-        );
-        let upgrade_store = KeyValueStore::create_upgrade_store(
-            &config.storage_uri,
-            PUBSERVER_CONTENT_NS,
-        )?;
-        upgrade_store.store(&new_key, &repo_content)?;
-        Ok(true)
-    } else {
-        Ok(false)
-    }
-}
-
-/// The format of the RepositoryContent did not change in 0.12, but
-/// the location and way of storing it did. So, migrate if present.
-fn migrate_pre_0_12_pubd_objects(config: &Config) -> KrillResult<()> {
-    let old_store =
-        KeyValueStore::create(&config.storage_uri, PUBSERVER_CONTENT_NS)?;
-    let old_key = Key::new_global(segment!("0.json"));
-    if let Ok(Some(old_repo_content)) =
-        old_store.get::<pre_0_13_0::OldRepositoryContent>(&old_key)
-    {
-        info!("Found pre 0.12.0 RC2 publication server data. Migrating..");
-        let repo_content: pubd::RepositoryContent =
-            old_repo_content.try_into()?;
-
-        let new_key = Key::new_scoped(
-            Scope::from_segment(segment!("0")),
-            segment!("snapshot.json"),
-        );
-        let upgrade_store = KeyValueStore::create_upgrade_store(
-            &config.storage_uri,
-            PUBSERVER_CONTENT_NS,
-        )?;
-        upgrade_store.store(&new_key, &repo_content)?;
-    }
-
-    Ok(())
 }
 
 /// Finalise the data migration for an upgrade.
@@ -1090,7 +1040,9 @@ pub fn finalise_data_migration(
             // so, remove it.
             let current_store =
                 KeyValueStore::create(&config.storage_uri, ns)?;
-            let version_key = Key::new_global(segment!("version"));
+            let version_key = Key::new_global(
+                const { Segment::make("version")
+            });
             if current_store.has(&version_key)? {
                 debug!("Removing excess version key in ns: {}", ns);
                 current_store.drop_key(&version_key)?;
@@ -1233,7 +1185,10 @@ pub async fn post_start_upgrade(
 
     for (ca, configs) in report.into_aspa_configs().into_iter() {
         info!("Re-import ASPA configurations after migration for CA '{ca}'");
-        let aspa_updates = AspaDefinitionUpdates::new(configs, vec![]);
+        let aspa_updates = AspaDefinitionUpdates {
+            add_or_replace: configs,
+            remove: Vec::new()
+        };
         server
             .ca_aspas_definitions_update(
                 ca,
@@ -1284,7 +1239,9 @@ fn upgrade_versions(
             PUBSERVER_CONTENT_NS,
         ] {
             let kv_store = KeyValueStore::create(&config.storage_uri, ns)?;
-            let key = Key::new_global(segment!("version"));
+            let key = Key::new_global(
+                const { Segment::make("version")
+            });
 
             if let Some(key_store_version) =
                 kv_store.get::<KrillVersion>(&key)?
@@ -1311,13 +1268,10 @@ fn upgrade_versions(
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
-
-    use kvx::Namespace;
     use log::LevelFilter;
     use url::Url;
-
-    use crate::test;
-
+    use crate::commons::storage::Namespace;
+    use crate::commons::test;
     use super::*;
 
     fn test_upgrade(base_dir: &str, namespaces: &[&str]) {
@@ -1487,7 +1441,7 @@ mod tests {
         let json = include_str!(
             "../../test-resources/migrations/v0_10_0_pubserver/0.json"
         );
-        let _repo: pre_0_13_0::OldRepositoryContent =
+        let _repo: pubd::pre_0_13_0::OldRepositoryContent =
             serde_json::from_str(json).unwrap();
     }
 

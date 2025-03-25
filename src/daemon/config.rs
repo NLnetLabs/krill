@@ -9,14 +9,14 @@ use std::{
 };
 
 use chrono::Duration;
-use kvx::Namespace;
-use log::{error, LevelFilter};
+use log::{error, info, warn, LevelFilter};
 use rpki::{
     ca::idexchange::PublisherHandle,
     repository::x509::{Time, Validity},
     uri,
 };
-use serde::{de, Deserialize, Deserializer};
+use serde::de;
+use serde::{Deserialize, Deserializer, Serialize};
 use url::Url;
 
 #[cfg(unix)]
@@ -24,24 +24,24 @@ use syslog::Facility;
 
 use crate::{
     commons::{
-        api::{PublicationServerUris, Token},
+        ext_serde,
         crypto::{OpenSslSignerConfig, SignSupport},
         error::{Error, KrillIoError},
-        eventsourcing::KeyValueStore,
-        util::ext_serde,
+        storage::{KeyValueStore, Namespace},
         KrillResult,
     },
     constants::*,
     daemon::{
-        auth::{Role, RoleMap},
+        http::auth::{Role, RoleMap},
         http::tls_keys::{self, HTTPS_SUB_DIR},
         mq::{in_seconds, Priority},
     },
-    ta::TaTimingConfig,
+    tasigner::TaTimingConfig,
 };
+use crate::api::admin::{PublicationServerUris, Token};
 
 #[cfg(feature = "multi-user")]
-use crate::daemon::auth::providers::{
+use crate::daemon::http::auth::providers::{
     config_file::ConfigAuthUsers,
     openid_connect::ConfigAuthOpenIDConnect,
 };
@@ -374,9 +374,10 @@ impl ConfigDefaults {
 
 #[derive(Clone, Debug)]
 pub enum SignerReference {
-    /// The name of the [[signers]] block being referred to. If supplied it
-    /// must match the name field of one of the [[signers]] blocks defined in
-    /// the configuration.
+    /// The name of the `\[signers\]` block being referred to.
+    ///
+    /// If supplied it must match the name field of one of the `\[signers\]`
+    /// blocks defined in the configuration.
     Name(Option<String>),
 
     /// The index into Config.signers vector that the name was resolved to.
@@ -432,36 +433,15 @@ impl SignerReference {
     }
 }
 
-/// Inspired by the serde_with crate. But, given that we don't need all
-/// its features - just implementing the one thing we need here.
-#[derive(Deserialize)]
-#[serde(untagged)]
-pub enum OneOrMany<'a, T> {
-    One(T),
-    Many(Vec<T>),
-    #[serde(skip)]
-    _LifeTimeMarker(std::marker::PhantomData<&'a u32>),
-}
-
-impl<T> From<OneOrMany<'_, T>> for Vec<T> {
-    fn from(one_or_many: OneOrMany<T>) -> Self {
-        match one_or_many {
-            OneOrMany::One(t) => vec![t],
-            OneOrMany::Many(vec_of_t) => vec_of_t,
-            OneOrMany::_LifeTimeMarker(_) => {
-                unreachable!("variant is never created")
-            }
-        }
-    }
-}
-
 fn deserialize_config_ips<'de, D>(
     deserializer: D,
 ) -> Result<Vec<IpAddr>, D::Error>
 where
     D: Deserializer<'de>,
 {
-    OneOrMany::<IpAddr>::deserialize(deserializer).map(|oom| oom.into())
+    ext_serde::OneOrMany::<IpAddr>::deserialize(
+        deserializer
+    ).map(|oom| oom.into())
 }
 
 pub fn deserialize_storage_uri<'de, D>(
@@ -883,10 +863,10 @@ impl TestBed {
     }
 
     pub fn publication_server_uris(&self) -> PublicationServerUris {
-        PublicationServerUris::new(
-            self.rrdp_base_uri.clone(),
-            self.rsync_jail.clone(),
-        )
+        PublicationServerUris {
+            rrdp_base_uri: self.rrdp_base_uri.clone(),
+            rsync_jail: self.rsync_jail.clone(),
+        }
     }
 }
 
@@ -1095,7 +1075,7 @@ impl Config {
         enable_suspend: bool,
         #[allow(unused_variables)] second_signer: bool,
     ) -> Self {
-        use crate::test;
+        use crate::commons::test;
 
         let ip = ConfigDefaults::ip();
         let port = ConfigDefaults::port();
@@ -2042,9 +2022,8 @@ impl SignerConfig {
 
 #[cfg(test)]
 mod tests {
-    use crate::test;
     use std::env;
-
+    use crate::commons::test;
     use super::*;
 
     fn assert_err_msg(
@@ -2094,12 +2073,12 @@ mod tests {
 
         let uris = testbed.publication_server_uris();
         assert_eq!(
-            uris.rrdp_base_uri(),
-            &test::https("https://testbed.example.com/rrdp/")
+            uris.rrdp_base_uri,
+            test::https("https://testbed.example.com/rrdp/")
         );
         assert_eq!(
-            uris.rsync_jail(),
-            &test::rsync("rsync://testbed.example.com/repo/")
+            uris.rsync_jail,
+            test::rsync("rsync://testbed.example.com/repo/")
         );
     }
 

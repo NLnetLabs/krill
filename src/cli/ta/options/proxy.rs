@@ -9,15 +9,18 @@ use rpki::ca::idcert::IdCert;
 use rpki::repository::resources::{
     AsBlocks, Ipv4Blocks, Ipv6Blocks, ResourceSet,
 };
-use crate::{constants, ta};
+use crate::{api, constants};
+use crate::api::ta::{
+    TrustAnchorSignedRequest, TrustAnchorSignerInfo,
+    TrustAnchorSignedResponse,
+};
 use crate::cli::client::KrillClient;
 use crate::cli::options::GeneralOptions;
 use crate::cli::options::args::JsonFile;
 use crate::cli::options::repo::RepositoryResponseFile;
 use crate::cli::report::Report;
-use crate::commons::api;
 use crate::commons::error::Error as KrillError;
-use crate::commons::util::httpclient;
+use crate::commons::httpclient;
 
 
 //------------ Command -------------------------------------------------------
@@ -88,7 +91,7 @@ pub struct Init;
 impl Init {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::Success, httpclient::Error> {
+    ) -> Result<api::status::Success, httpclient::Error> {
         client.ta_proxy_init().await
     }
 }
@@ -102,7 +105,7 @@ pub struct Id;
 impl Id {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::IdCertInfo, httpclient::Error> {
+    ) -> Result<api::ca::IdCertInfo, httpclient::Error> {
         client.ta_proxy_id().await
     }
 }
@@ -155,7 +158,7 @@ pub struct RepoContact;
 impl RepoContact {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::RepositoryContact, httpclient::Error> {
+    ) -> Result<api::admin::RepositoryContact, httpclient::Error> {
         client.ta_proxy_repo_contact().await
     }
 }
@@ -173,7 +176,7 @@ pub struct RepoConfigure {
 impl RepoConfigure {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::Success, httpclient::Error> {
+    ) -> Result<api::status::Success, httpclient::Error> {
         client.ta_proxy_repo_configure(self.response.into()).await
     }
 }
@@ -218,13 +221,13 @@ impl Signer {
 pub struct SignerInit {
     /// Path to the the Trust Anchor Signer info file (as 'signer show')
     #[arg(long, short, value_name="path")]
-    info: JsonFile<ta::TrustAnchorSignerInfo, TasiMsg>,
+    info: JsonFile<TrustAnchorSignerInfo, TasiMsg>,
 }
 
 impl SignerInit {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::Success, httpclient::Error> {
+    ) -> Result<api::status::Success, httpclient::Error> {
         client.ta_proxy_signer_add(self.info.content).await
     }
 }
@@ -245,13 +248,13 @@ impl fmt::Display for TasiMsg {
 pub struct SignerUpdate {
     /// Path to the the Trust Anchor Signer info file (as 'signer show')
     #[arg(long, short, value_name="path")]
-    info: JsonFile<ta::TrustAnchorSignerInfo, TasiMsg>,
+    info: JsonFile<TrustAnchorSignerInfo, TasiMsg>,
 }
 
 impl SignerUpdate {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::Success, httpclient::Error> {
+    ) -> Result<api::status::Success, httpclient::Error> {
         client.ta_proxy_signer_update(self.info.content).await
     }
 }
@@ -265,7 +268,7 @@ pub struct SignerMakeRequest;
 impl SignerMakeRequest {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<ta::TrustAnchorSignedRequest, httpclient::Error> {
+    ) -> Result<TrustAnchorSignedRequest, httpclient::Error> {
         client.ta_proxy_signer_make_request().await
     }
 }
@@ -279,7 +282,7 @@ pub struct SignerShowRequest;
 impl SignerShowRequest {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<ta::TrustAnchorSignedRequest, httpclient::Error> {
+    ) -> Result<TrustAnchorSignedRequest, httpclient::Error> {
         client.ta_proxy_signer_show_request().await
     }
 }
@@ -291,13 +294,13 @@ impl SignerShowRequest {
 pub struct SignerProcessResponse {
     /// Path to the the Trust Anchor Signer info file (as 'signer show')
     #[arg(long, short, value_name="path")]
-    response: JsonFile<ta::TrustAnchorSignedResponse, TasrMsg>,
+    response: JsonFile<TrustAnchorSignedResponse, TasrMsg>,
 }
 
 impl SignerProcessResponse {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<api::Success, httpclient::Error> {
+    ) -> Result<api::status::Success, httpclient::Error> {
         client.ta_proxy_signer_response(self.response.content).await
     }
 }
@@ -371,11 +374,11 @@ impl ChildrenAdd {
         self, client: &KrillClient
     ) -> Result<idexchange::ParentResponse, httpclient::Error> {
         client.ta_proxy_children_add(
-            api::AddChildRequest::new(
-                self.info.handle,
-                ResourceSet::new(self.asn, self.ipv4, self.ipv6),
-                self.info.id_cert,
-            )
+            api::admin::AddChildRequest {
+                handle: self.info.handle,
+                resources: ResourceSet::new(self.asn, self.ipv4, self.ipv6),
+                id_cert: self.info.id_cert,
+            }
         ).await
     }
 }
@@ -413,7 +416,7 @@ impl FromStr for CertAuthInfoFile {
     type Err = CertAuthInfoFileError;
 
     fn from_str(path: &str) -> Result<Self, Self::Err> {
-        let info = serde_json::from_reader::<_, api::CertAuthInfo>(
+        let info = serde_json::from_reader::<_, api::ca::CertAuthInfo>(
             BufReader::new(
                 File::open(path).map_err(|err| {
                     CertAuthInfoFileError::Io(path.into(), err)
@@ -423,8 +426,8 @@ impl FromStr for CertAuthInfoFile {
             CertAuthInfoFileError::Parse(path.into(), err)
         })?;
         Ok(Self {
-            handle: info.handle().convert(),
-            id_cert: info.id_cert().try_into().map_err(|err| {
+            handle: info.handle.convert(),
+            id_cert: (&info.id_cert).try_into().map_err(|err| {
                 CertAuthInfoFileError::Cert(path.into(), err)
             })?
         })

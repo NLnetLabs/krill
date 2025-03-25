@@ -1,11 +1,17 @@
 //! Common types used by the various Krill components.
 pub mod actor;
-pub mod api;
-pub mod bgp;
+pub mod cmslogger;
 pub mod crypto;
 pub mod error;
 pub mod eventsourcing;
+pub mod ext_serde;
+pub mod file;
+pub mod httpclient;
+pub mod queue;
+pub mod storage;
+pub mod test;
 pub mod util;
+pub mod version;
 
 //------------ Response Aliases ----------------------------------------------
 
