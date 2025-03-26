@@ -1,8 +1,15 @@
 # Change Log
 
+## Unreleased next version
+
+Bug fixes
+
+Other changes
+
+
 ## 0.14.6-rc1
 
-Released 2025-03-26
+Released 2025-03-26.
 
 Bug fixes
 
