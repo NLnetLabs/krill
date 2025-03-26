@@ -12,7 +12,10 @@ Bug fixes
 
 Other changes
 
+* The minimum supported Rust version is now 1.81. ([#1260])
+
 [#1242]: https://github.com/NLnetLabs/krill/pull/1242
+[#1260]: https://github.com/NLnetLabs/krill/pull/1260
 
 
 ## 0.14.5 ‘Who dis? New Phone’
