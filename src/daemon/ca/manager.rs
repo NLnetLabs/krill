@@ -596,7 +596,7 @@ impl CaManager {
 
         // Add signer to proxy
         let signer_info = self.get_trust_anchor_signer()?.get_signer_info();
-        self.ta_proxy_signer_add(signer_info, &self.system_actor).await?;
+        self.ta_proxy_signer_add(signer_info, &self.system_actor)?;
 
         self.sync_ta_proxy_signer_if_possible()?;
         self.cas_repo_sync_single(repo_manager, &ta_handle, 0).await?;
