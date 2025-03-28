@@ -25,6 +25,9 @@ Breaking Changes
 
 New
 
+* Added a command to re-initialize the trust anchor signer with different
+  timing values or TAL URLs. (#[1255])
+
 Bug Fixes
 
 * Fixed a potential infinite recursion in PKCS11 error handling. ([#1215])
@@ -52,6 +55,7 @@ Other changes
 [#1239]: https://github.com/NLnetLabs/krill/pull/1239
 [#1241]: https://github.com/NLnetLabs/krill/pull/1241
 [#1249]: https://github.com/NLnetLabs/krill/pull/1249
+[#1255]: https://github.com/NLnetLabs/krill/pull/1255
 
 
 ## 0.14.5 ‘Who dis? New Phone’
