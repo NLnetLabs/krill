@@ -167,6 +167,7 @@ pub enum TrustAnchorProxyEvent {
 
     // Proxy -> Signer interactions
     SignerAdded(TrustAnchorSignerInfo),
+    SignerUpdated(TrustAnchorSignerInfo),
     SignerRequestMade(Nonce),
     SignerResponseReceived(TrustAnchorSignedResponse),
 
@@ -196,6 +197,13 @@ impl fmt::Display for TrustAnchorProxyEvent {
                 write!(
                     f,
                     "Added signer with ID certificate hash: {}",
+                    signer.id.hash
+                )
+            }
+            TrustAnchorProxyEvent::SignerUpdated(signer) => {
+                write!(
+                    f,
+                    "Updated signer with ID certificate hash: {}",
                     signer.id.hash
                 )
             }
@@ -615,6 +623,9 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
             TrustAnchorProxyEvent::SignerAdded(signer) => {
                 self.signer = Some(signer)
             }
+            TrustAnchorProxyEvent::SignerUpdated(signer) => {
+                self.signer = Some(signer)
+            }
             TrustAnchorProxyEvent::SignerRequestMade(nonce) => {
                 self.open_signer_request = Some(nonce)
             }
@@ -778,7 +789,7 @@ impl TrustAnchorProxy {
                 // It is not possible to add a signer that has a different
                 // public key
                 return Ok(vec![
-                    TrustAnchorProxyEvent::SignerAdded(signer)
+                    TrustAnchorProxyEvent::SignerUpdated(signer)
                 ]);
             }
         }
