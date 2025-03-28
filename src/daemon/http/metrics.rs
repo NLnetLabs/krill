@@ -52,7 +52,7 @@ pub async fn metrics(req: Request) -> Result<HttpResponse, Request> {
             "auth_session_cache_size",
             "total number of cached login session tokens",
         ),
-        server.login_session_cache_size(),
+        server.login_session_cache_size().await,
     );
 
     if let Ok(cas_stats) = server.cas_stats().await {

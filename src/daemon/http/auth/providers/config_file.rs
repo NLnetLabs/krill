@@ -6,6 +6,7 @@ use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
 use base64::engine::Engine as _;
 use log::{debug, info, log_enabled, trace, warn};
 use serde::{Deserialize, Serialize};
+use tokio::runtime;
 use unicode_normalization::UnicodeNormalization;
 use crate::api::admin::Token;
 use crate::commons::httpclient;
@@ -71,6 +72,12 @@ impl AuthProvider {
         })
     }
 
+    /// Spawns a Tokio task sweeping the session cache.
+    pub fn spawn_sweep(&self, runtime: &runtime::Handle) {
+        self.session_cache.spawn_sweep(runtime)
+    }
+
+
     fn init_session_key(config: &Config) -> KrillResult<crypt::CryptState> {
         debug!("Initializing login session encryption key");
         crypt::crypt_init(config)
@@ -109,7 +116,7 @@ impl AuthProvider {
 }
 
 impl AuthProvider {
-    pub fn authenticate(
+    pub async fn authenticate(
         &self,
         request: &HyperRequest,
     ) -> Result<Option<AuthInfo>, ApiAuthError> {
@@ -125,7 +132,7 @@ impl AuthProvider {
                     token,
                     &self.session_key,
                     true,
-                )?;
+                ).await?;
 
                 trace!("user_id={}", session.user_id);
 
@@ -146,7 +153,9 @@ impl AuthProvider {
         Ok(HttpResponse::text_no_cache(UI_LOGIN_ROUTE_PATH.into()))
     }
 
-    pub fn login(&self, request: &HyperRequest) -> KrillResult<LoggedInUser> {
+    pub async fn login(
+        &self, request: &HyperRequest
+    ) -> KrillResult<LoggedInUser> {
         use scrypt::scrypt;
 
         let auth = match self.get_auth(request) {
@@ -258,20 +267,20 @@ impl AuthProvider {
             SessionSecret { role: user.role.clone() },
             &self.session_key,
             None,
-        )?;
+        ).await?;
 
         Ok(LoggedInUser::new(api_token, username, user.role.clone()))
     }
 
-    pub fn logout(
+    pub async fn logout(
         &self,
         request: &HyperRequest,
     ) -> KrillResult<HttpResponse> {
         match httpclient::get_bearer_token(request) {
             Some(token) => {
-                self.session_cache.remove(&token);
+                self.session_cache.remove(&token).await;
 
-                if let Ok(Some(info)) = self.authenticate(request) {
+                if let Ok(Some(info)) = self.authenticate(request).await {
                     info!("User logged out: {}", info.actor().name());
                 }
             }
@@ -288,12 +297,8 @@ impl AuthProvider {
         Ok(HttpResponse::text_no_cache("/".into()))
     }
 
-    pub fn sweep(&self) -> KrillResult<()> {
-        self.session_cache.sweep()
-    }
-
-    pub fn cache_size(&self) -> usize {
-        self.session_cache.size()
+    pub async fn cache_size(&self) -> usize {
+        self.session_cache.size().await
     }
 }
 

@@ -86,7 +86,10 @@ pub enum Task {
 
     RrdpUpdateIfNeeded,
 
-    #[cfg(feature = "multi-user")]
+    // This task is deprecated - the authorizer takes care of this itself.
+    // The mask may, however, still be in the task queue and currently the
+    // scheduler panics on unknown tasks, so we need to keep it for now and
+    // just not do anything.
     SweepLoginCache,
 }
 
@@ -142,10 +145,6 @@ impl Task {
             Task::RrdpUpdateIfNeeded => {
                 Ok(Segment::make("update_rrdp_if_needed").to_owned())
             }
-            #[cfg(feature = "multi-user")]
-            Task::SweepLoginCache => {
-                Ok(Segment::make("sweep_login_cache").to_owned())
-            }
             Task::RenewTestbedTa => {
                 Ok(Segment::make("renew_testbed_ta").to_owned())
             }
@@ -154,6 +153,9 @@ impl Task {
             }
             Task::QueueStartTasks => {
                 Ok(Segment::make("queue_start_tasks").to_owned())
+            }
+            Task::SweepLoginCache => {
+                Ok(Segment::make("sweep_login_cache").to_owned())
             }
         }
         .map_err(|e| Error::Custom(format!("could not create name: {}", e)))
@@ -193,9 +195,6 @@ impl fmt::Display for Task {
             Task::RrdpUpdateIfNeeded => {
                 write!(f, "create new RRDP delta, if needed")
             }
-
-            #[cfg(feature = "multi-user")]
-            Task::SweepLoginCache => write!(f, "sweep up expired logins"),
             Task::ResourceClassRemoved { ca_handle: ca, .. } => {
                 write!(f, "resource class removed for '{}' ", ca)
             }
@@ -208,6 +207,7 @@ impl fmt::Display for Task {
                     ca, rcn
                 )
             }
+            Task::SweepLoginCache => write!(f, "sweep up expired logins"),
         }
     }
 }

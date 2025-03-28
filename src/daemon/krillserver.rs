@@ -135,7 +135,9 @@ impl KrillServer {
         .build()?;
         let signer = Arc::new(signer);
 
-        let authorizer = Authorizer::new(config.clone())?.into();
+        let authorizer = Arc::new(Authorizer::new(config.clone())?);
+        authorizer.spawn_sweep(&tokio::runtime::Handle::current());
+
         let system_actor = ACTOR_DEF_KRILL;
 
         // Task queue Arc is shared between ca_manager, repo_manager and the
@@ -289,8 +291,6 @@ impl KrillServer {
             self.mq.clone(),
             self.ca_manager.clone(),
             self.repo_manager.clone(),
-            #[cfg(feature = "multi-user")]
-            self.authorizer.clone(),
             self.config.clone(),
             self.system_actor.clone(),
         )
@@ -340,8 +340,8 @@ impl KrillServer {
     }
 
     #[cfg(feature = "multi-user")]
-    pub fn login_session_cache_size(&self) -> usize {
-        self.authorizer.login_session_cache_size()
+    pub async fn login_session_cache_size(&self) -> usize {
+        self.authorizer.login_session_cache_size().await
     }
 }
 

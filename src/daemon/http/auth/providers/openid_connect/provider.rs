@@ -52,6 +52,7 @@ use openidconnect::{
     RevocationErrorResponseType, RevocationUrl, Scope, UserInfoError,
 };
 use serde::{Deserialize, Serialize};
+use tokio::runtime;
 use urlparse::{urlparse, GetQuery};
 
 use crate::daemon::http::request::HyperRequest;
@@ -186,6 +187,11 @@ impl AuthProvider {
             session_key,
             conn: Arc::new(RwLock::new(None)),
         })
+    }
+
+    /// Spawns a Tokio task sweeping the session cache.
+    pub fn spawn_sweep(&self, runtime: &runtime::Handle) {
+        self.session_cache.spawn_sweep(runtime)
     }
 
     async fn initialize_connection_if_needed(&self) -> KrillResult<()> {
@@ -677,7 +683,7 @@ impl AuthProvider {
                     ),
                     &self.session_key,
                     token_response.expires_in(),
-                );
+                ).await;
 
                 match new_token_res {
                     Ok(new_token) => {
@@ -1155,7 +1161,7 @@ impl AuthProvider {
                     token,
                     &self.session_key,
                     true,
-                )?;
+                ).await?;
                 let status = session.status();
 
                 // Token found in cache and active; all good, do an early
@@ -1734,7 +1740,7 @@ impl AuthProvider {
                     SessionSecrets::new(role_name.clone(), &token_response),
                     &self.session_key,
                     token_response.expires_in(),
-                )?;
+                ).await?;
 
                 Ok(LoggedInUser::new(token, id, role_name))
             }
@@ -1791,7 +1797,7 @@ impl AuthProvider {
             token.clone(),
             &self.session_key,
             false,
-        )?;
+        ).await?;
 
         // announce that the user requested to be logged out
         info!("User logged out: {}", session.user_id);
@@ -1800,7 +1806,7 @@ impl AuthProvider {
 
         // 1. remove any cached copy of the decoded session
         trace!("Removing any cached decoded login session details");
-        self.session_cache.remove(&token);
+        self.session_cache.remove(&token).await;
 
         // 2. verify that the provider is at least to some extent available,
         //    there's no point trying to log the token out of the provider if
@@ -1870,12 +1876,8 @@ impl AuthProvider {
         Ok(HttpResponse::text_no_cache(go_to_url.into()))
     }
 
-    pub fn sweep(&self) -> KrillResult<()> {
-        self.session_cache.sweep()
-    }
-
-    pub fn cache_size(&self) -> usize {
-        self.session_cache.size()
+    pub async fn cache_size(&self) -> usize {
+        self.session_cache.size().await
     }
 }
 

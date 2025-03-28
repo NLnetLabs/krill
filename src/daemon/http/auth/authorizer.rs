@@ -4,6 +4,7 @@ use std::sync::Arc;
 use log::{info, log_enabled, trace};
 use rpki::ca::idexchange::MyHandle;
 use serde::Serialize;
+use tokio::runtime;
 use crate::api::admin::Token;
 use crate::commons::KrillResult;
 use crate::commons::actor::Actor;
@@ -84,7 +85,7 @@ impl AuthProvider {
             AuthProvider::Token(provider) => provider.authenticate(request),
             #[cfg(feature = "multi-user")]
             AuthProvider::ConfigFile(provider) => {
-                provider.authenticate(request)
+                provider.authenticate(request).await
             }
             #[cfg(feature = "multi-user")]
             AuthProvider::OpenIdConnect(provider) => {
@@ -114,7 +115,9 @@ impl AuthProvider {
         match &self {
             AuthProvider::Token(provider) => provider.login(request),
             #[cfg(feature = "multi-user")]
-            AuthProvider::ConfigFile(provider) => provider.login(request),
+            AuthProvider::ConfigFile(provider) => {
+                provider.login(request).await
+            }
             #[cfg(feature = "multi-user")]
             AuthProvider::OpenIdConnect(provider) => {
                 provider.login(request).await
@@ -130,7 +133,9 @@ impl AuthProvider {
         match &self {
             AuthProvider::Token(provider) => provider.logout(request),
             #[cfg(feature = "multi-user")]
-            AuthProvider::ConfigFile(provider) => provider.logout(request),
+            AuthProvider::ConfigFile(provider) => {
+                provider.logout(request).await
+            }
             #[cfg(feature = "multi-user")]
             AuthProvider::OpenIdConnect(provider) => {
                 provider.logout(request).await
@@ -138,28 +143,33 @@ impl AuthProvider {
         }
     }
 
-    /// Sweeps out client session information.
-    ///
-    /// This method should be called regularly to remove expired sessions
-    /// from the cache.
-    pub fn sweep(&self) -> KrillResult<()> {
-        match self {
-            AuthProvider::Token(_) => Ok(()),
-            #[cfg(feature = "multi-user")]
-            AuthProvider::ConfigFile(provider) => provider.sweep(),
-            #[cfg(feature = "multi-user")]
-            AuthProvider::OpenIdConnect(provider) => provider.sweep(),
-        }
-    }
-
     /// Returns the size of the login session cache.
-    pub fn login_session_cache_size(&self) -> usize {
+    pub async fn login_session_cache_size(&self) -> usize {
         match self {
             AuthProvider::Token(_) => 0,
             #[cfg(feature = "multi-user")]
-            AuthProvider::ConfigFile(provider) => provider.cache_size(),
+            AuthProvider::ConfigFile(provider) => {
+                provider.cache_size().await
+            }
             #[cfg(feature = "multi-user")]
-            AuthProvider::OpenIdConnect(provider) => provider.cache_size(),
+            AuthProvider::OpenIdConnect(provider) => {
+                provider.cache_size().await
+            }
+        }
+    }
+
+    /// If necessary, spawns a Tokio task sweeping the session cache.
+    pub fn spawn_sweep(&self, runtime: &runtime::Handle) {
+        match self {
+            AuthProvider::Token(_) => { }
+            #[cfg(feature = "multi-user")]
+            AuthProvider::ConfigFile(provider) => {
+                provider.spawn_sweep(runtime)
+            }
+            #[cfg(feature = "multi-user")]
+            AuthProvider::OpenIdConnect(provider) => {
+                provider.spawn_sweep(runtime)
+            }
         }
     }
 }
@@ -288,17 +298,14 @@ impl Authorizer {
         self.primary_provider.logout(request).await
     }
 
-    /// Sweeps out session information.
-    ///
-    /// This method should be called regularly to remove expired sessions
-    /// from the cache.
-    pub fn sweep(&self) -> KrillResult<()> {
-        self.primary_provider.sweep()
+    /// Returns the size of the login session cache.
+    pub async fn login_session_cache_size(&self) -> usize {
+        self.primary_provider.login_session_cache_size().await
     }
 
-    /// Returns the size of the login session cache.
-    pub fn login_session_cache_size(&self) -> usize {
-        self.primary_provider.login_session_cache_size()
+    /// If necessary, spawns a Tokio task sweeping the session cache.
+    pub fn spawn_sweep(&self, runtime: &runtime::Handle) {
+        self.primary_provider.spawn_sweep(runtime)
     }
 }
 
