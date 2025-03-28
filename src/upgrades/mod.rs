@@ -1267,14 +1267,37 @@ fn upgrade_versions(
 
 #[cfg(test)]
 mod tests {
+    use std::{fs, path};
     use std::path::PathBuf;
     use log::LevelFilter;
+    use tempfile::tempdir;
     use url::Url;
     use crate::commons::storage::Namespace;
     use crate::commons::test;
+    use crate::daemon::ca::{CaStatus, CaStatusStore};
     use super::*;
 
+    fn copy_folder(src: impl AsRef<path::Path>, dst: impl AsRef<path::Path>) {
+        fs::create_dir_all(&dst).unwrap();
+        for item in fs::read_dir(src).unwrap() {
+            let item = item.unwrap();
+            let ft = item.file_type().unwrap();
+            if ft.is_dir() {
+                copy_folder(item.path(), dst.as_ref().join(item.file_name()));
+            } 
+            else if ft.is_file() {
+                fs::copy(
+                    item.path(), 
+                    dst.as_ref().join(item.file_name())
+                ).unwrap();
+            }
+        }
+    }
+
     fn test_upgrade(base_dir: &str, namespaces: &[&str]) {
+        let temp_dir = tempdir().unwrap();
+        copy_folder(&base_dir, &temp_dir);
+        
         // Copy data for the given names spaces into memory for testing.
         let mem_storage_base_uri = test::mem_storage();
         let bogus_path = PathBuf::from("/dev/null"); // needed for tls_dir etc, but will be ignored here
@@ -1289,8 +1312,8 @@ mod tests {
         config.log_level = LevelFilter::Trace;
         let _ = config.init_logging();
 
-        let source_url =
-            Url::parse(&format!("local://{}", base_dir)).unwrap();
+        let source_url = Url::parse(&format!("local://{}", 
+                temp_dir.path().to_str().unwrap())).unwrap();
         for ns in namespaces {
             let namespace = Namespace::parse(ns).unwrap();
             let source_store =
@@ -1450,6 +1473,9 @@ mod tests {
         not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11"))
     ))]
     fn unmapped_keys_test_core(do_upgrade: bool) {
+        let temp_dir = tempdir().unwrap();
+        copy_folder("test-resources/migrations/unmapped_keys/", &temp_dir);
+
         let expected_key_id = KeyIdentifier::from_str(
             "5CBCAB14B810C864F3EEA8FD102B79F4E53FCC70",
         )
@@ -1458,8 +1484,8 @@ mod tests {
         // Copy test data into test storage
         let mem_storage_base_uri = test::mem_storage();
 
-        let source_url =
-            Url::parse("local://test-resources/migrations/unmapped_keys/")
+        let source_url = Url::parse(
+            &format!("local://{}", temp_dir.path().to_str().unwrap()))
                 .unwrap();
         let source_store =
             KeyValueStore::create(&source_url, KEYS_NS).unwrap();
@@ -1538,5 +1564,48 @@ mod tests {
     #[test]
     fn test_upgrading_with_unmapped_keys() {
         unmapped_keys_test_core(true);
+    }
+
+    #[test]
+    fn read_save_status() {
+        let source_dir_path_str =
+            "test-resources/status_store/migration-0.9.5/";
+        let temp_dir = tempdir().unwrap();
+        copy_folder(&source_dir_path_str, &temp_dir);
+        let source_dir_url = Url::parse(
+            &format!("local://{}", &temp_dir.path().to_str().unwrap()))
+                .unwrap();
+
+        let source_store =
+            KeyValueStore::create(&source_dir_url, STATUS_NS).unwrap();
+
+        let test_storage_uri = test::mem_storage();
+        let status_kv_store =
+            KeyValueStore::create(&test_storage_uri, STATUS_NS).unwrap();
+
+        // copy the source KV store (files) into the test KV store (in memory)
+        status_kv_store.import(&source_store).unwrap();
+
+        // get the status for testbed before initialising a StatusStore
+        // using the copied the data - that will be done next and start
+        // a migration.
+        let testbed_status_key = Key::new_scoped(
+            Scope::from_segment(const { Segment::make("testbed") }),
+            Segment::parse("status.json").unwrap(),
+        );
+        let status_testbed_before_migration: CaStatus =
+            status_kv_store.get(&testbed_status_key).unwrap().unwrap();
+
+        // Initialise the StatusStore using the new (in memory) storage,
+        // and migrate the data.
+        let store =
+            CaStatusStore::create(&test_storage_uri, STATUS_NS).unwrap();
+        let testbed = CaHandle::from_str("testbed").unwrap();
+
+        // Get the migrated status for testbed and verify that it's equivalent
+        // to the status before migration.
+        let status_testbed_migrated = store.get_ca_status(&testbed);
+
+        assert_eq!(status_testbed_before_migration, status_testbed_migrated);
     }
 }
