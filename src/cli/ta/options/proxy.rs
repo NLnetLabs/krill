@@ -189,6 +189,9 @@ pub enum Signer {
     /// Initialise signer association
     Init(SignerInit),
 
+    /// Update signer association
+    Update(SignerUpdate),
+
     /// Make a NEW request for the signer (fails if a request exists)
     MakeRequest(SignerMakeRequest),
 
@@ -203,6 +206,7 @@ impl Signer {
     pub async fn run(self, client: &KrillClient) -> Report {
         match self {
             Self::Init(cmd) => cmd.run(client).await.into(),
+            Self::Update(cmd) => cmd.run(client).await.into(),
             Self::MakeRequest(cmd) => cmd.run(client).await.into(),
             Self::ShowRequest(cmd) => cmd.run(client).await.into(),
             Self::ProcessResponse(cmd) => cmd.run(client).await.into(),
@@ -234,6 +238,24 @@ struct TasiMsg;
 impl fmt::Display for TasiMsg {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str("signer info")
+    }
+}
+
+
+//------------ SignerUpdate --------------------------------------------------
+
+#[derive(clap::Args)]
+pub struct SignerUpdate {
+    /// Path to the the Trust Anchor Signer info file (as 'signer show')
+    #[arg(long, short, value_name="path")]
+    info: JsonFile<TrustAnchorSignerInfo, TasiMsg>,
+}
+
+impl SignerUpdate {
+    pub async fn run(
+        self, client: &KrillClient
+    ) -> Result<api::status::Success, httpclient::Error> {
+        client.ta_proxy_signer_update(self.info.content).await
     }
 }
 

@@ -468,6 +468,14 @@ impl KrillServer {
         self.ca_manager.ta_proxy_signer_add(info, actor)
     }
 
+    pub async fn ta_proxy_signer_update(
+        &self,
+        info: TrustAnchorSignerInfo,
+        actor: &Actor,
+    ) -> KrillResult<()> {
+        self.ca_manager.ta_proxy_signer_update(info, actor)
+    }
+
     pub async fn ta_proxy_signer_make_request(
         &self,
         actor: &Actor,

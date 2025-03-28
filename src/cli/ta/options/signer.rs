@@ -12,7 +12,7 @@ use crate::api::ta::{
 use crate::cli::options::args::JsonFile;
 use crate::cli::report::{Report, ReportFormat};
 use crate::cli::ta::signer::{
-    SignerClientError, SignerInitInfo, TrustAnchorSignerManager,
+    SignerClientError, SignerInitInfo, SignerReissueInfo, TrustAnchorSignerManager
 };
 use crate::tasigner::{Config, ConfigError, TrustAnchorProxySignerExchanges};
 
@@ -55,6 +55,9 @@ pub enum Subcommand {
     /// Initialise the signer
     Init(Init),
 
+    /// Reissue the TA certificate
+    Reissue(Reissue),
+
     /// Show the signer info
     Show(Show),
 
@@ -73,6 +76,7 @@ impl Subcommand {
     pub fn run(self, manager: &TrustAnchorSignerManager) -> Report {
         match self {
             Self::Init(cmd) => cmd.run(manager).into(),
+            Self::Reissue(cmd) => cmd.run(manager).into(),
             Self::Show(cmd) => cmd.run(manager).into(),
             Self::Process(cmd) => cmd.run(manager).into(),
             Self::Last(cmd) => cmd.run(manager).into(),
@@ -145,6 +149,42 @@ struct RcMsg;
 impl fmt::Display for RcMsg {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str("repository contact")
+    }
+}
+
+//------------ Reissue -------------------------------------------------------
+
+#[derive(clap::Args)]
+pub struct Reissue {
+    /// Path to the proxy ID JSON file.
+    #[arg(long, short = 'i', value_name = "path")]
+    proxy_id: JsonFile<api::ca::IdCertInfo, IdiMsg>,
+
+    /// Path to the proxy repository contact JSON file.
+    #[arg(long, short = 'r', value_name = "path")]
+    proxy_repository_contact: JsonFile<api::admin::RepositoryContact, RcMsg>,
+
+    /// The rsync URI used for TA certificate on TAL and AIA
+    #[arg(long, value_name = "rsync URI")]
+    tal_rsync: uri::Rsync,
+
+    /// The HTTPS URI used for the TAL.
+    #[arg(long, value_name = "HTTPS URI")]
+    tal_https: Vec<uri::Https>,
+}
+
+impl Reissue {
+    pub fn run(
+        self, manager: &TrustAnchorSignerManager
+    ) -> Result<api::status::Success, SignerClientError> {
+        manager.reissue(
+            SignerReissueInfo {
+                proxy_id: self.proxy_id.content,
+                repo_info: self.proxy_repository_contact.content.into(),
+                tal_https: self.tal_https,
+                tal_rsync: self.tal_rsync,
+            }
+        )
     }
 }
 

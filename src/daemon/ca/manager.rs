@@ -512,6 +512,20 @@ impl CaManager {
         Ok(())
     }
 
+    /// Updates the associated signer to the proxy.
+    ///
+    /// Errors if there is no proxy or the proxy has no or a different signer
+    pub fn ta_proxy_signer_update(
+        &self,
+        info: TrustAnchorSignerInfo,
+        actor: &Actor,
+    ) -> KrillResult<()> {            
+        self.send_ta_proxy_command(
+            TrustAnchorProxyCommand::update_signer(&ta_handle(), info, actor)
+        )?;
+        Ok(())
+    }
+
     /// Creates a new request for the signer.
     ///
     /// Errors if there is no proxy or the proxy already has a request.

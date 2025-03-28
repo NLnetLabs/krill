@@ -100,6 +100,16 @@ pub struct SignerInitInfo {
 }
 
 
+//------------ SignerReissueInfo ----------------------------------------------
+#[derive(Debug)]
+pub struct SignerReissueInfo {
+    pub proxy_id: IdCertInfo,
+    pub repo_info: idexchange::RepoInfo,
+    pub tal_https: Vec<uri::Https>,
+    pub tal_rsync: uri::Rsync,
+}
+
+
 //------------ TrustAnchorSignerManager --------------------------------------
 
 pub struct TrustAnchorSignerManager {
@@ -158,6 +168,27 @@ impl TrustAnchorSignerManager {
 
             Ok(Success)
         }
+    }
+
+    pub fn reissue(
+        &self,
+        info: SignerReissueInfo,
+    ) -> Result<Success, SignerClientError> {
+        let _ = self.get_signer()?;
+
+        let cmd = TrustAnchorSignerCommand::make_reissue_command(
+        &self.ta_handle,
+            info.repo_info,
+            info.tal_https,
+            info.tal_rsync,
+            self.config.ta_timing,
+            self.signer.clone(),
+            &self.actor,
+        );
+
+        self.store.command(cmd)?;
+
+        Ok(Success)
     }
 
     pub fn show(&self) -> Result<TrustAnchorSignerInfo, SignerClientError> {

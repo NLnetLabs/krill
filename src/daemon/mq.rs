@@ -619,6 +619,7 @@ impl eventsourcing::PreSaveEventListener<TrustAnchorProxy> for TaskQueue {
                 }
                 TrustAnchorProxyEvent::RepositoryAdded(_)
                 | TrustAnchorProxyEvent::SignerAdded(_)
+                | TrustAnchorProxyEvent::SignerUpdated(_)
                 | TrustAnchorProxyEvent::SignerRequestMade(_)
                 | TrustAnchorProxyEvent::ChildAdded(_)
                 | TrustAnchorProxyEvent::ChildResponseGiven(_, _) => {
