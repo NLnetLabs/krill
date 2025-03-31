@@ -1300,27 +1300,30 @@ mod tests {
         
         // Copy data for the given names spaces into memory for testing.
         let mem_storage_base_uri = test::mem_storage();
-        let bogus_path = PathBuf::from("/dev/null"); // needed for tls_dir etc, but will be ignored here
+
+        // This is needed for tls_dir etc, but will be ignored here.
+        let bogus_path = PathBuf::from("/dev/null");
+
         let mut config = Config::test(
             &mem_storage_base_uri,
             Some(&bogus_path),
-            false,
-            false,
-            false,
-            false,
+            false, false, false, false,
         );
         config.log_level = LevelFilter::Trace;
         let _ = config.init_logging();
 
-        let source_url = Url::parse(&format!("local://{}", 
-                temp_dir.path().to_str().unwrap())).unwrap();
+        let source_url = Url::parse(&format!(
+                "local://{}", temp_dir.path().to_str().unwrap()
+        )).unwrap();
+
         for ns in namespaces {
             let namespace = Namespace::parse(ns).unwrap();
-            let source_store =
-                KeyValueStore::create(&source_url, namespace).unwrap();
-            let target_store =
-                KeyValueStore::create(&mem_storage_base_uri, namespace)
-                    .unwrap();
+            let source_store = KeyValueStore::create(
+                &source_url, namespace
+            ).unwrap();
+            let target_store = KeyValueStore::create(
+                &mem_storage_base_uri, namespace
+            ).unwrap();
 
             target_store.import(&source_store).unwrap();
         }
@@ -1328,16 +1331,13 @@ mod tests {
         let properties_manager = PropertiesManager::create(
             &config.storage_uri,
             config.use_history_cache,
-        )
-        .unwrap();
+        ).unwrap();
 
         prepare_upgrade_data_migrations(
             UpgradeMode::PrepareOnly,
             &config,
             &properties_manager,
-        )
-        .unwrap()
-        .unwrap();
+        ).unwrap().unwrap();
 
         // and continue - immediately, but still tests that this can pick up
         // again.
@@ -1345,16 +1345,13 @@ mod tests {
             UpgradeMode::PrepareToFinalise,
             &config,
             &properties_manager,
-        )
-        .unwrap()
-        .unwrap();
+        ).unwrap().unwrap();
 
         finalise_data_migration(
             report.versions(),
             &config,
             &properties_manager,
-        )
-        .unwrap();
+        ).unwrap();
     }
 
     #[test]
@@ -1478,55 +1475,56 @@ mod tests {
 
         let expected_key_id = KeyIdentifier::from_str(
             "5CBCAB14B810C864F3EEA8FD102B79F4E53FCC70",
-        )
-        .unwrap();
+        ).unwrap();
 
         // Copy test data into test storage
         let mem_storage_base_uri = test::mem_storage();
 
-        let source_url = Url::parse(
-            &format!("local://{}", temp_dir.path().to_str().unwrap()))
-                .unwrap();
-        let source_store =
-            KeyValueStore::create(&source_url, KEYS_NS).unwrap();
+        let source_url = Url::parse(&format!(
+            "local://{}", temp_dir.path().to_str().unwrap()
+        )).unwrap();
+        let source_store = KeyValueStore::create(
+            &source_url, KEYS_NS
+        ).unwrap();
 
-        let target_store =
-            KeyValueStore::create(&mem_storage_base_uri, KEYS_NS).unwrap();
+        let target_store = KeyValueStore::create(
+            &mem_storage_base_uri, KEYS_NS
+        ).unwrap();
         target_store.import(&source_store).unwrap();
 
-        let bogus_path = PathBuf::from("/dev/null"); // needed for tls_dir etc, but will be ignored here
+        // This is needed for tls_dir etc, but will be ignored here.
+        let bogus_path = PathBuf::from("/dev/null");
 
         let mut config = Config::test(
             &mem_storage_base_uri,
             Some(&bogus_path),
-            false,
-            false,
-            false,
-            false,
+            false, false, false, false,
         );
         let _ = config.init_logging();
         config.process().unwrap();
 
         if do_upgrade {
-            record_preexisting_openssl_keys_in_signer_mapper(&config)
-                .unwrap();
+            record_preexisting_openssl_keys_in_signer_mapper(
+                &config
+            ).unwrap();
         }
 
         // Now test that a newly initialized `KrillSigner` with a default
         // OpenSSL signer is associated with the newly created mapper
         // store and is thus able to use the key that we placed on
         // disk.
-        let probe_interval =
-            std::time::Duration::from_secs(config.signer_probe_retry_seconds);
+        let probe_interval = std::time::Duration::from_secs(
+            config.signer_probe_retry_seconds
+        );
         let krill_signer = crate::commons::crypto::KrillSignerBuilder::new(
             &mem_storage_base_uri,
             probe_interval,
             &config.signers,
-        )
-        .with_default_signer(config.default_signer())
-        .with_one_off_signer(config.one_off_signer())
-        .build()
-        .unwrap();
+        ).with_default_signer(
+            config.default_signer()
+        ).with_one_off_signer(
+            config.one_off_signer()
+        ).build().unwrap();
 
         // Trigger the signer to be bound to the one the migration just
         // registered in the mapper
@@ -1541,7 +1539,8 @@ mod tests {
             // Verify that the mapper has a record of the test key belonging
             // to the signer
             mapper.get_signer_for_key(&expected_key_id).unwrap();
-        } else {
+        }
+        else {
             // Verify that the mapper does NOT have a record of the test key
             // belonging to the signer
             assert!(mapper.get_signer_for_key(&expected_key_id).is_err());
