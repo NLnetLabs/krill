@@ -27,7 +27,7 @@ use crate::constants::{
     REPOSITORY_RRDP_ARCHIVE_DIR, REPOSITORY_RRDP_DIR,
     RRDP_FIRST_SERIAL,
 };
-use crate::server::config::RrdpUpdatesConfig;
+use crate::config::RrdpUpdatesConfig;
 
 
 //------------ RRDP name definitions -----------------------------------------

@@ -55,8 +55,8 @@ use serde::{Deserialize, Serialize};
 use tokio::runtime;
 use urlparse::{urlparse, GetQuery};
 
-use crate::server::http::request::HyperRequest;
-use crate::server::http::response::HttpResponse;
+use crate::daemon::http::request::HyperRequest;
+use crate::daemon::http::response::HttpResponse;
 use crate::{
     api::admin::Token,
     commons::{
@@ -65,8 +65,8 @@ use crate::{
         util::sha256,
         KrillResult,
     },
-    server::{
-        config::Config,
+    config::Config,
+    daemon::{
         http::auth::{
             crypt::{self, CryptState},
             providers::openid_connect::{

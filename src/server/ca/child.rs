@@ -12,7 +12,7 @@ use crate::api::ca::{
 use crate::commons::KrillResult;
 use crate::commons::crypto::{KrillSigner, SignSupport};
 use crate::commons::error::Error;
-use crate::server::config::IssuanceTimingConfig;
+use crate::config::IssuanceTimingConfig;
 
 
 //------------ UsedKeyState --------------------------------------------------

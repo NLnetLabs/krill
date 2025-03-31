@@ -1,5 +1,6 @@
 use std::str::FromStr;
 use std::str::from_utf8;
+use std::sync::Arc;
 use bytes::Bytes;
 use http_body_util::{BodyExt, Limited};
 use hyper::{HeaderMap, Method};
@@ -15,7 +16,7 @@ use crate::commons::error::{ApiAuthError, Error};
 use crate::constants::HTTP_USER_AGENT_TRUNCATE;
 use super::auth::{AuthInfo, LoggedInUser, Permission};
 use super::response::HttpResponse;
-use super::server::State;
+use super::server::HttpServer;
 
 
 //------------ HyperRequest --------------------------------------------------
@@ -30,19 +31,19 @@ pub type HyperRequest = hyper::Request<hyper::body::Incoming>;
 pub struct Request {
     request: HyperRequest,
     path: RequestPath,
-    state: State,
+    server: Arc<HttpServer>,
     auth: AuthInfo,
 }
 
 impl Request {
-    pub async fn new(request: HyperRequest, state: State) -> Self {
+    pub async fn new(request: HyperRequest, server: Arc<HttpServer>) -> Self {
         let path = RequestPath::from_request(&request);
-        let auth = state.authenticate_request(&request).await;
+        let auth = server.authenticate_request(&request).await;
 
         Request {
             request,
             path,
-            state,
+            server,
             auth,
         }
     }
@@ -107,9 +108,9 @@ impl Request {
         &self.path
     }
 
-    /// Get the application State
-    pub fn state(&self) -> &State {
-        &self.state
+    /// Get the HTTP server for this request.
+    pub fn server(&self) -> &Arc<HttpServer> {
+        &self.server
     }
 
     /// Returns the method of this request.
@@ -142,17 +143,17 @@ impl Request {
     }
 
     pub async fn api_bytes(self) -> Result<Bytes, Error> {
-        let limit = self.state().config.post_limit_api;
+        let limit = self.server().config().post_limit_api;
         self.read_bytes(limit).await
     }
 
     pub async fn rfc6492_bytes(self) -> Result<Bytes, Error> {
-        let limit = self.state().config.post_limit_rfc6492;
+        let limit = self.server().config().post_limit_rfc6492;
         self.read_bytes(limit).await
     }
 
     pub async fn rfc8181_bytes(self) -> Result<Bytes, Error> {
-        let limit = self.state().config.post_limit_rfc8181;
+        let limit = self.server().config().post_limit_rfc8181;
         self.read_bytes(limit).await
     }
 
@@ -178,15 +179,15 @@ impl Request {
     }
 
     pub async fn get_login_url(&self) -> KrillResult<HttpResponse> {
-        self.state.get_login_url().await
+        self.server.get_login_url().await
     }
 
     pub async fn login(&self) -> KrillResult<LoggedInUser> {
-        self.state.login(&self.request).await
+        self.server.login(&self.request).await
     }
 
     pub async fn logout(&self) -> KrillResult<HttpResponse> {
-        self.state.logout(&self.request).await
+        self.server.logout(&self.request).await
     }
 }
 

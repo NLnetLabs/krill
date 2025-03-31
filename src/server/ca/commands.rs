@@ -34,7 +34,7 @@ use crate::commons::eventsourcing::{
     self, InitCommandDetails, SentCommand, SentInitCommand,
     WithStorableDetails,
 };
-use crate::server::config::Config;
+use crate::config::Config;
 use super::events::CertAuthEvent;
 use super::rc::DropReason;
 

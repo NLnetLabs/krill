@@ -4,8 +4,7 @@ use rpki::ca::idexchange::PublisherHandle;
 
 use crate::{
     constants::ta_handle,
-    server::{
-        ca::testbed_ca_handle,
+    daemon::{
         http::{
             server::{
                 api_add_pbl, api_ca_add_child, api_ca_child_remove,
@@ -18,6 +17,9 @@ use crate::{
         http::request::{Request, RequestPath},
         http::response::HttpResponse,
     },
+    server::{
+        ca::testbed_ca_handle,
+    }
 };
 
 //------------ Support acting as a testbed
@@ -48,7 +50,7 @@ use crate::{
 pub async fn testbed(mut req: Request) -> Result<HttpResponse, Request> {
     if !req.path().full().starts_with("/testbed") {
         Err(req) // Not for us
-    } else if !req.state().testbed_enabled() {
+    } else if !req.server().krill().testbed_enabled() {
         render_unknown_method()
     } else {
         // The testbed is intended to be used without being logged in but

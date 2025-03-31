@@ -28,7 +28,7 @@ use crate::commons::error::Error;
 use crate::commons::eventsourcing::PreSaveEventListener;
 use crate::commons::storage::{Key, KeyValueStore, Scope, Segment};
 use crate::constants::CA_OBJECTS_NS;
-use crate::server::config::IssuanceTimingConfig;
+use crate::config::IssuanceTimingConfig;
 use super::aspa::{AspaInfo, AspaObjectsUpdates};
 use super::bgpsec::{BgpSecCertInfo, BgpSecCertificateUpdates};
 use super::certauth::CertAuth;
