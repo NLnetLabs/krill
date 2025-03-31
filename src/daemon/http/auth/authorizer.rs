@@ -10,8 +10,8 @@ use crate::commons::KrillResult;
 use crate::commons::actor::Actor;
 use crate::commons::error::ApiAuthError;
 use crate::config::{AuthType, Config};
-use crate::server::http::request::HyperRequest;
-use crate::server::http::response::HttpResponse;
+use crate::daemon::http::request::HyperRequest;
+use crate::daemon::http::response::HttpResponse;
 use super::{Permission, Role};
 use super::providers::admin_token;
 #[cfg(feature = "multi-user")]

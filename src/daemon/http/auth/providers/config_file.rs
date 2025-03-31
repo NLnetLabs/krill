@@ -14,11 +14,11 @@ use crate::commons::KrillResult;
 use crate::commons::error::{ApiAuthError, Error};
 use crate::constants::{PW_HASH_LOG_N, PW_HASH_P, PW_HASH_R};
 use crate::config::Config;
-use crate::server::http::auth::crypt;
-use crate::server::http::auth::{AuthInfo, LoggedInUser, Permission, RoleMap};
-use crate::server::http::auth::session::{ClientSession, LoginSessionCache};
-use crate::server::http::request::HyperRequest;
-use crate::server::http::response::HttpResponse;
+use crate::daemon::http::auth::crypt;
+use crate::daemon::http::auth::{AuthInfo, LoggedInUser, Permission, RoleMap};
+use crate::daemon::http::auth::session::{ClientSession, LoginSessionCache};
+use crate::daemon::http::request::HyperRequest;
+use crate::daemon::http::response::HttpResponse;
 
 
 //------------ Constants -----------------------------------------------------

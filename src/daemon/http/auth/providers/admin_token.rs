@@ -7,9 +7,9 @@ use crate::commons::httpclient;
 use crate::commons::KrillResult;
 use crate::commons::error::{ApiAuthError, Error};
 use crate::config::Config;
-use crate::server::http::auth::{AuthInfo, LoggedInUser, Role};
-use crate::server::http::request::HyperRequest;
-use crate::server::http::response::HttpResponse;
+use crate::daemon::http::auth::{AuthInfo, LoggedInUser, Role};
+use crate::daemon::http::request::HyperRequest;
+use crate::daemon::http::response::HttpResponse;
 
 
 //------------ Constants -----------------------------------------------------

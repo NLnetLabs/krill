@@ -18,7 +18,7 @@ use rpki::{
     uri,
 };
 
-use crate::server::http::auth::AuthInfo;
+use crate::daemon::http::auth::AuthInfo;
 use crate::{
     commons::{
         actor::Actor,

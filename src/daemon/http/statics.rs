@@ -1,8 +1,8 @@
 use http_body_util::{Either, Empty};
 use hyper::{Method, StatusCode};
 
-use crate::server::http::request::Request;
-use crate::server::http::response::HttpResponse;
+use crate::daemon::http::request::Request;
+use crate::daemon::http::response::HttpResponse;
 
 pub async fn statics(req: Request) -> Result<HttpResponse, Request> {
     let res = match *req.method() {

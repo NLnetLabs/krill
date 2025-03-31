@@ -39,13 +39,15 @@ use crate::{
         KRILL_ENV_HTTP_LOG_INFO, KRILL_ENV_UPGRADE_ONLY, ta_handle,
     },
     config::Config,
-    server::{
+    daemon::{
         http::{
             statics::statics, testbed::testbed, tls, tls_keys,
         },
         http::auth::Permission,
         http::request::{HyperRequest, Request, RequestPath},
         http::response::{HttpResponse, HyperResponse},
+    },
+    server::{
         manager::KrillManager,
         properties::PropertiesManager,
     },
@@ -84,10 +86,13 @@ pub struct HttpServer {
 }
 
 impl HttpServer {
-    /// Creates a new server from the configuration.
-    pub async fn build(config: Arc<Config>) -> KrillResult<Arc<Self>> {
+    /// Creates a new server from a Krill manager and the configuration.
+    pub fn new(
+        krill: KrillManager,
+        config: Arc<Config>
+    ) -> KrillResult<Arc<Self>> {
         Ok(Self {
-            krill: KrillManager::build(config.clone()).await?,
+            krill,
             authorizer: Authorizer::new(config.clone())?,
             config,
             started: Timestamp::now(),
@@ -144,6 +149,8 @@ impl HttpServer {
     }
 }
 
+
+//------------ Old Stuff -----------------------------------------------------
 
 fn print_write_error_hint_and_die(error_msg: String) {
     eprintln!("{}", error_msg);
@@ -233,15 +240,15 @@ pub async fn start_krill_daemon(
             })?;
     }
 
-    // Create the server, this will create the necessary data sub-directories
-    // if needed
-    let server = HttpServer::build(config.clone()).await?;
+    // Create the Krill manager, this will create the necessary data
+    // sub-directories if needed
+    let krill = KrillManager::build(config.clone()).await?;
 
     // Call post-start upgrades to trigger any upgrade related runtime
     // actions, such as re-issuing ROAs because subject name strategy has
     // changed.
     if let Some(report) = upgrade_report {
-        post_start_upgrade(report, &server.krill()).await?;
+        post_start_upgrade(report, &krill).await?;
     }
 
     // If the operator wanted to do the upgrade only, now is a good time to
@@ -253,8 +260,11 @@ pub async fn start_krill_daemon(
 
     // Build the scheduler which will be responsible for executing
     // planned/triggered tasks
-    let scheduler = server.krill().build_scheduler();
+    let scheduler = krill.build_scheduler();
     let scheduler_future = scheduler.run();
+
+    // Create the HTTP server.
+    let server = HttpServer::new(krill, config.clone())?;
 
     // Create self-signed HTTPS cert if configured and not generated earlier.
     if config.https_mode().is_generate_https_cert() {
@@ -2435,7 +2445,7 @@ pub fn url_encode<S: AsRef<str>>(s: S) -> Result<String, Error> {
 
 #[cfg(feature = "multi-user")]
 fn build_auth_redirect_location(
-    user: crate::server::http::auth::LoggedInUser
+    user: crate::daemon::http::auth::LoggedInUser
 ) -> Result<String, Error> {
     fn b64_encode_attributes_with_mapped_error(
         a: &impl serde::Serialize,

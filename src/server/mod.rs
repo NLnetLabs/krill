@@ -1,6 +1,5 @@
 pub mod bgp;
 pub mod ca;
-pub mod http;
 pub mod manager;
 pub mod mq;
 pub mod properties;

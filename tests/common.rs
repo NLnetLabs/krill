@@ -28,8 +28,8 @@ use krill::config::{
     LogType, MetricsConfig, RrdpUpdatesConfig, SignerConfig,
     SignerReference, SignerType, TestBed,
 };
-use krill::server::http::tls_keys::HTTPS_SUB_DIR;
-use krill::server::http::server;
+use krill::daemon::http::tls_keys::HTTPS_SUB_DIR;
+use krill::daemon::http::server;
 use krill::tasigner::TaTimingConfig;
 
 
