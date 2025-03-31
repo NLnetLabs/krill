@@ -19,11 +19,11 @@ use crate::{
         },
         storage::{KeyValueStore, Namespace},
     },
-    daemon::{
+    server::{
         config::Config,
         properties::Properties,
     },
-    daemon::taproxy::{
+    server::taproxy::{
         TrustAnchorProxy, TrustAnchorProxyEvent, TrustAnchorProxyInitEvent,
     },
     tasigner::{

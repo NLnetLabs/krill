@@ -21,13 +21,13 @@ use crate::{
         KEYS_NS, PROPERTIES_NS, PUBSERVER_CONTENT_NS,
         PUBSERVER_NS, SIGNERS_NS, TA_PROXY_SERVER_NS, TA_SIGNER_SERVER_NS,
     },
-    daemon::{
+    server::{
         ca::upgrades::data_migration::check_ca_objects,
         config::Config,
         properties::{Properties, PropertiesManager},
         pubd::{RepositoryAccess, RepositoryContent},
     },
-    daemon::taproxy::TrustAnchorProxy,
+    server::taproxy::TrustAnchorProxy,
     upgrades::{
         finalise_data_migration, prepare_upgrade_data_migrations,
         UpgradeError,

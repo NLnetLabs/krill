@@ -1,7 +1,7 @@
 //! Perform functional tests on a Krill instance, using the API
 
 use krill::cli::client::KrillClient;
-use krill::daemon::config::Benchmark;
+use krill::server::config::Benchmark;
 use log::LevelFilter;
 
 mod common;

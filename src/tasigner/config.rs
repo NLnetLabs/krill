@@ -12,7 +12,7 @@ use url::Url;
 use crate::{
     commons::crypto::{KrillSigner, KrillSignerBuilder, OpenSslSignerConfig},
     constants::OPENSSL_ONE_OFF_SIGNER_NAME,
-    daemon::config::{LogType, SignerConfig, SignerReference, SignerType},
+    server::config::{LogType, SignerConfig, SignerReference, SignerType},
 };
 
 // TA timing defaults
@@ -92,20 +92,20 @@ impl TaTimingConfig {
 pub struct Config {
     #[serde(
         alias = "data_dir",
-        deserialize_with = "crate::daemon::config::deserialize_storage_uri"
+        deserialize_with = "crate::server::config::deserialize_storage_uri"
     )]
     pub storage_uri: Url,
 
     #[serde(default)]
     pub use_history_cache: bool,
 
-    #[serde(default = "crate::daemon::config::ConfigDefaults::log_type")]
+    #[serde(default = "crate::server::config::ConfigDefaults::log_type")]
     log_type: LogType,
 
     log_file: Option<PathBuf>,
 
     #[serde(
-        default = "crate::daemon::config::ConfigDefaults::log_level",
+        default = "crate::server::config::ConfigDefaults::log_level",
         deserialize_with = "crate::commons::ext_serde::de_level_filter"
     )]
     pub log_level: LevelFilter,
@@ -113,22 +113,22 @@ pub struct Config {
     // Signer support. Ported from main Krill.
     #[serde(
         default,
-        deserialize_with = "crate::daemon::config::deserialize_signer_ref"
+        deserialize_with = "crate::server::config::deserialize_signer_ref"
     )]
     pub default_signer: SignerReference,
 
     #[serde(
         default,
-        deserialize_with = "crate::daemon::config::deserialize_signer_ref"
+        deserialize_with = "crate::server::config::deserialize_signer_ref"
     )]
     pub one_off_signer: SignerReference,
 
     #[serde(
-        default = "crate::daemon::config::ConfigDefaults::signer_probe_retry_seconds"
+        default = "crate::server::config::ConfigDefaults::signer_probe_retry_seconds"
     )]
     pub signer_probe_retry_seconds: u64,
 
-    #[serde(default = "crate::daemon::config::ConfigDefaults::signers")]
+    #[serde(default = "crate::server::config::ConfigDefaults::signers")]
     pub signers: Vec<SignerConfig>,
 
     #[serde(

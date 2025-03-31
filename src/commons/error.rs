@@ -29,9 +29,9 @@ use crate::{
         storage,
         storage::KeyValueError,
     },
-    daemon::http::tls_keys,
-    daemon::http::auth::Permission,
-    daemon::pubd::PublicationDeltaError,
+    server::http::tls_keys,
+    server::http::auth::Permission,
+    server::pubd::PublicationDeltaError,
     upgrades::UpgradeError,
 };
 use crate::api::status::ErrorResponse;
