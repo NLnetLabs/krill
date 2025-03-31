@@ -1274,7 +1274,7 @@ mod tests {
     use url::Url;
     use crate::commons::storage::Namespace;
     use crate::commons::test;
-    use crate::daemon::ca::{CaStatus, CaStatusStore};
+    use crate::server::ca::{CaStatus, CaStatusStore};
     use super::*;
 
     fn copy_folder(src: impl AsRef<path::Path>, dst: impl AsRef<path::Path>) {
