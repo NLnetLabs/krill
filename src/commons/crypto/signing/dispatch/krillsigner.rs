@@ -517,7 +517,7 @@ pub mod tests {
             MockSigner, MockSignerCallCounts,
         },
         commons::test,
-        server::config::Config,
+        config::Config,
     };
 
     use super::*;
