@@ -65,8 +65,8 @@ use crate::{
         util::sha256,
         KrillResult,
     },
+    config::Config,
     server::{
-        config::Config,
         http::auth::{
             crypt::{self, CryptState},
             providers::openid_connect::{

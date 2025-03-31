@@ -6,7 +6,7 @@ use crate::api::admin::Token;
 use crate::commons::httpclient;
 use crate::commons::KrillResult;
 use crate::commons::error::{ApiAuthError, Error};
-use crate::server::config::Config;
+use crate::config::Config;
 use crate::server::http::auth::{AuthInfo, LoggedInUser, Role};
 use crate::server::http::request::HyperRequest;
 use crate::server::http::response::HttpResponse;

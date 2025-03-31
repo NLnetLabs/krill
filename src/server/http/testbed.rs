@@ -48,7 +48,7 @@ use crate::{
 pub async fn testbed(mut req: Request) -> Result<HttpResponse, Request> {
     if !req.path().full().starts_with("/testbed") {
         Err(req) // Not for us
-    } else if !req.state().testbed_enabled() {
+    } else if !req.server().krill().testbed_enabled() {
         render_unknown_method()
     } else {
         // The testbed is intended to be used without being logged in but

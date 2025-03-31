@@ -10,6 +10,7 @@ use std::{env, process};
 use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
 use base64::engine::Engine as _;
 use bytes::Bytes;
+use clap::crate_version;
 use hyper::header::HeaderName;
 use hyper::http::HeaderValue;
 use hyper::service::service_fn;
@@ -27,24 +28,25 @@ use tokio::select;
 use tokio_rustls::TlsAcceptor;
 use tokio::sync::oneshot;
 
+use crate::commons::file;
+use crate::commons::KrillResult;
 use crate::{
     commons::{
-        file,
         error::Error,
         eventsourcing::AggregateStoreError,
     },
     constants::{
         KRILL_ENV_HTTP_LOG_INFO, KRILL_ENV_UPGRADE_ONLY, ta_handle,
     },
+    config::Config,
     server::{
-        config::Config,
         http::{
             statics::statics, testbed::testbed, tls, tls_keys,
         },
         http::auth::Permission,
         http::request::{HyperRequest, Request, RequestPath},
         http::response::{HttpResponse, HyperResponse},
-        krillserver::KrillServer,
+        manager::KrillManager,
         properties::PropertiesManager,
     },
     upgrades::{
@@ -54,18 +56,94 @@ use crate::{
 };
 use crate::api::admin::{
     ApiRepositoryContact, ParentCaReq, PublisherList, RepositoryContact,
-    Token,
+    ServerInfo, Token,
 };
 use crate::api::aspa::AspaDefinitionUpdates;
 use crate::api::bgp::BgpAnalysisAdvice;
-use crate::api::ca::RtaName;
+use crate::api::ca::{RtaName, Timestamp};
 use crate::api::history::CommandHistoryCriteria;
 use crate::api::roa::RoaConfigurationUpdates;
+use super::auth::{AuthInfo, Authorizer, LoggedInUser};
 
 
-//------------ State -----------------------------------------------------
+//------------ HttpServer ----------------------------------------------------
 
-pub type State = Arc<KrillServer>;
+/// The Krill HTTP server.
+pub struct HttpServer {
+    /// The Krill “business logic.”
+    krill: KrillManager,
+
+    /// The component responsible for API authorization checks
+    authorizer: Authorizer,
+
+    /// A copy of the configuration.
+    config: Arc<Config>,
+
+    /// Time this server was started
+    started: Timestamp,
+}
+
+impl HttpServer {
+    /// Creates a new server from the configuration.
+    pub async fn build(config: Arc<Config>) -> KrillResult<Arc<Self>> {
+        Ok(Self {
+            krill: KrillManager::build(config.clone()).await?,
+            authorizer: Authorizer::new(config.clone())?,
+            config,
+            started: Timestamp::now(),
+        }.into())
+    }
+
+    /// Returns a reference to the Krill manager.
+    pub fn krill(&self) -> &KrillManager {
+        &self.krill
+    }
+
+    /// Returns the config.
+    pub fn config(&self) -> &Config {
+        &self.config
+    }
+
+    pub fn server_info(&self) -> ServerInfo {
+        ServerInfo {
+            version: crate_version!().into(),
+            started: self.started
+        }
+    }
+}
+
+/// # Authentication and Access
+impl HttpServer {
+    pub async fn authenticate_request(
+        &self, request: &HyperRequest
+    ) -> AuthInfo {
+        self.authorizer.authenticate_request(request).await
+    }
+
+    pub async fn get_login_url(&self) -> KrillResult<HttpResponse> {
+        self.authorizer.get_login_url().await
+    }
+
+    pub async fn login(
+        &self,
+        request: &HyperRequest,
+    ) -> KrillResult<LoggedInUser> {
+        self.authorizer.login(request).await
+    }
+
+    pub async fn logout(
+        &self,
+        request: &HyperRequest,
+    ) -> KrillResult<HttpResponse> {
+        self.authorizer.logout(request).await
+    }
+
+    #[cfg(feature = "multi-user")]
+    pub async fn login_session_cache_size(&self) -> usize {
+        self.authorizer.login_session_cache_size().await
+    }
+}
+
 
 fn print_write_error_hint_and_die(error_msg: String) {
     eprintln!("{}", error_msg);
@@ -157,13 +235,13 @@ pub async fn start_krill_daemon(
 
     // Create the server, this will create the necessary data sub-directories
     // if needed
-    let krill_server = KrillServer::build(config.clone()).await?;
+    let server = HttpServer::build(config.clone()).await?;
 
     // Call post-start upgrades to trigger any upgrade related runtime
     // actions, such as re-issuing ROAs because subject name strategy has
     // changed.
     if let Some(report) = upgrade_report {
-        post_start_upgrade(report, &krill_server).await?;
+        post_start_upgrade(report, &server.krill()).await?;
     }
 
     // If the operator wanted to do the upgrade only, now is a good time to
@@ -175,11 +253,8 @@ pub async fn start_krill_daemon(
 
     // Build the scheduler which will be responsible for executing
     // planned/triggered tasks
-    let scheduler = krill_server.build_scheduler();
+    let scheduler = server.krill().build_scheduler();
     let scheduler_future = scheduler.run();
-
-    // Start creating the server.
-    let krill_server = Arc::new(krill_server);
 
     // Create self-signed HTTPS cert if configured and not generated earlier.
     if config.https_mode().is_generate_https_cert() {
@@ -191,7 +266,7 @@ pub async fn start_krill_daemon(
     let server_futures = futures_util::future::select_all(
         config.socket_addresses().into_iter().map(|socket_addr| {
             tokio::spawn(single_http_listener(
-                krill_server.clone(),
+                server.clone(),
                 socket_addr,
                 config.clone(),
                 signal_running.take(),
@@ -209,7 +284,7 @@ pub async fn start_krill_daemon(
 
 /// Runs an HTTP listener on a single socket.
 async fn single_http_listener(
-    krill_server: Arc<KrillServer>,
+    server: Arc<HttpServer>,
     addr: SocketAddr,
     config: Arc<Config>,
     signal_running: Option<oneshot::Sender<()>>,
@@ -251,7 +326,7 @@ async fn single_http_listener(
                 return;
             }
         };
-        let server = krill_server.clone();
+        let server = server.clone();
         tokio::task::spawn(async move {
             let _ = hyper_util::server::conn::auto::Builder::new(
                 TokioExecutor::new(),
@@ -342,11 +417,11 @@ impl RequestLogger {
 
 async fn map_requests(
     req: HyperRequest,
-    state: State,
+    server: Arc<HttpServer>,
 ) -> Result<HyperResponse, Error> {
     let logger = RequestLogger::begin(&req);
 
-    let mut req = Request::new(req, state).await;
+    let mut req = Request::new(req, server).await;
 
     // Save any updated auth details, e.g. if an OpenID Connect token needed
     // refreshing.
@@ -496,14 +571,14 @@ pub async fn rfc8181(req: Request) -> Result<HttpResponse, Request> {
             None => return render_error(Error::ApiInvalidHandle),
         };
 
-        let state = req.state().clone();
+        let server = req.server().clone();
 
         let bytes = match req.rfc8181_bytes().await {
             Ok(bytes) => bytes,
             Err(e) => return render_error(e),
         };
 
-        match state.rfc8181(publisher, bytes) {
+        match server.krill().rfc8181(publisher, bytes) {
             Ok(bytes) => Ok(HttpResponse::rfc8181(bytes.to_vec())),
             Err(e) => render_error(e),
         }
@@ -526,7 +601,7 @@ async fn ta(req: Request) -> Result<HttpResponse, Request> {
 }
 
 pub async fn tal(req: Request) -> Result<HttpResponse, Request> {
-    match req.state().ta_cert_details().await {
+    match req.server().krill().ta_cert_details().await {
         Ok(ta) => {
             Ok(HttpResponse::text(format!("{}", ta.tal()).into_bytes()))
         }
@@ -535,7 +610,7 @@ pub async fn tal(req: Request) -> Result<HttpResponse, Request> {
 }
 
 pub async fn ta_cer(req: Request) -> Result<HttpResponse, Request> {
-    match req.state().trust_anchor_cert().await {
+    match req.server().krill().trust_anchor_cert().await {
         Some(cert) => Ok(HttpResponse::cert(cert.to_bytes().to_vec())),
         None => render_unknown_resource(),
     }
@@ -553,15 +628,14 @@ pub async fn rfc6492(req: Request) -> Result<HttpResponse, Request> {
         };
 
         let actor = req.actor();
-        let state = req.state().clone();
+        let server = req.server().clone();
         let user_agent = req.user_agent();
 
         let bytes = match req.rfc6492_bytes().await {
             Ok(bytes) => bytes,
             Err(e) => return render_error(e),
         };
-        let krill_server = state;
-        match krill_server.rfc6492(ca, bytes, user_agent, &actor).await {
+        match server.krill().rfc6492(ca, bytes, user_agent, &actor).await {
             Ok(bytes) => Ok(HttpResponse::rfc6492(bytes.to_vec())),
             Err(e) => render_error(e),
         }
@@ -574,9 +648,9 @@ pub async fn rfc6492(req: Request) -> Result<HttpResponse, Request> {
 async fn stats(req: Request) -> Result<HttpResponse, Request> {
     match *req.method() {
         Method::GET => match req.path().full() {
-            "/stats/info" => render_json(req.state().server_info()),
-            "/stats/repo" => render_json_res(req.state().repo_stats()),
-            "/stats/cas" => render_json_res(req.state().cas_stats().await),
+            "/stats/info" => render_json(req.server().server_info()),
+            "/stats/repo" => render_json_res(req.server().krill().repo_stats()),
+            "/stats/cas" => render_json_res(req.server().krill().cas_stats().await),
             _ => Err(req),
         },
         _ => Err(req),
@@ -725,7 +799,7 @@ async fn api(req: Request) -> Result<HttpResponse, Request> {
 async fn api_authorized(req: Request) -> Result<HttpResponse, Request> {
     // Use 'no_warn' to prevent the log being filled with warnings about
     // insufficient user rights as this API endpoint is invoked by Lagosta on
-    // every view transition, and not being authorized is a valid state that
+    // every view transition, and not being authorized is a valid server that
     // triggers Lagosta to show a login form, not something to warn about!
     aa!(no_warn
         req,
@@ -887,10 +961,10 @@ async fn api_ca_sync(
         if req.is_post() {
             match path.next() {
                 Some("parents") => {
-                    render_empty_res(req.state().cas_refresh_single(ca).await)
+                    render_empty_res(req.server().krill().cas_refresh_single(ca).await)
                 }
                 Some("repo") => {
-                    render_empty_res(req.state().cas_repo_sync_single(&ca))
+                    render_empty_res(req.server().krill().cas_repo_sync_single(&ca))
                 }
                 _ => render_unknown_method(),
             }
@@ -908,11 +982,11 @@ async fn api_publication_server(
         Some("publishers") => api_publishers(req, path).await,
         Some("delete") => match *req.method() {
             Method::POST => {
-                let state = req.state().clone();
+                let server = req.server().clone();
 
                 match req.json().await {
                     Ok(criteria) => render_empty_res(
-                        state.delete_matching_files(criteria),
+                        server.krill().delete_matching_files(criteria),
                     ),
                     Err(e) => render_error(e),
                 }
@@ -922,18 +996,18 @@ async fn api_publication_server(
         Some("stale") => api_stale_publishers(req, path.next()).await,
         Some("init") => match *req.method() {
             Method::POST => {
-                let state = req.state().clone();
+                let server = req.server().clone();
                 match req.json().await {
-                    Ok(uris) => render_empty_res(state.repository_init(uris)),
+                    Ok(uris) => render_empty_res(server.krill().repository_init(uris)),
                     Err(e) => render_error(e),
                 }
             }
-            Method::DELETE => render_empty_res(req.state().repository_clear()),
+            Method::DELETE => render_empty_res(req.server().krill().repository_clear()),
             _ => render_unknown_method(),
         },
         Some("session_reset") => match *req.method() {
             Method::POST => {
-                render_empty_res(req.state().repository_session_reset())
+                render_empty_res(req.server().krill().repository_session_reset())
             }
             _ => render_unknown_method(),
         },
@@ -984,7 +1058,7 @@ pub async fn api_stale_publishers(
         let seconds = seconds.unwrap_or("");
         match i64::from_str(seconds) {
             Ok(seconds) => {
-                render_json_res(req.state().repo_stats().map(|stats| {
+                render_json_res(req.server().krill().repo_stats().map(|stats| {
                     PublisherList::from_slice(&stats.stale_publishers(seconds))
                 }))
             }
@@ -997,7 +1071,7 @@ pub async fn api_stale_publishers(
 pub async fn api_list_pbl(req: Request) -> Result<HttpResponse, Request> {
     aa!(req, Permission::PubList, {
         render_json_res(
-            req.state()
+            req.server().krill()
                 .publishers()
                 .map(|publishers| PublisherList::from_slice(&publishers)),
         )
@@ -1008,9 +1082,9 @@ pub async fn api_list_pbl(req: Request) -> Result<HttpResponse, Request> {
 pub async fn api_add_pbl(req: Request) -> Result<HttpResponse, Request> {
     aa!(req, Permission::PubCreate, {
         let actor = req.actor();
-        let server = req.state().clone();
+        let server = req.server().clone();
         match req.json().await {
-            Ok(pbl) => render_json_res(server.add_publisher(pbl, &actor)),
+            Ok(pbl) => render_json_res(server.krill().add_publisher(pbl, &actor)),
             Err(e) => render_error(e),
         }
     })
@@ -1025,7 +1099,7 @@ pub async fn api_remove_pbl(
 ) -> Result<HttpResponse, Request> {
     aa!(req, Permission::PubDelete, {
         let actor = req.actor();
-        render_empty_res(req.state().remove_publisher(publisher, &actor))
+        render_empty_res(req.server().krill().remove_publisher(publisher, &actor))
     })
 }
 
@@ -1038,7 +1112,7 @@ pub async fn api_show_pbl(
     aa!(
         req,
         Permission::PubRead,
-        render_json_res(req.state().get_publisher(publisher))
+        render_json_res(req.server().krill().get_publisher(publisher))
     )
 }
 
@@ -1077,16 +1151,16 @@ async fn repository_response(
     req: &Request,
     publisher: &PublisherHandle,
 ) -> Result<idexchange::RepositoryResponse, Error> {
-    req.state().repository_response(publisher)
+    req.server().krill().repository_response(publisher)
 }
 
 pub async fn api_ca_add_child(req: Request, ca: CaHandle) -> Result<HttpResponse, Request> {
     aa!(req, Permission::CaUpdate, ca, {
         let actor = req.actor();
-        let server = req.state().clone();
+        let server = req.server().clone();
         match req.json().await {
             Ok(child_req) => render_json_res(
-                server.ca_add_child(&ca, child_req, &actor).await,
+                server.krill().ca_add_child(&ca, child_req, &actor).await,
             ),
             Err(e) => render_error(e),
         }
@@ -1100,10 +1174,10 @@ async fn api_ca_child_update(
 ) -> Result<HttpResponse, Request> {
     aa!(req, Permission::CaUpdate, ca, {
         let actor = req.actor();
-        let server = req.state().clone();
+        let server = req.server().clone();
         match req.json().await {
             Ok(child_req) => render_empty_res(
-                server.ca_child_update(&ca, child, child_req, &actor).await,
+                server.krill().ca_child_update(&ca, child, child_req, &actor).await,
             ),
             Err(e) => render_error(e),
         }
@@ -1118,7 +1192,7 @@ pub async fn api_ca_child_remove(
     aa!(req, Permission::CaUpdate, ca, {
         let actor = req.actor();
         render_empty_res(
-            req.state().ca_child_remove(&ca, child, &actor).await,
+            req.server().krill().ca_child_remove(&ca, child, &actor).await,
         )
     })
 }
@@ -1132,7 +1206,7 @@ async fn api_ca_child_show(
         req,
         Permission::CaRead,
         ca,
-        render_json_res(req.state().ca_child_show(&ca, &child).await)
+        render_json_res(req.server().krill().ca_child_show(&ca, &child).await)
     )
 }
 
@@ -1145,17 +1219,17 @@ async fn api_ca_child_export(
         req,
         Permission::CaRead,
         ca,
-        render_json_res(req.state().api_ca_child_export(&ca, &child).await)
+        render_json_res(req.server().krill().api_ca_child_export(&ca, &child).await)
     )
 }
 
 async fn api_ca_child_import(req: Request, ca: CaHandle) -> Result<HttpResponse, Request> {
     aa!(req, Permission::CaAdmin, ca, {
         let actor = req.actor();
-        let server = req.state().clone();
+        let server = req.server().clone();
         match req.json().await {
             Ok(import_child) => render_empty_res(
-                server.api_ca_child_import(&ca, import_child, &actor).await,
+                server.krill().api_ca_child_import(&ca, import_child, &actor).await,
             ),
             Err(e) => render_error(e),
         }
@@ -1170,7 +1244,7 @@ async fn api_ca_stats_child_connections(
         req,
         Permission::CaRead,
         ca,
-        render_json_res(req.state().ca_stats_child_connections(&ca).await)
+        render_json_res(req.server().krill().ca_stats_child_connections(&ca).await)
     )
 }
 
@@ -1184,7 +1258,7 @@ async fn api_ca_parent_res_json(
         Permission::CaRead,
         ca,
         render_json_res(
-            req.state().ca_parent_response(&ca, child.clone()).await
+            req.server().krill().ca_parent_response(&ca, child.clone()).await
         )
     )
 }
@@ -1195,7 +1269,7 @@ pub async fn api_ca_parent_res_xml(
     child: ChildHandle,
 ) -> Result<HttpResponse, Request> {
     aa!(req, Permission::CaRead, ca, {
-        match req.state().ca_parent_response(&ca, child.clone()).await {
+        match req.server().krill().ca_parent_response(&ca, child.clone()).await {
             Ok(res) => Ok(HttpResponse::xml(res.to_xml_vec())),
             Err(e) => render_error(e),
         }
@@ -1207,10 +1281,10 @@ pub async fn api_ca_parent_res_xml(
 async fn api_cas_import(req: Request) -> Result<HttpResponse, Request> {
     match *req.method() {
         Method::POST => aa!(req, Permission::CaAdmin, {
-            let server = req.state().clone();
+            let server = req.server().clone();
             match req.json().await {
                 Ok(structure) => {
-                    render_empty_res(server.cas_import(structure).await)
+                    render_empty_res(server.krill().cas_import(structure).await)
                 }
                 Err(e) => render_error(e),
             }
@@ -1223,21 +1297,21 @@ async fn api_all_ca_issues(req: Request) -> Result<HttpResponse, Request> {
     match *req.method() {
         Method::GET => aa!(req, Permission::CaRead, {
             render_json_res(
-                req.state().all_ca_issues(req.auth_info()).await
+                req.server().krill().all_ca_issues(req.auth_info()).await
             )
         }),
         _ => render_unknown_method(),
     }
 }
 
-/// Returns the health (state) for a given CA.
+/// Returns the health (server) for a given CA.
 async fn api_ca_issues(req: Request, ca: CaHandle) -> Result<HttpResponse, Request> {
     match *req.method() {
         Method::GET => aa!(
             req,
             Permission::CaRead,
             ca,
-            render_json_res(req.state().ca_issues(&ca).await)
+            render_json_res(req.server().krill().ca_issues(&ca).await)
         ),
         _ => render_unknown_method(),
     }
@@ -1245,16 +1319,16 @@ async fn api_ca_issues(req: Request, ca: CaHandle) -> Result<HttpResponse, Reque
 
 async fn api_cas_list(req: Request) -> Result<HttpResponse, Request> {
     aa!(req, Permission::CaList, {
-        render_json_res(req.state().ca_list(req.auth_info()))
+        render_json_res(req.server().krill().ca_list(req.auth_info()))
     })
 }
 
 pub async fn api_ca_init(req: Request) -> Result<HttpResponse, Request> {
     aa!(req, Permission::CaCreate, {
-        let state = req.state().clone();
+        let server = req.server().clone();
 
         match req.json().await {
-            Ok(ca_init) => render_empty_res(state.ca_init(ca_init)),
+            Ok(ca_init) => render_empty_res(server.krill().ca_init(ca_init)),
             Err(e) => render_error(e),
         }
     })
@@ -1268,7 +1342,7 @@ async fn api_ca_id(
     match *req.method() {
         Method::POST => aa!(req, Permission::CaUpdate, ca, {
             let actor = req.actor();
-            render_empty_res(req.state().ca_update_id(ca, &actor).await)
+            render_empty_res(req.server().krill().ca_update_id(ca, &actor).await)
         }),
         Method::GET => match path.next() {
             Some("child_request.xml") => api_ca_child_req_xml(req, ca).await,
@@ -1292,7 +1366,7 @@ async fn api_ca_info(req: Request, handle: CaHandle) -> Result<HttpResponse, Req
         req,
         Permission::CaRead,
         handle,
-        render_json_res(req.state().ca_info(&handle).await)
+        render_json_res(req.server().krill().ca_info(&handle).await)
     )
 }
 
@@ -1302,7 +1376,7 @@ async fn api_ca_delete(req: Request, handle: CaHandle) -> Result<HttpResponse, R
         req,
         Permission::CaDelete,
         handle,
-        render_json_res(req.state().ca_delete(&handle, &actor).await)
+        render_json_res(req.server().krill().ca_delete(&handle, &actor).await)
     )
 }
 
@@ -1315,7 +1389,7 @@ async fn api_ca_my_parent_contact(
         req,
         Permission::CaRead,
         ca,
-        render_json_res(req.state().ca_my_parent_contact(&ca, &parent).await)
+        render_json_res(req.server().krill().ca_my_parent_contact(&ca, &parent).await)
     )
 }
 
@@ -1328,7 +1402,7 @@ async fn api_ca_my_parent_statuses(
         Permission::CaRead,
         ca,
         render_json_res(
-            req.state()
+            req.server().krill()
                 .ca_status(&ca)
                 .map(|s| s.parents().clone())
         )
@@ -1396,7 +1470,7 @@ async fn api_ca_bgpsec_definitions_show(
     ca: CaHandle,
 ) -> Result<HttpResponse, Request> {
     aa!(req, Permission::BgpsecRead, ca, {
-        render_json_res(req.state().ca_bgpsec_definitions_show(ca).await)
+        render_json_res(req.server().krill().ca_bgpsec_definitions_show(ca).await)
     })
 }
 
@@ -1406,10 +1480,10 @@ async fn api_ca_bgpsec_definitions_update(
 ) -> Result<HttpResponse, Request> {
     aa!(req, Permission::BgpsecUpdate, ca, {
         let actor = req.actor();
-        let server = req.state().clone();
+        let server = req.server().clone();
         match req.json().await {
             Ok(updates) => render_empty_res(
-                server
+                server.krill()
                     .ca_bgpsec_definitions_update(ca, updates, &actor)
                     .await,
             ),
@@ -1468,7 +1542,7 @@ async fn api_ca_history_commands(
                 crit.after = path.path_arg();
                 crit.before = path.path_arg();
 
-                match req.state().ca_history(&handle, crit).await {
+                match req.server().krill().ca_history(&handle, crit).await {
                     Ok(history) => render_json(history),
                     Err(e) => render_error(e),
                 }
@@ -1501,7 +1575,7 @@ async fn api_ca_command_details(
         Some(key) => match *req.method() {
             Method::GET => {
                 aa!(req, Permission::CaRead, ca, {
-                    match req.state().ca_command_details(&ca, key) {
+                    match req.server().krill().ca_command_details(&ca, key) {
                         Ok(details) => render_json(details),
                         Err(e) => match e {
                             Error::AggregateStoreError(
@@ -1553,7 +1627,7 @@ async fn ca_child_req(
     req: &Request,
     ca: &CaHandle,
 ) -> Result<idexchange::ChildRequest, Error> {
-    req.state().ca_child_req(ca).await
+    req.server().krill().ca_child_req(ca).await
 }
 
 async fn api_ca_publisher_req_json(
@@ -1565,7 +1639,7 @@ async fn api_ca_publisher_req_json(
             req,
             Permission::CaRead,
             ca,
-            render_json_res(req.state().ca_publisher_req(&ca).await)
+            render_json_res(req.server().krill().ca_publisher_req(&ca).await)
         ),
         _ => render_unknown_method(),
     }
@@ -1580,7 +1654,7 @@ async fn api_ca_publisher_req_xml(
             req,
             Permission::CaRead,
             ca,
-            match req.state().ca_publisher_req(&ca).await {
+            match req.server().krill().ca_publisher_req(&ca).await {
                 Ok(publisher_request) =>
                     Ok(HttpResponse::xml(publisher_request.to_xml_vec())),
                 Err(e) => render_error(e),
@@ -1595,7 +1669,7 @@ async fn api_ca_repo_details(req: Request, ca: CaHandle) -> Result<HttpResponse,
         req,
         Permission::CaRead,
         ca,
-        render_json_res(req.state().ca_repo_details(&ca).await)
+        render_json_res(req.server().krill().ca_repo_details(&ca).await)
     )
 }
 
@@ -1606,7 +1680,7 @@ async fn api_ca_repo_status(req: Request, ca: CaHandle) -> Result<HttpResponse, 
             Permission::CaRead,
             ca,
             render_json_res(
-                req.state()
+                req.server().krill()
                     .ca_status(&ca)
                     .map(|status| status.repo().clone())
             )
@@ -1652,7 +1726,7 @@ fn extract_repository_contact(
 async fn api_ca_repo_update(req: Request, ca: CaHandle) -> Result<HttpResponse, Request> {
     aa!(req, Permission::CaUpdate, ca, {
         let actor = req.actor();
-        let server = req.state().clone();
+        let server = req.server().clone();
 
         match req
             .api_bytes()
@@ -1660,7 +1734,7 @@ async fn api_ca_repo_update(req: Request, ca: CaHandle) -> Result<HttpResponse, 
             .map(|bytes| extract_repository_contact(&ca, bytes))
         {
             Ok(Ok(update)) => render_empty_res(
-                server.ca_repo_update(ca, update, &actor).await,
+                server.krill().ca_repo_update(ca, update, &actor).await,
             ),
             Ok(Err(e)) | Err(e) => render_error(e),
         }
@@ -1674,7 +1748,7 @@ async fn api_ca_parent_add_or_update(
 ) -> Result<HttpResponse, Request> {
     aa!(req, Permission::CaUpdate, ca, {
         let actor = req.actor();
-        let server = req.state().clone();
+        let server = req.server().clone();
 
         let bytes = match req.api_bytes().await {
             Ok(bytes) => bytes,
@@ -1683,7 +1757,7 @@ async fn api_ca_parent_add_or_update(
 
         match extract_parent_ca_req(&ca, bytes, parent_override) {
             Ok(parent_req) => render_empty_res(
-                server.ca_parent_add_or_update(ca, parent_req, &actor).await,
+                server.krill().ca_parent_add_or_update(ca, parent_req, &actor).await,
             ),
             Err(e) => render_error(e),
         }
@@ -1744,7 +1818,7 @@ async fn api_ca_remove_parent(
     aa!(req, Permission::CaUpdate, ca, {
         let actor = req.actor();
         render_empty_res(
-            req.state().ca_parent_remove(ca, parent, &actor).await,
+            req.server().krill().ca_parent_remove(ca, parent, &actor).await,
         )
     })
 }
@@ -1753,7 +1827,7 @@ async fn api_ca_remove_parent(
 async fn api_ca_kr_init(req: Request, ca: CaHandle) -> Result<HttpResponse, Request> {
     aa!(req, Permission::CaUpdate, ca, {
         let actor = req.actor();
-        render_empty_res(req.state().ca_keyroll_init(ca, &actor).await)
+        render_empty_res(req.server().krill().ca_keyroll_init(ca, &actor).await)
     })
 }
 
@@ -1762,7 +1836,7 @@ async fn api_ca_kr_init(req: Request, ca: CaHandle) -> Result<HttpResponse, Requ
 async fn api_ca_kr_activate(req: Request, ca: CaHandle) -> Result<HttpResponse, Request> {
     aa!(req, Permission::CaUpdate, ca, {
         let actor = req.actor();
-        render_empty_res(req.state().ca_keyroll_activate(ca, &actor).await)
+        render_empty_res(req.server().krill().ca_keyroll_activate(ca, &actor).await)
     })
 }
 
@@ -1774,8 +1848,8 @@ async fn api_ca_aspas_definitions_show(
     ca: CaHandle,
 ) -> Result<HttpResponse, Request> {
     aa!(req, Permission::AspasRead, ca, {
-        let state = req.state().clone();
-        render_json_res(state.ca_aspas_definitions_show(ca).await)
+        let server = req.server().clone();
+        render_json_res(server.krill().ca_aspas_definitions_show(ca).await)
     })
 }
 
@@ -1786,12 +1860,12 @@ async fn api_ca_aspas_definitions_update(
 ) -> Result<HttpResponse, Request> {
     aa!(req, Permission::AspasUpdate, ca, {
         let actor = req.actor();
-        let state = req.state().clone();
+        let server = req.server().clone();
 
         match req.json().await {
             Err(e) => render_error(e),
             Ok(updates) => render_empty_res(
-                state.ca_aspas_definitions_update(ca, updates, &actor).await,
+                server.krill().ca_aspas_definitions_update(ca, updates, &actor).await,
             ),
         }
     })
@@ -1806,12 +1880,12 @@ async fn api_ca_aspas_update_aspa(
 ) -> Result<HttpResponse, Request> {
     aa!(req, Permission::AspasUpdate, ca, {
         let actor = req.actor();
-        let state = req.state().clone();
+        let server = req.server().clone();
 
         match req.json().await {
             Err(e) => render_error(e),
             Ok(update) => render_empty_res(
-                state
+                server.krill()
                     .ca_aspas_update_aspa(ca, customer, update, &actor)
                     .await,
             ),
@@ -1827,14 +1901,14 @@ async fn api_ca_aspas_delete(
 ) -> Result<HttpResponse, Request> {
     aa!(req, Permission::AspasUpdate, ca, {
         let actor = req.actor();
-        let state = req.state().clone();
+        let server = req.server().clone();
 
         let updates = AspaDefinitionUpdates {
             add_or_replace: Vec::new(),
             remove: vec![customer]
         };
         render_empty_res(
-            state.ca_aspas_definitions_update(ca, updates, &actor).await,
+            server.krill().ca_aspas_definitions_update(ca, updates, &actor).await,
         )
     })
 }
@@ -1843,12 +1917,12 @@ async fn api_ca_aspas_delete(
 async fn api_ca_routes_update(req: Request, ca: CaHandle) -> Result<HttpResponse, Request> {
     aa!(req, Permission::RoutesUpdate, ca, {
         let actor = req.actor();
-        let state = req.state().clone();
+        let server = req.server().clone();
 
         match req.json().await {
             Err(e) => render_error(e),
             Ok(updates) => render_empty_res(
-                state.ca_routes_update(ca, updates, &actor).await,
+                server.krill().ca_routes_update(ca, updates, &actor).await,
             ),
         }
     })
@@ -1863,13 +1937,13 @@ async fn api_ca_routes_try_update(
 ) -> Result<HttpResponse, Request> {
     aa!(req, Permission::RoutesUpdate, ca, {
         let actor = req.actor();
-        let state = req.state().clone();
+        let server = req.server().clone();
 
         match req.json::<RoaConfigurationUpdates>().await {
             Err(e) => render_error(e),
             Ok(mut updates) => {
-                let server = state;
-                match server.ca_routes_bgp_dry_run(&ca, updates.clone()).await
+                let server = server;
+                match server.krill().ca_routes_bgp_dry_run(&ca, updates.clone()).await
                 {
                     Err(e) => {
                         // update was rejected, return error
@@ -1879,7 +1953,7 @@ async fn api_ca_routes_try_update(
                         if !effect.contains_invalids() {
                             // no issues found, apply
                             render_empty_res(
-                                server
+                                server.krill()
                                     .ca_routes_update(ca, updates, &actor)
                                     .await,
                             )
@@ -1888,7 +1962,7 @@ async fn api_ca_routes_try_update(
                             updates.set_explicit_max_length();
                             let resources = updates.affected_prefixes();
 
-                            match server
+                            match server.krill()
                                 .ca_routes_bgp_suggest(&ca, Some(resources))
                                 .await
                             {
@@ -1913,14 +1987,14 @@ async fn api_ca_routes_try_update(
 /// show the route authorizations for this CA
 async fn api_ca_routes_show(req: Request, ca: CaHandle) -> Result<HttpResponse, Request> {
     aa!(req, Permission::RoutesRead, ca, {
-        match req.state().ca_routes_show(&ca).await {
+        match req.server().krill().ca_routes_show(&ca).await {
             Ok(roas) => render_json(roas),
             Err(_) => render_unknown_resource(),
         }
     })
 }
 
-/// Show the state of ROAs vs BGP for this CA
+/// Show the server of ROAs vs BGP for this CA
 async fn api_ca_routes_analysis(
     req: Request,
     path: &mut RequestPath,
@@ -1929,15 +2003,15 @@ async fn api_ca_routes_analysis(
     aa!(req, Permission::RoutesAnalysis, ca, {
         match path.next() {
             Some("full") => {
-                render_json_res(req.state().ca_routes_bgp_analysis(&ca).await)
+                render_json_res(req.server().krill().ca_routes_bgp_analysis(&ca).await)
             }
             Some("dryrun") => match *req.method() {
                 Method::POST => {
-                    let state = req.state().clone();
+                    let server = req.server().clone();
                     match req.json().await {
                         Err(e) => render_error(e),
                         Ok(updates) => render_json_res(
-                            state.ca_routes_bgp_dry_run(&ca, updates).await,
+                            server.krill().ca_routes_bgp_dry_run(&ca, updates).await,
                         ),
                     }
                 }
@@ -1945,14 +2019,14 @@ async fn api_ca_routes_analysis(
             },
             Some("suggest") => match *req.method() {
                 Method::GET => render_json_res(
-                    req.state().ca_routes_bgp_suggest(&ca, None).await,
+                    req.server().krill().ca_routes_bgp_suggest(&ca, None).await,
                 ),
                 Method::POST => {
-                    let server = req.state().clone();
+                    let server = req.server().clone();
                     match req.json().await {
                         Err(e) => render_error(e),
                         Ok(resources) => render_json_res(
-                            server
+                            server.krill()
                                 .ca_routes_bgp_suggest(&ca, Some(resources))
                                 .await,
                         ),
@@ -1970,7 +2044,9 @@ async fn api_ca_routes_analysis(
 async fn api_republish_all(req: Request, force: bool) -> Result<HttpResponse, Request> {
     match *req.method() {
         Method::POST => aa!(req, Permission::CaAdmin, {
-            render_empty_res(req.state().republish_all(force).await)
+            render_empty_res(
+                req.server().krill().republish_all(force).await
+            )
         }),
         _ => render_unknown_method(),
     }
@@ -1979,7 +2055,9 @@ async fn api_republish_all(req: Request, force: bool) -> Result<HttpResponse, Re
 async fn api_resync_all(req: Request) -> Result<HttpResponse, Request> {
     match *req.method() {
         Method::POST => aa!(req, Permission::CaAdmin, {
-            render_empty_res(req.state().cas_repo_sync_all(req.auth_info()))
+            render_empty_res(
+                req.server().krill().cas_repo_sync_all(req.auth_info())
+            )
         }),
         _ => render_unknown_method(),
     }
@@ -1989,7 +2067,7 @@ async fn api_resync_all(req: Request) -> Result<HttpResponse, Request> {
 async fn api_refresh_all(req: Request) -> Result<HttpResponse, Request> {
     match *req.method() {
         Method::POST => aa!(req, Permission::CaAdmin, {
-            render_empty_res(req.state().cas_refresh_all().await)
+            render_empty_res(req.server().krill().cas_refresh_all().await)
         }),
         _ => render_unknown_method(),
     }
@@ -1999,7 +2077,7 @@ async fn api_refresh_all(req: Request) -> Result<HttpResponse, Request> {
 async fn api_suspend_all(req: Request) -> Result<HttpResponse, Request> {
     match *req.method() {
         Method::POST => aa!(req, Permission::CaAdmin, {
-            render_empty_res(req.state().cas_schedule_suspend_all())
+            render_empty_res(req.server().krill().cas_schedule_suspend_all())
         }),
         _ => render_unknown_method(),
     }
@@ -2011,7 +2089,7 @@ async fn rrdp(req: Request) -> Result<HttpResponse, Request> {
     if !req.path().full().starts_with("/rrdp/") {
         Err(req) // Not for us
     } else {
-        let mut full_path: PathBuf = req.state().rrdp_base_path();
+        let mut full_path: PathBuf = req.server().krill().rrdp_base_path();
         let (_, path) = req.path().remaining().split_at(1);
         let cache_seconds = if path.ends_with("notification.xml") {
             60
@@ -2080,7 +2158,7 @@ async fn api_ca_rta_list(req: Request, ca: CaHandle) -> Result<HttpResponse, Req
         req,
         Permission::RtaList,
         ca,
-        render_json_res(req.state().rta_list(ca).await)
+        render_json_res(req.server().krill().rta_list(ca).await)
     )
 }
 
@@ -2093,7 +2171,7 @@ async fn api_ca_rta_show(
         req,
         Permission::RtaRead,
         ca,
-        render_json_res(req.state().rta_show(ca, name).await)
+        render_json_res(req.server().krill().rta_show(ca, name).await)
     )
 }
 
@@ -2104,11 +2182,11 @@ async fn api_ca_rta_sign(
 ) -> Result<HttpResponse, Request> {
     aa!(req, Permission::RtaUpdate, ca, {
         let actor = req.actor();
-        let state = req.state().clone();
+        let server = req.server().clone();
         match req.json().await {
             Err(e) => render_error(e),
             Ok(request) => render_empty_res(
-                state.rta_sign(ca, name, request, &actor).await,
+                server.krill().rta_sign(ca, name, request, &actor).await,
             ),
         }
     })
@@ -2121,11 +2199,11 @@ async fn api_ca_rta_multi_prep(
 ) -> Result<HttpResponse, Request> {
     aa!(req, Permission::RtaUpdate, ca, {
         let actor = req.actor();
-        let state = req.state().clone();
+        let server = req.server().clone();
 
         match req.json().await {
             Ok(resources) => render_json_res(
-                state.rta_multi_prep(ca, name, resources, &actor).await,
+                server.krill().rta_multi_prep(ca, name, resources, &actor).await,
             ),
             Err(e) => render_error(e),
         }
@@ -2139,10 +2217,10 @@ async fn api_ca_rta_multi_sign(
 ) -> Result<HttpResponse, Request> {
     aa!(req, Permission::RtaUpdate, ca, {
         let actor = req.actor();
-        let state = req.state().clone();
+        let server = req.server().clone();
         match req.json().await {
             Ok(rta) => render_empty_res(
-                state.rta_multi_cosign(ca, name, rta, &actor).await,
+                server.krill().rta_multi_cosign(ca, name, rta, &actor).await,
             ),
             Err(_) => render_error(Error::custom(
                 "Cannot decode RTA for co-signing",
@@ -2192,30 +2270,30 @@ async fn api_ta(req: Request, path: &mut RequestPath) -> Result<HttpResponse, Re
     match path.next() {
         Some("proxy") => match path.next() {
             Some("init") => {
-                render_empty_res(req.state().ta_proxy_init().await)
+                render_empty_res(req.server().krill().ta_proxy_init().await)
             }
-            Some("id") => render_json_res(req.state().ta_proxy_id().await),
+            Some("id") => render_json_res(req.server().krill().ta_proxy_id().await),
             Some("repo") => match path.next() {
                 Some("request.xml") => {
-                    match req.state().ta_proxy_publisher_request().await {
+                    match req.server().krill().ta_proxy_publisher_request().await {
                         Ok(req) => Ok(HttpResponse::xml(req.to_xml_vec())),
                         Err(e) => render_error(e),
                     }
                 }
                 Some("request.json") => render_json_res(
-                    req.state().ta_proxy_publisher_request().await,
+                    req.server().krill().ta_proxy_publisher_request().await,
                 ),
                 None => match *req.method() {
                     Method::POST => {
                         let ta_handle = ta_handle();
-                        let server = req.state().clone();
+                        let server = req.server().clone();
                         let actor = req.actor();
 
                         match req.api_bytes().await.map(|bytes| {
                             extract_repository_contact(&ta_handle, bytes)
                         }) {
                             Ok(Ok(contact)) => render_empty_res(
-                                server
+                                server.krill()
                                     .ta_proxy_repository_update(
                                         contact, &actor,
                                     )
@@ -2225,7 +2303,7 @@ async fn api_ta(req: Request, path: &mut RequestPath) -> Result<HttpResponse, Re
                         }
                     }
                     Method::GET => render_json_res(
-                        req.state().ta_proxy_repository_contact().await,
+                        req.server().krill().ta_proxy_repository_contact().await,
                     ),
                     _ => render_unknown_method(),
                 },
@@ -2234,11 +2312,11 @@ async fn api_ta(req: Request, path: &mut RequestPath) -> Result<HttpResponse, Re
             },
             Some("signer") => match path.next() {
                 Some("add") => {
-                    let server = req.state().clone();
+                    let server = req.server().clone();
                     let actor = req.actor();
                     match req.json().await {
                         Ok(ta_signer_info) => render_empty_res(
-                            server
+                            server.krill()
                                 .ta_proxy_signer_add(ta_signer_info, &actor)
                                 .await,
                         ),
@@ -2246,11 +2324,11 @@ async fn api_ta(req: Request, path: &mut RequestPath) -> Result<HttpResponse, Re
                     }
                 }
                 Some("update") => {
-                    let server = req.state().clone();
+                    let server = req.server().clone();
                     let actor = req.actor();
                     match req.json().await {
                         Ok(ta_signer_info) => render_empty_res(
-                            server
+                            server.krill()
                                 .ta_proxy_signer_update(ta_signer_info, &actor)
                                 .await,
                         ),
@@ -2259,23 +2337,23 @@ async fn api_ta(req: Request, path: &mut RequestPath) -> Result<HttpResponse, Re
                 }
                 Some("request") => match *req.method() {
                     Method::POST => render_json_res(
-                        req.state()
+                        req.server().krill()
                             .ta_proxy_signer_make_request(&req.actor())
                             .await,
                     ),
                     Method::GET => render_json_res(
-                        req.state().ta_proxy_signer_get_request().await,
+                        req.server().krill().ta_proxy_signer_get_request().await,
                     ),
                     _ => render_unknown_method(),
                 },
                 Some("response") => match *req.method() {
                     Method::POST => {
-                        let server = req.state().clone();
+                        let server = req.server().clone();
                         let actor = req.actor();
 
                         match req.json().await {
                             Ok(response) => render_empty_res(
-                                server
+                                server.krill()
                                     .ta_proxy_signer_process_response(
                                         response, &actor,
                                     )
@@ -2291,13 +2369,13 @@ async fn api_ta(req: Request, path: &mut RequestPath) -> Result<HttpResponse, Re
             Some("children") => match path.path_arg::<ChildHandle>() {
                 Some(child) => match path.next() {
                     Some("parent_response.json") => render_json_res(
-                        req.state()
+                        req.server().krill()
                             .ca_parent_response(&ta_handle(), child)
                             .await,
                     ),
                     Some("parent_response.xml") => {
                         match req
-                            .state()
+                            .server().krill()
                             .ca_parent_response(&ta_handle(), child)
                             .await
                         {
@@ -2321,10 +2399,10 @@ async fn api_ta(req: Request, path: &mut RequestPath) -> Result<HttpResponse, Re
                 None => match *req.method() {
                     Method::POST => {
                         let actor = req.actor();
-                        let server = req.state().clone();
+                        let server = req.server().clone();
                         match req.json().await {
                             Ok(child_req) => render_json_res(
-                                server
+                                server.krill()
                                     .ta_proxy_children_add(child_req, &actor)
                                     .await,
                             ),

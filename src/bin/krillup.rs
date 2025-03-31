@@ -7,7 +7,7 @@ use log::info;
 use log::LevelFilter;
 use url::Url;
 use krill::constants;
-use krill::server::config::{Config, LogType};
+use krill::config::{Config, LogType};
 use krill::server::properties::PropertiesManager;
 use krill::upgrades::{prepare_upgrade_data_migrations, UpgradeMode};
 use krill::upgrades::data_migration::migrate;

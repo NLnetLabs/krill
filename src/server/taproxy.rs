@@ -1205,7 +1205,7 @@ mod tests {
             storage::Namespace,
             test,
         },
-        server::config::ConfigDefaults,
+        config::ConfigDefaults,
     };
     use crate::tasigner::{
         TrustAnchorSigner, TrustAnchorSignerInitCommand,

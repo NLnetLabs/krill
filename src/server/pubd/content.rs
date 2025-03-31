@@ -17,7 +17,7 @@ use crate::commons::eventsourcing::{
     WalChange, WalCommand, WalSet, WalStore, WalSupport,
 };
 use crate::constants::PUBSERVER_CONTENT_NS;
-use crate::server::config::{Config, RrdpUpdatesConfig};
+use crate::config::{Config, RrdpUpdatesConfig};
 use super::rrdp::{
     CurrentObjects, DeltaElements, RrdpServer,RrdpSession, RrdpSessionReset,
     RrdpUpdated, RrdpUpdateNeeded,

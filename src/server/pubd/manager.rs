@@ -18,7 +18,7 @@ use crate::commons::actor::Actor;
 use crate::commons::cmslogger::CmsLogger;
 use crate::commons::crypto::KrillSigner;
 use crate::commons::error::Error;
-use crate::server::config::Config;
+use crate::config::Config;
 use crate::server::mq::{now, Task, TaskQueue};
 use super::access::RepositoryAccessProxy;
 use super::content::RepositoryContentProxy;
@@ -349,7 +349,7 @@ mod tests {
     use crate::constants::{
         ACTOR_DEF_TEST, RRDP_FIRST_SERIAL, enable_test_mode
     };
-    use crate::server::config::{SignerConfig, SignerType};
+    use crate::config::{SignerConfig, SignerType};
     use crate::server::pubd::Publisher;
     use crate::server::pubd::rrdp::{PublicationDeltaError, RrdpServer};
     use super::*;

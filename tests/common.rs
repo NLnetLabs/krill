@@ -23,7 +23,7 @@ use krill::commons::httpclient;
 use krill::commons::crypto::OpenSslSignerConfig;
 use krill::cli::client::KrillClient;
 use krill::constants::REPOSITORY_DIR;
-use krill::server::config::{
+use krill::config::{
     AuthType, Config, ConfigDefaults, HttpsMode, IssuanceTimingConfig,
     LogType, MetricsConfig, RrdpUpdatesConfig, SignerConfig,
     SignerReference, SignerType, TestBed,

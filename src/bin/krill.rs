@@ -6,7 +6,7 @@ use clap::Parser;
 use clap::crate_version;
 use log::error;
 use krill::constants::{KRILL_DEFAULT_CONFIG_FILE, KRILL_SERVER_APP};
-use krill::server::config::Config;
+use krill::config::Config;
 use krill::server::http::server;
 
 

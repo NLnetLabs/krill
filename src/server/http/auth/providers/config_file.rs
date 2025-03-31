@@ -13,7 +13,7 @@ use crate::commons::httpclient;
 use crate::commons::KrillResult;
 use crate::commons::error::{ApiAuthError, Error};
 use crate::constants::{PW_HASH_LOG_N, PW_HASH_P, PW_HASH_R};
-use crate::server::config::Config;
+use crate::config::Config;
 use crate::server::http::auth::crypt;
 use crate::server::http::auth::{AuthInfo, LoggedInUser, Permission, RoleMap};
 use crate::server::http::auth::session::{ClientSession, LoginSessionCache};

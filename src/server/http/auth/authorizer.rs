@@ -9,7 +9,7 @@ use crate::api::admin::Token;
 use crate::commons::KrillResult;
 use crate::commons::actor::Actor;
 use crate::commons::error::ApiAuthError;
-use crate::server::config::{AuthType, Config};
+use crate::config::{AuthType, Config};
 use crate::server::http::request::HyperRequest;
 use crate::server::http::response::HttpResponse;
 use super::{Permission, Role};

@@ -59,7 +59,7 @@ use crate::constants::{
     ta_handle,
 };
 use crate::server::http::auth::{AuthInfo, Permission}; // XXX remove
-use crate::server::config::Config;
+use crate::config::Config;
 use crate::server::mq::{now, Task, TaskQueue};
 use crate::server::pubd::RepositoryManager;
 use crate::server::taproxy::{

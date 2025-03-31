@@ -43,7 +43,7 @@ use crate::{
         KrillResult,
     },
     constants::ID_CERTIFICATE_VALIDITY_YEARS,
-    server::config::{SignerConfig, SignerType},
+    config::{SignerConfig, SignerType},
 };
 use crate::api::ca::ObjectName;
 
