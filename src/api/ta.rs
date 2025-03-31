@@ -32,7 +32,7 @@ use crate::api::admin::PublishedFile;
 use crate::api::ca::{
     IdCertInfo, IssuedCertificate, ObjectName, ReceivedCert, Revocations,
 };
-use crate::daemon::ca::publishing::{
+use crate::server::ca::publishing::{
     ManifestBuilder, ObjectSetRevision, PublishedCrl,
     PublishedManifest, PublishedObject, 
 };

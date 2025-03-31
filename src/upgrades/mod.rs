@@ -32,7 +32,7 @@ use crate::{
         PUBSERVER_CONTENT_NS, PUBSERVER_NS, SIGNERS_NS, STATUS_NS,
         TA_PROXY_SERVER_NS, TA_SIGNER_SERVER_NS,
     },
-    daemon::{
+    server::{
         config::Config, krillserver::KrillServer,
         properties::PropertiesManager,
     },
@@ -43,8 +43,8 @@ use crate::{
 use crate::api::aspa::{
     AspaDefinition, AspaDefinitionUpdates, CustomerAsn, ProviderAsn,
 };
-use crate::daemon::ca::upgrades as ca;
-use crate::daemon::pubd::upgrades as pubd;
+use crate::server::ca::upgrades as ca;
+use crate::server::pubd::upgrades as pubd;
 
 #[cfg(feature = "hsm")]
 use rpki::crypto::KeyIdentifier;

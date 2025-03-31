@@ -43,7 +43,7 @@ use crate::{
         KrillResult,
     },
     constants::ID_CERTIFICATE_VALIDITY_YEARS,
-    daemon::config::{SignerConfig, SignerType},
+    server::config::{SignerConfig, SignerType},
 };
 use crate::api::ca::ObjectName;
 
@@ -517,7 +517,7 @@ pub mod tests {
             MockSigner, MockSignerCallCounts,
         },
         commons::test,
-        daemon::config::Config,
+        server::config::Config,
     };
 
     use super::*;
