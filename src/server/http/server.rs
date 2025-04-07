@@ -27,6 +27,7 @@ use tokio::select;
 use tokio_rustls::TlsAcceptor;
 use tokio::sync::oneshot;
 
+use crate::server::config::SignerType;
 use crate::{
     commons::{
         file,
@@ -153,6 +154,24 @@ pub async fn start_krill_daemon(
                     e
                 ))
             })?;
+    }
+
+    // TODO: REMOVE
+    let _ = openssl::provider::Provider::try_load(
+        None, "tpm2", false).unwrap();
+
+
+    // If OpenSSL is configured to use a provider, use it
+    if config.signers.len() == 1 {
+        // panic!("HELP!");
+        match &config.signers[0].signer_type {
+            SignerType::OpenSsl(c) => {
+                if let Some(provider) = &c.provider {
+                    let _ = openssl::provider::Provider::try_load(
+                        None, provider, false).unwrap();
+                }
+            }
+        }
     }
 
     // Create the server, this will create the necessary data sub-directories

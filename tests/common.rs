@@ -382,6 +382,10 @@ impl KrillServer {
     ///
     /// This will start the server and wait for it to become ready.
     pub async fn start_with_config(config: Config) -> Self {
+        // TODO: REMOVE
+        let _ = openssl::provider::Provider::try_load(
+            None, "tpm2", false).unwrap();
+    
         let uri = ServiceUri::from_str(
             &format!(
                 "https://{}:{}/",

@@ -38,12 +38,16 @@ use crate::{
 pub struct OpenSslSignerConfig {
     #[serde(default)]
     pub keys_storage_uri: Option<Url>,
+
+    #[serde(default)]
+    pub provider: Option<String>,
 }
 
 impl OpenSslSignerConfig {
-    pub fn new(storage_uri: Url) -> Self {
+    pub fn new(storage_uri: Url, provider: String) -> Self {
         Self {
             keys_storage_uri: Some(storage_uri),
+            provider: Some(provider)
         }
     }
 }
