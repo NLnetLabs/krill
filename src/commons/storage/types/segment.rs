@@ -140,10 +140,12 @@ impl Segment {
             Ok(segment) => segment.to_owned(),
             Err(error) => {
                 let sanitized = value.trim().replace(Segment::SEPARATOR, "+");
-                let nonempty = sanitized
-                    .is_empty()
-                    .then(|| "EMPTY".to_owned())
-                    .unwrap_or(sanitized);
+                let nonempty = if sanitized.is_empty() {
+                    "EMPTY".to_owned()
+                } 
+                else {
+                    sanitized
+                };
                 let segment = SegmentBuf(nonempty);
                 warn!(
                     "{value} is not a valid Segment: {error}\n\

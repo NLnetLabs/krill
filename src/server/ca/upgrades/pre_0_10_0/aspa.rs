@@ -1,5 +1,4 @@
 /// Definition of ASPA-related types before 0.10.0.
-
 use rpki::ca::publication::Base64;
 use rpki::repository::x509::Time;
 use serde::{Deserialize, Serialize};
