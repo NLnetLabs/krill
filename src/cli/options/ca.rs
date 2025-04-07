@@ -1,4 +1,4 @@
-/// Commands related to managing a CA.
+//! Commands related to managing a CA.
 
 use rpki::ca::idexchange::CaHandle;
 use rpki::repository::x509::Time;
