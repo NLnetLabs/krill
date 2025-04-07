@@ -1,5 +1,6 @@
 //! The BGP analyser.
 
+use std::time::{Duration, Instant};
 use std::{error, fmt};
 use std::collections::HashMap;
 use std::ops::Range;
@@ -8,6 +9,7 @@ use intervaltree::IntervalTree;
 use rpki::repository::resources::{Addr, AddressRange, ResourceSet};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tokio::sync::RwLock;
 use crate::api::bgp::{
     Announcement, BgpAnalysisEntry, BgpAnalysisReport, BgpAnalysisState,
     BgpAnalysisSuggestion, ReplacementRoaSuggestion,
@@ -16,6 +18,8 @@ use crate::api::roa::{
     AsNumber, ConfiguredRoa, Ipv4Prefix, Ipv6Prefix, RoaPayload, TypedPrefix,
 };
 
+/// Time URL requests should remain in cache (30 minutes)
+const CACHE_DURATION: u64 = 30 * 60;
 
 //------------ BgpAnalyser -------------------------------------------------
 
@@ -29,6 +33,9 @@ pub struct BgpAnalyser {
 
     /// The HTTP client to talk to the BGP API with.
     client: reqwest::Client,
+
+    /// The cache for the HTTP client responses
+    cache: RwLock<HashMap<String, (Instant, Value)>>
 }
 
 impl BgpAnalyser {
@@ -41,6 +48,7 @@ impl BgpAnalyser {
             bgp_api_enabled,
             bgp_api_uri,
             client: reqwest::Client::new(),
+            cache: RwLock::new(HashMap::new())
         }
     }
 
@@ -411,7 +419,25 @@ impl BgpAnalyser {
             return Ok(value.remove(url.as_str()).unwrap())
         }
 
-        Ok(self.client.get(url.as_str()).send().await?.json().await?)
+        let mut local_cache = self.cache.write().await;
+
+        if let Some((time, value)) = &local_cache.get(&url) {
+            if time.elapsed() > Duration::from_secs(CACHE_DURATION) {
+                // drop(local_cache);
+                // let mut local_cache = self.cache.write().await;
+                local_cache.remove(&url);
+            } else {
+                return Ok(value.clone());
+            }
+        }
+
+        // drop(local_cache);
+        // let mut local_cache = self.cache.write().await;
+
+        let value: Value = self.client.get(
+            url.as_str()).send().await?.json().await?;
+            local_cache.insert(url, (Instant::now(), value.clone()));
+        Ok(value)
     }
 
     /// Obtain the announcements from the JSON tree.
