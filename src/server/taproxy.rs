@@ -1,8 +1,9 @@
 //! Trust Anchor Proxy
 //!
 //! The Trust Anchor Proxy performs all Trust Anchor responsibilities
-/// *except* for signing using the Trust Anchor private key. That
-/// function is handled by the Trust Anchor Signer instead.
+//! *except* for signing using the Trust Anchor private key. That
+//! function is handled by the Trust Anchor Signer instead.
+
 use std::{collections::HashMap, fmt, sync::Arc};
 
 use chrono::Duration;
