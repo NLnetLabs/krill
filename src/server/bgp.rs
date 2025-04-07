@@ -9,7 +9,7 @@ use intervaltree::IntervalTree;
 use rpki::repository::resources::{Addr, AddressRange, ResourceSet};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tokio::sync::RwLock;
+use tokio::sync::Mutex;
 use crate::api::bgp::{
     Announcement, BgpAnalysisEntry, BgpAnalysisReport, BgpAnalysisState,
     BgpAnalysisSuggestion, ReplacementRoaSuggestion,
@@ -35,7 +35,7 @@ pub struct BgpAnalyser {
     client: reqwest::Client,
 
     /// The cache for the HTTP client responses
-    cache: RwLock<HashMap<String, (Instant, Value)>>
+    cache: Mutex<HashMap<String, (Instant, Value)>>
 }
 
 impl BgpAnalyser {
@@ -48,7 +48,7 @@ impl BgpAnalyser {
             bgp_api_enabled,
             bgp_api_uri,
             client: reqwest::Client::new(),
-            cache: RwLock::new(HashMap::new())
+            cache: Mutex::new(HashMap::new())
         }
     }
 
@@ -419,7 +419,7 @@ impl BgpAnalyser {
             return Ok(value.remove(url.as_str()).unwrap())
         }
 
-        let mut local_cache = self.cache.write().await;
+        let mut local_cache = self.cache.lock().await;
 
         if let Some((time, value)) = &local_cache.get(&url) {
             if time.elapsed() > Duration::from_secs(CACHE_DURATION) {
