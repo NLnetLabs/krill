@@ -423,16 +423,11 @@ impl BgpAnalyser {
 
         if let Some((time, value)) = &local_cache.get(&url) {
             if time.elapsed() > Duration::from_secs(CACHE_DURATION) {
-                // drop(local_cache);
-                // let mut local_cache = self.cache.write().await;
                 local_cache.remove(&url);
             } else {
                 return Ok(value.clone());
             }
         }
-
-        // drop(local_cache);
-        // let mut local_cache = self.cache.write().await;
 
         let value: Value = self.client.get(
             url.as_str()).send().await?.json().await?;
