@@ -1,10 +1,10 @@
 # Change Log
 
-## Unreleased next version
+## 0.14.6 ‘Roll Initiative!’
 
-Bug fixes
+Released 2025-04-08.
 
-Other changes
+There were no changes since 0.14.6-rc1.
 
 
 ## 0.14.6-rc1
