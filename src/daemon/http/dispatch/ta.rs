@@ -158,9 +158,8 @@ fn proxy_init(
         Permission::CaAdmin, None
     )?;
     let server = request.empty()?;
-    Ok(HttpResponse::json(
-        &server.krill().ta_proxy_init()?
-    ))
+    server.krill().ta_proxy_init()?;
+    Ok(HttpResponse::ok())
 }
 
 

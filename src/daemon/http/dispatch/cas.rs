@@ -417,20 +417,20 @@ fn history(
 
 fn history_commands(
     request: Request<'_>,
-    mut path: PathIter<'_>,
+    path: PathIter<'_>,
     ca: CaHandle,
 ) -> Result<HttpResponse, DispatchError> {
+    let mut path = path.strip_trailing_slash();
+    let rows_limit = Some(path.parse_opt_next()?.unwrap_or(100));
+    let offset = path.parse_opt_next()?.unwrap_or(0);
+    let after = path.parse_opt_next()?;
+    let before = path.parse_opt_next()?;
     path.check_exhausted()?;
     request.check_get()?;
     let (request, _) = request.proceed_permitted(
         Permission::CaRead, Some(&ca)
     )?;
     let server = request.empty()?;
-
-    let rows_limit = Some(path.parse_opt_next()?.unwrap_or(100));
-    let offset = path.parse_opt_next()?.unwrap_or(0);
-    let after = path.parse_opt_next()?;
-    let before = path.parse_opt_next()?;
 
     Ok(HttpResponse::json(
         &server.krill().ca_history(
@@ -456,19 +456,20 @@ fn history_details(
     )?;
     let server = request.empty()?;
 
-    server.krill().ca_command_details(&ca, version).map_err(|err| {
-        match err {
-            Error::AggregateStoreError(
-                AggregateStoreError::UnknownCommand(..)
-            ) => {
-                HttpResponse::not_found()
-            },
-            err => {
-                HttpResponse::response_from_error(err)
+    Ok(HttpResponse::json(
+        &server.krill().ca_command_details(&ca, version).map_err(|err| {
+            match err {
+                Error::AggregateStoreError(
+                    AggregateStoreError::UnknownCommand(..)
+                ) => {
+                    HttpResponse::not_found()
+                },
+                err => {
+                    HttpResponse::response_from_error(err)
+                }
             }
-        }
-    })?;
-    Ok(HttpResponse::ok())
+        })?
+    ))
 }
 
 

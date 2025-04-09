@@ -335,6 +335,22 @@ impl<'a> PathIter<'a> {
         }
     }
 
+    /// Returns a copy with a possible trailing slash removed.
+    pub fn strip_trailing_slash(&self) -> Self {
+        // Some("") means there _was_ a trailing slash and we are now just
+        // past it. So we need to transform this case into an exhausted path.
+        let remaining = match self.remaining {
+            Some("") | None => None,
+            Some(remaining) => {
+                Some(remaining.strip_suffix('/').unwrap_or(remaining))
+            }
+        };
+        Self {
+            full: self.full.strip_suffix('/').unwrap_or(self.full),
+            remaining
+        }
+    }
+
     pub fn full(&self) -> &str {
         self.full
     }
@@ -369,6 +385,19 @@ impl<'a> PathIter<'a> {
     /// Returns `Ok(None)` if we reached the end of the path. Returns a
     /// Not Found error response if parsing failed.
     pub fn parse_opt_next<T: FromStr>(
+        &mut self
+    ) -> Result<Option<T>, HttpResponse> {
+        self.next().map(|s| {
+            T::from_str(s).map_err(|_| HttpResponse::not_found())
+        }).transpose()
+    }
+
+    /// Parses the next optional segment, allowing for a trailing slash.
+    ///
+    /// Returns `Ok(None)` if we reached the end of the path or if there was
+    /// a trailing slash. Returns a/ Not Found error response if parsing
+    /// failed.
+    pub fn parse_opt_next_trailing_slash<T: FromStr>(
         &mut self
     ) -> Result<Option<T>, HttpResponse> {
         self.next().map(|s| {

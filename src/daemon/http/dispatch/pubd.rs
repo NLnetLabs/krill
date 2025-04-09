@@ -111,8 +111,9 @@ async fn publishers_index(
                 Permission::PubCreate, None
             )?;
             let (server, pbl) = request.json().await?;
-            server.krill().add_publisher(pbl, auth.actor())?;
-            Ok(HttpResponse::ok())
+            Ok(HttpResponse::json(
+                &server.krill().add_publisher(pbl, auth.actor())?
+            ))
         }
         _ => Ok(HttpResponse::method_not_allowed())
     }
