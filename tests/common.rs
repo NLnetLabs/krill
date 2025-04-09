@@ -29,7 +29,7 @@ use krill::config::{
     SignerReference, SignerType, TestBed,
 };
 use krill::daemon::http::tls_keys::HTTPS_SUB_DIR;
-use krill::daemon::http::server;
+use krill::daemon::start::start_krill_daemon;
 use krill::tasigner::TaTimingConfig;
 
 
@@ -392,7 +392,7 @@ impl KrillServer {
         let (tx, running) = oneshot::channel();
         let mut res = Self {
             join: tokio::spawn(async {
-                if let Err(err) = server::start_krill_daemon(
+                if let Err(err) = start_krill_daemon(
                     config.into(), Some(tx)
                 ).await {
                     error!("Krill failed to start: {}", err);

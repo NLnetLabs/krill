@@ -4,16 +4,20 @@ use std::fmt;
 use std::collections::HashMap;
 use std::fmt::Write;
 use crate::constants::TA_NAME;
-use super::request::Request;
-use super::response::HttpResponse;
+use super::super::request::{PathIter, Request};
+use super::super::response::HttpResponse;
+use super::error::DispatchError;
 
 
-pub async fn metrics(req: Request) -> Result<HttpResponse, Request> {
-    if !req.is_get() || !req.path().segment().starts_with("metrics") {
-        return Err(req)
-    }
+pub async fn dispatch(
+    request: Request<'_>,
+    path: PathIter<'_>,
+) -> Result<HttpResponse, DispatchError> {
+    path.check_exhausted()?;
+    request.check_get()?;
+    let (request, _) = request.proceed_unchecked();
+    let server = request.empty()?;
 
-    let server = req.server();
     let mut target = Target::default();
 
     target.single(
@@ -52,7 +56,7 @@ pub async fn metrics(req: Request) -> Result<HttpResponse, Request> {
             "auth_session_cache_size",
             "total number of cached login session tokens",
         ),
-        server.login_session_cache_size().await,
+        server.authorizer().login_session_cache_size().await,
     );
 
     if let Ok(cas_stats) = server.krill().cas_stats().await {

@@ -55,6 +55,7 @@ use serde::{Deserialize, Serialize};
 use tokio::runtime;
 use urlparse::{urlparse, GetQuery};
 
+use crate::daemon::http::dispatch::AUTH_CALLBACK_ENDPOINT;
 use crate::daemon::http::request::HyperRequest;
 use crate::daemon::http::response::HttpResponse;
 use crate::{
@@ -80,7 +81,7 @@ use crate::{
             session::*,
             AuthInfo, LoggedInUser, Permission,
         },
-        http::server::{url_encode, AUTH_CALLBACK_ENDPOINT},
+        http::util::url_encode,
     },
 };
 use super::claims::Claims;
@@ -502,9 +503,7 @@ impl AuthProvider {
         let redirect_uri = RedirectUrl::new(
             self.config
                 .service_uri()
-                .join(
-                    AUTH_CALLBACK_ENDPOINT.trim_start_matches('/').as_bytes(),
-                )
+                .join(AUTH_CALLBACK_ENDPOINT.as_bytes())
                 .unwrap()
                 .to_string(),
         )?;
@@ -1143,7 +1142,7 @@ impl AuthProvider {
     pub async fn authenticate(
         &self,
         request: &HyperRequest,
-    ) -> Result<Option<AuthInfo>, ApiAuthError> {
+    ) -> Result<Option<(AuthInfo, Option<Token>)>, ApiAuthError> {
         trace!("Attempting to authenticate the request..");
 
         self.initialize_connection_if_needed().await.map_err(|err| {
@@ -1168,14 +1167,18 @@ impl AuthProvider {
                 // return
                 match status {
                     SessionStatus::Active => {
-                        return Ok(Some(self.auth_from_session(&session)?))
+                        return Ok(Some(
+                            (self.auth_from_session(&session)?, None)
+                        ))
                     }
                     SessionStatus::NeedsRefresh => {
                         // If we have a refresh token try and extend the
                         // session. Otherwise return the cached token
                         // and continue the login session until it expires.
                         if session.secrets.refresh_token.is_none() {
-                            return Ok(Some(self.auth_from_session(&session)?))
+                            return Ok(Some(
+                                (self.auth_from_session(&session)?, None)
+                            ))
                         }
                     }
                     SessionStatus::Expired => {
@@ -1278,9 +1281,10 @@ impl AuthProvider {
                     }
                 };
 
-                let mut auth = self.auth_from_session(&session)?;
-                auth.set_new_token(new_token);
-                Ok(Some(auth))
+                Ok(Some((
+                    self.auth_from_session(&session)?,
+                    Some(new_token)
+                )))
             }
             _ => Ok(None),
         };

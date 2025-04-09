@@ -1,15 +1,13 @@
-use std::io;
 use bytes::Bytes;
 use http_body_util::{Either, Empty, Full};
 use hyper::{HeaderMap, StatusCode};
+use hyper::header::{HeaderName, HeaderValue};
+use log::warn;
 use rpki::ca::{provisioning, publication};
 use serde::Serialize;
-
-use crate::{
-    commons::{
-        error::Error,
-    },
-};
+use crate::api::admin::Token;
+use crate::api::status::ErrorResponse;
+use crate::commons::error::Error;
 
 
 //----------- ContentType ----------------------------------------------------
@@ -32,8 +30,8 @@ enum ContentType {
     Woff2,
 }
 
-impl AsRef<str> for ContentType {
-    fn as_ref(&self) -> &str {
+impl ContentType {
+    fn as_str(&self) -> &'static str {
         match self {
             ContentType::Cert => "application/x-x509-ca-cert",
             ContentType::Json => "application/json",
@@ -63,9 +61,9 @@ pub type HyperResponse = hyper::Response<HyperResponseBody>;
 
 struct Response {
     status: StatusCode,
-    content_type: ContentType,
+    content_type: &'static str,
     max_age: Option<usize>,
-    body: Vec<u8>,
+    body: Bytes,
     cause: Option<Error>,
 }
 
@@ -73,9 +71,9 @@ impl Response {
     fn new(status: StatusCode) -> Self {
         Response {
             status,
-            content_type: ContentType::Text,
+            content_type: ContentType::Text.as_str(),
             max_age: None,
-            body: Vec::new(),
+            body: Bytes::default(), 
             cause: None,
         }
     }
@@ -83,7 +81,7 @@ impl Response {
     fn finalize(self) -> HttpResponse {
         let mut builder = hyper::Response::builder()
             .status(self.status)
-            .header("Content-Type", self.content_type.as_ref());
+            .header("Content-Type", self.content_type);
 
         if let Some(max_age) = self.max_age {
             builder = builder
@@ -97,7 +95,7 @@ impl Response {
         let body = if self.body.is_empty() {
             Either::Left(Empty::new())
         } else {
-            Either::Right(Full::new(self.body.into()))
+            Either::Right(Full::new(self.body))
         };
         let response = builder.body(body).unwrap();
 
@@ -115,18 +113,10 @@ impl From<Response> for HttpResponse {
     }
 }
 
-impl io::Write for Response {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.body.write(buf)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        self.body.flush()
-    }
-}
 
 //------------ HttpResponse --------------------------------------------------
 
+#[derive(Debug)]
 pub struct HttpResponse {
     response: HyperResponse,
     cause: Option<Error>,
@@ -145,6 +135,10 @@ impl HttpResponse {
     }
 
     pub fn into_response(self) -> HyperResponse {
+        self.response
+    }
+
+    pub fn into_hyper(self) -> HyperResponse {
         self.response
     }
 
@@ -194,27 +188,38 @@ impl HttpResponse {
         self.response.headers()
     }
 
-    fn ok_response(content_type: ContentType, body: Vec<u8>) -> Self {
+    pub fn ok_with_body(
+        content_type: &'static str,
+        body: impl Into<Bytes>
+    ) -> Self {
         Response {
             status: StatusCode::OK,
             content_type,
             max_age: None,
-            body,
+            body: body.into(),
             cause: None,
         }
         .finalize()
     }
 
+
+    fn ok_response(
+        content_type: ContentType,
+        body: impl Into<Bytes>
+    ) -> Self {
+        Self::ok_with_body(content_type.as_str(), body)
+    }
+
     pub fn json<O: Serialize>(object: &O) -> Self {
         match serde_json::to_string(object) {
             Ok(json) => {
-                Self::ok_response(ContentType::Json, json.into_bytes())
+                Self::ok_response(ContentType::Json, json)
             }
             Err(e) => Self::response_from_error(Error::JsonError(e)),
         }
     }
 
-    pub fn text(body: Vec<u8>) -> Self {
+    pub fn text(body: impl Into<Bytes>) -> Self {
         Self::ok_response(ContentType::Text, body)
     }
 
@@ -222,7 +227,7 @@ impl HttpResponse {
         HttpResponse::new(
             hyper::Response::builder()
                 .status(StatusCode::OK)
-                .header("Content-Type", ContentType::Text.as_ref())
+                .header("Content-Type", ContentType::Text.as_str())
                 .header("Cache-Control", "no-cache")
                 .body(Either::Right(Full::new(body.into())))
                 .unwrap(),
@@ -240,23 +245,23 @@ impl HttpResponse {
     pub fn xml_with_cache(body: Vec<u8>, seconds: usize) -> Self {
         Response {
             status: StatusCode::OK,
-            content_type: ContentType::Xml,
+            content_type: ContentType::Xml.as_str(),
             max_age: Some(seconds),
-            body,
+            body: body.into(),
             cause: None,
         }
         .finalize()
     }
 
-    pub fn rfc8181(body: Vec<u8>) -> Self {
+    pub fn rfc8181(body: Bytes) -> Self {
         Self::ok_response(ContentType::Rfc8181, body)
     }
 
-    pub fn rfc6492(body: Vec<u8>) -> Self {
+    pub fn rfc6492(body: Bytes) -> Self {
         Self::ok_response(ContentType::Rfc6492, body)
     }
 
-    pub fn cert(body: Vec<u8>) -> Self {
+    pub fn cert(body: Bytes) -> Self {
         Self::ok_response(ContentType::Cert, body)
     }
 
@@ -288,18 +293,31 @@ impl HttpResponse {
         Self::ok_response(ContentType::Woff2, content.to_vec())
     }
 
+    pub fn error(
+        status: StatusCode, error: impl Into<ErrorResponse>
+    ) -> Self {
+        let error = error.into();
+        let body = serde_json::to_string(&error).unwrap().into();
+        Response {
+            status,
+            content_type: ContentType::Json.as_str(),
+            max_age: None,
+            body,
+            cause: None,
+        }.finalize()
+    }
+
     pub fn response_from_error(error: Error) -> Self {
         let status = error.status();
         let response = error.to_error_response();
-        let body = serde_json::to_string(&response).unwrap();
+        let body = serde_json::to_string(&response).unwrap().into();
         Response {
             status,
-            content_type: ContentType::Json,
+            content_type: ContentType::Json.as_str(),
             max_age: None,
-            body: body.into_bytes(),
+            body: body,
             cause: Some(error),
-        }
-        .finalize()
+        }.finalize()
     }
 
     pub fn ok() -> Self {
@@ -326,6 +344,34 @@ impl HttpResponse {
 
     pub fn forbidden(err: String) -> Self {
         Self::response_from_error(Error::ApiInsufficientRights(err))
+    }
+
+    pub fn method_not_allowed() -> Self {
+        Self::response_from_error(Error::ApiUnknownMethod)
+    }
+
+    // Suppress any error in the unlikely event that we fail to inject the
+    // Authorization header into the HTTP response as this is an internal error
+    // that we should shield the user from, but log a warning as this is very
+    // unexpected.
+    pub fn add_authorization_token(
+        &mut self, token: Token,
+    ) {
+        let header_name = const { HeaderName::from_static("authorization") };
+        let header_value = match HeaderValue::from_maybe_shared(
+            Bytes::from(format!("Bearer {}", &token))
+        ) {
+            Ok(value) => value,
+            Err(_) => {
+                warn!(
+                    "Internal error: unable to add refreshed auth token \
+                     '{token}' to the response."
+                );
+                return
+            }
+        };
+
+        self.response.headers_mut().insert(header_name, header_value);
     }
 }
 

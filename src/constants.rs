@@ -277,6 +277,18 @@ pub fn ta_resource_class_name() -> rpki::ca::provisioning::ResourceClassName {
 }
 
 
+//------------ Testbed -------------------------------------------------------
+
+/// The handle of the CA used by the testbed.
+pub const TESTBED_CA_NAME: &str = "testbed";
+
+/// Returns the CA handle for the testbed.
+pub fn testbed_ca_handle() -> CaHandle {
+    use std::str::FromStr;
+    CaHandle::from_str(TESTBED_CA_NAME).unwrap()
+}
+
+
 //------------ Config File Auth Provider Defaults ----------------------------
 //
 // Note: These must match the values used by Lagosta.

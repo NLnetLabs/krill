@@ -467,7 +467,6 @@ impl Scheduler {
         let cas = self
             .ca_manager
             .republish_all(false)
-            .await
             .map_err(FatalError)?;
 
         for ca_handle in cas {

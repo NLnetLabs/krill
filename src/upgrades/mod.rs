@@ -1190,13 +1190,11 @@ pub async fn post_start_upgrade(
             add_or_replace: configs,
             remove: Vec::new()
         };
-        server
-            .ca_aspas_definitions_update(
-                ca,
-                aspa_updates,
-                server.system_actor(),
-            )
-            .await?;
+        server.ca_aspas_definitions_update(
+            ca,
+            aspa_updates,
+            server.system_actor(),
+        )?;
     }
 
     Ok(())

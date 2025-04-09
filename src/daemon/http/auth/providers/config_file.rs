@@ -119,7 +119,7 @@ impl AuthProvider {
     pub async fn authenticate(
         &self,
         request: &HyperRequest,
-    ) -> Result<Option<AuthInfo>, ApiAuthError> {
+    ) -> Result<Option<(AuthInfo, Option<Token>)>, ApiAuthError> {
         if log_enabled!(log::Level::Trace) {
             trace!("Attempting to authenticate the request..");
         }
@@ -136,7 +136,7 @@ impl AuthProvider {
 
                 trace!("user_id={}", session.user_id);
 
-                Ok(Some(self.auth_from_session(&session)?))
+                Ok(Some((self.auth_from_session(&session)?, None)))
             }
             _ => Ok(None),
         };
@@ -280,7 +280,7 @@ impl AuthProvider {
             Some(token) => {
                 self.session_cache.remove(&token).await;
 
-                if let Ok(Some(info)) = self.authenticate(request).await {
+                if let Ok(Some((info, _))) = self.authenticate(request).await {
                     info!("User logged out: {}", info.actor().name());
                 }
             }

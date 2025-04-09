@@ -783,8 +783,8 @@ impl TrustAnchorProxy {
         signer: TrustAnchorSignerInfo,
     ) -> KrillResult<Vec<TrustAnchorProxyEvent>> {
         if let Some(s) = &self.signer {
-            if  s.ta_cert_details.cert().key_identifier() == 
-                signer.ta_cert_details.cert().key_identifier() 
+            if  s.ta_cert_details.cert.key_identifier() == 
+                signer.ta_cert_details.cert.key_identifier() 
             {
                 // It is not possible to add a signer that has a different
                 // public key
@@ -1054,7 +1054,7 @@ impl TrustAnchorProxy {
         let child = self.get_child_details(child_handle)?;
 
         let signing_cert = {
-            let received_cert = signer.ta_cert_details.cert();
+            let received_cert = &signer.ta_cert_details.cert;
             let my_cert = received_cert.to_cert().map_err(|e| {
                 Error::Custom(format!(
                     "Issue with certificate held by TA: {} ",

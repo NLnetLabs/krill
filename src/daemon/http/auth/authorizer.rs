@@ -80,7 +80,7 @@ impl AuthProvider {
     pub async fn authenticate(
         &self,
         request: &HyperRequest,
-    ) -> Result<Option<AuthInfo>, ApiAuthError> {
+    ) -> Result<Option<(AuthInfo, Option<Token>)>, ApiAuthError> {
         match &self {
             AuthProvider::Token(provider) => provider.authenticate(request),
             #[cfg(feature = "multi-user")]
@@ -225,7 +225,9 @@ impl Authorizer {
 
     /// Authenticates an HTTP request.
     ///
-    /// The method will always return authentication information.
+    /// The method will always return authentication information. It will also
+    /// return an optional token that should be added to a response as a
+    /// Bearer token.
     ///
     /// If there was no authentiation information in the request, the returned
     /// auth info will indicate an anonymous user which will fail all
@@ -236,7 +238,7 @@ impl Authorizer {
     /// error information.
     pub async fn authenticate_request(
         &self, request: &HyperRequest
-    ) -> AuthInfo {
+    ) -> (AuthInfo, Option<Token>) {
         trace!("Determining actor for request {:?}", &request);
 
         // Try the legacy provider first, if any.
@@ -259,13 +261,13 @@ impl Authorizer {
             Ok(Some(res)) => res,
 
             // authentication failure
-            Ok(None) => AuthInfo::anonymous(),
+            Ok(None) => (AuthInfo::anonymous(), None),
 
             // error during authentication
-            Err(err) => AuthInfo::error(err),
+            Err(err) => (AuthInfo::error(err), None),
         };
 
-        trace!("Actor determination result: {:?}", res);
+        trace!("AuthInfo determination result: {:?}", res);
 
         res
     }
@@ -372,9 +374,6 @@ pub struct AuthInfo {
     /// The actor for the authenticated user.
     actor: Actor,
 
-    /// Optional updated bearer token.
-    new_token: Option<Token>,
-
     /// Access permissions.
     ///
     /// This is either a role which we consult to determine access
@@ -390,7 +389,6 @@ impl AuthInfo {
     ) -> Self {
         Self {
             actor: Actor::user(user_id),
-            new_token: None,
             permissions: Ok(role),
         }
     }
@@ -406,7 +404,6 @@ impl AuthInfo {
     fn anonymous() -> Self {
         Self {
             actor: Actor::anonymous(),
-            new_token: None,
             permissions: Ok(Role::anonymous().into()),
         }
     }
@@ -415,26 +412,27 @@ impl AuthInfo {
     fn error(err: ApiAuthError) -> Self {
         Self {
             actor: Actor::anonymous(),
-            new_token: None,
             permissions: Err(err)
         }
-    }
-
-    /// Sets the updated bearer token.
-    ///
-    /// If set, this new token needs to be included in an HTTP response.
-    pub fn set_new_token(&mut self, new_token: Token) {
-        self.new_token = Some(new_token);
-    }
-
-    /// Takes out an updated bearer token if presnet
-    pub fn take_new_token(&mut self) -> Option<Token> {
-        self.new_token.take()
     }
 
     /// Returns a reference to the actor.
     pub fn actor(&self) -> &Actor {
         &self.actor
+    }
+
+    /// Converts the auth info into the actor.
+    pub fn into_actor(self) -> Actor {
+        self.actor
+    }
+
+    /// Returns for permissions.
+    pub fn has_permission(
+        &self, 
+        permission: Permission,
+        resource: Option<&MyHandle>
+    ) -> bool {
+        self.check_permission(permission, resource).is_ok()
     }
 
     /// Checks permissions for an operation.

@@ -56,15 +56,16 @@ impl AuthProvider {
     /// bearer token, returns `Ok(None)`.
     pub fn authenticate(
         &self, request: &HyperRequest,
-    ) -> Result<Option<AuthInfo>, ApiAuthError> {
+    ) -> Result<Option<(AuthInfo, Option<Token>)>, ApiAuthError> {
         if log_enabled!(log::Level::Trace) {
             trace!("Attempting to authenticate the request..");
         }
 
         let res = match httpclient::get_bearer_token(request) {
             Some(token) if token == self.required_token => {
-                Ok(Some(AuthInfo::user(
-                    self.user_id.clone(), self.role.clone()
+                Ok(Some((
+                    AuthInfo::user(self.user_id.clone(), self.role.clone()),
+                    None
                 )))
             }
             Some(_) => Err(ApiAuthError::ApiInvalidCredentials(
@@ -105,7 +106,7 @@ impl AuthProvider {
         &self,
         request: &HyperRequest,
     ) -> KrillResult<HttpResponse> {
-        if let Ok(Some(info)) = self.authenticate(request) {
+        if let Ok(Some((info, _))) = self.authenticate(request) {
             info!("User logged out: {}", info.actor().name());
         }
 
