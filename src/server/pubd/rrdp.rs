@@ -210,11 +210,7 @@ impl RrdpServer {
         // change.
         for item in [path.next()?, path.next()?, path.next()?] {
             for &ch in item.as_bytes() {
-                if !matches!(ch, b'0'..=b'9')
-                    && !matches!(ch, b'A'..=b'Z')
-                    && !matches!(ch, b'a'..=b'z')
-                    && ch == b'-'
-                {
+                if !ch.is_ascii_alphanumeric() && ch != b'-' {
                     return None
                 }
             }

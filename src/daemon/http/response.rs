@@ -315,7 +315,7 @@ impl HttpResponse {
             status,
             content_type: ContentType::Json.as_str(),
             max_age: None,
-            body: body,
+            body,
             cause: Some(error),
         }.finalize()
     }

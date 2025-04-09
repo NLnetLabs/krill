@@ -1295,7 +1295,7 @@ mod tests {
 
     fn test_upgrade(base_dir: &str, namespaces: &[&str]) {
         let temp_dir = tempdir().unwrap();
-        copy_folder(&base_dir, &temp_dir);
+        copy_folder(base_dir, &temp_dir);
         
         // Copy data for the given names spaces into memory for testing.
         let mem_storage_base_uri = test::mem_storage();
@@ -1569,7 +1569,7 @@ mod tests {
         let source_dir_path_str =
             "test-resources/status_store/migration-0.9.5/";
         let temp_dir = tempdir().unwrap();
-        copy_folder(&source_dir_path_str, &temp_dir);
+        copy_folder(source_dir_path_str, &temp_dir);
         let source_dir_url = Url::parse(
             &format!("local://{}", &temp_dir.path().to_str().unwrap()))
                 .unwrap();

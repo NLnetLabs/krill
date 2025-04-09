@@ -329,13 +329,10 @@ pub struct PathIter<'a> {
 
 impl<'a> PathIter<'a> {
     fn new(path: &'a str) -> Self {
-        let remaining = if path.starts_with('/') {
-            &path[1..]
+        Self {
+            full: path,
+            remaining: Some(path.strip_prefix('/').unwrap_or(path))
         }
-        else {
-            path
-        };
-        Self { full: path, remaining: Some(remaining) }
     }
 
     pub fn full(&self) -> &str {
@@ -361,7 +358,7 @@ impl<'a> PathIter<'a> {
     /// Parses the next segment as the given type or returns a Not Found.
     pub fn parse_next<T: FromStr>(&mut self) -> Result<T, HttpResponse> {
         T::from_str(
-            self.next().ok_or_else(|| HttpResponse::not_found())?
+            self.next().ok_or_else(HttpResponse::not_found)?
         ).map_err(|_| {
             HttpResponse::not_found()
         })

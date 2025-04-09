@@ -55,9 +55,7 @@ fn index_get(
                 server.krill().ca_handles()?.filter_map(|handle| {
                     auth.has_permission(
                         Permission::CaRead, Some(&handle)
-                    ).then(|| {
-                        CertAuthSummary { handle }
-                    })
+                    ).then_some(CertAuthSummary { handle })
                 }).collect()
             }
         }
