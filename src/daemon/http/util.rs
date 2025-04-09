@@ -7,6 +7,8 @@
 pub fn url_encode<S: AsRef<str>>(
     s: S
 ) -> Result<String, crate::commons::error::Error> {
-    urlparse::quote(s, b"").map_err(|err| Error::custom(err.to_string()))
+    urlparse::quote(s, b"").map_err(|err| {
+        crate::commons::error::Error::custom(err.to_string())
+    })
 }
 
