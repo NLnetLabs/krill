@@ -1,7 +1,6 @@
 //! `/auth`
 
 use hyper::Method;
-use log::trace;
 use super::super::request::{PathIter, Request};
 use super::super::response::HttpResponse;
 use super::error::DispatchError;
@@ -61,6 +60,7 @@ async fn logout(
 mod multi_user {
     use base64::engine::Engine as _;
     use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
+    use log::trace;
     use crate::commons::error::Error;
     use crate::daemon::http::auth::LoggedInUser;
     use crate::daemon::http::util::url_encode;

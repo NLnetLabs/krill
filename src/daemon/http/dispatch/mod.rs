@@ -8,6 +8,7 @@ pub use self::root::dispatch_request;
 /// This must not start with a slash.
 ///
 /// It must also resolve to be dispatched to `self::auth::callback`.
+#[cfg(feature = "multi-user")]
 pub const AUTH_CALLBACK_ENDPOINT: &str = "auth/callback";
 
 mod api;

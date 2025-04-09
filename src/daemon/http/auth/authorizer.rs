@@ -159,6 +159,7 @@ impl AuthProvider {
     }
 
     /// If necessary, spawns a Tokio task sweeping the session cache.
+    #[allow(unused_variables)]
     pub fn spawn_sweep(&self, runtime: &runtime::Handle) {
         match self {
             AuthProvider::Token(_) => { }
