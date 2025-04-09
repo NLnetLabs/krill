@@ -38,7 +38,7 @@ impl Asset {
         };
 
         let media_type = match TYPES.iter().find_map(|(ext, media_type)| {
-            (path_ext == *ext).then(|| *media_type)
+            (path_ext == *ext).then_some(*media_type)
         }) {
             Some(media) => media,
             None => {
