@@ -217,36 +217,36 @@ impl<'a> AuthedRequest<'a> {
     }
 
     /// Returns the raw bytes of the request body.
-    pub async fn api_bytes(self) -> Result<(&'a HttpServer, Bytes), Error> {
+    pub async fn read_bytes(self) -> Result<(&'a HttpServer, Bytes), Error> {
         let limit = self.limits.post_limit_api;
-        self.read_bytes(limit).await
+        self.read_body(limit).await
     }
 
     /// Get a json object from a post body
-    pub async fn json<T: DeserializeOwned>(
+    pub async fn read_json<T: DeserializeOwned>(
         self
     ) -> Result<(&'a HttpServer, T), Error> {
-        let (server, bytes) = self.api_bytes().await?;
+        let (server, bytes) = self.read_bytes().await?;
         let json = serde_json::from_slice(&bytes).map_err(Error::JsonError)?;
         Ok((server, json))
     }
 
     /// Returns the raw bytes of a provisioning protocol request.
-    pub async fn rfc6492_bytes(
+    pub async fn read_rfc6492_bytes(
         self
     ) -> Result<(&'a HttpServer, Bytes), Error> {
         let limit = self.limits.post_limit_rfc6492;
-        self.read_bytes(limit).await
+        self.read_body(limit).await
     }
 
-    pub async fn rfc8181_bytes(
+    pub async fn read_rfc8181_bytes(
         self
     ) -> Result<(&'a HttpServer, Bytes), Error> {
         let limit = self.limits.post_limit_rfc8181;
-        self.read_bytes(limit).await
+        self.read_body(limit).await
     }
 
-    async fn read_bytes(
+    async fn read_body(
         self, limit: u64
     ) -> Result<(&'a HttpServer, Bytes), Error> {
         // We’re going to cheat a bit. If we know the body is too big from

@@ -38,7 +38,7 @@ async fn delete(
     let (request, _) = request.proceed_permitted(
         Permission::PubAdmin, None
     )?;
-    let (server, criteria) = request.json().await?;
+    let (server, criteria) = request.read_json().await?;
     server.krill().delete_matching_files(criteria)?;
     Ok(HttpResponse::ok())
 }
@@ -56,7 +56,7 @@ async fn init(
             let (request, _) = request.proceed_permitted(
                 Permission::PubAdmin, None
             )?;
-            let (server, uris) = request.json().await?;
+            let (server, uris) = request.read_json().await?;
             server.krill().repository_init(uris)?;
             Ok(HttpResponse::ok())
         }
@@ -110,7 +110,7 @@ async fn publishers_index(
             let (request, auth) = request.proceed_permitted(
                 Permission::PubCreate, None
             )?;
-            let (server, pbl) = request.json().await?;
+            let (server, pbl) = request.read_json().await?;
             Ok(HttpResponse::json(
                 &server.krill().add_publisher(pbl, auth.actor())?
             ))

@@ -67,7 +67,7 @@ async fn proxy_children_index(
             let (request, auth) = request.proceed_permitted(
                 Permission::CaAdmin, None
             )?;
-            let (server, child) = request.json().await?;
+            let (server, child) = request.read_json().await?;
             Ok(HttpResponse::json(
                 &server.krill().ta_proxy_children_add(child, auth.actor())?
             ))
@@ -190,7 +190,7 @@ async fn proxy_repo(
 ) -> Result<HttpResponse, DispatchError> {
     match path.next() {
         None => proxy_repo_index(request).await,
-        Some("request.json") => proxy_repo_request(request, path),
+        Some("request.read_json") => proxy_repo_request(request, path),
         Some("request.xml") => proxy_repo_request_xml(request, path),
         _ => Ok(HttpResponse::not_found())
     }
@@ -213,7 +213,7 @@ async fn proxy_repo_index(
             let (request, auth) = request.proceed_permitted(
                 Permission::CaAdmin, None
             )?;
-            let (server, update) = request.api_bytes().await?;
+            let (server, update) = request.read_bytes().await?;
             let update = super::cas::extract_repository_contact(
                 &ta_handle(), update
             )?;
@@ -275,7 +275,7 @@ async fn proxy_signer_add(
     let (request, auth) = request.proceed_permitted(
         Permission::CaAdmin, None
     )?;
-    let (server, info) = request.json().await?;
+    let (server, info) = request.read_json().await?;
     server.krill().ta_proxy_signer_add(info, auth.actor())?;
     Ok(HttpResponse::ok())
 }
@@ -319,7 +319,7 @@ async fn proxy_signer_response(
     let (request, auth) = request.proceed_permitted(
         Permission::CaAdmin, None
     )?;
-    let (server, response) = request.json().await?;
+    let (server, response) = request.read_json().await?;
     server.krill().ta_proxy_signer_process_response(response, auth.actor())?;
     Ok(HttpResponse::ok())
 }
@@ -333,7 +333,7 @@ async fn proxy_signer_update(
     let (request, auth) = request.proceed_permitted(
         Permission::CaAdmin, None
     )?;
-    let (server, info) = request.json().await?;
+    let (server, info) = request.read_json().await?;
     server.krill().ta_proxy_signer_update(info, auth.actor())?;
     Ok(HttpResponse::ok())
 }

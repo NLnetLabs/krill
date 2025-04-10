@@ -81,7 +81,7 @@ async fn children_index(
 ) -> Result<HttpResponse, DispatchError> {
     request.check_post()?;
     let (request, _) = request.proceed_unchecked();
-    let (server, child) = request.json().await?;
+    let (server, child) = request.read_json().await?;
     Ok(HttpResponse::json(
         &server.krill().ca_add_child(
             &testbed_ca_handle(), child, &Actor::anonymous()
@@ -150,7 +150,7 @@ async fn publishers_index(
 ) -> Result<HttpResponse, DispatchError> {
     request.check_post()?;
     let (request, _) = request.proceed_unchecked();
-    let (server, pbl) = request.json().await?;
+    let (server, pbl) = request.read_json().await?;
     Ok(HttpResponse::json(
         &server.krill().add_publisher(pbl, &Actor::anonymous())?
     ))

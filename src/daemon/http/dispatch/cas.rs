@@ -68,7 +68,7 @@ async fn index_post(
     let (request, _) = request.proceed_permitted(
         Permission::CaCreate, None
     )?;
-    let (server, init) = request.json().await?;
+    let (server, init) = request.read_json().await?;
     server.krill().ca_init(init)?;
     Ok(HttpResponse::ok())
 }
@@ -160,7 +160,7 @@ async fn aspas_index(
             let (request, auth) = request.proceed_permitted(
                 Permission::AspasUpdate, Some(&ca)
             )?;
-            let (server, updates) = request.json().await?;
+            let (server, updates) = request.read_json().await?;
             server.krill().ca_aspas_definitions_update(
                 ca, updates, auth.actor(),
             )?;
@@ -182,7 +182,7 @@ async fn aspas_as(
             let (request, auth) = request.proceed_permitted(
                 Permission::AspasUpdate, Some(&ca)
             )?;
-            let (server, update) = request.json().await?;
+            let (server, update) = request.read_json().await?;
             server.krill().ca_aspas_update_aspa(
                 ca, customer, update, auth.actor()
             )?;
@@ -230,7 +230,7 @@ async fn bgpsec(
             let (request, auth) = request.proceed_permitted(
                 Permission::BgpsecUpdate, Some(&ca)
             )?;
-            let (server, updates) = request.json().await?;
+            let (server, updates) = request.read_json().await?;
             server.krill().ca_bgpsec_definitions_update(
                 ca, updates, auth.actor()
             )?;
@@ -262,7 +262,7 @@ async fn children_index(
     let (request, auth) = request.proceed_permitted(
         Permission::CaUpdate, Some(&ca)
     )?;
-    let (server, child_req) = request.json().await?;
+    let (server, child_req) = request.read_json().await?;
     Ok(HttpResponse::json(
         &server.krill().ca_add_child(&ca, child_req, auth.actor())?
     ))
@@ -309,7 +309,7 @@ async fn children_child_index(
             let (request, auth) = request.proceed_permitted(
                 Permission::CaUpdate, Some(&ca)
             )?;
-            let (server, child_req) = request.json().await?;
+            let (server, child_req) = request.read_json().await?;
             server.krill().ca_child_update(
                 &ca, child, child_req, auth.actor()
             )?;
@@ -388,7 +388,7 @@ async fn children_child_import(
     let (request, auth) = request.proceed_permitted(
         Permission::CaAdmin, Some(&ca)
     )?;
-    let (server, import) = request.json::<ImportChild>().await?;
+    let (server, import) = request.read_json::<ImportChild>().await?;
     if import.name != child {
         return Ok(HttpResponse::response_from_error(
             Error::CaChildImportHandleMismatch {
@@ -482,11 +482,11 @@ fn id(
 ) -> Result<HttpResponse, DispatchError> {
     match path.next() {
         None => id_index(request, ca),
-        Some("child_request.json") => {
+        Some("child_request.read_json") => {
             id_child_request_json(request, path, ca)
         }
         Some("child_request.xml") => id_child_request_xml(request, path, ca),
-        Some("publisher_request.json") => {
+        Some("publisher_request.read_json") => {
             id_publisher_request_json(request, path, ca)
         }
         Some("publisher_request.xml") => {
@@ -669,7 +669,7 @@ async fn parents_index(
             let (request, auth) = request.proceed_permitted(
                 Permission::CaUpdate, Some(&ca)
             )?;
-            let (server, bytes) = request.api_bytes().await?;
+            let (server, bytes) = request.read_bytes().await?;
             let parent_req = extract_parent_ca_req(&ca, bytes, None)?;
             server.krill().ca_parent_add_or_update(
                 ca, parent_req, auth.actor()
@@ -701,7 +701,7 @@ async fn parents_parent(
             let (request, auth) = request.proceed_permitted(
                 Permission::CaUpdate, Some(&ca)
             )?;
-            let (server, bytes) = request.api_bytes().await?;
+            let (server, bytes) = request.read_bytes().await?;
             let parent_req = extract_parent_ca_req(
                 &ca, bytes, Some(parent)
             )?;
@@ -795,7 +795,7 @@ async fn repo_index(
             let (request, auth) = request.proceed_permitted(
                 Permission::CaUpdate, Some(&ca)
             )?;
-            let (server, update) = request.api_bytes().await?;
+            let (server, update) = request.read_bytes().await?;
             let update = extract_repository_contact(&ca, update)?;
             server.krill().ca_repo_update(ca, update, auth.actor()).await?;
             Ok(HttpResponse::ok())
@@ -880,7 +880,7 @@ async fn routes_index(
             let (request, auth) = request.proceed_permitted(
                 Permission::RoutesUpdate, Some(&ca)
             )?;
-            let (server, updates) = request.json().await?;
+            let (server, updates) = request.read_json().await?;
             server.krill().ca_routes_update(ca, updates, auth.actor())?;
             Ok(HttpResponse::ok())
         }
@@ -899,7 +899,7 @@ async fn routes_try(
         Permission::RoutesUpdate, Some(&ca)
     )?;
     let (server, mut updates)
-        = request.json::<RoaConfigurationUpdates>().await?;
+        = request.read_json::<RoaConfigurationUpdates>().await?;
     let effect = server.krill().ca_routes_bgp_dry_run(
         &ca, updates.clone()
     ).await?;
@@ -960,7 +960,7 @@ async fn routes_analysis_dryrun(
     let (request, _) = request.proceed_permitted(
         Permission::RoutesAnalysis, Some(&ca)
     )?;
-    let (server, updates) = request.json().await?;
+    let (server, updates) = request.read_json().await?;
     Ok(HttpResponse::json(
         &server.krill().ca_routes_bgp_dry_run(&ca, updates).await?
     ))
@@ -986,7 +986,7 @@ async fn routes_analysis_suggest(
             let (request, _) = request.proceed_permitted(
                 Permission::RoutesAnalysis, Some(&ca)
             )?;
-            let (server, resources) = request.json().await?;
+            let (server, resources) = request.read_json().await?;
             Ok(HttpResponse::json(
                 &server.krill().ca_routes_bgp_suggest(
                     &ca, Some(resources)

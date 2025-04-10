@@ -72,7 +72,7 @@ async fn rfc8181(
     path.check_exhausted()?;
     request.check_post()?;
     let (request, _) = request.proceed_unchecked();
-    let (server, bytes) = request.rfc8181_bytes().await?;
+    let (server, bytes) = request.read_rfc8181_bytes().await?;
     Ok(HttpResponse::rfc8181(
         server.krill().rfc8181(publisher, bytes)?
     ))
@@ -92,7 +92,7 @@ async fn rfc6492(
     request.check_post()?;
     let user_agent = request.user_agent();
     let (request, auth) = request.proceed_unchecked();
-    let (server, bytes) = request.rfc6492_bytes().await?;
+    let (server, bytes) = request.read_rfc6492_bytes().await?;
     // XXX Using auth.actor() here doesn’t make much sense -- it likely will
     //     always be the anonymous actor. Maybe the CA manager should
     //     determine the actor when looking at the ID certificate?
