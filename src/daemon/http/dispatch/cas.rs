@@ -482,7 +482,7 @@ fn id(
 ) -> Result<HttpResponse, DispatchError> {
     match path.next() {
         None => id_index(request, ca),
-        Some("child_request.read_json") => {
+        Some("child_request.json") => {
             id_child_request_json(request, path, ca)
         }
         Some("child_request.xml") => id_child_request_xml(request, path, ca),
