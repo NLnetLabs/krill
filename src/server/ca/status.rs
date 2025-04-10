@@ -569,9 +569,19 @@ impl CaStatus {
         &self.repo
     }
 
+    /// Converts the status into the repository status.
+    pub fn into_repo(self) -> RepoStatus {
+        self.repo
+    }
+
     /// Returns a reference to the parent statuses.
     pub fn parents(&self) -> &ParentStatuses {
         &self.parents
+    }
+
+    /// Converts the status into the parent statuses.
+    pub fn into_parents(self) -> ParentStatuses {
+        self.parents
     }
 
     /// Returns a reference to the child statuses.

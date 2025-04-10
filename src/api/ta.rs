@@ -274,39 +274,10 @@ impl fmt::Display for TrustAnchorObjects {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TaCertDetails {
-    cert: ReceivedCert,
-    tal: TrustAnchorLocator,
+    pub cert: ReceivedCert,
+    pub tal: TrustAnchorLocator,
 }
 
-impl TaCertDetails {
-    pub fn new(cert: ReceivedCert, tal: TrustAnchorLocator) -> Self {
-        TaCertDetails { cert, tal }
-    }
-
-    pub fn cert(&self) -> &ReceivedCert {
-        &self.cert
-    }
-
-    pub fn resources(&self) -> &ResourceSet {
-        &self.cert.resources
-    }
-
-    pub fn tal(&self) -> &TrustAnchorLocator {
-        &self.tal
-    }
-}
-
-impl From<TaCertDetails> for ReceivedCert {
-    fn from(details: TaCertDetails) -> Self {
-        details.cert
-    }
-}
-
-impl From<TaCertDetails> for TrustAnchorLocator {
-    fn from(details: TaCertDetails) -> Self {
-        details.tal
-    }
-}
 
 //------------ TrustAnchorLocator --------------------------------------------
 
@@ -411,7 +382,7 @@ impl fmt::Display for TrustAnchorSignerInfo {
             "-------------------------------------------------------"
         )?;
         writeln!(f)?;
-        writeln!(f, "{}", self.ta_cert_details.tal())?;
+        writeln!(f, "{}", self.ta_cert_details.tal)?;
         writeln!(f)?;
         writeln!(
             f,

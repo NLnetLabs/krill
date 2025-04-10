@@ -16,7 +16,6 @@ mod status;
 pub mod upgrades;
 
 pub use self::manager::CaManager;
-pub use self::manager::testbed_ca_handle;
 pub use self::status::CaStatusStore;
 pub use self::status::CaStatus;
 

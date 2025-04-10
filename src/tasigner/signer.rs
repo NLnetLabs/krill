@@ -153,7 +153,7 @@ impl fmt::Display for TrustAnchorSignerEvent {
                 write!(
                     f,
                     "Signer reissue done with serial {}",
-                    ta_cert_details.cert().serial
+                    ta_cert_details.cert.serial
                 )
             }
         }
@@ -378,7 +378,7 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
             &signer,
         )?;
         let objects = TrustAnchorObjects::create(
-            ta_cert_details.cert(),
+            &ta_cert_details.cert,
             cmd.ta_mft_nr_override.unwrap_or(1),
             timing.mft_next_update_weeks,
             &signer,
@@ -555,7 +555,7 @@ impl TrustAnchorSigner {
         )
         .map_err(Error::custom)?;
 
-        Ok(TaCertDetails::new(rcvd_cert, tal))
+        Ok(TaCertDetails { cert: rcvd_cert, tal })
     }
     
     fn update_ta_cert_details(
@@ -568,7 +568,7 @@ impl TrustAnchorSigner {
     ) -> KrillResult<TaCertDetails> {
         let resources = ResourceSet::all();
 
-        let key = self.ta_cert_details.cert().key_identifier();
+        let key = self.ta_cert_details.cert.key_identifier();
 
         let cert = {
             let serial: Serial = signer.random_serial()?;
@@ -624,7 +624,7 @@ impl TrustAnchorSigner {
         )
         .map_err(Error::custom)?;
 
-        Ok(TaCertDetails::new(rcvd_cert, tal))
+        Ok(TaCertDetails { cert: rcvd_cert, tal })
     }
 
     /// Process a request.
@@ -646,7 +646,7 @@ impl TrustAnchorSigner {
             HashMap<KeyIdentifier, ProvisioningResponse>,
         > = HashMap::new();
 
-        let signing_cert = self.ta_cert_details.cert();
+        let signing_cert = &self.ta_cert_details.cert;
         let ta_rcn = ta_resource_class_name();
 
         for child_request in &signed_request.content().child_requests {

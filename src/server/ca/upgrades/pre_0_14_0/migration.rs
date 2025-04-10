@@ -13,9 +13,7 @@ use crate::{
         storage::KeyValueStore,
     },
     constants::CASERVER_NS,
-    server::{
-        config::Config,
-    },
+    config::Config,
     upgrades::UpgradeResult,
 };
 

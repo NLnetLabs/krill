@@ -28,7 +28,7 @@ use crate::commons::eventsourcing::{
 use crate::constants::{
     ACTOR_DEF_KRILL, PUBSERVER_DFLT, PUBSERVER_NS, TA_NAME
 };
-use crate::server::config::Config;
+use crate::config::Config;
 use super::publishers::Publisher;
 
 

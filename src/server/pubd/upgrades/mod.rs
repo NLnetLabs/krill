@@ -11,7 +11,7 @@ use crate::commons::KrillResult;
 use crate::commons::eventsourcing::WalStore;
 use crate::commons::storage::{Key, KeyValueStore, Segment, Scope};
 use crate::constants::PUBSERVER_CONTENT_NS;
-use crate::server::config::Config;
+use crate::config::Config;
 use crate::server::pubd::content::RepositoryContent;
 use self::pre_0_13_0::OldRepositoryContent;
 

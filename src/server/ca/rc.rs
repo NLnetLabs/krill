@@ -20,7 +20,7 @@ use crate::api::roa::{RoaConfiguration, RoaInfo};
 use crate::commons::KrillResult;
 use crate::commons::crypto::{CsrInfo, KrillSigner, SignSupport};
 use crate::commons::error::{Error, KrillError};
-use crate::server::config::{Config, IssuanceTimingConfig};
+use crate::config::{Config, IssuanceTimingConfig};
 use super::aspa::{AspaDefinitions, AspaObjects, AspaObjectsUpdates};
 use super::bgpsec::{
     BgpSecCertificates, BgpSecCertificateUpdates, BgpSecDefinitions

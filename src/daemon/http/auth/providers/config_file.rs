@@ -13,12 +13,12 @@ use crate::commons::httpclient;
 use crate::commons::KrillResult;
 use crate::commons::error::{ApiAuthError, Error};
 use crate::constants::{PW_HASH_LOG_N, PW_HASH_P, PW_HASH_R};
-use crate::server::config::Config;
-use crate::server::http::auth::crypt;
-use crate::server::http::auth::{AuthInfo, LoggedInUser, Permission, RoleMap};
-use crate::server::http::auth::session::{ClientSession, LoginSessionCache};
-use crate::server::http::request::HyperRequest;
-use crate::server::http::response::HttpResponse;
+use crate::config::Config;
+use crate::daemon::http::auth::crypt;
+use crate::daemon::http::auth::{AuthInfo, LoggedInUser, Permission, RoleMap};
+use crate::daemon::http::auth::session::{ClientSession, LoginSessionCache};
+use crate::daemon::http::request::HyperRequest;
+use crate::daemon::http::response::HttpResponse;
 
 
 //------------ Constants -----------------------------------------------------
@@ -119,7 +119,7 @@ impl AuthProvider {
     pub async fn authenticate(
         &self,
         request: &HyperRequest,
-    ) -> Result<Option<AuthInfo>, ApiAuthError> {
+    ) -> Result<Option<(AuthInfo, Option<Token>)>, ApiAuthError> {
         if log_enabled!(log::Level::Trace) {
             trace!("Attempting to authenticate the request..");
         }
@@ -136,7 +136,7 @@ impl AuthProvider {
 
                 trace!("user_id={}", session.user_id);
 
-                Ok(Some(self.auth_from_session(&session)?))
+                Ok(Some((self.auth_from_session(&session)?, None)))
             }
             _ => Ok(None),
         };
@@ -280,7 +280,7 @@ impl AuthProvider {
             Some(token) => {
                 self.session_cache.remove(&token).await;
 
-                if let Ok(Some(info)) = self.authenticate(request).await {
+                if let Ok(Some((info, _))) = self.authenticate(request).await {
                     info!("User logged out: {}", info.actor().name());
                 }
             }

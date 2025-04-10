@@ -23,13 +23,13 @@ use krill::commons::httpclient;
 use krill::commons::crypto::OpenSslSignerConfig;
 use krill::cli::client::KrillClient;
 use krill::constants::REPOSITORY_DIR;
-use krill::server::config::{
+use krill::config::{
     AuthType, Config, ConfigDefaults, HttpsMode, IssuanceTimingConfig,
     LogType, MetricsConfig, RrdpUpdatesConfig, SignerConfig,
     SignerReference, SignerType, TestBed,
 };
-use krill::server::http::tls_keys::HTTPS_SUB_DIR;
-use krill::server::http::server;
+use krill::daemon::http::tls_keys::HTTPS_SUB_DIR;
+use krill::daemon::start::start_krill_daemon;
 use krill::tasigner::TaTimingConfig;
 
 
@@ -392,7 +392,7 @@ impl KrillServer {
         let (tx, running) = oneshot::channel();
         let mut res = Self {
             join: tokio::spawn(async {
-                if let Err(err) = server::start_krill_daemon(
+                if let Err(err) = start_krill_daemon(
                     config.into(), Some(tx)
                 ).await {
                     error!("Krill failed to start: {}", err);

@@ -32,8 +32,9 @@ use crate::{
         PUBSERVER_CONTENT_NS, PUBSERVER_NS, SIGNERS_NS, STATUS_NS,
         TA_PROXY_SERVER_NS, TA_SIGNER_SERVER_NS,
     },
+    config::Config,
     server::{
-        config::Config, krillserver::KrillServer,
+        manager::KrillManager,
         properties::PropertiesManager,
     },
     upgrades::pre_0_14_0::{
@@ -1176,7 +1177,7 @@ fn record_preexisting_openssl_keys_in_signer_mapper(
 /// server is started and operators can make changes.
 pub async fn post_start_upgrade(
     report: UpgradeReport,
-    server: &KrillServer,
+    server: &KrillManager,
 ) -> KrillResult<()> {
     if report.versions().from() < &KrillVersion::candidate(0, 9, 3, 2) {
         info!("Reissue ROAs on upgrade to force short EE certificate subjects in the objects");
@@ -1189,13 +1190,11 @@ pub async fn post_start_upgrade(
             add_or_replace: configs,
             remove: Vec::new()
         };
-        server
-            .ca_aspas_definitions_update(
-                ca,
-                aspa_updates,
-                server.system_actor(),
-            )
-            .await?;
+        server.ca_aspas_definitions_update(
+            ca,
+            aspa_updates,
+            server.system_actor(),
+        )?;
     }
 
     Ok(())
@@ -1296,7 +1295,7 @@ mod tests {
 
     fn test_upgrade(base_dir: &str, namespaces: &[&str]) {
         let temp_dir = tempdir().unwrap();
-        copy_folder(&base_dir, &temp_dir);
+        copy_folder(base_dir, &temp_dir);
         
         // Copy data for the given names spaces into memory for testing.
         let mem_storage_base_uri = test::mem_storage();
@@ -1570,7 +1569,7 @@ mod tests {
         let source_dir_path_str =
             "test-resources/status_store/migration-0.9.5/";
         let temp_dir = tempdir().unwrap();
-        copy_folder(&source_dir_path_str, &temp_dir);
+        copy_folder(source_dir_path_str, &temp_dir);
         let source_dir_url = Url::parse(
             &format!("local://{}", &temp_dir.path().to_str().unwrap()))
                 .unwrap();

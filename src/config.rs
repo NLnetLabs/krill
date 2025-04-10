@@ -31,17 +31,17 @@ use crate::{
         KrillResult,
     },
     constants::*,
-    server::{
+    daemon::{
         http::auth::{Role, RoleMap},
         http::tls_keys::{self, HTTPS_SUB_DIR},
-        mq::{in_seconds, Priority},
     },
+    server::mq::{in_seconds, Priority},
     tasigner::TaTimingConfig,
 };
 use crate::api::admin::{PublicationServerUris, Token};
 
 #[cfg(feature = "multi-user")]
-use crate::server::http::auth::providers::{
+use crate::daemon::http::auth::providers::{
     config_file::ConfigAuthUsers,
     openid_connect::ConfigAuthOpenIDConnect,
 };

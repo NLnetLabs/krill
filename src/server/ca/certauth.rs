@@ -47,7 +47,7 @@ use crate::commons::crypto::{CsrInfo, KrillSigner};
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::Aggregate;
 use crate::constants::test_mode_enabled;
-use crate::server::config::{Config, IssuanceTimingConfig};
+use crate::config::{Config, IssuanceTimingConfig};
 use super::aspa::AspaDefinitions;
 use super::bgpsec::BgpSecDefinitions;
 use super::child::{ChildDetails, ChildCertificateUpdates, UsedKeyState};
@@ -2744,7 +2744,7 @@ impl Rfc8183Id {
 mod tests {
     use crate::commons::crypto::KrillSignerBuilder;
     use crate::commons::test;
-    use crate::server::config::ConfigDefaults;
+    use crate::config::ConfigDefaults;
     use std::time::Duration;
     use super::*;
 

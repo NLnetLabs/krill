@@ -22,7 +22,7 @@ mod common;
 ///
 /// [Krill as a Trust Anchor]: https://krill.docs.nlnetlabs.nl/en/stable/trust-anchor.html
 #[tokio::test]
-async fn functional_at() {
+async fn functional_ta() {
     let (mut config, _tempdir) = common::TestConfig::mem_storage()
         .enable_second_signer().finalize();
     let port = config.port;

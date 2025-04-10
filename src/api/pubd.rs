@@ -20,20 +20,23 @@ pub struct RepoStats {
 }
 
 impl RepoStats {
-    pub fn stale_publishers(&self, seconds: i64) -> Vec<PublisherHandle> {
-        let mut res = vec![];
-        for (publisher, stats) in self.publishers.iter() {
+    pub fn stale_publishers(
+        self, seconds: i64
+    ) -> impl Iterator<Item = PublisherHandle> {
+        self.publishers.into_iter().filter_map(move |(publisher, stats)| {
             if let Some(update_time) = stats.last_update() {
                 if Time::now().timestamp() - update_time.timestamp()
                     >= seconds
                 {
-                    res.push(publisher.clone())
+                    Some(publisher)
+                }
+                else {
+                    None
                 }
             } else {
-                res.push(publisher.clone())
+                Some(publisher)
             }
-        }
-        res
+        })
     }
 }
 

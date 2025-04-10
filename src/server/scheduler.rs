@@ -28,9 +28,9 @@ use crate::{
         SCHEDULER_RESYNC_REPO_CAS_THRESHOLD,
         SCHEDULER_USE_JITTER_CAS_THRESHOLD, SIGNERS_NS,
     },
+    config::Config,
     server::{
         ca::{CaManager, CertAuth},
-        config::Config,
         mq::{
             in_hours, in_minutes, in_seconds, in_weeks, now, Task, TaskQueue,
         },
@@ -467,7 +467,6 @@ impl Scheduler {
         let cas = self
             .ca_manager
             .republish_all(false)
-            .await
             .map_err(FatalError)?;
 
         for ca_handle in cas {
