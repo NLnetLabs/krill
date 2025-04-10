@@ -190,7 +190,7 @@ async fn proxy_repo(
 ) -> Result<HttpResponse, DispatchError> {
     match path.next() {
         None => proxy_repo_index(request).await,
-        Some("request.read_json") => proxy_repo_request(request, path),
+        Some("request.json") => proxy_repo_request(request, path),
         Some("request.xml") => proxy_repo_request_xml(request, path),
         _ => Ok(HttpResponse::not_found())
     }

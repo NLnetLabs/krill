@@ -486,7 +486,7 @@ fn id(
             id_child_request_json(request, path, ca)
         }
         Some("child_request.xml") => id_child_request_xml(request, path, ca),
-        Some("publisher_request.read_json") => {
+        Some("publisher_request.json") => {
             id_publisher_request_json(request, path, ca)
         }
         Some("publisher_request.xml") => {
