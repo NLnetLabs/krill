@@ -151,8 +151,9 @@ async fn publishers_index(
     request.check_post()?;
     let (request, _) = request.proceed_unchecked();
     let (server, pbl) = request.json().await?;
-    server.krill().add_publisher(pbl, &Actor::anonymous())?;
-    Ok(HttpResponse::ok())
+    Ok(HttpResponse::json(
+        &server.krill().add_publisher(pbl, &Actor::anonymous())?
+    ))
 }
 
 fn publishers_publisher(

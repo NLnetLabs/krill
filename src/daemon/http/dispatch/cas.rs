@@ -804,7 +804,7 @@ async fn repo_index(
     }
 }
 
-fn extract_repository_contact(
+pub fn extract_repository_contact(
     ca: &CaHandle,
     bytes: Bytes,
 ) -> Result<RepositoryContact, Error> {

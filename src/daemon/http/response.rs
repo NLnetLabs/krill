@@ -347,7 +347,7 @@ impl HttpResponse {
     }
 
     pub fn method_not_allowed() -> Self {
-        Self::response_from_error(Error::ApiUnknownMethod)
+        Response::new(StatusCode::METHOD_NOT_ALLOWED).finalize()
     }
 
     // Suppress any error in the unlikely event that we fail to inject the

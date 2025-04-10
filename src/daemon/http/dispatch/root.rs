@@ -63,8 +63,11 @@ fn health(
 //------------ /rfc8181 ------------------------------------------------------
 
 async fn rfc8181(
-    request: Request<'_>, mut path: PathIter<'_>
+    request: Request<'_>, path: PathIter<'_>
 ) -> Result<HttpResponse, DispatchError> {
+    // We need to allow trailing slashes for compatibility.
+    let mut path = path.strip_trailing_slash();
+
     let publisher = path.parse_next()?;
     path.check_exhausted()?;
     request.check_post()?;
@@ -79,8 +82,11 @@ async fn rfc8181(
 //------------ /rfc6492 ------------------------------------------------------
 
 async fn rfc6492(
-    request: Request<'_>, mut path: PathIter<'_>
+    request: Request<'_>, path: PathIter<'_>
 ) -> Result<HttpResponse, DispatchError> {
+    // We need to allow trailing slashes for compatibility.
+    let mut path = path.strip_trailing_slash();
+
     let ca = path.parse_next()?;
     path.check_exhausted()?;
     request.check_post()?;
