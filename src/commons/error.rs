@@ -240,6 +240,7 @@ pub enum Error {
     //-----------------------------------------------------------------
     // General API Client Issues
     //-----------------------------------------------------------------
+    UnexpectedBody,
     JsonError(serde_json::Error),
     InvalidUtf8Input,
     ApiUnknownMethod,
@@ -422,6 +423,7 @@ impl fmt::Display for Error {
             //-----------------------------------------------------------------
             // General API Client Issues
             //-----------------------------------------------------------------
+            Error::UnexpectedBody => write!(f, "Unexpected body in request"),
             Error::JsonError(e) => write!(f,"Invalid JSON: {}", e),
             Error::InvalidUtf8Input => write!(f, "Submitted bytes are invalid UTF8"),
             Error::ApiUnknownMethod => write!(f,"Unknown API method"),
@@ -854,6 +856,10 @@ impl Error {
             //-----------------------------------------------------------------
             // General API Client Issues (label: api-*)
             //-----------------------------------------------------------------
+            Error::UnexpectedBody => {
+                ErrorResponse::new("api-unexpected-body", self)
+            }
+
             Error::JsonError(e) => {
                 ErrorResponse::new("api-json", self).with_cause(e)
             }

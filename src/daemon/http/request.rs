@@ -194,7 +194,8 @@ impl<'a> Request<'a> {
 
 /// A request that has been checked for the correct access permissions.
 ///
-/// Only this type allows access to the request’s body and the server.
+/// This type allows access to the request’s body and, by way of reading the
+/// body or forcing it to be empty, to the server.
 pub struct AuthedRequest<'a> {
     /// The underlying raw request.
     request: HyperRequest,
@@ -210,8 +211,7 @@ impl<'a> AuthedRequest<'a> {
     /// Ensures the body is empty.
     pub fn empty(self) -> Result<&'a HttpServer, Error> {
         if self.request.body().size_hint().upper() != Some(0) {
-            // XXX Maybe this should have its own error?
-            return Err(Error::PostTooBig)
+            return Err(Error::UnexpectedBody)
         }
         Ok(self.server)
     }
