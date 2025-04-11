@@ -73,13 +73,6 @@ include:
     image: "debian:buster"
     target: "aarch64-unknown-linux-gnu"
 test-exclude:
-  - pkg: "krill"
-    image: "rockylinux:9"
-    mode: "upgrade-from-published"
-  - pkg: "krillta"
-    image: "rockylinux:9"
-    mode: "upgrade-from-published"
-  - pkg: "krillup"
-    image: "rockylinux:9"
+  - image: "rockylinux:9"
     mode: "upgrade-from-published"
 
