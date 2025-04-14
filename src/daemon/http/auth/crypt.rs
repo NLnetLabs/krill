@@ -27,7 +27,7 @@ use crate::commons::ext_serde;
 use crate::commons::KrillResult;
 use crate::commons::error::{ApiAuthError, Error};
 use crate::commons::storage::{Key, Namespace, Segment};
-use crate::server::config::Config;
+use crate::config::Config;
 
 const CHACHA20_KEY_BIT_LEN: usize = 256;
 const CHACHA20_KEY_BYTE_LEN: usize = CHACHA20_KEY_BIT_LEN / 8;

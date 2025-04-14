@@ -136,7 +136,7 @@ impl TryFrom<OldTaCertDetails> for TaCertDetails {
 
         let tal = TrustAnchorLocator::new(tal.uris, rsync_uri, &public_key);
 
-        Ok(TaCertDetails::new(rvcd_cert, tal))
+        Ok(TaCertDetails { cert: rvcd_cert, tal })
     }
 }
 

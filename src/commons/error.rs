@@ -1,6 +1,6 @@
 //! Defines all Krill server side errors
 
-use std::{fmt, fmt::Display, io};
+use std::{error, fmt, fmt::Display, io};
 
 use hyper::StatusCode;
 
@@ -29,8 +29,8 @@ use crate::{
         storage,
         storage::KeyValueError,
     },
-    server::http::tls_keys,
-    server::http::auth::Permission,
+    daemon::http::tls_keys,
+    daemon::http::auth::Permission,
     server::pubd::PublicationDeltaError,
     upgrades::UpgradeError,
 };
@@ -212,6 +212,8 @@ impl fmt::Display for FatalError {
     }
 }
 
+impl error::Error for FatalError { }
+
 //------------ Error -------------------------------------------------------
 
 // Transitional type alias.
@@ -233,10 +235,12 @@ pub enum Error {
     HttpClientError(httpclient::Error),
     ConfigError(String),
     UpgradeError(UpgradeError),
+    NotImplemented,
 
     //-----------------------------------------------------------------
     // General API Client Issues
     //-----------------------------------------------------------------
+    UnexpectedBody,
     JsonError(serde_json::Error),
     InvalidUtf8Input,
     ApiUnknownMethod,
@@ -318,6 +322,7 @@ pub enum Error {
     //-----------------------------------------------------------------
     // CA Child Issues
     //-----------------------------------------------------------------
+    CaChildImportHandleMismatch { path: ChildHandle, body: ChildHandle },
     CaChildDuplicate(CaHandle, ChildHandle),
     CaChildUnknown(CaHandle, ChildHandle),
     CaChildMustHaveResources(CaHandle, ChildHandle),
@@ -413,10 +418,12 @@ impl fmt::Display for Error {
             Error::HttpClientError(e) => write!(f, "HTTP client error: {}", e),
             Error::ConfigError(e) => write!(f, "Configuration error: {}", e),
             Error::UpgradeError(e) => write!(f, "Could not upgrade Krill: {}", e),
+            Error::NotImplemented => write!(f, "Not yet implemented"),
 
             //-----------------------------------------------------------------
             // General API Client Issues
             //-----------------------------------------------------------------
+            Error::UnexpectedBody => write!(f, "Unexpected body in request"),
             Error::JsonError(e) => write!(f,"Invalid JSON: {}", e),
             Error::InvalidUtf8Input => write!(f, "Submitted bytes are invalid UTF8"),
             Error::ApiUnknownMethod => write!(f,"Unknown API method"),
@@ -510,6 +517,12 @@ impl fmt::Display for Error {
             //-----------------------------------------------------------------
             // CA Child Issues
             //-----------------------------------------------------------------
+            Error::CaChildImportHandleMismatch { path, body } => {
+                write!(f,
+                    "mismatch between child handles: \
+                     '{path}' in path, '{body}' in body"
+                )
+            },
             Error::CaChildDuplicate(ca, child) => write!(f, "CA '{}' already has a child named '{}'", ca, child),
             Error::CaChildUnknown(ca, child) => write!(f, "CA '{}' does not have a child named '{}'", ca, child),
             Error::CaChildMustHaveResources(ca, child) => write!(f, "Child '{}' for CA '{}' MUST have resources specified", child, ca),
@@ -773,6 +786,8 @@ impl Error {
             | Error::ApiLoginError(_) => StatusCode::UNAUTHORIZED,
             Error::ApiInsufficientRights(_) => StatusCode::FORBIDDEN,
 
+            Error::NotImplemented => StatusCode::NOT_IMPLEMENTED,
+
             _ => StatusCode::BAD_REQUEST,
         }
     }
@@ -833,9 +848,18 @@ impl Error {
                 ErrorResponse::new("sys-upgrade", self).with_cause(e)
             }
 
+            // not yet implemented error
+            Error::NotImplemented => {
+                ErrorResponse::new("sys-not-implemented", self)
+            }
+
             //-----------------------------------------------------------------
             // General API Client Issues (label: api-*)
             //-----------------------------------------------------------------
+            Error::UnexpectedBody => {
+                ErrorResponse::new("api-unexpected-body", self)
+            }
+
             Error::JsonError(e) => {
                 ErrorResponse::new("api-json", self).with_cause(e)
             }
@@ -1064,6 +1088,11 @@ impl Error {
             }
 
             // CA Child Issues
+            Error::CaChildImportHandleMismatch { path, body } => {
+                ErrorResponse::new("ca-child-import-handle-mismatch", self)
+                    .with_arg("path", path)
+                    .with_arg("body", body)
+            }
             Error::CaChildDuplicate(ca, child) => {
                 ErrorResponse::new("ca-child-duplicate", self)
                     .with_ca(ca)

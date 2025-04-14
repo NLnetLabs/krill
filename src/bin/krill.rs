@@ -6,8 +6,8 @@ use clap::Parser;
 use clap::crate_version;
 use log::error;
 use krill::constants::{KRILL_DEFAULT_CONFIG_FILE, KRILL_SERVER_APP};
-use krill::server::config::Config;
-use krill::server::http::server;
+use krill::config::Config;
+use krill::daemon::start::start_krill_daemon;
 
 
 //------------ main ----------------------------------------------------------
@@ -18,7 +18,7 @@ async fn main() {
 
     match Config::create(&args.config, false) {
         Ok(config) => {
-            if let Err(e) = server::start_krill_daemon(
+            if let Err(e) = start_krill_daemon(
                 Arc::new(config), None
             ).await {
                 error!("Krill failed to start: {}", e);

@@ -71,7 +71,7 @@ impl ErrorResponse {
         }
     }
 
-    fn with_arg(mut self, key: &str, value: impl fmt::Display) -> Self {
+    pub fn with_arg(mut self, key: &str, value: impl fmt::Display) -> Self {
         self.args.insert(key.to_string(), value.to_string());
         self
     }

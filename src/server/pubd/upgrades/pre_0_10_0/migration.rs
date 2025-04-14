@@ -4,7 +4,7 @@ use crate::commons::eventsourcing::{AggregateStore, StoredCommandBuilder};
 use crate::commons::storage::{KeyValueStore, Scope, Segment};
 use crate::commons::version::KrillVersion;
 use crate::constants::PUBSERVER_NS;
-use crate::server::config::Config;
+use crate::config::Config;
 use crate::server::pubd::access::{
     RepositoryAccess, RepositoryAccessEvent, RepositoryAccessInitEvent,
     StorableRepositoryCommand,

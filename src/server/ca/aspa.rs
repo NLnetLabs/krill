@@ -17,7 +17,7 @@ use crate::api::ca::ObjectName;
 use crate::commons::KrillResult;
 use crate::commons::crypto::KrillSigner;
 use crate::commons::error::Error;
-use crate::server::config::{Config, IssuanceTimingConfig};
+use crate::config::{Config, IssuanceTimingConfig};
 use super::events::CertAuthEvent;
 use super::keys::CertifiedKey;
 
