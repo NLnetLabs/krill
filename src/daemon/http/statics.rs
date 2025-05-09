@@ -17,25 +17,26 @@ pub async fn statics(req: Request) -> RoutingResult {
 
             "/assets/favicon-f84116cb.ico" => Ok(HttpResponse::fav(FAVICON)),
 
-            "/assets/index-16c05fa1.js" => Ok(HttpResponse::js(JS_INDEX)),
+            "/assets/index-17d9117e.js" => Ok(HttpResponse::js(JS_INDEX)),
 
-            "/assets/en-d3d88bc8.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_ENGLISH)),
-            "/assets/de-faf2935a.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_GERMAN)),
-            "/assets/es-52cbfc21.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_SPANISH)),
-            "/assets/fr-ac1aafd8.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_FRENCH)),
-            "/assets/gr-5a66c94a.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_GREEK)),
-            "/assets/nl-f2dd1189.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_DUTCH)),
-            "/assets/pt-e9bf4047.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_PORTUGUESE)),
-            "/assets/zh-Hans-f7c709f7.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_SIMPLIFIED_CHINESE)),
-            "/assets/zh-Hant-0d86c694.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_TRADITIONAL_CHINESE)),
+            "/assets/en-893c19c3.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_ENGLISH)),
+            "/assets/de-e4495468.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_GERMAN)),
+            "/assets/es-bf4361b1.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_SPANISH)),
+            "/assets/fr-fd67af37.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_FRENCH)),
+            "/assets/gr-9c53613e.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_GREEK)),
+            "/assets/nl-f91bc25c.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_DUTCH)),
+            "/assets/pt-ee7cebe0.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_PORTUGUESE)),
+            "/assets/zh-Hans-6406b9d3.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_SIMPLIFIED_CHINESE)),
+            "/assets/zh-Hant-d9271047.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_TRADITIONAL_CHINESE)),
 
-            "/assets/index-3c0611ee.css" => Ok(HttpResponse::css(CSS)),
+            "/assets/index-d02216b4.css" => Ok(HttpResponse::css(CSS)),
 
             "/assets/check-3e734f78.svg" => Ok(HttpResponse::svg(SVG_CHECK)),
             "/assets/check-green-4525c79c.svg" => Ok(HttpResponse::svg(SVG_CHECK_GREEN)),
             "/assets/clipboard-4659ffea.svg" => Ok(HttpResponse::svg(SVG_CLIPBOARD)),
             "/assets/download-2dfead4c.svg" => Ok(HttpResponse::svg(SVG_DOWNLOAD)),
             "/assets/edit-776bf3c3.svg" => Ok(HttpResponse::svg(SVG_EDIT)),
+            "/assets/edit-white-a808b3e3.svg" => Ok(HttpResponse::svg(SVG_EDIT_WHITE)),
             "/assets/error-fd1fc7e1.svg" => Ok(HttpResponse::svg(SVG_ERROR)),
             "/assets/krill_logo_white-05224433.svg" => Ok(HttpResponse::svg(SVG_KRILL_LOGO)),
             "/assets/logout-c725fd2c.svg" => Ok(HttpResponse::svg(SVG_LOGOUT)),
@@ -70,25 +71,26 @@ pub static INDEX: &[u8] = include_bytes!("../../../ui/index.html");
 
 static FAVICON: &[u8] = include_bytes!("../../../ui/assets/favicon-f84116cb.ico");
 
-static JS_INDEX: &[u8] = include_bytes!("../../../ui/assets/index-16c05fa1.js");
+static JS_INDEX: &[u8] = include_bytes!("../../../ui/assets/index-17d9117e.js");
 
-static JS_TRANSLATIONS_GERMAN: &[u8] = include_bytes!("../../../ui/assets/de-faf2935a.js");
-static JS_TRANSLATIONS_ENGLISH: &[u8] = include_bytes!("../../../ui/assets/en-d3d88bc8.js");
-static JS_TRANSLATIONS_SPANISH: &[u8] = include_bytes!("../../../ui/assets/es-52cbfc21.js");
-static JS_TRANSLATIONS_FRENCH: &[u8] = include_bytes!("../../../ui/assets/fr-ac1aafd8.js");
-static JS_TRANSLATIONS_GREEK: &[u8] = include_bytes!("../../../ui/assets/gr-5a66c94a.js");
-static JS_TRANSLATIONS_DUTCH: &[u8] = include_bytes!("../../../ui/assets/nl-f2dd1189.js");
-static JS_TRANSLATIONS_PORTUGUESE: &[u8] = include_bytes!("../../../ui/assets/pt-e9bf4047.js");
-static JS_TRANSLATIONS_SIMPLIFIED_CHINESE: &[u8] = include_bytes!("../../../ui/assets/zh-Hans-f7c709f7.js");
-static JS_TRANSLATIONS_TRADITIONAL_CHINESE: &[u8] = include_bytes!("../../../ui/assets/zh-Hant-0d86c694.js");
+static JS_TRANSLATIONS_GERMAN: &[u8] = include_bytes!("../../../ui/assets/de-e4495468.js");
+static JS_TRANSLATIONS_ENGLISH: &[u8] = include_bytes!("../../../ui/assets/en-893c19c3.js");
+static JS_TRANSLATIONS_SPANISH: &[u8] = include_bytes!("../../../ui/assets/es-bf4361b1.js");
+static JS_TRANSLATIONS_FRENCH: &[u8] = include_bytes!("../../../ui/assets/fr-fd67af37.js");
+static JS_TRANSLATIONS_GREEK: &[u8] = include_bytes!("../../../ui/assets/gr-9c53613e.js");
+static JS_TRANSLATIONS_DUTCH: &[u8] = include_bytes!("../../../ui/assets/nl-f91bc25c.js");
+static JS_TRANSLATIONS_PORTUGUESE: &[u8] = include_bytes!("../../../ui/assets/pt-ee7cebe0.js");
+static JS_TRANSLATIONS_SIMPLIFIED_CHINESE: &[u8] = include_bytes!("../../../ui/assets/zh-Hans-6406b9d3.js");
+static JS_TRANSLATIONS_TRADITIONAL_CHINESE: &[u8] = include_bytes!("../../../ui/assets/zh-Hant-d9271047.js");
 
-static CSS: &[u8] = include_bytes!("../../../ui/assets/index-3c0611ee.css");
+static CSS: &[u8] = include_bytes!("../../../ui/assets/index-d02216b4.css");
 
 static SVG_CHECK: &[u8] = include_bytes!("../../../ui/assets/check-3e734f78.svg");
 static SVG_CHECK_GREEN: &[u8] = include_bytes!("../../../ui/assets/check-green-4525c79c.svg");
 static SVG_CLIPBOARD: &[u8] = include_bytes!("../../../ui/assets/clipboard-4659ffea.svg");
 static SVG_DOWNLOAD: &[u8] = include_bytes!("../../../ui/assets/download-2dfead4c.svg");
 static SVG_EDIT: &[u8] = include_bytes!("../../../ui/assets/edit-776bf3c3.svg");
+static SVG_EDIT_WHITE: &[u8] = include_bytes!("../../../ui/assets/edit-white-a808b3e3.svg");
 static SVG_ERROR: &[u8] = include_bytes!("../../../ui/assets/error-fd1fc7e1.svg");
 static SVG_KRILL_LOGO: &[u8] = include_bytes!("../../../ui/assets/krill_logo_white-05224433.svg");
 static SVG_LOGOUT: &[u8] = include_bytes!("../../../ui/assets/logout-c725fd2c.svg");
