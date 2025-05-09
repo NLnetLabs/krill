@@ -1,5 +1,17 @@
 # Change Log
 
+
+## 0.17.7-rc1
+
+Released 2025-05-09.
+
+Other changes
+
+* Updates the bundled version of Krill UI to 0.9.0. ([#1271])
+
+[#1271]: https://github.com/NLnetLabs/krill/pull/1271
+
+
 ## 0.14.6 ‘Roll Initiative!’
 
 Released 2025-04-08.
