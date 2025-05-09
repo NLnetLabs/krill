@@ -1165,7 +1165,7 @@ dependencies = [
 
 [[package]]
 name = "krill"
-version = "0.14.6"
+version = "0.14.7-rc1"
 dependencies = [
  "backoff",
  "base64 0.13.1",
