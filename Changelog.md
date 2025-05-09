@@ -1,5 +1,13 @@
 # Change Log
 
+
+## Unreleased future version
+
+Bug fixes
+
+Other changes
+
+
 ## 0.14.7-rc1
 
 Released 2025-05-09.
