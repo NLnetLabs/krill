@@ -1,3 +1,7 @@
+#![allow(
+    clippy::result_large_err,
+    clippy::large_enum_variant
+)]
 //! The _Krill_ library crate.
 
 pub mod api;
