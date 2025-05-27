@@ -5,6 +5,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use chrono::Duration;
 use log::debug;
+use rand::seq::SliceRandom;
 use rpki::{rrdp, uri};
 use rpki::ca::idexchange::CaHandle;
 use rpki::ca::provisioning::ResourceClassName;
@@ -1678,9 +1679,14 @@ impl ManifestBuilder {
         // Add entry for CRL
         self.entries.insert(crl.name.clone(), crl.hash);
 
+        // Shuffle keys based on conversation on sidrops
+        let mut keys: Vec<&ObjectName> = published_objects.keys().collect();
+        let mut rng = rand::thread_rng();
+        keys.shuffle(&mut rng); 
+
         // Add other objects
-        for (name, object) in published_objects {
-            self.entries.insert(name.clone(), object.hash);
+        for key in keys {
+            self.entries.insert(key.clone(), published_objects[key].hash);
         }
 
         self
