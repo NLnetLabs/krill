@@ -65,7 +65,7 @@ jobs:
 
   pykmip-test:
     name: pykmip-test
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     strategy:
       matrix:
         rust: [1.82.0, stable, beta]
@@ -111,7 +111,7 @@ jobs:
 
   softhsm2-test:
     name: softhsm2-test
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     strategy:
       matrix:
         rust: [1.82.0, stable, beta]

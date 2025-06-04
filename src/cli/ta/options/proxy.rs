@@ -50,6 +50,7 @@ impl Command {
 //------------ Subcommand ----------------------------------------------------
 
 #[derive(clap::Subcommand)]
+#[allow(clippy::large_enum_variant)]
 pub enum Subcommand {
     /// Initialise the proxy
     Init(Init),
@@ -318,6 +319,7 @@ impl fmt::Display for TasrMsg {
 //------------ Children ------------------------------------------------------
 
 #[derive(clap::Subcommand)]
+#[allow(clippy::large_enum_variant)]
 pub enum Children {
     /// Add a child
     Add(ChildrenAdd),
@@ -440,6 +442,7 @@ impl FromStr for CertAuthInfoFile {
 //------------ CertAuthInfoFileError------------------------------------------
 
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum CertAuthInfoFileError {
     Io(String, io::Error),
     Parse(String, serde_json::Error),
