@@ -419,19 +419,25 @@ impl BgpAnalyser {
             return Ok(value.remove(url.as_str()).unwrap())
         }
 
-        let mut local_cache = self.cache.lock().await;
+        {
+            let mut local_cache = self.cache.lock().await;
 
-        if let Some((time, value)) = &local_cache.get(&url) {
-            if time.elapsed() > Duration::from_secs(CACHE_DURATION) {
-                local_cache.remove(&url);
-            } else {
-                return Ok(value.clone());
+            if let Some((time, value)) = &local_cache.get(&url) {
+                if time.elapsed() > Duration::from_secs(CACHE_DURATION) {
+                    local_cache.remove(&url);
+                } else {
+                    return Ok(value.clone());
+                }
             }
         }
 
         let value: Value = self.client.get(
-            url.as_str()).send().await?.json().await?;
-            local_cache.insert(url, (Instant::now(), value.clone()));
+            url.as_str()
+        ).send().await?.json().await?;
+
+        self.cache.lock().await.insert(
+            url, (Instant::now(), value.clone())
+        );
         Ok(value)
     }
 
