@@ -69,3 +69,5 @@ include:
 exclude:
   - image: "rockylinux:9"
     mode: "upgrade-from-published"
+  - image: "ubuntu:noble"
+    mode: "upgrade-from-published"
