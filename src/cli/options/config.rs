@@ -41,41 +41,13 @@ pub struct Simple {
     /// Override the default log file path of ./krill.log
     #[arg(short, long)]
     pub logfile: Option<String>,
-
-    /// Include config for multi-user feature
-    pub multi_user: bool,
-
-    /// Include config for HSM
-    pub hsm: bool,
-}
-
-impl Default for Simple {
-    fn default() -> Self {
-        Self {
-            data: None,
-            logfile: None,
-            multi_user: Self::MULTI_USER_DEFAULT,
-            hsm: false,
-        }
-    }
-}
-
-impl Simple {
-    #[cfg(feature = "multi-user")]
-    const MULTI_USER_DEFAULT: bool = true;
-
-    #[cfg(not(feature = "multi-user"))]
-    const MULTI_USER_DEFAULT: bool = false;
 }
 
 impl Simple {
     pub fn run(self, client: &KrillClient) -> ConfigFile {
         let defaults = include_str!("../../../defaults/krill.conf");
-        let multi_add_on =
-            include_str!("../../../defaults/krill-multi-user.conf");
-        let hsm_add_on = include_str!("../../../defaults/krill-hsm.conf");
-
         let mut config = defaults.to_string();
+
         config = config.replace(
             "### admin_token =",
             &format!("admin_token = \"{}\"", client.token()),
@@ -97,7 +69,7 @@ impl Simple {
             };
             config = config.replace(
                 "### storage_uri = \"./data\"",
-                &data_dir
+                &format!("storage_uri = \"{}\"", data_dir)
             );
         }
 
@@ -108,14 +80,11 @@ impl Simple {
             )
         }
 
-        if self.multi_user {
+        #[cfg(feature = "multi-user")] {
             config.push_str("\n\n\n");
-            config.push_str(multi_add_on);
-        }
-
-        if self.hsm {
-            config.push_str("\n\n\n");
-            config.push_str(hsm_add_on);
+            config.push_str(
+                include_str!("../../../defaults/krill-multi-user.conf")
+            );
         }
 
         config.into()

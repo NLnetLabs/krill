@@ -25,7 +25,7 @@ include:
   # us unlike `cargo deb`, so we have to control the feature set used for building ourselves rather than in
   # `Cargo.toml`.
   - image: "centos:7"
-    extra_build_args: "--features static-openssl"
+    extra_build_args: "--features openssl/vendored"
     rpm_systemd_service_unit_file: pkg/common/krill-ubuntu-xenial.krill.service
 
   # CentOS 8 became EOL and is in theory still usable as a build container as there is still a Docker image
