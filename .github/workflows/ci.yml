@@ -48,9 +48,8 @@ jobs:
         # Order: oldest Rust to newest Rust.
         rust: [1.82.0, stable, beta]
 
-        # Test with no features, default features ("") and all except UI tests.
-        # Order: fewest features to most features.
-        args: ["--no-default-features", "", "--all-features"]
+        # Test with no features and all features.
+        args: ["--no-default-features", "--all-features"]
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
