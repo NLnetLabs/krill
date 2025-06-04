@@ -69,7 +69,7 @@ impl Simple {
             };
             config = config.replace(
                 "### storage_uri = \"./data\"",
-                &data_dir
+                &format!("storage_uri = \"{}\"", data_dir)
             );
         }
 
