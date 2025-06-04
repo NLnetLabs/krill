@@ -136,7 +136,7 @@ and then store it in this directory.
 
 .. parsed-literal::
 
-  :ref:`krillc config simple<cmd_krillc_config_simple>` --token correct-horse-battery-staple --data ~/data/ > ~/data/krill.conf
+  :ref:`krillc --token correct-horse-battery-staple config simple<cmd_krillc_config_simple>` --data ~/data/ > ~/data/krill.conf
 
 .. Note:: If you wish to run a self-hosted RPKI repository with Krill you will
           need to use a different ``krillc config`` command. See :ref:`doc_krill_publication_server`
