@@ -305,6 +305,7 @@ impl FromStr for PrivateKeyFile {
 //------------ ConfigFileError -----------------------------------------------
 
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum ConfigFileError {
     Parse(String, ConfigError),
     Create(SignerClientError),

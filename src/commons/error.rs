@@ -1386,7 +1386,7 @@ mod tests {
 
         let krill_io_err = KrillIoError::new(
             "Trouble reading 'foo'".to_string(),
-            io::Error::new(io::ErrorKind::Other, "can't read file"),
+            io::Error::other("can't read file"),
         );
 
         verify(

@@ -17,6 +17,7 @@ use super::ca;
 //------------ Command -------------------------------------------------------
 
 #[derive(clap::Subcommand)]
+#[allow(clippy::large_enum_variant)]
 pub enum Command {
     /// Show current BGPsec router keys
     List(List),
