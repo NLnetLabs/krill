@@ -236,7 +236,7 @@ assets = [
 #   b) uses a simpler systemd service unit file because Ubuntu 16.04 doesn't
 #      support newer features supported by Ubuntu 18.04 and 20.04.
 [package.metadata.deb.variants.ubuntu-xenial]
-features = ["static-openssl"]
+features = ["openssl/vendored"]
 depends = "$auto, passwd"
 
 [package.metadata.deb.variants.ubuntu-bionic]
@@ -247,7 +247,7 @@ depends = "$auto, passwd"
 depends = "$auto, passwd, libssl3"
 
 [package.metadata.deb.variants.debian-stretch]
-features = ["static-openssl"]
+features = ["openssl/vendored"]
 depends = "$auto, passwd"
 
 [package.metadata.deb.variants.debian-buster]
