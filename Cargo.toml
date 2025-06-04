@@ -94,7 +94,6 @@ multi-user = [
 rta = []
 
 # Internal features - not for external use
-all = ["multi-user", "rta"]
 hsm-tests-kmip = ["hsm"]
 hsm-tests-pkcs11 = ["hsm"]
 

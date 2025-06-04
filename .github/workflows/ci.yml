@@ -50,7 +50,7 @@ jobs:
 
         # Test with no features, default features ("") and all except UI tests.
         # Order: fewest features to most features.
-        args: ["--no-default-features", "", "--features all"]
+        args: ["--no-default-features", "", "--all-features"]
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -58,7 +58,7 @@ jobs:
       uses: hecrj/setup-rust-action@v1
       with:
         rust-version: ${{ matrix.rust }}
-    - if: matrix.rust == 'stable' && matrix.args == '--features all'
+    - if: matrix.rust == 'stable' && matrix.args == '--all-features'
       run: cargo clippy ${{ matrix.args }} -- -D warnings
     - run: cargo build ${{ matrix.args }} --locked
     - run: cargo test ${{ matrix.args }} -- --test-threads=1 2>&1
