@@ -311,7 +311,7 @@ impl TaskQueue {
         debug!(
             "add task: {} with priority: {}",
             task_name,
-            priority.to_string()
+            priority,
         );
         let json = serde_json::to_value(&task).map_err(|e| {
             Error::Custom(format!(

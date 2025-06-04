@@ -228,14 +228,13 @@ pub fn clean_file_and_path(path: &Path) -> Result<(), KrillIoError> {
                 == 0
             {
                 trace!(
-                    "Will delete {}",
-                    parent.to_string_lossy().to_string()
+                    "Will delete {}", parent.display(),
                 );
                 fs::remove_dir(parent).map_err(|e| {
                     KrillIoError::new(
                         format!(
                             "Could not remove dir: {}",
-                            parent.to_string_lossy()
+                            parent.display(),
                         ),
                         e,
                     )
