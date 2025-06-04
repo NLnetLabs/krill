@@ -89,13 +89,12 @@ multi-user = [
     "unicode-normalization",
     "urlparse",
 ]
-static-openssl = ["openssl/vendored"]
 
 # Preview features - not ready for production use
 rta = []
 
 # Internal features - not for external use
-all = ["multi-user", "rta", "static-openssl"]
+all = ["multi-user", "rta"]
 hsm-tests-kmip = ["hsm"]
 hsm-tests-pkcs11 = ["hsm"]
 
