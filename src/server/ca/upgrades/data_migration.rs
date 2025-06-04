@@ -4,7 +4,7 @@ use crate::commons::crypto::KrillSignerBuilder;
 use crate::constants::CASERVER_NS;
 use crate::server::ca::certauth::CertAuth;
 use crate::server::ca::publishing::CaObjectsStore;
-use crate::server::config::Config;
+use crate::config::Config;
 use crate::upgrades::UpgradeResult;
 use crate::upgrades::data_migration::check_agg_store;
 

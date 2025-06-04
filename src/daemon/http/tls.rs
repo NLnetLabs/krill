@@ -338,7 +338,7 @@ impl TlsConfigError {
     ) -> Self {
         Self {
             kind,
-            err: io::Error::new(io::ErrorKind::Other, err),
+            err: io::Error::other(err),
         }
     }
 }

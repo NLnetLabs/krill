@@ -13,7 +13,7 @@ use crate::server::ca::certauth::CertAuth;
 use crate::server::ca::commands::CertAuthStorableCommand;
 use crate::server::ca::events::{CertAuthEvent, CertAuthInitEvent};
 use crate::server::ca::publishing::CaObjects;
-use crate::server::config::Config;
+use crate::config::Config;
 use crate::upgrades::{
     AspaMigrationConfigUpdates, AspaMigrationConfigs, CommandMigrationEffect,
     UpgradeAggregateStorePre0_14, UpgradeError, UpgradeMode, UpgradeResult,

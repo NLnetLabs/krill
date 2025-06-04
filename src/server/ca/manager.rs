@@ -58,8 +58,8 @@ use crate::constants::{
     CASERVER_NS, STATUS_NS, TA_PROXY_SERVER_NS, TA_SIGNER_SERVER_NS, TA_NAME,
     ta_handle,
 };
-use crate::server::http::auth::{AuthInfo, Permission}; // XXX remove
-use crate::server::config::Config;
+use crate::daemon::http::auth::{AuthInfo, Permission}; // XXX remove
+use crate::config::Config;
 use crate::server::mq::{now, Task, TaskQueue};
 use crate::server::pubd::RepositoryManager;
 use crate::server::taproxy::{
@@ -75,18 +75,6 @@ use super::commands::{
 };
 use super::publishing::{CaObjectsStore, DeprecatedRepository};
 use super::status::{CaStatus, CaStatusStore};
-
-
-//------------ testbed_ca_handle ---------------------------------------------
-
-/// The handle of the CA used by the testbed.
-pub const TESTBED_CA_NAME: &str = "testbed";
-
-/// Returns the CA handle for the testbed.
-pub fn testbed_ca_handle() -> CaHandle {
-    use std::str::FromStr;
-    CaHandle::from_str(TESTBED_CA_NAME).unwrap()
-}
 
 
 //------------ CaManager -----------------------------------------------------
@@ -304,7 +292,7 @@ impl CaManager {
     /// those objects that are close to expiring.
     ///
     /// Returns all CAs for which objects were republished.
-    pub async fn republish_all(
+    pub fn republish_all(
         &self,
         force: bool,
     ) -> KrillResult<Vec<CaHandle>> {
@@ -657,7 +645,7 @@ impl CaManager {
         actor: &Actor,
     ) -> KrillResult<()> {
         self.process_ca_command(
-            handle.clone(), actor,
+            handle, actor,
             CertAuthCommandDetails::GenerateNewIdKey(
                 self.signer.clone(),
             )
@@ -671,8 +659,6 @@ impl CaManager {
     }
 
     /// Returns the CAs that the given policy allows read access to.
-    //
-    //  XXX This should probably not live here but in krillserver.
     pub fn ca_list(
         &self, auth: &AuthInfo,
     ) -> KrillResult<CertAuthList> {
@@ -2531,10 +2517,10 @@ impl CaManager {
 impl CaManager {
     /// Schedules synchronizing all CAs with their repositories.
     pub fn cas_schedule_repo_sync_all(
-        &self, auth: &AuthInfo,
+        &self,
     ) -> KrillResult<()> {
-        for ca in &self.ca_list(auth)?.cas {
-            self.cas_schedule_repo_sync(ca.handle.clone())?;
+        for ca in self.ca_handles()? {
+            self.cas_schedule_repo_sync(ca)?;
         }
         Ok(())
     }
@@ -3011,9 +2997,9 @@ impl CaManager {
     /// Returns the current ASPA definitions for this CA.
     pub fn ca_aspas_definitions_show(
         &self,
-        ca: CaHandle,
+        ca: &CaHandle,
     ) -> KrillResult<AspaDefinitionList> {
-        Ok(self.get_ca(&ca)?.aspas_definitions_show())
+        Ok(self.get_ca(ca)?.aspas_definitions_show())
     }
 
     /// Adds a new ASPA definition for this CA.
@@ -3024,7 +3010,7 @@ impl CaManager {
         actor: &Actor,
     ) -> KrillResult<()> {
         self.process_ca_command(
-            ca.clone(), actor,
+            ca, actor,
             CertAuthCommandDetails::AspasUpdate(
                 updates,
                 self.config.clone(),
@@ -3060,9 +3046,9 @@ impl CaManager {
     /// Returns the BGPsec definitions for a CA.
     pub fn ca_bgpsec_definitions_show(
         &self,
-        ca: CaHandle,
+        ca: &CaHandle,
     ) -> KrillResult<BgpSecCsrInfoList> {
-        Ok(self.get_ca(&ca)?.bgpsec_definitions_show())
+        Ok(self.get_ca(ca)?.bgpsec_definitions_show())
     }
 
     /// Updates the BGPsec definitions for a CA.

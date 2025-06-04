@@ -19,8 +19,8 @@ use crate::{
         },
         storage::{KeyValueStore, Namespace},
     },
+    config::Config,
     server::{
-        config::Config,
         properties::Properties,
     },
     server::taproxy::{

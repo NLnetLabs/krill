@@ -4,16 +4,20 @@ use std::fmt;
 use std::collections::HashMap;
 use std::fmt::Write;
 use crate::constants::TA_NAME;
-use super::request::Request;
-use super::response::HttpResponse;
+use super::super::request::{PathIter, Request};
+use super::super::response::HttpResponse;
+use super::error::DispatchError;
 
 
-pub async fn metrics(req: Request) -> Result<HttpResponse, Request> {
-    if !req.is_get() || !req.path().segment().starts_with("metrics") {
-        return Err(req)
-    }
+pub async fn dispatch(
+    request: Request<'_>,
+    path: PathIter<'_>,
+) -> Result<HttpResponse, DispatchError> {
+    path.check_exhausted()?;
+    request.check_get()?;
+    let (request, _) = request.proceed_unchecked();
+    let server = request.empty()?;
 
-    let server = req.state();
     let mut target = Target::default();
 
     target.single(
@@ -52,21 +56,21 @@ pub async fn metrics(req: Request) -> Result<HttpResponse, Request> {
             "auth_session_cache_size",
             "total number of cached login session tokens",
         ),
-        server.login_session_cache_size().await,
+        server.authorizer().login_session_cache_size().await,
     );
 
-    if let Ok(cas_stats) = server.cas_stats().await {
+    if let Ok(cas_stats) = server.krill().cas_stats().await {
         target.single(
             Metric::gauge("cas", "number of CAs in Krill"),
             cas_stats.len()
         );
 
 
-        if !server.config.metrics.metrics_hide_ca_details {
+        if !server.config().metrics.metrics_hide_ca_details {
             let mut ca_status_map = HashMap::new();
 
             for ca in cas_stats.keys() {
-                if let Ok(ca_status) = server.ca_status(ca) {
+                if let Ok(ca_status) = server.krill().ca_status(ca) {
                     ca_status_map.insert(ca.clone(), ca_status);
                 }
             }
@@ -155,7 +159,7 @@ pub async fn metrics(req: Request) -> Result<HttpResponse, Request> {
             });
 
             if any_children
-                && !server.config.metrics.metrics_hide_child_details
+                && !server.config().metrics.metrics_hide_child_details
             {
                 let metric = Metric::gauge(
                     "cas_children",
@@ -279,7 +283,7 @@ pub async fn metrics(req: Request) -> Result<HttpResponse, Request> {
                 }
             }
 
-            if !server.config.metrics.metrics_hide_roa_details {
+            if !server.config().metrics.metrics_hide_roa_details {
                 let metric = Metric::gauge(
                     "cas_bgp_announcements_valid",
                     "number of announcements seen for CA resources \
@@ -382,7 +386,7 @@ pub async fn metrics(req: Request) -> Result<HttpResponse, Request> {
         }
     }
 
-    if let Ok(stats) = server.repo_stats() {
+    if let Ok(stats) = server.krill().repo_stats() {
         target.single(
             Metric::gauge(
                 "repo_publisher",
@@ -409,7 +413,7 @@ pub async fn metrics(req: Request) -> Result<HttpResponse, Request> {
             stats.serial
         );
 
-        if !server.config.metrics.metrics_hide_publisher_details {
+        if !server.config().metrics.metrics_hide_publisher_details {
             let metric = Metric::gauge(
                 "repo_objects",
                 "number of objects in repository for publisher"

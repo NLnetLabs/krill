@@ -72,7 +72,7 @@ pub struct PublisherSummary {
 }
 
 impl PublisherSummary {
-    fn from_handle(handle: PublisherHandle) -> Self {
+    pub fn from_handle(handle: PublisherHandle) -> Self {
         PublisherSummary { handle }
     }
 }
