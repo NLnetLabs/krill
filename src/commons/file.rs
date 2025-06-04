@@ -119,8 +119,7 @@ pub fn load_json<O: DeserializeOwned>(
                 "Could not load json for file: {}",
                 full_path.to_string_lossy()
             ),
-            io::Error::new(
-                io::ErrorKind::Other,
+            io::Error::other(
                 format!("could not deserialize json: {}", e),
             ),
         )
