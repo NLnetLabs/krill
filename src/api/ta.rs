@@ -7,6 +7,7 @@ use std::{
 };
 
 use bytes::Bytes;
+use chrono::TimeDelta;
 use rpki::{
     ca::{
         idexchange::{ChildHandle, RecipientHandle, SenderHandle},
@@ -524,6 +525,15 @@ impl fmt::Display for TrustAnchorSignedRequest {
 pub struct TrustAnchorSignerRequest {
     pub nonce: Nonce, // should be matched in response (replay protection)
     pub child_requests: Vec<TrustAnchorChildRequests>,
+
+    #[serde(skip)]
+    pub timing_info: Option<TrustAnchorTimingInfo>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TrustAnchorTimingInfo {
+    pub issued_certificate_reissue_weeks_before: i64,
+    pub renew_time: Time,
 }
 
 impl TrustAnchorSignerRequest {
@@ -571,6 +581,25 @@ impl fmt::Display for TrustAnchorSignerRequest {
             }
             writeln!(f)?;
         }
+        if let Some(timing_info) = self.timing_info {
+            writeln!(
+                f, "Certificates will be reissued {} weeks before expiry.", 
+                timing_info.issued_certificate_reissue_weeks_before
+            )?;
+            writeln!(f, "The current certificate expires on {}.", 
+                timing_info.renew_time.to_rfc3339()
+            )?; 
+            if let Some(weeks) = TimeDelta::try_weeks(
+                timing_info.issued_certificate_reissue_weeks_before
+            ) {
+                let t = timing_info.renew_time - weeks;
+                writeln!(
+                    f, "The certificate is eligible for renewal on {}.",
+                    t.to_rfc3339()
+                )?; 
+            }
+        }      
+        writeln!(f)?;
         writeln!(f, "NOTE: Use the JSON output for the signer.")?;
 
         Ok(())
