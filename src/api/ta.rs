@@ -694,7 +694,7 @@ impl fmt::Display for TrustAnchorSignerResponse {
             }
         }
         writeln!(f)?;
-        writeln!(f, "NOTE: use the json format for the proxy.")?;
+        writeln!(f, "NOTE: use the JSON format for the proxy.")?;
 
         Ok(())
     }
