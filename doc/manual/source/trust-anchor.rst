@@ -130,6 +130,20 @@ any other set up that you need to do:
 Then run Krill as usual so that it can accessed by ``krillc``, ``krillta``
 and the UI.
 
+Optionally, timings can be adjusted by including the following snippet at
+the end of your ``krill.conf``:
+
+.. code-block:: text
+  [ta_timing]
+  certificate_validity_years = 100
+  issued_certificate_validity_weeks = 52
+  issued_certificate_reissue_weeks_before = 26
+  mft_next_update_weeks = 12
+  signed_message_validity_days = 14
+
+Make sure that these timings match the ones in the configuration for your
+signer, as otherwise unexpected behaviour may occur.
+
 Initialise TA Proxy
 -------------------
 
@@ -208,12 +222,6 @@ The configuration file must at least contain a setting for the data
 directory. Other settings are optional - you only need to change them
 if you want to change the default logging and/or use an HSM.
 
-.. NOTE:: At this moment "timing" parameters for the TA are hard coded. Child
-   CA certificates are signed (and re-signed) with a validity of 52 weeks.
-   The CRL and MFT next update and MFT EE certificate not after time are
-   set to 12 weeks after the moment of signing. We may add support for
-   overriding these values if desired.
-
 Example configuration file:
 
 .. code-block::
@@ -271,6 +279,55 @@ Example configuration file:
   # support for the TA. This may be implemented in future in which case we would
   # also support RPKI Signed TALs for this process.
 
+  ######################################################################################
+  #                                                                                    #
+  #                                      TIMING                                          #
+  #                                                                                    #
+  ######################################################################################
+
+  #
+  # Include the following section '[timing_config]' if the default TA
+  # timing settings need to be changed.
+  #
+  #            !!!!!IMPORTANT!!!!!!
+  #
+  # If you include this, make sure that both the TA signer and your Krill
+  # server where the TA Proxy lives use the same configuration.
+  #
+  [timing_config]
+
+  # The number of years the TA certificate is valid for. The TA certificate
+  # is only generated once, so set this value before initialising the TA.
+  #
+  ### certificate_validity_years = 100,
+
+  # The validity time in weeks for certificates issued under the TA. Note
+  # that these certifcates get re-issued by request of the child before
+  # they would expire.
+  #
+  ### issued_certificate_validity_weeks = 52
+
+  # The threshold in weeks before expiry of a current issued certificate
+  # used to determine when a new certificate should be requested.
+  # The hardcoded minimum is 10% more than the current expiration.
+  #
+  ### issued_certificate_reissue_weeks_before = 26
+
+  # The time before the manifest and CRL expire for objects published by
+  # the TA. This determines the minimal re-signing frequency needed.
+  #
+  ### mft_next_update_weeks = 12
+
+  # The validity time for signed messages between the online and offline
+  # TA components (TA Proxy and TA Signer). This determines how fast messages
+  # need to exchanged between the components.
+  #
+  # Note that there is replay protection in addition to this constraint, meaning
+  # that a message that has been previously processed cannot be applied again,
+  # even if it's still cryptographically valid.
+  #
+  ### signed_message_validity_days = 14
+
 
 Initialise the TA Signer
 ------------------------
@@ -284,13 +341,13 @@ Step 1: Get the proxy ID
 
 .. code-block:: bash
 
-  krillta proxy id --format json > ./proxy-id.json
+  krillta proxy --format json id > ./proxy-id.json
 
 Step 2: Get the proxy repo contact
 
 .. code-block:: bash
 
-  krillta proxy repo contact --format json  >./proxy-repo.json
+  krillta proxy --format json repo contact  >./proxy-repo.json
 
 Step 3: Initialise
 
@@ -421,12 +478,18 @@ Make a TA Proxy Request
 *Note that the ``krillta`` subcommand combination ``proxy signer`` is
 used for actions for the ``proxy`` relating to its associated ``signer``.
 
+It might be worth to force all CAs to ask their parents for updated
+certificates first. This can be done using:
+
+.. code-block:: bash
+  krillc bulk refresh
+
 Download the TA Proxy Request
 -----------------------------
 
 .. code-block:: bash
 
-  krillta proxy signer show-request --format json > ./request.json
+  krillta proxy --format json signer show-request > ./request.json
 
 .. Note:: the request JSON includes both a readable representation of the
     request that is made by the ``proxy`` for the ``signer``, and a

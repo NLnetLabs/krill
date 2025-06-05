@@ -178,6 +178,8 @@ impl CertifiedKey {
             || (remaining_seconds_on_eligible as f64
                 / remaining_seconds_on_current as f64)
                 > 1.1_f64
+            || (remaining_seconds_on_eligible
+                - remaining_seconds_on_current >= 604_800)
         {
             info!(
                 "Will request new certificate for CA '{}' under RC '{}'. \
@@ -185,6 +187,15 @@ impl CertifiedKey {
                 handle,
                 rcn,
                 new_not_after.to_rfc3339()
+            );
+            true
+        }
+        // XXX We’re using the fact that a TA certificate usually contains
+        //     all resources to identify a TA certificate here.
+        else if self.incoming_cert().resources == ResourceSet::all() {
+            debug!(
+                "It is technically too early for a new update, but \
+                 requesting one anyway since it is the TA"
             );
             true
         }
