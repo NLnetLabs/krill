@@ -192,9 +192,7 @@ impl CertifiedKey {
         }
         // XXX We’re using the fact that a TA certificate usually contains
         //     all resources to identify a TA certificate here.
-        else if self.incoming_cert().resources().contains(
-            &ResourceSet::all()
-        ) {
+        else if self.incoming_cert().resources == ResourceSet::all() {
             debug!(
                 "It is technically too early for a new update, but \
                  requesting one anyway since it is the TA"
