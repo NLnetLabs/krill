@@ -466,7 +466,7 @@ where
 fn deserialize_seconds_duration<'de, D: Deserializer<'de>>(
     deserializer: D
 ) -> Result<Duration, D::Error> {
-    i64::deserialize(deserializer).map(Duration::seconds)
+    u32::deserialize(deserializer).map(|secs| Duration::seconds(secs.into()))
 }
 
 
