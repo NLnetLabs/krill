@@ -18,8 +18,10 @@ use crate::api::roa::{
     AsNumber, ConfiguredRoa, Ipv4Prefix, Ipv6Prefix, RoaPayload, TypedPrefix,
 };
 
-/// Time URL requests should remain in cache (30 minutes)
-const CACHE_DURATION: u64 = 30 * 60;
+/// Time URL requests should remain in cache.
+///
+/// XXX This should probably configurable?
+const CACHE_DURATION: Duration = Duration::from_secs(30 * 60);
 
 //------------ BgpAnalyser -------------------------------------------------
 
@@ -423,7 +425,7 @@ impl BgpAnalyser {
             let mut local_cache = self.cache.lock().await;
 
             if let Some((time, value)) = &local_cache.get(&url) {
-                if time.elapsed() > Duration::from_secs(CACHE_DURATION) {
+                if time.elapsed() > CACHE_DURATION {
                     local_cache.remove(&url);
                 } else {
                     return Ok(value.clone());
