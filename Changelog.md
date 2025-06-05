@@ -21,12 +21,16 @@ Breaking Changes
   OpenID Connect, you will have to update your configuration. Please, see
   the manual for details. ([#1232])
 * Replaced downloading of RISwhois file for ROA analysis with calls to the
-  [Roto API](https://github.com/NLnetLabs/roto-api). ([#1233])
+  [Roto API](https://github.com/NLnetLabs/roto-api). This can be
+  controlled via new configuration settings `bgp_api_enabled`,
+  `bgp_api_uri`, and `bgp_api_cache_seconds`. ([#1233], [#1266])
 
 New
 
 * Added a command to re-initialize the trust anchor signer with different
-  timing values or TAL URLs. (#[1255])
+  timing values or TAL URLs. ([#1255])
+* Disables the protection against early re-issuance for CA certificates that
+  have the full resource set, typically TA certificates. ([#1281])
 
 Bug Fixes
 
@@ -56,6 +60,8 @@ Other changes
 [#1241]: https://github.com/NLnetLabs/krill/pull/1241
 [#1249]: https://github.com/NLnetLabs/krill/pull/1249
 [#1255]: https://github.com/NLnetLabs/krill/pull/1255
+[#1266]: https://github.com/NLnetLabs/krill/pull/1266
+[#1281]: https://github.com/NLnetLabs/krill/pull/1255
 
 
 ## 0.14.5 ‘Who dis? New Phone’
