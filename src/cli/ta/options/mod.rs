@@ -17,6 +17,7 @@ use clap::Parser;
     version,
     about = "Manage the Krill trust anchor proxy and signer.",
 )]
+#[allow(clippy::large_enum_variant)]
 pub enum Command {
     /// Manage the Trust Anchor Proxy
     Proxy(proxy::Command),

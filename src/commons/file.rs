@@ -119,8 +119,7 @@ pub fn load_json<O: DeserializeOwned>(
                 "Could not load json for file: {}",
                 full_path.to_string_lossy()
             ),
-            io::Error::new(
-                io::ErrorKind::Other,
+            io::Error::other(
                 format!("could not deserialize json: {}", e),
             ),
         )
@@ -228,14 +227,13 @@ pub fn clean_file_and_path(path: &Path) -> Result<(), KrillIoError> {
                 == 0
             {
                 trace!(
-                    "Will delete {}",
-                    parent.to_string_lossy().to_string()
+                    "Will delete {}", parent.display(),
                 );
                 fs::remove_dir(parent).map_err(|e| {
                     KrillIoError::new(
                         format!(
                             "Could not remove dir: {}",
-                            parent.to_string_lossy()
+                            parent.display(),
                         ),
                         e,
                     )
