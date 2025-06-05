@@ -166,6 +166,7 @@ impl TestConfig {
 
         let bgp_api_enabled = false;
         let bgp_api_uri = ConfigDefaults::bgp_api_uri();
+        let bgp_api_cache_duration = ConfigDefaults::bgp_api_cache_duration();
 
         let roa_aggregate_threshold = 3;
         let roa_deaggregate_threshold = 2;
@@ -283,6 +284,7 @@ impl TestConfig {
             post_protocol_msg_timeout_seconds,
             bgp_api_enabled,
             bgp_api_uri,
+            bgp_api_cache_duration,
             roa_aggregate_threshold,
             roa_deaggregate_threshold,
             issuance_timing,
