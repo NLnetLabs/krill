@@ -23,7 +23,7 @@ exclude = [
 [dependencies]
 base64          = "0.22.1"
 bytes           = "1"
-chrono          = { version = "0.4", features = ["serde"] }
+chrono          = { version = "0.4.39", features = ["serde"] }
 clap            = { version = "4.5.37", features = ["cargo", "derive", "env",  "wrap_help"]}
 fd-lock         = "4.0.4"
 fern            = { version = "0.6.2", features = ["syslog-6"] }

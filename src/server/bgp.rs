@@ -1,5 +1,6 @@
 //! The BGP analyser.
 
+use std::time::{Duration, Instant};
 use std::{error, fmt};
 use std::collections::HashMap;
 use std::ops::Range;
@@ -8,6 +9,7 @@ use intervaltree::IntervalTree;
 use rpki::repository::resources::{Addr, AddressRange, ResourceSet};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tokio::sync::Mutex;
 use crate::api::bgp::{
     Announcement, BgpAnalysisEntry, BgpAnalysisReport, BgpAnalysisState,
     BgpAnalysisSuggestion, ReplacementRoaSuggestion,
@@ -29,6 +31,12 @@ pub struct BgpAnalyser {
 
     /// The HTTP client to talk to the BGP API with.
     client: reqwest::Client,
+
+    /// The cache for the HTTP client responses
+    cache: Mutex<HashMap<String, (Instant, Value)>>,
+
+    /// The duration to keep responses cached.
+    cache_duration: Duration,
 }
 
 impl BgpAnalyser {
@@ -36,11 +44,14 @@ impl BgpAnalyser {
     pub fn new(
         bgp_api_enabled: bool,
         bgp_api_uri: String,
+        cache_duration: Duration,
     ) -> Self {
         BgpAnalyser {
             bgp_api_enabled,
             bgp_api_uri,
             client: reqwest::Client::new(),
+            cache: Mutex::new(HashMap::new()),
+            cache_duration,
         }
     }
 
@@ -411,7 +422,26 @@ impl BgpAnalyser {
             return Ok(value.remove(url.as_str()).unwrap())
         }
 
-        Ok(self.client.get(url.as_str()).send().await?.json().await?)
+        {
+            let mut local_cache = self.cache.lock().await;
+
+            if let Some((time, value)) = &local_cache.get(&url) {
+                if time.elapsed() > self.cache_duration {
+                    local_cache.remove(&url);
+                } else {
+                    return Ok(value.clone());
+                }
+            }
+        }
+
+        let value: Value = self.client.get(
+            url.as_str()
+        ).send().await?.json().await?;
+
+        self.cache.lock().await.insert(
+            url, (Instant::now(), value.clone())
+        );
+        Ok(value)
     }
 
     /// Obtain the announcements from the JSON tree.
@@ -775,7 +805,6 @@ mod test {
     use crate::commons::test::{configured_roa, roa_payload};
     use super::*;
 
-
     fn ann(s: &str) -> Announcement {
         Announcement::from_str(s).unwrap()
     }
@@ -818,7 +847,9 @@ mod test {
                 .unwrap();
         let limit = None;
 
-        let analyser = BgpAnalyser::new(true, "test".to_string());
+        let analyser = BgpAnalyser::new(
+            true, "test".to_string(), Duration::default()
+        );
 
         let report = analyser
             .analyse(
@@ -849,7 +880,9 @@ mod test {
         let roa = configured_roa("10.0.0.0/22 => 0");
 
         let roas = &[roa];
-        let analyser = BgpAnalyser::new(true, "test".to_string());
+        let analyser = BgpAnalyser::new(
+            true, "test".to_string(), Duration::default(),
+        );
 
         let resources_held =
             ResourceSet::from_strs("", "10.0.0.0/8, 192.168.0.0/16", "")
@@ -898,7 +931,9 @@ mod test {
         let resources_held =
             ResourceSet::from_strs("", "10.0.0.0/16", "").unwrap();
 
-        let analyser = BgpAnalyser::new(false, "".to_string());
+        let analyser = BgpAnalyser::new(
+            false, "".to_string(), Duration::default()
+        );
         let table = analyser.analyse(&roas, &resources_held, None).await;
         let table_entries = table.entries();
         assert_eq!(3, table_entries.len());
@@ -933,7 +968,9 @@ mod test {
             roa_as0_redundant,
         ];
 
-        let analyser = BgpAnalyser::new(true, "test".to_string());
+        let analyser = BgpAnalyser::new(
+            true, "test".to_string(), Duration::default()
+        );
 
         let resources_held =
             ResourceSet::from_strs("", "10.0.0.0/8, 192.168.0.0/16", "")
@@ -965,7 +1002,7 @@ mod test {
     #[test]
     fn format_url() {
         let analyser = BgpAnalyser::new(
-            true, "https://rest.bgp-api.net".to_string()
+            true, "https://rest.bgp-api.net".to_string(), Duration::default()
         );
         assert_eq!(
             "https://rest.bgp-api.net/api/v1/prefix/192.168.0.0/16/search", 
@@ -983,7 +1020,9 @@ mod test {
 
     #[tokio::test]
     async fn retrieve_announcements() {
-        let analyser = BgpAnalyser::new(true, "test".to_string());
+        let analyser = BgpAnalyser::new(
+            true, "test".to_string(), Duration::default()
+        );
 
         let ipv4s = "185.49.140.0/22";
         let ipv6s = "2a04:b900::/29";
@@ -1005,7 +1044,9 @@ mod test {
 
     #[tokio::test]
     async fn retrieve_broken_announcements() {
-        let analyser = BgpAnalyser::new(true, "test".to_string());
+        let analyser = BgpAnalyser::new(
+            true, "test".to_string(), Duration::default()
+        );
 
         let ipv4s = "1.1.1.1/32, 2.2.2.2/32, 3.3.3.3/32, 4.4.4.4/32";
         let set = ResourceSet::from_strs("", ipv4s, "").unwrap();
@@ -1019,7 +1060,9 @@ mod test {
 
     #[tokio::test]
     async fn analyse_nlnet_labs_snapshot() {
-        let analyser = BgpAnalyser::new(true, "test".to_string());
+        let analyser = BgpAnalyser::new(
+            true, "test".to_string(), Duration::default()
+        );
 
         let ipv4s = "185.49.140.0/22";
         let ipv6s = "2a04:b900::/29";

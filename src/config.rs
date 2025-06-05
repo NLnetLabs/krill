@@ -187,6 +187,10 @@ impl ConfigDefaults {
         "https://rest.bgp-api.net".to_string()
     }
 
+    pub fn bgp_api_cache_duration() -> Duration {
+        Duration::seconds(30 * 60)
+    }
+
     pub fn roa_aggregate_threshold() -> usize {
         if let Ok(from_env) = env::var("KRILL_ROA_AGGREGATE_THRESHOLD") {
             if let Ok(nr) = usize::from_str(&from_env) {
@@ -370,7 +374,7 @@ impl ConfigDefaults {
     }
 }
 
-//------------ Config --------------------------------------------------------
+//------------ SignerReference -----------------------------------------------
 
 #[derive(Clone, Debug)]
 pub enum SignerReference {
@@ -458,6 +462,15 @@ where
         }
     }
 }
+
+fn deserialize_seconds_duration<'de, D: Deserializer<'de>>(
+    deserializer: D
+) -> Result<Duration, D::Error> {
+    u32::deserialize(deserializer).map(|secs| Duration::seconds(secs.into()))
+}
+
+
+//------------ Config --------------------------------------------------------
 
 /// Global configuration for the Krill Server.
 #[derive(Clone, Debug, Deserialize)]
@@ -588,8 +601,16 @@ pub struct Config {
     // RIS BGP
     #[serde(default = "ConfigDefaults::bgp_api_enabled")]
     pub bgp_api_enabled: bool,
+
     #[serde(default = "ConfigDefaults::bgp_api_uri")]
     pub bgp_api_uri: String,
+
+    #[serde(
+        rename = "bgp_api_cache_seconds",
+        default = "ConfigDefaults::bgp_api_cache_duration",
+        deserialize_with = "deserialize_seconds_duration",
+    )]
+    pub bgp_api_cache_duration: Duration,
 
     // ROA Aggregation per ASN
     #[serde(default = "ConfigDefaults::roa_aggregate_threshold")]
@@ -1123,6 +1144,7 @@ impl Config {
 
         let bgp_api_enabled = false;
         let bgp_api_uri = ConfigDefaults::bgp_api_uri();
+        let bgp_api_cache_duration = ConfigDefaults::bgp_api_cache_duration();
 
         let roa_aggregate_threshold = 3;
         let roa_deaggregate_threshold = 2;
@@ -1234,6 +1256,7 @@ impl Config {
             post_protocol_msg_timeout_seconds,
             bgp_api_enabled,
             bgp_api_uri,
+            bgp_api_cache_duration,
             roa_aggregate_threshold,
             roa_deaggregate_threshold,
             issuance_timing,
@@ -2017,6 +2040,7 @@ impl SignerConfig {
         Self { name, signer_type }
     }
 }
+
 
 //------------ Tests ---------------------------------------------------------
 

@@ -154,6 +154,9 @@ impl KrillManager {
         let bgp_analyser = Arc::new(BgpAnalyser::new(
             config.bgp_api_enabled,
             config.bgp_api_uri.clone(),
+            config.bgp_api_cache_duration.to_std().unwrap_or(
+                std::time::Duration::from_secs(0)
+            )
         ));
 
         // When multi-node set ups with a shared queue are
