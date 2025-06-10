@@ -44,8 +44,8 @@ use crate::api::rta::{
     ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest,
 };
 use crate::api::ta::{
-    ProvisioningRequest, TrustAnchorSignedRequest, TrustAnchorSignedResponse,
-    TrustAnchorSignerInfo,
+    ApiTrustAnchorSignedRequest, ProvisioningRequest,
+    TrustAnchorSignedResponse, TrustAnchorSignerInfo,
 };
 use crate::commons::httpclient;
 use crate::commons::KrillResult;
@@ -520,7 +520,7 @@ impl CaManager {
     pub fn ta_proxy_signer_make_request(
         &self,
         actor: &Actor,
-    ) -> KrillResult<TrustAnchorSignedRequest> {
+    ) -> KrillResult<ApiTrustAnchorSignedRequest> {
         self.send_ta_proxy_command(
             TrustAnchorProxyCommand::make_signer_request(&ta_handle(), actor)
         )?.get_signer_request(self.config.ta_timing, &self.signer)
@@ -529,7 +529,7 @@ impl CaManager {
     /// Returns the current request for the signer.
     pub fn ta_proxy_signer_get_request(
         &self,
-    ) -> KrillResult<TrustAnchorSignedRequest> {
+    ) -> KrillResult<ApiTrustAnchorSignedRequest> {
         self.get_trust_anchor_proxy()?.get_signer_request(
             self.config.ta_timing, &self.signer
         )
@@ -1695,13 +1695,13 @@ impl CaManager {
         )?;
 
         // Remember the noce of the request so we can retrieve it.
-        let request_nonce = signed_request.content().nonce.clone();
+        let request_nonce = signed_request.request.nonce.clone();
 
         // Let signer process request.
         let signer = self.send_ta_signer_command(
             TrustAnchorSignerCommand::make_process_request_command(
                 &ta_handle,
-                signed_request,
+                signed_request.into(),
                 self.config.ta_timing,
                 None, // do not override next manifest number
                 self.signer.clone(),

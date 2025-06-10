@@ -19,7 +19,7 @@ use crate::api::admin::Token;
 use crate::api::pubd::RepoStats;
 use crate::api::status::Success;
 use crate::api::ta::{
-    TrustAnchorSignedRequest, TrustAnchorSignedResponse,
+    ApiTrustAnchorSignedRequest, TrustAnchorSignedResponse,
     TrustAnchorSignerInfo,
 };
 use crate::commons::httpclient;
@@ -823,7 +823,7 @@ impl KrillClient {
 
     pub async fn ta_proxy_signer_make_request(
         &self
-    ) -> Result<TrustAnchorSignedRequest, Error> {
+    ) -> Result<ApiTrustAnchorSignedRequest, Error> {
         self.post_empty_with_response(
             once("api/v1/ta/proxy/signer/request")
         ).await
@@ -831,7 +831,7 @@ impl KrillClient {
 
     pub async fn ta_proxy_signer_show_request(
         &self
-    ) -> Result<TrustAnchorSignedRequest, Error> {
+    ) -> Result<ApiTrustAnchorSignedRequest, Error> {
         self.get_json(once("api/v1/ta/proxy/signer/request")).await
     }
 

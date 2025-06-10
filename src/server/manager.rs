@@ -67,7 +67,7 @@ use crate::api::rta::{
     ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest,
 };
 use crate::api::ta::{
-    TaCertDetails, TrustAnchorSignedRequest, TrustAnchorSignedResponse,
+    ApiTrustAnchorSignedRequest, TaCertDetails, TrustAnchorSignedResponse,
     TrustAnchorSignerInfo,
 };
 use crate::constants::{TA_NAME, ta_handle};
@@ -447,13 +447,13 @@ impl KrillManager {
     pub fn ta_proxy_signer_make_request(
         &self,
         actor: &Actor,
-    ) -> KrillResult<TrustAnchorSignedRequest> {
+    ) -> KrillResult<ApiTrustAnchorSignedRequest> {
         self.ca_manager.ta_proxy_signer_make_request(actor)
     }
 
     pub fn ta_proxy_signer_get_request(
         &self,
-    ) -> KrillResult<TrustAnchorSignedRequest> {
+    ) -> KrillResult<ApiTrustAnchorSignedRequest> {
         self.ca_manager.ta_proxy_signer_get_request()
     }
 
