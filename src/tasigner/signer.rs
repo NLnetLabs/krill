@@ -239,16 +239,19 @@ impl TrustAnchorSignerCommand {
     }
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct TrustAnchorReissueRequest {
+    repo_info: RepoInfo,
+    tal_https: Vec<uri::Https>,
+    tal_rsync: uri::Rsync,
+}
+
 // Storable Commands (KrillSigner cannot be de-/serialized)
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum TrustAnchorSignerStorableCommand {
     Init,
     TrustAnchorSignerRequest(TrustAnchorSignedRequest),
-    TrustAnchorSignerReissueRequest {
-        repo_info: RepoInfo,
-        tal_https: Vec<uri::Https>,
-        tal_rsync: uri::Rsync,
-    }
+    TrustAnchorSignerReissueRequest(TrustAnchorReissueRequest)
 }
 
 impl From<&TrustAnchorSignerCommandDetails>
@@ -265,11 +268,11 @@ impl From<&TrustAnchorSignerCommandDetails>
             TrustAnchorSignerCommandDetails::TrustAnchorSignerReissueRequest { 
                 repo_info, tal_https, tal_rsync, ..
             } => {
-                Self::TrustAnchorSignerReissueRequest {
+                Self::TrustAnchorSignerReissueRequest(TrustAnchorReissueRequest {
                     repo_info: repo_info.clone(),
                     tal_https: tal_https.clone(),
                     tal_rsync: tal_rsync.clone(),
-                }
+                })
             }
         }
     }
@@ -293,11 +296,11 @@ impl eventsourcing::WithStorableDetails for TrustAnchorSignerStorableCommand {
                     self,
                 ).arg("nonce", &request.content().nonce)
             }
-            Self::TrustAnchorSignerReissueRequest {
+            Self::TrustAnchorSignerReissueRequest(TrustAnchorReissueRequest {
                 repo_info: _,
                 tal_https: _,
                 tal_rsync: _,
-            } => {
+            }) => {
                 crate::api::history::CommandSummary::new(
                     "cmd-ta-signer-reissue", 
                     self
