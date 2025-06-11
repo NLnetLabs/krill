@@ -33,7 +33,7 @@ jobs:
     - run: cargo install cargo-tarpaulin
     - run: cargo tarpaulin --locked --verbose --out Html ${{ matrix.args }}
     - name: Archive code coverage results
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
         name: code-coverage-report ${{ matrix.os }} ${{ matrix.rust }} ${{ matrix.args }}
         path: tarpaulin-report.html
