@@ -6,7 +6,7 @@ use std::sync::Arc;
 use rpki::uri;
 use crate::{api, constants};
 use crate::api::ta::{
-    TrustAnchorSignedRequest, TrustAnchorSignedResponse,
+    ApiTrustAnchorSignedRequest, TrustAnchorSignedResponse,
     TrustAnchorSignerInfo,
 };
 use crate::cli::options::args::JsonFile;
@@ -209,7 +209,7 @@ impl Show {
 pub struct Process {
     /// Path to TA proxy request JSON file
     #[arg(long, short, value_name = "path")]
-    request: JsonFile<TrustAnchorSignedRequest, TasrMsg>,
+    request: JsonFile<ApiTrustAnchorSignedRequest, TasrMsg>,
 
     /// Override the next manifest number.
     #[arg(long, value_name = "number")]
@@ -220,7 +220,9 @@ impl Process {
     pub fn run(
         self, manager: &TrustAnchorSignerManager
     ) -> Result<TrustAnchorSignedResponse, SignerClientError> {
-        manager.process(self.request.content, self.ta_mft_number_override)
+        manager.process(
+            self.request.content.into(), self.ta_mft_number_override
+        )
     }
 }
 

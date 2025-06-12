@@ -111,7 +111,7 @@ async fn functional_ta() {
     eprintln!(">>>> Process proxy signer exchange.");
     server.client().ta_proxy_signer_make_request().await.unwrap();
     let req = server.client().ta_proxy_signer_show_request().await.unwrap();
-    signer.process(req, None).unwrap();
+    signer.process(req.into(), None).unwrap();
     let response = signer.show_last_response().unwrap();
     server.client().ta_proxy_signer_response(response).await.unwrap();
 

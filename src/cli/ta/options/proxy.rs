@@ -11,7 +11,7 @@ use rpki::repository::resources::{
 };
 use crate::{api, constants};
 use crate::api::ta::{
-    TrustAnchorSignedRequest, TrustAnchorSignerInfo,
+    ApiTrustAnchorSignedRequest, TrustAnchorSignerInfo,
     TrustAnchorSignedResponse,
 };
 use crate::cli::client::KrillClient;
@@ -269,7 +269,7 @@ pub struct SignerMakeRequest;
 impl SignerMakeRequest {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<TrustAnchorSignedRequest, httpclient::Error> {
+    ) -> Result<ApiTrustAnchorSignedRequest, httpclient::Error> {
         client.ta_proxy_signer_make_request().await
     }
 }
@@ -283,7 +283,7 @@ pub struct SignerShowRequest;
 impl SignerShowRequest {
     pub async fn run(
         self, client: &KrillClient
-    ) -> Result<TrustAnchorSignedRequest, httpclient::Error> {
+    ) -> Result<ApiTrustAnchorSignedRequest, httpclient::Error> {
         client.ta_proxy_signer_show_request().await
     }
 }

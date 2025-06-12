@@ -4,12 +4,13 @@
 //! *except* for signing using the Trust Anchor private key. That
 //! function is handled by the Trust Anchor Signer instead.
 
-use std::{collections::HashMap, fmt, sync::Arc};
+use std::{cmp, collections::HashMap, fmt, sync::Arc};
 
 use chrono::Duration;
 use log::{log_enabled, trace};
 use rpki::{
     ca::{
+        idcert::IdCert,
         idexchange::{self, CaHandle, ChildHandle, MyHandle},
         provisioning::{ResourceClassEntitlements, SigningCert},
     },
@@ -34,7 +35,7 @@ use crate::api::ca::IdCertInfo;
 use crate::api::ta::{
     Nonce, ProvisioningRequest, ProvisioningResponse, TaCertDetails, 
     TrustAnchorChild, TrustAnchorChildRequests, TrustAnchorObjects, 
-    TrustAnchorSignedRequest, TrustAnchorSignedResponse,
+    ApiTrustAnchorSignedRequest, TrustAnchorSignedResponse,
     TrustAnchorSignerInfo, TrustAnchorSignerRequest,
 };
 use crate::constants::ta_resource_class_name;
@@ -501,9 +502,11 @@ impl TrustAnchorProxy {
         &self,
         timing: TaTimingConfig,
         signer: &KrillSigner,
-    ) -> KrillResult<TrustAnchorSignedRequest> {
+    ) -> KrillResult<ApiTrustAnchorSignedRequest> {
         if let Some(nonce) = self.open_signer_request.as_ref().cloned() {
             let mut child_requests = vec![];
+            let mut renew_time = None;
+
             for (child, details) in &self.child_details {
                 if !details.open_requests.is_empty() {
                     child_requests.push(TrustAnchorChildRequests {
@@ -512,9 +515,19 @@ impl TrustAnchorProxy {
                         requests: details.open_requests.clone(),
                     });
                 }
+
+                if let Ok(cert) = IdCert::try_from(&details.id) {
+                    let v = cert.validity();
+                    if let Some(rt) = renew_time {
+                        renew_time = Some(cmp::min(rt, v.not_after()));
+                    }
+                    else {
+                        renew_time = Some(v.not_after());
+                    }
+                }
             }
 
-            TrustAnchorSignerRequest {
+            let request = TrustAnchorSignerRequest {
                 nonce,
                 child_requests,
             }
@@ -522,7 +535,15 @@ impl TrustAnchorProxy {
                 self.id.public_key.key_identifier(),
                 timing.signed_message_validity_days,
                 signer,
-            )
+            )?;
+
+            Ok(ApiTrustAnchorSignedRequest {
+                request: request.request,
+                signed: request.signed,
+                issued_certificate_reissue_weeks_before:
+                    timing.issued_certificate_reissue_weeks_before,
+                renew_time,
+            })
         } else {
             Err(Error::TaProxyHasNoRequest)
         }
@@ -1363,12 +1384,12 @@ mod tests {
 
             let signed_request =
                 proxy.get_signer_request(timing, &signer).unwrap();
-            let request_nonce = signed_request.content().nonce.clone();
+            let request_nonce = signed_request.request.nonce.clone();
 
             let ta_signer_process_request_command =
                 TrustAnchorSignerCommand::make_process_request_command(
                     &signer_handle,
-                    signed_request,
+                    signed_request.into(),
                     timing,
                     Some(55), // override the next manifest number again
                     signer,

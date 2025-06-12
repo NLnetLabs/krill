@@ -1,4 +1,4 @@
-//! Common types used in the communication (API) between the Proxy and Signer
+//! Common types used in the communication between TA Proxy and TA Signer.
 
 use std::{
     collections::HashMap,
@@ -7,6 +7,7 @@ use std::{
 };
 
 use bytes::Bytes;
+use chrono::TimeDelta;
 use rpki::{
     ca::{
         idexchange::{ChildHandle, RecipientHandle, SenderHandle},
@@ -474,6 +475,78 @@ impl From<SignedMessage> for TrustAnchorSignedMessage {
     }
 }
 
+
+//------------ ApiTrustAnchorSignedRequest -----------------------------------
+
+/// A trust anchor signer request with additional information.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ApiTrustAnchorSignedRequest {
+    /// The actual signer request.
+    pub request: TrustAnchorSignerRequest,
+
+    /// The signed message for the request.
+    pub signed: TrustAnchorSignedMessage,
+
+    /// The re-issue limit from the timing configuration.
+    pub issued_certificate_reissue_weeks_before: i64,
+
+    /// The shortest renewal time for any of the certificates.
+    pub renew_time: Option<Time>,
+}
+
+impl fmt::Display for ApiTrustAnchorSignedRequest {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(f, "-------------------------------")?;
+        writeln!(f, "nonce: {}", self.request.nonce)?;
+        writeln!(f, "-------------------------------")?;
+        writeln!(f)?;
+
+        for request in &self.request.child_requests {
+            writeln!(f, "-------------------------------")?;
+            writeln!(f, "          child request")?;
+            writeln!(f, "-------------------------------")?;
+            writeln!(f, "child:         {}", request.child)?;
+            writeln!(f, "entitlements:  {}", request.resources)?;
+            for (key, child_req) in &request.requests {
+                match child_req {
+                    ProvisioningRequest::Issuance(_) => {
+                        writeln!(f, "key:           {}    (re-)issue", key)?
+                    }
+                    ProvisioningRequest::Revocation(_) => {
+                        writeln!(f, "key:           {}    revoke", key)?
+                    }
+                }
+            }
+            writeln!(f)?;
+        }
+
+        if let Some(renew_time) = self.renew_time {
+            writeln!(
+                f, "Certificates will be reissued {} weeks before expiry.", 
+                self.issued_certificate_reissue_weeks_before
+            )?;
+            writeln!(f, "The current certificate expires on {}.", 
+                renew_time.to_rfc3339()
+            )?; 
+            if let Some(weeks) = TimeDelta::try_weeks(
+                self.issued_certificate_reissue_weeks_before
+            ) {
+                let t = renew_time - weeks;
+                writeln!(
+                    f, "The certificate is eligible for renewal on {}.",
+                    t.to_rfc3339()
+                )?; 
+            }
+        }
+
+        writeln!(f)?;
+        writeln!(f, "NOTE: Use the JSON output for the signer.")?;
+
+        Ok(())
+    }
+}
+
+
 //------------ TrustAnchorSignedRequest ------------------------------------
 
 /// A [`TrustAnchorSignerRequest`] and its signed message as base64 for
@@ -482,8 +555,17 @@ impl From<SignedMessage> for TrustAnchorSignedMessage {
 //  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TrustAnchorSignedRequest {
-    signed: TrustAnchorSignedMessage,
-    request: TrustAnchorSignerRequest,
+    pub signed: TrustAnchorSignedMessage,
+    pub request: TrustAnchorSignerRequest,
+}
+
+impl From<ApiTrustAnchorSignedRequest> for TrustAnchorSignedRequest {
+    fn from(src: ApiTrustAnchorSignedRequest) -> Self {
+        Self {
+            signed: src.signed,
+            request: src.request,
+        }
+    }
 }
 
 impl TrustAnchorSignedRequest {
@@ -521,7 +603,8 @@ impl fmt::Display for TrustAnchorSignedRequest {
     }
 }
 
-//------------ TrustAnchorSignerRequest ------------------------------------
+
+//------------ TrustAnchorSignerRequest --------------------------------------
 
 /// Request for the Trust Anchor Signer to update the signed
 /// objects (new mft, crl). Can contain requests for one or
