@@ -19,7 +19,7 @@ fn untar_file(tar_path: &str, dst: impl AsRef<path::Path>) {
 /// This function tests whether Krill in its current state still works with data
 /// from v0.14.5, even as a TA. If it does not, then we might have a problem.
 /// 
-/// 
+/// The test data contains ROA, ASPA, BGPsec, and child objects.
 #[tokio::test]
 async fn functional_old_data() {
     let (mut config, tempdir) = common::TestConfig::file_storage()
