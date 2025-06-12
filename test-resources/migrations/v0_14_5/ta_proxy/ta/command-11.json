@@ -1,0 +1,11 @@
+{
+  "actor": "admin-token",
+  "details": "MakeSignerRequest",
+  "effect": {
+    "msg": "Trust Anchor Proxy already has signer request",
+    "result": "error"
+  },
+  "handle": "ta",
+  "time": "2024-12-10T13:36:27.966712954Z",
+  "version": 11
+}

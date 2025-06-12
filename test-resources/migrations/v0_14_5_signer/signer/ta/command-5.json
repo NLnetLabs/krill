@@ -1,0 +1,20 @@
+{
+  "actor": "krillta",
+  "time": "2025-06-10T10:50:29.364556710Z",
+  "handle": "ta",
+  "version": 5,
+  "details": {
+    "TrustAnchorSignerReissueRequest": {
+      "repo_info": {
+        "sia_base": "rsync://krill-lacnic.nlnetlabs.net/repo/",
+        "rrdp_notification_uri": "https://krill-lacnic.nlnetlabs.net/notification.xml"
+      },
+      "tal_https": [],
+      "tal_rsync": "rsync://krill-lacnic.nlnetlabs.net/ta/ta.tal"
+    }
+  },
+  "effect": {
+    "result": "error",
+    "msg": "Cannot derive filename from URI: rsync://krill-lacnic.nlnetlabs.net/ta/ta.tal"
+  }
+}

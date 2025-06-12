@@ -1,0 +1,28 @@
+{
+  "actor": "admin-token",
+  "details": {
+    "service_uri": "https://localhost:3000/rfc8181/online/",
+    "type": "repo_update"
+  },
+  "effect": {
+    "events": [
+      {
+        "contact": {
+          "repo_info": {
+            "rrdp_notification_uri": "https://krill-lacnic.nlnetlabs.net/notification.xml",
+            "sia_base": "rsync://krill-lacnic.nlnetlabs.net/repo/online/"
+          },
+          "server_info": {
+            "public_key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqm8GWFqYlXM43bcdnvidI5UjV9N2O8F3/K955FFCEV02gRAiqhUGHghoyE9wI2za2qGuLdCzxPg0YsGFWLHCNMphxRCCSm34EHk9klXR1791NhW6SsEhgE08xKKtKkMCrfjmXKemxalipk6zuL/Nr+ZCA+bhYhxlHHSW65peGEAicXrHDZyuwiFALOdPR9+nWuB868SDRglyXs4fOSzzP7ZrTBIsSyaRiSNHmFN2HzbrEd3CQAqNyKANxldyo1BHsoDL6PZNwEOQcbL706c6nTn/CslSsDiS5zu5zF1Nge9Iza28J1Q5v4xsVqZ7IA5TMw3GmXZX7fUf0m+26mhalQIDAQAB",
+            "service_uri": "https://localhost:3000/rfc8181/online/"
+          }
+        },
+        "type": "repo_updated"
+      }
+    ],
+    "result": "success"
+  },
+  "handle": "online",
+  "time": "2024-12-05T12:47:16.202178816Z",
+  "version": 2
+}

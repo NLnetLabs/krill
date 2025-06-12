@@ -1,0 +1,23 @@
+{
+  "actor": "krill",
+  "details": {
+    "GiveChildResponse": [
+      "online",
+      "F038768DAD7A1CF068D28B32CDDF9525BDCF410F"
+    ]
+  },
+  "effect": {
+    "events": [
+      {
+        "ChildResponseGiven": [
+          "online",
+          "F038768DAD7A1CF068D28B32CDDF9525BDCF410F"
+        ]
+      }
+    ],
+    "result": "success"
+  },
+  "handle": "ta",
+  "time": "2024-12-10T13:37:51.978492976Z",
+  "version": 13
+}

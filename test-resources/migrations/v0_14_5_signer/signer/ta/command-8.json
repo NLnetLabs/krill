@@ -1,0 +1,53 @@
+{
+  "actor": "krillta",
+  "time": "2025-06-10T10:51:13.262313275Z",
+  "handle": "ta",
+  "version": 8,
+  "details": {
+    "TrustAnchorSignerReissueRequest": {
+      "repo_info": {
+        "sia_base": "rsync://krill-lacnic.nlnetlabs.net/repo/",
+        "rrdp_notification_uri": "https://krill-lacnic.nlnetlabs.net/notification.xml"
+      },
+      "tal_https": [],
+      "tal_rsync": "rsync://krill-lacnic.nlnetlabs.net/ta/ta.cer"
+    }
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      {
+        "SignerReissueDone": {
+          "cert": {
+            "uri": "rsync://krill-lacnic.nlnetlabs.net/ta/ta.cer",
+            "name": "a.cer",
+            "resources": {
+              "asn": "AS0-AS4294967295",
+              "ipv4": "0.0.0.0/0",
+              "ipv6": "::/0"
+            },
+            "limit": {},
+            "subject": "MDMxMTAvBgNVBAMTKDk4RjdDODY0MjExMzJBQzgwNzM5MUJBNjIyRkMzNTdEQjNBQTZGQzQ=",
+            "validity": {
+              "not_before": "2025-06-10T10:46:13.273100421Z",
+              "not_after": "2026-06-10T10:51:13Z"
+            },
+            "serial": "703923880147819926053415321213743988350785023426",
+            "ca_repository": "rsync://krill-lacnic.nlnetlabs.net/repo/",
+            "rpki_manifest": "rsync://krill-lacnic.nlnetlabs.net/repo/98F7C86421132AC807391BA622FC357DB3AA6FC4.mft",
+            "rpki_notify": "https://krill-lacnic.nlnetlabs.net/notification.xml",
+            "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAomZiPIIlaSHB5VjBmMsFKbEgVA7yWRolf7gIIcAaaSG93g9LHapUWKxKp4WiutG2WLFDvXBL3yuY980s2PYKJv8MVm75RQtwzBa+TXMm2+zNxN8HW4vzu23l6eUfFtCyNkgHl7WtzngyJTCAVarIJJ5CPU+N6ff76iGBlk44/v5aj5xSPvHssChuPHI3L2Kd9LQg3tUwD0LxEegfLix9BxLXykipOQoV8uQzyjNzU7/oq9U6C4W+T1pNmj3lPKmRfta59cSvpSOERRPVPvHDESHo59R3btbiURPEtv1b7t66/mvRjX1/jFt6m6CO36nQcLo0CrewGq0ZXkr9a5mtowIDAQAB",
+            "base64": "MIIEjDCCA3SgAwIBAgIUe00J2U6Bz4RHY9kB15XIYoll7cIwDQYJKoZIhvcNAQELBQAwMzExMC8GA1UEAxMoOThGN0M4NjQyMTEzMkFDODA3MzkxQkE2MjJGQzM1N0RCM0FBNkZDNDAeFw0yNTA2MTAxMDQ2MTNaFw0yNjA2MTAxMDUxMTNaMDMxMTAvBgNVBAMTKDk4RjdDODY0MjExMzJBQzgwNzM5MUJBNjIyRkMzNTdEQjNBQTZGQzQwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCiZmI8giVpIcHlWMGYywUpsSBUDvJZGiV/uAghwBppIb3eD0sdqlRYrEqnhaK60bZYsUO9cEvfK5j3zSzY9gom/wxWbvlFC3DMFr5Ncybb7M3E3wdbi/O7beXp5R8W0LI2SAeXta3OeDIlMIBVqsgknkI9T43p9/vqIYGWTjj+/lqPnFI+8eywKG48cjcvYp30tCDe1TAPQvER6B8uLH0HEtfKSKk5ChXy5DPKM3NTv+ir1ToLhb5PWk2aPeU8qZF+1rn1xK+lI4RFE9U+8cMRIejn1Hdu1uJRE8S2/Vvu3rr+a9GNfX+MW3qboI7fqdBwujQKt7AarRleSv1rma2jAgMBAAGjggGWMIIBkjAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBSY98hkIRMqyAc5G6Yi/DV9s6pvxDAOBgNVHQ8BAf8EBAMCAQYwgekGCCsGAQUFBwELBIHcMIHZMDQGCCsGAQUFBzAFhihyc3luYzovL2tyaWxsLWxhY25pYy5ubG5ldGxhYnMubmV0L3JlcG8vMGAGCCsGAQUFBzAKhlRyc3luYzovL2tyaWxsLWxhY25pYy5ubG5ldGxhYnMubmV0L3JlcG8vOThGN0M4NjQyMTEzMkFDODA3MzkxQkE2MjJGQzM1N0RCM0FBNkZDNC5tZnQwPwYIKwYBBQUHMA2GM2h0dHBzOi8va3JpbGwtbGFjbmljLm5sbmV0bGFicy5uZXQvbm90aWZpY2F0aW9uLnhtbDAYBgNVHSABAf8EDjAMMAoGCCsGAQUFBw4CMCcGCCsGAQUFBwEHAQH/BBgwFjAJBAIAATADAwEAMAkEAgACMAMDAQAwIQYIKwYBBQUHAQgBAf8EEjAQoA4wDDAKAgEAAgUA/////zANBgkqhkiG9w0BAQsFAAOCAQEAMhnVhSEhiEwb2dyI1F8rcp8WZdI6rLY4DdB5oNCsFdtQGJltZbUt7tv1lldSq94wJOppeE0eoflnFve6YeRkBaqT94iMruUZFU+j8ycnDe+TbQMW8QTCZQ/Siv1rQvjmNI1GSt8SlmPmDZ84+l19+2h8jRwxWGNIf0jzp636EIdMYf0bROw7x7dTb69GlKab5Fhb6SmwIgnuQMbWt7CzvGgZuJAHi/2qd+ke4PSYKxvCMbIipJOrOaAIzGnWnrj39h+1E6HeFPK0rwH6z+W0COztjmkFnfpghmlsJCIWJmgFADBndXBIOAiHe59z/0Ahc27sPlOC3s/mxv+wjvfWHw==",
+            "hash": "13892147a78bb39e6b6dd3eb57b45c53793d1489ed0704a345292f855e6b65df",
+            "marker": null
+          },
+          "tal": {
+            "uris": [],
+            "rsync_uri": "rsync://krill-lacnic.nlnetlabs.net/ta/ta.cer",
+            "encoded_ski": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAomZiPIIlaSHB5VjBmMsFKbEgVA7yWRolf7gIIcAaaSG93g9LHapUWKxKp4WiutG2WLFDvXBL3yuY980s2PYKJv8MVm75RQtwzBa+TXMm2+zNxN8HW4vzu23l6eUfFtCyNkgHl7WtzngyJTCAVarIJJ5CPU+N6ff76iGBlk44/v5aj5xSPvHssChuPHI3L2Kd9LQg3tUwD0LxEegfLix9BxLXykipOQoV8uQzyjNzU7/oq9U6C4W+T1pNmj3lPKmRfta59cSvpSOERRPVPvHDESHo59R3btbiURPEtv1b7t66/mvRjX1/jFt6m6CO36nQcLo0CrewGq0ZXkr9a5mtowIDAQAB"
+          }
+        }
+      }
+    ]
+  }
+}

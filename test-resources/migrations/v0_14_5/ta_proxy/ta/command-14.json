@@ -1,0 +1,15 @@
+{
+  "actor": "admin-token",
+  "details": "MakeSignerRequest",
+  "effect": {
+    "events": [
+      {
+        "SignerRequestMade": "06d7845b-61aa-4ce9-97cf-d7942a1a5a9a"
+      }
+    ],
+    "result": "success"
+  },
+  "handle": "ta",
+  "time": "2024-12-10T13:38:03.488512313Z",
+  "version": 14
+}
