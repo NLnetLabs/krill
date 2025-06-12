@@ -50,6 +50,7 @@ Other changes
   ([#1249])
 * Added packaging support for Ubuntu Noble; removed packaging support for
   Ubuntu Xenial and Bionic, and Debian Stretch. ([#1239])
+* The minimum supported Rust version is now 1.85. ([#1288])
 
 [#1215]: https://github.com/NLnetLabs/krill/pull/1215
 [#1226]: https://github.com/NLnetLabs/krill/pull/1226
@@ -61,7 +62,8 @@ Other changes
 [#1249]: https://github.com/NLnetLabs/krill/pull/1249
 [#1255]: https://github.com/NLnetLabs/krill/pull/1255
 [#1266]: https://github.com/NLnetLabs/krill/pull/1266
-[#1281]: https://github.com/NLnetLabs/krill/pull/1255
+[#1281]: https://github.com/NLnetLabs/krill/pull/1281
+[#1288]: https://github.com/NLnetLabs/krill/pull/1288
 
 
 ## 0.14.5 ‘Who dis? New Phone’

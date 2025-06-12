@@ -96,10 +96,14 @@ pub const KRILL_HTTPS_ROOT_CERTS_ENV: &str = "KRILL_HTTPS_ROOT_CERTS";
 
 // XXX The following functions should probably live somewhere else. But
 //     where?
+//
+//     The use of environment variables here is very unsafe and we should
+//     probably replace this with something else.
 
 /// Sets the environment variable to enable test mode.
 pub fn enable_test_mode() {
-    std::env::set_var(KRILL_ENV_TEST, "1");
+    // Safety: See note above.
+    unsafe { std::env::set_var(KRILL_ENV_TEST, "1") };
 }
 
 /// Returns whether the environment variable to enable test mode is set.
@@ -109,7 +113,8 @@ pub fn test_mode_enabled() -> bool {
 
 /// Sets the environment variable to enable test announcements.
 pub fn enable_test_announcements() {
-    std::env::set_var(KRILL_ENV_TEST_ANN, "1");
+    // Safety: See note above.
+    unsafe { std::env::set_var(KRILL_ENV_TEST_ANN, "1"); }
 }
 
 /// Returns whether the environment variable for test announcements is set.

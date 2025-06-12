@@ -121,7 +121,7 @@ impl Namespace {
     /// and must not be longer than 255 characters.
     pub const unsafe fn from_str_unchecked(s: &str) -> &Self {
         // SAFETY: Self has #repr(transparent)
-        mem::transmute(s)
+        unsafe { mem::transmute(s) }
     }
 
     /// Returns a string slice of the namespace.
