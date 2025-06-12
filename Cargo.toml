@@ -98,6 +98,7 @@ hsm-tests-kmip = ["hsm"]
 hsm-tests-pkcs11 = ["hsm"]
 
 [dev-dependencies]
+tar       = "0.4"
 regex     = "1.11.1"
 stderrlog = "0.6"
 tempfile  = "3.19.1"
