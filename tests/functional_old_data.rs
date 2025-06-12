@@ -7,21 +7,13 @@ use krill::cli::ta::signer::TrustAnchorSignerManager;
 mod common;
 
 
-fn copy_folder(src: impl AsRef<path::Path>, dst: impl AsRef<path::Path>) {
-    fs::create_dir_all(&dst).unwrap();
-    for item in fs::read_dir(src).unwrap() {
-        let item = item.unwrap();
-        let ft = item.file_type().unwrap();
-        if ft.is_dir() {
-            copy_folder(item.path(), dst.as_ref().join(item.file_name()));
-        } 
-        else if ft.is_file() {
-            fs::copy(
-                item.path(), 
-                dst.as_ref().join(item.file_name())
-            ).unwrap();
-        }
-    }
+fn untar_file(tar_path: &str, dst: impl AsRef<path::Path>) {
+    let mut archive = tar::Archive::new(
+        std::io::BufReader::new(
+            fs::File::open(tar_path).unwrap()
+        )
+    );
+    archive.unpack(dst).unwrap();
 }
 
 /// This function tests whether Krill in its current state still works with data
@@ -34,12 +26,12 @@ async fn functional_old_data() {
         .enable_second_signer().finalize();
 
     fs::create_dir(&tempdir.path().join("ta")).unwrap();
-    copy_folder(
-        "test-resources/migrations/v0_14_5", 
+    untar_file(
+        "test-resources/migrations/v0_14_5.tar", 
         &tempdir.path().join("data")
     );
-    copy_folder(
-        "test-resources/migrations/v0_14_5_signer", 
+    untar_file(
+        "test-resources/migrations/v0_14_5_signer.tar", 
         &tempdir.path().join("ta")
     );
     config.ta_support_enabled = true;
