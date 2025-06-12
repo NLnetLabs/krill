@@ -1,0 +1,42 @@
+{
+  "actor": "krill",
+  "time": "2025-06-12T13:35:54.482488406Z",
+  "handle": "online-child",
+  "version": 3,
+  "details": {
+    "type": "update_resource_entitlements",
+    "parent": "online",
+    "entitlements": [
+      {
+        "resource_class_name": "0",
+        "resources": {
+          "asn": "AS65000",
+          "ipv4": "10.0.0.0/16",
+          "ipv6": ""
+        }
+      }
+    ]
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      {
+        "type": "resource_class_added",
+        "resource_class_name": "0",
+        "parent": "online",
+        "parent_resource_class_name": "0",
+        "pending_key": "0B97405BE3D024E50EE72F035C064D9BC50B5240"
+      },
+      {
+        "type": "certificate_requested",
+        "resource_class_name": "0",
+        "req": {
+          "class_name": "0",
+          "limit": {},
+          "csr": "MIIDwDCCAqgCAQAwMzExMC8GA1UEAxMoMEI5NzQwNUJFM0QwMjRFNTBFRTcyRjAzNUMwNjREOUJDNTBCNTI0MDCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAKgr/P06cT/xUMh6clzP8Fa87P4aQZcdZ19CwqnYBj0ARg7j9ExyJgRGeilGTRnOFgiLafzuJ9kzI1kD2m812QIvc/yx3uxAzemIdseNg54MTW5QB2nFhoxkt3dtaSd3T2E1ljq4lOghTh/93xtmKnODXesi/xThLbcEUC2392gveA2JsDN+093hqYlbyklcSsfn9bS1QVGfb6EHKSUpHYWgPH70iBTVpr45iDl4uMquyIINN/mCp468H+VvQOyp3fs8J2g5DW4ZzDeEN0yQ3M0FiNeT298FK8bUkTTdgrbk+Al5Wd+3bjcsiqjdEsnO8qxLOm6Ls6MeLR8b/g8vkC8CAwEAAaCCAUYwggFCBgkqhkiG9w0BCQ4xggEzMIIBLzAPBgNVHRMBAf8EBTADAQH/MA4GA1UdDwEB/wQEAwIBBjCCAQoGCCsGAQUFBwELAQEABIH6MIH3MEMGCCsGAQUFBzAFhjdyc3luYzovL2tyaWxsLWxhY25pYy5ubG5ldGxhYnMubmV0L3JlcG8vb25saW5lLWNoaWxkLzAvMG8GCCsGAQUFBzAKhmNyc3luYzovL2tyaWxsLWxhY25pYy5ubG5ldGxhYnMubmV0L3JlcG8vb25saW5lLWNoaWxkLzAvMEI5NzQwNUJFM0QwMjRFNTBFRTcyRjAzNUMwNjREOUJDNTBCNTI0MC5tZnQwPwYIKwYBBQUHMA2GM2h0dHBzOi8va3JpbGwtbGFjbmljLm5sbmV0bGFicy5uZXQvbm90aWZpY2F0aW9uLnhtbDANBgkqhkiG9w0BAQsFAAOCAQEAValTx0ejVxDQu5NYNcqgd1jhQ7tNdVZcT0iFuuT/hhOvlAtP5WNvE9BVRdx64TbIjsxTRQaUHr8bXtrmqwMaRmZHDgkB4xlb4DAXlL6nAzGke37szpf9U7aQeQQgj/LQyJlsNRBOgjMKqOl6riE2BdpRn+dRcaNjNZHT7DiBuWUHzDgvDGinLNjOh3GHKoK4nrgpm0mFjJjk0l7QOaxwE+30D/YmbSPNFmlDCZJfvkLzLU1xZw9TcZZjoGTvgrv5zPRS92F+DEVLvVbThIFVV0m9Sn4sqcGBdTQJbIEYNdRIwxnK6ilpPP23sO4keKjCigkxzNEZhT0d2ZIRy8CRsg=="
+        },
+        "ki": "0B97405BE3D024E50EE72F035C064D9BC50B5240"
+      }
+    ]
+  }
+}

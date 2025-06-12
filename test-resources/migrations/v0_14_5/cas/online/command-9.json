@@ -1,0 +1,61 @@
+{
+  "actor": "user:admin-token",
+  "time": "2025-06-12T13:35:52.998150106Z",
+  "handle": "online",
+  "version": 9,
+  "details": {
+    "type": "aspas_update",
+    "updates": {
+      "add_or_replace": [
+        {
+          "customer": 64496,
+          "providers": [
+            64497,
+            64498
+          ]
+        }
+      ],
+      "remove": []
+    }
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      {
+        "type": "aspa_config_added",
+        "aspa_config": {
+          "customer": 64496,
+          "providers": [
+            64497,
+            64498
+          ]
+        }
+      },
+      {
+        "type": "aspa_objects_updated",
+        "resource_class_name": "0",
+        "updates": {
+          "updated": [
+            {
+              "definition": {
+                "customer": 64496,
+                "providers": [
+                  64497,
+                  64498
+                ]
+              },
+              "validity": {
+                "not_before": "2025-06-12T13:30:52.998227218Z",
+                "not_after": "2026-06-11T13:35:52.998229762Z"
+              },
+              "serial": "557567730648535581301290034967169545423061474635",
+              "uri": "rsync://krill-lacnic.nlnetlabs.net/repo/online/0/AS64496.asa",
+              "base64": "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",
+              "hash": "1ad64bc2c3db2805658ecc681dcde133b1c905b6f12b3b8f54f6690fa1a042bd"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

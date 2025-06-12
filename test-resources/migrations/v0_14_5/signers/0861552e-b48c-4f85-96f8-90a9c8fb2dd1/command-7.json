@@ -1,0 +1,17 @@
+{
+  "actor": "krill",
+  "time": "2025-06-12T13:35:52.189833453Z",
+  "handle": "0861552e-b48c-4f85-96f8-90a9c8fb2dd1",
+  "version": 7,
+  "details": {
+    "ChangeSignerInfo": "OpenSSL Soft Signer [version: OpenSSL 3.0.13 30 Jan 2024, keys store: local:///tmp/.tmpr56QKU/data/]"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      {
+        "SignerInfoChanged": "OpenSSL Soft Signer [version: OpenSSL 3.0.13 30 Jan 2024, keys store: local:///tmp/.tmpr56QKU/data/]"
+      }
+    ]
+  }
+}

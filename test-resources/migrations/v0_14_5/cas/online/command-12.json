@@ -1,0 +1,55 @@
+{
+  "actor": "krill",
+  "time": "2025-06-12T13:35:54.737989082Z",
+  "handle": "online",
+  "version": 12,
+  "details": {
+    "type": "child_certify",
+    "child": "online-child",
+    "resource_class_name": "0",
+    "limit": {},
+    "ki": "0B97405BE3D024E50EE72F035C064D9BC50B5240"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      {
+        "type": "child_certificate_issued",
+        "child": "online-child",
+        "resource_class_name": "0",
+        "ki": "0B97405BE3D024E50EE72F035C064D9BC50B5240"
+      },
+      {
+        "type": "child_certificates_updated",
+        "resource_class_name": "0",
+        "updates": {
+          "issued": [
+            {
+              "uri": "rsync://krill-lacnic.nlnetlabs.net/repo/online/0/0B97405BE3D024E50EE72F035C064D9BC50B5240.cer",
+              "name": "0B97405BE3D024E50EE72F035C064D9BC50B5240.cer",
+              "resources": {
+                "asn": "AS65000",
+                "ipv4": "10.0.0.0/16",
+                "ipv6": ""
+              },
+              "limit": {},
+              "subject": "MDMxMTAvBgNVBAMTKDBCOTc0MDVCRTNEMDI0RTUwRUU3MkYwMzVDMDY0RDlCQzUwQjUyNDA=",
+              "validity": {
+                "not_before": "2025-06-12T13:30:54.738124450Z",
+                "not_after": "2026-06-11T13:35:54.738126105Z"
+              },
+              "serial": "389865889932317739692364262077753558617195977875",
+              "ca_repository": "rsync://krill-lacnic.nlnetlabs.net/repo/online-child/0/",
+              "rpki_manifest": "rsync://krill-lacnic.nlnetlabs.net/repo/online-child/0/0B97405BE3D024E50EE72F035C064D9BC50B5240.mft",
+              "rpki_notify": "https://krill-lacnic.nlnetlabs.net/notification.xml",
+              "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqCv8/TpxP/FQyHpyXM/wVrzs/hpBlx1nX0LCqdgGPQBGDuP0THImBEZ6KUZNGc4WCItp/O4n2TMjWQPabzXZAi9z/LHe7EDN6Yh2x42DngxNblAHacWGjGS3d21pJ3dPYTWWOriU6CFOH/3fG2Yqc4Nd6yL/FOEttwRQLbf3aC94DYmwM37T3eGpiVvKSVxKx+f1tLVBUZ9voQcpJSkdhaA8fvSIFNWmvjmIOXi4yq7Igg03+YKnjrwf5W9A7Knd+zwnaDkNbhnMN4Q3TJDczQWI15Pb3wUrxtSRNN2CtuT4CXlZ37duNyyKqN0Syc7yrEs6bouzox4tHxv+Dy+QLwIDAQAB",
+              "base64": "MIIFnjCCBIagAwIBAgIUREow7fv+5FFWsMjGDSOD+dw6nJMwDQYJKoZIhvcNAQELBQAwMzExMC8GA1UEAxMoRjAzODc2OERBRDdBMUNGMDY4RDI4QjMyQ0RERjk1MjVCRENGNDEwRjAeFw0yNTA2MTIxMzMwNTRaFw0yNjA2MTExMzM1NTRaMDMxMTAvBgNVBAMTKDBCOTc0MDVCRTNEMDI0RTUwRUU3MkYwMzVDMDY0RDlCQzUwQjUyNDAwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCoK/z9OnE/8VDIenJcz/BWvOz+GkGXHWdfQsKp2AY9AEYO4/RMciYERnopRk0ZzhYIi2n87ifZMyNZA9pvNdkCL3P8sd7sQM3piHbHjYOeDE1uUAdpxYaMZLd3bWknd09hNZY6uJToIU4f/d8bZipzg13rIv8U4S23BFAtt/doL3gNibAzftPd4amJW8pJXErH5/W0tUFRn2+hByklKR2FoDx+9IgU1aa+OYg5eLjKrsiCDTf5gqeOvB/lb0Dsqd37PCdoOQ1uGcw3hDdMkNzNBYjXk9vfBSvG1JE03YK25PgJeVnft243LIqo3RLJzvKsSzpui7OjHi0fG/4PL5AvAgMBAAGjggKoMIICpDAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBQLl0Bb49Ak5Q7nLwNcBk2bxQtSQDAfBgNVHSMEGDAWgBTwOHaNrXoc8GjSizLN35Ulvc9BDzAOBgNVHQ8BAf8EBAMCAQYwbgYDVR0fBGcwZTBjoGGgX4ZdcnN5bmM6Ly9rcmlsbC1sYWNuaWMubmxuZXRsYWJzLm5ldC9yZXBvL29ubGluZS8wL0YwMzg3NjhEQUQ3QTFDRjA2OEQyOEIzMkNEREY5NTI1QkRDRjQxMEYuY3JsMHAGCCsGAQUFBwEBBGQwYjBgBggrBgEFBQcwAoZUcnN5bmM6Ly9rcmlsbC1sYWNuaWMubmxuZXRsYWJzLm5ldC9yZXBvL0YwMzg3NjhEQUQ3QTFDRjA2OEQyOEIzMkNEREY5NTI1QkRDRjQxMEYuY2VyMIIBBwYIKwYBBQUHAQsEgfowgfcwQwYIKwYBBQUHMAWGN3JzeW5jOi8va3JpbGwtbGFjbmljLm5sbmV0bGFicy5uZXQvcmVwby9vbmxpbmUtY2hpbGQvMC8wbwYIKwYBBQUHMAqGY3JzeW5jOi8va3JpbGwtbGFjbmljLm5sbmV0bGFicy5uZXQvcmVwby9vbmxpbmUtY2hpbGQvMC8wQjk3NDA1QkUzRDAyNEU1MEVFNzJGMDM1QzA2NEQ5QkM1MEI1MjQwLm1mdDA/BggrBgEFBQcwDYYzaHR0cHM6Ly9rcmlsbC1sYWNuaWMubmxuZXRsYWJzLm5ldC9ub3RpZmljYXRpb24ueG1sMBgGA1UdIAEB/wQOMAwwCgYIKwYBBQUHDgIwHgYIKwYBBQUHAQcBAf8EDzANMAsEAgABMAUDAwAKADAaBggrBgEFBQcBCAEB/wQLMAmgBzAFAgMA/egwDQYJKoZIhvcNAQELBQADggEBAH5XrtxnKO87vmxAG1kOyAPLwvRzhB/o+waW7Lzdv4I+ZSyyQ0k4fHXXcrpbrjhgAfEC2CkGkoYHS9CiaIi51O+91hkHq4s+n6sM8S0fONWzsBKf+ktzXIDvFaA+lXobWjGRWEMO2csu0pErIDfrvYRlcZg5TIBug2vy4W5FXbgm7NacOh+raiVWBZ7aF+fCxQBhc+tlDVD6eEeuGPnmRqc/bj5nqpF77Cfl4KgsbeF955/9Veefz+QPljWwRinJdGo9lDA/hKmdoIKiC5ITmaxZ7zuMcV5nqZa2JipVB4A8QZEIqaotN4fk2pojwGYCur/zStg8hZK7WM+kLrxSW4o=",
+              "hash": "88dd67d00fca53f8f61ac015804d742a47c4d179fadb3e2aadae86f4ef5237f5",
+              "marker": null
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

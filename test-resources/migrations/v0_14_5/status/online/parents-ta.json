@@ -1,10 +1,10 @@
 {
   "last_exchange": {
-    "timestamp": 1749551864,
+    "timestamp": 1749735352,
     "uri": "https://localhost:3000/rfc6492/ta",
     "result": "Success"
   },
-  "last_success": 1749551864,
+  "last_success": 1749735352,
   "all_resources": {
     "asn": "AS0-AS4294967295",
     "ipv4": "0.0.0.0/0",

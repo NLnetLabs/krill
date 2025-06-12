@@ -1,0 +1,6 @@
+{
+  "ca_handle": "online-child",
+  "ca_version": 3,
+  "parent": "online",
+  "type": "sync_parent"
+}
