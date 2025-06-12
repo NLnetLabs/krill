@@ -72,6 +72,8 @@ use super::rta::{PreparedRta, Rtas, SignedRta};
 /// Configurations for published objects such as ROAs or ASPA objects are
 /// kept at the level of the CA, and actual RPKI objects are then issued
 /// under the resource class that has matching resources.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CertAuth {
     /// The local handle of the CA.
@@ -2710,6 +2712,8 @@ impl CertAuth {
 //------------ Rfc8183Id ---------------------------------------------------
 
 /// An identity used for communication with a parent CA.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Rfc8183Id {
     /// The ID certificate to use.

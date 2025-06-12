@@ -21,6 +21,8 @@ use crate::config::IssuanceTimingConfig;
 ///
 /// This is needed because RFC 6492 dictates that keys cannot be re-used
 /// across resource classes.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case")]
@@ -36,13 +38,15 @@ pub enum UsedKeyState {
 }
 
 
-//------------ ChildInfo -----------------------------------------------------
+//------------ ChildDetails --------------------------------------------------
 
 /// Information about a child CA needed by a parent CA.
 ///
 /// Note that the actual [`IssuedCertificate`] corresponding to the
 /// [`KeyIdentifier`] and [`ResourceClassName`] are kept in the parent's
 /// resource class.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildDetails {
     /// The state of the child.
@@ -166,6 +170,8 @@ impl ChildDetails {
 //------------ ChildCertificates -------------------------------------------
 
 /// The collection of certificates issued under a resource class.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildCertificates {
     /// The certificates for active CAs.
@@ -367,6 +373,8 @@ impl ChildCertificates {
 //------------ ChildCertificateUpdates -------------------------------------
 
 /// Describes an update to the set of ROAs under a ResourceClass.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildCertificateUpdates {
     /// Issued certificates that have been added.

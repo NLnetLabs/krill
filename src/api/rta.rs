@@ -67,6 +67,8 @@ impl fmt::Display for RtaContentRequest {
 /// Resource Tagged Attestations
 ///
 /// See: <https://tools.ietf.org/id/draft-michaelson-rpki-rta-01.html>
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, Serialize, PartialEq)]
 pub struct ResourceTaggedAttestation {
     #[serde(

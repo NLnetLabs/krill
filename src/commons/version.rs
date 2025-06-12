@@ -8,7 +8,7 @@ use clap::crate_version;
 //------------ KrillVersion --------------------------------------------------
 
 /// Defines a Krill version.
-
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct KrillVersion {
     major: u64,
@@ -207,6 +207,8 @@ impl<'de> Deserialize<'de> for KrillVersion {
     }
 }
 
+
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum KrillVersionReleaseType {
     Release,

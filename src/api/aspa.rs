@@ -14,15 +14,21 @@ use serde::{Deserialize, Serialize};
 //------------- Type Aliases -------------------------------------------------
 
 /// The type of a customer ASN.
+//
+//  *Warning:* This type is used in stored state.
 pub type CustomerAsn = Asn;
 
 /// The type of a provider ASN.
+//
+//  *Warning:* This type is used in stored state.
 pub type ProviderAsn = Asn;
 
 
 //------------ AspaDefinitionUpdates -----------------------------------------
 
 /// Information for an ASPA definition update.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AspaDefinitionUpdates {
     /// Definitions to add or replace.
@@ -87,6 +93,8 @@ impl fmt::Display for AspaDefinitionList {
 //------------ AspaDefinition ------------------------------------------------
 
 /// The definition of an ASPA record.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AspaDefinition {
     /// The customer ASN.
@@ -225,6 +233,8 @@ impl FromStr for AspaDefinition {
 //------------ AspaProvidersUpdate -------------------------------------------
 
 /// An update to the provider ASN list of an ASPA definition.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AspaProvidersUpdate {
     /// A list of ASNs to be added to the provider ASNs.

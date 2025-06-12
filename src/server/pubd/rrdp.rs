@@ -47,6 +47,8 @@ const WITHDRAW: Name = Name::unqualified(b"withdraw");
 ///
 /// This isn’t the actual server but creates the data to be served by an
 /// HTTP server.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RrdpServer {
     /// The base URI for RRDP files.
@@ -894,6 +896,7 @@ pub enum RrdpUpdateNeeded {
 
 //------------ RrdpSessionReset ----------------------------------------------
 
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RrdpSessionReset {
     pub last_update: Time,
@@ -904,6 +907,7 @@ pub struct RrdpSessionReset {
 
 //------------ RrdpUpdated ---------------------------------------------------
 
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RrdpUpdated {
     pub time: Time,
@@ -918,6 +922,8 @@ pub struct RrdpUpdated {
 ///
 /// A session is identified by a UUID. By default, a new session will be
 /// created with a random V4 UUID.
+///
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct RrdpSession(Uuid);
 
@@ -983,6 +989,8 @@ impl Serialize for RrdpSession {
 //------------ SnapshotData --------------------------------------------------
 
 /// The data needed to create an RRDP Snapshot.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct SnapshotData {
     /// A random value to make the URI unique.
@@ -1185,6 +1193,8 @@ impl SnapshotData {
 //------------ CurrentObjects ------------------------------------------------
 
 /// The current set of published objects.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CurrentObjects(HashMap<CurrentObjectUri, Base64>);
 
@@ -1444,6 +1454,8 @@ where K: Into<CurrentObjectUri> {
 ///
 /// This type can still be cloned cheaply since it holds an arc to an
 /// allocated string.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct CurrentObjectUri(Arc<str>);
 
@@ -1497,6 +1509,8 @@ impl TryFrom<CurrentObjectUri> for uri::Rsync {
 ///
 /// The component will make the URIs unguessable and prevent cache poisoning
 /// (through CDNs caching a 404 not found).
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RrdpFileRandom(String);
 
@@ -1513,6 +1527,8 @@ impl Default for RrdpFileRandom {
 //------------ DeltaData -----------------------------------------------------
 
 /// The data needed to create an RRDP delta XML file.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct DeltaData {
     /// A random value to make the URI unique.
@@ -1666,6 +1682,8 @@ impl DeltaData {
 //------------ DeltaElements -------------------------------------------------
 
 /// The elements of an RRDP delta.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct DeltaElements {
     /// The objects to be published.
@@ -1783,10 +1801,15 @@ impl From<publication::PublishDelta> for DeltaElements {
     }
 }
 
+
+//------------ StagedElements ------------------------------------------------
+
 /// This type is used to combine staged delta elements for publishers.
 ///
 /// It uses a map with object URIs as key, because this is the unique key that
 /// identifies objects in the publication protocol.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct StagedElements(HashMap<uri::Rsync, DeltaElement>);
 
@@ -1977,6 +2000,8 @@ impl From<StagedElements> for DeltaElements {
 ///
 /// Note that the difference with the publication protocol is the absence of
 /// the tag.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PublishElement {
     /// The URI identifying the object to be published.
@@ -2000,6 +2025,8 @@ impl From<publication::Publish> for PublishElement {
 ///
 /// Note that the difference with the publication protocol is the absence of
 /// the tag.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct UpdateElement {
     /// The URI identifying the object to be updated.
@@ -2035,6 +2062,8 @@ impl From<publication::Update> for UpdateElement {
 /// A withdraw element as used in the RRDP protocol.
 ///
 /// Note that the difference with the publication protocol is the absence of
+//
+//  *Warning:* This type is used in stored state.
 /// the tag.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct WithdrawElement {
@@ -2056,6 +2085,8 @@ impl From<publication::Withdraw> for WithdrawElement {
 //------------ DeltaElement --------------------------------------------------
 
 /// An element in an RRDP delta.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum DeltaElement {
     Publish(PublishElement),

@@ -31,6 +31,8 @@ use super::keys::CertifiedKey;
 /// customer ASN. The customer ASN will be held by a single resource class 
 /// only, but at least in theory the CA could issue ASPA objects in each
 /// resource class that holds the ASN.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AspaDefinitions {
     /// The definitions for each customer ASN.
@@ -204,6 +206,8 @@ impl AspaDefinitions {
 ///
 /// Each ASPA object is described by an [`AspaInfo`]. There can at most by
 /// one ASPA object per customer ASN.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AspaObjects(HashMap<CustomerAsn, AspaInfo>);
 
@@ -357,6 +361,8 @@ impl AspaObjects {
 //------------ AspaInfo ----------------------------------------------------
 
 /// Information about a single ASPA obejct.
+///
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AspaInfo {
     /// The customer ASN and all Provider ASNs
@@ -413,6 +419,8 @@ impl AspaInfo {
 //------------ AspaObjectsUpdates --------------------------------------------
 
 /// The updates to the ASPA objects of a resource class.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AspaObjectsUpdates {
     /// Newly added or updated ASPA objects.

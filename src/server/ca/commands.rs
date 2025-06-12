@@ -21,7 +21,7 @@ use crate::api::aspa::{
 };
 use crate::api::bgpsec::BgpSecDefinitionUpdates;
 use crate::api::ca::{
-    IdCertInfo, ReceivedCert,  ResourceSetSummary,RtaName
+    IdCertInfo, ReceivedCert,  ResourceSetSummary, RtaName
 };
 use crate::api::history::CommandSummary;
 use crate::api::import::ImportChild;
@@ -298,8 +298,9 @@ impl fmt::Display for CertAuthCommandDetails {
 }
 
 
-//------------ StorableCaCommand --------------------------------------------
+//------------ CertAuthStorableCommand --------------------------------------
 
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case")]
@@ -977,8 +978,9 @@ impl fmt::Display for CertAuthStorableCommand {
 }
 
 
-//------------ StorableCaCommand --------------------------------------------
+//------------ StorableRcEntitlement ----------------------------------------
 
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct StorableRcEntitlement {
     pub resource_class_name: ResourceClassName,

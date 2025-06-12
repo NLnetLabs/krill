@@ -49,6 +49,8 @@ use crate::server::ca::publishing::{
 /// The Trust Anchor Signer can make changes to this set based on the
 /// requests it gets from the proxy. It can then return a response to the
 /// proxy that allow it to update the state with that same change.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TrustAnchorObjects {
     // The revision of the set, meaning its number and the
@@ -272,6 +274,7 @@ impl fmt::Display for TrustAnchorObjects {
 
 //------------ TaCertDetails -------------------------------------------------
 
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TaCertDetails {
     pub cert: ReceivedCert,
@@ -341,6 +344,7 @@ impl std::fmt::Display for TrustAnchorLocator {
 
 //------------ TrustAnchorSignerInfo ---------------------------------------
 
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TrustAnchorSignerInfo {
     // The ID of the associated signer.
@@ -395,6 +399,7 @@ impl fmt::Display for TrustAnchorSignerInfo {
 
 //------------ Nonce -------------------------------------------------------
 
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Nonce(Arc<str>);
 
@@ -702,6 +707,7 @@ impl fmt::Display for TrustAnchorSignerResponse {
 
 //------------ TrustAnchorChild --------------------------------------------
 
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TrustAnchorChild {
     pub handle: ChildHandle,
@@ -746,6 +752,7 @@ pub enum UsedKeyState {
 
 //------------ ProvisioningRequest -----------------------------------------
 
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum ProvisioningRequest {

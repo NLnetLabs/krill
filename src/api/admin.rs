@@ -163,6 +163,8 @@ pub struct PublishedFile {
 //------------ PublicationServerInfo -----------------------------------------
 
 /// Details of a publication server.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PublicationServerInfo {
     /// The public key used by the publication server.
@@ -189,6 +191,8 @@ pub struct ApiRepositoryContact {
 //------------ RepositoryContact ---------------------------------------------
 
 /// A contact with a remote repository.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RepositoryContact {
     /// Information about the remote repository.
@@ -269,6 +273,8 @@ impl fmt::Display for ParentCaReq {
 //------------ ParentServerInfo ----------------------------------------------
 
 /// Information about the server of the parent CA.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ParentServerInfo {
     /// The URI where the CA needs to send its RFC6492 messages
@@ -310,6 +316,8 @@ impl fmt::Display for ParentServerInfo {
 /// a data migration of past events, and because theoretically we may
 /// need other options in future if there is an alternative to RFC 6492
 /// one day.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case")]
@@ -368,6 +376,8 @@ impl fmt::Display for ParentCaContact {
 /// The protocol to use when contacting a parent.
 ///
 /// This type is used when saving and presenting the command history.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StorableParentContact {
@@ -410,6 +420,8 @@ impl fmt::Display for CertAuthInit {
 //------------ AddChildRequest -----------------------------------------------
 
 /// Information necessary to request adding a child CA.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AddChildRequest {
     /// The handle to identify the child with.
@@ -449,16 +461,6 @@ pub struct UpdateChildRequest {
     /// Changes to the names of a resource class.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resource_class_name_mapping: Option<ResourceClassNameMapping>,
-}
-
-/// A mapping from the name of a resource class in parent and child.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ResourceClassNameMapping {
-    /// The name of the resource class at the parent.
-    pub name_in_parent: ResourceClassName,
-
-    /// The name of the resource class at the child.
-    pub name_for_child: ResourceClassName,
 }
 
 impl UpdateChildRequest {
@@ -528,6 +530,20 @@ impl fmt::Display for UpdateChildRequest {
         }
         Ok(())
     }
+}
+
+//------------ ResourceClassNameMapping --------------------------------------
+
+/// A mapping from the name of a resource class in parent and child.
+//
+//  *Warning:* This type is used in stored state.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ResourceClassNameMapping {
+    /// The name of the resource class at the parent.
+    pub name_in_parent: ResourceClassName,
+
+    /// The name of the resource class at the child.
+    pub name_for_child: ResourceClassName,
 }
 
 

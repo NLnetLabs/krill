@@ -42,7 +42,9 @@ use super::roa::{RoaPayload, RoaPayloadJsonMapKey};
 
 //------------ IdCertInfo ----------------------------------------------------
 
-/// A encoded ID certificate and SHA256 hash of the encoding.
+/// An encoded ID certificate and SHA256 hash of the encoding.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct IdCertInfo {
     /// The public key of the ID certificate.
@@ -130,6 +132,8 @@ impl fmt::Display for IdCertPem<'_> {
 //------------ ChildState ----------------------------------------------------
 
 /// The suspension status of a child CA.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(
     Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize,
 )]
@@ -197,6 +201,8 @@ impl fmt::Display for ChildCaInfo {
 pub struct Received;
 
 /// A certificate that was received from a parent CA.
+//
+//  *Warning:* This type is used in stored state.
 pub type ReceivedCert = CertInfo<Received>;
 
 
@@ -207,6 +213,8 @@ pub type ReceivedCert = CertInfo<Received>;
 pub struct Issued;
 
 /// A certificate which has been issued to a child CA.
+//
+//  *Warning:* This type is used in stored state.
 pub type IssuedCertificate = CertInfo<Issued>;
 
 
@@ -217,6 +225,8 @@ pub type IssuedCertificate = CertInfo<Issued>;
 pub struct Suspended;
 
 /// An certificate which has been suspended because the child is inactive.
+//
+//  *Warning:* This type is used in stored state.
 pub type SuspendedCert = CertInfo<Suspended>;
 
 
@@ -227,6 +237,8 @@ pub type SuspendedCert = CertInfo<Suspended>;
 pub struct Unsuspended;
 
 /// A certificate that has been unsuspended and needs to be re-activated.
+//
+//  *Warning:* This type is used in stored state.
 pub type UnsuspendedCert = CertInfo<Unsuspended>;
 
 
@@ -239,6 +251,8 @@ pub type UnsuspendedCert = CertInfo<Unsuspended>;
 ///
 /// This type is generic over a marker type `T` indicating the status of the
 /// certificate.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CertInfo<T> {
     /// Where this certificate is published by the parent
@@ -615,6 +629,8 @@ impl fmt::Display for ObjectName {
 //------------ Revocation ----------------------------------------------------
 
 /// Information for an entry on a CRL.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Revocation {
     /// The serial number of the certificate to be revoked.
@@ -675,6 +691,8 @@ impl From<&Aspa> for Revocation {
 //------------ Revocations ---------------------------------------------------
 
 /// The list of revocation entries of a CRL.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Revocations(Vec<Revocation>);
 
@@ -2093,6 +2111,8 @@ pub struct BgpStats {
 //------------ RtaName -------------------------------------------------------
 
 /// The name of an RTA.
+//
+//  *Warning:* This type is used in stored state.
 pub type RtaName = String;
 
 

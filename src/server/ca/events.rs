@@ -31,6 +31,8 @@ use super::rta::{PreparedRta, SignedRta};
 //------------ CertAuthInitEvent ---------------------------------------------
 
 /// The init event of the `CertAuth` aggregate.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CertAuthInitEvent {
     /// The ID certificate used by the CA for communication.
@@ -63,6 +65,8 @@ impl fmt::Display for CertAuthInitEvent {
 //------------ CertAuthEvent ------------------------------------------------
 
 /// The events of the `CertAuth` aggregate.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case")]
