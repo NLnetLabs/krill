@@ -24,5 +24,6 @@ pub use self::status::CaStatus;
 // away.
 
 pub use self::certauth::CertAuth; // mq and scheduler
+pub use self::child::UsedKeyState; // api::ta
 pub use self::events::CertAuthEvent; // mq
 

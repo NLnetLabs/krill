@@ -48,11 +48,12 @@ use crate::api::ta::{
 use crate::constants::ta_resource_class_name;
 
 
-//------------ TrustAnchorSigner -------------------------------------------
+//------------ TrustAnchorSigner ---------------------------------------------
 
 /// The Trust Anchor Signer signs requests sent to it by its associated
 /// proxy, as long as it can verify that the proxy signed that request.
-
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct TrustAnchorSigner {
     // event-sourcing support
@@ -73,272 +74,6 @@ pub struct TrustAnchorSigner {
 
     // Proxy Signer Exchanges
     exchanges: TrustAnchorProxySignerExchanges,
-}
-
-//------------ TrustAnchorSigner: Commands and Events ----------------------
-
-pub type TrustAnchorSignerInitCommand =
-    eventsourcing::SentInitCommand<TrustAnchorSignerInitCommandDetails>;
-
-#[derive(Clone, Debug)]
-pub struct TrustAnchorSignerInitCommandDetails {
-    pub proxy_id: IdCertInfo,
-    pub repo_info: RepoInfo,
-    pub tal_https: Vec<uri::Https>,
-    pub tal_rsync: uri::Rsync,
-    pub private_key_pem: Option<String>,
-    pub ta_mft_nr_override: Option<u64>,
-    pub timing: TaTimingConfig,
-    pub signer: Arc<KrillSigner>,
-}
-
-impl fmt::Display for TrustAnchorSignerInitCommandDetails {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.store().fmt(f)
-    }
-}
-
-impl InitCommandDetails for TrustAnchorSignerInitCommandDetails {
-    type StorableDetails = TrustAnchorSignerStorableCommand;
-
-    fn store(&self) -> Self::StorableDetails {
-        TrustAnchorSignerStorableCommand::make_init()
-    }
-}
-
-
-pub type TrustAnchorSignerCommand =
-    eventsourcing::SentCommand<TrustAnchorSignerCommandDetails>;
-
-// Initialisation
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct TrustAnchorSignerInitEvent {
-    id: IdCertInfo,
-    proxy_id: IdCertInfo,
-    ta_cert_details: TaCertDetails,
-    objects: TrustAnchorObjects,
-}
-
-impl InitEvent for TrustAnchorSignerInitEvent {}
-
-impl fmt::Display for TrustAnchorSignerInitEvent {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // note that this is a summary, full details are stored in the init
-        // event.
-        write!(f, "Trust Anchor Signer was initialised.")
-    }
-}
-
-// Events
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum TrustAnchorSignerEvent {
-    ProxySignerExchangeDone(TrustAnchorProxySignerExchange),
-    SignerReissueDone(TaCertDetails)
-}
-
-impl Event for TrustAnchorSignerEvent {}
-
-impl fmt::Display for TrustAnchorSignerEvent {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            TrustAnchorSignerEvent::ProxySignerExchangeDone(exchange) => {
-                write!(
-                    f,
-                    "Proxy signer exchange done on {} for nonce: {}",
-                    exchange.time.to_rfc3339(),
-                    exchange.request.content().nonce
-                )
-            },
-            TrustAnchorSignerEvent::SignerReissueDone(ta_cert_details) => {
-                write!(
-                    f,
-                    "Signer reissue done with serial {}",
-                    ta_cert_details.cert.serial
-                )
-            }
-        }
-    }
-}
-
-// Commands
-#[derive(Clone, Debug)]
-pub enum TrustAnchorSignerCommandDetails {
-    TrustAnchorSignerRequest {
-        signed_request: TrustAnchorSignedRequest,
-        ta_timing_config: TaTimingConfig,
-        ta_mft_number_override: Option<u64>,
-        signer: Arc<KrillSigner>,
-    },
-    TrustAnchorSignerReissueRequest {
-        repo_info: RepoInfo,
-        tal_https: Vec<uri::Https>,
-        tal_rsync: uri::Rsync,
-        timing: TaTimingConfig,
-        signer: Arc<KrillSigner>,
-    },
-}
-
-impl eventsourcing::CommandDetails for TrustAnchorSignerCommandDetails {
-    type Event = TrustAnchorSignerEvent;
-    type StorableDetails = TrustAnchorSignerStorableCommand;
-
-    fn store(&self) -> Self::StorableDetails {
-        self.into()
-    }
-}
-
-impl fmt::Display for TrustAnchorSignerCommandDetails {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        TrustAnchorSignerStorableCommand::from(self).fmt(f)
-    }
-}
-
-impl TrustAnchorSignerCommand {
-    pub fn make_process_request_command(
-        id: &CaHandle,
-        signed_request: TrustAnchorSignedRequest,
-        ta_timing_config: TaTimingConfig,
-        ta_mft_number_override: Option<u64>,
-        signer: Arc<KrillSigner>,
-        actor: &Actor,
-    ) -> TrustAnchorSignerCommand {
-        TrustAnchorSignerCommand::new(
-            id.clone(),
-            None,
-            TrustAnchorSignerCommandDetails::TrustAnchorSignerRequest {
-                signed_request,
-                ta_timing_config,
-                ta_mft_number_override,
-                signer,
-            },
-            actor,
-        )
-    }
-
-    pub fn make_reissue_command(
-        id: &CaHandle,
-        repo_info: RepoInfo,
-        tal_https: Vec<uri::Https>,
-        tal_rsync: uri::Rsync,
-        ta_timing_config: TaTimingConfig,
-        signer: Arc<KrillSigner>,
-        actor: &Actor,
-    ) -> TrustAnchorSignerCommand {
-        TrustAnchorSignerCommand::new(
-            id.clone(),
-            None,
-            TrustAnchorSignerCommandDetails::TrustAnchorSignerReissueRequest {
-                repo_info,
-                tal_https,
-                tal_rsync,
-                timing: ta_timing_config,
-                signer,
-            }, 
-            actor
-        )
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct TrustAnchorReissueRequest {
-    repo_info: RepoInfo,
-    tal_https: Vec<uri::Https>,
-    tal_rsync: uri::Rsync,
-}
-
-// Storable Commands (KrillSigner cannot be de-/serialized)
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum TrustAnchorSignerStorableCommand {
-    Init,
-    TrustAnchorSignerRequest(TrustAnchorSignedRequest),
-    TrustAnchorSignerReissueRequest(TrustAnchorReissueRequest)
-}
-
-impl From<&TrustAnchorSignerCommandDetails>
-    for TrustAnchorSignerStorableCommand
-{
-    fn from(details: &TrustAnchorSignerCommandDetails) -> Self {
-        match details {
-            TrustAnchorSignerCommandDetails::TrustAnchorSignerRequest {
-                signed_request,
-                ..
-            } => TrustAnchorSignerStorableCommand::TrustAnchorSignerRequest(
-                signed_request.clone(),
-            ),
-            TrustAnchorSignerCommandDetails::TrustAnchorSignerReissueRequest { 
-                repo_info, tal_https, tal_rsync, ..
-            } => {
-                Self::TrustAnchorSignerReissueRequest(TrustAnchorReissueRequest {
-                    repo_info: repo_info.clone(),
-                    tal_https: tal_https.clone(),
-                    tal_rsync: tal_rsync.clone(),
-                })
-            }
-        }
-    }
-}
-
-
-impl eventsourcing::WithStorableDetails for TrustAnchorSignerStorableCommand {
-    fn summary(&self) -> crate::api::history::CommandSummary {
-        match self {
-            TrustAnchorSignerStorableCommand::Init => {
-                crate::api::history::CommandSummary::new(
-                    "cmd-ta-signer-init",
-                    self,
-                )
-            }
-            Self::TrustAnchorSignerRequest(
-                request,
-            ) => {
-                crate::api::history::CommandSummary::new(
-                    "cmd-ta-signer-process-request",
-                    self,
-                ).arg("nonce", &request.content().nonce)
-            }
-            Self::TrustAnchorSignerReissueRequest(TrustAnchorReissueRequest {
-                repo_info: _,
-                tal_https: _,
-                tal_rsync: _,
-            }) => {
-                crate::api::history::CommandSummary::new(
-                    "cmd-ta-signer-reissue", 
-                    self
-                )
-                // XXX This should probably include the stored values.
-            }
-        }
-    }
-
-    fn make_init() -> Self {
-        Self::Init
-    }
-}
-
-impl fmt::Display for TrustAnchorSignerStorableCommand {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // note that this is a summary, full details are stored in the json.
-        match self {
-            TrustAnchorSignerStorableCommand::Init => {
-                write!(f, "Initialise TA signer")
-            }
-            TrustAnchorSignerStorableCommand::TrustAnchorSignerRequest(
-                req,
-            ) => {
-                write!(
-                    f,
-                    "Process signer request with nonce: {}",
-                    req.content().nonce
-                )
-            },
-            Self::TrustAnchorSignerReissueRequest {
-                ..
-            } => {
-                write!(f, "Reissue the TA signer")
-                // XXX This should probably print all the values.
-            }
-        }
-    }
 }
 
 impl eventsourcing::Aggregate for TrustAnchorSigner {
@@ -805,6 +540,301 @@ impl TrustAnchorSigner {
     }
 }
 
+
+//------------ TrustAnchorSignerInitCommand ----------------------------------
+
+pub type TrustAnchorSignerInitCommand =
+    eventsourcing::SentInitCommand<TrustAnchorSignerInitCommandDetails>;
+
+
+//------------ TrustAnchorSignerInitCommandDetails ---------------------------
+
+#[derive(Clone, Debug)]
+pub struct TrustAnchorSignerInitCommandDetails {
+    pub proxy_id: IdCertInfo,
+    pub repo_info: RepoInfo,
+    pub tal_https: Vec<uri::Https>,
+    pub tal_rsync: uri::Rsync,
+    pub private_key_pem: Option<String>,
+    pub ta_mft_nr_override: Option<u64>,
+    pub timing: TaTimingConfig,
+    pub signer: Arc<KrillSigner>,
+}
+
+impl fmt::Display for TrustAnchorSignerInitCommandDetails {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.store().fmt(f)
+    }
+}
+
+impl InitCommandDetails for TrustAnchorSignerInitCommandDetails {
+    type StorableDetails = TrustAnchorSignerStorableCommand;
+
+    fn store(&self) -> Self::StorableDetails {
+        TrustAnchorSignerStorableCommand::make_init()
+    }
+}
+
+
+//------------ TrustAnchorSignerCommand --------------------------------------
+
+pub type TrustAnchorSignerCommand =
+    eventsourcing::SentCommand<TrustAnchorSignerCommandDetails>;
+
+impl TrustAnchorSignerCommand {
+    pub fn make_process_request_command(
+        id: &CaHandle,
+        signed_request: TrustAnchorSignedRequest,
+        ta_timing_config: TaTimingConfig,
+        ta_mft_number_override: Option<u64>,
+        signer: Arc<KrillSigner>,
+        actor: &Actor,
+    ) -> TrustAnchorSignerCommand {
+        TrustAnchorSignerCommand::new(
+            id.clone(),
+            None,
+            TrustAnchorSignerCommandDetails::TrustAnchorSignerRequest {
+                signed_request,
+                ta_timing_config,
+                ta_mft_number_override,
+                signer,
+            },
+            actor,
+        )
+    }
+
+    pub fn make_reissue_command(
+        id: &CaHandle,
+        repo_info: RepoInfo,
+        tal_https: Vec<uri::Https>,
+        tal_rsync: uri::Rsync,
+        ta_timing_config: TaTimingConfig,
+        signer: Arc<KrillSigner>,
+        actor: &Actor,
+    ) -> TrustAnchorSignerCommand {
+        TrustAnchorSignerCommand::new(
+            id.clone(),
+            None,
+            TrustAnchorSignerCommandDetails::TrustAnchorSignerReissueRequest {
+                repo_info,
+                tal_https,
+                tal_rsync,
+                timing: ta_timing_config,
+                signer,
+            }, 
+            actor
+        )
+    }
+}
+
+
+//------------ TrustAnchorSignerCommandDetails -------------------------------
+
+#[derive(Clone, Debug)]
+pub enum TrustAnchorSignerCommandDetails {
+    TrustAnchorSignerRequest {
+        signed_request: TrustAnchorSignedRequest,
+        ta_timing_config: TaTimingConfig,
+        ta_mft_number_override: Option<u64>,
+        signer: Arc<KrillSigner>,
+    },
+    TrustAnchorSignerReissueRequest {
+        repo_info: RepoInfo,
+        tal_https: Vec<uri::Https>,
+        tal_rsync: uri::Rsync,
+        timing: TaTimingConfig,
+        signer: Arc<KrillSigner>,
+    },
+}
+
+impl eventsourcing::CommandDetails for TrustAnchorSignerCommandDetails {
+    type Event = TrustAnchorSignerEvent;
+    type StorableDetails = TrustAnchorSignerStorableCommand;
+
+    fn store(&self) -> Self::StorableDetails {
+        self.into()
+    }
+}
+
+impl fmt::Display for TrustAnchorSignerCommandDetails {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        TrustAnchorSignerStorableCommand::from(self).fmt(f)
+    }
+}
+
+
+//------------ TrustAnchorSignerStorableCommand ------------------------------
+
+//  *Warning:* This type is used in stored state.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum TrustAnchorSignerStorableCommand {
+    Init,
+    TrustAnchorSignerRequest(TrustAnchorSignedRequest),
+    TrustAnchorSignerReissueRequest(TrustAnchorReissueRequest),
+}
+
+impl From<&TrustAnchorSignerCommandDetails>
+    for TrustAnchorSignerStorableCommand
+{
+    fn from(details: &TrustAnchorSignerCommandDetails) -> Self {
+        match details {
+            TrustAnchorSignerCommandDetails::TrustAnchorSignerRequest {
+                signed_request,
+                ..
+            } => TrustAnchorSignerStorableCommand::TrustAnchorSignerRequest(
+                signed_request.clone(),
+            ),
+            TrustAnchorSignerCommandDetails::TrustAnchorSignerReissueRequest { 
+                repo_info, tal_https, tal_rsync, ..
+            } => {
+                Self::TrustAnchorSignerReissueRequest(
+                    TrustAnchorReissueRequest {
+                        repo_info: repo_info.clone(),
+                        tal_https: tal_https.clone(),
+                        tal_rsync: tal_rsync.clone(),
+                    }
+                )
+            }
+        }
+    }
+}
+
+
+impl eventsourcing::WithStorableDetails for TrustAnchorSignerStorableCommand {
+    fn summary(&self) -> crate::api::history::CommandSummary {
+        match self {
+            TrustAnchorSignerStorableCommand::Init => {
+                crate::api::history::CommandSummary::new(
+                    "cmd-ta-signer-init",
+                    self,
+                )
+            }
+            Self::TrustAnchorSignerRequest(
+                request,
+            ) => {
+                crate::api::history::CommandSummary::new(
+                    "cmd-ta-signer-process-request",
+                    self,
+                ).arg("nonce", &request.content().nonce)
+            }
+            Self::TrustAnchorSignerReissueRequest(
+                TrustAnchorReissueRequest {
+                    repo_info: _,
+                    tal_https: _,
+                    tal_rsync: _,
+                }
+            ) => {
+                crate::api::history::CommandSummary::new(
+                    "cmd-ta-signer-reissue", 
+                    self
+                )
+                // XXX This should probably include the stored values.
+            }
+        }
+    }
+
+    fn make_init() -> Self {
+        Self::Init
+    }
+}
+
+impl fmt::Display for TrustAnchorSignerStorableCommand {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // note that this is a summary, full details are stored in the json.
+        match self {
+            TrustAnchorSignerStorableCommand::Init => {
+                write!(f, "Initialise TA signer")
+            }
+            TrustAnchorSignerStorableCommand::TrustAnchorSignerRequest(
+                req,
+            ) => {
+                write!(
+                    f,
+                    "Process signer request with nonce: {}",
+                    req.content().nonce
+                )
+            },
+            Self::TrustAnchorSignerReissueRequest {
+                ..
+            } => {
+                write!(f, "Reissue the TA signer")
+                // XXX This should probably print all the values.
+            }
+        }
+    }
+}
+
+
+//------------ TrustAnchorReissueRequest -------------------------------------
+
+//  *Warning:* This type is used in stored state.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct TrustAnchorReissueRequest {
+    repo_info: RepoInfo,
+    tal_https: Vec<uri::Https>,
+    tal_rsync: uri::Rsync,
+}
+
+
+//------------ TrustAnchorSignerInitEvent ------------------------------------
+
+//  *Warning:* This type is used in stored state.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct TrustAnchorSignerInitEvent {
+    id: IdCertInfo,
+    proxy_id: IdCertInfo,
+    ta_cert_details: TaCertDetails,
+    objects: TrustAnchorObjects,
+}
+
+impl InitEvent for TrustAnchorSignerInitEvent {}
+
+impl fmt::Display for TrustAnchorSignerInitEvent {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // note that this is a summary, full details are stored in the init
+        // event.
+        write!(f, "Trust Anchor Signer was initialised.")
+    }
+}
+
+
+//------------ TrustAnchorSignerEvent ----------------------------------------
+
+//  *Warning:* This type is used in stored state.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum TrustAnchorSignerEvent {
+    ProxySignerExchangeDone(TrustAnchorProxySignerExchange),
+    SignerReissueDone(TaCertDetails)
+}
+
+impl Event for TrustAnchorSignerEvent {}
+
+impl fmt::Display for TrustAnchorSignerEvent {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            TrustAnchorSignerEvent::ProxySignerExchangeDone(exchange) => {
+                write!(
+                    f,
+                    "Proxy signer exchange done on {} for nonce: {}",
+                    exchange.time.to_rfc3339(),
+                    exchange.request.content().nonce
+                )
+            },
+            TrustAnchorSignerEvent::SignerReissueDone(ta_cert_details) => {
+                write!(
+                    f,
+                    "Signer reissue done with serial {}",
+                    ta_cert_details.cert.serial
+                )
+            }
+        }
+    }
+}
+
+
+//------------ TrustAnchorProxySignerExchanges -------------------------------
+
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct TrustAnchorProxySignerExchanges(
     Vec<TrustAnchorProxySignerExchange>,

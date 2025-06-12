@@ -6,6 +6,8 @@ use crate::api::ca::IdCertInfo;
 //------------ Publisher -----------------------------------------------------
 
 /// This type defines Publisher CAs that are allowed to publish.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Publisher {
     /// Used by remote RFC8181 publishers

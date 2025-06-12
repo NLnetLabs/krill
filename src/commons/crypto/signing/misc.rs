@@ -30,6 +30,7 @@ pub type CaRepository = uri::Rsync;
 pub type RpkiManifest = uri::Rsync;
 pub type RpkiNotify = uri::Https;
 
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CsrInfo {
     ca_repository: CaRepository,

@@ -311,6 +311,8 @@ impl CaObjectsStore {
 //------------CaObjects ------------------------------------------------------
 
 /// All the published objects of a CA.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CaObjects {
     /// The handle of the CA.
@@ -618,6 +620,8 @@ impl CaObjects {
 //------------ DeprecatedRepository ------------------------------------------
 
 /// A previously used repository that hasn’t been successfully cleaned out.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct DeprecatedRepository {
     /// The repository contact.
@@ -661,6 +665,8 @@ impl DeprecatedRepository {
 //------------ ResourceClassObjects ------------------------------------------
 
 /// The objects for a resource class.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ResourceClassObjects {
     keys: ResourceClassKeyState,
@@ -931,6 +937,7 @@ impl ResourceClassObjects {
 
 //------------ ResourceClassKeyState -----------------------------------------
 
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ResourceClassKeyState {
@@ -990,6 +997,7 @@ impl ResourceClassKeyState {
 
 //------------ CurrentKeyState -----------------------------------------------
 
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CurrentKeyState {
     current_set: KeyObjectSet,
@@ -1003,6 +1011,7 @@ impl CurrentKeyState {
 
 //------------ StagingKeyState -----------------------------------------------
 
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct StagingKeyState {
     staging_set: KeyObjectSet,
@@ -1021,6 +1030,7 @@ impl StagingKeyState {
 
 //------------ OldKeyState ---------------------------------------------------
 
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct OldKeyState {
     current_set: KeyObjectSet,
@@ -1039,6 +1049,8 @@ impl OldKeyState {
 //------------ KeyObjectSet ------------------------------------------------
 
 /// Maintains the set of objects published for a key.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct KeyObjectSet {
     /// The latest received certificate for the owning key.
@@ -1406,6 +1418,8 @@ impl KeyObjectSet {
 //------------ ObjectSetRevision ---------------------------------------------
 
 /// The current revision information for a key object set.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ObjectSetRevision {
     /// The manifest and CRL number.
@@ -1479,6 +1493,8 @@ pub type PublishedCert = IssuedCertificate;
 ///
 /// The concrete type of object is provided through the marker type `T`. This
 /// is only used to make sure we add objects in the right place.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PublishedItem<T> {
     /// The name of the object.
@@ -1537,9 +1553,12 @@ impl<T> PublishedItem<T> {
 //------------ PublishedManifest ---------------------------------------------
 
 /// A published manifest.
+//
+//  *Warning:* This type is used in stored state.
+pub type PublishedManifest = PublishedItem<PublishedItemManifest>;
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PublishedItemManifest;
-pub type PublishedManifest = PublishedItem<PublishedItemManifest>;
 
 impl From<Manifest> for PublishedManifest {
     fn from(mft: Manifest) -> Self {
@@ -1556,9 +1575,12 @@ impl From<Manifest> for PublishedManifest {
 //------------ PublishedCrl --------------------------------------------------
 
 /// A published CRL.
+//
+//  *Warning:* This type is used in stored state.
+pub type PublishedCrl = PublishedItem<PublishedItemCrl>;
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PublishedItemCrl;
-pub type PublishedCrl = PublishedItem<PublishedItemCrl>;
 
 impl PublishedCrl {
     pub fn build(
@@ -1600,9 +1622,12 @@ impl From<Crl> for PublishedCrl {
 //------------ PublishedObject -----------------------------------------------
 
 /// A generic published object.
+//
+//  *Warning:* This type is used in stored state.
+pub type PublishedObject = PublishedItem<PublishedItemOther>;
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PublishedItemOther;
-pub type PublishedObject = PublishedItem<PublishedItemOther>;
 
 impl PublishedObject {
     /// Creates a published ROA.

@@ -38,6 +38,8 @@ impl Eq for BgpSecDefinition {}
 //------------ BgpSecAsnKey ------------------------------------------------
 
 /// A BGPsec router key for a specific ASN.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct BgpSecAsnKey {
     /// The autonomous system that uses the router key.

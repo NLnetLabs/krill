@@ -41,6 +41,8 @@ use super::ca::Revocation;
 /// accordance with best practices (avoid fate sharing in case a prefix is
 /// suddenly no longer held), but aggregation will be done if a
 /// (configurable) threshold is exceeded.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Copy, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct RoaPayload {
     /// The autonomous system authorized to originate routes.
@@ -229,6 +231,8 @@ impl fmt::Debug for RoaPayload {
 //------------ RoaPayloadJsonMapKey ------------------------------------------
 
 /// A [`RoaPayload`] that serializes as a string.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialOrd, PartialEq)]
 pub struct RoaPayloadJsonMapKey(RoaPayload);
 
@@ -302,6 +306,8 @@ impl<'de> Deserialize<'de> for RoaPayloadJsonMapKey {
 /// Existing ROAs may contain other information that the Krill system is
 /// responsible for, rather than the API (update) user. For example: which ROA
 /// object(s) the intended configuration appears on.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct RoaConfiguration {
     /// The ROA payload definition.
@@ -390,6 +396,8 @@ impl fmt::Display for RoaConfiguration {
 //------------ RoaInfo -------------------------------------------------------
 
 /// Information about a ROA *object.*
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RoaInfo {
     /// The route or routes authorized by this ROA
@@ -507,6 +515,8 @@ impl fmt::Display for ConfiguredRoas {
 /// Multiple updates are sent as a single delta, because it's important that
 /// all authorizations for a given prefix are published together in order to
 /// avoid invalidating announcements.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RoaConfigurationUpdates {
     /// The ROA configurations to be added.
@@ -630,6 +640,8 @@ impl fmt::Display for RoaConfigurationUpdates {
 /// A prefix that knows which family it belongs to.
 ///
 /// This type serializes into the string representation of the prefix.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub enum TypedPrefix {
     /// An IPv4 prefix.
@@ -808,6 +820,8 @@ impl Serialize for TypedPrefix {
 //------------ Ipv4Prefix ----------------------------------------------------
 
 /// An IPv4 prefix.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub struct Ipv4Prefix(Prefix);
 
@@ -844,6 +858,8 @@ impl From<Ipv4Prefix> for Prefix {
 //------------ Ipv6Prefix ----------------------------------------------------
 
 /// An IPv6 prefix.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub struct Ipv6Prefix(Prefix);
 

@@ -28,6 +28,8 @@ use super::keys::CertifiedKey;
 //------------ Routes --------------------------------------------------------
 
 /// The current configured route authorizations of a CA.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Routes {
     /// The route authorization keyed by ROA payload.
@@ -234,6 +236,8 @@ impl Routes {
 //------------ RouteInfo -----------------------------------------------------
 
 /// Meta-information about a configured route authorization.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RouteInfo {
     /// The time the authorization was first added by the user.
@@ -273,6 +277,8 @@ impl Default for RouteInfo {
 ///
 /// We currently don’t use grouping. It is here in case we want to give
 /// users more options in the future.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct RoaAggregateKey {
     /// The origin ASN.
@@ -419,6 +425,8 @@ impl Serialize for RoaAggregateKey {
 //------------ Roas --------------------------------------------------------
 
 /// ROA configurations held by a resource class in a CA.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Roas {
     /// The simple ROAs held by the resource class.
@@ -891,6 +899,8 @@ enum RoaMode {
 //------------ RoaUpdates --------------------------------------------------
 
 /// Describes an update to the set of ROAs under a ResourceClass.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RoaUpdates {
     #[serde(

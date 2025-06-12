@@ -30,6 +30,8 @@ use super::keys::CertifiedKey;
 ///
 /// Actual BGPsec certificates will be issued under the relevant
 /// resource classes.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BgpSecDefinitions(HashMap<BgpSecAsnKey, StoredBgpSecCsr>);
 
@@ -177,6 +179,8 @@ impl BgpSecDefinitions {
 /// The original CSR is stored as a base64 structure in order to avoid
 /// issues if (when?) our CSR parsing should become more strict in a
 /// future release.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct StoredBgpSecCsr {
     /// The time we first processed this CSR.
@@ -206,6 +210,8 @@ impl StoredBgpSecCsr {
 //------------ BgpSecCertificates --------------------------------------------
 
 /// The BGPsec certificates issued under a resource class in a CA.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BgpSecCertificates(HashMap<BgpSecAsnKey, BgpSecCertInfo>);
 
@@ -363,6 +369,8 @@ impl BgpSecCertificates {
 //------------ BgpSecCertInfo ------------------------------------------------
 
 /// An issued BGPsec certificate under a resource class
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BgpSecCertInfo {
     /// The ASN of the autonomous system that uses this router key.
@@ -413,6 +421,8 @@ impl BgpSecCertInfo {
 //------------ BgpSecCertificateUpdates --------------------------------------
 
 /// Updates to the published BGPsec router key certificates.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BgpSecCertificateUpdates {
     /// The certificates to be added or updated.

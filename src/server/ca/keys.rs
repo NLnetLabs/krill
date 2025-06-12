@@ -25,6 +25,8 @@ use super::events::CertAuthEvent;
 ///
 /// This means that the key has received an incoming certificate and has at
 /// least a manifest and CRL.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CertifiedKey {
     /// The key identifier.
@@ -234,6 +236,8 @@ pub type CurrentKey = CertifiedKey;
 /// This key should usually have an open [`IssuanceRequest`], and will be
 /// moved to a 'new' or 'current' [`CertifiedKey`] when a certificate is
 /// received.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PendingKey {
     /// The key identifier of the key.
@@ -299,6 +303,8 @@ impl OldKey {
 ///
 /// The type guards that keys are created, activated, rolled and retired
 /// properly.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, Serialize, PartialEq)]
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case")]

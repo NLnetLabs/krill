@@ -12,7 +12,6 @@ use rpki::{
     ca::{
         idexchange::{ChildHandle, RecipientHandle, SenderHandle},
         provisioning,
-        provisioning::ResourceClassName,
         publication::Base64,
         sigmsg::SignedMessage,
     },
@@ -33,6 +32,7 @@ use crate::api::admin::PublishedFile;
 use crate::api::ca::{
     IdCertInfo, IssuedCertificate, ObjectName, ReceivedCert, Revocations,
 };
+use crate::server::ca::UsedKeyState;
 use crate::server::ca::publishing::{
     ManifestBuilder, ObjectSetRevision, PublishedCrl,
     PublishedManifest, PublishedObject, 
@@ -50,6 +50,8 @@ use crate::server::ca::publishing::{
 /// The Trust Anchor Signer can make changes to this set based on the
 /// requests it gets from the proxy. It can then return a response to the
 /// proxy that allow it to update the state with that same change.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TrustAnchorObjects {
     // The revision of the set, meaning its number and the
@@ -273,6 +275,7 @@ impl fmt::Display for TrustAnchorObjects {
 
 //------------ TaCertDetails -------------------------------------------------
 
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TaCertDetails {
     pub cert: ReceivedCert,
@@ -342,6 +345,7 @@ impl std::fmt::Display for TrustAnchorLocator {
 
 //------------ TrustAnchorSignerInfo ---------------------------------------
 
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TrustAnchorSignerInfo {
     // The ID of the associated signer.
@@ -396,6 +400,7 @@ impl fmt::Display for TrustAnchorSignerInfo {
 
 //------------ Nonce -------------------------------------------------------
 
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Nonce(Arc<str>);
 
@@ -419,6 +424,7 @@ impl std::fmt::Display for Nonce {
 
 //------------ TrustAnchorProxySignerExchange ------------------------------
 
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TrustAnchorProxySignerExchange {
     pub time: Time,
@@ -428,6 +434,7 @@ pub struct TrustAnchorProxySignerExchange {
 
 //------------ TrustAnchorSignedMessage ------------------------------------
 
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TrustAnchorSignedMessage {
     message: Base64,
@@ -544,6 +551,8 @@ impl fmt::Display for ApiTrustAnchorSignedRequest {
 
 /// A [`TrustAnchorSignerRequest`] and its signed message as base64 for
 /// (re-)validation.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TrustAnchorSignedRequest {
     pub signed: TrustAnchorSignedMessage,
@@ -603,6 +612,8 @@ impl fmt::Display for TrustAnchorSignedRequest {
 /// a key. If there are no requests for a child, then it is
 /// assumed that the current issued certificate(s) to the child
 /// should not change.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TrustAnchorSignerRequest {
     pub nonce: Nonce, // should be matched in response (replay protection)
@@ -663,6 +674,8 @@ impl fmt::Display for TrustAnchorSignerRequest {
 //------------ TrustAnchorChildRequests ------------------------------------
 
 /// Requests for Trust Anchor Child.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TrustAnchorChildRequests {
     pub child: ChildHandle,
@@ -674,6 +687,8 @@ pub struct TrustAnchorChildRequests {
 
 /// A [`TrustAnchorSignerResponse`] and its signed message as base64 for
 /// (re-)validation.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TrustAnchorSignedResponse {
     signed: TrustAnchorSignedMessage,
@@ -721,6 +736,7 @@ impl fmt::Display for TrustAnchorSignedResponse {
 
 //------------ TrustAnchorSignerResponse -----------------------------------
 
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TrustAnchorSignerResponse {
     pub nonce: Nonce, // should match the request (replay protection)
@@ -785,6 +801,7 @@ impl fmt::Display for TrustAnchorSignerResponse {
 
 //------------ TrustAnchorChild --------------------------------------------
 
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TrustAnchorChild {
     pub handle: ChildHandle,
@@ -813,22 +830,9 @@ impl TrustAnchorChild {
 }
 
 
-//------------ UsedKeyState ------------------------------------------------
-
-/// Tracks the state of a key used by a child CA. This is needed because
-/// RFC 6492 dictates that keys cannot be re-used across resource classes.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[allow(clippy::large_enum_variant)]
-#[serde(rename_all = "snake_case")]
-pub enum UsedKeyState {
-    #[serde(alias = "current")]
-    InUse(ResourceClassName), /* Multiple keys are possible during a key
-                               * rollover. */
-    Revoked,
-}
-
 //------------ ProvisioningRequest -----------------------------------------
 
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum ProvisioningRequest {
@@ -877,6 +881,7 @@ impl std::fmt::Display for ProvisioningRequest {
 
 //------------ ProvisioningResponse ----------------------------------------
 
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum ProvisioningResponse {

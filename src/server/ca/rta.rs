@@ -15,6 +15,8 @@ use crate::commons::error::Error;
 //------------ Rtas ---------------------------------------------------------
 
 /// The set of RTAs held by a CA.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Rtas {
     /// The RTAs keyed by their name.
@@ -85,6 +87,8 @@ impl Rtas {
 //------------ RtaState -----------------------------------------------------
 
 /// The state of an RTA.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 enum RtaState {
     /// The RTA is currently being prepared.
@@ -98,6 +102,8 @@ enum RtaState {
 //------------ PreparedRta --------------------------------------------------
 
 /// An RTA currently being prepared.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PreparedRta {
     /// The resources contained in the RTA.
@@ -151,6 +157,8 @@ impl PreparedRta {
 //------------ SignedRta -----------------------------------------------------
 
 /// An RTA having been signed.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct SignedRta {
     /// The resources of the RTA.

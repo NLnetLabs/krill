@@ -26,13 +26,12 @@ use crate::{
 use crate::api::history::CommandSummary;
 
 
-//------------ SignerInfoInitCommand
-//------------ ------------------------------------------------------------------------------
+//------------ SignerInfoInitCommand -----------------------------------------
 
 type SignerInfoInitCommand = SentInitCommand<SignerInfoInitCommandDetails>;
 
-//------------ SignerInfoInitCommandDetails
-//------------ --------------------------------------------------------------------
+
+//------------ SignerInfoInitCommandDetails ----------------------------------
 
 #[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
 pub struct SignerInfoInitCommandDetails {
@@ -75,9 +74,10 @@ impl InitCommandDetails for SignerInfoInitCommandDetails {
     }
 }
 
-//------------ InitSignerInfoEvent
-//------------ -----------------------------------------------------------------------------
 
+//------------ SignerInfoInitEvent -------------------------------------------
+
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
 pub struct SignerInfoInitEvent {
     pub signer_name: String,
@@ -97,9 +97,10 @@ impl fmt::Display for SignerInfoInitEvent {
     }
 }
 
-//------------ SignerInfoEvent
-//------------ ---------------------------------------------------------------------------------
 
+//------------ SignerInfoEvent -----------------------------------------------
+
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
 pub enum SignerInfoEvent {
     KeyAdded(KeyIdentifier, String),
@@ -149,11 +150,15 @@ impl fmt::Display for SignerInfoEvent {
     }
 }
 
-//------------ SignerInfoCommand
-//------------ ----------------------------------------------------------------------------------
+
+//------------ SignerInfoCommand ---------------------------------------------
 
 type SignerInfoCommand = SentCommand<SignerInfoCommandDetails>;
 
+
+//------------ SignerInfoCommandDetails --------------------------------------
+
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
 pub enum SignerInfoCommandDetails {
     Init,
@@ -273,9 +278,10 @@ impl SignerInfoCommand {
     }
 }
 
-//------------ SignerInfo
-//------------ -----------------------------------------------------------------------------------------
 
+//------------ SignerIdentity ------------------------------------------------
+
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
 pub struct SignerIdentity {
     /// An X.509 Subject Public Key Info public key that can be used to
@@ -287,8 +293,13 @@ pub struct SignerIdentity {
     private_key_internal_id: String,
 }
 
+
+//------------ SignerInfo ----------------------------------------------------
+
 /// SignerInfo defines the set of keys created in a particular signer backend
 /// and the identity of that backend.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Deserialize, Serialize)]
 pub struct SignerInfo {
     /// The id is needed when generating events.
@@ -416,6 +427,9 @@ impl Aggregate for SignerInfo {
         })
     }
 }
+
+
+//------------ SignerMapper --------------------------------------------------
 
 pub struct SignerMapper {
     store: AggregateStore<SignerInfo>,
@@ -649,3 +663,4 @@ impl SignerMapper {
         )))
     }
 }
+

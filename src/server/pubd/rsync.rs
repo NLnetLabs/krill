@@ -11,6 +11,7 @@ use crate::commons::error::{Error, KrillIoError};
 use crate::constants::REPOSITORY_RSYNC_DIR;
 use super::rrdp::SnapshotData;
 
+
 //------------ RsyncdStore ---------------------------------------------------
 
 /// Manages content to be published with rsyncd.
@@ -27,6 +28,8 @@ use super::rrdp::SnapshotData;
 /// things to disk. We can then have the RRDP component server RRDP over
 /// HTTPs and let krill-sync do the writing with all the caveats that that
 /// involves.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RsyncdStore {
     /// The base URI for our store.

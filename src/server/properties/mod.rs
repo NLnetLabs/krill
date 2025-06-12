@@ -38,11 +38,14 @@ use crate::{
 use crate::api::history::CommandSummary;
 
 
-//------------ PropertiesInitCommand ---------------------------------------
+//------------ PropertiesInitCommand -----------------------------------------
+
 pub type PropertiesInitCommand =
     SentInitCommand<PropertiesInitCommandDetails>;
 
-//------------ PropertiesInitCommandDetails --------------------------------
+
+//------------ PropertiesInitCommandDetails ----------------------------------
+
 #[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PropertiesInitCommandDetails {
     pub krill_version: KrillVersion,
@@ -62,10 +65,14 @@ impl InitCommandDetails for PropertiesInitCommandDetails {
     }
 }
 
-//------------ PropertiesCommand -------------------------------------------
+
+//------------ PropertiesCommand ---------------------------------------------
+
 pub type PropertiesCommand = SentCommand<PropertiesCommandDetails>;
 
-//------------ PropertiesCommandDetails ------------------------------------
+
+//------------ PropertiesCommandDetails --------------------------------------
+
 #[derive(Clone, Debug)]
 pub enum PropertiesCommandDetails {
     UpgradeTo { krill_version: KrillVersion },
@@ -77,7 +84,10 @@ impl fmt::Display for PropertiesCommandDetails {
     }
 }
 
-//------------ StorablePropertiesCommand -----------------------------------
+
+//------------ StorablePropertiesCommand -------------------------------------
+
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
@@ -141,7 +151,10 @@ impl eventsourcing::WithStorableDetails for StorablePropertiesCommand {
     }
 }
 
-//------------ PropertiesEvent ---------------------------------------------
+
+//------------ PropertiesEvent -----------------------------------------------
+
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
@@ -164,7 +177,10 @@ impl fmt::Display for PropertiesEvent {
     }
 }
 
-//------------ PropertiesInitEvent -----------------------------------------
+
+//------------ PropertiesInitEvent -------------------------------------------
+
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PropertiesInitEvent {
     krill_version: KrillVersion,
@@ -178,9 +194,12 @@ impl fmt::Display for PropertiesInitEvent {
     }
 }
 
-//------------ Properties --------------------------------------------------
+
+//------------ Properties ----------------------------------------------------
 
 /// Runtime properties used by the server
+///
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Properties {
     handle: MyHandle,
@@ -263,7 +282,7 @@ impl Aggregate for Properties {
     }
 }
 
-//------------ PropertiesManager -------------------------------------------
+//------------ PropertiesManager ---------------------------------------------
 
 /// Convenience manager for the single Properties instance used by Krill
 pub struct PropertiesManager {
@@ -331,7 +350,9 @@ impl PropertiesManager {
     }
 }
 
-//--------- Tests
+
+//============ Tests =========================================================
+
 #[cfg(test)]
 mod tests {
     use crate::commons::test;
@@ -376,3 +397,4 @@ mod tests {
         })
     }
 }
+

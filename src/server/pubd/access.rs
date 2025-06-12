@@ -255,6 +255,8 @@ impl RepositoryAccessProxy {
 ///
 /// The server is capable of handling publishers (both embedded, and remote),
 /// and publishing to RRDP and disk, and/ signing responses.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RepositoryAccess {
     /// The instance handle of the server.
@@ -575,6 +577,8 @@ impl From<RepositoryAccessCommandDetails> for StorableRepositoryCommand {
 //------------ StorableRepositoryCommand -----------------------------------
 
 /// The storeable part of the repository access command.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case", tag = "type")]
@@ -639,6 +643,8 @@ impl fmt::Display for StorableRepositoryCommand {
 //------------ RepositoryAccessInitEvent -------------------------------------
 
 /// The event initializing the repository access aggregate.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RepositoryAccessInitEvent {
     /// The identity certificate of the repository.
@@ -684,6 +690,8 @@ impl fmt::Display for RepositoryAccessInitEvent {
 //------------ RepositoryAccessEvent -----------------------------------------
 
 /// The events of the repository access aggregate.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case", tag = "type")]

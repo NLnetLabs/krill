@@ -36,9 +36,10 @@ use crate::api::ta::{
     Nonce, ProvisioningRequest, ProvisioningResponse, TaCertDetails, 
     TrustAnchorChild, TrustAnchorChildRequests, TrustAnchorObjects, 
     ApiTrustAnchorSignedRequest, TrustAnchorSignedResponse,
-    TrustAnchorSignerInfo, TrustAnchorSignerRequest, UsedKeyState,
+    TrustAnchorSignerInfo, TrustAnchorSignerRequest,
 };
 use crate::constants::ta_resource_class_name;
+use crate::server::ca::UsedKeyState;
 use crate::tasigner::TaTimingConfig;
 
 
@@ -64,6 +65,8 @@ use crate::tasigner::TaTimingConfig;
 /// is inline with how the current RIR Trust Anchors are being managed at the
 /// moment. That said, we may add support for claiming (and changing) a
 /// specific set of resources in future.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct TrustAnchorProxy {
     // event-sourcing support
@@ -100,466 +103,6 @@ pub struct TrustAnchorProxy {
     // is an open request. We first need to process the response, before we
     // can accept new requests from any child.
     open_signer_request: Option<Nonce>,
-}
-
-//------------ TrustAnchorProxy: Commands and Events -----------------------
-
-pub type TrustAnchorProxyInitCommand =
-    eventsourcing::SentInitCommand<TrustAnchorProxyInitCommandDetails>;
-
-impl TrustAnchorProxyInitCommand {
-    pub fn make(
-        id: MyHandle,
-        signer: Arc<KrillSigner>,
-        actor: &Actor,
-    ) -> Self {
-        TrustAnchorProxyInitCommand::new(
-            id,
-            TrustAnchorProxyInitCommandDetails { signer },
-            actor,
-        )
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct TrustAnchorProxyInitCommandDetails {
-    signer: Arc<KrillSigner>,
-}
-
-impl fmt::Display for TrustAnchorProxyInitCommandDetails {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.store().fmt(f)
-    }
-}
-
-impl InitCommandDetails for TrustAnchorProxyInitCommandDetails {
-    type StorableDetails = TrustAnchorProxyCommandDetails;
-
-    fn store(&self) -> Self::StorableDetails {
-        TrustAnchorProxyCommandDetails::make_init()
-    }
-}
-
-pub type TrustAnchorProxyCommand =
-    eventsourcing::SentCommand<TrustAnchorProxyCommandDetails>;
-
-// Initialisation
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct TrustAnchorProxyInitEvent {
-    pub id: IdCertInfo,
-}
-
-impl InitEvent for TrustAnchorProxyInitEvent {}
-
-impl fmt::Display for TrustAnchorProxyInitEvent {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // note that this is a summary, full details are stored in the init
-        // event.
-        write!(f, "Trust Anchor Proxy was initialised.")
-    }
-}
-
-// Events
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[allow(clippy::large_enum_variant)]
-pub enum TrustAnchorProxyEvent {
-    // Publication Support
-    RepositoryAdded(RepositoryContact),
-
-    // Proxy -> Signer interactions
-    SignerAdded(TrustAnchorSignerInfo),
-    SignerUpdated(TrustAnchorSignerInfo),
-    SignerRequestMade(Nonce),
-    SignerResponseReceived(TrustAnchorSignedResponse),
-
-    // Children
-    ChildAdded(TrustAnchorChild),
-    ChildRequestAdded(ChildHandle, ProvisioningRequest),
-    ChildResponseGiven(ChildHandle, KeyIdentifier),
-}
-
-impl Event for TrustAnchorProxyEvent {}
-
-impl fmt::Display for TrustAnchorProxyEvent {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // note that this is a summary, full details are stored in the json.
-        match self {
-            // Publication Support
-            TrustAnchorProxyEvent::RepositoryAdded(repository) => {
-                write!(
-                    f,
-                    "Added repository with service uri: {}",
-                    repository.server_info.service_uri
-                )
-            }
-
-            // Proxy -> Signer interactions
-            TrustAnchorProxyEvent::SignerAdded(signer) => {
-                write!(
-                    f,
-                    "Added signer with ID certificate hash: {}",
-                    signer.id.hash
-                )
-            }
-            TrustAnchorProxyEvent::SignerUpdated(signer) => {
-                write!(
-                    f,
-                    "Updated signer with ID certificate hash: {}",
-                    signer.id.hash
-                )
-            }
-            TrustAnchorProxyEvent::SignerRequestMade(nonce) => {
-                write!(f, "Created signer request with nonce '{}'", nonce)
-            }
-            TrustAnchorProxyEvent::SignerResponseReceived(response) => {
-                write!(
-                    f,
-                    "Received signer response with nonce '{}'",
-                    response.content().nonce
-                )
-            }
-
-            // Children
-            TrustAnchorProxyEvent::ChildAdded(child) => {
-                write!(
-                    f,
-                    "Added child: {}, with resources: {}",
-                    child.handle, child.resources
-                )
-            }
-            TrustAnchorProxyEvent::ChildRequestAdded(
-                child_handle,
-                request,
-            ) => {
-                write!(
-                    f,
-                    "Added request for child {}: {}",
-                    child_handle, request
-                )
-            }
-            TrustAnchorProxyEvent::ChildResponseGiven(child_handle, key) => {
-                write!(
-                    f,
-                    "Given response to child {} for key: {}",
-                    child_handle, key
-                )
-            }
-        }
-    }
-}
-
-// Commands
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[allow(clippy::large_enum_variant)]
-pub enum TrustAnchorProxyCommandDetails {
-    // Create new instance - cannot be sent to an existing instance
-    Init,
-
-    // Publication Support
-    AddRepository(RepositoryContact),
-
-    // Proxy -> Signer interactions
-    AddSigner(TrustAnchorSignerInfo),
-    UpdateSigner(TrustAnchorSignerInfo),
-    MakeSignerRequest,
-    ProcessSignerResponse(TrustAnchorSignedResponse),
-
-    // Children
-    AddChild(AddChildRequest),
-    AddChildRequest(ChildHandle, ProvisioningRequest),
-    GiveChildResponse(ChildHandle, KeyIdentifier),
-}
-
-impl fmt::Display for TrustAnchorProxyCommandDetails {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // note that this is a summary, full details are stored in the json.
-        match self {
-            TrustAnchorProxyCommandDetails::Init => {
-                write!(f, "Initialise TA proxy")
-            }
-            // Publication Support
-            TrustAnchorProxyCommandDetails::AddRepository(repository) => {
-                write!(
-                    f,
-                    "Add repository at: {}",
-                    repository.server_info.service_uri
-                )
-            }
-
-            // Proxy -> Signer interactions
-            TrustAnchorProxyCommandDetails::AddSigner(signer) => {
-                write!(
-                    f,
-                    "Add signer with id certificate hash: {}",
-                    signer.id.hash
-                )
-            }
-            TrustAnchorProxyCommandDetails::UpdateSigner(signer) => {
-                write!(
-                    f,
-                    "Update signer with id certificate hash: {}",
-                    signer.id.hash
-                )
-            }
-            TrustAnchorProxyCommandDetails::MakeSignerRequest => {
-                write!(f, "Create new publish request for signer")
-            }
-            TrustAnchorProxyCommandDetails::ProcessSignerResponse(
-                response,
-            ) => {
-                write!(
-                    f,
-                    "Process signer response. Nonce: {}. Next Update (before): {}",
-                    response.content().nonce,
-                    response.content().objects.revision().next_update().to_rfc3339()
-                )
-            }
-
-            // Children
-            TrustAnchorProxyCommandDetails::AddChild(child) => {
-                write!(f, "Add child: {}", child)
-            }
-            TrustAnchorProxyCommandDetails::AddChildRequest(
-                child_handle,
-                request,
-            ) => {
-                write!(
-                    f,
-                    "Add request for child {}: {}",
-                    child_handle, request
-                )
-            }
-            TrustAnchorProxyCommandDetails::GiveChildResponse(
-                child_handle,
-                key,
-            ) => {
-                write!(
-                    f,
-                    "Give (and remove) response to child {} for key {}",
-                    child_handle, key
-                )
-            }
-        }
-    }
-}
-
-impl eventsourcing::WithStorableDetails for TrustAnchorProxyCommandDetails {
-    fn summary(&self) -> crate::api::history::CommandSummary {
-        match self {
-            // Initialisation
-            TrustAnchorProxyCommandDetails::Init => {
-                crate::api::history::CommandSummary::new(
-                    "cmd-ta-proxy-init",
-                    self,
-                )
-            }
-            // Publication Support
-            TrustAnchorProxyCommandDetails::AddRepository(repository) => {
-                crate::api::history::CommandSummary::new(
-                    "cmd-ta-proxy-repo-add",
-                    self,
-                )
-                .service_uri(&repository.server_info.service_uri)
-            }
-
-            // Proxy -> Signer interactions
-            TrustAnchorProxyCommandDetails::AddSigner(signer) => {
-                crate::api::history::CommandSummary::new(
-                    "cmd-ta-proxy-signer-add",
-                    self,
-                )
-                .id_cert_hash(&signer.id.hash)
-            }
-            TrustAnchorProxyCommandDetails::UpdateSigner(signer) => {
-                crate::api::history::CommandSummary::new(
-                    "cmd-ta-proxy-signer-update",
-                    self,
-                )
-                .id_cert_hash(&signer.id.hash)
-            }
-            TrustAnchorProxyCommandDetails::MakeSignerRequest => {
-                crate::api::history::CommandSummary::new(
-                    "cmd-ta-proxy-pub-req",
-                    self,
-                )
-            }
-            TrustAnchorProxyCommandDetails::ProcessSignerResponse(
-                response,
-            ) => crate::api::history::CommandSummary::new(
-                "cmd-ta-proxy-pub-res",
-                self,
-            )
-            .arg("nonce", &response.content().nonce)
-            .arg(
-                "manifest number",
-                response.content().objects.revision().number(),
-            )
-            .arg(
-                "this update",
-                response
-                    .content()
-                    .objects
-                    .revision()
-                    .this_update()
-                    .to_rfc3339(),
-            )
-            .arg(
-                "next update",
-                response
-                    .content()
-                    .objects
-                    .revision()
-                    .next_update()
-                    .to_rfc3339(),
-            ),
-
-            // Children
-            TrustAnchorProxyCommandDetails::AddChild(child) => {
-                crate::api::history::CommandSummary::new(
-                    "cmd-ta-proxy-child-add", self,
-                ).child(&child.handle)
-            }
-            TrustAnchorProxyCommandDetails::AddChildRequest(
-                child_handle,
-                _request,
-            ) => {
-                crate::api::history::CommandSummary::new(
-                    "cmd-ta-proxy-child-req",
-                    self,
-                ).child(child_handle)
-            }
-            TrustAnchorProxyCommandDetails::GiveChildResponse(
-                child_handle,
-                _response,
-            ) => {
-                crate::api::history::CommandSummary::new(
-                    "cmd-ta-proxy-child-res",
-                    self,
-                ).child(child_handle)
-            }
-        }
-    }
-
-    fn make_init() -> Self {
-        Self::Init
-    }
-}
-
-impl TrustAnchorProxyCommand {
-    pub fn add_repo(
-        id: &CaHandle,
-        repository: RepositoryContact,
-        actor: &Actor,
-    ) -> Self {
-        TrustAnchorProxyCommand::new(
-            id.clone(),
-            None,
-            TrustAnchorProxyCommandDetails::AddRepository(repository),
-            actor,
-        )
-    }
-
-    pub fn add_signer(
-        id: &CaHandle,
-        signer: TrustAnchorSignerInfo,
-        actor: &Actor,
-    ) -> Self {
-        TrustAnchorProxyCommand::new(
-            id.clone(),
-            None,
-            TrustAnchorProxyCommandDetails::AddSigner(signer),
-            actor,
-        )
-    }
-
-    pub fn update_signer(
-        id: &CaHandle,
-        signer: TrustAnchorSignerInfo,
-        actor: &Actor,
-    ) -> Self {
-        TrustAnchorProxyCommand::new(
-            id.clone(),
-            None,
-            TrustAnchorProxyCommandDetails::UpdateSigner(signer),
-            actor,
-        )
-    }
-
-    pub fn make_signer_request(
-        id: &CaHandle,
-        actor: &Actor,
-    ) -> Self {
-        TrustAnchorProxyCommand::new(
-            id.clone(),
-            None,
-            TrustAnchorProxyCommandDetails::MakeSignerRequest,
-            actor,
-        )
-    }
-
-    pub fn process_signer_response(
-        id: &CaHandle,
-        response: TrustAnchorSignedResponse,
-        actor: &Actor,
-    ) -> Self {
-        TrustAnchorProxyCommand::new(
-            id.clone(),
-            None,
-            TrustAnchorProxyCommandDetails::ProcessSignerResponse(response),
-            actor,
-        )
-    }
-
-    pub fn add_child(
-        id: &CaHandle,
-        child: AddChildRequest,
-        actor: &Actor,
-    ) -> Self {
-        TrustAnchorProxyCommand::new(
-            id.clone(),
-            None,
-            TrustAnchorProxyCommandDetails::AddChild(child),
-            actor,
-        )
-    }
-
-    pub fn add_child_request(
-        id: &CaHandle,
-        child: ChildHandle,
-        request: ProvisioningRequest,
-        actor: &Actor,
-    ) -> Self {
-        TrustAnchorProxyCommand::new(
-            id.clone(),
-            None,
-            TrustAnchorProxyCommandDetails::AddChildRequest(child, request),
-            actor,
-        )
-    }
-
-    pub fn give_child_response(
-        id: &CaHandle,
-        child: ChildHandle,
-        key: KeyIdentifier,
-        actor: &Actor,
-    ) -> Self {
-        TrustAnchorProxyCommand::new(
-            id.clone(),
-            None,
-            TrustAnchorProxyCommandDetails::GiveChildResponse(child, key),
-            actor,
-        )
-    }
-}
-
-impl eventsourcing::CommandDetails for TrustAnchorProxyCommandDetails {
-    type Event = TrustAnchorProxyEvent;
-    type StorableDetails = Self;
-
-    fn store(&self) -> Self::StorableDetails {
-        self.clone()
-    }
 }
 
 impl eventsourcing::Aggregate for TrustAnchorProxy {
@@ -1205,6 +748,480 @@ impl TrustAnchorProxy {
         self.child_details.get(child_handle).ok_or_else(|| {
             Error::CaChildUnknown(self.handle.clone(), child_handle.clone())
         })
+    }
+}
+
+
+//------------ TrustAnchorProxyInitCommand -----------------------------------
+
+pub type TrustAnchorProxyInitCommand =
+    eventsourcing::SentInitCommand<TrustAnchorProxyInitCommandDetails>;
+
+impl TrustAnchorProxyInitCommand {
+    pub fn make(
+        id: MyHandle,
+        signer: Arc<KrillSigner>,
+        actor: &Actor,
+    ) -> Self {
+        TrustAnchorProxyInitCommand::new(
+            id,
+            TrustAnchorProxyInitCommandDetails { signer },
+            actor,
+        )
+    }
+}
+
+
+//------------ TrustAnchorProxyInitCommandDetails ----------------------------
+
+#[derive(Clone, Debug)]
+pub struct TrustAnchorProxyInitCommandDetails {
+    signer: Arc<KrillSigner>,
+}
+
+impl fmt::Display for TrustAnchorProxyInitCommandDetails {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.store().fmt(f)
+    }
+}
+
+impl InitCommandDetails for TrustAnchorProxyInitCommandDetails {
+    type StorableDetails = TrustAnchorProxyCommandDetails;
+
+    fn store(&self) -> Self::StorableDetails {
+        TrustAnchorProxyCommandDetails::make_init()
+    }
+}
+
+
+//------------ TrustAnchorProxyInitEvent -------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct TrustAnchorProxyInitEvent {
+    pub id: IdCertInfo,
+}
+
+impl InitEvent for TrustAnchorProxyInitEvent {}
+
+impl fmt::Display for TrustAnchorProxyInitEvent {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // note that this is a summary, full details are stored in the init
+        // event.
+        write!(f, "Trust Anchor Proxy was initialised.")
+    }
+}
+
+
+//------------ TrustAnchorProxyEvent -----------------------------------------
+
+//  *Warning:* This type is used in stored state.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[allow(clippy::large_enum_variant)]
+pub enum TrustAnchorProxyEvent {
+    // Publication Support
+    RepositoryAdded(RepositoryContact),
+
+    // Proxy -> Signer interactions
+    SignerAdded(TrustAnchorSignerInfo),
+    SignerUpdated(TrustAnchorSignerInfo),
+    SignerRequestMade(Nonce),
+    SignerResponseReceived(TrustAnchorSignedResponse),
+
+    // Children
+    ChildAdded(TrustAnchorChild),
+    ChildRequestAdded(ChildHandle, ProvisioningRequest),
+    ChildResponseGiven(ChildHandle, KeyIdentifier),
+}
+
+impl Event for TrustAnchorProxyEvent {}
+
+impl fmt::Display for TrustAnchorProxyEvent {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // note that this is a summary, full details are stored in the json.
+        match self {
+            // Publication Support
+            TrustAnchorProxyEvent::RepositoryAdded(repository) => {
+                write!(
+                    f,
+                    "Added repository with service uri: {}",
+                    repository.server_info.service_uri
+                )
+            }
+
+            // Proxy -> Signer interactions
+            TrustAnchorProxyEvent::SignerAdded(signer) => {
+                write!(
+                    f,
+                    "Added signer with ID certificate hash: {}",
+                    signer.id.hash
+                )
+            }
+            TrustAnchorProxyEvent::SignerUpdated(signer) => {
+                write!(
+                    f,
+                    "Updated signer with ID certificate hash: {}",
+                    signer.id.hash
+                )
+            }
+            TrustAnchorProxyEvent::SignerRequestMade(nonce) => {
+                write!(f, "Created signer request with nonce '{}'", nonce)
+            }
+            TrustAnchorProxyEvent::SignerResponseReceived(response) => {
+                write!(
+                    f,
+                    "Received signer response with nonce '{}'",
+                    response.content().nonce
+                )
+            }
+
+            // Children
+            TrustAnchorProxyEvent::ChildAdded(child) => {
+                write!(
+                    f,
+                    "Added child: {}, with resources: {}",
+                    child.handle, child.resources
+                )
+            }
+            TrustAnchorProxyEvent::ChildRequestAdded(
+                child_handle,
+                request,
+            ) => {
+                write!(
+                    f,
+                    "Added request for child {}: {}",
+                    child_handle, request
+                )
+            }
+            TrustAnchorProxyEvent::ChildResponseGiven(child_handle, key) => {
+                write!(
+                    f,
+                    "Given response to child {} for key: {}",
+                    child_handle, key
+                )
+            }
+        }
+    }
+}
+
+
+//------------ TrustAnchorProxyCommand ---------------------------------------
+
+pub type TrustAnchorProxyCommand =
+    eventsourcing::SentCommand<TrustAnchorProxyCommandDetails>;
+
+impl TrustAnchorProxyCommand {
+    pub fn add_repo(
+        id: &CaHandle,
+        repository: RepositoryContact,
+        actor: &Actor,
+    ) -> Self {
+        TrustAnchorProxyCommand::new(
+            id.clone(),
+            None,
+            TrustAnchorProxyCommandDetails::AddRepository(repository),
+            actor,
+        )
+    }
+
+    pub fn add_signer(
+        id: &CaHandle,
+        signer: TrustAnchorSignerInfo,
+        actor: &Actor,
+    ) -> Self {
+        TrustAnchorProxyCommand::new(
+            id.clone(),
+            None,
+            TrustAnchorProxyCommandDetails::AddSigner(signer),
+            actor,
+        )
+    }
+
+    pub fn update_signer(
+        id: &CaHandle,
+        signer: TrustAnchorSignerInfo,
+        actor: &Actor,
+    ) -> Self {
+        TrustAnchorProxyCommand::new(
+            id.clone(),
+            None,
+            TrustAnchorProxyCommandDetails::UpdateSigner(signer),
+            actor,
+        )
+    }
+
+    pub fn make_signer_request(
+        id: &CaHandle,
+        actor: &Actor,
+    ) -> Self {
+        TrustAnchorProxyCommand::new(
+            id.clone(),
+            None,
+            TrustAnchorProxyCommandDetails::MakeSignerRequest,
+            actor,
+        )
+    }
+
+    pub fn process_signer_response(
+        id: &CaHandle,
+        response: TrustAnchorSignedResponse,
+        actor: &Actor,
+    ) -> Self {
+        TrustAnchorProxyCommand::new(
+            id.clone(),
+            None,
+            TrustAnchorProxyCommandDetails::ProcessSignerResponse(response),
+            actor,
+        )
+    }
+
+    pub fn add_child(
+        id: &CaHandle,
+        child: AddChildRequest,
+        actor: &Actor,
+    ) -> Self {
+        TrustAnchorProxyCommand::new(
+            id.clone(),
+            None,
+            TrustAnchorProxyCommandDetails::AddChild(child),
+            actor,
+        )
+    }
+
+    pub fn add_child_request(
+        id: &CaHandle,
+        child: ChildHandle,
+        request: ProvisioningRequest,
+        actor: &Actor,
+    ) -> Self {
+        TrustAnchorProxyCommand::new(
+            id.clone(),
+            None,
+            TrustAnchorProxyCommandDetails::AddChildRequest(child, request),
+            actor,
+        )
+    }
+
+    pub fn give_child_response(
+        id: &CaHandle,
+        child: ChildHandle,
+        key: KeyIdentifier,
+        actor: &Actor,
+    ) -> Self {
+        TrustAnchorProxyCommand::new(
+            id.clone(),
+            None,
+            TrustAnchorProxyCommandDetails::GiveChildResponse(child, key),
+            actor,
+        )
+    }
+}
+
+
+//------------ TrustAnchorProxyCommandDetails --------------------------------
+
+//  *Warning:* This type is used in stored state.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[allow(clippy::large_enum_variant)]
+pub enum TrustAnchorProxyCommandDetails {
+    // Create new instance - cannot be sent to an existing instance
+    Init,
+
+    // Publication Support
+    AddRepository(RepositoryContact),
+
+    // Proxy -> Signer interactions
+    AddSigner(TrustAnchorSignerInfo),
+    UpdateSigner(TrustAnchorSignerInfo),
+    MakeSignerRequest,
+    ProcessSignerResponse(TrustAnchorSignedResponse),
+
+    // Children
+    AddChild(AddChildRequest),
+    AddChildRequest(ChildHandle, ProvisioningRequest),
+    GiveChildResponse(ChildHandle, KeyIdentifier),
+}
+
+impl fmt::Display for TrustAnchorProxyCommandDetails {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // note that this is a summary, full details are stored in the json.
+        match self {
+            TrustAnchorProxyCommandDetails::Init => {
+                write!(f, "Initialise TA proxy")
+            }
+            // Publication Support
+            TrustAnchorProxyCommandDetails::AddRepository(repository) => {
+                write!(
+                    f,
+                    "Add repository at: {}",
+                    repository.server_info.service_uri
+                )
+            }
+
+            // Proxy -> Signer interactions
+            TrustAnchorProxyCommandDetails::AddSigner(signer) => {
+                write!(
+                    f,
+                    "Add signer with id certificate hash: {}",
+                    signer.id.hash
+                )
+            }
+            TrustAnchorProxyCommandDetails::UpdateSigner(signer) => {
+                write!(
+                    f,
+                    "Update signer with id certificate hash: {}",
+                    signer.id.hash
+                )
+            }
+            TrustAnchorProxyCommandDetails::MakeSignerRequest => {
+                write!(f, "Create new publish request for signer")
+            }
+            TrustAnchorProxyCommandDetails::ProcessSignerResponse(
+                response,
+            ) => {
+                write!(
+                    f,
+                    "Process signer response. Nonce: {}. Next Update (before): {}",
+                    response.content().nonce,
+                    response.content().objects.revision().next_update().to_rfc3339()
+                )
+            }
+
+            // Children
+            TrustAnchorProxyCommandDetails::AddChild(child) => {
+                write!(f, "Add child: {}", child)
+            }
+            TrustAnchorProxyCommandDetails::AddChildRequest(
+                child_handle,
+                request,
+            ) => {
+                write!(
+                    f,
+                    "Add request for child {}: {}",
+                    child_handle, request
+                )
+            }
+            TrustAnchorProxyCommandDetails::GiveChildResponse(
+                child_handle,
+                key,
+            ) => {
+                write!(
+                    f,
+                    "Give (and remove) response to child {} for key {}",
+                    child_handle, key
+                )
+            }
+        }
+    }
+}
+
+impl eventsourcing::WithStorableDetails for TrustAnchorProxyCommandDetails {
+    fn summary(&self) -> crate::api::history::CommandSummary {
+        match self {
+            // Initialisation
+            TrustAnchorProxyCommandDetails::Init => {
+                crate::api::history::CommandSummary::new(
+                    "cmd-ta-proxy-init",
+                    self,
+                )
+            }
+            // Publication Support
+            TrustAnchorProxyCommandDetails::AddRepository(repository) => {
+                crate::api::history::CommandSummary::new(
+                    "cmd-ta-proxy-repo-add",
+                    self,
+                )
+                .service_uri(&repository.server_info.service_uri)
+            }
+
+            // Proxy -> Signer interactions
+            TrustAnchorProxyCommandDetails::AddSigner(signer) => {
+                crate::api::history::CommandSummary::new(
+                    "cmd-ta-proxy-signer-add",
+                    self,
+                )
+                .id_cert_hash(&signer.id.hash)
+            }
+            TrustAnchorProxyCommandDetails::UpdateSigner(signer) => {
+                crate::api::history::CommandSummary::new(
+                    "cmd-ta-proxy-signer-update",
+                    self,
+                )
+                .id_cert_hash(&signer.id.hash)
+            }
+            TrustAnchorProxyCommandDetails::MakeSignerRequest => {
+                crate::api::history::CommandSummary::new(
+                    "cmd-ta-proxy-pub-req",
+                    self,
+                )
+            }
+            TrustAnchorProxyCommandDetails::ProcessSignerResponse(
+                response,
+            ) => crate::api::history::CommandSummary::new(
+                "cmd-ta-proxy-pub-res",
+                self,
+            )
+            .arg("nonce", &response.content().nonce)
+            .arg(
+                "manifest number",
+                response.content().objects.revision().number(),
+            )
+            .arg(
+                "this update",
+                response
+                    .content()
+                    .objects
+                    .revision()
+                    .this_update()
+                    .to_rfc3339(),
+            )
+            .arg(
+                "next update",
+                response
+                    .content()
+                    .objects
+                    .revision()
+                    .next_update()
+                    .to_rfc3339(),
+            ),
+
+            // Children
+            TrustAnchorProxyCommandDetails::AddChild(child) => {
+                crate::api::history::CommandSummary::new(
+                    "cmd-ta-proxy-child-add", self,
+                ).child(&child.handle)
+            }
+            TrustAnchorProxyCommandDetails::AddChildRequest(
+                child_handle,
+                _request,
+            ) => {
+                crate::api::history::CommandSummary::new(
+                    "cmd-ta-proxy-child-req",
+                    self,
+                ).child(child_handle)
+            }
+            TrustAnchorProxyCommandDetails::GiveChildResponse(
+                child_handle,
+                _response,
+            ) => {
+                crate::api::history::CommandSummary::new(
+                    "cmd-ta-proxy-child-res",
+                    self,
+                ).child(child_handle)
+            }
+        }
+    }
+
+    fn make_init() -> Self {
+        Self::Init
+    }
+}
+
+impl eventsourcing::CommandDetails for TrustAnchorProxyCommandDetails {
+    type Event = TrustAnchorProxyEvent;
+    type StorableDetails = Self;
+
+    fn store(&self) -> Self::StorableDetails {
+        self.clone()
     }
 }
 

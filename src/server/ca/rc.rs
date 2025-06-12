@@ -46,6 +46,8 @@ use super::roa::{Roas, RoaUpdates, Routes};
 /// Furthermore a resource class manages the key life cycle, and certificates
 /// for each key, as well as objects that need to be issued by the 'current'
 /// key for this class.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ResourceClass {
     /// The name of the resource class.
@@ -1041,5 +1043,6 @@ impl ResourceClass {
 
 //------------ DropReason ----------------------------------------------------
 
+//  *Warning:* This type is used in stored state.
 pub type DropReason = String;
 

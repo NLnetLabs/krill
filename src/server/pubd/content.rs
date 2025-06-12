@@ -19,7 +19,7 @@ use crate::commons::eventsourcing::{
 use crate::constants::PUBSERVER_CONTENT_NS;
 use crate::config::{Config, RrdpUpdatesConfig};
 use super::rrdp::{
-    CurrentObjects, DeltaElements, RrdpServer,RrdpSession, RrdpSessionReset,
+    CurrentObjects, DeltaElements, RrdpServer, RrdpSession, RrdpSessionReset,
     RrdpUpdated, RrdpUpdateNeeded,
 };
 use super::rsync::RsyncdStore;
@@ -268,6 +268,8 @@ impl RepositoryContentProxy {
 /// Access to the repository is managed by an event sourced component which
 /// handles the publication protocol, and which can enforce restrictions,
 /// such as the base uri for publishers.
+//
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RepositoryContent {
     /// The revision of aggregate in the WAL store.
@@ -712,6 +714,7 @@ impl fmt::Display for RepositoryContentCommand {
 
 //------------ RepositoryContentChange -------------------------------------
 
+//  *Warning:* This type is used in stored state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case", tag = "type")]
 pub enum RepositoryContentChange {

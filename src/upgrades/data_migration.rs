@@ -262,3 +262,4 @@ pub mod tests {
         migrate(config, target_store).unwrap();
     }
 }
+
