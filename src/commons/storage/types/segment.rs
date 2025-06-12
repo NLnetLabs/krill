@@ -174,7 +174,7 @@ impl Segment {
     /// white space and must not contain `Self::SEPARATOR`.
     pub const unsafe fn from_str_unchecked(s: &str) -> &Self {
         // SAFETY: Self has #repr(transparent)
-        mem::transmute(s)
+        unsafe { mem::transmute(s) }
     }
 
     /// Returns a string slice of the segment.

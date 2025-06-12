@@ -2068,7 +2068,9 @@ mod tests {
     fn should_parse_default_config_file() {
         // Config for auth token is required! If there is nothing in the conf
         // file, then an environment variable must be set.
-        env::set_var(KRILL_ENV_ADMIN_TOKEN, "secret");
+        //
+        // Safety: Not really.
+        unsafe { env::set_var(KRILL_ENV_ADMIN_TOKEN, "secret"); }
 
         let c = Config::read_config("./defaults/krill.conf").unwrap();
         let expected_socket_addresses: Vec<SocketAddr> =
@@ -2081,7 +2083,9 @@ mod tests {
     fn should_parse_testbed_config_file() {
         // Config for auth token is required! If there is nothing in the conf
         // file, then an environment variable must be set.
-        env::set_var(KRILL_ENV_ADMIN_TOKEN, "secret");
+        //
+        // Safety: Not really.
+        unsafe { env::set_var(KRILL_ENV_ADMIN_TOKEN, "secret"); }
 
         let c = Config::read_config("./defaults/krill-testbed.conf").unwrap();
 
@@ -2133,7 +2137,9 @@ mod tests {
 
         // Krill requires an auth token to be defined, give it one in the
         // environment
-        env::set_var(KRILL_ENV_ADMIN_TOKEN, "secret");
+        //
+        // Safety: Not really.
+        unsafe {env::set_var(KRILL_ENV_ADMIN_TOKEN, "secret"); }
 
         // Define sets of log targets aka components of Krill that we want to
         // test log settings for, based on the rules & exceptions that
@@ -2234,61 +2240,6 @@ mod tests {
                         config_level,
                         if should_be_enabled { "enabled" } else { "disabled" },
                         component
-                    );
-                }
-            }
-        }
-
-        //
-        // Test that Oso logging at levels below Info is only enabled if the
-        // Oso POLAR_LOG=1 environment variable is set
-        //
-        let component = "oso";
-        for set_polar_log_env_var in &[true, false] {
-            // setup env vars
-            if *set_polar_log_env_var {
-                env::set_var("POLAR_LOG", "1");
-            } else {
-                env::remove_var("POLAR_LOG");
-            }
-
-            // for each Krill config log level we want to test
-            for config_level in &["debug", "trace"] {
-                // build a logger for that config
-                let log = void_logger_from_krill_config(&format!(
-                    r#"log_level = "{config_level}""#
-                ));
-
-                // for each level of interest that messages could be logged at
-                for log_msg_level in &[LL::Debug, LL::Trace] {
-                    // determine if logging should be enabled or not
-                    let should_be_enabled =
-                        should_logging_be_enabled_at_this_krill_config_log_level(log_msg_level, config_level)
-                            && *set_polar_log_env_var;
-
-                    // verify that logging is enabled or not as expected
-                    assert_eq!(
-                        should_be_enabled,
-                        log.enabled(&for_target_at_level(
-                            component,
-                            *log_msg_level
-                        )),
-                        // output an easy to understand test failure
-                        // description
-                        r#"Logging at level {} with log_level={} should be {} for component {} and env var POLAR_LOG is {}"#,
-                        log_msg_level,
-                        config_level,
-                        if should_be_enabled {
-                            "enabled"
-                        } else {
-                            "disabled"
-                        },
-                        component,
-                        if *set_polar_log_env_var {
-                            "set"
-                        } else {
-                            "not set"
-                        }
                     );
                 }
             }

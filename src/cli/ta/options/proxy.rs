@@ -40,7 +40,8 @@ impl Command {
             self.general.server, self.general.token
         );
         if self.general.api {
-            env::set_var(constants::KRILL_CLI_API_ENV, "1")
+            // Safety: We are still single thread at this point.
+            unsafe { env::set_var(constants::KRILL_CLI_API_ENV, "1") }
         }
         self.command.run(&client).await
     }
