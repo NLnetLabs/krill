@@ -683,8 +683,8 @@ impl IssuanceTimingConfig {
             0
         } else {
             use rand::Rng;
-            let mut rng = rand::thread_rng();
-            rng.gen_range(0..(60 * self.timing_publish_next_jitter_hours))
+            let mut rng = rand::rng();
+            rng.random_range(0..(60 * self.timing_publish_next_jitter_hours))
         } as i64;
         Time::now() + Duration::minutes(regular_mins + random_mins)
     }
@@ -1059,8 +1059,8 @@ impl Config {
             0
         } else {
             use rand::Rng;
-            let mut rng = rand::thread_rng();
-            rng.gen_range(0..jitter_seconds)
+            let mut rng = rand::rng();
+            rng.random_range(0..jitter_seconds)
         };
 
         in_seconds((regular_seconds + random_seconds).into())

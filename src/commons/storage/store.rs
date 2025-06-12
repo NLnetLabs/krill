@@ -291,12 +291,12 @@ impl fmt::Display for KeyValueError {
 #[cfg(test)]
 mod tests {
     use std::env;
-    use rand::{distributions::Alphanumeric, Rng};
+    use rand::{distr::Alphanumeric, Rng};
     use crate::commons::storage::{Segment, SegmentBuf};
     use super::*;
 
     fn random_segment() -> SegmentBuf {
-        rand::thread_rng()
+        rand::rng()
             .sample_iter(&Alphanumeric)
             .take(8)
             .map(char::from)
@@ -306,7 +306,7 @@ mod tests {
     }
 
     fn random_namespace() -> NamespaceBuf {
-        rand::thread_rng()
+        rand::rng()
             .sample_iter(&Alphanumeric)
             .take(8)
             .map(char::from)
