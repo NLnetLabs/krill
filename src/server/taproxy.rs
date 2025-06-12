@@ -35,9 +35,10 @@ use crate::api::ta::{
     Nonce, ProvisioningRequest, ProvisioningResponse, TaCertDetails, 
     TrustAnchorChild, TrustAnchorChildRequests, TrustAnchorObjects, 
     TrustAnchorSignedRequest, TrustAnchorSignedResponse,
-    TrustAnchorSignerInfo, TrustAnchorSignerRequest, UsedKeyState,
+    TrustAnchorSignerInfo, TrustAnchorSignerRequest,
 };
 use crate::constants::ta_resource_class_name;
+use crate::server::ca::UsedKeyState;
 use crate::tasigner::TaTimingConfig;
 
 
