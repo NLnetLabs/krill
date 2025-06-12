@@ -670,11 +670,7 @@ impl fmt::Display for TrustAnchorSignerCommandDetails {
 pub enum TrustAnchorSignerStorableCommand {
     Init,
     TrustAnchorSignerRequest(TrustAnchorSignedRequest),
-    TrustAnchorSignerReissueRequest {
-        repo_info: RepoInfo,
-        tal_https: Vec<uri::Https>,
-        tal_rsync: uri::Rsync,
-    }
+    TrustAnchorSignerReissueRequest(TrustAnchorReissueRequest),
 }
 
 impl From<&TrustAnchorSignerCommandDetails>
@@ -691,11 +687,13 @@ impl From<&TrustAnchorSignerCommandDetails>
             TrustAnchorSignerCommandDetails::TrustAnchorSignerReissueRequest { 
                 repo_info, tal_https, tal_rsync, ..
             } => {
-                Self::TrustAnchorSignerReissueRequest {
-                    repo_info: repo_info.clone(),
-                    tal_https: tal_https.clone(),
-                    tal_rsync: tal_rsync.clone(),
-                }
+                Self::TrustAnchorSignerReissueRequest(
+                    TrustAnchorReissueRequest {
+                        repo_info: repo_info.clone(),
+                        tal_https: tal_https.clone(),
+                        tal_rsync: tal_rsync.clone(),
+                    }
+                )
             }
         }
     }
@@ -719,11 +717,13 @@ impl eventsourcing::WithStorableDetails for TrustAnchorSignerStorableCommand {
                     self,
                 ).arg("nonce", &request.content().nonce)
             }
-            Self::TrustAnchorSignerReissueRequest {
-                repo_info: _,
-                tal_https: _,
-                tal_rsync: _,
-            } => {
+            Self::TrustAnchorSignerReissueRequest(
+                TrustAnchorReissueRequest {
+                    repo_info: _,
+                    tal_https: _,
+                    tal_rsync: _,
+                }
+            ) => {
                 crate::api::history::CommandSummary::new(
                     "cmd-ta-signer-reissue", 
                     self
@@ -762,6 +762,17 @@ impl fmt::Display for TrustAnchorSignerStorableCommand {
             }
         }
     }
+}
+
+
+//------------ TrustAnchorReissueRequest -------------------------------------
+
+//  *Warning:* This type is used in stored state.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct TrustAnchorReissueRequest {
+    repo_info: RepoInfo,
+    tal_https: Vec<uri::Https>,
+    tal_rsync: uri::Rsync,
 }
 
 
