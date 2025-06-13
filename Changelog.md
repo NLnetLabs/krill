@@ -1,6 +1,6 @@
 # Change Log
 
-## Unreleased next version
+## 0.15.0-rc2
 
 Released 2025-06-13.
 
