@@ -86,11 +86,11 @@ pub enum Task {
 
     RrdpUpdateIfNeeded,
 
-    // This task is deprecated - the authorizer takes care of this itself.
-    // The mask may, however, still be in the task queue and currently the
-    // scheduler panics on unknown tasks, so we need to keep it for now and
-    // just not do anything.
+    // The following tasks are deprecated. They may, however, still be in the
+    // task queue and currently the scheduler panics on unknown tasks, so we
+    // need to keep it for now and just not do anything.
     SweepLoginCache,
+    RefreshAnnouncementsInfo,
 }
 
 impl Task {
@@ -157,6 +157,9 @@ impl Task {
             Task::SweepLoginCache => {
                 Ok(Segment::make("sweep_login_cache").to_owned())
             }
+            Task::RefreshAnnouncementsInfo => {
+                Ok(Segment::make("refresh_bgp_announcements_info").to_owned())
+            }
         }
         .map_err(|e| Error::Custom(format!("could not create name: {}", e)))
     }
@@ -208,6 +211,9 @@ impl fmt::Display for Task {
                 )
             }
             Task::SweepLoginCache => write!(f, "sweep up expired logins"),
+            Task::RefreshAnnouncementsInfo => {
+                write!(f, "refresh BGP announcements info")
+            }
         }
     }
 }
