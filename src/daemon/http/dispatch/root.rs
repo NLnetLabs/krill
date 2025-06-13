@@ -13,7 +13,7 @@ pub async fn dispatch_request(
     mut path: PathIter<'_>,
 ) -> Result<HttpResponse, DispatchError> {
     match path.next() {
-        None => index(request),
+        Some("") => index(request),
         Some("api") => super::api::dispatch(request, path).await,
         Some("assets") => assets(request, path),
         Some("auth") => super::auth::dispatch(request, path).await,
@@ -176,9 +176,9 @@ fn rrdp(
 //------------ /ui -----------------------------------------------------------
 
 fn ui(
-    request: Request<'_>, path: PathIter<'_>
+    request: Request<'_>, _path: PathIter<'_>
 ) -> Result<HttpResponse, DispatchError> {
-    path.check_exhausted()?;
+    // No check for exhausted since longer paths are totally legit.
     request.check_get()?;
     let (request, _) = request.proceed_unchecked();
     let _server = request.empty()?;
