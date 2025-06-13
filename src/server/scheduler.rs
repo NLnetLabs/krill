@@ -162,12 +162,6 @@ impl Scheduler {
                 self.renew_objects_if_needed().await
             }
 
-            Task::SweepLoginCache => {
-                // Don’t do anything. The authorizer now takes care of
-                // sweeping itself.
-                Ok(TaskResult::Done)
-            }
-
             Task::UpdateSnapshots => self.update_snapshots(),
 
             Task::RrdpUpdateIfNeeded => self.update_rrdp_if_needed(),
@@ -197,6 +191,11 @@ impl Scheduler {
             } => {
                 self.unexpected_key(ca, ca_version, rcn, revocation_request)
                     .await
+            }
+
+            Task::SweepLoginCache | Task::RefreshAnnouncementsInfo => {
+                // Don’t do anything. These are deprecated.
+                Ok(TaskResult::Done)
             }
         }
     }
