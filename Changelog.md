@@ -1,6 +1,8 @@
 # Change Log
 
-## Unreleased next version
+## 0.15.0-rc1
+
+Released 2025-06-13.
 
 Breaking Changes
 
@@ -64,6 +66,33 @@ Other changes
 [#1266]: https://github.com/NLnetLabs/krill/pull/1266
 [#1281]: https://github.com/NLnetLabs/krill/pull/1281
 [#1288]: https://github.com/NLnetLabs/krill/pull/1288
+
+
+## 0.14.6 ‘Roll Initiative!’
+
+Released 2025-04-08.
+
+There were no changes since 0.14.6-rc1.
+
+
+## 0.14.6-rc1
+
+Released 2025-03-26.
+
+Bug fixes
+
+* Fixed the naming of the trust anchor timing configuration. It was
+  expected to be `timing_config` for the config used by Krill and
+  `ta_timing` if used by the Krill TA signer. It is now `ta_timing` in
+  both cases while `timing_config` is accepted as an alias in both cases.
+  ([#1242])
+
+Other changes
+
+* The minimum supported Rust version is now 1.81. ([#1260])
+
+[#1242]: https://github.com/NLnetLabs/krill/pull/1242
+[#1260]: https://github.com/NLnetLabs/krill/pull/1260
 
 
 ## 0.14.5 ‘Who dis? New Phone’
