@@ -2,9 +2,18 @@
 
 ## Unreleased next version
 
+Released 2025-06-13.
+
 Bug fixes
 
-Other changes
+* Fix Krill refusing to start if the now unnecessary “refresh announcements
+  info” task is still present by adding it back as a dummy task. ([#1292])
+* Fix redirect of `/` to `/ui` and allow additional segments on the `/ui`
+  path in the HTTP server. ([#1293])
+
+
+[#1292]: https://github.com/NLnetLabs/krill/pull/1292
+[#1293]: https://github.com/NLnetLabs/krill/pull/1293
 
 
 ## 0.15.0-rc1
