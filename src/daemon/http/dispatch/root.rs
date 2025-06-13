@@ -176,7 +176,7 @@ fn rrdp(
 //------------ /ui -----------------------------------------------------------
 
 fn ui(
-    request: Request<'_>, path: PathIter<'_>
+    request: Request<'_>, _path: PathIter<'_>
 ) -> Result<HttpResponse, DispatchError> {
     // No check for exhausted since longer paths are totally legit.
     request.check_get()?;
