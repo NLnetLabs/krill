@@ -6,6 +6,12 @@ Bug fixes
 
 Other changes
 
+* Upgraded the bundled Krill UI to
+  [release 0.9.0](https://github.com/NLnetLabs/krill-ui/releases/tag/v0.9.0).
+  ([#1295])
+
+[#1295]: https://github.com/NLnetLabs/krill/pull/1295
+
 
 ## 0.15.0-rc2
 
