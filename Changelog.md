@@ -1,16 +1,18 @@
 # Change Log
 
-## Unreleased next version
+## 0.15.0-rc3
 
-Bug fixes
+Released 2025-06-18.
 
 Other changes
 
 * Upgraded the bundled Krill UI to
   [release 0.9.0](https://github.com/NLnetLabs/krill-ui/releases/tag/v0.9.0).
   ([#1295])
+* Added packaging support for RHEL 10-alikes. ([#1297])
 
 [#1295]: https://github.com/NLnetLabs/krill/pull/1295
+[#1297]: https://github.com/NLnetLabs/krill/pull/1297
 
 
 ## 0.15.0-rc2
