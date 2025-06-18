@@ -196,7 +196,7 @@ public rsyncd and HTTPS web server available.
    .. group-tab:: RHEL
 
        To install a Routinator package, you need Red Hat Enterprise Linux
-       (RHEL) 8 or 9, or compatible operating system such as Rocky Linux.
+       (RHEL) 8, 9 or 10, or compatible operating system such as Rocky Linux.
        Packages are available for the ``amd64``/``x86_64`` architecture only.
 
        To use this repository, create a file named
