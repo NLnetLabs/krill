@@ -203,7 +203,7 @@ impl Store {
     ) -> Result<Option<T>, Error> {
         let path = self.key_path(key);
         let file = match File::open(&path) {
-            Ok(file) => file,
+            Ok(file) => io::BufReader::new(file),
             Err(err) if err.kind() == io::ErrorKind::NotFound => {
                 return Ok(None)
             }
