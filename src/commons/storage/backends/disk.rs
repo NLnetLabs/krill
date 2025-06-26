@@ -407,21 +407,25 @@ impl Store {
             )
         })?;
 
-        serde_json::to_writer_pretty(&mut tmp_file, value).map_err(|err| {
+        let res = serde_json::to_writer_pretty(
+            &mut io::BufWriter::new(&mut tmp_file),
+            value
+        );
+        if let Err(err) = res {
             if err.is_io() {
-                Error::io(
+                return Err(Error::io(
                     format!(
                         "failed to write temp file '{}' for key '{}'",
                         tmp_file.as_ref().display(),
                         key
                     ),
                     err.into(),
-                )
+                ))
             }
             else {
-                Error::serialize(key.clone(), err)
+                return Err(Error::serialize(key.clone(), err))
             }
-        })?;
+        }
 
         // Move the temporary file to its final location.
         tmp_file.persist(&path).map_err(|err| {
