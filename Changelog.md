@@ -1,6 +1,8 @@
 # Change Log
 
-## Unreleased next version
+## 0.15.0-rc4
+
+Released 2025-06-26.
 
 Bug fixes
 
@@ -8,6 +10,8 @@ Bug fixes
   ([#1300], [#1301])
 
 Other changes
+
+* Updated dependencies.
 
 [#1300]: https://github.com/NLnetLabs/krill/pull/1300
 [#1301]: https://github.com/NLnetLabs/krill/pull/1301
