@@ -4,7 +4,13 @@
 
 Bug fixes
 
+* Improve performance by using buffered reading and writing in the store.
+  ([#1300], [#1301])
+
 Other changes
+
+[#1300]: https://github.com/NLnetLabs/krill/pull/1300
+[#1301]: https://github.com/NLnetLabs/krill/pull/1301
 
 
 ## 0.15.0-rc3
