@@ -486,8 +486,7 @@ impl TrustAnchorProxy {
             // This should not never happen. The command would not be sent,
             // but let's return some useful error anyway.
             Err(Error::Custom(format!(
-                "No response found for child {} and key {}",
-                child_handle, key
+                "No response found for child {child_handle} and key {key}"
             )))
         }
     }
@@ -621,8 +620,7 @@ impl TrustAnchorProxy {
             let received_cert = &signer.ta_cert_details.cert;
             let my_cert = received_cert.to_cert().map_err(|e| {
                 Error::Custom(format!(
-                    "Issue with certificate held by TA: {} ",
-                    e
+                    "Issue with certificate held by TA: {e} "
                 ))
             })?;
             SigningCert::new(received_cert.uri.clone(), my_cert)
@@ -643,8 +641,7 @@ impl TrustAnchorProxy {
                         // This should never happen, unless our current issued
                         // certificate can no longer be parsed
                         Error::Custom(format!(
-                            "Issue with issued certificate held by TA: {} ",
-                            e
+                            "Issue with issued certificate held by TA: {e} "
                         ))
                     },
                 )?);
@@ -690,8 +687,7 @@ impl TrustAnchorProxy {
                 Ok(Some(response))
             } else {
                 Err(Error::Custom(format!(
-                    "Response for {} does not match request type.",
-                    child_handle
+                    "Response for {child_handle} does not match request type."
                 )))
             }
         } else {
@@ -864,7 +860,7 @@ impl fmt::Display for TrustAnchorProxyEvent {
                 )
             }
             TrustAnchorProxyEvent::SignerRequestMade(nonce) => {
-                write!(f, "Created signer request with nonce '{}'", nonce)
+                write!(f, "Created signer request with nonce '{nonce}'")
             }
             TrustAnchorProxyEvent::SignerResponseReceived(response) => {
                 write!(
@@ -888,15 +884,13 @@ impl fmt::Display for TrustAnchorProxyEvent {
             ) => {
                 write!(
                     f,
-                    "Added request for child {}: {}",
-                    child_handle, request
+                    "Added request for child {child_handle}: {request}"
                 )
             }
             TrustAnchorProxyEvent::ChildResponseGiven(child_handle, key) => {
                 write!(
                     f,
-                    "Given response to child {} for key: {}",
-                    child_handle, key
+                    "Given response to child {child_handle} for key: {key}"
                 )
             }
         }
@@ -1088,7 +1082,7 @@ impl fmt::Display for TrustAnchorProxyCommandDetails {
 
             // Children
             TrustAnchorProxyCommandDetails::AddChild(child) => {
-                write!(f, "Add child: {}", child)
+                write!(f, "Add child: {child}")
             }
             TrustAnchorProxyCommandDetails::AddChildRequest(
                 child_handle,
@@ -1096,8 +1090,7 @@ impl fmt::Display for TrustAnchorProxyCommandDetails {
             ) => {
                 write!(
                     f,
-                    "Add request for child {}: {}",
-                    child_handle, request
+                    "Add request for child {child_handle}: {request}"
                 )
             }
             TrustAnchorProxyCommandDetails::GiveChildResponse(
@@ -1106,8 +1099,7 @@ impl fmt::Display for TrustAnchorProxyCommandDetails {
             ) => {
                 write!(
                     f,
-                    "Give (and remove) response to child {} for key {}",
-                    child_handle, key
+                    "Give (and remove) response to child {child_handle} for key {key}"
                 )
             }
         }

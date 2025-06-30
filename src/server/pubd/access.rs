@@ -77,8 +77,7 @@ impl RepositoryAccessProxy {
                 // - user started
                 error!(
                     "Could not warm up cache, data seems corrupt. \
-                     You may need to restore a backup. Error was: {}",
-                    e
+                     You may need to restore a backup. Error was: {e}"
                 );
             }
         }
@@ -144,7 +143,7 @@ impl RepositoryAccessProxy {
         }
         else {
             self.store.get_latest(&self.key).map_err(|e| {
-                Error::custom(format!("Publication Server data issue: {}", e))
+                Error::custom(format!("Publication Server data issue: {e}"))
             })
         }
     }
@@ -422,8 +421,7 @@ impl RepositoryAccess {
             uri::Rsync::from_str(
                 &format!("{}{}/", self.rsync_base, name)).map_err(|_| {
                     Error::Custom(format!(
-                        "Cannot derive base uri for {}",
-                        name
+                        "Cannot derive base uri for {name}"
                     ))
                 }
             )
@@ -628,10 +626,10 @@ impl fmt::Display for StorableRepositoryCommand {
                 write!(f, "Initialise server")
             }
             StorableRepositoryCommand::AddPublisher { name } => {
-                write!(f, "Added publisher '{}'", name)
+                write!(f, "Added publisher '{name}'")
             }
             StorableRepositoryCommand::RemovePublisher { name } => {
-                write!(f, "Removed publisher '{}'", name)
+                write!(f, "Removed publisher '{name}'")
             }
         }
     }
@@ -718,10 +716,10 @@ impl fmt::Display for RepositoryAccessEvent {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             RepositoryAccessEvent::PublisherAdded { name, .. } => {
-                write!(f, "Publisher '{}' added", name)
+                write!(f, "Publisher '{name}' added")
             }
             RepositoryAccessEvent::PublisherRemoved { name } => {
-                write!(f, "Publisher '{}' removed", name)
+                write!(f, "Publisher '{name}' removed")
             }
         }
     }

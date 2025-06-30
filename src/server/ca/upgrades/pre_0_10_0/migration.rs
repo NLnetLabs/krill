@@ -232,8 +232,7 @@ impl UpgradeAggregateStorePre0_14 for CasMigration {
     /// Override post migration, we need to do extra stuff.
     fn post_command_migration(&self, handle: &MyHandle) -> UpgradeResult<()> {
         info!(
-            "Will migrate the current repository objects for CA '{}'",
-            handle
+            "Will migrate the current repository objects for CA '{handle}'"
         );
         self.ca_objects_migration.prepare_new_data_for(handle)
     }
@@ -270,7 +269,7 @@ impl CaObjectsMigration {
         ca: &CaHandle,
     ) -> Result<(), UpgradeError> {
         let key =
-            Key::new_global(Segment::parse_lossy(&format!("{}.json", ca))); // ca should always be a valid Segment
+            Key::new_global(Segment::parse_lossy(&format!("{ca}.json"))); // ca should always be a valid Segment
 
         if let Some(old_objects) =
             self.current_store.get::<OldCaObjects>(&key)?

@@ -318,8 +318,7 @@ impl fmt::Display for ConfigFileError {
         match self {
             Self::Parse(path, err) => {
                 write!(
-                    f, "Failed to read config file '{}': {}",
-                    path, err
+                    f, "Failed to read config file '{path}': {err}"
                 )
             }
             Self::Create(err) => err.fmt(f)

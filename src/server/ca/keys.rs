@@ -157,10 +157,8 @@ impl CertifiedKey {
         }
         else if remaining_seconds_on_current == remaining_seconds_on_eligible {
             debug!(
-                "Will not request new certificate for CA '{}' \
-                 under RC '{}'. Resources and not after time are unchanged.",
-                handle,
-                rcn,
+                "Will not request new certificate for CA '{handle}' \
+                 under RC '{rcn}'. Resources and not after time are unchanged.",
             );
             false
         }
@@ -170,9 +168,8 @@ impl CertifiedKey {
                 < 0.9_f64
         {
             warn!(
-                "Parent of CA '{}' *reduced* not after time for certificate \
-                 under RC '{}'. This is odd, but requesting new certificate.",
-                handle, rcn,
+                "Parent of CA '{handle}' *reduced* not after time for certificate \
+                 under RC '{rcn}'. This is odd, but requesting new certificate.",
             );
             true
         }

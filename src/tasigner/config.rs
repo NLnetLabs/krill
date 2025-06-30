@@ -144,15 +144,13 @@ impl Config {
 
         let mut file = File::open(file_path).map_err(|e| {
             ConfigError::Other(format!(
-                "Could not read config file '{}': {}",
-                file_path, e
+                "Could not read config file '{file_path}': {e}"
             ))
         })?;
 
         file.read_to_string(&mut v).map_err(|e| {
             ConfigError::Other(format!(
-                "Could not read config file '{}': {}",
-                file_path, e
+                "Could not read config file '{file_path}': {e}"
             ))
         })?;
 
@@ -245,7 +243,7 @@ impl Config {
         .with_one_off_signer(self.one_off_signer())
         .build()
         .map_err(|e| {
-            ConfigError::Other(format!("Could not create KrillSigner: {}", e))
+            ConfigError::Other(format!("Could not create KrillSigner: {e}"))
         })?;
 
         Ok(Arc::new(signer))
@@ -288,7 +286,7 @@ impl Config {
         })?;
 
         self.fern_logger().chain(log_file).apply().map_err(|e| {
-            ConfigError::Other(format!("Failed to init file logging: {}", e))
+            ConfigError::Other(format!("Failed to init file logging: {e}"))
         })
     }
 
@@ -296,8 +294,7 @@ impl Config {
     fn stderr_logger(&self) -> Result<(), ConfigError> {
         self.fern_logger().chain(io::stderr()).apply().map_err(|e| {
             ConfigError::Other(format!(
-                "Failed to init stderr logging: {}",
-                e
+                "Failed to init stderr logging: {e}"
             ))
         })
     }

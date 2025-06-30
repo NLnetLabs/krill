@@ -258,7 +258,7 @@ impl KrillClient {
                 format!("{}/{}", rows.unwrap_or(100), offset)
             }
             else if let Some(rows) = rows {
-                format!("{}", rows)
+                format!("{rows}")
             }
             else {
                 String::new()

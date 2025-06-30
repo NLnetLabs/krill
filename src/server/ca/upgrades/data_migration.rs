@@ -38,13 +38,13 @@ pub fn check_ca_objects(config: &Config) -> UpgradeResult<()> {
     for ca in &cas_with_objects {
         ca_objects_store.ca_objects(ca)?;
         if !ca_store.has(ca)? {
-            warn!("  Objects found for CA '{}' which no longer exists.", ca);
+            warn!("  Objects found for CA '{ca}' which no longer exists.");
         }
     }
 
     for ca in ca_store.list()? {
         if !cas_with_objects.contains(&ca) {
-            debug!("  CA '{}' did not have any CA objects yet.", ca);
+            debug!("  CA '{ca}' did not have any CA objects yet.");
         }
     }
 

@@ -194,7 +194,7 @@ impl common::KrillServer {
             common::sleep_millis(500).await;
         }
 
-        eprintln!("Expected serial: {}, found: {}", nr, number_found);
+        eprintln!("Expected serial: {nr}, found: {number_found}");
         false
     }
 }

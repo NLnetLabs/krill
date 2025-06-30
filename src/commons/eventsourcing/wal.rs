@@ -344,9 +344,8 @@ impl<T: WalSupport> WalStore<T> {
                         Ok(changes) => {
                             if changes.is_empty() {
                                 trace!(
-                                    "No changes needed for '{}' when \
-                                     processing command: {}",
-                                    handle, summary,
+                                    "No changes needed for '{handle}' when \
+                                     processing command: {summary}",
                                 );
                             }
                             else {
@@ -463,7 +462,7 @@ impl<T: WalSupport> WalStore<T> {
             Self::scope_for_handle(handle),
             // Cannot panic as a u64 cannot contain a Scope::SEPARATOR.
             Segment::parse(
-                &format!("wal-{}.json", revision)
+                &format!("wal-{revision}.json")
             ).unwrap(),
         )
     }
@@ -490,15 +489,14 @@ impl fmt::Display for WalStoreError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             WalStoreError::KeyStoreError(e) => {
-                write!(f, "KeyStore Error: {}", e)
+                write!(f, "KeyStore Error: {e}")
             }
             WalStoreError::Unknown(handle) => {
-                write!(f, "Unknown entity: {}", handle)
+                write!(f, "Unknown entity: {handle}")
             }
             WalStoreError::WarmupFailed(handle, e) => write!(
                 f,
-                "Warmup failed with entity '{}' error: {}",
-                handle, e
+                "Warmup failed with entity '{handle}' error: {e}"
             ),
         }
     }

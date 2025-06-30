@@ -522,9 +522,8 @@ impl fmt::Display for CertAuthEvent {
                 ki,
             } => write!(
                 f,
-                "issued certificate to child '{}' for class '{}' and \
-                 pub key '{}'",
-                child, resource_class_name, ki
+                "issued certificate to child '{child}' for class '{resource_class_name}' and \
+                 pub key '{ki}'"
             ),
             CertAuthEvent::ChildCertificatesUpdated {
                 resource_class_name,
@@ -532,8 +531,7 @@ impl fmt::Display for CertAuthEvent {
             } => {
                 write!(
                     f,
-                    "updated child certificates in resource class {}",
-                    resource_class_name
+                    "updated child certificates in resource class {resource_class_name}"
                 )?;
                 if !updates.issued.is_empty() {
                     write!(f, " issued keys: ")?;
@@ -544,7 +542,7 @@ impl fmt::Display for CertAuthEvent {
                 if !updates.removed.is_empty() {
                     write!(f, " revoked keys: ")?;
                     for rev in &updates.removed {
-                        write!(f, " {}", rev)?;
+                        write!(f, " {rev}")?;
                     }
                 }
                 if !updates.suspended.is_empty() {
@@ -568,9 +566,8 @@ impl fmt::Display for CertAuthEvent {
                 ki,
             } => write!(
                 f,
-                "revoked certificate for child '{}' in resource class \
-                 '{}' with key(hash) '{}'",
-                child, resource_class_name, ki
+                "revoked certificate for child '{child}' in resource class \
+                 '{resource_class_name}' with key(hash) '{ki}'"
             ),
             CertAuthEvent::ChildUpdatedIdCert { child, id_cert } => {
                 write!(
@@ -582,7 +579,7 @@ impl fmt::Display for CertAuthEvent {
             }
             CertAuthEvent::ChildUpdatedResources { child, resources } => {
                 write!(f,
-                    "updated child '{}' resources to '{}'", child, resources
+                    "updated child '{child}' resources to '{resources}'"
                 )
             }
             CertAuthEvent::ChildUpdatedResourceClassNameMapping {
@@ -592,20 +589,19 @@ impl fmt::Display for CertAuthEvent {
             } => {
                 write!(
                     f,
-                    "updated child '{}' map parent RC name '{}' to '{}' \
-                     for child",
-                    child, name_in_parent, name_for_child
+                    "updated child '{child}' map parent RC name '{name_in_parent}' to '{name_for_child}' \
+                     for child"
                 )
             }
 
             CertAuthEvent::ChildRemoved { child } => {
-                write!(f, "removed child '{}'", child)
+                write!(f, "removed child '{child}'")
             }
             CertAuthEvent::ChildSuspended { child } => {
-                write!(f, "suspended child '{}'", child)
+                write!(f, "suspended child '{child}'")
             }
             CertAuthEvent::ChildUnsuspended { child } => {
-                write!(f, "unsuspended child '{}'", child)
+                write!(f, "unsuspended child '{child}'")
             }
             CertAuthEvent::IdUpdated { id } => write!(
                 f,
@@ -613,20 +609,19 @@ impl fmt::Display for CertAuthEvent {
                 id.cert().public_key.key_identifier()
             ),
             CertAuthEvent::ParentAdded { parent, .. } => {
-                write!(f, "added parent '{}' ", parent)
+                write!(f, "added parent '{parent}' ")
             }
             CertAuthEvent::ParentUpdated { parent, .. } => {
-                write!(f, "updated parent '{}'", parent)
+                write!(f, "updated parent '{parent}'")
             }
             CertAuthEvent::ParentRemoved { parent } => {
-                write!(f, "removed parent '{}'", parent)
+                write!(f, "removed parent '{parent}'")
             }
             CertAuthEvent::ResourceClassAdded {
                 resource_class_name, ..
             } => {
                 write!(f,
-                    "added resource class with name '{}'",
-                    resource_class_name
+                    "added resource class with name '{resource_class_name}'"
                 )
             }
             CertAuthEvent::ResourceClassRemoved {
@@ -635,8 +630,7 @@ impl fmt::Display for CertAuthEvent {
                 ..
             } => {
                 write!(f,
-                    "removed resource class with name '{}' under parent '{}'",
-                    resource_class_name, parent
+                    "removed resource class with name '{resource_class_name}' under parent '{parent}'"
                 )
             }
             CertAuthEvent::CertificateRequested {
@@ -645,9 +639,8 @@ impl fmt::Display for CertAuthEvent {
                 ..
             } => {
                 write!(f,
-                    "requested certificate for key (hash) '{}' under \
-                     resource class '{}'",
-                    ki, resource_class_name
+                    "requested certificate for key (hash) '{ki}' under \
+                     resource class '{resource_class_name}'"
                 )
             }
             CertAuthEvent::CertificateReceived {
@@ -656,9 +649,8 @@ impl fmt::Display for CertAuthEvent {
                 ..
             } => {
                 write!(f,
-                    "received certificate for key (hash) '{}' under \
-                     resource class '{}'",
-                    ki, resource_class_name
+                    "received certificate for key (hash) '{ki}' under \
+                     resource class '{resource_class_name}'"
                 )
             }
             CertAuthEvent::KeyRollPendingKeyAdded {
@@ -667,9 +659,8 @@ impl fmt::Display for CertAuthEvent {
             } => {
                 write!(
                     f,
-                    "key roll: added pending key '{}' under resource class \
-                    '{}'",
-                    pending_key_id, resource_class_name
+                    "key roll: added pending key '{pending_key_id}' under resource class \
+                    '{resource_class_name}'"
                 )
             }
             CertAuthEvent::KeyPendingToNew {
@@ -704,8 +695,7 @@ impl fmt::Display for CertAuthEvent {
             }
             CertAuthEvent::KeyRollFinished { resource_class_name } => {
                 write!(f,
-                    "key roll: finished for resource class '{}'",
-                    resource_class_name
+                    "key roll: finished for resource class '{resource_class_name}'"
                 )
             }
             CertAuthEvent::UnexpectedKeyFound {
@@ -719,45 +709,41 @@ impl fmt::Display for CertAuthEvent {
                 )
             }
             CertAuthEvent::RouteAuthorizationAdded { auth } => {
-                write!(f, "added ROA: '{}'", auth)
+                write!(f, "added ROA: '{auth}'")
             }
             CertAuthEvent::RouteAuthorizationComment { auth, comment } => {
                 if let Some(comment) = comment {
                     write!(f,
-                        "added comment to ROA: '{}' => {}",
-                        auth, comment
+                        "added comment to ROA: '{auth}' => {comment}"
                     )
                 }
                 else {
-                    write!(f, "removed comment from ROA: '{}'", auth)
+                    write!(f, "removed comment from ROA: '{auth}'")
                 }
             }
             CertAuthEvent::RouteAuthorizationRemoved { auth } => {
-                write!(f, "removed ROA: '{}'", auth)
+                write!(f, "removed ROA: '{auth}'")
             }
             CertAuthEvent::RoasUpdated {
                 resource_class_name,
                 updates,
             } => {
                 write!(f,
-                    "updated ROA objects under resource class '{}'",
-                    resource_class_name
+                    "updated ROA objects under resource class '{resource_class_name}'"
                 )?;
                 updates.fmt_event(f)
             }
             CertAuthEvent::AspaConfigAdded { aspa_config: addition } => {
-                write!(f, "{}", addition)
+                write!(f, "{addition}")
             }
             CertAuthEvent::AspaConfigUpdated { customer, update } => {
                 write!(f,
-                    "updated ASPA config for customer ASN: {} {}",
-                    customer, update
+                    "updated ASPA config for customer ASN: {customer} {update}"
                 )
             }
             CertAuthEvent::AspaConfigRemoved { customer } => {
                 write!(f,
-                    "removed ASPA config for customer ASN: {}",
-                    customer
+                    "removed ASPA config for customer ASN: {customer}"
                 )
             }
             CertAuthEvent::AspaObjectsUpdated {
@@ -765,8 +751,7 @@ impl fmt::Display for CertAuthEvent {
                 updates,
             } => {
                 write!(f,
-                    "updated ASPA objects under resource class '{}'{}",
-                    resource_class_name, updates,
+                    "updated ASPA objects under resource class '{resource_class_name}'{updates}",
                 )
             }
             CertAuthEvent::BgpSecDefinitionAdded { key, .. } => {

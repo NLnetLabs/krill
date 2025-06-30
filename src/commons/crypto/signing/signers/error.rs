@@ -33,20 +33,20 @@ impl fmt::Display for SignerError {
         match self {
             SignerError::DecodeError => write!(f, "Could not decode key"),
             SignerError::InvalidStorage(url) => {
-                write!(f, "Invalid storage url: {}", url)
+                write!(f, "Invalid storage url: {url}")
             }
             SignerError::IoError(e) => e.fmt(f),
             SignerError::JsonError(e) => {
-                write!(f, "Could not decode public key info: {}", e)
+                write!(f, "Could not decode public key info: {e}")
             }
             SignerError::KeyNotFound => write!(f, "Could not find key"),
-            SignerError::KmipError(e) => write!(f, "KMIP Error: {}", e),
-            SignerError::OpenSslError(e) => write!(f, "OpenSSL Error: {}", e),
-            SignerError::Other(e) => write!(f, "Signer error: {}", e),
+            SignerError::KmipError(e) => write!(f, "KMIP Error: {e}"),
+            SignerError::OpenSslError(e) => write!(f, "OpenSSL Error: {e}"),
+            SignerError::Other(e) => write!(f, "Signer error: {e}"),
             SignerError::PermanentlyUnusable => {
                 write!(f, "Signer is unusable")
             }
-            SignerError::Pkcs11Error(e) => write!(f, "{}", e), /* Cryptoki prefixes e with "PKCS11 error" */
+            SignerError::Pkcs11Error(e) => write!(f, "{e}"), /* Cryptoki prefixes e with "PKCS11 error" */
             SignerError::TemporarilyUnavailable => {
                 write!(f, "Signer is unavailable")
             }

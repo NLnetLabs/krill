@@ -25,14 +25,14 @@ async fn functional_old_data() {
     let (mut config, tempdir) = common::TestConfig::file_storage()
         .enable_second_signer().finalize();
 
-    fs::create_dir(&tempdir.path().join("ta")).unwrap();
+    fs::create_dir(tempdir.path().join("ta")).unwrap();
     untar_file(
         "test-resources/migrations/v0_14_5.tar", 
-        &tempdir.path().join("data")
+        tempdir.path().join("data")
     );
     untar_file(
         "test-resources/migrations/v0_14_5_signer.tar", 
-        &tempdir.path().join("ta")
+        tempdir.path().join("ta")
     );
     config.ta_support_enabled = true;
 
@@ -42,7 +42,7 @@ async fn functional_old_data() {
     let signer_config = 
         include_str!("../test-resources/migrations/v0_14_5_signer/ta.conf");
     let signer_config = signer_config.replace("%TEMPDIR%", 
-        &tempdir.path().join("ta").to_str().unwrap());
+        tempdir.path().join("ta").to_str().unwrap());
 
     eprintln!(">>>> Configure the TA signer.");
     let signer = TrustAnchorSignerManager::create(

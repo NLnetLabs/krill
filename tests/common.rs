@@ -229,10 +229,10 @@ impl TestConfig {
             Some(TestBed::new(
                 uri::Rsync::from_str("rsync://localhost/ta/ta.cer").unwrap(),
                 uri::Https::from_string(
-                    format!("https://localhost:{}/ta/ta.cer", port)
+                    format!("https://localhost:{port}/ta/ta.cer")
                 ).unwrap(),
                 uri::Https::from_string(
-                    format!("https://localhost:{}/rrdp/", port)
+                    format!("https://localhost:{port}/rrdp/")
                 ).unwrap(),
                 uri::Rsync::from_str("rsync://localhost/repo/").unwrap(),
             ))
@@ -397,7 +397,7 @@ impl KrillServer {
                 if let Err(err) = start_krill_daemon(
                     config.into(), Some(tx)
                 ).await {
-                    error!("Krill failed to start: {}", err);
+                    error!("Krill failed to start: {err}");
                 }
             }),
             running: Some(running),
@@ -418,14 +418,14 @@ impl KrillServer {
             self.client.authorized(),
         ).await {
             Ok(Ok(_)) => { debug!("health check succeded") },
-            err => panic!("health check failed: {:?}", err),
+            err => panic!("health check failed: {err:?}"),
         }
     }
 
     pub async fn pubserver_init(&self, port: u16) {
         self.client().pubserver_init(
             uri::Https::from_str(
-                &format!("https://localhost:{}/test-rrdp/", port)
+                &format!("https://localhost:{port}/test-rrdp/")
             ).unwrap(),
             uri::Rsync::from_str(
                 "rsync://localhost/dedicated-repo/"
@@ -733,7 +733,7 @@ impl<'a> ExpectedObjects<'a> {
         }
         eprintln!("Expected:");
         for file in &self.files {
-            eprintln!("  {}", file);
+            eprintln!("  {file}");
         }
 
         false

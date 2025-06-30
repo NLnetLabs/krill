@@ -211,7 +211,7 @@ impl CaObjectsStore {
     fn key(ca: &CaHandle) -> Key {
         // CA handles should always be a valid segment
         Key::new_global(
-            Segment::parse_lossy(&format!("{}.json", ca))
+            Segment::parse_lossy(&format!("{ca}.json"))
         )
     }
 
@@ -296,7 +296,7 @@ impl CaObjectsStore {
         force: bool,
         ca_handle: &CaHandle,
     ) -> KrillResult<bool> {
-        debug!("Re-issue for CA {} using force: {}", ca_handle, force);
+        debug!("Re-issue for CA {ca_handle} using force: {force}");
         self.with_ca_objects(ca_handle, |objects| {
             objects.re_issue(
                 force,

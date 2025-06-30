@@ -75,7 +75,7 @@ impl AuthProvider {
         };
 
         if log_enabled!(log::Level::Trace) {
-            trace!("Authentication result: {:?}", res);
+            trace!("Authentication result: {res:?}");
         }
 
         res

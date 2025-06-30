@@ -142,7 +142,7 @@ impl AuthProvider {
         };
 
         if log_enabled!(log::Level::Trace) {
-            trace!("Authentication result: {:?}", res);
+            trace!("Authentication result: {res:?}");
         }
 
         res
@@ -222,7 +222,7 @@ impl AuthProvider {
         // the two scenarios which could potentially
         // be used to discover user names.
         if encoded_hash != user_password_hash {
-            trace!("Unknown user {}", username);
+            trace!("Unknown user {username}");
             return Err(Error::ApiInvalidCredentials(
                 "Incorrect credentials".to_string(),
             ))
@@ -231,7 +231,7 @@ impl AuthProvider {
         let user = match self.users.get(username.as_str()) {
             Some(user) => user,
             None => {
-                trace!("Incorrect password for user {}", username);
+                trace!("Incorrect password for user {username}");
                 return Err(Error::ApiInvalidCredentials(
                     "Incorrect credentials".to_string(),
                 ));
@@ -251,11 +251,10 @@ impl AuthProvider {
 
         if !role.is_allowed(Permission::Login, None) {
             let reason = format!(
-                "Login denied for user '{}': \
+                "Login denied for user '{username}': \
                  User is not permitted to 'login'",
-                 username,
             );
-            warn!("{}", reason);
+            warn!("{reason}");
             return Err(Error::ApiInsufficientRights(reason));
         }
 

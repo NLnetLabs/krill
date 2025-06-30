@@ -420,9 +420,8 @@ impl Pkcs11Signer {
             ) => {
                 // https://github.com/NLnetLabs/krill/issues/1019
                 let err_msg = format!(
-                    "{} [Note: This error can occur if the signer does not support authenticated \
-                    access to public keys. Setting `CKA_PRIVATE` in krill.conf to \"false\"` may help]",
-                    err
+                    "{err} [Note: This error can occur if the signer does not support authenticated \
+                    access to public keys. Setting `CKA_PRIVATE` in krill.conf to \"false\"` may help]"
                 );
                 Err(SignerError::Pkcs11Error(err_msg))
             }
@@ -571,12 +570,11 @@ impl Pkcs11Signer {
 
             let cryptoki_info = readable_ctx.get_info().map_err(|err| {
                 error!(
-                    "[{}] Unable to read PKCS#11 info for library '{}': {}",
-                    name, lib_name, err
+                    "[{name}] Unable to read PKCS#11 info for library '{lib_name}': {err}"
                 );
                 ProbeError::CompletedUnusable
             })?;
-            trace!("[{}] C_GetInfo(): {:?}", name, cryptoki_info);
+            trace!("[{name}] C_GetInfo(): {cryptoki_info:?}");
 
             let slot = match &conn_settings.slot {
                 SlotIdOrLabel::Id(id) => {
@@ -584,8 +582,7 @@ impl Pkcs11Signer {
                         .get_slot_list(false)
                         .map_err(|err| {
                             error!(
-                                "[{}] Unable to get PKCS#11 slot list for library '{}': {}",
-                                name, lib_name, err
+                                "[{name}] Unable to get PKCS#11 slot list for library '{lib_name}': {err}"
                             );
                             ProbeError::CompletedUnusable
                         })?
@@ -593,8 +590,7 @@ impl Pkcs11Signer {
                         .find(|&slot| slot.id() == *id)
                         .ok_or_else(|| {
                             error!(
-                                "[{}] No PKCS#11 slot found for library '{}' with id {}",
-                                name, lib_name, id
+                                "[{name}] No PKCS#11 slot found for library '{lib_name}' with id {id}"
                             );
                             ProbeError::CallbackFailed(
                                 SignerError::TemporarilyUnavailable
@@ -607,17 +603,15 @@ impl Pkcs11Signer {
                         Ok(Some(slot)) => slot,
                         Ok(None) => {
                             let err_msg = format!(
-                                "[{}] No PKCS#11 slot found for library '{}' with label '{}'",
-                                name, lib_name, label
+                                "[{name}] No PKCS#11 slot found for library '{lib_name}' with label '{label}'"
                             );
 
-                            error!("{}", err_msg);
+                            error!("{err_msg}");
                             return Err(ProbeError::CallbackFailed(SignerError::TemporarilyUnavailable));
                         }
                         Err(err) => {
                             error!(
-                                "[{}] Failed to enumerate PKCS#11 slots for library '{}': {}",
-                                name, lib_name, err
+                                "[{name}] Failed to enumerate PKCS#11 slots for library '{lib_name}': {err}"
                             );
                             return Err(ProbeError::CompletedUnusable);
                         }
@@ -627,11 +621,10 @@ impl Pkcs11Signer {
 
             let slot_info = readable_ctx.get_slot_info(slot).map_err(|err| {
                 let err_msg = format!(
-                    "[{}] Unable to read PKCS#11 slot info for library '{}' slot {}: {}",
-                    name, lib_name, slot, err
+                    "[{name}] Unable to read PKCS#11 slot info for library '{lib_name}' slot {slot}: {err}"
                 );
 
-                error!("{}", err_msg);
+                error!("{err_msg}");
 
                 if is_transient_error(&err) {
                     ProbeError::CallbackFailed(SignerError::TemporarilyUnavailable)
@@ -639,15 +632,14 @@ impl Pkcs11Signer {
                     ProbeError::CallbackFailed(SignerError::Pkcs11Error(err_msg))
                 }
             })?;
-            trace!("[{}] C_GetSlotInfo(): {:?}", name, slot_info);
+            trace!("[{name}] C_GetSlotInfo(): {slot_info:?}");
 
             let token_info = readable_ctx.get_token_info(slot).map_err(|err| {
                 let err_msg = format!(
-                    "[{}] Unable to read PKCS#11 token info for library '{}' slot {}: {}",
-                    name, lib_name, slot, err
+                    "[{name}] Unable to read PKCS#11 token info for library '{lib_name}' slot {slot}: {err}"
                 );
 
-                error!("{}", err_msg);
+                error!("{err_msg}");
 
                 if is_transient_error(&err) {
                     ProbeError::CallbackFailed(SignerError::TemporarilyUnavailable)
@@ -655,7 +647,7 @@ impl Pkcs11Signer {
                     ProbeError::CallbackFailed(SignerError::Pkcs11Error(err_msg))
                 }
             })?;
-            trace!("[{}] C_GetTokenInfo(): {:?}", name, token_info);
+            trace!("[{name}] C_GetTokenInfo(): {token_info:?}");
 
             let user_pin = conn_settings.user_pin.clone();
             Ok((cryptoki_info, slot, slot_info, token_info, user_pin))
@@ -677,17 +669,13 @@ impl Pkcs11Signer {
                 LoginMode::LoginRequired => {
                     session.login(UserType::User, user_pin.as_ref()).map_err(|err| {
                         error!(
-                            "[{}] Unable to login to PKCS#11 session for library '{}' slot {}: {}",
-                            name, lib_name, slot, err
+                            "[{name}] Unable to login to PKCS#11 session for library '{lib_name}' slot {slot}: {err}"
                         );
                         ProbeError::CallbackFailed(SignerError::TemporarilyUnavailable)
                     })?;
 
                     trace!(
-                        "[{}] Logged in to PKCS#11 session for library '{}' slot {}",
-                        name,
-                        lib_name,
-                        slot,
+                        "[{name}] Logged in to PKCS#11 session for library '{lib_name}' slot {slot}",
                     );
 
                     Ok(Some(session))
@@ -698,13 +686,12 @@ impl Pkcs11Signer {
         let conn_settings = status.config()?;
         let lib_name = &conn_settings.lib_path;
 
-        debug!("[{}] Probing server using library '{}'", name, lib_name);
+        debug!("[{name}] Probing server using library '{lib_name}'");
 
         let context =
             initialize_if_needed(&conn_settings).map_err(|err| {
                 error!(
-                "[{}] Unable to initialize PKCS#11 info for library '{}': {}",
-                name, lib_name, err
+                "[{name}] Unable to initialize PKCS#11 info for library '{lib_name}': {err}"
             );
                 ProbeError::CompletedUnusable
             })?;
@@ -718,8 +705,7 @@ impl Pkcs11Signer {
             Ok((cryptoki_info, slot, _slot_info, token_info, user_pin)) => {
                 let session = Pkcs11Session::new(context.clone(), slot).map_err(|err| {
                     error!(
-                        "[{}] Unable to open PKCS#11 session for library '{}' slot {}: {}",
-                        name, lib_name, slot, err
+                        "[{name}] Unable to open PKCS#11 session for library '{lib_name}' slot {slot}: {err}"
                     );
                     ProbeError::CompletedUnusable
                 })?;
@@ -763,13 +749,11 @@ impl Pkcs11Signer {
                 );
 
                 info!(
-                    "Using PKCS#11 token '{}' in slot {} of server '{}' via library '{}'",
-                    token_identification, slot, server_identification, lib_name
+                    "Using PKCS#11 token '{token_identification}' in slot {slot} of server '{server_identification}' via library '{lib_name}'"
                 );
 
                 let server_info = format!(
-                    "PKCS#11 Signer [token: {}, slot: {}, server: {}, library: {}]",
-                    token_identification, slot, server_identification, lib_name
+                    "PKCS#11 Signer [token: {token_identification}, slot: {slot}, server: {server_identification}, library: {lib_name}]"
                 );
 
                 let state = UsableServerState::new(
@@ -881,8 +865,7 @@ impl Pkcs11Signer {
         // Try (and retry if needed) the requested operation.
         backoff::retry_notify(backoff_policy, op, notify).map_err(|e| {
             error!(
-                "[{}] {} failed, retries exhausted: {}",
-                signer_name, desc, e
+                "[{signer_name}] {desc} failed, retries exhausted: {e}"
             );
             e.into()
         })
@@ -909,8 +892,7 @@ impl Pkcs11Signer {
             .add_key(signer_handle, key_id, &internal_key_id)
             .map_err(|err| {
                 SignerError::Pkcs11Error(format!(
-                    "Failed to record signer key: {}",
-                    err
+                    "Failed to record signer key: {err}"
                 ))
             })?;
 
@@ -1053,8 +1035,7 @@ impl Pkcs11Signer {
             {
                 PublicKey::rsa_from_components(m, e).map_err(|e| {
                     SignerError::Pkcs11Error(format!(
-                        "Failed to construct RSA Public for key '{:?}'. Error: {}",
-                        pub_handle, e
+                        "Failed to construct RSA Public for key '{pub_handle:?}'. Error: {e}"
                     ))
                 })
             } else {
@@ -1067,8 +1048,7 @@ impl Pkcs11Signer {
             }
         } else {
             Err(SignerError::Pkcs11Error(format!(
-                "Unable to obtain modulus and public exponent attributes for key {:?}",
-                pub_handle
+                "Unable to obtain modulus and public exponent attributes for key {pub_handle:?}"
             )))
         }
     }
@@ -1301,8 +1281,7 @@ impl Pkcs11Signer {
             .sign_with_key(priv_handle, algorithm, data.as_ref())
             .map_err(|err| {
                 SignerError::Pkcs11Error(format!(
-                    "One-off signing of data failed: {}",
-                    err
+                    "One-off signing of data failed: {err}"
                 ))
             });
 
@@ -1560,7 +1539,7 @@ fn is_transient_error(err: &Pkcs11Error) -> bool {
 impl From<Pkcs11Error> for SignerError {
     fn from(err: Pkcs11Error) -> Self {
         if is_transient_error(&err) {
-            error!("PKCS#11 signer unavailable: {}", err);
+            error!("PKCS#11 signer unavailable: {err}");
             SignerError::TemporarilyUnavailable
         } else {
             SignerError::Pkcs11Error(err.to_string())

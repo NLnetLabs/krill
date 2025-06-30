@@ -210,8 +210,7 @@ impl Queue {
                 Ok(Ok(()))
             } else {
                 Ok(Err(Error::other(format!(
-                    "Cannot finish task {}. It is not running.",
-                    running_key
+                    "Cannot finish task {running_key}. It is not running."
                 ))))
             }
         })?

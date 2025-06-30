@@ -83,7 +83,7 @@ impl fmt::Display for RoaDeltaError {
         if !self.duplicates.is_empty() {
             writeln!(f, "Cannot add the following duplicate ROAs:")?;
             for dup in self.duplicates.iter() {
-                writeln!(f, "  {}", dup)?;
+                writeln!(f, "  {dup}")?;
             }
         }
         if !self.notheld.is_empty() {
@@ -92,13 +92,13 @@ impl fmt::Display for RoaDeltaError {
                 "Cannot add the following ROAs with prefixes not on any of your certificates:"
             )?;
             for not in self.notheld.iter() {
-                writeln!(f, "  {}", not)?;
+                writeln!(f, "  {not}")?;
             }
         }
         if !self.unknowns.is_empty() {
             writeln!(f, "Cannot remove the following unknown ROAs:")?;
             for unk in self.unknowns.iter() {
-                writeln!(f, "  {}", unk)?;
+                writeln!(f, "  {unk}")?;
             }
         }
         if !self.invalid_length.is_empty() {
@@ -107,7 +107,7 @@ impl fmt::Display for RoaDeltaError {
                 "The following ROAs have a max length which is invalid for the prefix:"
             )?;
             for unk in self.invalid_length.iter() {
-                writeln!(f, "  {}", unk)?;
+                writeln!(f, "  {unk}")?;
             }
         }
         Ok(())
@@ -140,15 +140,13 @@ impl ApiAuthError {
             match resource {
                 Some(res) => {
                     format!(
-                        "User '{}' does not have permission '{}' \
-                         on resource '{}'",
-                        actor, perm, res,
+                        "User '{actor}' does not have permission '{perm}' \
+                         on resource '{res}'",
                     )
                 },
                 None => {
                     format!(
-                        "User '{}' does not have permission '{}'",
-                        actor, perm,
+                        "User '{actor}' does not have permission '{perm}'",
                     )
                 }
             }
@@ -408,23 +406,23 @@ impl fmt::Display for Error {
             //-----------------------------------------------------------------
             // System Issues
             //-----------------------------------------------------------------
-            Error::IoError(e) => write!(f, "I/O error: {}", e),
-            Error::KeyValueError(e) => write!(f, "Key/Value error: {}", e),
-            Error::QueueError(e) => write!(f, "Queue error: {}", e),
-            Error::AggregateStoreError(e) => write!(f, "Persistence (aggregate store) error: {}", e),
-            Error::WalStoreError(e) => write!(f, "Persistence (wal store) error: {}", e),
-            Error::SignerError(e) => write!(f, "Signing issue: {}", e),
-            Error::HttpsSetup(e) => write!(f, "Cannot set up HTTPS: {}", e),
-            Error::HttpClientError(e) => write!(f, "HTTP client error: {}", e),
-            Error::ConfigError(e) => write!(f, "Configuration error: {}", e),
-            Error::UpgradeError(e) => write!(f, "Could not upgrade Krill: {}", e),
+            Error::IoError(e) => write!(f, "I/O error: {e}"),
+            Error::KeyValueError(e) => write!(f, "Key/Value error: {e}"),
+            Error::QueueError(e) => write!(f, "Queue error: {e}"),
+            Error::AggregateStoreError(e) => write!(f, "Persistence (aggregate store) error: {e}"),
+            Error::WalStoreError(e) => write!(f, "Persistence (wal store) error: {e}"),
+            Error::SignerError(e) => write!(f, "Signing issue: {e}"),
+            Error::HttpsSetup(e) => write!(f, "Cannot set up HTTPS: {e}"),
+            Error::HttpClientError(e) => write!(f, "HTTP client error: {e}"),
+            Error::ConfigError(e) => write!(f, "Configuration error: {e}"),
+            Error::UpgradeError(e) => write!(f, "Could not upgrade Krill: {e}"),
             Error::NotImplemented => write!(f, "Not yet implemented"),
 
             //-----------------------------------------------------------------
             // General API Client Issues
             //-----------------------------------------------------------------
             Error::UnexpectedBody => write!(f, "Unexpected body in request"),
-            Error::JsonError(e) => write!(f,"Invalid JSON: {}", e),
+            Error::JsonError(e) => write!(f,"Invalid JSON: {e}"),
             Error::InvalidUtf8Input => write!(f, "Submitted bytes are invalid UTF8"),
             Error::ApiUnknownMethod => write!(f,"Unknown API method"),
             Error::ApiUnknownResource => write!(f, "Unknown resource"),
@@ -432,12 +430,12 @@ impl fmt::Display for Error {
             Error::ApiInvalidSeconds => write!(f, "Invalid path argument for seconds"),
             Error::PostTooBig => write!(f, "POST body exceeds configured limit"),
             Error::PostCannotRead => write!(f, "POST body cannot be read"),
-            Error::ApiInvalidCredentials(e) => write!(f, "Invalid credentials: {}", e),
-            Error::ApiLoginError(e) => write!(f, "Login error: {}", e),
-            Error::ApiAuthPermanentError(e) => write!(f, "Authentication error: {}", e),
-            Error::ApiAuthTransientError(e) => write!(f, "Transient authentication error: {}", e),
-            Error::ApiAuthSessionExpired(e) => write!(f, "Session expired: {}", e),
-            Error::ApiInsufficientRights(e) => write!(f, "Insufficient rights: {}", e),
+            Error::ApiInvalidCredentials(e) => write!(f, "Invalid credentials: {e}"),
+            Error::ApiLoginError(e) => write!(f, "Login error: {e}"),
+            Error::ApiAuthPermanentError(e) => write!(f, "Authentication error: {e}"),
+            Error::ApiAuthTransientError(e) => write!(f, "Transient authentication error: {e}"),
+            Error::ApiAuthSessionExpired(e) => write!(f, "Session expired: {e}"),
+            Error::ApiInsufficientRights(e) => write!(f, "Insufficient rights: {e}"),
 
             //-----------------------------------------------------------------
             // Repository Issues
@@ -448,10 +446,10 @@ impl fmt::Display for Error {
             //-----------------------------------------------------------------
             // Publisher Issues
             //-----------------------------------------------------------------
-            Error::PublisherUnknown(pbl) => write!(f, "Unknown publisher '{}'", pbl),
-            Error::PublisherUriOutsideBase(uri, jail) => write!(f, "Publishing uri '{}' outside repository uri '{}'", uri, jail),
-            Error::PublisherBaseUriNoSlash(uri) => write!(f, "Publisher uri '{}' must have a trailing slash", uri),
-            Error::PublisherDuplicate(pbl) => write!(f, "Duplicate publisher '{}'", pbl),
+            Error::PublisherUnknown(pbl) => write!(f, "Unknown publisher '{pbl}'"),
+            Error::PublisherUriOutsideBase(uri, jail) => write!(f, "Publishing uri '{uri}' outside repository uri '{jail}'"),
+            Error::PublisherBaseUriNoSlash(uri) => write!(f, "Publisher uri '{uri}' must have a trailing slash"),
+            Error::PublisherDuplicate(pbl) => write!(f, "Duplicate publisher '{pbl}'"),
 
             //-----------------------------------------------------------------
             // Repository Server Issues
@@ -463,56 +461,52 @@ impl fmt::Display for Error {
             //-----------------------------------------------------------------
             // RFC 8181 (publishing)
             //-----------------------------------------------------------------
-            Error::Rfc8181Validation(req) => write!(f, "Issue with RFC8181 request: {}", req),
-            Error::Rfc8181Decode(req) => write!(f, "Issue with decoding RFC8181 request: {}", req),
+            Error::Rfc8181Validation(req) => write!(f, "Issue with RFC8181 request: {req}"),
+            Error::Rfc8181Decode(req) => write!(f, "Issue with decoding RFC8181 request: {req}"),
             Error::Rfc8181(e) => e.fmt(f),
             Error::Rfc8181Delta(e) => e.fmt(f),
-            Error::PublishingObjects(msg) => write!(f, "Issue generating repository objects: '{}'", msg),
+            Error::PublishingObjects(msg) => write!(f, "Issue generating repository objects: '{msg}'"),
 
 
             //-----------------------------------------------------------------
             // CA Issues
             //-----------------------------------------------------------------
-            Error::CaDuplicate(ca) => write!(f, "CA '{}' was already initialized", ca),
-            Error::CaUnknown(ca) => write!(f, "CA '{}' is unknown", ca),
+            Error::CaDuplicate(ca) => write!(f, "CA '{ca}' was already initialized"),
+            Error::CaUnknown(ca) => write!(f, "CA '{ca}' is unknown"),
 
             // CA Repo Issues
-            Error::CaRepoInUse(ca) => write!(f, "CA '{}' already uses this repository", ca),
-            Error::CaRepoIssue(ca, e) => write!(f, "CA '{}' cannot get response from repository '{}'. Is the 'service_uri' in the XML reachable? Note that when upgrading Krill you should re-use existing configuration and data. For a fresh \
-            re-install of Krill you will need to send XML to all other parties again: parent(s), children, and repository", ca,        e),
-            Error::CaRepoResponseInvalid(ca, e) => write!(f, "CA '{}' got invalid repository response: {}", ca, e),
-            Error::CaRepoResponseWrongXml(ca) => write!(f, "CA '{}' got parent instead of repository response", ca),
+            Error::CaRepoInUse(ca) => write!(f, "CA '{ca}' already uses this repository"),
+            Error::CaRepoIssue(ca, e) => write!(f, "CA '{ca}' cannot get response from repository '{e}'. Is the 'service_uri' in the XML reachable? Note that when upgrading Krill you should re-use existing configuration and data. For a fresh \
+            re-install of Krill you will need to send XML to all other parties again: parent(s), children, and repository"),
+            Error::CaRepoResponseInvalid(ca, e) => write!(f, "CA '{ca}' got invalid repository response: {e}"),
+            Error::CaRepoResponseWrongXml(ca) => write!(f, "CA '{ca}' got parent instead of repository response"),
 
             // CA Parent Issues
-            Error::CaParentDuplicateName(ca, parent) => write!(f, "CA '{}' already has a parent named '{}'", ca, parent),
-            Error::CaParentDuplicateInfo(ca, parent) => write!(f, "CA '{}' already has a parent named '{}' for this XML", ca, parent),
-            Error::CaParentUnknown(ca, parent) => write!(f, "CA '{}' does not have a parent named '{}'", ca, parent),
-            Error::CaParentIssue(ca, parent, e) => write!(f, "CA '{}' got error from parent '{}': {}", ca, parent, e),
-            Error::CaParentResponseInvalid(ca, e) => write!(f, "CA '{}' got invalid parent response: {}", ca, e),
-            Error::CaParentResponseWrongXml(ca) => write!(f, "CA '{}' got repository response when adding parent", ca),
-            Error::CaParentAddNotResponsive(ca, parent) => write!(f, "CA '{}' cannot get response from parent '{}'. Is the 'service_uri' in the XML reachable? Note that when upgrading Krill you should re-use existing configuration and data. For a fresh re-install of Krill you will need to send XML to all other parties again: parent(s), children, and repository",        ca, parent),
+            Error::CaParentDuplicateName(ca, parent) => write!(f, "CA '{ca}' already has a parent named '{parent}'"),
+            Error::CaParentDuplicateInfo(ca, parent) => write!(f, "CA '{ca}' already has a parent named '{parent}' for this XML"),
+            Error::CaParentUnknown(ca, parent) => write!(f, "CA '{ca}' does not have a parent named '{parent}'"),
+            Error::CaParentIssue(ca, parent, e) => write!(f, "CA '{ca}' got error from parent '{parent}': {e}"),
+            Error::CaParentResponseInvalid(ca, e) => write!(f, "CA '{ca}' got invalid parent response: {e}"),
+            Error::CaParentResponseWrongXml(ca) => write!(f, "CA '{ca}' got repository response when adding parent"),
+            Error::CaParentAddNotResponsive(ca, parent) => write!(f, "CA '{ca}' cannot get response from parent '{parent}'. Is the 'service_uri' in the XML reachable? Note that when upgrading Krill you should re-use existing configuration and data. For a fresh re-install of Krill you will need to send XML to all other parties again: parent(s), children, and repository"),
             Error::CaParentSyncError(ca, parent, rcn, error_msg) => {
                 write!(
                     f,
-                    "CA '{}' could not sync with parent '{}', for resource class '{}', error: {}",
-                    ca,
-                    parent,
-                    rcn,
-                    error_msg
+                    "CA '{ca}' could not sync with parent '{parent}', for resource class '{rcn}', error: {error_msg}"
                 )
             }
 
             //-----------------------------------------------------------------
             // RFC8183 (exchanging id XML)
             //-----------------------------------------------------------------
-            Error::Rfc8183(e) => write!(f, "RFC 8183 XML issue: {}", e),
+            Error::Rfc8183(e) => write!(f, "RFC 8183 XML issue: {e}"),
 
             //-----------------------------------------------------------------
             // RFC6492 (requesting resources)
             //-----------------------------------------------------------------
-            Error::Rfc6492(e) => write!(f, "RFC 6492 Issue: {}", e),
-            Error::Rfc6492NotPerformed(not) => write!(f, "RFC 6492 Not Performed: {}", not),
-            Error::Rfc6492InvalidCsrSent(e) => write!(f, "Invalid CSR received: {}", e),
+            Error::Rfc6492(e) => write!(f, "RFC 6492 Issue: {e}"),
+            Error::Rfc6492NotPerformed(not) => write!(f, "RFC 6492 Not Performed: {not}"),
+            Error::Rfc6492InvalidCsrSent(e) => write!(f, "Invalid CSR received: {e}"),
 
             //-----------------------------------------------------------------
             // CA Child Issues
@@ -523,30 +517,30 @@ impl fmt::Display for Error {
                      '{path}' in path, '{body}' in body"
                 )
             },
-            Error::CaChildDuplicate(ca, child) => write!(f, "CA '{}' already has a child named '{}'", ca, child),
-            Error::CaChildUnknown(ca, child) => write!(f, "CA '{}' does not have a child named '{}'", ca, child),
-            Error::CaChildMustHaveResources(ca, child) => write!(f, "Child '{}' for CA '{}' MUST have resources specified", child, ca),
-            Error::CaChildExtraResources(ca, child) => write!(f, "Child '{}' cannot have resources not held by CA '{}'", child, ca),
-            Error::CaChildUnauthorized(ca, child) => write!(f, "CA '{}' does not know id certificate for child '{}'", ca, child),
+            Error::CaChildDuplicate(ca, child) => write!(f, "CA '{ca}' already has a child named '{child}'"),
+            Error::CaChildUnknown(ca, child) => write!(f, "CA '{ca}' does not have a child named '{child}'"),
+            Error::CaChildMustHaveResources(ca, child) => write!(f, "Child '{child}' for CA '{ca}' MUST have resources specified"),
+            Error::CaChildExtraResources(ca, child) => write!(f, "Child '{child}' cannot have resources not held by CA '{ca}'"),
+            Error::CaChildUnauthorized(ca, child) => write!(f, "CA '{ca}' does not know id certificate for child '{child}'"),
 
             //-----------------------------------------------------------------
             // RouteAuthorizations - ROAs
             //-----------------------------------------------------------------
-            Error::CaAuthorizationUnknown(_ca, roa) => write!(f, "Cannot remove unknown ROA '{}'", roa),
-            Error::CaAuthorizationDuplicate(_ca, roa) => write!(f, "ROA '{}' already present", roa),
-            Error::CaAuthorizationInvalidMaxLength(_ca, roa) => write!(f, "Invalid max length in ROA: '{}'", roa),
-            Error::CaAuthorizationNotEntitled(_ca, roa) => write!(f, "Prefix in ROA '{}' not held by you", roa),
-            Error::RoaDeltaError(_ca, e) => write!(f, "ROA delta rejected:\n\n'{}' ", e),
+            Error::CaAuthorizationUnknown(_ca, roa) => write!(f, "Cannot remove unknown ROA '{roa}'"),
+            Error::CaAuthorizationDuplicate(_ca, roa) => write!(f, "ROA '{roa}' already present"),
+            Error::CaAuthorizationInvalidMaxLength(_ca, roa) => write!(f, "Invalid max length in ROA: '{roa}'"),
+            Error::CaAuthorizationNotEntitled(_ca, roa) => write!(f, "Prefix in ROA '{roa}' not held by you"),
+            Error::RoaDeltaError(_ca, e) => write!(f, "ROA delta rejected:\n\n'{e}' "),
 
             //-----------------------------------------------------------------
             // Autonomous System Provider Authorization - ASPAs
             //-----------------------------------------------------------------
-            Error::AspaCustomerAsNotEntitled(_ca, asn) => write!(f, "Customer AS '{}' is not held by you", asn),
-            Error::AspaCustomerAlreadyPresent(_ca, asn) => write!(f, "ASPA already exists for customer AS '{}'", asn),
-            Error::AspaProvidersEmpty(_ca, asn) => write!(f, "ASPA for customer AS '{}' requires at least one provider", asn),
-            Error::AspaCustomerAsProvider(_ca, asn) => write!(f, "ASPA for customer AS '{}' cannot have that AS as provider", asn),
-            Error::AspaProvidersDuplicates(_ca, asn) => write!(f, "ASPA for customer AS '{}' cannot have duplicate providers", asn),
-            Error::AspaCustomerUnknown(_ca, asn) => write!(f, "No current ASPA exists for customer AS '{}'", asn),
+            Error::AspaCustomerAsNotEntitled(_ca, asn) => write!(f, "Customer AS '{asn}' is not held by you"),
+            Error::AspaCustomerAlreadyPresent(_ca, asn) => write!(f, "ASPA already exists for customer AS '{asn}'"),
+            Error::AspaProvidersEmpty(_ca, asn) => write!(f, "ASPA for customer AS '{asn}' requires at least one provider"),
+            Error::AspaCustomerAsProvider(_ca, asn) => write!(f, "ASPA for customer AS '{asn}' cannot have that AS as provider"),
+            Error::AspaProvidersDuplicates(_ca, asn) => write!(f, "ASPA for customer AS '{asn}' cannot have duplicate providers"),
+            Error::AspaCustomerUnknown(_ca, asn) => write!(f, "No current ASPA exists for customer AS '{asn}'"),
 
             //-----------------------------------------------------------------
             // BGPSec
@@ -578,14 +572,14 @@ impl fmt::Display for Error {
             Error::KeyUseNoCurrentKey => write!(f, "No current key in resource class"),
             Error::KeyUseNoOldKey => write!(f, "No old key in resource class"),
             Error::KeyUseNoIssuedCert => write!(f, "No issued cert matching pub key"),
-            Error::KeyUseNoMatch(ki) => write!(f, "No key found matching key identifier: '{}'", ki),
+            Error::KeyUseNoMatch(ki) => write!(f, "No key found matching key identifier: '{ki}'"),
             Error::KeyRollInProgress => write!(f, "Key roll in progress"),
             Error::KeyRollActivatePendingRequests => write!(f, "Cannot activate key while there are still pending requests."),
 
             //-----------------------------------------------------------------
             // Resource Issues
             //-----------------------------------------------------------------
-            Error::ResourceClassUnknown(rcn) => write!(f, "Unknown resource class: '{}'", rcn),
+            Error::ResourceClassUnknown(rcn) => write!(f, "Unknown resource class: '{rcn}'"),
             Error::ResourceSetError(e) => e.fmt(f),
             Error::MissingResources => write!(f, "Requester is not entitled to all requested resources"),
 
@@ -604,7 +598,7 @@ impl fmt::Display for Error {
             Error::TaProxyHasDifferentSigner => write!(f, "Trust Anchor Proxy already has a different associated signer"),
             Error::TaProxyHasNoRequest => write!(f, "Trust Anchor Proxy has no signer request"),
             Error::TaProxyHasRequest => write!(f, "Trust Anchor Proxy already has signer request"),
-            Error::TaProxyRequestNonceMismatch(rcvd, expected) => write!(f, "Trust Anchor Response nonce '{}' does not match open Request nonce '{}'", rcvd, expected),
+            Error::TaProxyRequestNonceMismatch(rcvd, expected) => write!(f, "Trust Anchor Response nonce '{rcvd}' does not match open Request nonce '{expected}'"),
 
             //-----------------------------------------------------------------
             // Resource Tagged Attestation issues

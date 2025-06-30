@@ -40,7 +40,7 @@ fn main() {
                 Ok(mgr) => mgr,
                 Err(e) => {
                     eprintln!("*** Error Preparing Data Migration ***");
-                    eprintln!("{}", e);
+                    eprintln!("{e}");
                     eprintln!();
                     eprintln!(
                         "Note that your server data has NOT been modified. \
@@ -62,7 +62,7 @@ fn main() {
             ) {
                 Err(e) => {
                     eprintln!("*** Error Preparing Data Migration ***");
-                    eprintln!("{}", e);
+                    eprintln!("{e}");
                     eprintln!();
                     eprintln!(
                         "Note that your server data has NOT been modified. \
@@ -81,14 +81,12 @@ fn main() {
                     let to = report.versions().to();
                     if report.data_migration() {
                         info!(
-                            "Prepared and verified upgrade from {} to {}.",
-                            from, to
+                            "Prepared and verified upgrade from {from} to {to}."
                         );
                     } else {
                         info!(
                             "No preparation is needed for the upgrade from \
-                             {} to {}.",
-                            from, to
+                             {from} to {to}."
                         )
                     }
                 },
@@ -97,7 +95,7 @@ fn main() {
         Command::Migrate(cmd) => {
             if let Err(e) = migrate(config, cmd.target) {
                 eprintln!("*** Error Migrating DATA ***");
-                eprintln!("{}", e);
+                eprintln!("{e}");
                 eprintln!();
                 eprintln!(
                     "Note that your server data has NOT been modified."

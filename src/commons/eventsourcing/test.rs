@@ -99,7 +99,7 @@ impl fmt::Display for PersonEvent {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             PersonEvent::NameChanged(new_name) => {
-                write!(f, "changed name to '{}'", new_name)
+                write!(f, "changed name to '{new_name}'")
             }
             PersonEvent::HadBirthday => write!(f, "went around the sun."),
         }
@@ -137,7 +137,7 @@ impl fmt::Display for PersonCommandDetails {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             PersonCommandDetails::ChangeName(name) => {
-                write!(f, "Change name to {}", name)
+                write!(f, "Change name to {name}")
             }
             PersonCommandDetails::GoAroundTheSun => {
                 write!(f, "Go around the sun")
@@ -198,7 +198,7 @@ impl fmt::Display for PersonStorableCommand {
         match self {
             PersonStorableCommand::Init => write!(f, "Initialise person"),
             PersonStorableCommand::ChangeName(name) => {
-                write!(f, "Change name to {}", name)
+                write!(f, "Change name to {name}")
             }
             PersonStorableCommand::GoAroundTheSun => {
                 write!(f, "Go around the sun")

@@ -353,14 +353,12 @@ impl fmt::Display for PublisherRequestFileError {
         match self {
             Self::Io(path, err) => {
                 write!(
-                    f, "Failed to read publisher request file '{}': {}'",
-                    path, err
+                    f, "Failed to read publisher request file '{path}': {err}'"
                 )
             }
             Self::Parse(path, err) => {
                 write!(
-                    f, "Failed to parse publisher request file '{}': {}'",
-                    path, err
+                    f, "Failed to parse publisher request file '{path}': {err}'"
                 )
             }
         }

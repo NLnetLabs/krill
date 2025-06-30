@@ -47,7 +47,7 @@ pub async fn logging_http_client(
                 );
             }
             Err(err) => {
-                debug!("OpenID Connect response: {:?}", err)
+                debug!("OpenID Connect response: {err:?}")
             }
         }
     }
@@ -119,7 +119,7 @@ async fn convert_to_openid_response(
     .map_err(|_| {
         httpclient::Error::response(
             uri,
-            format!("invalid status code: {}", response_code),
+            format!("invalid status code: {response_code}"),
         )
     })?;
 
@@ -155,7 +155,7 @@ async fn convert_to_openid_response(
     let response_body = response.bytes().await.map_err(|e| {
         httpclient::Error::response(
             uri,
-            format!("could not get response body: {}", e),
+            format!("could not get response body: {e}"),
         )
     })?;
 

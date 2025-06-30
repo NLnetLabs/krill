@@ -158,14 +158,12 @@ impl fmt::Display for RepositoryResponseFileError {
         match self {
             Self::Io(path, err) => {
                 write!(
-                    f, "Failed to read repository response file '{}': {}'",
-                    path, err
+                    f, "Failed to read repository response file '{path}': {err}'"
                 )
             }
             Self::Parse(path, err) => {
                 write!(
-                    f, "Failed to parse repository response file '{}': {}'",
-                    path, err
+                    f, "Failed to parse repository response file '{path}': {err}'"
                 )
             }
         }

@@ -1999,8 +1999,7 @@ impl CertAuth {
         signer: Arc<KrillSigner>,
     ) -> KrillResult<Vec<CertAuthEvent>> {
         warn!(
-            "Dropping resource class '{}' because of reason: {}",
-            rcn, reason
+            "Dropping resource class '{rcn}' because of reason: {reason}"
         );
         let rc = self.resources.get(&rcn).ok_or_else(|| {
             Error::ResourceClassUnknown(rcn.clone())
@@ -2498,8 +2497,7 @@ impl CertAuth {
 
         if self.rtas.has(&name) {
             return Err(Error::Custom(format!(
-                "RTA with name '{}' already exists",
-                name
+                "RTA with name '{name}' already exists"
             )));
         }
 
@@ -2562,7 +2560,7 @@ impl CertAuth {
     ) -> KrillResult<Vec<CertAuthEvent>> {
         if self.rtas.has(&name) {
             return Err(Error::Custom(
-                format!("RTA with name '{}' already exists", name)
+                format!("RTA with name '{name}' already exists")
             ));
         }
 

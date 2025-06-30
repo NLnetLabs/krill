@@ -49,13 +49,13 @@ impl fmt::Display for AspaDefinitionUpdates {
         if !self.add_or_replace.is_empty() {
             write!(f, " add or replace:")?;
             for definition in &self.add_or_replace {
-                write!(f, " {}", definition)?;
+                write!(f, " {definition}")?;
             }
         }
         if !self.remove.is_empty() {
             write!(f, " remove where customer ASN is:")?;
             for as_id in &self.remove {
-                write!(f, " {}", as_id)?;
+                write!(f, " {as_id}")?;
             }
         }
 
@@ -83,7 +83,7 @@ impl AspaDefinitionList {
 impl fmt::Display for AspaDefinitionList {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for def in self.0.iter() {
-            writeln!(f, "{}", def)?;
+            writeln!(f, "{def}")?;
         }
         Ok(())
     }
@@ -256,14 +256,14 @@ impl fmt::Display for AspaProvidersUpdate {
         if !self.added.is_empty() {
             write!(f, "adding providers:")?;
             for added in &self.added {
-                write!(f, " {}", added)?;
+                write!(f, " {added}")?;
             }
             write!(f, " ")?;
         }
         if !self.removed.is_empty() {
             write!(f, "removing providers:")?;
             for removed in &self.removed {
-                write!(f, " {}", removed)?;
+                write!(f, " {removed}")?;
             }
         }
         Ok(())
@@ -302,16 +302,15 @@ impl fmt::Display for AspaDefinitionFormatError {
                 write!(f, "customer AS missing")
             }
             AspaDefinitionFormatError::CustomerAsInvalid(s) => {
-                write!(f, "cannot parse customer AS: {}", s)
+                write!(f, "cannot parse customer AS: {s}")
             }
             AspaDefinitionFormatError::ProviderAsInvalid(s) => {
-                write!(f, "cannot parse provider AS: {}", s)
+                write!(f, "cannot parse provider AS: {s}")
             }
             AspaDefinitionFormatError::ProviderAsDuplicate(l, r) => {
                 write!(
                     f,
-                    "duplicate AS in provider list. Found {} and {}",
-                    l, r
+                    "duplicate AS in provider list. Found {l} and {r}"
                 )
             }
             AspaDefinitionFormatError::ExtraParts => {

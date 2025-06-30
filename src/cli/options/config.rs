@@ -65,18 +65,18 @@ impl Simple {
                 Cow::Borrowed(data_dir)
             }
             else {
-                Cow::Owned(format!("{}/", data_dir))
+                Cow::Owned(format!("{data_dir}/"))
             };
             config = config.replace(
                 "### storage_uri = \"./data\"",
-                &format!("storage_uri = \"{}\"", data_dir)
+                &format!("storage_uri = \"{data_dir}\"")
             );
         }
 
         if let Some(log_file) = self.logfile {
             config = config.replace(
                 "### log_file = \"./krill.log\"",
-                &format!("log_file = \"{}\"", log_file),
+                &format!("log_file = \"{log_file}\""),
             )
         }
 
@@ -143,7 +143,7 @@ impl User {
             // the client browser knows how to construct based on the
             // users id and a site specific string. Then hash again using
             // a strong random salt only known to the server.
-            let weak_salt = format!("krill-lagosta-{}", user_id);
+            let weak_salt = format!("krill-lagosta-{user_id}");
             let weak_salt = weak_salt.nfkc().collect::<String>();
 
             let mut interim_hash = [0u8; 32];
@@ -178,11 +178,11 @@ impl User {
                     .into_iter()
                     // quote the key if needed
                     .map(|KeyValuePair(k, v)| match k.contains(' ') {
-                        true => (format!(r#""{}""#, k), v),
+                        true => (format!(r#""{k}""#), v),
                         false => (k, v),
                     })
                     // quote the value
-                    .map(|(k, v)| format!(r#"{}="{}""#, k, v))
+                    .map(|(k, v)| format!(r#"{k}="{v}""#))
                     .collect::<Vec<String>>()
                     .join(", ")
             )

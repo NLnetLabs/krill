@@ -184,11 +184,10 @@ impl KeyValueStore {
         namespace: &Namespace,
         prefix: &str,
     ) -> Result<NamespaceBuf, KeyValueError> {
-        let namespace_string = format!("{}_{}", prefix, namespace);
+        let namespace_string = format!("{prefix}_{namespace}");
         NamespaceBuf::from_str(&namespace_string).map_err(|e| {
             KeyValueError::Other(format!(
-                "Cannot parse namespace: {}. Error: {}",
-                namespace_string, e
+                "Cannot parse namespace: {namespace_string}. Error: {e}"
             ))
         })
     }
@@ -219,8 +218,7 @@ impl KeyValueStore {
         let current_store = KeyValueStore::create(storage_uri, namespace)?;
         if !current_store.is_empty()? {
             Err(KeyValueError::Other(format!(
-                "Abort migrate upgraded store for {} to current. The current store was not archived.",
-                namespace
+                "Abort migrate upgraded store for {namespace} to current. The current store was not archived."
             )))
         } else {
             self.inner
@@ -275,13 +273,13 @@ impl fmt::Display for KeyValueError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             KeyValueError::UnknownScheme(e) => {
-                write!(f, "Unknown Scheme: {}", e)
+                write!(f, "Unknown Scheme: {e}")
             }
             KeyValueError::DuplicateKey(key) => {
-                write!(f, "Duplicate key: {}", key)
+                write!(f, "Duplicate key: {key}")
             }
-            KeyValueError::Inner(e) => write!(f, "Store error: {}", e),
-            KeyValueError::Other(msg) => write!(f, "{}", msg),
+            KeyValueError::Inner(e) => write!(f, "Store error: {e}"),
+            KeyValueError::Other(msg) => write!(f, "{msg}"),
         }
     }
 }

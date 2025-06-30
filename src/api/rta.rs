@@ -48,7 +48,7 @@ impl fmt::Display for RtaContentRequest {
 
         write!(f, "keys: ")?;
         for key in self.subject_keys.iter() {
-            write!(f, "{} ", key)?;
+            write!(f, "{key} ")?;
         }
         writeln!(f)?;
         writeln!(

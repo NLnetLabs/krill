@@ -523,10 +523,10 @@ impl fmt::Display for UpdateChildRequest {
             write!(f, "new id cert ")?;
         }
         if let Some(resources) = &self.resources {
-            write!(f, "new resources: {} ", resources)?;
+            write!(f, "new resources: {resources} ")?;
         }
         if let Some(suspend) = self.suspend {
-            write!(f, "change suspend status to: {}", suspend)?;
+            write!(f, "change suspend status to: {suspend}")?;
         }
         Ok(())
     }

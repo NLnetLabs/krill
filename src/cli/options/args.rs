@@ -53,14 +53,12 @@ impl<Msg: fmt::Display> fmt::Display for JsonFileError<Msg> {
         match self {
             Self::Io(path, msg, err) => {
                 write!(
-                    f, "Failed to read {} file '{}': {}'",
-                    msg, path, err
+                    f, "Failed to read {msg} file '{path}': {err}'"
                 )
             }
             Self::Parse(path, msg, err) => {
                 write!(
-                    f, "Failed to parse {} file '{}': {}'",
-                    msg, path, err
+                    f, "Failed to parse {msg} file '{path}': {err}'"
                 )
             }
         }

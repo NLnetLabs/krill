@@ -320,7 +320,7 @@ impl AspaObjects {
             aspa_def.customer,
             aspa_def.providers.clone(),
         ).map_err(|e| {
-            Error::Custom(format!("Cannot use aspa config: {}", e))
+            Error::Custom(format!("Cannot use aspa config: {e}"))
         })?;
 
         let object_builder = {

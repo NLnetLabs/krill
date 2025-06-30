@@ -73,8 +73,7 @@ impl<S> ClientSession<S> {
                 Err(err) => {
                     warn!(
                         "Login session status check: unable to determine \
-                         the current time: {}",
-                        err
+                         the current time: {err}"
                     );
                 }
             }
@@ -172,8 +171,7 @@ impl<S> LoginSessionCache<S> {
         let session_json_str =
             serde_json::to_string(&session).map_err(|err| {
                 Error::Custom(format!(
-                    "Error while serializing session data: {}",
-                    err
+                    "Error while serializing session data: {err}"
                 ))
             })?;
         let unencrypted_bytes = session_json_str.as_bytes();
@@ -195,8 +193,7 @@ impl<S> LoginSessionCache<S> {
             .duration_since(UNIX_EPOCH)
             .map_err(|err| {
                 Error::Custom(format!(
-                    "Unable to determine the current time: {}",
-                    err
+                    "Unable to determine the current time: {err}"
                 ))
             })?
             .as_secs())
@@ -243,7 +240,7 @@ impl<S> LoginSessionCache<S> {
 
         let bytes = BASE64_ENGINE.decode(token.as_ref().as_bytes()).map_err(
             |err| {
-                debug!("Invalid bearer token: cannot decode: {}", err);
+                debug!("Invalid bearer token: cannot decode: {err}");
                 ApiAuthError::ApiInvalidCredentials(
                     "Invalid bearer token".to_string(),
                 )
@@ -256,7 +253,7 @@ impl<S> LoginSessionCache<S> {
             &unencrypted_bytes
         ).map_err(|err| {
             debug!(
-                "Invalid bearer token: cannot deserialize: {}", err
+                "Invalid bearer token: cannot deserialize: {err}"
             );
             ApiAuthError::ApiInvalidCredentials(
                 "Invalid bearer token".to_string(),
@@ -343,8 +340,7 @@ impl<S> LoginSessionCache<S> {
                 if size_after != size_before {
                     debug!(
                         "Login session cache purge: \
-                         size before={}, size after={}",
-                        size_before, size_after
+                         size before={size_before}, size after={size_after}"
                     );
                 }
             }

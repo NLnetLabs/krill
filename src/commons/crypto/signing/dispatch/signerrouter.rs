@@ -363,7 +363,7 @@ impl SignerRouter {
     /// attempts.
     fn bind_ready_signers(&self) {
         if let Err(err) = self.do_ready_signer_binding() {
-            error!("Internal error: Unable to bind ready signers: {}", err);
+            error!("Internal error: Unable to bind ready signers: {err}");
         }
     }
 
@@ -372,8 +372,7 @@ impl SignerRouter {
         let num_pending_signers = self.pending_signers.read().unwrap().len();
         if num_pending_signers > 0 {
             trace!(
-                "Attempting to bind {} pending signers",
-                num_pending_signers
+                "Attempting to bind {num_pending_signers} pending signers"
             );
 
             // Fetch the handle of every signer previously created in the
@@ -409,7 +408,7 @@ impl SignerRouter {
                     .and_then(|verify_result| match verify_result {
                         IdentifyResult::Unavailable => {
                             // Signer isn't ready yet, leave it in the pending set and try again next time.
-                            trace!("Signer '{}' is unavailable", signer_name);
+                            trace!("Signer '{signer_name}' is unavailable");
                             Ok(true)
                         }
                         IdentifyResult::Identified(signer_handle) => {
@@ -418,7 +417,7 @@ impl SignerRouter {
                                 .write()
                                 .unwrap()
                                 .insert(signer_handle, signer_provider.clone());
-                            info!("Signer '{}' is ready for use", signer_name);
+                            info!("Signer '{signer_name}' is ready for use");
                             // And remove it from the pending set
                             Ok(false)
                         }
@@ -429,7 +428,7 @@ impl SignerRouter {
                                     RegisterResult::NotReady => {
                                         // Strange, it was ready just now when we verified it ... leave it in the
                                         // pending set and try again next time.
-                                        trace!("Signer '{}' is not ready", signer_name);
+                                        trace!("Signer '{signer_name}' is not ready");
                                         true
                                     }
                                     RegisterResult::ReadyVerified(signer_handle) => {
@@ -438,15 +437,14 @@ impl SignerRouter {
                                             .write()
                                             .unwrap()
                                             .insert(signer_handle, signer_provider.clone());
-                                        info!("Signer '{}' is ready for use", signer_name);
+                                        info!("Signer '{signer_name}' is ready for use");
                                         // And remove it from the pending set
                                         false
                                     }
                                     RegisterResult::ReadyUnusable(err) => {
                                         // Signer registration failed, remove it from the pending set
                                         error!(
-                                            "Signer '{}' could not be registered: signer is not usable: {}",
-                                            signer_name, err
+                                            "Signer '{signer_name}' could not be registered: signer is not usable: {err}"
                                         );
                                         false
                                     }
@@ -454,7 +452,7 @@ impl SignerRouter {
                         }
                         IdentifyResult::Unusable => {
                             // Signer is ready and unusable, remove it from the pending set
-                            error!("Signer '{}' could not be identified: signer is not usable", signer_name);
+                            error!("Signer '{signer_name}' could not be identified: signer is not usable");
                             Ok(false)
                         }
                         IdentifyResult::Corrupt => {
@@ -482,7 +480,7 @@ impl SignerRouter {
             .as_ref()
             .unwrap()
             .get_signer_handles()
-            .map_err(|err| format!("Failed to get signer handles: {}", err))
+            .map_err(|err| format!("Failed to get signer handles: {err}"))
     }
 
     /// Checks if the signer identity can be shown to match one of the known
@@ -568,9 +566,7 @@ impl SignerRouter {
             .get_signer_name(candidate_handle)?;
         let signer_name = signer_provider.get_name().to_string();
         trace!(
-            "Attempting to identify signer '{}' using identity key stored for signer '{}'",
-            signer_name,
-            handle_name
+            "Attempting to identify signer '{signer_name}' using identity key stored for signer '{handle_name}'"
         );
 
         let public_key = match self
@@ -583,8 +579,7 @@ impl SignerRouter {
             Err(err) => match err {
                 crate::commons::error::Error::SignerError(err) => {
                     error!(
-                        "Internal error: Identity public key for signer '{}' is invalid: {}",
-                        handle_name, err
+                        "Internal error: Identity public key for signer '{handle_name}' is invalid: {err}"
                     );
                     return Ok(IdentifyResult::Corrupt);
                 }
@@ -603,25 +598,24 @@ impl SignerRouter {
             .sign_registration_challenge(&signer_private_key_id, challenge)
         {
             Err(SignerError::TemporarilyUnavailable) => {
-                debug!("Signer '{}' could not be contacted", signer_name);
+                debug!("Signer '{signer_name}' could not be contacted");
                 return Ok(IdentifyResult::Unavailable);
             }
             Err(SignerError::KeyNotFound) => {
                 debug!(
-                    "Signer '{}' not matched: private key id '{}' not found",
-                    signer_name, signer_private_key_id
+                    "Signer '{signer_name}' not matched: private key id '{signer_private_key_id}' not found"
                 );
                 return Ok(IdentifyResult::Unidentified);
             }
             Err(err) => {
-                error!("Signer '{}' is unusable: {}", signer_name, err);
+                error!("Signer '{signer_name}' is unusable: {err}");
                 return Ok(IdentifyResult::Unusable);
             }
             Ok(res) => res,
         };
 
         if public_key.verify(challenge, &signature).is_ok() {
-            debug!("Signer '{}' is ready and known, binding", signer_name);
+            debug!("Signer '{signer_name}' is ready and known, binding");
             let signer_info = signer_provider
                 .get_info()
                 .unwrap_or_else(|| "No signer info".to_string());
@@ -637,8 +631,7 @@ impl SignerRouter {
                 // This is unexpected and perhaps indicative of a deeper
                 // problem but log and keep going.
                 error!(
-                    "Internal error: Failed to change name of signer to '{}': {}",
-                    signer_name, err
+                    "Internal error: Failed to change name of signer to '{signer_name}': {err}"
                 );
             }
             if let Err(err) = self
@@ -650,19 +643,16 @@ impl SignerRouter {
                 // This is unexpected and perhaps indicative of a deeper
                 // problem but log and keep going.
                 error!(
-                    "Internal error: Failed to change info for signer '{}' to '{}': {}",
-                    signer_name, signer_info, err
+                    "Internal error: Failed to change info for signer '{signer_name}' to '{signer_info}': {err}"
                 );
             }
 
             debug!(
-                "Signer '{}' bound to signer mapper handle '{}'",
-                signer_name, candidate_handle
+                "Signer '{signer_name}' bound to signer mapper handle '{candidate_handle}'"
             );
         } else {
             debug!(
-                "Signer '{}' not matched: incorrect signature created with private key '{}'",
-                signer_name, signer_private_key_id
+                "Signer '{signer_name}' not matched: incorrect signature created with private key '{signer_private_key_id}'"
             );
         }
 
@@ -682,7 +672,7 @@ impl SignerRouter {
     ) -> Result<RegisterResult, ErrorString> {
         let signer_name = signer_provider.get_name().to_string();
 
-        trace!("Attempting to register signer '{}'", signer_name);
+        trace!("Attempting to register signer '{signer_name}'");
 
         let (public_key, signer_private_key_id) =
             match signer_provider.create_registration_key() {
@@ -714,7 +704,7 @@ impl SignerRouter {
             ));
         }
 
-        debug!("Signer '{}' is ready and new, binding", signer_name);
+        debug!("Signer '{signer_name}' is ready and new, binding");
 
         let signer_info = signer_provider
             .get_info()
@@ -730,8 +720,7 @@ impl SignerRouter {
         signer_provider.set_handle(signer_handle.clone());
 
         debug!(
-            "Signer '{}' bound to signer handle '{}'",
-            signer_name, signer_handle
+            "Signer '{signer_name}' bound to signer handle '{signer_handle}'"
         );
         Ok(RegisterResult::ReadyVerified(signer_handle))
     }

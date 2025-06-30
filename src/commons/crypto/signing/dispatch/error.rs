@@ -10,7 +10,7 @@ impl std::ops::Deref for ErrorString {
 
 impl ErrorString {
     pub fn new<T: std::fmt::Display>(displayable: T) -> Self {
-        ErrorString(format!("{}", displayable))
+        ErrorString(format!("{displayable}"))
     }
 }
 

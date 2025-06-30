@@ -202,9 +202,8 @@ impl CaStatusStore {
         let status = self.store.get::<CaStatus>(&key).ok().flatten();
         if let Some(full_status) = status {
             info!(
-                "Migrating pre 0.9.5 connection status file for CA '{}' \
-                 to new format",
-                ca
+                "Migrating pre 0.9.5 connection status file for CA '{ca}' \
+                 to new format"
             );
             // repo status
             self.store.store(
@@ -249,8 +248,7 @@ impl CaStatusStore {
         Key::new_scoped(
             Scope::from_segment(Segment::parse_lossy(ca.as_str())),
             Segment::parse_lossy(&format!(
-                "{}{}{}",
-                PARENTS_PREFIX, parent, JSON_SUFFIX
+                "{PARENTS_PREFIX}{parent}{JSON_SUFFIX}"
             )),
         )
     }
@@ -260,8 +258,7 @@ impl CaStatusStore {
         Key::new_scoped(
             Scope::from_segment(Segment::parse_lossy(ca.as_str())),
             Segment::parse_lossy(&format!(
-                "{}{}{}",
-                CHILDREN_PREFIX, child, JSON_SUFFIX
+                "{CHILDREN_PREFIX}{child}{JSON_SUFFIX}"
             )),
         )
     }

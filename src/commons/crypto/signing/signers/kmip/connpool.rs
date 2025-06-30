@@ -134,12 +134,12 @@ where
     E: std::fmt::Display,
 {
     fn handle_error(&self, err: E) {
-        warn!("Pool error: {}", err)
+        warn!("Pool error: {err}")
     }
 }
 
 impl From<r2d2::Error> for SignerError {
     fn from(err: r2d2::Error) -> Self {
-        SignerError::KmipError(format!("{}", err))
+        SignerError::KmipError(format!("{err}"))
     }
 }

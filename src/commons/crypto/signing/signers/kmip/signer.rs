@@ -261,7 +261,7 @@ impl TryFrom<&KmipSignerConfig> for ConnectionSettings {
 fn read_binary_file(file_path: &PathBuf) -> Result<Vec<u8>, SignerError> {
     std::fs::read(file_path).map_err(|err| {
         SignerError::IoError(KrillIoError::new(
-            format!("Failed to read file '{:?}'", file_path),
+            format!("Failed to read file '{file_path:?}'"),
             err,
         ))
     })
@@ -422,15 +422,15 @@ impl KmipSigner {
             match err {
                 // Fatal error
                 kmip::client::Error::ConfigurationError(err) => {
-                    error!("Failed to connect KMIP server: Configuration error: {}", err);
+                    error!("Failed to connect KMIP server: Configuration error: {err}");
                     ProbeError::CompletedUnusable
                 }
 
                 // I/O error attempting to contact the server or a problem on an internal problem at the server, not
                 // necessarily fatal or a reason to abort creating the pool.
                 kmip::client::Error::ServerError(err) => {
-                    error!("Failed to connect KMIP server: Server error: {}", err);
-                    ProbeError::CallbackFailed(SignerError::KmipError(format!("Failed to connect to server: {}", err)))
+                    error!("Failed to connect KMIP server: Server error: {err}");
+                    ProbeError::CallbackFailed(SignerError::KmipError(format!("Failed to connect to server: {err}")))
                 }
 
                 // Impossible errors: we didn't yet try to send a request or receive a response
@@ -441,12 +441,12 @@ impl KmipSigner {
                 | kmip::client::Error::InternalError(err)
                 | kmip::client::Error::Unknown(err)
                 | kmip::client::Error::ItemNotFound(err) => {
-                    error!("Failed to connect KMIP server: Unexpected error: {}", err);
+                    error!("Failed to connect KMIP server: Unexpected error: {err}");
                     ProbeError::CompletedUnusable
                 }
 
                 other => {
-                    error!("Failed to connect KMIP server: Unexpected error: {}", other);
+                    error!("Failed to connect KMIP server: Unexpected error: {other}");
                     ProbeError::CompletedUnusable
                 }
             }
@@ -667,8 +667,7 @@ impl KmipSigner {
             .add_key(signer_handle, key_id, &internal_key_id)
             .map_err(|err| {
                 SignerError::KmipError(format!(
-                    "Failed to record signer key: {}",
-                    err
+                    "Failed to record signer key: {err}"
                 ))
             })?;
 
@@ -735,8 +734,8 @@ impl KmipSigner {
         // should be none as they key should either be renamed after
         // creation or should have been deleted at some point).
         let prefix = format!("krill_new_key_{}", Timestamp::now());
-        let private_key_name = format!("{}_priv", prefix);
-        let public_key_name = format!("{}_pub", prefix);
+        let private_key_name = format!("{prefix}_priv");
+        let public_key_name = format!("{prefix}_pub");
 
         // Create the RSA key pair
         let kmip_key_pair_ids =
@@ -809,9 +808,9 @@ impl KmipSigner {
         // more helpful names to the keys such as the name of the CA they were
         // created for?
         let hex_key_id = hex::encode(public_key.key_identifier());
-        let new_public_key_name = format!("krill-public-key-{}", hex_key_id);
+        let new_public_key_name = format!("krill-public-key-{hex_key_id}");
         let new_private_key_name =
-            format!("krill-private-key-{}", hex_key_id);
+            format!("krill-private-key-{hex_key_id}");
 
         // Rename the keys to their new names
         self.with_conn("rename key", |conn| {
@@ -852,8 +851,7 @@ impl KmipSigner {
             }
             _ => {
                 return Err(SignerError::KmipError(format!(
-                    "Failed to get key material: unsupported cryptographic object type returned by KMIP Get operation for public key with ID '{}'",
-                    public_key_id)));
+                    "Failed to get key material: unsupported cryptographic object type returned by KMIP Get operation for public key with ID '{public_key_id}'")));
             }
         };
 
@@ -861,16 +859,14 @@ impl KmipSigner {
             KeyMaterial::Bytes(bytes) => {
                 PublicKey::rsa_from_bits_bytes(bytes::Bytes::from(bytes)).map_err(|e| {
                     SignerError::KmipError(format!(
-                        "Failed to construct RSA Public for key with ID '{}'. Error: {}",
-                        public_key_id, e
+                        "Failed to construct RSA Public for key with ID '{public_key_id}'. Error: {e}"
                     ))
                 })
             }
             KeyMaterial::TransparentRSAPublicKey(pub_key) => {
                 PublicKey::rsa_from_components(&pub_key.modulus, &pub_key.public_exponent).map_err(|e| {
                     SignerError::KmipError(format!(
-                        "Failed to construct RSA Public for key with ID '{}'. Error: {}",
-                        public_key_id, e
+                        "Failed to construct RSA Public for key with ID '{public_key_id}'. Error: {e}"
                     ))
                 })
             }
@@ -878,20 +874,17 @@ impl KmipSigner {
                 if let Some(public_exponent) = priv_key.public_exponent {
                     PublicKey::rsa_from_components(&priv_key.modulus, &public_exponent).map_err(|e| {
                         SignerError::KmipError(format!(
-                            "Failed to construct RSA Public for key with ID '{}'. Error: {}",
-                            public_key_id, e
+                            "Failed to construct RSA Public for key with ID '{public_key_id}'. Error: {e}"
                         ))
                     })
                 } else {
                     Err(SignerError::KmipError(format!(
-                        "Failed to get key material: missing exponent in transparent RSA private key returned by KMIP Get operation for public key with ID '{}'",
-                        public_key_id)))
+                        "Failed to get key material: missing exponent in transparent RSA private key returned by KMIP Get operation for public key with ID '{public_key_id}'")))
                 }
             }
             _ => {
                 Err(SignerError::KmipError(format!(
-                    "Failed to get key material: unsupported key material type {:?} returned by KMIP Get operation for public key with ID '{}'",
-                    key_material, public_key_id)))
+                    "Failed to get key material: unsupported key material type {key_material:?} returned by KMIP Get operation for public key with ID '{public_key_id}'")))
             }
         }
     }
@@ -1088,8 +1081,7 @@ impl KmipSigner {
             )
             .map_err(|err| {
                 SignerError::KmipError(format!(
-                    "One-off signing of data failed: {}",
-                    err
+                    "One-off signing of data failed: {err}"
                 ))
             });
 
@@ -1109,7 +1101,7 @@ impl From<kmip::client::Error> for SignerError {
     fn from(err: kmip::client::Error) -> Self {
         match err {
             kmip::client::Error::ItemNotFound(_) => SignerError::KeyNotFound,
-            _ => SignerError::KmipError(format!("Client error: {}", err)),
+            _ => SignerError::KmipError(format!("Client error: {err}")),
         }
     }
 }
