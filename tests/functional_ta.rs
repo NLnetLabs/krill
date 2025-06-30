@@ -60,7 +60,7 @@ async fn functional_ta() {
             },
             tal_https: vec![
                 uri::Https::from_string(
-                    format!("https://localhost:{}/ta/ta.cer", port)
+                    format!("https://localhost:{port}/ta/ta.cer")
                 ).unwrap()
             ],
             tal_rsync: uri::Rsync::from_str(
@@ -124,7 +124,7 @@ async fn functional_ta() {
                 },
                 tal_https: vec![
                     uri::Https::from_string(
-                        format!("https://localhost:{}/ta/ta.cer", port)
+                        format!("https://localhost:{port}/ta/ta.cer")
                     ).unwrap()
                 ],
                 tal_rsync: uri::Rsync::from_str(

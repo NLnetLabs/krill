@@ -115,8 +115,7 @@ impl Pkcs11Context {
         // path represents a file.
         let lib_file_name = lib_path.file_name().ok_or_else(|| {
             SignerError::Pkcs11Error(format!(
-                "Failed to load PKCS#11 library '{:?}': path does not refer to a file",
-                lib_path
+                "Failed to load PKCS#11 library '{lib_path:?}': path does not refer to a file"
             ))
         })?;
 
@@ -129,16 +128,15 @@ impl Pkcs11Context {
         // Note, we cannot use entry and or_insert_with because our fn may
         // fail.
         if !locked_contexts.contains_key(&lib_file_name) {
-            trace!("Loading PKCS#11 library '{:?}'", lib_path);
+            trace!("Loading PKCS#11 library '{lib_path:?}'");
 
             let ctx = Pkcs11::new(lib_path).map_err(|err| {
                 SignerError::Pkcs11Error(format!(
-                    "Failed to load PKCS#11 library '{:?}': {}",
-                    lib_path, err
+                    "Failed to load PKCS#11 library '{lib_path:?}': {err}"
                 ))
             })?;
 
-            trace!("Loaded PKCS#11 library '{:?}'", lib_path);
+            trace!("Loaded PKCS#11 library '{lib_path:?}'");
             locked_contexts.insert(
                 lib_file_name.clone(),
                 ThreadSafePkcs11Context::new(&lib_file_name, ctx),

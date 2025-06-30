@@ -248,8 +248,8 @@ impl fmt::Display for KrillVersionReleaseType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             KrillVersionReleaseType::Release => write!(f, ""),
-            KrillVersionReleaseType::Candidate(nr) => write!(f, "-rc{}", nr),
-            KrillVersionReleaseType::Dev(text) => write!(f, "-{}", text),
+            KrillVersionReleaseType::Candidate(nr) => write!(f, "-rc{nr}"),
+            KrillVersionReleaseType::Dev(text) => write!(f, "-{text}"),
         }
     }
 }

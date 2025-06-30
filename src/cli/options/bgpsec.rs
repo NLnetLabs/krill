@@ -167,15 +167,14 @@ impl fmt::Display for BgpsecCsrFileError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::Io(path, err) => {
-                write!(f, "Failed to read CSR file '{}': {}", path, err)
+                write!(f, "Failed to read CSR file '{path}': {err}")
             }
             Self::Decode(path, err) => {
-                write!(f, "Failed to parse CSR file '{}': {}", path, err)
+                write!(f, "Failed to parse CSR file '{path}': {err}")
             }
             Self::Verify(path, err) => {
                 write!(
-                    f, "Failed to verify signature in CSR file '{}': {}",
-                    path, err
+                    f, "Failed to verify signature in CSR file '{path}': {err}"
                 )
             }
         }

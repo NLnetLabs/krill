@@ -386,7 +386,7 @@ impl fmt::Display for RoaConfiguration {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.payload)?;
         if let Some(comment) = &self.comment {
-            write!(f, " # {}", comment)?;
+            write!(f, " # {comment}")?;
         }
         Ok(())
     }
@@ -502,7 +502,7 @@ impl ConfiguredRoas {
 impl fmt::Display for ConfiguredRoas {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for def in self.0.iter() {
-            writeln!(f, "{}", def)?;
+            writeln!(f, "{def}")?;
         }
         Ok(())
     }
@@ -625,10 +625,10 @@ impl FromStr for RoaConfigurationUpdates {
 impl fmt::Display for RoaConfigurationUpdates {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for a in &self.added {
-            writeln!(f, "A: {}", a)?;
+            writeln!(f, "A: {a}")?;
         }
         for r in &self.removed {
-            writeln!(f, "R: {}", r)?;
+            writeln!(f, "R: {r}")?;
         }
         Ok(())
     }
@@ -991,16 +991,16 @@ impl fmt::Display for AuthorizationFmtError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             AuthorizationFmtError::Pfx(s) => {
-                write!(f, "Invalid prefix string: {}", s)
+                write!(f, "Invalid prefix string: {s}")
             }
             AuthorizationFmtError::Asn(s) => {
-                write!(f, "Invalid asn in string: {}", s)
+                write!(f, "Invalid asn in string: {s}")
             }
             AuthorizationFmtError::Auth(s) => {
-                write!(f, "Invalid authorization string: {}", s)
+                write!(f, "Invalid authorization string: {s}")
             }
             AuthorizationFmtError::Delta(s) => {
-                write!(f, "Invalid authorization delta string: {}", s)
+                write!(f, "Invalid authorization delta string: {s}")
             }
         }
     }

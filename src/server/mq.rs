@@ -97,20 +97,18 @@ impl Task {
     fn name(&self) -> KrillResult<SegmentBuf> {
         match self {
             Task::SyncRepo { ca_handle: ca, .. } => {
-                SegmentBuf::from_str(&format!("sync_repo_{}", ca))
+                SegmentBuf::from_str(&format!("sync_repo_{ca}"))
             }
             Task::SyncParent {
                 ca_handle: ca,
                 parent,
                 ..
             } => SegmentBuf::from_str(&format!(
-                "sync_{}_with_parent_{}",
-                ca, parent
+                "sync_{ca}_with_parent_{parent}"
             )),
             Task::SuspendChildrenIfNeeded { ca_handle: ca } => {
                 SegmentBuf::from_str(&format!(
-                    "suspend_children_if_needed_{}",
-                    ca
+                    "suspend_children_if_needed_{ca}"
                 ))
             }
             Task::RepublishIfNeeded => {
@@ -125,8 +123,7 @@ impl Task {
                 rcn,
                 ..
             } => SegmentBuf::from_str(&format!(
-                "resource_class_removed_ca_{}_parent_{}_rcn_{}",
-                ca, parent, rcn
+                "resource_class_removed_ca_{ca}_parent_{parent}_rcn_{rcn}"
             )),
             Task::UnexpectedKey {
                 ca_handle: ca,
@@ -161,7 +158,7 @@ impl Task {
                 Ok(Segment::make("refresh_bgp_announcements_info").to_owned())
             }
         }
-        .map_err(|e| Error::Custom(format!("could not create name: {}", e)))
+        .map_err(|e| Error::Custom(format!("could not create name: {e}")))
     }
 }
 
@@ -170,21 +167,21 @@ impl fmt::Display for Task {
         match self {
             Task::QueueStartTasks => write!(f, "Server just started"),
             Task::SyncRepo { ca_handle: ca, .. } => {
-                write!(f, "synchronize repo for '{}'", ca)
+                write!(f, "synchronize repo for '{ca}'")
             }
             Task::SyncParent {
                 ca_handle: ca,
                 parent,
                 ..
             } => {
-                write!(f, "synchronize CA '{}' with parent '{}'", ca, parent)
+                write!(f, "synchronize CA '{ca}' with parent '{parent}'")
             }
             Task::RenewTestbedTa => write!(f, "renew testbed TA"),
             Task::SyncTrustAnchorProxySignerIfPossible => {
                 write!(f, "sync TA Proxy and Signer if both in this server.")
             }
             Task::SuspendChildrenIfNeeded { ca_handle: ca } => {
-                write!(f, "verify if CA '{}' has children to suspend", ca)
+                write!(f, "verify if CA '{ca}' has children to suspend")
             }
             Task::RepublishIfNeeded => {
                 write!(f, "let CAs republish their mft/crls if needed")
@@ -199,15 +196,14 @@ impl fmt::Display for Task {
                 write!(f, "create new RRDP delta, if needed")
             }
             Task::ResourceClassRemoved { ca_handle: ca, .. } => {
-                write!(f, "resource class removed for '{}' ", ca)
+                write!(f, "resource class removed for '{ca}' ")
             }
             Task::UnexpectedKey {
                 ca_handle: ca, rcn, ..
             } => {
                 write!(
                     f,
-                    "unexpected key found for '{}' resource class: '{}'",
-                    ca, rcn
+                    "unexpected key found for '{ca}' resource class: '{rcn}'"
                 )
             }
             Task::SweepLoginCache => write!(f, "sweep up expired logins"),
@@ -248,7 +244,7 @@ impl TaskQueue {
                 // a database is used - might be temporarily unavailable.
                 // In that case we don't want Krill to crash on this, but
                 // just keep trying to poll.
-                error!("Could not get pending task from queue: {}", e);
+                error!("Could not get pending task from queue: {e}");
                 None
             }
             Ok(None) => {
@@ -315,14 +311,11 @@ impl TaskQueue {
     ) -> KrillResult<()> {
         let task_name = task.name()?;
         debug!(
-            "add task: {} with priority: {}",
-            task_name,
-            priority,
+            "add task: {task_name} with priority: {priority}",
         );
         let json = serde_json::to_value(&task).map_err(|e| {
             Error::Custom(format!(
-                "could not serialize task {}. error: {}",
-                task_name, e
+                "could not serialize task {task_name}. error: {e}"
             ))
         })?;
 
@@ -333,7 +326,7 @@ impl TaskQueue {
 
     /// Finish a running task, without rescheduling it.
     pub fn finish(&self, task: &Key) -> KrillResult<()> {
-        debug!("Finish task: {}", task);
+        debug!("Finish task: {task}");
         self.q.finish_running_task(task).map_err(Error::from)
     }
 
@@ -343,7 +336,7 @@ impl TaskQueue {
         task: &Key,
         priority: Priority,
     ) -> KrillResult<()> {
-        debug!("Reschedule task: {} to: {}", task, priority);
+        debug!("Reschedule task: {task} to: {priority}");
         self.q
             .reschedule_running_task(task, Some(priority.to_millis()))
             .map_err(Error::from)
@@ -381,8 +374,7 @@ impl TaskQueue {
         let ca_handle = ca.handle().clone();
 
         debug!(
-            "Seen event for CA {} version {}: '{}'",
-            ca_handle, ca_version, event
+            "Seen event for CA {ca_handle} version {ca_version}: '{event}'"
         );
 
         match event {
@@ -477,8 +469,7 @@ impl TaskQueue {
             | CertAuthEvent::ParentUpdated { parent, .. } => {
                 if ca.repository_contact().is_ok() {
                     debug!(
-                        "Parent {} added to CA {}, scheduling sync",
-                        parent, ca_handle
+                        "Parent {parent} added to CA {ca_handle}, scheduling sync"
                     );
                     self.schedule(
                         Task::SyncParent {
@@ -493,8 +484,7 @@ impl TaskQueue {
                     // when the event for updating the
                     // repository is seen.
                     warn!(
-                        "Synchronisation of CA '{}' with parent '{}' postponed until repository is configured.",
-                        ca_handle, parent
+                        "Synchronisation of CA '{ca_handle}' with parent '{parent}' postponed until repository is configured."
                     );
                     Ok(())
                 }
@@ -517,13 +507,11 @@ impl TaskQueue {
                 ..
             } => {
                 debug!(
-                    "CA {} requested certificate for RC {}",
-                    ca_handle, resource_class_name
+                    "CA {ca_handle} requested certificate for RC {resource_class_name}"
                 );
                 if let Ok(parent) = ca.parent_for_rc(resource_class_name) {
                     debug!(
-                        "CA {} will schedule sync for parent {} when CA is version {}",
-                        ca_handle, parent, ca_version
+                        "CA {ca_handle} will schedule sync for parent {parent} when CA is version {ca_version}"
                     );
                     self.schedule(
                         Task::SyncParent {
@@ -601,7 +589,7 @@ impl eventsourcing::PreSaveEventListener<TrustAnchorProxy> for TaskQueue {
         events: &[TrustAnchorProxyEvent],
     ) -> KrillResult<()> {
         for event in events {
-            trace!("Seen TrustAnchorProxy event '{}'", event);
+            trace!("Seen TrustAnchorProxy event '{event}'");
             match event {
                 TrustAnchorProxyEvent::ChildRequestAdded(
                     _child,
@@ -651,8 +639,7 @@ impl eventsourcing::PostSaveEventListener<TrustAnchorProxy> for TaskQueue {
                     // response.
                     for ca in response.content().child_responses.keys() {
                         trace!(
-                            "Received signed response for TA child {}",
-                            ca
+                            "Received signed response for TA child {ca}"
                         );
                         if let Err(e) = self.schedule(
                             Task::SyncParent {

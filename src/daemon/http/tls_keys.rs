@@ -224,13 +224,12 @@ impl fmt::Display for Error {
                 write!(f, "Certificate PEM file contains no certificates")
             }
             Error::Pkcs12(e) => {
-                write!(f, "Cannot create PKCS12 Identity: {}", e)
+                write!(f, "Cannot create PKCS12 Identity: {e}")
             }
-            Error::Connection(e) => write!(f, "Connection error: {}", e),
+            Error::Connection(e) => write!(f, "Connection error: {e}"),
             Error::SignerError(e) => write!(
                 f,
-                "Error signing self-signed HTTPS certificate: {}",
-                e
+                "Error signing self-signed HTTPS certificate: {e}"
             ),
         }
     }

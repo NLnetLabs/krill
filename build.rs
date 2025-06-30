@@ -43,7 +43,7 @@ impl Asset {
             Some(media) => media,
             None => {
                 return Err(format!(
-                    "Asset with unknown extension '{}'", path_ext
+                    "Asset with unknown extension '{path_ext}'"
                 ))
             }
         };
@@ -130,7 +130,7 @@ fn write_mod(
         "#
     )?;
     for item in assets.0 {
-        write!(dest, "{},", item)?;
+        write!(dest, "{item},")?;
     }
     writeln!(dest, "];")
 }
@@ -152,14 +152,14 @@ fn main() {
     let index = match Asset::load(INDEX_PATH.into(), false) {
         Ok(index) => index,
         Err(err) => {
-            eprintln!("{}", err);
+            eprintln!("{err}");
             process::exit(1);
         }
     };
 
     let mut assets = Assets::default();
     if let Err(err) = assets.load_dir(ASSETS_DIR.into()) {
-        eprintln!("{}", err);
+        eprintln!("{err}");
         process::exit(1);
     }
 
@@ -170,6 +170,6 @@ fn main() {
         process::exit(1)
     }
 
-    println!("cargo:rerun-if-changed={}", UI_DIR);
+    println!("cargo:rerun-if-changed={UI_DIR}");
 }
 

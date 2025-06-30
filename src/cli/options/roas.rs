@@ -225,10 +225,10 @@ impl fmt::Display for RoaUpdatesFileError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::Io(path, err) => {
-                write!(f, "Failed to read delta file '{}': {}", path, err)
+                write!(f, "Failed to read delta file '{path}': {err}")
             }
             Self::Parse(path, err) => {
-                write!(f, "Failed to parse delta file '{}': {}", path, err)
+                write!(f, "Failed to parse delta file '{path}': {err}")
             }
         }
     }

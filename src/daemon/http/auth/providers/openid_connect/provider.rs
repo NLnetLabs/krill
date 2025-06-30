@@ -405,7 +405,7 @@ impl AuthProvider {
             // to the rules given in [RFC6749], Section 3.1.  Clients
             //     MUST verify that the URL is an HTTPS URL.
             if urlparse(rev_url).scheme != "https" {
-                warn!("OpenID Connect: Ignoring insecure revocation_endpoint '{}'", rev_url);
+                warn!("OpenID Connect: Ignoring insecure revocation_endpoint '{rev_url}'");
                 revocation_url = None;
             }
         }
@@ -422,8 +422,7 @@ impl AuthProvider {
             // components.
             if urlparse(rpinit_url).scheme != "https" {
                 warn!(
-                    "OpenID Connect: Ignoring insecure end_session_endpoint '{}'",
-                    rpinit_url
+                    "OpenID Connect: Ignoring insecure end_session_endpoint '{rpinit_url}'"
                 );
                 rp_initiated_logout_url = None;
             }
@@ -593,8 +592,7 @@ impl AuthProvider {
             .revoke_token(token_to_revoke)
             .map_err(|err| {
                 RevocationErrorResponseType::Basic(CoreErrorResponseType::Extension(format!(
-                    "Unexpected error while preparing to revoke token: {}",
-                    err
+                    "Unexpected error while preparing to revoke token: {err}"
                 )))
             })?
             .request_async(logging_http_client)
@@ -615,11 +613,11 @@ impl AuthProvider {
                 openidconnect::RequestTokenError::Request(r) => {
                     self.on_connection_issue(lock_guard);
                     Err(RevocationErrorResponseType::Basic(CoreErrorResponseType::Extension(
-                        format!("Network failure while revoking token: {}", r),
+                        format!("Network failure while revoking token: {r}"),
                     )))
                 }
                 openidconnect::RequestTokenError::Parse(r, _) => Err(RevocationErrorResponseType::Basic(
-                    CoreErrorResponseType::Extension(format!("Error while parsing token revocation response: {}", r)),
+                    CoreErrorResponseType::Extension(format!("Error while parsing token revocation response: {r}")),
                 )),
                 openidconnect::RequestTokenError::Other(err_string) => match err_string.as_str() {
                     "temporarily_unavailable" | "server_error" => {
@@ -629,7 +627,7 @@ impl AuthProvider {
                         )))
                     }
                     _ => Err(RevocationErrorResponseType::Basic(CoreErrorResponseType::Extension(
-                        format!("Unknown error while revoking token: {}", err_string),
+                        format!("Unknown error while revoking token: {err_string}"),
                     ))),
                 },
             },
@@ -691,8 +689,7 @@ impl AuthProvider {
                         Ok(new_token)
                     }
                     Err(err) => Err(CoreErrorResponseType::Extension(format!(
-                        "Internal error: Error while encoding the refreshed token {}",
-                        err
+                        "Internal error: Error while encoding the refreshed token {err}"
                     ))),
                 }
             }
@@ -716,14 +713,12 @@ impl AuthProvider {
                     openidconnect::RequestTokenError::Request(r) => {
                         self.on_connection_issue(lock_guard);
                         Err(CoreErrorResponseType::Extension(format!(
-                            "Network failure while refreshing token: {}",
-                            r
+                            "Network failure while refreshing token: {r}"
                         )))
                     }
                     openidconnect::RequestTokenError::Parse(r, _) => {
                         Err(CoreErrorResponseType::Extension(format!(
-                            "Error while parsing refreshed token: {}",
-                            r
+                            "Error while parsing refreshed token: {r}"
                         )))
                     }
                     openidconnect::RequestTokenError::Other(err_string) => {
@@ -736,8 +731,7 @@ impl AuthProvider {
                             }
                             _ => Err(CoreErrorResponseType::Extension(
                                 format!(
-                            "Unknown error while refreshing token: {}",
-                            err_string
+                            "Unknown error while refreshing token: {err_string}"
                         ),
                             )),
                         }
@@ -803,8 +797,7 @@ impl AuthProvider {
                     }
                     Err(err) => {
                         error!(
-                            "Unable to parse HTTP cookie header value '{}': {}",
-                            cookie_hdr_val_str, err
+                            "Unable to parse HTTP cookie header value '{cookie_hdr_val_str}': {err}"
                         );
                     }
                 }
@@ -825,7 +818,7 @@ impl AuthProvider {
             Some(additional_info) => {
                 warn!("{} [additional info: {}]", msg, additional_info.into())
             }
-            None => warn!("{}", msg),
+            None => warn!("{msg}"),
         };
         Error::ApiLoginError(msg)
     }
@@ -950,19 +943,18 @@ impl AuthProvider {
                 let (msg, additional_info) = match e {
                     RequestTokenError::ServerResponse(ref provider_err) => (
                         format!(
-                            "Server returned error response: {:?}",
-                            provider_err
+                            "Server returned error response: {provider_err:?}"
                         ),
                         None,
                     ),
                     RequestTokenError::Request(ref req) => {
                         self.on_connection_issue(lock_guard);
-                        (format!("Request failed: {:?}", req), None)
+                        (format!("Request failed: {req:?}"), None)
                     }
                     RequestTokenError::Parse(_, ref res) => {
                         let body = match std::str::from_utf8(res) {
                             Ok(text) => text.to_string(),
-                            Err(_) => format!("{:?}", res),
+                            Err(_) => format!("{res:?}"),
                         };
                         (
                             "Failed to parse server response".to_string(),
@@ -983,13 +975,13 @@ impl AuthProvider {
                 let cause_chain_str = stringify_cause_chain(e);
                 let additional_info = match additional_info {
                     Some(ai_str) => {
-                        format!("{}, {}", ai_str, cause_chain_str)
+                        format!("{ai_str}, {cause_chain_str}")
                     }
                     None => cause_chain_str,
                 };
 
                 Self::internal_error(
-                    format!("OpenID Connect: Code exchange failed: {}", msg),
+                    format!("OpenID Connect: Code exchange failed: {msg}"),
                     Some(additional_info),
                 )
             })?;
@@ -1030,14 +1022,13 @@ impl AuthProvider {
             .claims(&id_token_verifier, &nonce_hash)
             .map_err(|e| {
                 Self::internal_error(
-                    format!("OpenID Connect: ID token verification failed: {}", e),
+                    format!("OpenID Connect: ID token verification failed: {e}"),
                     Some(stringify_cause_chain(e)),
                 )
             })?;
 
         trace!(
-            "OpenID Connect: Identity provider returned ID token: {:?}",
-            id_token_claims
+            "OpenID Connect: Identity provider returned ID token: {id_token_claims:?}"
         );
 
         Ok(id_token_claims)
@@ -1074,17 +1065,17 @@ impl AuthProvider {
                     .map_err(|e| {
                         let msg = match e {
                             UserInfoError::ClaimsVerification(ref provider_err) => {
-                                format!("Failed to verify claims: {:?}", provider_err)
+                                format!("Failed to verify claims: {provider_err:?}")
                             }
                             UserInfoError::Response(_, _, ref provider_err) => {
-                                format!("Server returned error response: {:?}", provider_err)
+                                format!("Server returned error response: {provider_err:?}")
                             }
                             UserInfoError::Request(ref req) => {
                                 self.on_connection_issue(lock_guard);
-                                format!("Request failed: {:?}", req)
+                                format!("Request failed: {req:?}")
                             }
                             UserInfoError::Parse(ref parse_err) => {
-                                format!("Failed to parse server response: {}", parse_err)
+                                format!("Failed to parse server response: {parse_err}")
                             }
                             UserInfoError::Other(ref err_string) => match err_string.as_str() {
                                 "temporarily_unavailable" | "server_error" => {
@@ -1097,7 +1088,7 @@ impl AuthProvider {
                         };
 
                         Self::internal_error(
-                            format!("OpenID Connect: UserInfo request failed: {}", msg),
+                            format!("OpenID Connect: UserInfo request failed: {msg}"),
                             Some(stringify_cause_chain(e)),
                         )
                     })?,
@@ -1217,8 +1208,7 @@ impl AuthProvider {
                             // new session by logging in again.
                             CoreErrorResponseType::InvalidGrant => {
                                 warn!(
-                                    "OpenID Connect: invalid_grant {:?}",
-                                    err
+                                    "OpenID Connect: invalid_grant {err:?}"
                                 );
                                 return Err(ApiAuthError::ApiInvalidCredentials(
                                     "Unable to extend login session: your session has been terminated.".to_string(),
@@ -1227,8 +1217,7 @@ impl AuthProvider {
                             CoreErrorResponseType::InvalidRequest
                             | CoreErrorResponseType::InvalidClient => {
                                 warn!(
-                                    "OpenID Connect: RFC 6749 5.2 {:?}",
-                                    err
+                                    "OpenID Connect: RFC 6749 5.2 {err:?}"
                                 );
                                 return Err(ApiAuthError::ApiAuthPermanentError(
                                     "Unable to extend login session: the provider rejected the request.".to_string(),
@@ -1243,8 +1232,7 @@ impl AuthProvider {
                             | CoreErrorResponseType::UnsupportedGrantType
                             | CoreErrorResponseType::InvalidScope => {
                                 warn!(
-                                    "OpenID Connect: RFC 6749 5.2 {:?}",
-                                    err
+                                    "OpenID Connect: RFC 6749 5.2 {err:?}"
                                 );
                                 return Err(ApiAuthError::ApiInsufficientRights(
                                     "Unable to extend login session: the authorization was revoked for this user, client or action.".to_string(),
@@ -1264,13 +1252,13 @@ impl AuthProvider {
                                 match err.as_str() {
                                     "temporarily_unavailable"
                                     | "server_error" => {
-                                        warn!("OpenID Connect: RFC 6749 5.2 {:?}", err);
+                                        warn!("OpenID Connect: RFC 6749 5.2 {err:?}");
                                         return Err(ApiAuthError::ApiAuthTransientError(
                                         "Unable to extend login session: could not contact the provider".to_string(),
                                     ));
                                     }
                                     _ => {
-                                        warn!("OpenID Connect: RFC 6749 5.2 unknown error {:?}", err);
+                                        warn!("OpenID Connect: RFC 6749 5.2 unknown error {err:?}");
                                         return Err(ApiAuthError::ApiAuthTransientError(
                                         "Unable to extend login session: unknown error".to_string(),
                                     ));
@@ -1290,7 +1278,7 @@ impl AuthProvider {
         };
 
         if log_enabled!(log::Level::Trace) {
-            trace!("Authentication result: {:?}", res);
+            trace!("Authentication result: {res:?}");
         }
 
         res
@@ -1504,14 +1492,12 @@ impl AuthProvider {
             cookie_value: &str,
         ) -> KrillResult<HeaderValue> {
             let cookie_str = format!(
-                "{}={}; Secure; HttpOnly; SameSite=Lax; Max-Age=300; Path=/",
-                cookie_name, cookie_value
+                "{cookie_name}={cookie_value}; Secure; HttpOnly; SameSite=Lax; Max-Age=300; Path=/"
             );
             HeaderValue::from_str(&cookie_str).map_err(|err| {
                 AuthProvider::internal_error(
                     format!(
-                        "Unable to construct HTTP cookie '{}' with value '{}'",
-                        cookie_name, cookie_value
+                        "Unable to construct HTTP cookie '{cookie_name}' with value '{cookie_value}'"
                     ),
                     Some(stringify_cause_chain(err)),
                 )
@@ -1694,22 +1680,20 @@ impl AuthProvider {
                     &role_name
                 ).ok_or_else(|| {
                     let reason = format!(
-                        "Login denied for user '{}': \
-                         user is assigned undefined role '{}'.",
-                         id, role_name
+                        "Login denied for user '{id}': \
+                         user is assigned undefined role '{role_name}'."
                     );
-                    warn!("{}", reason);
+                    warn!("{reason}");
                     Error::ApiInsufficientRights(reason)
                 })?;
 
                 // Step 4 1/2: Check that the user is allowed to log in.
                 if !role.is_allowed(Permission::Login, None) {
                     let reason = format!(
-                        "Login denied for user '{}': \
+                        "Login denied for user '{id}': \
                          User is not permitted to 'login'",
-                         id,
                     );
-                    warn!("{}", reason);
+                    warn!("{reason}");
                     return Err(Error::ApiInsufficientRights(reason));
                 }
 

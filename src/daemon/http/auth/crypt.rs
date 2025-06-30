@@ -174,8 +174,7 @@ pub(crate) fn crypt_init(config: &Config) -> KrillResult<CryptState> {
         let mut key_bytes = [0; CHACHA20_KEY_BYTE_LEN];
         openssl::rand::rand_bytes(&mut key_bytes).map_err(|err| {
             Error::Custom(format!(
-                "Unable to generate symmetric key: {}",
-                err
+                "Unable to generate symmetric key: {err}"
             ))
         })?;
 

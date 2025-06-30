@@ -108,7 +108,7 @@ impl KrillManager {
         let service_uri = config.service_uri();
 
         info!("Starting {} v{}", KRILL_SERVER_APP, crate_version!());
-        info!("{} uses service uri: {}", KRILL_SERVER_APP, service_uri);
+        info!("{KRILL_SERVER_APP} uses service uri: {service_uri}");
 
         // Assumes that Config::verify() has already ensured that the signer
         // configuration is valid and that Config::resolve() has been
@@ -216,7 +216,7 @@ impl KrillManager {
                             testbed_ca_handle().into_converted();
                         for nr in 0..benchmark.cas {
                             let handle = CaHandle::new(
-                                format!("benchmark-{}", nr).into(),
+                                format!("benchmark-{nr}").into(),
                             );
 
                             // derive resources for benchmark ca
@@ -224,15 +224,13 @@ impl KrillManager {
                             let byte_3_ipv4 = nr % 256;
 
                             let prefix_str = format!(
-                                "10.{}.{}.0/24",
-                                byte_2_ipv4, byte_3_ipv4
+                                "10.{byte_2_ipv4}.{byte_3_ipv4}.0/24"
                             );
                             let resources =
                                 ResourceSet::from_strs("", &prefix_str, "")
                                     .map_err(|e| {
                                     Error::ResourceSetError(format!(
-                                        "cannot parse resources: {}",
-                                        e
+                                        "cannot parse resources: {e}"
                                     ))
                                 })?;
 
@@ -243,8 +241,7 @@ impl KrillManager {
                                 ..asn_range_start + benchmark.ca_roas
                             {
                                 let payload = RoaPayload::from_str(&format!(
-                                    "{} => {}",
-                                    prefix_str, asn
+                                    "{prefix_str} => {asn}"
                                 ))
                                 .unwrap();
                                 roas.push(payload.into());
@@ -721,7 +718,7 @@ impl KrillManager {
             )));
         }
         try_join_all(import_fns).await.map_err(|e| {
-            Error::Custom(format!("Could not import CAs: {}", e))
+            Error::Custom(format!("Could not import CAs: {e}"))
         })?;
 
         Ok(())

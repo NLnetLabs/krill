@@ -167,24 +167,22 @@ pub trait LogOrFail {
 impl<T> LogOrFail for Option<T> {
     fn log_or_fail(self, prop: &str, val: Option<&str>) -> KrillResult<()> {
         let prop_val_text = match val {
-            Some(val) => format!("{}={}", prop, val),
+            Some(val) => format!("{prop}={val}"),
             None => prop.to_string(),
         };
 
         match self {
             Some(_) => {
                 debug!(
-                    "OpenID Connect provider has capability {}",
-                    prop_val_text
+                    "OpenID Connect provider has capability {prop_val_text}"
                 );
                 Ok(())
             }
             None => {
                 let err = format!(
-                    "OpenID Connect provider lacks capability {}",
-                    prop_val_text
+                    "OpenID Connect provider lacks capability {prop_val_text}"
                 );
-                error!("{}", err);
+                error!("{err}");
                 Err(Error::Custom(err))
             }
         }

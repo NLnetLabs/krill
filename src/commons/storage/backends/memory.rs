@@ -359,14 +359,12 @@ impl fmt::Display for Error {
             }
             Error::Deserialize { key, err } => {
                 write!(f,
-                    "failed to deserialize value for key '{}': {}",
-                    key, err
+                    "failed to deserialize value for key '{key}': {err}"
                 )
             }
             Error::Serialize { key, err } => {
                 write!(f,
-                    "failed to serialize value for key '{}': {}",
-                    key, err
+                    "failed to serialize value for key '{key}': {err}"
                 )
             }
             Error::NotFound(key) => write!(f, "no such key '{key}'"),

@@ -163,7 +163,7 @@ impl OpenSslSigner {
             .store(&Key::new_global(Segment::parse_lossy(&key_id.to_string())), &json) // key_id should always be a valid Segment
         {
             Ok(_) => Ok(key_id),
-            Err(err) => Err(SignerError::Other(format!("Failed to store key: {}:", err))),
+            Err(err) => Err(SignerError::Other(format!("Failed to store key: {err}:"))),
         }
     }
 
@@ -200,7 +200,7 @@ impl OpenSslSigner {
         {
             Ok(Some(kp)) => Ok(kp),
             Ok(None) => Err(SignerError::KeyNotFound),
-            Err(err) => Err(SignerError::Other(format!("Failed to get key: {}", err))),
+            Err(err) => Err(SignerError::Other(format!("Failed to get key: {err}"))),
         }
     }
 
@@ -220,11 +220,10 @@ impl OpenSslSigner {
                 SignerError::Other("OpenSSL: Failed to record signer key: Signer handle not set".to_string())
             })?;
             mapper
-                .add_key(signer_handle, key_id, &format!("{}", key_id))
+                .add_key(signer_handle, key_id, &format!("{key_id}"))
                 .map_err(|err| {
                     SignerError::Other(format!(
-                        "Failed to record signer key: {}",
-                        err
+                        "Failed to record signer key: {err}"
                     ))
                 })
         } else {
@@ -362,7 +361,7 @@ impl OpenSslKeyPair {
         PKey::private_key_from_pem(pem.as_bytes())
             .map(|pkey| OpenSslKeyPair { pkey })
             .map_err(|e| {
-                SignerError::Other(format!("Invalid private key: {}", e))
+                SignerError::Other(format!("Invalid private key: {e}"))
             })
     }
 
@@ -374,7 +373,7 @@ impl OpenSslKeyPair {
         PKey::private_key_from_der(&bytes)
             .map(|pkey| OpenSslKeyPair { pkey })
             .map_err(|e| {
-                SignerError::Other(format!("Invalid private key: {}", e))
+                SignerError::Other(format!("Invalid private key: {e}"))
             })
     }
 }

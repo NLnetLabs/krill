@@ -87,8 +87,7 @@ impl TryFrom<&IdCertInfo> for IdCert {
     fn try_from(info: &IdCertInfo) -> Result<Self, Self::Error> {
         IdCert::decode(info.base64.to_bytes().as_ref()).map_err(|e| {
             error::Error::Custom(format!(
-                "Could not decode IdCertInfo into IdCert: {}",
-                e
+                "Could not decode IdCertInfo into IdCert: {e}"
             ))
         })
     }
@@ -528,7 +527,7 @@ impl ObjectName {
 
     /// Creates a new object name from a key identifer and a file extension.
     pub fn from_key(ki: &KeyIdentifier, extension: &str) -> Self {
-        ObjectName(format!("{}.{}", ki, extension).into())
+        ObjectName(format!("{ki}.{extension}").into())
     }
 
     /// Creates the name for a CA certificate from its key.
@@ -548,7 +547,7 @@ impl ObjectName {
 
     /// Creates the name of an ASPA object from the customer ASN.
     pub fn aspa_from_customer(customer: Asn) -> Self {
-        ObjectName(format!("{}.asa", customer).into())
+        ObjectName(format!("{customer}.asa").into())
     }
 
     /// Creates the name of a router key from ASN and key identifer.
@@ -1026,7 +1025,7 @@ impl<'a> IntoIterator for &'a ParentStatuses {
 impl fmt::Display for ParentStatuses {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for (parent, status) in self.0.iter() {
-            writeln!(f, "Parent: {}", parent)?;
+            writeln!(f, "Parent: {parent}")?;
             match &status.last_exchange {
                 None => writeln!(f, "Status: connection still pending")?,
                 Some(exchange) => {
@@ -1729,8 +1728,8 @@ impl fmt::Display for CertAuthInfo {
                 .map(|uri| uri.as_str())
                 .unwrap_or("<none>");
 
-            writeln!(f, "Base uri: {}", base_uri)?;
-            writeln!(f, "RRDP uri: {}", rrdp_uri)?;
+            writeln!(f, "Base uri: {base_uri}")?;
+            writeln!(f, "RRDP uri: {rrdp_uri}")?;
         } else {
             writeln!(f, "No repository configured.")?;
         }
@@ -1754,7 +1753,7 @@ impl fmt::Display for CertAuthInfo {
         writeln!(f, "Parents:")?;
         if !self.parents.is_empty() {
             for parent in &self.parents {
-                writeln!(f, "{}", parent)?;
+                writeln!(f, "{parent}")?;
             }
             writeln!(f)?;
         } else {
@@ -1762,7 +1761,7 @@ impl fmt::Display for CertAuthInfo {
         }
 
         for (name, rc) in &self.resource_classes {
-            writeln!(f, "Resource Class: {}", name,)?;
+            writeln!(f, "Resource Class: {name}",)?;
             writeln!(f, "Parent: {}", rc.parent_handle)?;
             writeln!(f, "{}", rc.keys)?;
         }
@@ -1770,7 +1769,7 @@ impl fmt::Display for CertAuthInfo {
         writeln!(f, "Children:")?;
         if !self.children.is_empty() {
             for child_handle in &self.children {
-                writeln!(f, "{}", child_handle)?;
+                writeln!(f, "{child_handle}")?;
             }
         } else {
             writeln!(f, "<none>")?;
@@ -1955,7 +1954,7 @@ impl fmt::Display for CaRepoDetails {
         writeln!(
             f, "  base_uri:       {}", self.contact.repo_info.base_uri()
         )?;
-        writeln!(f, "  rpki_notify:    {}", rrdp_uri)?;
+        writeln!(f, "  rpki_notify:    {rrdp_uri}")?;
         writeln!(f)?;
 
         Ok(())
@@ -1979,10 +1978,10 @@ impl fmt::Display for AllCertAuthIssues {
         }
         else {
             for (ca, issues) in &self.cas {
-                writeln!(f, "Found issue for CA '{}':", ca)?;
+                writeln!(f, "Found issue for CA '{ca}':")?;
 
                 if let Some(repo_issue) = issues.repo_issue() {
-                    writeln!(f, "   Repository Issue: {}", repo_issue)?;
+                    writeln!(f, "   Repository Issue: {repo_issue}")?;
                 }
                 let parent_issues = issues.parent_issues();
                 if !parent_issues.is_empty() {
@@ -2043,7 +2042,7 @@ impl fmt::Display for CertAuthIssues {
         }
         else {
             if let Some(repo_issue) = self.repo_issue.as_ref() {
-                writeln!(f, "Repository Issue: {}", repo_issue)?;
+                writeln!(f, "Repository Issue: {repo_issue}")?;
             }
             if !self.parent_issues.is_empty() {
                 for parent_issue in &self.parent_issues {
@@ -2131,7 +2130,7 @@ impl RtaList {
 impl fmt::Display for RtaList {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for name in &self.0 {
-            writeln!(f, "{}", name)?;
+            writeln!(f, "{name}")?;
         }
         Ok(())
     }
@@ -2160,7 +2159,7 @@ impl fmt::Display for RtaPrepResponse {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         writeln!(f, "Created the following keys")?;
         for key in &self.0 {
-            writeln!(f, "  {}", key)?;
+            writeln!(f, "  {key}")?;
         }
         Ok(())
     }
@@ -2200,7 +2199,7 @@ impl fmt::Display for InvalidCert {
                 )
             }
             Self::Uri(s) => {
-                write!(f, "Cannot derive filename from URI: {}", s)
+                write!(f, "Cannot derive filename from URI: {s}")
             }
         }
     }

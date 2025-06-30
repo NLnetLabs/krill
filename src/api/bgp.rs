@@ -36,7 +36,7 @@ impl fmt::Display for BgpAnalysisAdvice {
             writeln!(f)?;
             writeln!(f, "  Announcements from invalid ASNs:")?;
             for invalid in invalid_asns {
-                writeln!(f, "    {}\n", invalid)?;
+                writeln!(f, "    {invalid}\n")?;
             }
         }
 
@@ -47,7 +47,7 @@ impl fmt::Display for BgpAnalysisAdvice {
             writeln!(f)?;
             writeln!(f, "  Announcements too specific for their ASNs:\n")?;
             for invalid in invalid_length {
-                writeln!(f, "    {}", invalid)?;
+                writeln!(f, "    {invalid}")?;
             }
         }
 
@@ -116,7 +116,7 @@ impl fmt::Display for BgpAnalysisSuggestion {
         if !self.stale.is_empty() {
             writeln!(f, "Remove the following stale entries:")?;
             for auth in &self.stale {
-                writeln!(f, "  {}", auth)?;
+                writeln!(f, "  {auth}")?;
             }
             writeln!(f)?;
         }
@@ -126,7 +126,7 @@ impl fmt::Display for BgpAnalysisSuggestion {
             for entry in &self.too_permissive {
                 writeln!(f, "  Remove: {}", entry.current)?;
                 for replace in &entry.new {
-                    writeln!(f, "  Add: {}", replace)?;
+                    writeln!(f, "  Add: {replace}")?;
                 }
                 writeln!(f)?;
             }
@@ -139,7 +139,7 @@ impl fmt::Display for BgpAnalysisSuggestion {
                  ROAs for the same prefix and a real ASN:"
             )?;
             for auth in &self.as0_redundant {
-                writeln!(f, "  {}", auth)?;
+                writeln!(f, "  {auth}")?;
             }
             writeln!(f)?;
         }
@@ -151,7 +151,7 @@ impl fmt::Display for BgpAnalysisSuggestion {
                  using max length:"
             )?;
             for auth in &self.redundant {
-                writeln!(f, "  {}", auth)?;
+                writeln!(f, "  {auth}")?;
             }
             writeln!(f)?;
         }
@@ -164,7 +164,7 @@ impl fmt::Display for BgpAnalysisSuggestion {
                 intended you may want to use AS0 instead:"
             )?;
             for auth in &self.disallowing {
-                writeln!(f, "  {}", auth)?;
+                writeln!(f, "  {auth}")?;
             }
             writeln!(f)?;
         }
@@ -172,7 +172,7 @@ impl fmt::Display for BgpAnalysisSuggestion {
         if !self.keep.is_empty() {
             writeln!(f, "Keep the following authorizations:")?;
             for auth in &self.keep {
-                writeln!(f, "  {}", auth)?;
+                writeln!(f, "  {auth}")?;
             }
             writeln!(f)?;
         }
@@ -183,7 +183,7 @@ impl fmt::Display for BgpAnalysisSuggestion {
                  not covered:"
             )?;
             for auth in &self.not_found {
-                writeln!(f, "  {}", auth)?;
+                writeln!(f, "  {auth}")?;
             }
             writeln!(f)?;
         }
@@ -195,7 +195,7 @@ impl fmt::Display for BgpAnalysisSuggestion {
                  invalid because they are too specific:"
             )?;
             for auth in &self.invalid_length {
-                writeln!(f, "  {}", auth)?;
+                writeln!(f, "  {auth}")?;
             }
             writeln!(f)?;
         }
@@ -207,7 +207,7 @@ impl fmt::Display for BgpAnalysisSuggestion {
                  invalid because they are not allowed for these ASNs:"
             )?;
             for auth in &self.invalid_asn {
-                writeln!(f, "  {}", auth)?;
+                writeln!(f, "  {auth}")?;
             }
             writeln!(f)?;
         }
@@ -356,14 +356,14 @@ impl fmt::Display for BgpAnalysisReport {
                     writeln!(f)?;
                     writeln!(f, "\t\tAuthorizes announcement(s):")?;
                     for ann in roa.authorizes.iter() {
-                        writeln!(f, "\t\t{}", ann)?;
+                        writeln!(f, "\t\t{ann}")?;
                     }
 
                     if !roa.disallows.is_empty() {
                         writeln!(f)?;
                         writeln!(f, "\t\tDisallows announcement(s):")?;
                         for ann in roa.disallows.iter() {
-                            writeln!(f, "\t\t{}", ann)?;
+                            writeln!(f, "\t\t{ann}")?;
                         }
                     }
                 }
@@ -384,21 +384,21 @@ impl fmt::Display for BgpAnalysisReport {
                     writeln!(f)?;
                     writeln!(f, "\t\tAuthorizes announcement(s):")?;
                     for ann in roa.authorizes.iter() {
-                        writeln!(f, "\t\t{}", ann)?;
+                        writeln!(f, "\t\t{ann}")?;
                     }
 
                     if !roa.disallows.is_empty() {
                         writeln!(f)?;
                         writeln!(f, "\t\tDisallows announcement(s):")?;
                         for ann in roa.disallows.iter() {
-                            writeln!(f, "\t\t{}", ann)?;
+                            writeln!(f, "\t\t{ann}")?;
                         }
                     }
 
                     writeln!(f)?;
                     writeln!(f, "\t\tMade redundant by:")?;
                     for redundant_by in roa.made_redundant_by.iter() {
-                        writeln!(f, "\t\t{}", redundant_by)?;
+                        writeln!(f, "\t\t{redundant_by}")?;
                     }
                 }
                 writeln!(f)?;
@@ -453,7 +453,7 @@ impl fmt::Display for BgpAnalysisReport {
                     writeln!(f)?;
                     writeln!(f, "\t\tDisallows:")?;
                     for ann in roa.disallows.iter() {
-                        writeln!(f, "\t\t{}", ann)?;
+                        writeln!(f, "\t\t{ann}")?;
                     }
                 }
                 writeln!(f)?;
@@ -473,14 +473,14 @@ impl fmt::Display for BgpAnalysisReport {
                     writeln!(f)?;
                     writeln!(f, "\t\tAuthorizes announcement(s):")?;
                     for ann in roa.authorizes.iter() {
-                        writeln!(f, "\t\t{}", ann)?;
+                        writeln!(f, "\t\t{ann}")?;
                     }
 
                     if !roa.disallows.is_empty() {
                         writeln!(f)?;
                         writeln!(f, "\t\tDisallows announcement(s):")?;
                         for ann in roa.disallows.iter() {
-                            writeln!(f, "\t\t{}", ann)?;
+                            writeln!(f, "\t\t{ann}")?;
                         }
                     }
                 }
@@ -517,7 +517,7 @@ impl fmt::Display for BgpAnalysisReport {
                         "\t\tMade redundant by ROA configuration(s):"
                     )?;
                     for redundant_by in &roa.made_redundant_by {
-                        writeln!(f, "\t\t{}", redundant_by)?;
+                        writeln!(f, "\t\t{redundant_by}")?;
                     }
                     writeln!(f)?;
                 }
@@ -548,7 +548,7 @@ impl fmt::Display for BgpAnalysisReport {
                     writeln!(f)?;
                     writeln!(f, "\t\tDisallowed by ROA configuration(s):")?;
                     for roa in ann.disallowed_by.iter() {
-                        writeln!(f, "\t\t{}", roa)?;
+                        writeln!(f, "\t\t{roa}")?;
                     }
                 }
                 writeln!(f)?;
@@ -564,7 +564,7 @@ impl fmt::Display for BgpAnalysisReport {
                     writeln!(f)?;
                     writeln!(f, "\t\tDisallowed by ROA configuration(s):")?;
                     for roa in ann.disallowed_by.iter() {
-                        writeln!(f, "\t\t{}", roa)?;
+                        writeln!(f, "\t\t{roa}")?;
                     }
                 }
                 writeln!(f)?;
@@ -1056,12 +1056,11 @@ impl FromStr for Announcement {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let as_roa = RoaPayload::from_str(s).map_err(|e| {
-            format!("Can't parse: {}, Error: {}", s, e)
+            format!("Can't parse: {s}, Error: {e}")
         })?;
         if as_roa.max_length.is_some() {
             Err(format!(
-                "Cannot parse announcement (max length not allowed): {}",
-                s
+                "Cannot parse announcement (max length not allowed): {s}"
             ))
         }
         else {

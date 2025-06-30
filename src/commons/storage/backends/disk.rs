@@ -179,7 +179,7 @@ impl Store {
     pub fn has(&self, key: &Key) -> Result<bool, Error> {
         self.key_path(key).try_exists().map_err(|err| {
             Error::io(
-                format!("failed to check existance of key '{}'", key),
+                format!("failed to check existance of key '{key}'"),
                 err
             )
         })
@@ -189,7 +189,7 @@ impl Store {
     pub fn has_scope(&self, scope: &Scope) -> Result<bool, Error> {
         self.scope_path(scope).try_exists().map_err(|err| {
             Error::io(
-                format!("failed to check existance of scope '{}'", scope),
+                format!("failed to check existance of scope '{scope}'"),
                 err
             )
         })
@@ -400,8 +400,7 @@ impl Store {
         let mut tmp_file = NamedTempFile::new_in(&self.tmp).map_err(|err| {
             Error::io(
                 format!(
-                    "writing temp file failed for key: '{}'",
-                    key
+                    "writing temp file failed for key: '{key}'"
                 ),
                 err,
             )
@@ -649,7 +648,7 @@ impl FileLock {
     fn write(&mut self) -> Result<fd_lock::RwLockWriteGuard<'_, File>, Error> {
         self.lock
             .write()
-            .map_err(|e| Error::other(format!("Cannot get file lock: {}", e)))
+            .map_err(|e| Error::other(format!("Cannot get file lock: {e}")))
     }
 }
 
@@ -695,18 +694,16 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Error::Io { context, err } => {
-                write!(f, "{}: {}", context, err)
+                write!(f, "{context}: {err}")
             }
             Error::Deserialize { key, err } => {
                 write!(f,
-                    "failed to deserialize value for key '{}': {}",
-                    key, err
+                    "failed to deserialize value for key '{key}': {err}"
                 )
             }
             Error::Serialize { key, err } => {
                 write!(f,
-                    "failed to serialize value for key '{}': {}",
-                    key, err
+                    "failed to serialize value for key '{key}': {err}"
                 )
             }
             Error::Other(s) => f.write_str(s)

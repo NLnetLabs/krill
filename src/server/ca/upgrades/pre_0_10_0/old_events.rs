@@ -129,8 +129,7 @@ impl TryFrom<OldTaCertDetails> for TaCertDetails {
             ReceivedCert::create(cert, rsync_uri.clone(), resources, limit)
                 .map_err(|e| {
                 UpgradeError::Custom(format!(
-                    "Could not convert old TA details: {}",
-                    e
+                    "Could not convert old TA details: {e}"
                 ))
             })?;
 
@@ -234,8 +233,7 @@ impl<T> TryFrom<OldDelegatedCertificate> for CertInfo<T> {
         CertInfo::create(old.cert, old.uri, old.resource_set, old.limit)
             .map_err(|e| {
                 UpgradeError::Custom(format!(
-                    "cannot convert certificate: {}",
-                    e
+                    "cannot convert certificate: {e}"
                 ))
             })
     }
@@ -275,7 +273,7 @@ impl TryFrom<OldRcvdCert> for ReceivedCert {
             RequestResourceLimit::default(),
         )
         .map_err(|e| {
-            UpgradeError::Custom(format!("cannot convert certificate: {}", e))
+            UpgradeError::Custom(format!("cannot convert certificate: {e}"))
         })
     }
 }

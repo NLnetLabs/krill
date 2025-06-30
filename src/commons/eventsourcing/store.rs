@@ -663,7 +663,7 @@ impl<A: Aggregate> AggregateStore<A> {
             Self::scope_for_agg(agg),
             // Cannot panic as a u64 cannot contain a Scope::SEPARATOR.
             Segment::parse(
-                &format!("command-{}.json", version)
+                &format!("command-{version}.json")
             ).unwrap(), 
         )
     }
@@ -701,19 +701,19 @@ impl fmt::Display for AggregateStoreError {
         match self {
             AggregateStoreError::IoError(e) => e.fmt(f),
             AggregateStoreError::KeyStoreError(e) => {
-                write!(f, "KeyStore Error: {}", e)
+                write!(f, "KeyStore Error: {e}")
             }
             AggregateStoreError::NotInitialized => {
                 write!(f, "This aggregate store is not initialized")
             }
             AggregateStoreError::UnknownAggregate(handle) => {
-                write!(f, "unknown entity: {}", handle)
+                write!(f, "unknown entity: {handle}")
             }
             AggregateStoreError::DuplicateAggregate(handle) => {
-                write!(f, "duplicate entity: {}", handle)
+                write!(f, "duplicate entity: {handle}")
             }
             AggregateStoreError::InitError(handle) => {
-                write!(f, "Command 0 for '{}' has no init", handle)
+                write!(f, "Command 0 for '{handle}' has no init")
             }
             AggregateStoreError::ReplayError(
                 handle,
@@ -721,41 +721,35 @@ impl fmt::Display for AggregateStoreError {
                 fail_version,
             ) => write!(
                 f,
-                "Event for '{}' version '{}' had version '{}'",
-                handle, version, fail_version
+                "Event for '{handle}' version '{version}' had version '{fail_version}'"
             ),
             AggregateStoreError::ConcurrentModification(handle) => {
                 write!(
                     f,
-                    "concurrent modification attempt for entity: '{}'",
-                    handle
+                    "concurrent modification attempt for entity: '{handle}'"
                 )
             }
             AggregateStoreError::UnknownCommand(handle, version) => write!(
                 f,
-                "Aggregate '{}' does not have command with version '{}'",
-                handle, version
+                "Aggregate '{handle}' does not have command with version '{version}'"
             ),
             AggregateStoreError::WarmupFailed(handle, e) => {
-                write!(f, "Could not rebuild state for '{}': {}", handle, e)
+                write!(f, "Could not rebuild state for '{handle}': {e}")
             }
             AggregateStoreError::CouldNotArchive(handle, e) => write!(
                 f,
-                "Could not archive commands and events for '{}'. Error: {}",
-                handle, e
+                "Could not archive commands and events for '{handle}'. Error: {e}"
             ),
             AggregateStoreError::CommandCorrupt(handle, key) => {
                 write!(
                     f,
-                    "StoredCommand '{}' for '{}' was corrupt",
-                    handle, key
+                    "StoredCommand '{handle}' for '{key}' was corrupt"
                 )
             }
             AggregateStoreError::CommandNotFound(handle, key) => {
                 write!(
                     f,
-                    "StoredCommand '{}' for '{}' cannot be found",
-                    handle, key
+                    "StoredCommand '{handle}' for '{key}' cannot be found"
                 )
             }
         }

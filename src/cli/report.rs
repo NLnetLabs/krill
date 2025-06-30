@@ -95,7 +95,7 @@ impl<T: Serialize + fmt::Display> ReportContent for T {
                 Ok(())
             }
             ReportFormat::Text => {
-                writeln!(target, "{}", self)
+                writeln!(target, "{self}")
             }
         }
     }

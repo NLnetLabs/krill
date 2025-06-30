@@ -346,8 +346,7 @@ pub mod tests {
         match res {
             Err(ProbeError::CompletedUnusable) => {}
             other => panic!(
-                "Expected Err(ProbeError::PermanentlyUnusable) but got {:?}",
-                other
+                "Expected Err(ProbeError::PermanentlyUnusable) but got {other:?}"
             ),
         }
     }
@@ -364,8 +363,7 @@ pub mod tests {
         match res {
             Err(ProbeError::CompletedUnusable) => {}
             other => panic!(
-                "Expected Err(ProbeError::PermanentlyUnusable) but got {:?}",
-                other
+                "Expected Err(ProbeError::PermanentlyUnusable) but got {other:?}"
             ),
         }
     }
@@ -382,8 +380,7 @@ pub mod tests {
         match res {
             Err(ProbeError::CompletedUnusable) => {}
             other => panic!(
-                "Expected Err(ProbeError::PermanentlyUnusable) but got {:?}",
-                other
+                "Expected Err(ProbeError::PermanentlyUnusable) but got {other:?}"
             ),
         }
     }
@@ -400,8 +397,7 @@ pub mod tests {
         match res {
             Err(ProbeError::AwaitingNextProbe) => {}
             other => panic!(
-                "Expected Err(ProbeError::AwaitingNextProbe) but got {:?}",
-                other
+                "Expected Err(ProbeError::AwaitingNextProbe) but got {other:?}"
             ),
         }
     }
@@ -420,8 +416,7 @@ pub mod tests {
         match res {
             Err(ProbeError::AwaitingNextProbe) => {}
             other => panic!(
-                "Expected Err(ProbeError::AwaitingNextProbe) but got {:?}",
-                other
+                "Expected Err(ProbeError::AwaitingNextProbe) but got {other:?}"
             ),
         }
     }

@@ -455,20 +455,17 @@ impl fmt::Display for CertAuthInfoFileError {
         match self {
             Self::Io(path, err) => {
                 write!(
-                    f, "Failed to read child info file '{}': {}'",
-                    path, err
+                    f, "Failed to read child info file '{path}': {err}'"
                 )
             }
             Self::Parse(path, err) => {
                 write!(
-                    f, "Failed to parse child info file '{}': {}'",
-                    path, err
+                    f, "Failed to parse child info file '{path}': {err}'"
                 )
             }
             Self::Cert(path, err) => {
                 write!(
-                    f, "Failed to parse child info file '{}': {}'",
-                    path, err
+                    f, "Failed to parse child info file '{path}': {err}'"
                 )
             }
         }

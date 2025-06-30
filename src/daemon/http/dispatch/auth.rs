@@ -82,8 +82,7 @@ mod multi_user {
             build_auth_redirect_location(user).map_err(|err| {
                 Error::custom(format!(
                     "Unable to build redirect with logged in user details: \
-                     {:?}",
-                    err
+                     {err:?}"
                 ))
             })
         }).map(|location| {

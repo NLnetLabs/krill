@@ -193,13 +193,11 @@ impl fmt::Display for ParentResponseError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::Io(path, err) => {
-                write!(f, "Failed to open request file '{}': {}",
-                    path, err
+                write!(f, "Failed to open request file '{path}': {err}"
                 )
             }
             Self::Parse(path, err) => {
-                write!(f, "Failed to parse request file '{}': {}",
-                    path, err
+                write!(f, "Failed to parse request file '{path}': {err}"
                 )
             }
         }

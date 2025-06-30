@@ -268,7 +268,7 @@ impl Authorizer {
             Err(err) => (AuthInfo::error(err), None),
         };
 
-        trace!("AuthInfo determination result: {:?}", res);
+        trace!("AuthInfo determination result: {res:?}");
 
         res
     }

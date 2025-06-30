@@ -399,8 +399,7 @@ impl TrustAnchorSigner {
 
                         if rcn != ta_rcn {
                             return Err(Error::Custom(format!(
-                                "TA child request uses unknown resource class name '{}'",
-                                rcn
+                                "TA child request uses unknown resource class name '{rcn}'"
                             )));
                         }
 
@@ -454,8 +453,7 @@ impl TrustAnchorSigner {
 
                         if rcn != ta_rcn {
                             return Err(Error::Custom(format!(
-                                "TA child request uses unknown resource class name '{}'",
-                                rcn
+                                "TA child request uses unknown resource class name '{rcn}'"
                             )));
                         }
 
@@ -472,8 +470,7 @@ impl TrustAnchorSigner {
                         // investigated.
                         if !objects.revoke_issued(&key) {
                             return Err(Error::Custom(format!(
-                                "TA child requests revocation for unknown key '{}'",
-                                key
+                                "TA child requests revocation for unknown key '{key}'"
                             )));
                         }
 
@@ -884,7 +881,7 @@ impl fmt::Display for TrustAnchorProxySignerExchanges {
                             ProvisioningResponse::Revocation(_) => "revoked ",
                             ProvisioningResponse::Error => "error   ",
                         };
-                        writeln!(f, "   {} | {} | {}", res_type, key, child)?;
+                        writeln!(f, "   {res_type} | {key} | {child}")?;
                     }
                 }
                 writeln!(f)?;

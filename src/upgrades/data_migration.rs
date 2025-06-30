@@ -136,7 +136,7 @@ fn check_openssl_keys(config: &Config) -> UpgradeResult<()> {
         None,
     )
     .map_err(|e| {
-        UpgradeError::Custom(format!("Cannot create openssl signer: {}", e))
+        UpgradeError::Custom(format!("Cannot create openssl signer: {e}"))
     })?;
     let keys_key_store = KeyValueStore::create(&config.storage_uri, KEYS_NS)?;
 
@@ -151,8 +151,7 @@ fn check_openssl_keys(config: &Config) -> UpgradeResult<()> {
             })?;
         open_ssl_signer.get_key_info(&key_id).map_err(|e| {
             UpgradeError::Custom(format!(
-                "Cannot get key with key_id {} from openssl keystore. Error: {}",
-                key_id, e
+                "Cannot get key with key_id {key_id} from openssl keystore. Error: {e}"
             ))
         })?;
     }
@@ -213,8 +212,7 @@ fn copy_data_for_migration(
     ] {
         let namespace = Namespace::parse(ns).map_err(|_| {
             UpgradeError::Custom(format!(
-                "Cannot parse namespace '{}'. This is a bug.",
-                ns
+                "Cannot parse namespace '{ns}'. This is a bug."
             ))
         })?;
         let source_kv_store =
@@ -241,7 +239,7 @@ pub mod tests {
         // Create a config file that uses test data for its storage_uri
         let test_sources_base = "test-resources/migrations/v0_9_5/";
         let test_sources_url =
-            Url::parse(&format!("local://{}", test_sources_base)).unwrap();
+            Url::parse(&format!("local://{test_sources_base}")).unwrap();
 
         let bogus_path = PathBuf::from("/dev/null"); // needed for tls_dir etc, but will be ignored here
         let mut config = Config::test(

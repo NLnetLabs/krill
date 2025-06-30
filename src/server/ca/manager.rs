@@ -751,31 +751,28 @@ impl CaManager {
         ca_handle: &CaHandle,
         actor: &Actor,
     ) -> KrillResult<()> {
-        warn!("Deleting CA '{}' as requested by: {}", ca_handle, actor);
+        warn!("Deleting CA '{ca_handle}' as requested by: {actor}");
 
         let ca = self.get_ca(ca_handle)?;
 
         // Request revocations from all parents - best effort
         info!(
-            "Will try to request revocations from all parents CA '{}' \
-             before removing it.",
-            ca_handle
+            "Will try to request revocations from all parents CA '{ca_handle}' \
+             before removing it."
         );
         for parent in ca.parents() {
             if let Err(e) = self.ca_parent_revoke(ca_handle, parent).await {
                 warn!(
-                    "Removing CA '{}', but could not send revoke request \
-                     to parent '{}': {}",
-                    ca_handle, parent, e
+                    "Removing CA '{ca_handle}', but could not send revoke request \
+                     to parent '{parent}': {e}"
                 );
             }
         }
 
         // Clean all repos - again best effort
         info!(
-            "Will try to clean up all repositories for CA '{}' before \
-             removing it.",
-            ca_handle
+            "Will try to clean up all repositories for CA '{ca_handle}' before \
+             removing it."
         );
 
         // XXX This is quite wasteful. Maybe have a dedicated method to
@@ -875,7 +872,7 @@ impl CaManager {
         ca: &CaHandle,
         child: &ChildHandle,
     ) -> KrillResult<ChildCaInfo> {
-        trace!("Finding details for CA: {} under parent: {}", child, ca);
+        trace!("Finding details for CA: {child} under parent: {ca}");
         self.get_ca(ca)?.get_child(child).map(|details| details.to_info())
     }
 
@@ -895,7 +892,7 @@ impl CaManager {
         ca: &CaHandle,
         child_handle: &ChildHandle,
     ) -> KrillResult<ImportChild> {
-        trace!("Exporting CA: {} under parent: {}", child_handle, ca);
+        trace!("Exporting CA: {child_handle} under parent: {ca}");
         self.get_ca(ca)?.child_export(child_handle)
     }
 
@@ -974,7 +971,7 @@ impl CaManager {
         base_uri: &uri::Https,
         ca_handle: &CaHandle,
     ) -> ServiceUri {
-        let service_uri = format!("{}rfc6492/{}", base_uri, ca_handle);
+        let service_uri = format!("{base_uri}rfc6492/{ca_handle}");
         let service_uri = uri::Https::from_string(service_uri).unwrap();
         ServiceUri::Https(service_uri)
     }
@@ -1425,9 +1422,8 @@ impl CaManager {
         // parent.
         if let Err(e) = self.ca_parent_revoke(&handle, &parent).await {
             warn!(
-                "Removing parent '{}' from CA '{}', but could not send \
-                 revoke requests: {}",
-                parent, handle, e
+                "Removing parent '{parent}' from CA '{handle}', but could not send \
+                 revoke requests: {e}"
             );
         }
 
@@ -1528,13 +1524,12 @@ impl CaManager {
                         let threshold_string = if threshold_seconds >= 3600 {
                             format!("{} hours", threshold_seconds / 3600)
                         } else {
-                            format!("{} seconds", threshold_seconds)
+                            format!("{threshold_seconds} seconds")
                         };
 
                         info!(
-                            "Child '{}' under CA '{}' was inactive for more \
-                             than {}. Will suspend it.",
-                            child, ca_handle, threshold_string
+                            "Child '{child}' under CA '{ca_handle}' was inactive for more \
+                             than {threshold_string}. Will suspend it."
                         );
                     }
                     if let Err(e) =
@@ -1553,8 +1548,7 @@ impl CaManager {
                         ca_handle, child, req, actor
                     ) {
                         error!(
-                            "Could not suspend inactive child, error: {}",
-                            e
+                            "Could not suspend inactive child, error: {e}"
                         );
                     }
                 }
@@ -1928,8 +1922,7 @@ impl CaManager {
                     }
                     _ => {
                         return Err(Error::custom(format!(
-                            "Got unexpected response '{}' to revoke query",
-                            payload_type
+                            "Got unexpected response '{payload_type}' to revoke query"
                         )))
                     }
                 }
@@ -2366,12 +2359,11 @@ impl CaManager {
         match payload {
             provisioning::Payload::ListResponse(response) => Ok(response),
             provisioning::Payload::ErrorResponse(np) => {
-                Err(Error::Custom(format!("Not performed: {}", np)))
+                Err(Error::Custom(format!("Not performed: {np}")))
             }
             _ => {
                 Err(Error::custom(format!(
-                    "Got unexpected response type '{}' to list query",
-                    payload_type
+                    "Got unexpected response type '{payload_type}' to list query"
                 )))
             }
         }
@@ -2427,10 +2419,9 @@ impl CaManager {
                 Err(e) => {
                     error!(
                         "Could not decode response from parent (handle): \
-                         {}, for ca (handle): {}, at URI: {}. Error: {}",
-                        recipient, sender, service_uri, e
+                         {recipient}, for ca (handle): {sender}, at URI: {service_uri}. Error: {e}"
                     );
-                    cms_logger.err(format!("Could not decode CMS: {}", e))?;
+                    cms_logger.err(format!("Could not decode CMS: {e}"))?;
                     Err(Error::Rfc6492(e))
                 }
                 Ok(cms) => {
@@ -2440,12 +2431,11 @@ impl CaManager {
                         Err(e) => {
                             error!(
                                 "Could not validate response from parent \
-                                (handle): {}, for ca (handle): {}, \
-                                at URI: {}. Error: {}",
-                                recipient, sender, service_uri, e
+                                (handle): {recipient}, for ca (handle): {sender}, \
+                                at URI: {service_uri}. Error: {e}"
                             );
                             cms_logger.err(
-                                format!("Response invalid: {}", e)
+                                format!("Response invalid: {e}")
                             )?;
                             Err(Error::Rfc6492(e))
                         }
@@ -2475,7 +2465,7 @@ impl CaManager {
         ).await {
             Err(e) => {
                 cms_logger.err(format!(
-                    "Error posting CMS to {}: {}", service_uri, e
+                    "Error posting CMS to {service_uri}: {e}"
                 ))?;
                 Err(Error::HttpClientError(e))
             }
@@ -2628,8 +2618,7 @@ impl CaManager {
                         vec![],
                     ).await {
                         warn!(
-                            "Could not clean up deprecated repository: {}",
-                            e
+                            "Could not clean up deprecated repository: {e}"
                         );
 
                         if deprecated.clean_attempts() < 5 {
@@ -2661,7 +2650,7 @@ impl CaManager {
         repo_contact: &RepositoryContact,
         publish_elements: Vec<PublishedFile>,
     ) -> KrillResult<()> {
-        debug!("CA '{}' sends list query to repo", ca_handle);
+        debug!("CA '{ca_handle}' sends list query to repo");
         let list_reply = self.send_rfc8181_list(
             repo_manager,
             ca_handle,
@@ -2699,7 +2688,7 @@ impl CaManager {
         }
 
         if !delta.is_empty() {
-            debug!("CA '{}' sends delta", ca_handle);
+            debug!("CA '{ca_handle}' sends delta");
             self.send_rfc8181_delta(
                 repo_manager,
                 ca_handle,
@@ -2707,10 +2696,10 @@ impl CaManager {
                 &repo_contact.server_info,
                 delta,
             ).await?;
-            debug!("CA '{}' sent delta", ca_handle);
+            debug!("CA '{ca_handle}' sent delta");
         }
         else {
-            debug!("CA '{}' has nothing to publish", ca_handle);
+            debug!("CA '{ca_handle}' has nothing to publish");
         }
 
         Ok(())
@@ -2850,7 +2839,7 @@ impl CaManager {
                 Err(err)
             }
             publication::Reply::ErrorReply(e) => {
-                let err = Error::Custom(format!("Got error reply: {}", e));
+                let err = Error::Custom(format!("Got error reply: {e}"));
                 self.status_store.set_status_repo_failure(
                     ca_handle,
                     server_info.service_uri.clone(),
@@ -2902,7 +2891,7 @@ impl CaManager {
                 Ok(())
             }
             publication::Reply::ErrorReply(e) => {
-                let err = Error::Custom(format!("Got error reply: {}", e));
+                let err = Error::Custom(format!("Got error reply: {e}"));
                 self.status_store.set_status_repo_failure(
                     ca_handle,
                     server_info.service_uri.clone(),
@@ -2966,20 +2955,18 @@ impl CaManager {
                 Err(e) => {
                     error!(
                         "Could not decode response from publication server \
-                         at: {}, for ca: {}. Error: {}",
-                        repo_service_uri, ca_handle, e
+                         at: {repo_service_uri}, for ca: {ca_handle}. Error: {e}"
                     );
-                    cms_logger.err(format!("Could not decode CMS: {}", e))?;
+                    cms_logger.err(format!("Could not decode CMS: {e}"))?;
                     Err(Error::Rfc8181(e))
                 }
                 Ok(cms) => match cms.validate(&server_info.public_key) {
                     Err(e) => {
                         error!(
                             "Could not validate response from publication \
-                            server at: {}, for ca: {}. Error: {}",
-                            repo_service_uri, ca_handle, e
+                            server at: {repo_service_uri}, for ca: {ca_handle}. Error: {e}"
                         );
-                        cms_logger.err(format!("Response invalid: {}", e))?;
+                        cms_logger.err(format!("Response invalid: {e}"))?;
                         Err(Error::Rfc8181(e))
                     }
                     Ok(()) => {
@@ -3122,8 +3109,7 @@ impl CaManager {
                 )
             ) {
                 error!(
-                    "Renewing ROAs for CA '{}' failed with error: {}",
-                    ca, e
+                    "Renewing ROAs for CA '{ca}' failed with error: {e}"
                 );
             }
 
@@ -3135,8 +3121,7 @@ impl CaManager {
                 ),
             ) {
                 error!(
-                    "Renewing ASPAs for CA '{}' failed with error: {}",
-                    ca, e
+                    "Renewing ASPAs for CA '{ca}' failed with error: {e}"
                 );
             }
 
@@ -3176,8 +3161,7 @@ impl CaManager {
                 ),
             ) {
                 error!(
-                    "Renewing ROAs for CA '{}' failed with error: {}",
-                    ca, e
+                    "Renewing ROAs for CA '{ca}' failed with error: {e}"
                 );
             }
         }

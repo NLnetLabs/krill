@@ -81,8 +81,7 @@ impl Structure {
         for ca in &self.cas {
             if ca.handle == ta_handle {
                 return Err(Error::Custom(format!(
-                    "CA name {} is reserved.",
-                    ta_handle
+                    "CA name {ta_handle} is reserved."
                 )));
             }
 
@@ -233,17 +232,17 @@ impl fmt::Display for ImportChild {
         )?;
         writeln!(f, "Resources:    {}", self.resources)?;
         if let Some(class_name) = &self.issued_cert.class_name {
-            writeln!(f, "Classname:    {}", class_name)?;
+            writeln!(f, "Classname:    {class_name}")?;
         }
         let (ca_repository, rpki_manifest, rpki_notify, key) =
             self.issued_cert.csr.clone().unpack();
 
         writeln!(f, "Issued Certificate:")?;
         writeln!(f, "  Key Id:       {}", key.key_identifier())?;
-        writeln!(f, "  CA repo:      {}", ca_repository)?;
-        writeln!(f, "  CA mft:       {}", rpki_manifest)?;
+        writeln!(f, "  CA repo:      {ca_repository}")?;
+        writeln!(f, "  CA mft:       {rpki_manifest}")?;
         if let Some(rrdp) = rpki_notify {
-            writeln!(f, "  RRDP:         {}", rrdp)?;
+            writeln!(f, "  RRDP:         {rrdp}")?;
         }
 
         Ok(())

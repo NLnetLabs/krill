@@ -289,7 +289,7 @@ impl<'a> Claims<'a> {
             Some(additional_info) => {
                 warn!("{} [additional info: {}]", msg, additional_info.into())
             }
-            None => warn!("{}", msg),
+            None => warn!("{msg}"),
         };
         Error::ApiLoginError(msg)
     }
@@ -455,8 +455,7 @@ impl<'de> Deserialize<'de> for ClaimSource {
                         "expected \"id-token-additional-claim\", \
                         \"id-token-standard-claim\", \
                         \"user-info-standard-claim\", or \
-                        \"user-info-additional-claim\", found : \"{}\"",
-                    s
+                        \"user-info-additional-claim\", found : \"{s}\""
                 )))
             }
         }

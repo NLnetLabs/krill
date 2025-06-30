@@ -83,8 +83,7 @@ impl ConfigDefaults {
                 Ok(level) => level,
                 Err(_) => {
                     eprintln!(
-                        "Unrecognized value for log level in env var {}",
-                        KRILL_ENV_LOG_LEVEL
+                        "Unrecognized value for log level in env var {KRILL_ENV_LOG_LEVEL}"
                     );
                     ::std::process::exit(1);
                 }
@@ -99,8 +98,7 @@ impl ConfigDefaults {
                 Ok(log_type) => log_type,
                 Err(e) => {
                     eprintln!(
-                        "Unrecognized value for log type in env var {}, {}",
-                        KRILL_ENV_LOG_TYPE, e
+                        "Unrecognized value for log type in env var {KRILL_ENV_LOG_TYPE}, {e}"
                     );
                     ::std::process::exit(1);
                 }
@@ -1204,8 +1202,8 @@ impl Config {
         let testbed = if enable_testbed {
             Some(TestBed::new(
                 test::rsync("rsync://localhost/ta/ta.cer"),
-                test::https(&format!("https://localhost:{}/ta/ta.cer", port)),
-                test::https(&format!("https://localhost:{}/rrdp/", port)),
+                test::https(&format!("https://localhost:{port}/ta/ta.cer")),
+                test::https(&format!("https://localhost:{port}/rrdp/")),
                 test::rsync("rsync://localhost/repo/"),
             ))
         } else {
@@ -1349,16 +1347,14 @@ impl Config {
     fn fix(&mut self) -> Result<(), ConfigError> {
         if self.ca_refresh_seconds < CA_REFRESH_SECONDS_MIN {
             warn!(
-                "The value for 'ca_refresh_seconds' was below the minimum value, changing it to {} seconds",
-                CA_REFRESH_SECONDS_MIN
+                "The value for 'ca_refresh_seconds' was below the minimum value, changing it to {CA_REFRESH_SECONDS_MIN} seconds"
             );
             self.ca_refresh_seconds = CA_REFRESH_SECONDS_MIN;
         }
 
         if self.ca_refresh_seconds > CA_REFRESH_SECONDS_MAX {
             warn!(
-                "The value for 'ca_refresh_seconds' was above the maximum value, changing it to {} seconds",
-                CA_REFRESH_SECONDS_MAX
+                "The value for 'ca_refresh_seconds' was above the maximum value, changing it to {CA_REFRESH_SECONDS_MAX} seconds"
             );
             self.ca_refresh_seconds = CA_REFRESH_SECONDS_MAX;
         }
@@ -1393,7 +1389,7 @@ impl Config {
         let half_refresh = self.ca_refresh_seconds / 2;
 
         if self.ca_refresh_jitter_seconds > half_refresh {
-            warn!("The value for 'ca_refresh_jitter_seconds' exceeded 50% of 'ca_refresh_seconds'. Changing it to {} seconds", half_refresh);
+            warn!("The value for 'ca_refresh_jitter_seconds' exceeded 50% of 'ca_refresh_seconds'. Changing it to {half_refresh} seconds");
             self.ca_refresh_jitter_seconds = half_refresh;
         }
 
@@ -1458,7 +1454,7 @@ impl Config {
 
     fn verify(&self) -> Result<(), ConfigError> {
         if env::var(KRILL_ENV_ADMIN_TOKEN_DEPRECATED).is_ok() {
-            warn!("The environment variable for setting the admin token has been updated from '{}' to '{}', please update as the old value may not be supported in future releases", KRILL_ENV_ADMIN_TOKEN_DEPRECATED, KRILL_ENV_ADMIN_TOKEN)
+            warn!("The environment variable for setting the admin token has been updated from '{KRILL_ENV_ADMIN_TOKEN_DEPRECATED}' to '{KRILL_ENV_ADMIN_TOKEN}', please update as the old value may not be supported in future releases")
         }
 
         if self.port < 1024 {
@@ -1552,8 +1548,7 @@ impl Config {
         if let Some(threshold) = self.suspend_child_after_inactive_hours {
             if threshold < CA_SUSPEND_MIN_HOURS {
                 return Err(ConfigError::Other(format!(
-                    "suspend_child_after_inactive_hours must be {} or higher (or not set at all)",
-                    CA_SUSPEND_MIN_HOURS
+                    "suspend_child_after_inactive_hours must be {CA_SUSPEND_MIN_HOURS} or higher (or not set at all)"
                 )));
             }
         }
@@ -1688,8 +1683,7 @@ impl Config {
     fn stderr_logger(&self) -> Result<(), ConfigError> {
         self.fern_logger().chain(io::stderr()).apply().map_err(|e| {
             ConfigError::Other(format!(
-                "Failed to init stderr logging: {}",
-                e
+                "Failed to init stderr logging: {e}"
             ))
         })
     }
@@ -1713,7 +1707,7 @@ impl Config {
             }
         };
         self.fern_logger().chain(file).apply().map_err(|e| {
-            ConfigError::Other(format!("Failed to init file logging: {}", e))
+            ConfigError::Other(format!("Failed to init file logging: {e}"))
         })
     }
 
@@ -1746,13 +1740,12 @@ impl Config {
             Ok(logger) => {
                 self.fern_logger().chain(logger).apply().map_err(|e| {
                     ConfigError::Other(format!(
-                        "Failed to init syslog: {}",
-                        e
+                        "Failed to init syslog: {e}"
                     ))
                 })
             }
             Err(err) => {
-                let msg = format!("Cannot connect to syslog: {}", err);
+                let msg = format!("Cannot connect to syslog: {err}");
                 Err(ConfigError::Other(msg))
             }
         }
@@ -1871,8 +1864,7 @@ impl FromStr for LogType {
             "file" => Ok(LogType::File),
             "syslog" => Ok(LogType::Syslog),
             _ => Err(format!(
-                "expected \"stderr\", \"file\" or \"syslog\", found : \"{}\"",
-                log_type
+                "expected \"stderr\", \"file\" or \"syslog\", found : \"{log_type}\""
             )),
         }
     }
@@ -1918,8 +1910,7 @@ impl<'de> Deserialize<'de> for HttpsMode {
             "generate" => Ok(HttpsMode::Generate),
             "disable" => Ok(HttpsMode::Disable),
             _ => Err(de::Error::custom(format!(
-                "expected \"existing\", \"generate\", or \"disable\" found: \"{}\"",
-                string
+                "expected \"existing\", \"generate\", or \"disable\" found: \"{string}\""
             ))),
         }
     }
@@ -1957,8 +1948,7 @@ impl<'de> Deserialize<'de> for AuthType {
                 );
                 #[cfg(feature = "multi-user")]
                 let msg = format!(
-                    "expected \"config-file\", \"admin-token\", or \"openid-connect\", found: \"{}\"",
-                    string
+                    "expected \"config-file\", \"admin-token\", or \"openid-connect\", found: \"{string}\""
                 );
                 Err(de::Error::custom(msg))
             }
@@ -2058,8 +2048,7 @@ mod tests {
             assert_eq!(msg, expected_err_msg);
         } else {
             panic!(
-                "Expected error '{}' but got: {:?}",
-                expected_err_msg, res
+                "Expected error '{expected_err_msg}' but got: {res:?}"
             );
         }
     }

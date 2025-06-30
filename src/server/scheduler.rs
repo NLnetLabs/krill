@@ -107,12 +107,12 @@ impl Scheduler {
                                     self.tasks.reschedule(&task_key, priority)
                                 }
                             } {
-                                error!("Error finishing / scheduling task {}. Krill will stop as there is no good way to recover from this. When Krill starts it will try to reschedule any missing tasks. Error was: {}", task_key, e);
+                                error!("Error finishing / scheduling task {task_key}. Krill will stop as there is no good way to recover from this. When Krill starts it will try to reschedule any missing tasks. Error was: {e}");
                                 std::process::exit(1);
                             }
                         }
                         Err(e) => {
-                            error!("Error processing task: {}. Tasks are only allowed to return fatal errors. Krill will stop as there is no good way to recover from this. When Krill starts it will try to reschedule any missing tasks. Error was: {}", task_key, e);
+                            error!("Error processing task: {task_key}. Tasks are only allowed to return fatal errors. Krill will stop as there is no good way to recover from this. When Krill starts it will try to reschedule any missing tasks. Error was: {e}");
                             std::process::exit(1);
                         }
                     },
@@ -322,7 +322,7 @@ impl Scheduler {
         ca: CaHandle,
         version: u64,
     ) -> Result<TaskResult, FatalError> {
-        info!("Synchronize CA {} with repository", ca);
+        info!("Synchronize CA {ca} with repository");
 
         match self
             .ca_manager
@@ -333,8 +333,7 @@ impl Scheduler {
                 let next = self.config.requeue_remote_failed();
 
                 error!(
-                    "Failed to publish for '{}'. Will reschedule to: '{}'. Error: {}",
-                    ca, next, e
+                    "Failed to publish for '{ca}'. Will reschedule to: '{next}'. Error: {e}"
                 );
 
                 Ok(TaskResult::Reschedule(next))
@@ -357,7 +356,7 @@ impl Scheduler {
         parent: ParentHandle,
     ) -> Result<TaskResult, FatalError> {
         if self.ca_manager.has_ca(&ca).map_err(FatalError)? {
-            info!("Synchronize CA '{}' with its parent '{}'", ca, parent);
+            info!("Synchronize CA '{ca}' with its parent '{parent}'");
             match self
                 .ca_manager
                 .ca_sync_parent(&ca, ca_version, &parent, &self.system_actor)
@@ -367,8 +366,7 @@ impl Scheduler {
                     let next = self.config.requeue_remote_failed();
 
                     error!(
-                        "Failed to synchronize CA '{}' with its parent '{}'. Will reschedule to: '{}'. Error: {}",
-                        ca, parent, next, e
+                        "Failed to synchronize CA '{ca}' with its parent '{parent}'. Will reschedule to: '{next}'. Error: {e}"
                     );
                     Ok(TaskResult::Reschedule(next))
                 }
@@ -394,8 +392,7 @@ impl Scheduler {
             // 6492 then we will       also be able to alert
             // remote children.
             debug!(
-                "Skipping parent sync fo CA '{}'. It is either a remote child, or a local CA that has been removed",
-                ca
+                "Skipping parent sync fo CA '{ca}'. It is either a remote child, or a local CA that has been removed"
             );
             Ok(TaskResult::Done)
         }
@@ -404,7 +401,7 @@ impl Scheduler {
     /// Resync the testbed TA signer and proxy
     async fn renew_testbed_ta(&self) -> Result<TaskResult, FatalError> {
         if let Err(e) = self.ca_manager.ta_renew_testbed_ta() {
-            error!("There was an issue renewing the testbed TA: {}", e);
+            error!("There was an issue renewing the testbed TA: {e}");
         }
         let weeks_to_resync = self.config.ta_timing.mft_next_update_weeks / 2;
         Ok(TaskResult::FollowUp(
@@ -422,7 +419,7 @@ impl Scheduler {
         if let Err(e) =
             self.ca_manager.sync_ta_proxy_signer_if_possible()
         {
-            error!("There was an issue synchronising the TA Proxy and Signer: {}", e);
+            error!("There was an issue synchronising the TA Proxy and Signer: {e}");
         }
         Ok(TaskResult::Done)
     }
@@ -434,8 +431,7 @@ impl Scheduler {
     ) -> Result<TaskResult, FatalError> {
         if self.ca_manager.has_ca(&ca_handle).map_err(FatalError)? {
             debug!(
-                "Verify if CA '{}' has children that need to be suspended",
-                ca_handle
+                "Verify if CA '{ca_handle}' has children that need to be suspended"
             );
             self.ca_manager.ca_suspend_inactive_children(
                 &ca_handle, self.started, &self.system_actor,
@@ -469,7 +465,7 @@ impl Scheduler {
             .map_err(FatalError)?;
 
         for ca_handle in cas {
-            info!("Re-issued MFT and CRL for CA: {}", ca_handle);
+            info!("Re-issued MFT and CRL for CA: {ca_handle}");
 
             let ca_version = 0; // we use 0 because we don't need to wait for an updated CertAuth
             self.tasks
@@ -520,8 +516,7 @@ impl Scheduler {
                     // is broken and Krill       would
                     // have panicked as a result already.
                     error!(
-                        "Could not update snapshots for {} will try again in 24 hours. Error: {}",
-                        namespace, e
+                        "Could not update snapshots for {namespace} will try again in 24 hours. Error: {e}"
                     );
                 }
                 Ok(store) => {
@@ -530,11 +525,10 @@ impl Scheduler {
                         // else is broken and Krill
                         //       would have panicked as a result already.
                         error!(
-                            "Could not update snapshots for {} will try again in 24 hours. Error: {}",
-                            namespace, e
+                            "Could not update snapshots for {namespace} will try again in 24 hours. Error: {e}"
                         );
                     } else {
-                        info!("Updated snapshots for {}", namespace);
+                        info!("Updated snapshots for {namespace}");
                     }
                 }
             }
@@ -550,8 +544,7 @@ impl Scheduler {
                     // is broken and Krill       would
                     // have panicked as a result already.
                     error!(
-                        "Could not update snapshots for {} will try again in 24 hours. Error: {}",
-                        namespace, e
+                        "Could not update snapshots for {namespace} will try again in 24 hours. Error: {e}"
                     );
                 }
                 Ok(store) => {
@@ -560,8 +553,7 @@ impl Scheduler {
                         // else is broken and Krill
                         //       would have panicked as a result already.
                         error!(
-                            "Could not update snapshots for {} will try again in 24 hours. Error: {}",
-                            namespace, e
+                            "Could not update snapshots for {namespace} will try again in 24 hours. Error: {e}"
                         );
                     }
                 }
@@ -596,7 +588,7 @@ impl Scheduler {
     fn update_rrdp_if_needed(&self) -> Result<TaskResult, FatalError> {
         match self.repo_manager.update_rrdp_if_needed() {
             Err(e) => {
-                error!("Could not update RRDP deltas! Error: {}", e);
+                error!("Could not update RRDP deltas! Error: {e}");
                 // Should we panic in this case? For now, just keep trying,
                 // this may be an issue that gets resolved
                 // (permission? disk space?)
@@ -624,8 +616,7 @@ impl Scheduler {
         revocation_requests: Vec<RevocationRequest>,
     ) -> Result<TaskResult, FatalError> {
         info!(
-            "Trigger send revoke requests for removed RC for '{}' under '{}'",
-            ca_handle, parent
+            "Trigger send revoke requests for removed RC for '{ca_handle}' under '{parent}'"
         );
 
         let requests = HashMap::from([(rcn, revocation_requests)]);
@@ -648,8 +639,7 @@ impl Scheduler {
                 Ok(TaskResult::Done)
             } else {
                 debug!(
-                    "Revoked keys for CA '{}' under parent '{}'",
-                    ca_handle, parent
+                    "Revoked keys for CA '{ca_handle}' under parent '{parent}'"
                 );
                 Ok(TaskResult::Done)
             }
@@ -692,8 +682,7 @@ impl Scheduler {
                     .await
                 {
                     warn!(
-                        "Could not revoke surplus key, most likely already revoked by parent. Error was: {}",
-                        e
+                        "Could not revoke surplus key, most likely already revoked by parent. Error was: {e}"
                     );
                 }
 

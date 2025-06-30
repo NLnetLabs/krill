@@ -166,19 +166,19 @@ impl TrustAnchorObjects {
         let mft_uri = self
             .base_uri
             .join(ObjectName::mft_from_ca_key(&self.key_identifier).as_ref())
-            .map_err(|e| Error::Custom(format!("Cannot make uri: {}", e)))?;
+            .map_err(|e| Error::Custom(format!("Cannot make uri: {e}")))?;
         res.push(self.manifest.published_file(mft_uri));
 
         let crl_uri = self
             .base_uri
             .join(ObjectName::crl_from_ca_key(&self.key_identifier).as_ref())
-            .map_err(|e| Error::Custom(format!("Cannot make uri: {}", e)))?;
+            .map_err(|e| Error::Custom(format!("Cannot make uri: {e}")))?;
         res.push(self.crl.published_file(crl_uri));
 
         for (name, object) in self.issued_certs_objects() {
             let cert_uri =
                 self.base_uri.join(name.as_ref()).map_err(|e| {
-                    Error::Custom(format!("Cannot make uri: {}", e))
+                    Error::Custom(format!("Cannot make uri: {e}"))
                 })?;
             res.push(object.published_file(cert_uri));
         }
@@ -322,7 +322,7 @@ impl std::fmt::Display for TrustAnchorLocator {
         let base64_string = self.encoded_ski.to_string();
 
         for uri in self.uris.iter() {
-            writeln!(f, "{}", uri)?;
+            writeln!(f, "{uri}")?;
         }
         writeln!(f, "{}", self.rsync_uri)?;
 
@@ -456,11 +456,11 @@ impl TrustAnchorSignedMessage {
         let bytes = self.message.to_bytes();
         let signed_message =
             SignedMessage::decode(bytes, true).map_err(|e| {
-                Error::Custom(format!("Cannot decode signed message: {}", e))
+                Error::Custom(format!("Cannot decode signed message: {e}"))
             })?;
 
         signed_message.validate_at(issuer_key, time).map_err(|e| {
-            Error::Custom(format!("Invalid signed message: {}", e))
+            Error::Custom(format!("Invalid signed message: {e}"))
         })?;
 
         Ok(signed_message)
@@ -510,10 +510,10 @@ impl fmt::Display for ApiTrustAnchorSignedRequest {
             for (key, child_req) in &request.requests {
                 match child_req {
                     ProvisioningRequest::Issuance(_) => {
-                        writeln!(f, "key:           {}    (re-)issue", key)?
+                        writeln!(f, "key:           {key}    (re-)issue")?
                     }
                     ProvisioningRequest::Revocation(_) => {
-                        writeln!(f, "key:           {}    revoke", key)?
+                        writeln!(f, "key:           {key}    revoke")?
                     }
                 }
             }
@@ -577,8 +577,7 @@ impl TrustAnchorSignedRequest {
         let signed_bytes = signed_message.content().to_bytes();
         let signed_request: TrustAnchorSignerRequest = serde_json::from_slice(&signed_bytes).map_err(|e| {
             Error::Custom(format!(
-                "Cannot deserialize content of signed Trust Anchor request: {}",
-                e
+                "Cannot deserialize content of signed Trust Anchor request: {e}"
             ))
         })?;
 
@@ -656,10 +655,10 @@ impl fmt::Display for TrustAnchorSignerRequest {
             for (key, child_req) in &request.requests {
                 match child_req {
                     ProvisioningRequest::Issuance(_) => {
-                        writeln!(f, "key:           {}    (re-)issue", key)?
+                        writeln!(f, "key:           {key}    (re-)issue")?
                     }
                     ProvisioningRequest::Revocation(_) => {
-                        writeln!(f, "key:           {}    revoke", key)?
+                        writeln!(f, "key:           {key}    revoke")?
                     }
                 }
             }
@@ -704,8 +703,7 @@ impl TrustAnchorSignedResponse {
         let signed_bytes = signed_message.content().to_bytes();
         let signed_response: TrustAnchorSignerResponse = serde_json::from_slice(&signed_bytes).map_err(|e| {
             Error::Custom(format!(
-                "Cannot deserialize content of signed Trust Anchor response: {}",
-                e
+                "Cannot deserialize content of signed Trust Anchor response: {e}"
             ))
         })?;
 
@@ -777,17 +775,17 @@ impl fmt::Display for TrustAnchorSignerResponse {
             writeln!(f, "-------------------------------")?;
             writeln!(f, "          child response")?;
             writeln!(f, "-------------------------------")?;
-            writeln!(f, "child:         {}", child)?;
+            writeln!(f, "child:         {child}")?;
             for (key, response) in responses.iter() {
                 match response {
                     ProvisioningResponse::Error => {
-                        writeln!(f, "key:           {}    ERROR", key)?
+                        writeln!(f, "key:           {key}    ERROR")?
                     }
                     ProvisioningResponse::Issuance(_) => {
-                        writeln!(f, "key:           {}    issued", key)?
+                        writeln!(f, "key:           {key}    issued")?
                     }
                     ProvisioningResponse::Revocation(_) => {
-                        writeln!(f, "key:           {}    revoked", key)?
+                        writeln!(f, "key:           {key}    revoked")?
                     }
                 }
             }

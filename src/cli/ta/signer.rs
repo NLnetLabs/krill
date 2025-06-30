@@ -54,16 +54,16 @@ impl std::fmt::Display for SignerClientError {
                 write!(f, "Unrecognised argument. Use 'help'")
             }
             SignerClientError::HttpClientError(e) => {
-                write!(f, "HTTP client error: {}", e)
+                write!(f, "HTTP client error: {e}")
             }
-            SignerClientError::KrillError(e) => write!(f, "{}", e),
+            SignerClientError::KrillError(e) => write!(f, "{e}"),
             SignerClientError::StorageError(e) => {
-                write!(f, "Issue with persistence layer: {}", e)
+                write!(f, "Issue with persistence layer: {e}")
             }
             SignerClientError::ConfigError(e) => {
-                write!(f, "Issue with configuration file: {}", e)
+                write!(f, "Issue with configuration file: {e}")
             }
-            SignerClientError::Other(msg) => write!(f, "{}", msg),
+            SignerClientError::Other(msg) => write!(f, "{msg}"),
         }
     }
 }

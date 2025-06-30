@@ -148,7 +148,7 @@ impl SignSupport {
         // Still, to to be absolutely sure and future proof it's better to
         // fail with an error than it would be to unwrap and panic.
         IssuedCertificate::create(cert, uri, resources, limit).map_err(|e| {
-            Error::Custom(format!("Signed certificate has issue: {}", e))
+            Error::Custom(format!("Signed certificate has issue: {e}"))
         })
     }
 

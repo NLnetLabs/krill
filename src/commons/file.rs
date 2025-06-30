@@ -120,7 +120,7 @@ pub fn load_json<O: DeserializeOwned>(
                 full_path.to_string_lossy()
             ),
             io::Error::other(
-                format!("could not deserialize json: {}", e),
+                format!("could not deserialize json: {e}"),
             ),
         )
     })
@@ -313,8 +313,8 @@ fn derive_uri(
     let rel_string = rel.to_string_lossy().to_string();
 
     let uri_string = match rsync_base {
-        Some(rsync_base) => format!("{}{}", rsync_base, rel_string),
-        None => format!("rsync://{}", rel_string),
+        Some(rsync_base) => format!("{rsync_base}{rel_string}"),
+        None => format!("rsync://{rel_string}"),
     };
 
     let uri = uri::Rsync::from_str(&uri_string)
@@ -509,9 +509,9 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Error::CannotRead(s) => write!(f, "Cannot read: {}", s),
+            Error::CannotRead(s) => write!(f, "Cannot read: {s}"),
             Error::UnsupportedFileName(name) => {
-                write!(f, "Unsupported characters: {}", name)
+                write!(f, "Unsupported characters: {name}")
             }
             Error::PathOutsideBasePath => {
                 write!(f, "Cannot use path outside of rsync jail")
@@ -521,10 +521,10 @@ impl fmt::Display for Error {
                 "Do not ever use '/' as the source or target for backups"
             ),
             Error::BackupCannotReadSource(e) => {
-                write!(f, "Source for backup cannot be read: {}", e)
+                write!(f, "Source for backup cannot be read: {e}")
             }
             Error::BackupTargetExists(e) => {
-                write!(f, "Target for backup already exists: {}", e)
+                write!(f, "Target for backup already exists: {e}")
             }
             Error::Io(e) => e.fmt(f),
         }

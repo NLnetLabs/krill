@@ -21,12 +21,12 @@ async fn main() {
             if let Err(e) = start_krill_daemon(
                 Arc::new(config), None
             ).await {
-                error!("Krill failed to start: {}", e);
+                error!("Krill failed to start: {e}");
                 ::std::process::exit(1);
             }
         }
         Err(e) => {
-            eprintln!("Could not parse config: {}", e);
+            eprintln!("Could not parse config: {e}");
             ::std::process::exit(1);
         }
     }

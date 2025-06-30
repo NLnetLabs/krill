@@ -810,8 +810,7 @@ impl fmt::Display for CertAuthStorableCommand {
             }
             CertAuthStorableCommand::ChildCertify { child, ki, .. } => {
                 write!(f,
-                    "Issue certificate to child '{}' for key '{}'",
-                    child, ki
+                    "Issue certificate to child '{child}' for key '{ki}'"
                 )
             }
             CertAuthStorableCommand::ChildRevokeKey { child, revoke_req } => {
@@ -825,45 +824,40 @@ impl fmt::Display for CertAuthStorableCommand {
             }
             CertAuthStorableCommand::ChildRemove { child } => {
                 write!(f,
-                    "Remove child '{}' and revoke & remove its certs",
-                    child
+                    "Remove child '{child}' and revoke & remove its certs"
                 )
             }
             CertAuthStorableCommand::ChildSuspendInactive { child } => {
                 write!(f,
-                    "Suspend inactive child '{}': stop publishing its certs",
-                    child
+                    "Suspend inactive child '{child}': stop publishing its certs"
                 )
             }
             CertAuthStorableCommand::ChildUnsuspend { child } => {
                 write!(f,
-                    "Unsuspend child '{}': publish its unexpired certs",
-                    child
+                    "Unsuspend child '{child}': publish its unexpired certs"
                 )
             }
             CertAuthStorableCommand::GenerateNewIdKey => {
                 write!(f, "Generate a new RFC8183 ID.")
             }
             CertAuthStorableCommand::AddParent { parent, contact } => {
-                write!(f, "Add parent '{}' as '{}'", parent, contact)
+                write!(f, "Add parent '{parent}' as '{contact}'")
             }
             CertAuthStorableCommand::UpdateParentContact {
                 parent, contact
             } => {
                 write!(f,
-                    "Update contact for parent '{}' to '{}'",
-                    parent, contact
+                    "Update contact for parent '{parent}' to '{contact}'"
                 )
             }
             CertAuthStorableCommand::RemoveParent { parent } => {
-                write!(f, "Remove parent '{}'", parent)
+                write!(f, "Remove parent '{parent}'")
             }
             CertAuthStorableCommand::UpdateResourceEntitlements {
                 parent, entitlements
             } => {
                 write!(f,
-                    "Update entitlements under parent '{}': ",
-                    parent
+                    "Update entitlements under parent '{parent}': "
                 )?;
                 for entitlement in entitlements.iter() {
                     write!(f,
@@ -880,8 +874,7 @@ impl fmt::Display for CertAuthStorableCommand {
             } => {
                 let summary = ResourceSetSummary::from(resources);
                 write!(f,
-                    "Update received cert in RC '{}', with resources '{}'",
-                    resource_class_name, summary
+                    "Update received cert in RC '{resource_class_name}', with resources '{summary}'"
                 )
             }
             CertAuthStorableCommand::DropResourceClass {
@@ -889,32 +882,28 @@ impl fmt::Display for CertAuthStorableCommand {
                 reason,
             } => {
                 write!(f,
-                    "Removing resource class '{}' because of reason: {}",
-                    resource_class_name, reason
+                    "Removing resource class '{resource_class_name}' because of reason: {reason}"
                 )
             }
             CertAuthStorableCommand::KeyRollInitiate {
                 older_than_seconds
             } => {
                 write!(f,
-                    "Initiate key roll for keys older than '{}' seconds",
-                    older_than_seconds
+                    "Initiate key roll for keys older than '{older_than_seconds}' seconds"
                 )
             }
             CertAuthStorableCommand::KeyRollActivate {
                 staged_for_seconds
             } => {
                 write!(f,
-                    "Activate new keys staging longer than '{}' seconds",
-                    staged_for_seconds
+                    "Activate new keys staging longer than '{staged_for_seconds}' seconds"
                 )
             }
             CertAuthStorableCommand::KeyRollFinish {
                 resource_class_name
             } => {
                 write!(f,
-                    "Retire old revoked key in RC '{}'",
-                    resource_class_name
+                    "Retire old revoked key in RC '{resource_class_name}'"
                 )
             }
             CertAuthStorableCommand::RoaDefinitionUpdates { updates } => {
@@ -922,13 +911,13 @@ impl fmt::Display for CertAuthStorableCommand {
                 if !updates.added.is_empty() {
                     write!(f, "  ADD:",)?;
                     for addition in &updates.added {
-                        write!(f, " {}", addition)?;
+                        write!(f, " {addition}")?;
                     }
                 }
                 if !updates.removed.is_empty() {
                     write!(f, "  REMOVE:",)?;
                     for rem in &updates.removed {
-                        write!(f, " {}", rem)?;
+                        write!(f, " {rem}")?;
                     }
                 }
                 Ok(())
@@ -942,33 +931,32 @@ impl fmt::Display for CertAuthStorableCommand {
                 write!(f, "Force re-issuance of objects")
             }
             CertAuthStorableCommand::AspasUpdate { updates } => {
-                write!(f, "{}", updates)
+                write!(f, "{updates}")
             }
             CertAuthStorableCommand::AspasUpdateExisting {
                 customer, update
             } => {
                 write!(f,
-                    "update ASPA for customer AS: {} {}",
-                    customer, update
+                    "update ASPA for customer AS: {customer} {update}"
                 )
             }
             CertAuthStorableCommand::AspaRemove { customer } => {
-                write!(f, "Remove ASPA for customer AS: {}", customer)
+                write!(f, "Remove ASPA for customer AS: {customer}")
             }
             CertAuthStorableCommand::BgpSecDefinitionUpdates => {
                 write!(f, "Update BGPSec definitions")
             }
             CertAuthStorableCommand::RepoUpdate { service_uri } => {
-                write!(f, "Update repo to server at: {}", service_uri)
+                write!(f, "Update repo to server at: {service_uri}")
             }
             CertAuthStorableCommand::RtaPrepare { name } => {
-                write!(f, "RTA Prepare {}", name)
+                write!(f, "RTA Prepare {name}")
             }
             CertAuthStorableCommand::RtaSign { name } => {
-                write!(f, "RTA Sign {}", name)
+                write!(f, "RTA Sign {name}")
             }
             CertAuthStorableCommand::RtaCoSign { name } => {
-                write!(f, "RTA Co-Sign {}", name)
+                write!(f, "RTA Co-Sign {name}")
             }
             CertAuthStorableCommand::Deactivate => {
                 write!(f, "Deactivate CA")

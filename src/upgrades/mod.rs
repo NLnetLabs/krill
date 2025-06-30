@@ -191,19 +191,19 @@ pub enum UpgradeError {
 impl fmt::Display for UpgradeError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let cause = match &self {
-            UpgradeError::AggregateStoreError(e) => format!("Aggregate Error: {}", e),
-            UpgradeError::WalStoreError(e) => format!("Write-Ahead-Log Store Error: {}", e),
-            UpgradeError::KeyStoreError(e) => format!("Keystore Error: {}", e),
-            UpgradeError::IoError(e) => format!("I/O Error: {}", e),
-            UpgradeError::Unrecognised(s) => format!("Unrecognised: {}", s),
-            UpgradeError::CannotLoadAggregate(h) => format!("Cannot load: {}", h),
-            UpgradeError::IdExchange(s) => format!("Could not use exchanged id info: {}", s),
+            UpgradeError::AggregateStoreError(e) => format!("Aggregate Error: {e}"),
+            UpgradeError::WalStoreError(e) => format!("Write-Ahead-Log Store Error: {e}"),
+            UpgradeError::KeyStoreError(e) => format!("Keystore Error: {e}"),
+            UpgradeError::IoError(e) => format!("I/O Error: {e}"),
+            UpgradeError::Unrecognised(s) => format!("Unrecognised: {s}"),
+            UpgradeError::CannotLoadAggregate(h) => format!("Cannot load: {h}"),
+            UpgradeError::IdExchange(s) => format!("Could not use exchanged id info: {s}"),
             UpgradeError::OldTaMigration => "Your installation cannot be upgraded to Krill 0.13.0 or later because it includes a CA called \"ta\". These CAs were used for the preliminary Trust Anchor support needed by testbed and benchmark setups. They cannot be migrated to the production grade Trust Anchor support that was introduced in Krill 0.13.0. If you want to continue to use your existing installation we recommend that you downgrade to Krill 0.12.1 or earlier. If you want to operate a testbed using Krill 0.13.0 or later, then you can create a fresh testbed instead of migrating your existing testbed. If you believe that you should not have a CA called \"ta\" - i.e. it may have been left over from an abandoned testbed set up - then you can delete the \"ta\" directory under your krill data \"cas\" directory and restart Krill.".to_string(),
             UpgradeError::CodeOlderThanData(code, data) => format!("Krill version {code} is older than data version {data}. You either need to upgrade krill, or restore the data from version {code}."),
             UpgradeError::Custom(s) => s.clone(),
         };
 
-        write!(f, "Upgrade preparation failed because of: {}", cause)
+        write!(f, "Upgrade preparation failed because of: {cause}")
     }
 }
 impl UpgradeError {
@@ -392,7 +392,7 @@ pub trait UpgradeAggregateStorePre0_14 {
             // We only need top-level scopes, not sub-scopes such as 'surplus'
             // archive dirs
             if scope.len() != 1 {
-                trace!("Skipping migration for sub-scope: {}", scope);
+                trace!("Skipping migration for sub-scope: {scope}");
                 continue;
             }
 
@@ -401,8 +401,7 @@ pub trait UpgradeAggregateStorePre0_14 {
             let handle =
                 MyHandle::from_str(&scope.to_string()).map_err(|_| {
                     UpgradeError::Custom(format!(
-                        "Found invalid handle '{}'",
-                        scope
+                        "Found invalid handle '{scope}'"
                     ))
                 })?;
 
@@ -476,7 +475,7 @@ pub trait UpgradeAggregateStorePre0_14 {
             // Process remaining commands
             for old_cmd_key in old_cmd_keys {
                 // Read and parse the command.
-                trace!("  +- command: {}", old_cmd_key);
+                trace!("  +- command: {old_cmd_key}");
                 let old_command: OldStoredCommand<Self::OldStorableDetails> =
                     self.get(&old_cmd_key)?;
 
@@ -488,14 +487,13 @@ pub trait UpgradeAggregateStorePre0_14 {
                         for v in events {
                             let event_key =
                                 Self::event_key(scope.clone(), *v);
-                            trace!("    +- event: {}", event_key);
+                            trace!("    +- event: {event_key}");
                             let evt: OldStoredEvent<Self::OldEvent> = self
                                 .deployed_store()
                                 .get(&event_key)?
                                 .ok_or_else(|| {
                                     UpgradeError::Custom(format!(
-                                        "Cannot parse old event: {}",
-                                        event_key
+                                        "Cannot parse old event: {event_key}"
                                     ))
                                 })?;
                             full_events.push(evt.into_details());
@@ -575,7 +573,7 @@ pub trait UpgradeAggregateStorePre0_14 {
                 }
             }
 
-            info!("Finished migrating commands for '{}'", scope);
+            info!("Finished migrating commands for '{scope}'");
 
             // Verify migration
             info!(
@@ -584,8 +582,7 @@ pub trait UpgradeAggregateStorePre0_14 {
             );
             let _latest = self.preparation_aggregate_store().save_snapshot(&handle).map_err(|e| {
                 UpgradeError::Custom(format!(
-                    "Could not rebuild state after migrating CA '{}'! Error was: {}.",
-                    handle, e
+                    "Could not rebuild state after migrating CA '{handle}'! Error was: {e}."
                 ))
             })?;
 
@@ -598,7 +595,7 @@ pub trait UpgradeAggregateStorePre0_14 {
             // changes were applied.
             self.update_data_upgrade_info(&scope, &data_upgrade_info)?;
 
-            info!("Verified migration of '{}'", handle);
+            info!("Verified migration of '{handle}'");
         }
 
         match mode {
@@ -621,8 +618,7 @@ pub trait UpgradeAggregateStorePre0_14 {
                     let ca = MyHandle::from_str(&scope.to_string()).map_err(
                         |_| {
                             UpgradeError::Custom(format!(
-                                "Found invalid handle '{}'",
-                                scope
+                                "Found invalid handle '{scope}'"
                             ))
                         },
                     )?;
@@ -694,13 +690,11 @@ pub trait UpgradeAggregateStorePre0_14 {
 
         if last_command == 0 {
             info!(
-                "Will migrate {} commands for '{}'",
-                total_remaining, handle
+                "Will migrate {total_remaining} commands for '{handle}'"
             );
         } else {
             info!(
-                "Will resume migration of {} remaining commands for '{}'",
-                total_remaining, handle
+                "Will resume migration of {total_remaining} remaining commands for '{handle}'"
             );
         }
 
@@ -792,7 +786,7 @@ pub trait UpgradeAggregateStorePre0_14 {
             .map(|ck| {
                 Key::new_scoped(
                     scope.clone(),
-                    Segment::parse_lossy(&format!("{}.json", ck)),
+                    Segment::parse_lossy(&format!("{ck}.json")),
                 )
             }) // ck should always be a valid Segment
             .collect();
@@ -802,7 +796,7 @@ pub trait UpgradeAggregateStorePre0_14 {
 
     fn get<V: DeserializeOwned>(&self, key: &Key) -> Result<V, UpgradeError> {
         self.deployed_store().get(key)?.ok_or_else(|| {
-            UpgradeError::Custom(format!("Cannot read key: {}", key))
+            UpgradeError::Custom(format!("Cannot read key: {key}"))
         })
     }
 
@@ -880,11 +874,11 @@ pub fn prepare_upgrade_data_migrations(
 
             if versions.from < KrillVersion::release(0, 6, 0) {
                 let msg = "Cannot upgrade Krill installations from before version 0.6.0. Please upgrade to 0.8.1 first, then upgrade to 0.12.3, and then upgrade to this version.";
-                error!("{}", msg);
+                error!("{msg}");
                 Err(UpgradeError::custom(msg))
             } else if versions.from < KrillVersion::release(0, 9, 0) {
                 let msg = "Cannot upgrade Krill installations from before version 0.9.0. Please upgrade to 0.12.3 first, and then upgrade to this version.";
-                error!("{}", msg);
+                error!("{msg}");
                 Err(UpgradeError::custom(msg))
             } else if versions.from < KrillVersion::candidate(0, 10, 0, 1) {
                 // Complex migrations involving command / event conversions
@@ -1027,7 +1021,7 @@ pub fn finalise_data_migration(
         let mut upgrade_store =
             KeyValueStore::create_upgrade_store(&config.storage_uri, ns)?;
         if !upgrade_store.is_empty()? {
-            info!("Migrate new data for {} and archive old", ns);
+            info!("Migrate new data for {ns} and archive old");
             let mut current_store =
                 KeyValueStore::create(&config.storage_uri, ns)?;
             if !current_store.is_empty()? {
@@ -1045,7 +1039,7 @@ pub fn finalise_data_migration(
                 const { Segment::make("version")
             });
             if current_store.has(&version_key)? {
-                debug!("Removing excess version key in ns: {}", ns);
+                debug!("Removing excess version key in ns: {ns}");
                 current_store.drop_key(&version_key)?;
             }
         }
@@ -1110,7 +1104,7 @@ fn record_preexisting_openssl_keys_in_signer_mapper(
         let mut openssl_signer_handle: Option<SignerHandle> = None;
 
         for key in keys_key_store.keys(&Scope::global(), "")? {
-            debug!("Found key: {}", key);
+            debug!("Found key: {key}");
             // Is it a key identifier?
             if let Ok(key_id) = KeyIdentifier::from_str(key.name().as_str()) {
                 // Is the key already recorded in the mapper? It shouldn't be,
@@ -1158,13 +1152,12 @@ fn record_preexisting_openssl_keys_in_signer_mapper(
                     }
                 }
             } else {
-                debug!("Could not parse key as key identifier: {}", key);
+                debug!("Could not parse key as key identifier: {key}");
             }
         }
 
         info!(
-            "Recorded {} key identifiers in the signer store",
-            num_recorded_keys
+            "Recorded {num_recorded_keys} key identifiers in the signer store"
         );
         Ok(())
     } else {

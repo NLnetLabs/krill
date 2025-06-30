@@ -597,7 +597,7 @@ impl Roas {
             }
         };
 
-        debug!("Selecting ROA publication mode: {:?}", mode);
+        debug!("Selecting ROA publication mode: {mode:?}");
 
         mode
     }
@@ -683,7 +683,7 @@ impl Roas {
 
         // Then remove all simple ROAs
         for roa_key in self.simple.keys() {
-            debug!("Will remove simple authorization for: {}", roa_key);
+            debug!("Will remove simple authorization for: {roa_key}");
             roa_updates.removed.push(*roa_key);
         }
 
@@ -1055,7 +1055,7 @@ mod tests {
         fn parse_encode_authorization(s: &str) {
             let auth = authorization(s);
             let json = serde_json::to_string(&auth).unwrap();
-            assert_eq!(format!("\"{}\"", s), json);
+            assert_eq!(format!("\"{s}\""), json);
 
             let des: RoaPayloadJsonMapKey =
                 serde_json::from_str(&json).unwrap();

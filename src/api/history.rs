@@ -42,7 +42,7 @@ impl fmt::Display for CommandHistory {
                 CommandHistoryResult::Init() => "INIT".to_string(),
                 CommandHistoryResult::Ok() => "OK".to_string(),
                 CommandHistoryResult::Error(msg) => {
-                    format!("ERROR -> {}", msg)
+                    format!("ERROR -> {msg}")
                 }
             };
             writeln!(
@@ -358,7 +358,7 @@ impl fmt::Display for CommandDetails {
 
         match &self.effect {
             CommandEffect::Error { msg, .. } => {
-                writeln!(f, "Error:  {}", msg)?
+                writeln!(f, "Error:  {msg}")?
             }
             CommandEffect::Success { events } => {
                 writeln!(f, "Changes:")?;

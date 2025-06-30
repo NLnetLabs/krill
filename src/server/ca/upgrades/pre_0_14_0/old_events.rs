@@ -274,7 +274,7 @@ pub enum Pre0_14_0CertAuthEvent {
 
 impl fmt::Display for Pre0_14_0CertAuthEvent {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{self:?}")
     }
 }
 

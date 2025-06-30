@@ -23,9 +23,9 @@ use crate::api::status::ErrorResponse;
 const JSON_CONTENT: &str = "application/json";
 
 fn report_get_and_exit(uri: &str, token: Option<&Token>) {
-    println!("GET:\n  {}", uri);
+    println!("GET:\n  {uri}");
     if let Some(token) = token {
-        println!("Headers:\n  Authorization: Bearer {}", token);
+        println!("Headers:\n  Authorization: Bearer {token}");
     }
     std::process::exit(0);
 }
@@ -36,19 +36,19 @@ fn report_post_and_exit(
     token: Option<&Token>,
     body: &str,
 ) {
-    println!("POST:\n  {}", uri);
+    println!("POST:\n  {uri}");
 
     if content_type.is_some() || token.is_some() {
         println!("Headers:");
     }
 
     if let Some(content_type) = content_type {
-        println!("  content-type: {}", content_type);
+        println!("  content-type: {content_type}");
     }
     if let Some(token) = token {
-        println!("  Authorization: Bearer {}", token);
+        println!("  Authorization: Bearer {token}");
     }
-    println!("Body:\n{}", body);
+    println!("Body:\n{body}");
     std::process::exit(0);
 }
 
@@ -58,16 +58,16 @@ fn report_delete(
     token: Option<&Token>,
 ) {
     if env::var(KRILL_CLI_API_ENV).is_ok() {
-        println!("DELETE:\n  {}", uri);
+        println!("DELETE:\n  {uri}");
         if content_type.is_some() || token.is_some() {
             println!("Headers:");
         }
 
         if let Some(content_type) = content_type {
-            println!("  content-type: {}", content_type);
+            println!("  content-type: {content_type}");
         }
         if let Some(token) = token {
-            println!("  Authorization: Bearer {}", token);
+            println!("  Authorization: Bearer {token}");
         }
         std::process::exit(0);
     }
@@ -296,7 +296,7 @@ pub async fn post_binary_with_full_ua(
     match res.status() {
         StatusCode::OK => {
             let bytes = res.bytes().await.map_err(|e| {
-                Error::response(uri, format!("cannot get body: {}", e))
+                Error::response(uri, format!("cannot get body: {e}"))
             })?;
             Ok(bytes)
         }
@@ -391,7 +391,7 @@ fn headers(
     if let Some(token) = token {
         headers.insert(
             hyper::header::AUTHORIZATION,
-            HeaderValue::from_str(&format!("Bearer {}", token))
+            HeaderValue::from_str(&format!("Bearer {token}"))
                 .map_err(|e| Error::request_build(uri, e))?,
         );
     }
@@ -418,7 +418,7 @@ async fn process_opt_json_response<T: DeserializeOwned>(
             let res: T = serde_json::from_str(&s).map_err(|e| {
                 Error::response(
                     uri,
-                    format!("could not parse JSON response: {}", e),
+                    format!("could not parse JSON response: {e}"),
                 )
             })?;
             Ok(Some(res))
@@ -486,48 +486,42 @@ impl fmt::Display for Error {
         match self {
             Error::RequestBuild(uri, msg) => write!(
                 f,
-                "Issue creating request for URI: {}, error: {}",
-                uri, msg
+                "Issue creating request for URI: {uri}, error: {msg}"
             ),
             Error::RequestBuildHttpsCert(path, msg) => {
                 write!(
                     f,
-                    "Cannot use configured HTTPS root cert '{}'. Error: {}",
-                    path, msg
+                    "Cannot use configured HTTPS root cert '{path}'. Error: {msg}"
                 )
             }
 
             Error::RequestExecute(uri, msg) => {
-                write!(f, "Issue accessing URI: {}, error: {}", uri, msg)
+                write!(f, "Issue accessing URI: {uri}, error: {msg}")
             }
 
             Error::Response(uri, msg) => write!(
                 f,
-                "Issue processing response from URI: {}, error: {}",
-                uri, msg
+                "Issue processing response from URI: {uri}, error: {msg}"
             ),
             Error::Forbidden(uri) => {
-                write!(f, "Got 'Forbidden' response for URI: {}", uri)
+                write!(f, "Got 'Forbidden' response for URI: {uri}")
             }
             Error::ErrorResponse(uri, code) => {
                 write!(
                     f,
-                    "Issue processing response from URI: {}, \
-                     error: unexpected status code {}",
-                    uri, code
+                    "Issue processing response from URI: {uri}, \
+                     error: unexpected status code {code}"
                 )
             }
             Error::ErrorResponseWithBody(uri, code, e) => {
                 write!(
                     f,
-                    "Error response from URI: {}, Status: {}, Error: {}",
-                    uri, code, e
+                    "Error response from URI: {uri}, Status: {code}, Error: {e}"
                 )
             }
             Error::ErrorResponseWithJson(uri, code, res) => write!(
                 f,
-                "Error response from URI: {}, Status: {}, ErrorResponse: {}",
-                uri, code, res
+                "Error response from URI: {uri}, Status: {code}, ErrorResponse: {res}"
             ),
         }
     }
@@ -541,7 +535,7 @@ impl Error {
     pub fn request_build_json(uri: &str, e: impl fmt::Display) -> Self {
         Error::RequestBuild(
             uri.to_string(),
-            format!("could not serialize type to JSON: {}", e),
+            format!("could not serialize type to JSON: {e}"),
         )
     }
 

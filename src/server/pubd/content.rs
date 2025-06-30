@@ -164,7 +164,7 @@ impl RepositoryContentProxy {
         delta: PublishDelta,
         jail: &uri::Rsync,
     ) -> KrillResult<()> {
-        debug!("Publish delta for {}", publisher);
+        debug!("Publish delta for {publisher}");
         self.store.send_command(
             RepositoryContentCommand::publish(
                 self.default_handle.clone(),
@@ -480,7 +480,7 @@ impl RepositoryContent {
     ) -> KrillResult<Vec<RepositoryContentChange>> {
         let mut res = vec![];
 
-        info!("Deleting files matching '{}'", del_uri);
+        info!("Deleting files matching '{del_uri}'");
 
         for publisher in self.rrdp.publishers() {
             let current_objects = self.objects_for_publisher(&publisher);
@@ -665,16 +665,15 @@ impl fmt::Display for RepositoryContentCommand {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             RepositoryContentCommand::ResetSession { handle } => {
-                write!(f, "reset session for repository {}", handle)
+                write!(f, "reset session for repository {handle}")
             }
             RepositoryContentCommand::CreateRrdpDelta { handle, .. } => {
-                write!(f, "create next RRDP delta for repository {}", handle)
+                write!(f, "create next RRDP delta for repository {handle}")
             }
             RepositoryContentCommand::AddPublisher { handle, publisher } => {
                 write!(
                     f,
-                    "add publisher '{}' to repository {}",
-                    publisher, handle
+                    "add publisher '{publisher}' to repository {handle}"
                 )
             }
             RepositoryContentCommand::RemovePublisher {
@@ -684,8 +683,7 @@ impl fmt::Display for RepositoryContentCommand {
             } => {
                 write!(
                     f,
-                    "remove publisher '{}' from repository {}",
-                    publisher, handle
+                    "remove publisher '{publisher}' from repository {handle}"
                 )
             }
             RepositoryContentCommand::DeleteMatchingFiles {
@@ -695,8 +693,7 @@ impl fmt::Display for RepositoryContentCommand {
             } => {
                 write!(
                     f,
-                    "remove content matching '{}' from repository {}",
-                    uri, handle
+                    "remove content matching '{uri}' from repository {handle}"
                 )
             }
             RepositoryContentCommand::Publish {
@@ -704,8 +701,7 @@ impl fmt::Display for RepositoryContentCommand {
             } => {
                 write!(
                     f,
-                    "publish for publisher '{}' under repository {}",
-                    publisher, handle
+                    "publish for publisher '{publisher}' under repository {handle}"
                 )
             }
         }
@@ -749,10 +745,10 @@ impl fmt::Display for RepositoryContentChange {
                 write!(f, "RRDP updated")
             }
             RepositoryContentChange::PublisherAdded { publisher } => {
-                write!(f, "added publisher: {}", publisher)
+                write!(f, "added publisher: {publisher}")
             }
             RepositoryContentChange::PublisherRemoved { publisher } => {
-                write!(f, "removed publisher: {}", publisher)
+                write!(f, "removed publisher: {publisher}")
             }
         }
     }

@@ -47,10 +47,9 @@ pub async fn start_krill_daemon(
             },
             _ => {
                 Error::Custom(format!(
-                    "Upgrade data migration failed with error: {}\n\n\
+                    "Upgrade data migration failed with error: {e}\n\n\
                      NOTE: your data was not changed. Please downgrade \
-                     your krill instance to your previous version.",
-                     e
+                     your krill instance to your previous version."
                 ))
             }
         }
@@ -104,7 +103,7 @@ pub async fn start_krill_daemon(
     // Create self-signed HTTPS cert if configured and not generated earlier.
     if config.https_mode().is_generate_https_cert() {
         tls_keys::create_key_cert_if_needed(config.tls_keys_dir())
-            .map_err(|e| Error::HttpsSetup(format!("{}", e)))?;
+            .map_err(|e| Error::HttpsSetup(format!("{e}")))?;
     }
 
     // Start a hyper server for the configured socket.
@@ -137,7 +136,7 @@ async fn single_http_listener(
     let listener = match TcpListener::bind(addr).await {
         Ok(listener) => listener,
         Err(err) => {
-            error!("Could not bind to {}: {}", addr, err);
+            error!("Could not bind to {addr}: {err}");
             return;
         }
     };
@@ -151,7 +150,7 @@ async fn single_http_listener(
         ) {
             Ok(config) => Some(TlsAcceptor::from(Arc::new(config))),
             Err(err) => {
-                error!("{}", err);
+                error!("{err}");
                 return;
             }
         }
@@ -167,7 +166,7 @@ async fn single_http_listener(
                 tls::MaybeTlsTcpStream::new(stream, tls.as_ref())
             }
             Err(err) => {
-                error!("Fatal error in HTTP server {}: {}", addr, err);
+                error!("Fatal error in HTTP server {addr}: {err}");
                 return;
             }
         };
@@ -193,8 +192,7 @@ fn write_pid_file_or_die(config: &Config) {
         process::id().to_string().as_bytes(), config.pid_file()
     ) {
         print_write_error_hint_and_die(format!(
-            "Could not write PID file: {}",
-            e
+            "Could not write PID file: {e}"
         ));
     }
 }
@@ -235,7 +233,7 @@ fn test_data_dir_or_die(config_item: &str, dir: &Path) {
 
 
 fn print_write_error_hint_and_die(error_msg: String) {
-    eprintln!("{}", error_msg);
+    eprintln!("{error_msg}");
     eprintln!();
     eprintln!("Hint: if you use systemd you may need to override the allowed");
     eprintln!("ReadWritePaths, the easiest way may be by doing ");

@@ -134,17 +134,16 @@ impl fmt::Display for SignerInfoEvent {
         match self {
             SignerInfoEvent::KeyAdded(key_id, internal_key_id) => write!(
                 f,
-                "added key with key id '{}' and internal key id '{}'",
-                key_id, internal_key_id
+                "added key with key id '{key_id}' and internal key id '{internal_key_id}'"
             ),
             SignerInfoEvent::KeyRemoved(key_id) => {
-                write!(f, "removed key with key id '{}'", key_id)
+                write!(f, "removed key with key id '{key_id}'")
             }
             SignerInfoEvent::SignerNameChanged(signer_name) => {
-                write!(f, "signer name changed to '{}'", signer_name)
+                write!(f, "signer name changed to '{signer_name}'")
             }
             SignerInfoEvent::SignerInfoChanged(signer_info) => {
-                write!(f, "signer info changed to '{}'", signer_info)
+                write!(f, "signer info changed to '{signer_info}'")
             }
         }
     }
@@ -175,18 +174,17 @@ impl fmt::Display for SignerInfoCommandDetails {
             SignerInfoCommandDetails::AddKey(key_id, internal_key_id) => {
                 write!(
                     f,
-                    "Add key with key id '{}' and internal key id '{}'",
-                    key_id, internal_key_id
+                    "Add key with key id '{key_id}' and internal key id '{internal_key_id}'"
                 )
             }
             SignerInfoCommandDetails::RemoveKey(key_id) => {
-                write!(f, "Remove key with key id '{}'", key_id)
+                write!(f, "Remove key with key id '{key_id}'")
             }
             SignerInfoCommandDetails::ChangeSignerName(signer_name) => {
-                write!(f, "Change signer name to '{}'", signer_name)
+                write!(f, "Change signer name to '{signer_name}'")
             }
             SignerInfoCommandDetails::ChangeSignerInfo(signer_info) => {
-                write!(f, "Change signer info to '{}'", signer_info)
+                write!(f, "Change signer info to '{signer_info}'")
             }
         }
     }
@@ -500,8 +498,7 @@ impl SignerMapper {
             SignerHandle::from_str(&uuid::Uuid::new_v4().to_string())
                 .map_err(|err| {
                     Error::SignerError(format!(
-                        "Generated UUID is not a valid signer handle: {}",
-                        err
+                        "Generated UUID is not a valid signer handle: {err}"
                     ))
                 })?;
 
@@ -630,8 +627,7 @@ impl SignerMapper {
             .cloned()
             .ok_or_else(|| {
                 Error::SignerError(format!(
-                    "Key with key id '{}' not found",
-                    key_id
+                    "Key with key id '{key_id}' not found"
                 ))
             })
     }
@@ -658,8 +654,7 @@ impl SignerMapper {
             }
         }
         Err(Error::SignerError(format!(
-            "No signer owns key id '{}'",
-            key_id
+            "No signer owns key id '{key_id}'"
         )))
     }
 }

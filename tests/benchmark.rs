@@ -57,8 +57,7 @@ async fn wait_for_nr_cas_under_publication_server(
     }
 
     panic!(
-        "Expected {} publishers, but found {}",
-        publishers_expected, publishers_found
+        "Expected {publishers_expected} publishers, but found {publishers_found}"
     );
 }
 

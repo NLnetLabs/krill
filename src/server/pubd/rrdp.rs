@@ -758,7 +758,7 @@ impl RrdpServer {
 
                         let mut dest = self.rrdp_archive_dir.clone();
                         dest.push(self.session.to_string());
-                        dest.push(format!("{}", serial));
+                        dest.push(format!("{serial}"));
 
                         info!(
                             "Archiving RRDP serial '{}' to '{}",
@@ -2131,18 +2131,16 @@ impl fmt::Display for PublicationDeltaError {
         match self {
             PublicationDeltaError::UriOutsideJail(uri, jail) => {
                 write!(f,
-                    "Publishing '{}' outside of jail URI '{}'",
-                    uri, jail
+                    "Publishing '{uri}' outside of jail URI '{jail}'"
                 )
             }
             PublicationDeltaError::ObjectAlreadyPresent(uri) => {
                 write!(f,
-                    "File already exists for uri (use update!): {}",
-                    uri
+                    "File already exists for uri (use update!): {uri}"
                 )
             }
             PublicationDeltaError::NoObjectForHashAndOrUri(uri) => {
-                write!(f, "File does not match hash at uri: {}", uri)
+                write!(f, "File does not match hash at uri: {uri}")
             }
         }
     }
@@ -2264,8 +2262,7 @@ mod test {
         fn file_uri(name: &str) -> CurrentObjectUri {
             CurrentObjectUri(
                 format!(
-                    "rsync://example.krill.cloud/repo/publisher/{}",
-                    name
+                    "rsync://example.krill.cloud/repo/publisher/{name}"
                 )
                 .into(),
             )

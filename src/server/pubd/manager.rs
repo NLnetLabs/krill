@@ -137,8 +137,7 @@ impl RepositoryManager {
             &publisher_handle, &msg_bytes
         ).map_err(|e| {
             Error::Custom(format!(
-                "Issue with publication request by publisher '{}': {}",
-                publisher_handle, e
+                "Issue with publication request by publisher '{publisher_handle}': {e}"
             ))
         })?;
         let message = cms.into_message();
@@ -184,16 +183,14 @@ impl RepositoryManager {
         match query {
             publication::Query::List => {
                 debug!(
-                    "Received RFC 8181 list query for {}",
-                    publisher_handle
+                    "Received RFC 8181 list query for {publisher_handle}"
                 );
                 let list_reply = self.list(publisher_handle)?;
                 Ok(publication::Message::list_reply(list_reply))
             }
             publication::Query::Delta(delta) => {
                 debug!(
-                    "Received RFC 8181 delta query for {}",
-                    publisher_handle
+                    "Received RFC 8181 delta query for {publisher_handle}"
                 );
                 self.publish(publisher_handle, delta)?;
                 Ok(publication::Message::success())
@@ -911,7 +908,7 @@ mod tests {
         serial: u64,
         filename: &str,
     ) -> Option<PathBuf> {
-        let session_path = base_dir.join(format!("repo/rrdp/{}", session));
+        let session_path = base_dir.join(format!("repo/rrdp/{session}"));
         RrdpServer::find_in_serial_dir(&session_path, serial, filename)
             .unwrap()
     }
