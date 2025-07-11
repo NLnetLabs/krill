@@ -523,23 +523,24 @@ impl fmt::Display for ApiTrustAnchorSignedRequest {
             writeln!(f)?;
         }
 
-        if let Some(renew_time) = self.renew_time && 
-            self.request.child_requests.is_empty() {
-            writeln!(
-                f, "Certificates will be reissued {} weeks before expiry.", 
-                self.issued_certificate_reissue_weeks_before
-            )?;
-            writeln!(f, "The current certificate expires on {}.", 
-                renew_time.to_rfc3339()
-            )?; 
-            if let Some(weeks) = TimeDelta::try_weeks(
-                self.issued_certificate_reissue_weeks_before
-            ) {
-                let t = renew_time - weeks;
+        if self.request.child_requests.is_empty() {
+            if let Some(renew_time) = self.renew_time {
                 writeln!(
-                    f, "The certificate is eligible for renewal on {}.",
-                    t.to_rfc3339()
+                    f, "Certificates will be reissued {} weeks before expiry.", 
+                    self.issued_certificate_reissue_weeks_before
+                )?;
+                writeln!(f, "The current certificate expires on {}.", 
+                    renew_time.to_rfc3339()
                 )?; 
+                if let Some(weeks) = TimeDelta::try_weeks(
+                    self.issued_certificate_reissue_weeks_before
+                ) {
+                    let t = renew_time - weeks;
+                    writeln!(
+                        f, "The certificate is eligible for renewal on {}.",
+                        t.to_rfc3339()
+                    )?; 
+                }
             }
         }
 
