@@ -504,7 +504,7 @@ impl fmt::Display for ApiTrustAnchorSignedRequest {
         match &self.request.child_requests.len() {
             0 => writeln!(f, "There are no child requests")?,
             1 => writeln!(f, "There is one child request")?,
-            n => writeln!(f, "There are {} child requests", n)?,
+            n => writeln!(f, "There are {n} child requests")?,
         };
         writeln!(f)?;
 
