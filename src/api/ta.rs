@@ -501,6 +501,9 @@ impl fmt::Display for ApiTrustAnchorSignedRequest {
         writeln!(f, "-------------------------------")?;
         writeln!(f)?;
 
+        writeln!(f, "There are {} child requests:", &self.request.child_requests.len())?;
+        writeln!(f)?;
+
         for request in &self.request.child_requests {
             writeln!(f, "-------------------------------")?;
             writeln!(f, "          child request")?;
@@ -520,7 +523,8 @@ impl fmt::Display for ApiTrustAnchorSignedRequest {
             writeln!(f)?;
         }
 
-        if let Some(renew_time) = self.renew_time {
+        if let Some(renew_time) = self.renew_time && 
+            self.request.child_requests.is_empty() {
             writeln!(
                 f, "Certificates will be reissued {} weeks before expiry.", 
                 self.issued_certificate_reissue_weeks_before
