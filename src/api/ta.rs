@@ -490,8 +490,11 @@ pub struct ApiTrustAnchorSignedRequest {
     /// The re-issue limit from the timing configuration.
     pub issued_certificate_reissue_weeks_before: i64,
 
-    /// The shortest renewal time for any of the certificates.
-    pub renew_time: Option<Time>,
+    /// The renewal times for all the child certificates.
+    pub renew_times: Vec<(KeyIdentifier, Time)>,
+
+    /// The renewal time of the TA certificate
+    pub ta_renew_time: Option<Time>,
 }
 
 impl fmt::Display for ApiTrustAnchorSignedRequest {
@@ -528,23 +531,29 @@ impl fmt::Display for ApiTrustAnchorSignedRequest {
         }
 
         if self.request.child_requests.is_empty() {
-            if let Some(renew_time) = self.renew_time {
-                writeln!(
-                    f, "Certificates will be reissued {} weeks before expiry.", 
-                    self.issued_certificate_reissue_weeks_before
-                )?;
-                writeln!(f, "The current certificate expires on {}.", 
-                    renew_time.to_rfc3339()
+            writeln!(
+                f, "Certificates will be reissued {} weeks before expiry.", 
+                self.issued_certificate_reissue_weeks_before
+            )?;
+            for &(key, time) in &self.renew_times {
+                writeln!(f, "The certificate for key {}\n    expires on {},", 
+                    key,
+                    time.to_rfc3339()
                 )?; 
                 if let Some(weeks) = TimeDelta::try_weeks(
                     self.issued_certificate_reissue_weeks_before
                 ) {
-                    let t = renew_time - weeks;
+                    let t = time - weeks;
                     writeln!(
-                        f, "The certificate is eligible for renewal on {}.",
+                        f, "    eligible for renewal on {}.",
                         t.to_rfc3339()
                     )?; 
                 }
+            }
+            if let Some(ta_renew_time) = self.ta_renew_time {
+                writeln!(f, "The TA certificate expires on {}.",
+                    ta_renew_time.to_rfc3339(),
+                )?;
             }
         }
 
