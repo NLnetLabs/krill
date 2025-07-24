@@ -514,15 +514,14 @@ impl TrustAnchorProxy {
                         requests: details.open_requests.clone(),
                     });
                 }
+            }
 
-                if let Ok(cert) = IdCert::try_from(&details.id) {
-                    let v = cert.validity();
-                    if let Some(rt) = renew_time {
-                        renew_time = Some(cmp::min(rt, v.not_after()));
-                    }
-                    else {
-                        renew_time = Some(v.not_after());
-                    }
+            if let Some(info) = &self.signer {
+                let v = info.ta_cert_details.cert.validity;
+                if let Some(rt) = renew_time {
+                    renew_time = Some(cmp::min(rt, v.not_after()));
+                } else {
+                    renew_time = Some(v.not_after());
                 }
             }
 
