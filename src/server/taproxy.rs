@@ -10,7 +10,6 @@ use chrono::Duration;
 use log::{log_enabled, trace};
 use rpki::{
     ca::{
-        idcert::IdCert,
         idexchange::{self, CaHandle, ChildHandle, MyHandle},
         provisioning::{ResourceClassEntitlements, SigningCert},
     },
