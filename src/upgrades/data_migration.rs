@@ -220,7 +220,15 @@ fn copy_data_for_migration(
         if !source_kv_store.is_empty()? {
             let target_kv_store =
                 KeyValueStore::create(target_storage, namespace)?;
-            target_kv_store.import(&source_kv_store)?;
+            target_kv_store.import(
+                &source_kv_store,
+                |scope| {
+                    match scope.first_segment() {
+                        Some(segment) => segment.as_str() != ".locks",
+                        None => true
+                    }
+                }
+            )?;
         }
     }
 

@@ -396,6 +396,13 @@ pub trait UpgradeAggregateStorePre0_14 {
                 continue;
             }
 
+            // Skip a scope [`.locks`]. This is the old locks directory.
+            if let Some(segment) = scope.first_segment() {
+                if segment.as_str() == ".locks" {
+                    continue
+                }
+            }
+
             // Getting the Handle should never fail, but if it does then we
             // should bail out asap.
             let handle =
