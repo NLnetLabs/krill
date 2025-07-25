@@ -1324,7 +1324,7 @@ mod tests {
                 &mem_storage_base_uri, namespace
             ).unwrap();
 
-            target_store.import(&source_store).unwrap();
+            target_store.import(&source_store, |_| true).unwrap();
         }
 
         let properties_manager = PropertiesManager::create(
@@ -1489,7 +1489,7 @@ mod tests {
         let target_store = KeyValueStore::create(
             &mem_storage_base_uri, KEYS_NS
         ).unwrap();
-        target_store.import(&source_store).unwrap();
+        target_store.import(&source_store, |_| true).unwrap();
 
         // This is needed for tls_dir etc, but will be ignored here.
         let bogus_path = PathBuf::from("/dev/null");
@@ -1582,7 +1582,7 @@ mod tests {
             KeyValueStore::create(&test_storage_uri, STATUS_NS).unwrap();
 
         // copy the source KV store (files) into the test KV store (in memory)
-        status_kv_store.import(&source_store).unwrap();
+        status_kv_store.import(&source_store, |_| true).unwrap();
 
         // get the status for testbed before initialising a StatusStore
         // using the copied the data - that will be done next and start
