@@ -1049,6 +1049,15 @@ pub fn finalise_data_migration(
                 debug!("Removing excess version key in ns: {ns}");
                 current_store.drop_key(&version_key)?;
             }
+
+            // If we migrate from before 0.15.0, delete the .locks scope.
+            if upgrade.from() < &KrillVersion::release(0,15,0) {
+                let _ = current_store.drop_scope(
+                    &Scope::from_segment(
+                        const { Segment::make(".locks") }
+                    )
+                );
+            }
         }
     }
 
