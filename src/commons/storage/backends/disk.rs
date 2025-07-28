@@ -343,7 +343,11 @@ impl Store {
             }
         };
         match self.path_scope(path) {
-            Some(scope) if !scope.is_global() => res.push(scope),
+            Some(scope) => {
+                if !scope.is_global() {
+                    res.push(scope)
+                }
+            }
             _ => return Ok(())
         };
         for item in dir {
