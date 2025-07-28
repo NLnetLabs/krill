@@ -1591,7 +1591,15 @@ mod tests {
             KeyValueStore::create(&test_storage_uri, STATUS_NS).unwrap();
 
         // copy the source KV store (files) into the test KV store (in memory)
-        status_kv_store.import(&source_store, |_| true).unwrap();
+        status_kv_store.import(
+            &source_store,
+            |scope| {
+                match scope.first_segment() {
+                    Some(segment) => segment.as_str() != ".locks",
+                    None => true
+                }
+            }
+        ).unwrap();
 
         // get the status for testbed before initialising a StatusStore
         // using the copied the data - that will be done next and start

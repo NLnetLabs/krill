@@ -159,7 +159,10 @@ impl KeyValueStore {
         self.execute(scope, |kv| kv.delete_scope(scope))
     }
 
-    /// Returns all scopes, including sub_scopes
+    /// Returns all scopes.
+    ///
+    /// The returned vec will contain all scopes, including their subscopes.
+    /// It will not, however, contain the global scope.
     pub fn scopes(&self) -> Result<Vec<Scope>, KeyValueError> {
         self.execute(&Scope::global(), |kv| kv.list_scopes())
     }
