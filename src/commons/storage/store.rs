@@ -229,17 +229,27 @@ impl KeyValueStore {
 
     /// Import all data from the given KV store into this
     ///
+    /// The closure `keep` is given each scope and decides whether it should
+    /// be copied.
+    ///
     /// NOTE: This function is not transactional because both this, and the
     /// other       keystore could be in the same database and nested
     /// transactions are       currently not supported. This should be
     /// okay, because this function       is intended to be used for
     /// migrations and testing (copy test data       into a store) while
     /// Krill is not running.
-    pub fn import(&self, other: &Self) -> Result<(), KeyValueError> {
+    pub fn import(
+        &self,
+        other: &Self,
+        mut keep: impl FnMut(&Scope) -> bool,
+    ) -> Result<(), KeyValueError> {
         let mut scopes = other.scopes()?;
         scopes.push(Scope::global());
 
         for scope in scopes {
+            if !keep(&scope) {
+                continue
+            }
             for key in other.keys(&scope, "")? {
                 if let Some(value) = other.inner.get_any(&key)? {
                     self.inner.store_any(&key, &value)?
