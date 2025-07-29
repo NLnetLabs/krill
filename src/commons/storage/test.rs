@@ -23,15 +23,21 @@ macro_rules! testfns {
             fn $name:ident($harness:ident: impl Harness) $body:block
         )*
     ) => {
+        mod testfns {
+            use super::*;
+
+            $(
+                pub fn $name($harness: impl Harness) $body
+            )*
+        }
+
         mod memory {
             use super::*;
 
             $(
                 #[test]
                 fn $name() {
-                    fn test($harness: MemoryHarness) $body
-
-                    test(MemoryHarness::new());
+                    super::testfns::$name(MemoryHarness::new());
                 }
             )*
         }
@@ -42,9 +48,7 @@ macro_rules! testfns {
             $(
                 #[test]
                 fn $name() {
-                    fn test($harness: DiskHarness) $body
-
-                    test(DiskHarness::new());
+                    super::testfns::$name(DiskHarness::new());
                 }
             )*
         }
@@ -279,8 +283,8 @@ trait Harness {
 /// The test harness for the memory backend.
 ///
 /// Because there is only a single shared memory store for the whole process,
-/// we can only run a single test using at the same time and need to wipe it
-/// clean before the test. This is why there is a lock and a guard here.
+/// we can only run a single test using it at the same time and need to wipe
+/// it clean before the test. This is why there are a lock and a guard here.
 struct MemoryHarness<'a> {
     _guard: MutexGuard<'a, ()>,
 }
