@@ -7,7 +7,7 @@
 // file.
 
 mod disk;
-mod memory;
+pub(super) mod memory; // Test code wants to access the Store directly.
 
 
 //============ Backend Enum ==================================================
