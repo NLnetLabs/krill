@@ -174,7 +174,7 @@ assets = [
         "644",
     ],
 ]
-systemd-units = { unit-name = "krill", unit-scripts = "pkg/common", enable = true }
+systemd-units = { unit-name = "krill", unit-scripts = "pkg/common", enable = false }
 
 # Packaging configuration for the `krillup` binary rather than Krill itself. As
 # we want the built binary to match that built for Krill we want the same
