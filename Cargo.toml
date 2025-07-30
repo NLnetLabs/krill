@@ -168,6 +168,11 @@ assets = [
         "/usr/share/man/man1/krillc.1",
         "644",
     ],
+    [
+        "pkg/common/krill.service.preset",
+        "/usr/lib/systemd/system-preset/50-krill.preset",
+        "644",
+    ],
 ]
 systemd-units = { unit-name = "krill", unit-scripts = "pkg/common", enable = false }
 
@@ -231,28 +236,110 @@ assets = [
 #      OpenSSL >= 1.1.0.
 #   b) uses a simpler systemd service unit file because Ubuntu 16.04 doesn't
 #      support newer features supported by Ubuntu 18.04 and 20.04.
-[package.metadata.deb.variants.ubuntu-xenial]
-features = ["openssl/vendored"]
-depends = "$auto, passwd"
-
-[package.metadata.deb.variants.ubuntu-bionic]
-systemd-units = { unit-name = "krill", unit-scripts = "pkg/common", enable = false, usr-merge = false }
-
 [package.metadata.deb.variants.ubuntu-focal]
+assets = [
+    [
+        "target/release/krill",
+        "/usr/bin/krill",
+        "755",
+    ],
+    [
+        "target/release/krillc",
+        "/usr/bin/krillc",
+        "755",
+    ],
+    [
+        "defaults/krill.conf",
+        "/usr/share/doc/krill/krill.conf",
+        "644",
+    ],
+    [
+        "doc/krill.1",
+        "/usr/share/man/man1/krill.1",
+        "644",
+    ],
+    [
+        "doc/krillc.1",
+        "/usr/share/man/man1/krillc.1",
+        "644",
+    ],
+    [
+        "pkg/common/krill.service.preset",
+        "/lib/systemd/system-preset/50-krill.preset",
+        "644",
+    ],
+]
 systemd-units = { unit-name = "krill", unit-scripts = "pkg/common", enable = false, usr-merge = false }
 
 [package.metadata.deb.variants.ubuntu-jammy]
+assets = [
+    [
+        "target/release/krill",
+        "/usr/bin/krill",
+        "755",
+    ],
+    [
+        "target/release/krillc",
+        "/usr/bin/krillc",
+        "755",
+    ],
+    [
+        "defaults/krill.conf",
+        "/usr/share/doc/krill/krill.conf",
+        "644",
+    ],
+    [
+        "doc/krill.1",
+        "/usr/share/man/man1/krill.1",
+        "644",
+    ],
+    [
+        "doc/krillc.1",
+        "/usr/share/man/man1/krillc.1",
+        "644",
+    ],
+    [
+        "pkg/common/krill.service.preset",
+        "/lib/systemd/system-preset/50-krill.preset",
+        "644",
+    ],
+]
 systemd-units = { unit-name = "krill", unit-scripts = "pkg/common", enable = false, usr-merge = false }
 depends = "$auto, passwd, libssl3"
 
-[package.metadata.deb.variants.debian-stretch]
-features = ["openssl/vendored"]
-depends = "$auto, passwd"
-
-[package.metadata.deb.variants.debian-buster]
-systemd-units = { unit-name = "krill", unit-scripts = "pkg/common", enable = false, usr-merge = false }
-
 [package.metadata.deb.variants.debian-bullseye]
+assets = [
+    [
+        "target/release/krill",
+        "/usr/bin/krill",
+        "755",
+    ],
+    [
+        "target/release/krillc",
+        "/usr/bin/krillc",
+        "755",
+    ],
+    [
+        "defaults/krill.conf",
+        "/usr/share/doc/krill/krill.conf",
+        "644",
+    ],
+    [
+        "doc/krill.1",
+        "/usr/share/man/man1/krill.1",
+        "644",
+    ],
+    [
+        "doc/krillc.1",
+        "/usr/share/man/man1/krillc.1",
+        "644",
+    ],
+    [
+        "pkg/common/krill.service.preset",
+        "/lib/systemd/system-preset/50-krill.preset",
+        "644",
+    ],
+]
 systemd-units = { unit-name = "krill", unit-scripts = "pkg/common", enable = false, usr-merge = false }
 
 [package.metadata.deb.variants.debian-bookworm]
