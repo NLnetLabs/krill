@@ -168,11 +168,6 @@ assets = [
         "/usr/share/man/man1/krillc.1",
         "644",
     ],
-    [
-        "pkg/common/krill.service.preset",
-        "/lib/systemd/system-preset/50-krill.preset",
-        "644",
-    ],
 ]
 systemd-units = { unit-name = "krill", unit-scripts = "pkg/common", enable = false }
 
