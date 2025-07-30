@@ -264,7 +264,7 @@ systemd-units = { unit-name = "krill", unit-scripts = "pkg/common", enable = fal
 depends = "$auto, passwd, libssl3"
 
 [package.metadata.deb.variants.debian-trixie]
-depends = "$auto, passwd, libssl3"
+depends = "$auto, passwd, libssl3, adduser"
 
 [package.metadata.deb.variants.ubuntu-noble]
 depends = "$auto, passwd, libssl3"
