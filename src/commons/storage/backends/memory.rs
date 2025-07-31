@@ -27,6 +27,10 @@ pub struct Store {
 }
 
 impl Store {
+    pub fn wipe_all() {
+        MEMORY.wipe_all()
+    }
+
     pub fn from_uri(
         uri: &Url, namespace: &Namespace
     ) -> Result<Option<Self>, Error> {
@@ -133,7 +137,11 @@ impl Store {
     /// Returns all the scopes in the score.
     ///
     pub fn list_scopes(&self) -> Result<Vec<Scope>, Error> {
-        Ok(self.namespace.values().keys().cloned().collect())
+        Ok(
+            self.namespace.values().keys().filter(|scope| {
+                !scope.is_global()
+            }).cloned().collect()
+        )
     }
 }
 
@@ -301,6 +309,10 @@ struct Memory {
 }
 
 impl Memory {
+    fn wipe_all(&self) {
+        self.namespaces.lock().expect("poisoned lock").clear();
+    }
+
     fn get_namespace(
         &self,
         prefix: String,

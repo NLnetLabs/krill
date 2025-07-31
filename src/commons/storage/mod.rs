@@ -10,4 +10,5 @@ pub use self::types::{
 mod backends;
 mod store;
 mod types;
+mod test;
 
