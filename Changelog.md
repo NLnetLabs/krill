@@ -4,7 +4,18 @@
 
 Bug fixes
 
+* Improved the message printed when the TA proxy’s signer request does not
+  contain any actual requests. ([#1305])
+* Fixed various migration issues. ([#1306], [#1307])
+
 Other changes
+
+* Add packaging for Debian 13. ([#1308])
+
+[#1305]: https://github.com/NLnetLabs/krill/pull/1305
+[#1306]: https://github.com/NLnetLabs/krill/pull/1306
+[#1307]: https://github.com/NLnetLabs/krill/pull/1307
+[#1308]: https://github.com/NLnetLabs/krill/pull/1308
 
 
 ## 0.15.0-rc4
