@@ -521,6 +521,36 @@ Upload the Signer Response
   krillta proxy signer process-response --response ./response.json
 
 
+Reissuing TA Certificates
+-------------------------
+
+Reissue the signer. This takes the same arguments as init. Any changes to
+ta_timing are also reflected here:
+
+.. code-block:: bash
+
+  krillta signer -c ta.conf reissue --proxy-id proxy-id.json \ 
+                                    --proxy-repository-contact proxy-request.json \
+                                    --tal-rsync rsync://abcd.example.org/ta/ta.tal \ 
+                                    ...
+
+
+Get the TA Signer 'info' JSON file and save it:
+
+.. code-block:: bash
+
+  krillta signer -f json show > ./signer-info.json
+
+
+Then 'update' the signer associated with the TA Proxy:
+
+.. code-block:: bash
+
+  krillta proxy signer update --info ./signer-info.json
+
+At this point you should see that both /ta/ta.tal and /ta/ta.cer are updated.
+
+
 Auditing
 ^^^^^^^^
 

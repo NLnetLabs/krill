@@ -4,7 +4,7 @@
 //! *except* for signing using the Trust Anchor private key. That
 //! function is handled by the Trust Anchor Signer instead.
 
-use std::{cmp, collections::HashMap, fmt, sync::Arc};
+use std::{collections::HashMap, fmt, sync::Arc};
 
 use chrono::Duration;
 use log::{log_enabled, trace};
@@ -504,7 +504,7 @@ impl TrustAnchorProxy {
     ) -> KrillResult<ApiTrustAnchorSignedRequest> {
         if let Some(nonce) = self.open_signer_request.as_ref().cloned() {
             let mut child_requests = vec![];
-            let mut renew_time = None;
+            let mut renew_times = Vec::new();
 
             for (child, details) in &self.child_details {
                 if !details.open_requests.is_empty() {
@@ -517,12 +517,7 @@ impl TrustAnchorProxy {
 
                 if let Ok(cert) = IdCert::try_from(&details.id) {
                     let v = cert.validity();
-                    if let Some(rt) = renew_time {
-                        renew_time = Some(cmp::min(rt, v.not_after()));
-                    }
-                    else {
-                        renew_time = Some(v.not_after());
-                    }
+                    renew_times.push((cert.public_key().key_identifier(), v.not_after()));
                 }
             }
 
@@ -541,7 +536,10 @@ impl TrustAnchorProxy {
                 signed: request.signed,
                 issued_certificate_reissue_weeks_before:
                     timing.issued_certificate_reissue_weeks_before,
-                renew_time,
+                renew_times,
+                ta_renew_time: self.signer.as_ref().map(|info| {
+                    info.ta_cert_details.cert.validity.not_after()
+                }),
             })
         } else {
             Err(Error::TaProxyHasNoRequest)
