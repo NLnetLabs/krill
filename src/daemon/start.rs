@@ -11,6 +11,7 @@ use tokio::sync::oneshot;
 use tokio_rustls::TlsAcceptor;
 use crate::commons::file;
 use crate::commons::error::Error;
+use crate::commons::version::KrillVersion;
 use crate::config::Config;
 use crate::constants::KRILL_ENV_UPGRADE_ONLY;
 use crate::server::properties::PropertiesManager;
@@ -72,6 +73,11 @@ pub async fn start_krill_daemon(
                 e
             ))
         })?;
+    }
+
+    // Added in 0.15.0: Initialize the property manager if it isn’t yet.
+    if !properties_manager.is_initialized() {
+        properties_manager.init(KrillVersion::code_version())?;
     }
 
     // Create the Krill manager, this will create the necessary data

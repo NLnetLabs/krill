@@ -29,8 +29,8 @@ use crate::{
     },
     constants::{
         ACTOR_DEF_KRILL, CASERVER_NS, CA_OBJECTS_NS, KEYS_NS,
-        PUBSERVER_CONTENT_NS, PUBSERVER_NS, SIGNERS_NS, STATUS_NS,
-        TA_PROXY_SERVER_NS, TA_SIGNER_SERVER_NS,
+        PROPERTIES_NS, PUBSERVER_CONTENT_NS, PUBSERVER_NS, SIGNERS_NS,
+        STATUS_NS, TA_PROXY_SERVER_NS, TA_SIGNER_SERVER_NS, TASK_QUEUE_NS,
     },
     config::Config,
     server::{
@@ -1016,12 +1016,14 @@ pub fn finalise_data_migration(
         CASERVER_NS,
         CA_OBJECTS_NS,
         KEYS_NS,
+        PROPERTIES_NS,
         PUBSERVER_CONTENT_NS,
         PUBSERVER_NS,
         SIGNERS_NS,
         STATUS_NS,
         TA_PROXY_SERVER_NS,
         TA_SIGNER_SERVER_NS,
+        TASK_QUEUE_NS,
     ] {
         // Check if there is a non-empty upgrade store for this namespace
         // that would need to be migrated.
@@ -1051,7 +1053,7 @@ pub fn finalise_data_migration(
             }
 
             // If we migrate from before 0.15.0, delete the .locks scope.
-            if upgrade.from() < &KrillVersion::release(0,15,0) {
+            if upgrade.from() < &KrillVersion::release(0, 15, 0) {
                 let _ = current_store.drop_scope(
                     &Scope::from_segment(
                         const { Segment::make(".locks") }
@@ -1218,19 +1220,24 @@ fn upgrade_versions(
     properties_manager: &PropertiesManager,
 ) -> Result<Option<UpgradeVersions>, UpgradeError> {
     if properties_manager.is_initialized() {
-        // The properties manager was introduced in Krill 0.14.0.
+        // The properties manager was introduced in Krill 0.14.0. However,
+        // in 0.14.0, it is not being initialised unless a migration from
+        // an older version happened. This changed in 0.15.0 where it gets
+        // initialised even on a fresh install.
+        //
         // If it's initialised then it MUST have a Krill Version.
         let current = properties_manager.current_krill_version()?;
         UpgradeVersions::for_current(current)
-    } else {
-        // No KrillVersion yet. So, either this is an older Krill version,
-        // or this a fresh installation.
+    }
+    else {
+        // No KrillVersion. So, this is an older Krill version.
         //
-        // If this is an existing older Krill installation then we will
-        // find version files (keys) in one or more existing key value
+        // If this is an existing Krill installation before 0.14.0, then we
+        // will find version files (keys) in one or more existing key value
         // stores used for the various entities in Krill.
         //
-        // If can't find any versions then this is a clean install.
+        // If can't find any versions then this is a new install being done
+        // in the 0.14 series. We treat all of them as 0.14.0.
 
         let mut current: Option<KrillVersion> = None;
 
@@ -1265,7 +1272,9 @@ fn upgrade_versions(
         }
 
         match current {
-            None => Ok(None),
+            None => {
+                UpgradeVersions::for_current(KrillVersion::release(0, 14, 0))
+            }
             Some(current) => UpgradeVersions::for_current(current),
         }
     }
