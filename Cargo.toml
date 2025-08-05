@@ -236,14 +236,16 @@ assets = [
 #      OpenSSL >= 1.1.0.
 #   b) uses a simpler systemd service unit file because Ubuntu 16.04 doesn't
 #      support newer features supported by Ubuntu 18.04 and 20.04.
-[package.metadata.deb.variants.ubuntu-focal]
+[package.metadata.deb_alt_base_krill.variants.ubuntu-focal]
+systemd-units = { unit-name = "krill", unit-scripts = "pkg/common", enable = false, usr-merge = false }
+
+[package.metadata.deb_alt_base_krill.variants.ubuntu-jammy]
 systemd-units = { unit-name = "krill", unit-scripts = "pkg/common", enable = false, usr-merge = false }
 
 [package.metadata.deb.variants.ubuntu-jammy]
-systemd-units = { unit-name = "krill", unit-scripts = "pkg/common", enable = false, usr-merge = false }
 depends = "$auto, passwd, libssl3"
 
-[package.metadata.deb.variants.debian-bullseye]
+[package.metadata.deb_alt_base_krill.variants.debian-bullseye]
 systemd-units = { unit-name = "krill", unit-scripts = "pkg/common", enable = false, usr-merge = false }
 
 [package.metadata.deb.variants.debian-bookworm]
@@ -259,8 +261,10 @@ depends = "$auto, passwd, libssl3"
 # Note: we have to specifiy dependencies manually because we don't run cargo-deb
 # on the target platform and so it cannot determine the dependencies correctly
 # for us.
-[package.metadata.deb.variants.debian-bullseye-armv7-unknown-linux-gnueabihf]
+[package.metadata.deb_alt_base_krill.variants.debian-bullseye-armv7-unknown-linux-gnueabihf]
 systemd-units = { unit-name = "krill", unit-scripts = "pkg/common", enable = false, usr-merge = false }
+
+[package.metadata.deb.variants.debian-bullseye-armv7-unknown-linux-gnueabihf]
 depends = "adduser, passwd, libc6 (>= 2.28), libssl1.1"
 
 # END DEBIAN PACKAGING
