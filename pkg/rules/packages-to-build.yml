@@ -50,7 +50,9 @@ include:
   - pkg: "krill"
     image: "debian:bullseye"
     target: "armv7-unknown-linux-gnueabihf"
+    deb_extra_lintian_args: "--suppress-tags systemd-service-file-outside-lib"
   - pkg: "krillup"
     image: "debian:bullseye"
     target: "armv7-unknown-linux-gnueabihf"
+    deb_extra_lintian_args: "--suppress-tags systemd-service-file-outside-lib"
 
