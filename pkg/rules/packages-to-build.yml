@@ -39,6 +39,9 @@ include:
   - image: "almalinux:10"
     rpm_systemd_service_unit_file: "pkg/common/krill-ubuntu-focal.krill.service"
 
+  - image: "debian:bullseye"
+    deb_extra_lintian_args: "--suppress-tags systemd-service-file-outside-lib"
+
   # package for the Raspberry Pi 4b as an ARMv7 cross compiled variant of the Debian Bullseye upon which
   # Raspbian 11 is based.
   - pkg: "krill"
