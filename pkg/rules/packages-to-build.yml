@@ -39,29 +39,20 @@ include:
   - image: "almalinux:10"
     rpm_systemd_service_unit_file: "pkg/common/krill-ubuntu-focal.krill.service"
 
+  - image: "debian:bullseye"
+    deb_extra_lintian_args: "--suppress-tags systemd-service-file-outside-lib"
+
+  - image: "ubuntu:focal"
+    deb_extra_lintian_args: "--suppress-tags systemd-service-file-outside-lib"
+
   # package for the Raspberry Pi 4b as an ARMv7 cross compiled variant of the Debian Bullseye upon which
   # Raspbian 11 is based.
   - pkg: "krill"
     image: "debian:bullseye"
     target: "armv7-unknown-linux-gnueabihf"
+    deb_extra_lintian_args: "--suppress-tags systemd-service-file-outside-lib"
   - pkg: "krillup"
     image: "debian:bullseye"
     target: "armv7-unknown-linux-gnueabihf"
+    deb_extra_lintian_args: "--suppress-tags systemd-service-file-outside-lib"
 
-  # package for the Raspberry Pi 1b as an ARMv6 cross compiled variant of the Debian Buster upon which
-  # Raspbian 10 is based.
-  - pkg: "krill"
-    image: "debian:buster"
-    target: "arm-unknown-linux-gnueabihf"
-  - pkg: "krillup"
-    image: "debian:buster"
-    target: "arm-unknown-linux-gnueabihf"
-
-  # package for the ROCK64 as an AARCH64 cross compiled variant of Debian Buster upon which Armbian 21 is
-  # based.
-  - pkg: "krill"
-    image: "debian:buster"
-    target: "aarch64-unknown-linux-gnu"
-  - pkg: "krillup"
-    image: "debian:buster"
-    target: "aarch64-unknown-linux-gnu"
