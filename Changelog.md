@@ -1,6 +1,8 @@
 # Change Log
 
-## Unreleased next version
+## 0.15.0-rc5
+
+Released 2025-08-05.
 
 Bug fixes
 
@@ -11,12 +13,14 @@ Bug fixes
 Other changes
 
 * Add packaging for Debian 13. ([#1308])
+* Updated dependencies. ([#1311])
 
 [#1305]: https://github.com/NLnetLabs/krill/pull/1305
 [#1306]: https://github.com/NLnetLabs/krill/pull/1306
 [#1307]: https://github.com/NLnetLabs/krill/pull/1307
 [#1308]: https://github.com/NLnetLabs/krill/pull/1308
 [#1309]: https://github.com/NLnetLabs/krill/pull/1309
+[#1311]: https://github.com/NLnetLabs/krill/pull/1311
 
 
 ## 0.15.0-rc4
