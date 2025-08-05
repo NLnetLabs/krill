@@ -6,7 +6,7 @@ Bug fixes
 
 * Improved the message printed when the TA proxy’s signer request does not
   contain any actual requests. ([#1305])
-* Fixed various migration issues. ([#1306], [#1307])
+* Fixed various migration issues. ([#1306], [#1307], [#1309])
 
 Other changes
 
@@ -16,6 +16,7 @@ Other changes
 [#1306]: https://github.com/NLnetLabs/krill/pull/1306
 [#1307]: https://github.com/NLnetLabs/krill/pull/1307
 [#1308]: https://github.com/NLnetLabs/krill/pull/1308
+[#1309]: https://github.com/NLnetLabs/krill/pull/1309
 
 
 ## 0.15.0-rc4
