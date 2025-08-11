@@ -48,24 +48,6 @@ include:
     image: "debian:bullseye"
     target: "armv7-unknown-linux-gnueabihf"
 
-  # package for the Raspberry Pi 1b as an ARMv6 cross compiled variant of the Debian Buster upon which
-  # Raspbian 10 is based.
-  - pkg: "krill"
-    image: "debian:buster"
-    target: "arm-unknown-linux-gnueabihf"
-  - pkg: "krillup"
-    image: "debian:buster"
-    target: "arm-unknown-linux-gnueabihf"
-
-  # package for the ROCK64 as an AARCH64 cross compiled variant of Debian Buster upon which Armbian 21 is
-  # based.
-  - pkg: "krill"
-    image: "debian:buster"
-    target: "aarch64-unknown-linux-gnu"
-  - pkg: "krillup"
-    image: "debian:buster"
-    target: "aarch64-unknown-linux-gnu"
-
 # Exclude upgrade testing on Ubuntu Noble as no prior released versions exist to upgrade from.
 exclude:
   - image: "almalinux:9"
