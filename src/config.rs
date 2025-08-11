@@ -2111,7 +2111,7 @@ mod tests {
             void_logger
         }
 
-        fn for_target_at_level(target: &str, level: LL) -> log::Metadata {
+        fn for_target_at_level(target: &str, level: LL) -> log::Metadata<'_> {
             log::Metadata::builder().target(target).level(level).build()
         }
 

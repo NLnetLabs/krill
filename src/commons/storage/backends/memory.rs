@@ -285,11 +285,11 @@ impl MemoryNamespace {
         }
     }
 
-    fn values(&self) -> MutexGuard<MemoryValues> {
+    fn values(&self) -> MutexGuard<'_, MemoryValues> {
         self.values.lock().expect("poisoned lock")
     }
 
-    fn locks(&self) -> MutexGuard<HashSet<Scope>> {
+    fn locks(&self) -> MutexGuard<'_, HashSet<Scope>> {
         self.locks.lock().expect("poisoned lock")
     }
 }

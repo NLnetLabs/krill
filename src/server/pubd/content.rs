@@ -389,7 +389,7 @@ impl RepositoryContent {
     fn objects_for_publisher(
         &self,
         publisher: &PublisherHandle,
-    ) -> Cow<CurrentObjects> {
+    ) -> Cow<'_, CurrentObjects> {
         let current = self.rrdp.snapshot().get_publisher_objects(publisher);
         let staged = self.rrdp.get_publisher_staged(publisher).cloned();
 
