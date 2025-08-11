@@ -1,10 +1,18 @@
 # Change Log
 
-## Unreleased next version
+## 0.15.0-rc6
 
-Bug fixes
+Released 2025-08-11.
+
+This RC was only made to properly test upgrading Debian packages. It does
+not include any functional changes.
 
 Other changes
+
+* Do not include systemd unit files in krillta and krillup deb packages.
+  ([#1313])
+
+[#1313]: https://github.com/NLnetLabs/krill/pull/1313
 
 
 ## 0.15.0-rc5
