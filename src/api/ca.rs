@@ -59,7 +59,7 @@ pub struct IdCertInfo {
 
 impl IdCertInfo {
     /// Returns the PEM encoding of the certificate.
-    pub fn pem(&self) -> IdCertPem {
+    pub fn pem(&self) -> IdCertPem<'_> {
         IdCertPem { base64: &self.base64 }
     }
 }
@@ -921,7 +921,7 @@ impl ParentStatuses {
     }
 
     /// Iterates over pairs of parent handles and their status.
-    pub fn iter(&self) -> hash_map::Iter<ParentHandle, ParentStatus> {
+    pub fn iter(&self) -> hash_map::Iter<'_, ParentHandle, ParentStatus> {
         self.0.iter()
     }
 
