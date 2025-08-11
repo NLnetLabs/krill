@@ -860,7 +860,7 @@ impl AuthProvider {
 
     async fn get_connection(
         &self,
-    ) -> KrillResult<RwLockReadGuard<Option<ProviderConnectionProperties>>>
+    ) -> KrillResult<RwLockReadGuard<'_, Option<ProviderConnectionProperties>>>
     {
         let conn_guard = self.conn.read().await;
 

@@ -307,7 +307,7 @@ impl RequestPath {
         }
     }
 
-    pub fn iter(&self) -> PathIter {
+    pub fn iter(&self) -> PathIter<'_> {
         PathIter::new(self.as_str())
     }
 }

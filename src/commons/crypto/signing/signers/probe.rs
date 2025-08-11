@@ -153,7 +153,7 @@ impl<C, E, S> StatefulProbe<C, E, S> {
     pub fn status<F>(
         &self,
         probe: F,
-    ) -> Result<RwLockReadGuard<ProbeStatus<C, E, S>>, ProbeError<E>>
+    ) -> Result<RwLockReadGuard<'_, ProbeStatus<C, E, S>>, ProbeError<E>>
     where
         F: Fn(String, &ProbeStatus<C, E, S>) -> Result<S, ProbeError<E>>,
     {
