@@ -47,7 +47,7 @@ serde_json      = "1.0"
 tempfile        = "3.19.1"
 tokio           = { version = "1", features = [ "macros", "rt", "rt-multi-thread", "signal", "time" ] }
 tokio-rustls    = { version = "0.26", default-features = false, features = [ "ring", "logging", "tls12" ] }
-toml            = "0.8.22"
+toml            = "0.9.5"
 url             = { version = "2.5.4", features = ["serde"] }
 uuid            = { version = "1.16", features = ["serde", "v4"] }
 
