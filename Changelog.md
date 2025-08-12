@@ -1,5 +1,16 @@
 # Change Log
 
+## Unreleased Next Version
+
+Breaking changes
+
+New
+
+Bug fixes
+
+Other changes
+
+
 ## 0.15.0 ‘But I Digress’
 
 Released 2025-08-12.
