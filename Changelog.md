@@ -1,10 +1,10 @@
 # Change Log
 
-## Unreleased next version
+## 0.15.0 ‘But I Digress’
 
-Bug fixes
+Released 2025-08-12.
 
-Other changes
+There have been no changes since 0.15.0-rc6.
 
 
 ## 0.15.0-rc6
