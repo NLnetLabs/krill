@@ -4,6 +4,7 @@
 //! requires a wee bit of macro magic.
 #![cfg(test)]
 
+use std::slice;
 use std::sync::{Mutex, MutexGuard};
 use lazy_static::lazy_static;
 use tempfile::{TempDir, tempdir};
@@ -194,7 +195,7 @@ testfns! {
         assert!(store.scopes().unwrap().is_empty());
 
         store.store(&key, &CONTENT).unwrap();
-        assert_eq!(store.scopes().unwrap(), [scope.clone()]);
+        assert_eq!(store.scopes().unwrap(), slice::from_ref(&scope));
 
         store.store(&key2, &CONTENT_2).unwrap();
 
@@ -205,7 +206,7 @@ testfns! {
         assert_eq!(scopes, expected);
 
         store.drop_scope(&scope2).unwrap();
-        assert_eq!(store.scopes().unwrap(), [scope.clone()]);
+        assert_eq!(store.scopes().unwrap(), slice::from_ref(&scope));
 
         store.drop_scope(&scope).unwrap();
         assert!(store.scopes().unwrap().is_empty());
@@ -247,7 +248,9 @@ testfns! {
         expected.sort();
         assert_eq!(keys, expected);
 
-        assert_eq!(store.keys(&scope, id2.as_str()).unwrap(), [key2.clone()]);
+        assert_eq!(
+            store.keys(&scope, id2.as_str()).unwrap(), slice::from_ref(&key2)
+        );
         assert_eq!(store.keys(&scope, id3.as_str()).unwrap(), []);
         assert_eq!(
             store.keys(&Scope::global(), id3.as_str()).unwrap(),
