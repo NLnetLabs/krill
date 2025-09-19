@@ -782,6 +782,7 @@ impl Signer for SignerRouter {
 
 #[cfg(all(test, feature = "hsm"))]
 pub mod tests {
+    use std::slice;
     use rpki::crypto::RpkiSignatureAlgorithm;
 
     use crate::{
@@ -836,7 +837,7 @@ pub mod tests {
             // Create a SignerRouter that uses the mock signer with the mock
             // signer starting in the pending signer set.
             let router = create_signer_router(
-                &[mock_signer.clone()],
+                slice::from_ref(&mock_signer),
                 signer_mapper.clone(),
             );
 
@@ -901,7 +902,7 @@ pub mod tests {
             // forcing it to re-read it's saved state from disk
             // (and we're not trying to test the AggregateStore here anyway!).
             let router = create_signer_router(
-                &[mock_signer.clone()],
+                slice::from_ref(&mock_signer),
                 signer_mapper.clone(),
             );
 
