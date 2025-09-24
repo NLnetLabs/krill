@@ -247,6 +247,10 @@ impl TestConfig {
             ip,
             port,
             https_mode,
+            #[cfg(unix)]
+            unix_socket: None,
+            #[cfg(unix)]
+            unix_users: Vec::new(),
             storage_uri: self.storage_uri,
             use_history_cache: false,
             tls_keys_dir: Some(self.data_dir.path().join(HTTPS_SUB_DIR)),
