@@ -74,7 +74,7 @@ impl AuthProvider {
                     )))
                 } else {
                     Err(ApiAuthError::ApiInvalidCredentials(
-                        "Unauthorised unix user".to_string(),
+                        format!("Unauthorised unix user {uid}")
                     ))
                 }
             },
