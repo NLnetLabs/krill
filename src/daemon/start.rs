@@ -112,8 +112,8 @@ pub async fn start_krill_daemon(
             .map_err(|e| Error::HttpsSetup(format!("{e}")))?;
     }
 
-    // Start a hyper server for the configured socket.
-    let server_futures = futures_util::future::select_all(
+    // Start a hyper server for the configured http sockets.
+    let http_server_futures = futures_util::future::select_all(
         config.socket_addresses().into_iter().map(|socket_addr| {
             tokio::spawn(single_http_listener(
                 server.clone(),
@@ -124,8 +124,21 @@ pub async fn start_krill_daemon(
         }),
     );
 
+    // Start a hyper server for the configured unix sockets.
+    let unix_server_futures = futures_util::future::select_all(
+        config.unix_socket().map(|path| {
+            tokio::spawn(single_unix_listener(
+                server.clone(),
+                path.clone(),
+                config.clone(),
+                signal_running.take(),
+            ))
+        }),
+    );
+
     select!(
-        _ = server_futures => error!("http server stopped unexpectedly"),
+        _ = http_server_futures => error!("http server stopped unexpectedly"),
+        _ = unix_server_futures => error!("unix server stopped unexpectedly"),
         _ = scheduler_future => error!("scheduler stopped unexpectedly"),
     );
 
@@ -184,6 +197,78 @@ async fn single_http_listener(
             .serve_connection(
                 TokioIo::new(stream),
                 service_fn(move |req| {
+                    let server = server.clone();
+                    async move { server.process_request(req).await }
+                }),
+            )
+            .await;
+        });
+    }
+}
+
+#[cfg(unix)]
+/// Runs an UNIX listener on a single socket.
+async fn single_unix_listener(
+    server: Arc<HttpServer>,
+    path: std::path::PathBuf,
+    _config: Arc<Config>,
+    signal_running: Option<oneshot::Sender<()>>,
+) {
+    use tokio::net::UnixListener;
+
+    if path.exists() {
+        if let Err(err) = std::fs::remove_file(&path) {
+            error!("Fatal error in UNIX socket: {err}");
+            return;
+        };
+    }
+
+    let listener = match UnixListener::bind(&path) {
+        Ok(listener) => listener,
+        Err(err) => {
+            error!("Could not bind to {}: {}", &path.to_string_lossy(), err);
+            return;
+        }
+    };
+
+    if let Some(tx) = signal_running {
+        let _ = tx.send(());
+    }
+
+    loop {
+        use tokio::net::unix;
+
+        let (stream, _addr) = match listener.accept().await {
+            Ok(stream) => stream,
+            Err(err) => {
+                error!("Fatal UNIX socket error: {err}");
+                continue;
+            }
+        };
+        let uid: unix::uid_t = match stream.peer_cred() {
+            Ok(cred) => cred.uid(),
+            Err(err) => {
+                error!("Could not obtain peer credentials: {err}");
+                continue;
+            }
+        };
+
+        // HAS BEEN MOVED TO providers::unix_user
+        // if !config.unix_users().contains(&uid) {
+        //     warn!("Connection attempted from unauthorised user: {uid}");
+        //     continue;
+        // }
+
+        let server = server.clone();
+        tokio::task::spawn(async move {
+            let _ = hyper_util::server::conn::auto::Builder::new(
+                TokioExecutor::new(),
+            )
+            .serve_connection(
+                TokioIo::new(stream),
+                service_fn(move |mut req| {
+                    let extensions = req.extensions_mut();
+                    extensions.insert(uid);
                     let server = server.clone();
                     async move { server.process_request(req).await }
                 }),
