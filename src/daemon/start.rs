@@ -125,7 +125,9 @@ pub async fn start_krill_daemon(
     );
 
     // Start a hyper server for the configured unix sockets.
-    let unix_server_futures = futures_util::future::select_all(
+    // We do not await these, as they are not required
+    #[cfg(unix)]
+    let _unix_server_futures = futures_util::future::select_all(
         config.unix_socket().map(|path| {
             tokio::spawn(single_unix_listener(
                 server.clone(),
@@ -138,7 +140,6 @@ pub async fn start_krill_daemon(
 
     select!(
         _ = http_server_futures => error!("http server stopped unexpectedly"),
-        _ = unix_server_futures => error!("unix server stopped unexpectedly"),
         _ = scheduler_future => error!("scheduler stopped unexpectedly"),
     );
 
