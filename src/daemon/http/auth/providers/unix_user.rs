@@ -1,20 +1,16 @@
 //! Auth provider using unix user matching.
 
 use std::sync::Arc;
-use log::{info, log_enabled, trace};
+use log::{log_enabled, trace};
 use crate::api::admin::Token;
-use crate::commons::KrillResult;
-use crate::commons::error::{ApiAuthError, Error};
+use crate::commons::error::ApiAuthError;
 use crate::config::Config;
-use crate::daemon::http::auth::{AuthInfo, LoggedInUser, Role};
+use crate::daemon::http::auth::{AuthInfo, Role};
 use crate::daemon::http::request::HyperRequest;
-use crate::daemon::http::response::HttpResponse;
 
 
 //------------ Constants -----------------------------------------------------
 
-/// The path defined in Krill UI for the login view.
-const LAGOSTA_LOGIN_ROUTE_PATH: &str = "/login";
 
 
 //------------ AuthProvider --------------------------------------------------
@@ -31,14 +27,8 @@ pub struct AuthProvider {
     /// The allowed users
     unix_users: Vec<String>,
 
-    /// The admin token (also the one in the config file)
-    admin_token: Token,
-
     /// The user name of the actor if authentication succeeds.
     user_id: Arc<str>,
-
-    /// The role to use if authentication succeeds.
-    role: Arc<Role>,
 }
 
 impl AuthProvider {
@@ -46,9 +36,7 @@ impl AuthProvider {
     pub fn new(config: Arc<Config>) -> Self {
         AuthProvider {
             unix_users: config.unix_users().clone(),
-            admin_token: config.admin_token.clone(),
-            user_id: "admin-token".into(),
-            role: Role::admin().into(),
+            user_id: "admin-token".into()
         }
     }
     
@@ -68,7 +56,10 @@ impl AuthProvider {
             Some(user) => {
                 if self.unix_users.contains(&user.name) {
                     Ok(Some((
-                        AuthInfo::user(self.user_id.clone(), self.role.clone()),
+                        AuthInfo::user(
+                            self.user_id.clone(), 
+                            Role::admin().into()
+                        ),
                         None
                     )))
                 } else {
@@ -85,40 +76,6 @@ impl AuthProvider {
         }
 
         res
-    }
-
-    /// Returns an HTTP text response with the login URL.
-    pub fn get_login_url(&self) -> KrillResult<HttpResponse> {
-        // Direct Lagosta to show the user the Lagosta API token login form
-        Ok(HttpResponse::text_no_cache(LAGOSTA_LOGIN_ROUTE_PATH.into()))
-    }
-
-    /// Establishes a client session from credentials in an HTTP request.
-    pub fn login(&self, request: &HyperRequest) -> KrillResult<LoggedInUser> {
-        match self.authenticate(request)? {
-            Some(_actor) => Ok(LoggedInUser::new(
-                self.admin_token.clone(),
-                self.user_id.as_ref().into(),
-                "admin".into(),
-            )),
-            None => Err(Error::ApiInvalidCredentials(
-                "Not from a UNIX socket".to_string(),
-            )),
-        }
-    }
-
-    /// Returns an HTTP text response with the logout URL.
-    pub fn logout(
-        &self,
-        request: &HyperRequest,
-    ) -> KrillResult<HttpResponse> {
-        if let Ok(Some((info, _))) = self.authenticate(request) {
-            info!("User logged out: {}", info.actor().name());
-        }
-
-        // Logout is complete, direct Lagosta to show the user the Lagosta
-        // index page
-        Ok(HttpResponse::text_no_cache(b"/".to_vec()))
     }
 }
 
