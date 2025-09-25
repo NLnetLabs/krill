@@ -349,7 +349,7 @@ fn uri_socket(
         //     "path": "/api/v1/cas"
         // }
         let re = regex::RegexBuilder::new(
-            r"unix:(?P<socket>.+\.sock)(?P<path>.+)$")
+            r"unix://(?P<socket>.+\.sock)(?P<path>.+)$")
             .case_insensitive(true).build().unwrap();
         let caps = re.captures(uri)
             .ok_or(Error::request_build(
