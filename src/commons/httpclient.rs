@@ -346,11 +346,10 @@ fn uri_socket(
         // This regex turns e.g. unix:/var/run/krill.sock:3000/api/v1/cas into
         // {
         //     "socket": "/var/run/krill.sock",
-        //     "port": "3000",
         //     "path": "/api/v1/cas"
         // }
         let re = regex::RegexBuilder::new(
-            r"unix:(?P<socket>.+\.sock):(?P<port>\d+)(?P<path>.+)$")
+            r"unix:(?P<socket>.+\.sock)(?P<path>.+)$")
             .case_insensitive(true).build().unwrap();
         let caps = re.captures(uri)
             .ok_or(Error::request_build(
@@ -358,7 +357,8 @@ fn uri_socket(
                 "Unix socket path parsing failed"
             ))?;
         return Ok((
-            format!("http://localhost:{}{}", &caps["port"], &caps["path"]),
+            // Dummy port number is required
+            format!("http://localhost:1{}", &caps["path"]),
             Some(PathBuf::from(&caps["socket"]))
         ));
     }
