@@ -38,7 +38,7 @@ impl FromStr for Uri {
             return Ok(Self::Http(value.to_string()));
         } else if value.to_lowercase().starts_with("https://") {
             return Ok(Self::Https(value.to_string()));
-        } else if value.to_lowercase().starts_with("unix:") {
+        } else if value.to_lowercase().starts_with("unix://") {
             return Ok(Self::Unix(value.to_string()));
         }
         Err(std::io::Error::other("Unknown type"))
