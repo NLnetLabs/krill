@@ -74,12 +74,12 @@ impl ConfigDefaults {
 
     #[cfg(unix)]
     pub fn unix_socket() -> Option<PathBuf> {
-        Some(PathBuf::from("/tmp/krill.sock"))
+        None
     }
 
     #[cfg(unix)]
     pub fn unix_users() -> Vec<unix::uid_t> {
-        vec![0] //0 is always the root user
+        Vec::new()
     }
 
     pub fn storage_uri() -> Url {
