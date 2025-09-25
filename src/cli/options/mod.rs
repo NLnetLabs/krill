@@ -69,9 +69,8 @@ pub struct GeneralOptions {
     #[arg(
         short, long,
         env = "KRILL_CLI_TOKEN",
-        default_value = ""
    )]
-    pub token: Token,
+    pub token: Option<Token>,
 
     /// Report format
     #[arg(

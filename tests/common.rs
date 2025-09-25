@@ -395,7 +395,7 @@ impl KrillServer {
                 config.ip.first().unwrap(), config.port
             )
         ).unwrap();
-        let client = KrillClient::new(uri, config.admin_token.clone());
+        let client = KrillClient::new(uri, Some(config.admin_token.clone()));
         let (tx, running) = oneshot::channel();
         let mut res = Self {
             join: tokio::spawn(async {

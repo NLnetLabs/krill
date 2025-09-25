@@ -36,14 +36,14 @@ pub struct KrillClient {
     base_uri: Uri,
 
     /// The access token for the API.
-    token: Token,
+    token: Option<Token>,
 }
 
 /// # Low-level commands
 impl KrillClient {
     /// Creates a cient from a URI and token.
     pub fn new(
-        base_uri: Uri, token: Token
+        base_uri: Uri, token: Option<Token>
     ) -> Self {
         Self { base_uri, token }
     }
@@ -54,12 +54,12 @@ impl KrillClient {
     }
 
     /// Returns the access token.
-    pub fn token(&self) -> &Token {
-        &self.token
+    pub fn token(&self) -> Option<&Token> {
+        self.token.as_ref()
     }
 
     /// Sets the access token.
-    pub fn set_token(&mut self, token: Token) {
+    pub fn set_token(&mut self, token: Option<Token>) {
         self.token = token
     }
 
@@ -68,7 +68,7 @@ impl KrillClient {
         &self, path: impl IntoIterator<Item = Cow<'a, str>>
     ) -> Result<Success, Error> {
         httpclient::get_ok(
-            &self.create_uri(path), Some(&self.token)
+            &self.create_uri(path), self.token.as_ref()
         ).await.map(|_| Success)
     }
 
@@ -77,7 +77,7 @@ impl KrillClient {
         &self, path: impl IntoIterator<Item = Cow<'a, str>>
     ) -> Result<T, Error> {
         httpclient::get_json(
-            &self.create_uri(path), Some(&self.token)
+            &self.create_uri(path), self.token.as_ref()
         ).await
     }
 
@@ -86,7 +86,7 @@ impl KrillClient {
         &self, path: impl IntoIterator<Item = Cow<'a, str>>
     ) -> Result<Success, Error> {
         httpclient::post_empty(
-            &self.create_uri(path), Some(&self.token)
+            &self.create_uri(path), self.token.as_ref()
         ).await.map(|_| Success)
     }
 
@@ -96,7 +96,7 @@ impl KrillClient {
         path: impl IntoIterator<Item = Cow<'a, str>>,
     ) -> Result<T, Error> {
         httpclient::post_empty_with_response(
-            &self.create_uri(path), Some(&self.token)
+            &self.create_uri(path), self.token.as_ref()
         ).await
     }
 
@@ -107,7 +107,7 @@ impl KrillClient {
         data: impl Serialize,
     ) -> Result<Success, Error> {
         httpclient::post_json(
-            &self.create_uri(path), data, Some(&self.token)
+            &self.create_uri(path), data, self.token.as_ref()
         ).await.map(|_| Success)
     }
 
@@ -118,7 +118,7 @@ impl KrillClient {
         data: impl Serialize,
     ) -> Result<T, Error> {
         httpclient::post_json_with_response(
-            &self.create_uri(path), data, Some(&self.token)
+            &self.create_uri(path), data, self.token.as_ref()
         ).await
     }
 
@@ -129,7 +129,7 @@ impl KrillClient {
         data: impl Serialize,
     ) -> Result<Option<T>, Error> {
         httpclient::post_json_with_opt_response(
-            &self.create_uri(path), data, Some(&self.token)
+            &self.create_uri(path), data, self.token.as_ref()
         ).await
     }
 
@@ -138,7 +138,7 @@ impl KrillClient {
         &self, path: impl IntoIterator<Item = Cow<'a, str>>
     ) -> Result<Success, Error> {
         httpclient::delete(
-            &self.create_uri(path), Some(&self.token)
+            &self.create_uri(path), self.token.as_ref()
         ).await.map(|_| Success)
     }
 

@@ -13,7 +13,7 @@ async fn auth_check() {
 
     // Get a client and change its auth token.
     let mut client = server.client().clone();
-    client.set_token("wrong secret".into());
+    client.set_token(Some("wrong secret".into()));
 
     // Now try and create a CA. This should fail with a “Forbidden” error.
     let res = client.ca_add(common::ca_handle("dummy_ca")).await;
