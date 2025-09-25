@@ -82,7 +82,6 @@ default = ["multi-user", "hsm"]
 hsm = ["backoff", "kmip", "cryptoki", "r2d2", "secrecy"]
 multi-user = [
     "basic-cookies",
-    "regex",
     "openidconnect",
     "rpassword",
     "scrypt",
