@@ -8,7 +8,7 @@ use rpki::ca::idexchange;
 use rpki::ca::csr::BgpsecCsr;
 use rpki::ca::idcert::IdCert;
 use rpki::ca::idexchange::{
-    CaHandle, ChildHandle, ParentHandle, PublisherHandle, ServiceUri
+    CaHandle, ChildHandle, ParentHandle, PublisherHandle
 };
 use rpki::repository::resources::{Asn, ResourceSet};
 use rpki::repository::x509::Time;
@@ -24,6 +24,7 @@ use crate::api::ta::{
 };
 use crate::commons::httpclient;
 use crate::commons::httpclient::Error;
+use crate::commons::uri::Uri;
 
 
 //------------ KrillClient ---------------------------------------------------
@@ -32,7 +33,7 @@ use crate::commons::httpclient::Error;
 #[derive(Clone, Debug)]
 pub struct KrillClient {
     /// The base URI of the API server.
-    base_uri: ServiceUri,
+    base_uri: Uri,
 
     /// The access token for the API.
     token: Token,
@@ -41,12 +42,14 @@ pub struct KrillClient {
 /// # Low-level commands
 impl KrillClient {
     /// Creates a cient from a URI and token.
-    pub fn new(base_uri: ServiceUri, token: Token) -> Self {
+    pub fn new(
+        base_uri: Uri, token: Token
+    ) -> Self {
         Self { base_uri, token }
     }
 
     /// Returns the base URI of the server.
-    pub fn base_uri(&self) -> &ServiceUri {
+    pub fn base_uri(&self) -> &Uri {
         &self.base_uri
     }
 

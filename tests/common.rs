@@ -3,13 +3,14 @@
 use std::env;
 use std::str::FromStr;
 use std::time::Duration;
+use krill::commons::uri::Uri;
 use url::Url;
 use log::LevelFilter;
 use log::{debug, error};
 use reqwest::StatusCode;
 use rpki::uri;
 use rpki::ca::idexchange::{
-    CaHandle, ChildHandle, ChildRequest, ParentResponse, ServiceUri
+    CaHandle, ChildHandle, ChildRequest, ParentResponse
 };
 use rpki::ca::provisioning::ResourceClassName;
 use rpki::repository::resources::{Asn, ResourceSet};
@@ -388,7 +389,7 @@ impl KrillServer {
     ///
     /// This will start the server and wait for it to become ready.
     pub async fn start_with_config(config: Config) -> Self {
-        let uri = ServiceUri::from_str(
+        let uri = Uri::from_str(
             &format!(
                 "https://{}:{}/",
                 config.ip.first().unwrap(), config.port

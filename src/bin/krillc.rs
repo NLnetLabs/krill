@@ -12,7 +12,8 @@ use krill::constants;
 async fn main() {
     let options = Options::from_args();
     let client = KrillClient::new(
-        options.general.server, options.general.token
+        options.general.server, 
+        options.general.token
     );
 
     if options.general.api {

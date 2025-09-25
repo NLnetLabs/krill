@@ -18,9 +18,9 @@ mod server;
 
 //------------ Content -------------------------------------------------------
 
-use rpki::ca::idexchange::ServiceUri;
 use clap::Parser;
 use crate::api::admin::Token;
+use crate::commons::uri::Uri;
 use super::client::KrillClient;
 use super::report::{Report, ReportFormat};
 
@@ -61,14 +61,15 @@ pub struct GeneralOptions {
     #[arg(
         short, long,
         env = "KRILL_CLI_SERVER",
-        default_value = "https://localhost:3000/"
+        default_value = "unix:/tmp/krill.sock:3000"
     )]
-    pub server: ServiceUri,
+    pub server: Uri,
 
     /// The secret token for the Krill server.
     #[arg(
         short, long,
-        env = "KRILL_CLI_TOKEN"
+        env = "KRILL_CLI_TOKEN",
+        default_value = ""
    )]
     pub token: Token,
 
