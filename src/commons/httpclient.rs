@@ -358,7 +358,7 @@ fn uri_socket(
             ))?;
         return Ok((
             // Dummy port number is required
-            format!("http://localhost:1{}", &caps["path"]),
+            format!("http://localhost{}", &caps["path"]),
             Some(PathBuf::from(&caps["socket"]))
         ));
     }
