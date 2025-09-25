@@ -1,4 +1,4 @@
-//! Auth provider using a pre-defined token.
+//! Auth provider using unix user matching.
 
 use std::sync::Arc;
 use log::{info, log_enabled, trace};
@@ -32,7 +32,7 @@ pub struct AuthProvider {
     /// The allowed users
     unix_users: Vec<unix::uid_t>,
 
-    /// The admin token
+    /// The admin token (also the one in the config file)
     admin_token: Token,
 
     /// The user name of the actor if authentication succeeds.
