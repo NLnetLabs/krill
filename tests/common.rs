@@ -1,5 +1,7 @@
 #![allow(dead_code)] // Different tests use different parts.
 
+#[cfg(unix)]
+use std::collections::HashMap;
 use std::env;
 use std::str::FromStr;
 use std::time::Duration;
@@ -251,7 +253,7 @@ impl TestConfig {
             #[cfg(unix)]
             unix_socket: None,
             #[cfg(unix)]
-            unix_users: Vec::new(),
+            unix_users: HashMap::new(),
             storage_uri: self.storage_uri,
             use_history_cache: false,
             tls_keys_dir: Some(self.data_dir.path().join(HTTPS_SUB_DIR)),

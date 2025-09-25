@@ -1,11 +1,12 @@
 //! Auth provider using unix user matching.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use log::{log_enabled, trace};
 use crate::api::admin::Token;
 use crate::commons::error::ApiAuthError;
 use crate::config::Config;
-use crate::daemon::http::auth::{AuthInfo, Role};
+use crate::daemon::http::auth::{AuthInfo, RoleMap};
 use crate::daemon::http::request::HyperRequest;
 
 
@@ -25,10 +26,10 @@ use crate::daemon::http::request::HyperRequest;
 /// everything everywhere all at once.
 pub struct AuthProvider {
     /// The allowed users
-    unix_users: Vec<String>,
+    unix_users: HashMap<String, String>,
 
-    /// The user name of the actor if authentication succeeds.
-    user_id: Arc<str>,
+    /// The roles configured
+    role_map: Arc<RoleMap>,
 }
 
 impl AuthProvider {
@@ -36,7 +37,7 @@ impl AuthProvider {
     pub fn new(config: Arc<Config>) -> Self {
         AuthProvider {
             unix_users: config.unix_users().clone(),
-            user_id: "admin-token".into()
+            role_map: config.auth_roles.clone(),
         }
     }
     
@@ -54,14 +55,21 @@ impl AuthProvider {
         let user: Option<&nix::unistd::User> = request.extensions().get();
         let res = match user {
             Some(user) => {
-                if self.unix_users.contains(&user.name) {
-                    Ok(Some((
-                        AuthInfo::user(
-                            self.user_id.clone(), 
-                            Role::admin().into()
-                        ),
-                        None
-                    )))
+                if let Some(role) = self.unix_users.get(&user.name) {
+                    if let Some(role) = self.role_map.get(&role) {
+                        Ok(Some((
+                            AuthInfo::user(
+                                user.name.clone(), 
+                                role
+                            ),
+                            None
+                        )))
+                    } else {
+                    Err(ApiAuthError::ApiInsufficientRights(
+                        format!("Role mapping for system user '{}' not found", 
+                            user.name)
+                    ))
+                    }
                 } else {
                     Err(ApiAuthError::ApiInvalidCredentials(
                         format!("Unauthorised system user '{}'", user.name)

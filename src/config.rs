@@ -20,6 +20,9 @@ use serde::{Deserialize, Deserializer, Serialize};
 use url::Url;
 
 #[cfg(unix)]
+use std::collections::HashMap;
+
+#[cfg(unix)]
 use syslog::Facility;
 
 use crate::{
@@ -76,8 +79,8 @@ impl ConfigDefaults {
     }
 
     #[cfg(unix)]
-    pub fn unix_users() -> Vec<String> {
-        Vec::new()
+    pub fn unix_users() -> HashMap<String, String> {
+        HashMap::new()
     }
 
     pub fn storage_uri() -> Url {
@@ -501,7 +504,7 @@ pub struct Config {
 
     #[cfg(unix)]
     #[serde(default = "ConfigDefaults::unix_users")]
-    pub unix_users: Vec<String>,
+    pub unix_users: HashMap<String, String>,
 
     // Deserialize this field from data_dir or storage_uri
     #[serde(
@@ -990,7 +993,7 @@ impl Config {
     }
 
     #[cfg(unix)]
-    pub fn unix_users(&self) -> &Vec<String> {
+    pub fn unix_users(&self) -> &HashMap<String, String> {
         &self.unix_users
     }
 
@@ -1251,7 +1254,7 @@ impl Config {
             #[cfg(unix)]
             unix_socket: None,
             #[cfg(unix)]
-            unix_users: Vec::new(),
+            unix_users: HashMap::new(),
             repo_dir: data_dir.map(|d| d.join(REPOSITORY_DIR)),
             ta_support_enabled: false, /* but, enabled by testbed where
                                         * applicable */
