@@ -54,7 +54,7 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
     - name: Install Rust
-      uses: hecrj/setup-rust-action@v1
+      uses: hecrj/setup-rust-action@v2
       with:
         rust-version: ${{ matrix.rust }}
     - if: matrix.rust == 'stable' && matrix.args == '--all-features'
