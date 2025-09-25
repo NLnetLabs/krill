@@ -56,7 +56,7 @@ impl AuthProvider {
         let res = match user {
             Some(user) => {
                 if let Some(role) = self.unix_users.get(&user.name) {
-                    if let Some(role) = self.role_map.get(&role) {
+                    if let Some(role) = self.role_map.get(role) {
                         Ok(Some((
                             AuthInfo::user(
                                 user.name.clone(), 
