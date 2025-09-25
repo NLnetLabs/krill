@@ -251,12 +251,19 @@ async fn single_unix_listener(
                 continue;
             }
         };
-
-        // HAS BEEN MOVED TO providers::unix_user
-        // if !config.unix_users().contains(&uid) {
-        //     warn!("Connection attempted from unauthorised user: {uid}");
-        //     continue;
-        // }
+        let user: nix::unistd::User = match nix::unistd::User::from_uid(
+            nix::unistd::Uid::from_raw(uid)
+        ) {
+            Ok(Some(user)) => user,
+            Err(err) => {
+                error!("Could not obtain user details for UNIX socket: {err}");
+                continue;
+            },
+            _ => {
+                error!("Could not obtain user details for UNIX socket");
+                continue;
+            }
+        };
 
         let server = server.clone();
         tokio::task::spawn(async move {
@@ -267,7 +274,7 @@ async fn single_unix_listener(
                 TokioIo::new(stream),
                 service_fn(move |mut req| {
                     let extensions = req.extensions_mut();
-                    extensions.insert(uid);
+                    extensions.insert(user.clone());
                     let server = server.clone();
                     async move { server.process_request(req).await }
                 }),

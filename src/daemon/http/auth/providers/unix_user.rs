@@ -2,7 +2,6 @@
 
 use std::sync::Arc;
 use log::{info, log_enabled, trace};
-use tokio::net::unix;
 use crate::api::admin::Token;
 use crate::commons::KrillResult;
 use crate::commons::error::{ApiAuthError, Error};
@@ -30,7 +29,7 @@ const LAGOSTA_LOGIN_ROUTE_PATH: &str = "/login";
 /// everything everywhere all at once.
 pub struct AuthProvider {
     /// The allowed users
-    unix_users: Vec<unix::uid_t>,
+    unix_users: Vec<String>,
 
     /// The admin token (also the one in the config file)
     admin_token: Token,
@@ -64,17 +63,17 @@ impl AuthProvider {
             trace!("Attempting to authenticate the request..");
         }
 
-        let uid: Option<&unix::uid_t> = request.extensions().get();
-        let res = match uid {
-            Some(uid) => {
-                if self.unix_users.contains(uid) {
+        let user: Option<&nix::unistd::User> = request.extensions().get();
+        let res = match user {
+            Some(user) => {
+                if self.unix_users.contains(&user.name) {
                     Ok(Some((
                         AuthInfo::user(self.user_id.clone(), self.role.clone()),
                         None
                     )))
                 } else {
                     Err(ApiAuthError::ApiInvalidCredentials(
-                        format!("Unauthorised unix user {uid}")
+                        format!("Unauthorised system user '{}'", user.name)
                     ))
                 }
             },

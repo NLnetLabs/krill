@@ -17,8 +17,6 @@ use rpki::{
 };
 use serde::de;
 use serde::{Deserialize, Deserializer, Serialize};
-#[cfg(unix)]
-use tokio::net::unix;
 use url::Url;
 
 #[cfg(unix)]
@@ -78,7 +76,7 @@ impl ConfigDefaults {
     }
 
     #[cfg(unix)]
-    pub fn unix_users() -> Vec<unix::uid_t> {
+    pub fn unix_users() -> Vec<String> {
         Vec::new()
     }
 
@@ -503,7 +501,7 @@ pub struct Config {
 
     #[cfg(unix)]
     #[serde(default = "ConfigDefaults::unix_users")]
-    pub unix_users: Vec<unix::uid_t>,
+    pub unix_users: Vec<String>,
 
     // Deserialize this field from data_dir or storage_uri
     #[serde(
@@ -992,7 +990,7 @@ impl Config {
     }
 
     #[cfg(unix)]
-    pub fn unix_users(&self) -> &Vec<unix::uid_t> {
+    pub fn unix_users(&self) -> &Vec<String> {
         &self.unix_users
     }
 

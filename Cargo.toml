@@ -76,6 +76,7 @@ urlparse        = { version = "0.7", optional = true }
 
 [target.'cfg(unix)'.dependencies]
 syslog = "7.0.0"
+nix = { version = "0.30.1", features = ["user"] }
 
 [features]
 default = ["multi-user", "hsm"]
