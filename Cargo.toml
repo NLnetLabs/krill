@@ -96,11 +96,9 @@ rta = []
 # Internal features - not for external use
 hsm-tests-kmip = ["hsm"]
 hsm-tests-pkcs11 = ["hsm"]
-regex = ["dep:regex"]
 
 [dev-dependencies]
 tar       = "0.4"
-regex     = "1.11.1"
 stderrlog = "0.6"
 tempfile  = "3.19.1"
 urlparse  = "0.7"
