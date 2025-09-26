@@ -1669,6 +1669,7 @@ impl Config {
         match self.log_type {
             LogType::File => self.file_logger(),
             LogType::Stderr => self.stderr_logger(),
+            #[cfg(unix)]
             LogType::Syslog => {
                 let facility = Facility::from_str(&self.syslog_facility)
                     .map_err(|_| {

@@ -8,6 +8,7 @@ use bytes::Bytes;
 use log::LevelFilter;
 use rpki::repository::resources::{AsBlocks, IpBlocks};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+#[cfg(unix)]
 use syslog::Facility;
 
 
