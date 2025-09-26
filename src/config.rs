@@ -1676,7 +1676,10 @@ impl Config {
                         ConfigError::other("Invalid syslog_facility")
                     })?;
                 self.syslog_logger(facility)
-            }
+            },
+            #[cfg(not(unix))]
+            LogType::Syslog => 
+                Err(ConfigError::other("syslog not support on non-unix")),
         }
     }
 

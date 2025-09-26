@@ -183,6 +183,7 @@ where
 
 //------------ Facility ------------------------------------------------------
 
+#[cfg(unix)]
 pub fn de_facility<'de, D>(d: D) -> Result<Facility, D::Error>
 where
     D: Deserializer<'de>,
