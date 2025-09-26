@@ -1282,6 +1282,7 @@ fn upgrade_versions(
 
 //------------ Tests ---------------------------------------------------------
 
+#[cfg(unix)]
 #[cfg(test)]
 mod tests {
     use std::{fs, path};
