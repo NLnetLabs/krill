@@ -60,7 +60,7 @@ jobs:
     - if: runner.os == 'Windows'
       run: echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
     - if: runner.os == 'Windows'
-      run: vcpkg install openssl:${{ matrix.os.arch }}-windows-static-md
+      run: vcpkg install openssl:x64-windows-static-md
     - if: matrix.rust == 'stable' && matrix.args == '--all-features'
       run: cargo clippy ${{ matrix.args }} -- -D warnings
     - run: cargo build ${{ matrix.args }} --locked
