@@ -41,7 +41,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest]
+        os: [ubuntu-latest, windows-latest, macOS-latest]
 
         # Test against the oldest supported version.
         # Test against beta Rust to get early warning of any problems that might occur with the upcoming Rust release.
@@ -57,6 +57,10 @@ jobs:
       uses: hecrj/setup-rust-action@v2
       with:
         rust-version: ${{ matrix.rust }}
+    - if: runner.os == 'Windows'
+      run: echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
+    - if: runner.os == 'Windows'
+      run: vcpkg install openssl:${{ matrix.os.arch }}-windows-static-md
     - if: matrix.rust == 'stable' && matrix.args == '--all-features'
       run: cargo clippy ${{ matrix.args }} -- -D warnings
     - run: cargo build ${{ matrix.args }} --locked
