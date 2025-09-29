@@ -564,7 +564,6 @@ impl From<KrillIoError> for Error {
 
 //------------ Tests ---------------------------------------------------------
 
-#[cfg(unix)]
 #[cfg(test)]
 mod tests {
     use crate::commons::test;
