@@ -594,8 +594,6 @@ mod tests {
 
             let files = crawl_derive_rsync_uri(&base_dir).unwrap();
 
-            dbg!(&files);
-
             assert!(files.contains(&file_1));
             assert!(files.contains(&file_2));
             assert!(files.contains(&file_3));
