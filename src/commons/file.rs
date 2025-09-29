@@ -248,10 +248,7 @@ pub fn clean_file_and_path(path: &Path) -> Result<(), KrillIoError> {
 
 fn path_with_rsync(base_path: &Path, uri: &uri::Rsync) -> PathBuf {
     let mut path = base_path.to_path_buf();
-    #[cfg(unix)]
     path.push(uri.authority());
-    #[cfg(not(unix))]
-    path.push(uri.authority().replace(":", "_"));
     path.push(uri.module_name());
     path.push(uri.path());
     path
@@ -574,19 +571,19 @@ mod tests {
     fn should_scan_disk() {
         test::test_under_tmp(|base_dir| {
             let file_1 = CurrentFile::new(
-                test::rsync("rsync://host:10873/module/alice/file1.txt"),
+                test::rsync("rsync://host/module/alice/file1.txt"),
                 &Bytes::from("content 1"),
             );
             let file_2 = CurrentFile::new(
-                test::rsync("rsync://host:10873/module/alice/file2.txt"),
+                test::rsync("rsync://host/module/alice/file2.txt"),
                 &Bytes::from("content 2"),
             );
             let file_3 = CurrentFile::new(
-                test::rsync("rsync://host:10873/module/alice/sub/file1.txt"),
+                test::rsync("rsync://host/module/alice/sub/file1.txt"),
                 &Bytes::from("content sub file"),
             );
             let file_4 = CurrentFile::new(
-                test::rsync("rsync://host:10873/module/bob/file.txt"),
+                test::rsync("rsync://host/module/bob/file.txt"),
                 &Bytes::from("content"),
             );
 
@@ -596,6 +593,8 @@ mod tests {
             file_4.save(&base_dir).unwrap();
 
             let files = crawl_derive_rsync_uri(&base_dir).unwrap();
+
+            dbg!(&files);
 
             assert!(files.contains(&file_1));
             assert!(files.contains(&file_2));
