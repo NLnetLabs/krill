@@ -1282,7 +1282,6 @@ fn upgrade_versions(
 
 //------------ Tests ---------------------------------------------------------
 
-#[cfg(unix)]
 #[cfg(test)]
 mod tests {
     use std::{fs, path};
@@ -1589,8 +1588,11 @@ mod tests {
             "test-resources/status_store/migration-0.9.5/";
         let temp_dir = tempdir().unwrap();
         copy_folder(source_dir_path_str, &temp_dir);
+        let temp_dir_str = &temp_dir.path().to_str().unwrap();
+        #[cfg(windows)]
+        let temp_dir_str = format!("/{}", temp_dir_str);
         let source_dir_url = Url::parse(
-            &format!("local://{}", &temp_dir.path().to_str().unwrap()))
+            &format!("local://{}", temp_dir_str))
                 .unwrap();
 
         let source_store =
