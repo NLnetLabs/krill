@@ -89,9 +89,10 @@ impl Store {
         ));
 
         #[cfg(windows)]
-        let path = PathBuf::from(format!(
-            "{}:{}", uri.host_str().unwrap_or_default(), uri.path()
-        ));
+        let path = path.to_string_lossy()
+                      .strip_prefix('/')
+                      .map(|s| PathBuf::from(s))
+                      .unwrap_or(path);
         
         let root = path.join(namespace.as_str());
         let tmp = path.join(TMP_FILE_DIR);

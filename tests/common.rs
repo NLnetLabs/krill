@@ -64,7 +64,7 @@ impl TestConfig {
         let uri = data_dir.path().to_string_lossy();
 
         #[cfg(windows)]
-        let uri = uri.replace("\\", "/");
+        let uri = format!("/{}", uri.replace("\\", "/"));
 
         Self::new(
             Url::parse(
