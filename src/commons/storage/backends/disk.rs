@@ -87,6 +87,13 @@ impl Store {
         let path = PathBuf::from(format!(
             "{}{}", uri.host_str().unwrap_or_default(), uri.path()
         ));
+
+        #[cfg(windows)]
+        let path = path.to_string_lossy()
+                      .strip_prefix('/')
+                      .map(|s| PathBuf::from(s))
+                      .unwrap_or(path);
+        
         let root = path.join(namespace.as_str());
         let tmp = path.join(TMP_FILE_DIR);
         let mut locks = path.join(LOCK_FILE_DIR);
