@@ -357,7 +357,6 @@ fn uri_socket(
                 "Unix socket path parsing failed"
             ))?;
         return Ok((
-            // Dummy port number is required
             format!("http://localhost{}", &caps["path"]),
             Some(PathBuf::from(&caps["socket"]))
         ));
