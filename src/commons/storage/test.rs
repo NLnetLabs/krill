@@ -4,6 +4,7 @@
 //! requires a wee bit of macro magic.
 #![cfg(test)]
 
+use std::slice;
 use std::sync::{Mutex, MutexGuard};
 use lazy_static::lazy_static;
 use tempfile::{TempDir, tempdir};
