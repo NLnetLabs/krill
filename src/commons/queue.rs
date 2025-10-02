@@ -471,7 +471,7 @@ mod tests {
                 const { Ident::make("foo") },
                 Some(12)
             ),
-            const { Ident::make("12-foo") }.into()
+            Ident::make("12-foo").into()
         );
         assert_eq!(
             Queue::split_storage_key(const { Ident::make("12-foo") }),
