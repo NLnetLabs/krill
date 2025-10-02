@@ -66,13 +66,13 @@ jobs:
       name: Set VCPKG root
       run: echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
     - if: runner.os == 'Windows'
-      name: Cache OpenSSL
-      id: cache-openssl
+      name: Cache vcpkg
+      id: cache-vckpg
       uses: actions/cache@v4
       with:
         path: C:/vcpkg
         key: ${{ runner.os }}-vcpkg
-    - if: runner.os == 'Windows' && steps.cache-openssl.outputs.cache-hit != 'true'
+    - if: runner.os == 'Windows' && steps.cache-vckpg.outputs.cache-hit != 'true'
       name: Install OpenSSL for Windows
       run: vcpkg install openssl:x64-windows-static-md
     - if: matrix.rust == 'stable' && matrix.args == '--all-features' && matrix.os == 'ubuntu-latest'
