@@ -521,5 +521,22 @@
             }
          ]
       }
+   },
+   "test/api/v1/prefix/11.44.31.0/24/search": {
+      "type": "longest-match",
+      "prefix": "11.44.31.0/24",
+      "result": {
+         "prefix": "11.44.31.0/24",
+         "meta": [
+            {
+               "sourceType": "bgp",
+               "sourceID": "riswhois",
+               "originASNs": [
+                  "AS555222"
+               ],
+               "type": "exact-match"
+            }
+         ]
+      }
    }
 }

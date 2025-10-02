@@ -453,10 +453,12 @@ impl BgpAnalyser {
         for meta in json.get("result")?.get("meta")?.as_array()? {
             self.parse_meta(meta, prefix_str, &mut anns)?;
         }
-        for relation in json.get("result")?.get("relations")?.as_array()? {
-            if relation.get("type")?.as_str()? == "more-specific" {
-                for member in relation.get("members")?.as_array()? {
-                    self.parse_member(member, &mut anns)?;
+        if let Some(relations) = json.get("result")?.get("relations") {
+            for relation in relations.as_array()? {
+                if relation.get("type")?.as_str()? == "more-specific" {
+                    for member in relation.get("members")?.as_array()? {
+                        self.parse_member(member, &mut anns)?;
+                    }
                 }
             }
         }
@@ -1087,8 +1089,6 @@ mod test {
 
         let report = analyser.analyse(roas, &set, None).await;
 
-        dbg!(&report);
-
         let entry_expect_roa = |x: &str, y| {
             let x = x.to_string();
             assert!(report.entries().iter().any(|s| 
@@ -1233,5 +1233,33 @@ mod test {
         assert_eq!(2, ranges[1].len());
         assert_eq!(2, ranges[2].len());
         assert_eq!(1, ranges[3].len());
+    }
+
+    #[tokio::test]
+    async fn correct_analysis() {
+        let analyser = BgpAnalyser::new(
+            true, "test".to_string(), Duration::default()
+        );
+
+        let ipv4s = "11.44.31.0/24";
+        let ipv6s = "";
+        let set = ResourceSet::from_strs("AS1000-1200", ipv4s, ipv6s).unwrap();
+
+        let roas = &[
+            configured_roa("11.44.31.0/24-24 => 211321"),
+        ];
+        
+        let block = analyser.retrieve(
+            IpRange::from_resource_set(&set)[0].clone()
+        ).await;
+
+        assert!(block.is_ok());
+
+        let report = analyser.analyse(roas, &set, None).await;
+
+        assert_eq!(
+            BgpAnalysisState::RoaDisallowing, 
+            report.entries()[0].state()
+        )
     }
 }
