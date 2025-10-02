@@ -72,7 +72,6 @@ jobs:
       with:
         path: C:/vcpkg/packages/openssl_x64-windows-static-md
         key: ${{ runner.os }}-build
-        restore-keys: ${{ runner.os }}-build
     - if: runner.os == 'Windows' && steps.cache-openssl.outputs.cache-hit != 'true'
       name: Install OpenSSL for Windows
       run: vcpkg install openssl:x64-windows-static-md
