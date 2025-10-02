@@ -15,7 +15,7 @@ use crate::{
         eventsourcing::{
             Aggregate, AggregateStore, WalStore, WalSupport,
         },
-        storage::{KeyValueStore, Namespace, Scope},
+        storage::{Ident, KeyValueStore},
     },
     constants::{
         KEYS_NS, PROPERTIES_NS, PUBSERVER_CONTENT_NS,
@@ -140,13 +140,11 @@ fn check_openssl_keys(config: &Config) -> UpgradeResult<()> {
     })?;
     let keys_key_store = KeyValueStore::create(&config.storage_uri, KEYS_NS)?;
 
-    for key in keys_key_store.keys(&Scope::global(), "")? {
+    for key in keys_key_store.keys(None, "")? {
         let key_id =
-            KeyIdentifier::from_str(key.name().as_str()).map_err(|e| {
+            KeyIdentifier::from_str(key.as_str()).map_err(|e| {
                 UpgradeError::Custom(format!(
-                    "Cannot parse as key identifier: {}. Error: {}",
-                    key.name().as_str(),
-                    e
+                    "Cannot parse as key identifier: {key}. Error: {e}"
                 ))
             })?;
         open_ssl_signer.get_key_info(&key_id).map_err(|e| {
@@ -162,7 +160,7 @@ fn check_openssl_keys(config: &Config) -> UpgradeResult<()> {
 
 pub fn check_agg_store<A: Aggregate>(
     config: &Config,
-    ns: &Namespace,
+    ns: &Ident,
     name: &str,
 ) -> UpgradeResult<AggregateStore<A>> {
     info!("");
@@ -180,7 +178,7 @@ pub fn check_agg_store<A: Aggregate>(
 
 fn check_wal_store<W: WalSupport>(
     config: &Config,
-    ns: &Namespace,
+    ns: &Ident,
     name: &str,
 ) -> UpgradeResult<()> {
     info!("");
@@ -199,36 +197,26 @@ fn copy_data_for_migration(
     config: &Config,
     target_storage: &Url,
 ) -> UpgradeResult<()> {
-    for ns in &[
-        "ca_objects",
-        "cas",
-        "keys",
-        "pubd",
-        "pubd_objects",
-        "signers",
-        "status",
-        "ta_proxy",
-        "ta_signer",
-    ] {
-        let namespace = Namespace::parse(ns).map_err(|_| {
-            UpgradeError::Custom(format!(
-                "Cannot parse namespace '{ns}'. This is a bug."
-            ))
-        })?;
-        let source_kv_store =
-            KeyValueStore::create(&config.storage_uri, namespace)?;
+    const NAMESPACES: &[&Ident] = &[
+        Ident::make("ca_objects"),
+        Ident::make("cas"),
+        Ident::make("keys"),
+        Ident::make("pubd"),
+        Ident::make("pubd_objects"),
+        Ident::make("signers"),
+        Ident::make("status"),
+        Ident::make("ta_proxy"),
+        Ident::make("ta_signer"),
+    ];
+    for namespace in NAMESPACES {
+        let source_kv_store = KeyValueStore::create(
+            &config.storage_uri, namespace
+        )?;
         if !source_kv_store.is_empty()? {
-            let target_kv_store =
-                KeyValueStore::create(target_storage, namespace)?;
-            target_kv_store.import(
-                &source_kv_store,
-                |scope| {
-                    match scope.first_segment() {
-                        Some(segment) => segment.as_str() != ".locks",
-                        None => true
-                    }
-                }
+            let target_kv_store = KeyValueStore::create(
+                target_storage, namespace
             )?;
+            target_kv_store.import(&source_kv_store)?;
         }
     }
 

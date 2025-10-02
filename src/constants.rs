@@ -1,7 +1,7 @@
 //! Various Krill-wide constants.
 
 use rpki::ca::idexchange::CaHandle;
-use crate::commons::storage::Namespace;
+use crate::commons::storage::Ident;
 use crate::commons::actor::Actor;
 
 
@@ -127,37 +127,37 @@ pub fn test_announcements_enabled() -> bool {
 
 /// The namespace for the CA manager.
 ///
-pub const CASERVER_NS: &Namespace = Namespace::make("cas");
+pub const CASERVER_NS: &Ident = Ident::make("cas");
 
 /// The namespace for CA objects store.
-pub const CA_OBJECTS_NS: &Namespace = Namespace::make("ca_objects");
+pub const CA_OBJECTS_NS: &Ident = Ident::make("ca_objects");
 
 /// The namespace for the keys of the signer.
-pub const KEYS_NS: &Namespace = Namespace::make("keys");
+pub const KEYS_NS: &Ident = Ident::make("keys");
 
 /// The namespace for the property manager.
-pub const PROPERTIES_NS: &Namespace = Namespace::make("properties");
+pub const PROPERTIES_NS: &Ident = Ident::make("properties");
 
 /// The namespace for the publication server content.
-pub const PUBSERVER_CONTENT_NS: &Namespace = Namespace::make("pubd_objects");
+pub const PUBSERVER_CONTENT_NS: &Ident = Ident::make("pubd_objects");
 
 /// The namespace for the publication server.
-pub const PUBSERVER_NS: &Namespace = Namespace::make("pubd");
+pub const PUBSERVER_NS: &Ident = Ident::make("pubd");
 
 /// The namespace for the signer.
-pub const SIGNERS_NS: &Namespace = Namespace::make("signers");
+pub const SIGNERS_NS: &Ident = Ident::make("signers");
 
 /// The namespace for the status manager.
-pub const STATUS_NS: &Namespace = Namespace::make("status");
+pub const STATUS_NS: &Ident = Ident::make("status");
 
 /// The namespace for the trust anchor proxy.
-pub const TA_PROXY_SERVER_NS: &Namespace = Namespace::make("ta_proxy");
+pub const TA_PROXY_SERVER_NS: &Ident = Ident::make("ta_proxy");
 
 /// The namespace for the trust anchor signer.
-pub const TA_SIGNER_SERVER_NS: &Namespace = Namespace::make("ta_signer");
+pub const TA_SIGNER_SERVER_NS: &Ident = Ident::make("ta_signer");
 
 /// The namespace for the task queue.
-pub const TASK_QUEUE_NS: &Namespace = Namespace::make("tasks");
+pub const TASK_QUEUE_NS: &Ident = Ident::make("tasks");
 
 
 //------------ Property Manager Defaults ------------------------------------

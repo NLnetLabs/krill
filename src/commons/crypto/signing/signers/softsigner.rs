@@ -27,7 +27,7 @@ use crate::{
             dispatch::signerinfo::SignerMapper, signers::error::SignerError,
             SignerHandle,
         },
-        storage::{Key, KeyValueStore, Segment},
+        storage::{Ident, KeyValueStore},
     },
     constants::KEYS_NS,
 };
@@ -158,10 +158,10 @@ impl OpenSslSigner {
 
         // TODO encrypt key before storing
         let json = serde_json::to_value(&kp)?;
-        match self
-            .keys_store
-            .store(&Key::new_global(Segment::parse_lossy(&key_id.to_string())), &json) // key_id should always be a valid Segment
-        {
+        match self.keys_store.store(
+            None, &Ident::from_key_identifier(key_id),
+            &json
+        ) {
             Ok(_) => Ok(key_id),
             Err(err) => Err(SignerError::Other(format!("Failed to store key: {err}:"))),
         }
@@ -194,10 +194,9 @@ impl OpenSslSigner {
         key_id: &KeyIdentifier,
     ) -> Result<OpenSslKeyPair, SignerError> {
         // TODO decrypt key after read
-        match self
-            .keys_store
-            .get(&Key::new_global(Segment::parse_lossy(&key_id.to_string()))) // key_id should always be a valid Segment
-        {
+        match self.keys_store.get(
+            None, &Ident::from_key_identifier(*key_id)
+        ) {
             Ok(Some(kp)) => Ok(kp),
             Ok(None) => Err(SignerError::KeyNotFound),
             Err(err) => Err(SignerError::Other(format!("Failed to get key: {err}"))),
@@ -270,11 +269,11 @@ impl OpenSslSigner {
         &self,
         key_id: &KeyIdentifier,
     ) -> Result<(), KeyError<SignerError>> {
-        self.keys_store
-            .drop_key(&Key::new_global(Segment::parse_lossy(
-                &key_id.to_string(),
-            ))) // key_id should always be a valid Segment
-            .map_err(|_| KeyError::Signer(SignerError::KeyNotFound))
+        self.keys_store.drop_key(
+            None, &Ident::from_key_identifier(*key_id)
+        ).map_err(|_| {
+            KeyError::Signer(SignerError::KeyNotFound)
+        })
     }
 
     pub fn sign<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
