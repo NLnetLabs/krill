@@ -41,7 +41,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest]
+        os: [ubuntu-latest, windows-latest, macOS-latest]
 
         # Test against the oldest supported version.
         # Test against beta Rust to get early warning of any problems that might occur with the upcoming Rust release.
@@ -51,13 +51,24 @@ jobs:
         # Test with no features and all features.
         args: ["--no-default-features", "--all-features"]
     steps:
+    - name: Set git to use LF
+      if: runner.os == 'Windows'
+      run: |
+        git config --global core.autocrlf false
+        git config --global core.eol lf
     - name: Checkout repository
       uses: actions/checkout@v4
     - name: Install Rust
       uses: hecrj/setup-rust-action@v2
       with:
         rust-version: ${{ matrix.rust }}
-    - if: matrix.rust == 'stable' && matrix.args == '--all-features'
+    - if: runner.os == 'Windows'
+      name: Set VCPKG root
+      run: echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
+    - if: runner.os == 'Windows'
+      name: Install OpenSSL for Windows
+      run: vcpkg install openssl:x64-windows-static-md
+    - if: matrix.rust == 'stable' && matrix.args == '--all-features' && matrix.os == 'ubuntu-latest'
       run: cargo clippy ${{ matrix.args }} -- -D warnings
     - run: cargo build ${{ matrix.args }} --locked
     - run: cargo test ${{ matrix.args }} -- --test-threads=1 2>&1

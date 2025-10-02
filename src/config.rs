@@ -1704,13 +1704,17 @@ impl Config {
         match self.log_type {
             LogType::File => self.file_logger(),
             LogType::Stderr => self.stderr_logger(),
+            #[cfg(unix)]
             LogType::Syslog => {
                 let facility = Facility::from_str(&self.syslog_facility)
                     .map_err(|_| {
                         ConfigError::other("Invalid syslog_facility")
                     })?;
                 self.syslog_logger(facility)
-            }
+            },
+            #[cfg(not(unix))]
+            LogType::Syslog => 
+                Err(ConfigError::other("syslog not support on non-unix")),
         }
     }
 
