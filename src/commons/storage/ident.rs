@@ -383,7 +383,7 @@ impl IdentBuilder {
 
         // Remaining parts go in with a plus in front. Empty strings mean
         // multiple subsequent slashes, so we can just pretend-append them.
-        while let Some(part) = parts.next() {
+        for part in parts {
             self.content.push('+');
             self.content.push_str(part);
         }
@@ -428,11 +428,9 @@ impl IdentBuilder {
             return self
         }
 
-        if !s.starts_with("+") {
-            if Ident::check_bytes(s.as_bytes()).is_ok() {
-                self.content.push_str(s);
-                return self
-            }
+        if !s.starts_with("+") && Ident::check_bytes(s.as_bytes()).is_ok() {
+            self.content.push_str(s);
+            return self
         }
         
         self.content.push('+');
