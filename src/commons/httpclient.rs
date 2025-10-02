@@ -343,7 +343,7 @@ fn uri_socket(
 ) -> Result<(String, Option<PathBuf>), Error> {
     #[cfg(unix)]
     if uri.starts_with("unix:") {
-        // This regex turns e.g. unix:/var/run/krill.sock/api/v1/cas into
+        // This regex turns e.g. unix:///var/run/krill.sock/api/v1/cas into
         // {
         //     "socket": "/var/run/krill.sock",
         //     "path": "/api/v1/cas"
