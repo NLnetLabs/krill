@@ -68,7 +68,7 @@ impl KrillClient {
             Uri::Unix(socket_path) => {
                 let socket_path = socket_path
                     .strip_prefix("unix://")
-                    .unwrap_or(&socket_path);
+                    .unwrap_or(socket_path);
                 builder = builder.unix_socket(socket_path);
                 builder = builder.danger_accept_invalid_certs(true);
             },
