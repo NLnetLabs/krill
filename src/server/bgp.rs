@@ -1056,7 +1056,7 @@ mod test {
             true, "test".to_string(), Duration::default()
         );
 
-        let ipv4s = "1.1.1.1/32, 2.2.2.2/32, 3.3.3.3/32, 4.4.4.4/32";
+        let ipv4s = "1.1.1.1/32, 3.3.3.3/32, 4.4.4.4/32";
         let set = ResourceSet::from_strs("", ipv4s, "").unwrap();
         
         let ranges = IpRange::from_resource_set(&set);

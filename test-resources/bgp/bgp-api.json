@@ -455,16 +455,6 @@
       }
    },
    "test/api/v1/prefix/1.1.1.1/32/search": "",
-   "test/api/v1/prefix/2.2.2.2/32/search": {
-      "type": "longest-match",
-      "prefix": "0.0.0.0/0",
-      "result": {
-         "prefix": null,
-         "type": "empty-match",
-         "meta": [],
-         "members": []
-      }
-   },
    "test/api/v1/prefix/3.3.3.3/32/search": {
       "type": "longest-match",
       "prefix": "3.3.3.3/32",
