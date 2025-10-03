@@ -100,16 +100,15 @@ pub async fn get_json<T: DeserializeOwned>(
     }
 
     let headers = headers(uri, Some(JSON_CONTENT), token)?;
-    let (uri, socket) = uri_socket(uri)?;
 
-    let res = client(&uri, socket)?
-        .get(&uri)
+    let res = client(uri)?
+        .get(uri)
         .headers(headers)
         .send()
         .await
-        .map_err(|e| Error::execute(&uri, e))?;
+        .map_err(|e| Error::execute(uri, e))?;
 
-    process_json_response(&uri, res).await
+    process_json_response(uri, res).await
 }
 
 /// Performs a get request and expects a response that can be turned
@@ -123,15 +122,14 @@ pub async fn get_text(
     }
 
     let headers = headers(uri, None, token)?;
-    let (uri, socket) = uri_socket(uri)?;
-    let res = client(&uri, socket)?
-        .get(&uri)
+    let res = client(uri)?
+        .get(uri)
         .headers(headers)
         .send()
         .await
-        .map_err(|e| Error::execute(&uri, e))?;
+        .map_err(|e| Error::execute(uri, e))?;
 
-    text_response(&uri, res).await
+    text_response(uri, res).await
 }
 
 /// Checks that there is a 200 OK response at the given URI. Discards the
@@ -142,15 +140,14 @@ pub async fn get_ok(uri: &str, token: Option<&Token>) -> Result<(), Error> {
     }
 
     let headers = headers(uri, None, token)?;
-    let (uri, socket) = uri_socket(uri)?;
-    let res = client(&uri, socket)?
-        .get(&uri)
+    let res = client(uri)?
+        .get(uri)
         .headers(headers)
         .send()
         .await
-        .map_err(|e| Error::execute(&uri, e))?;
+        .map_err(|e| Error::execute(uri, e))?;
 
-    opt_text_response(&uri, res).await?; // Will return nice errors with possible body.
+    opt_text_response(uri, res).await?; // Will return nice errors with possible body.
     Ok(())
 }
 
@@ -168,16 +165,16 @@ pub async fn post_json(
         report_post_and_exit(uri, Some(JSON_CONTENT), token, &body);
     }
     let headers = headers(uri, Some(JSON_CONTENT), token)?;
-    let (uri, socket) = uri_socket(uri)?;
-    let res = client(&uri, socket)?
-        .post(&uri)
+
+    let res = client(uri)?
+        .post(uri)
         .headers(headers)
         .body(body)
         .send()
         .await
-        .map_err(|e| Error::execute(&uri, e))?;
+        .map_err(|e| Error::execute(uri, e))?;
 
-    empty_response(&uri, res).await
+    empty_response(uri, res).await
 }
 
 /// Performs a POST of data that can be serialized into json, and expects
@@ -210,16 +207,15 @@ pub async fn post_json_with_opt_response<T: DeserializeOwned>(
     }
 
     let headers = headers(uri, Some(JSON_CONTENT), token)?;
-    let (uri, socket) = uri_socket(uri)?;
-    let res = client(&uri, socket)?
-        .post(&uri)
+    let res = client(uri)?
+        .post(uri)
         .headers(headers)
         .body(body)
         .send()
         .await
-        .map_err(|e| Error::execute(&uri, e))?;
+        .map_err(|e| Error::execute(uri, e))?;
 
-    process_opt_json_response(&uri, res).await
+    process_opt_json_response(uri, res).await
 }
 
 /// Performs a POST with no data to the given URI and expects and empty 200 OK
@@ -250,13 +246,12 @@ async fn do_empty_post(
     }
 
     let headers = headers(uri, Some(JSON_CONTENT), token)?;
-    let (uri, socket) = uri_socket(uri)?;
-    client(&uri, socket)?
-        .post(&uri)
+    client(uri)?
+        .post(uri)
         .headers(headers)
         .send()
         .await
-        .map_err(|e| Error::execute(&uri, e))
+        .map_err(|e| Error::execute(uri, e))
 }
 
 /// Posts binary data, and expects a binary response. Includes the full krill
@@ -314,17 +309,16 @@ pub async fn delete(uri: &str, token: Option<&Token>) -> Result<(), Error> {
     report_delete(uri, None, token);
 
     let headers = headers(uri, None, token)?;
-    let (uri, socket) = uri_socket(uri)?;
-    let res = client(&uri, socket)?
-        .delete(&uri)
+    let res = client(uri)?
+        .delete(uri)
         .headers(headers)
         .send()
         .await
-        .map_err(|e| Error::execute(&uri, e))?;
+        .map_err(|e| Error::execute(uri, e))?;
 
     match res.status() {
         StatusCode::OK => Ok(()),
-        _ => Err(Error::from_res(&uri, res).await),
+        _ => Err(Error::from_res(uri, res).await),
     }
 }
 
@@ -338,42 +332,13 @@ fn load_root_cert(path_str: &str) -> Result<reqwest::Certificate, Error> {
         .map_err(|e| Error::request_build_https_cert(path_str, e))
 }
 
-fn uri_socket(
-    uri: &str
-) -> Result<(String, Option<PathBuf>), Error> {
-    #[cfg(unix)]
-    if uri.starts_with("unix:") {
-        // This regex turns e.g. unix:///var/run/krill.sock/api/v1/cas into
-        // {
-        //     "socket": "/var/run/krill.sock",
-        //     "path": "/api/v1/cas"
-        // }
-        let re = regex::RegexBuilder::new(
-            r"unix://(?P<socket>.+\.sock)(?P<path>.+)$")
-            .case_insensitive(true).build().unwrap();
-        let caps = re.captures(uri)
-            .ok_or(Error::request_build(
-                uri, 
-                "Unix socket path parsing failed"
-            ))?;
-        return Ok((
-            format!("http://localhost{}", &caps["path"]),
-            Some(PathBuf::from(&caps["socket"]))
-        ));
-    }
-    Ok((uri.to_string(), None))
-}
-
 /// Default client for Krill use cases.
 #[allow(clippy::result_large_err)]
-fn client(
-    uri: &str, socket_path: Option<PathBuf>
-) -> Result<reqwest::Client, Error> {
+fn client(uri: &str) -> Result<reqwest::Client, Error> {
     client_with_tweaks(
         uri,
         Duration::from_secs(HTTP_CLIENT_TIMEOUT_SECS),
         true,
-        socket_path,
     )
 }
 
@@ -383,7 +348,6 @@ pub fn client_with_tweaks(
     uri: &str,
     timeout: Duration,
     allow_redirects: bool,
-    socket_path: Option<PathBuf>,
 ) -> Result<reqwest::Client, Error> {
     let mut builder = reqwest::ClientBuilder::new().timeout(timeout);
 
@@ -398,19 +362,14 @@ pub fn client_with_tweaks(
         }
     }
 
-    #[cfg(unix)]
-    if let Some(socket_path) = socket_path {
-        builder = builder.unix_socket(socket_path);
-    }
-
     if uri.starts_with("https://localhost")
         || uri.starts_with("https://127.0.0.1")
     {
-        builder = builder.danger_accept_invalid_certs(true);
+        builder.danger_accept_invalid_certs(true).build()
+    } else {
+        builder.build()
     }
-    let client = builder.build()
-        .map_err(|e| Error::request_build(uri, e))?;
-    Ok(client)
+    .map_err(|e| Error::request_build(uri, e))
 }
 
 #[allow(clippy::result_large_err)]

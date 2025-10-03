@@ -65,7 +65,7 @@ async fn dispatch_openid_request(
         let allow_redirects = false; // Following redirects opens the client up to SSRF vulnerabilities.
 
         httpclient::client_with_tweaks(
-            &request_uri, timeout, allow_redirects, None
+            &request_uri, timeout, allow_redirects
         )
     }?;
 
