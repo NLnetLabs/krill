@@ -58,9 +58,9 @@ pub async fn get_json<T: DeserializeOwned>(
         .headers(headers)
         .send()
         .await
-        .map_err(|e| Error::execute(&uri, e))?;
+        .map_err(|e| Error::execute(uri, e))?;
 
-    process_json_response(&uri, res).await
+    process_json_response(uri, res).await
 }
 
 /// Performs a get request and expects a response that can be turned
@@ -79,9 +79,9 @@ pub async fn get_text(
         .headers(headers)
         .send()
         .await
-        .map_err(|e| Error::execute(&uri, e))?;
+        .map_err(|e| Error::execute(uri, e))?;
 
-    text_response(&uri, res).await
+    text_response(uri, res).await
 }
 
 /// Checks that there is a 200 OK response at the given URI. Discards the
@@ -97,9 +97,9 @@ pub async fn get_ok(client: &reqwest::Client, uri: &str) -> Result<(), Error> {
         .headers(headers)
         .send()
         .await
-        .map_err(|e| Error::execute(&uri, e))?;
+        .map_err(|e| Error::execute(uri, e))?;
 
-    opt_text_response(&uri, res).await?; // Will return nice errors with possible body.
+    opt_text_response(uri, res).await?; // Will return nice errors with possible body.
     Ok(())
 }
 
@@ -124,9 +124,9 @@ pub async fn post_json(
         .body(body)
         .send()
         .await
-        .map_err(|e| Error::execute(&uri, e))?;
+        .map_err(|e| Error::execute(uri, e))?;
 
-    empty_response(&uri, res).await
+    empty_response(uri, res).await
 }
 
 /// Performs a POST of data that can be serialized into json, and expects
@@ -166,9 +166,9 @@ pub async fn post_json_with_opt_response<T: DeserializeOwned>(
         .body(body)
         .send()
         .await
-        .map_err(|e| Error::execute(&uri, e))?;
+        .map_err(|e| Error::execute(uri, e))?;
 
-    process_opt_json_response(&uri, res).await
+    process_opt_json_response(uri, res).await
 }
 
 /// Performs a POST with no data to the given URI and expects and empty 200 OK
@@ -205,7 +205,7 @@ pub async fn do_empty_post(
         .headers(headers)
         .send()
         .await
-        .map_err(|e| Error::execute(&uri, e))
+        .map_err(|e| Error::execute(uri, e))
 }
 
 /// Sends a delete request to the specified url.
@@ -222,11 +222,11 @@ pub async fn delete(
         .headers(headers)
         .send()
         .await
-        .map_err(|e| Error::execute(&uri, e))?;
+        .map_err(|e| Error::execute(uri, e))?;
 
     match res.status() {
         StatusCode::OK => Ok(()),
-        _ => Err(Error::from_res(&uri, res).await),
+        _ => Err(Error::from_res(uri, res).await),
     }
 }
 
