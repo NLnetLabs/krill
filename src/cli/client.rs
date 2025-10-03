@@ -43,9 +43,6 @@ pub struct KrillClient {
     /// The base URI of the API server.
     base_uri: Uri,
 
-    /// The access token for the API.
-    token: Option<Token>,
-
     /// The HTTP client to make the requests. This is stateful.
     http_client: reqwest::Client,
 }
@@ -69,7 +66,10 @@ impl KrillClient {
         match &base_uri {
             #[cfg(unix)]
             Uri::Unix(socket_path) => {
-                builder = builder.unix_socket(socket_path.as_str());
+                let socket_path = socket_path
+                    .strip_prefix("unix://")
+                    .unwrap_or(&socket_path);
+                builder = builder.unix_socket(socket_path);
                 builder = builder.danger_accept_invalid_certs(true);
             },
             Uri::Https(uri) => {
@@ -98,22 +98,12 @@ impl KrillClient {
         let http_client = builder.build()
             .map_err(|e| Error::request_build(base_uri.as_str(), e))?;
 
-        Ok(Self { base_uri, token, http_client })
+        Ok(Self { base_uri, http_client })
     }
 
     /// Returns the base URI of the server.
     pub fn base_uri(&self) -> &Uri {
         &self.base_uri
-    }
-
-    /// Returns the access token.
-    pub fn token(&self) -> Option<&Token> {
-        self.token.as_ref()
-    }
-
-    /// Sets the access token.
-    pub fn set_token(&mut self, token: Option<Token>) {
-        self.token = token
     }
 
     /// Performs a GET request and checks that it gets a 200 OK back.

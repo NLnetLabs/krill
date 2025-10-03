@@ -408,7 +408,7 @@ impl KrillServer {
                 }
             }),
             running: Some(running),
-            client,
+            client: client.unwrap(),
         };
         res.ready().await;
         res

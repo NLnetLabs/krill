@@ -2,7 +2,7 @@
 //! REST API requires a valid bearer token.
 
 use hyper::StatusCode;
-use krill::commons::httpclient;
+use krill::{cli::client::KrillClient, commons::httpclient};
 
 mod common;
 
@@ -12,8 +12,11 @@ async fn auth_check() {
     let (server, _tempdir) = common::KrillServer::start().await;
 
     // Get a client and change its auth token.
-    let mut client = server.client().clone();
-    client.set_token(Some("wrong secret".into()));
+    let client = server.client().clone();
+    let client = KrillClient::new(
+        client.base_uri().clone(), 
+        Some("wrong secret".into())
+    ).unwrap();
 
     // Now try and create a CA. This should fail with a “Forbidden” error.
     let res = client.ca_add(common::ca_handle("dummy_ca")).await;
