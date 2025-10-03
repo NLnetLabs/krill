@@ -39,6 +39,12 @@ impl Command {
         let client = KrillClient::new(
             self.general.server, self.general.token
         );
+
+        let client = match client {
+            Ok(client) => client,
+            Err(err) => return Report::from_err(err)
+        };
+
         if self.general.api {
             // Safety: We are still single thread at this point.
             unsafe { env::set_var(constants::KRILL_CLI_API_ENV, "1") }

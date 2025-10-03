@@ -1,6 +1,12 @@
 //! A client to talk to the Krill server.
 
 use std::borrow::Cow;
+use std::env;
+use std::path::PathBuf;
+use std::str::FromStr;
+use std::time::Duration;
+use hyper::header::{HeaderValue, USER_AGENT};
+use hyper::HeaderMap;
 use percent_encoding::{CONTROLS, AsciiSet, utf8_percent_encode};
 use rpki::uri;
 use rpki::crypto::KeyIdentifier;
@@ -22,9 +28,11 @@ use crate::api::ta::{
     ApiTrustAnchorSignedRequest, TrustAnchorSignedResponse,
     TrustAnchorSignerInfo,
 };
-use crate::commons::httpclient;
-use crate::commons::httpclient::Error;
+use crate::cli::httpcli;
+use crate::commons::file;
 use crate::commons::uri::Uri;
+use crate::commons::httpclient::Error;
+use crate::constants::{HTTP_CLIENT_TIMEOUT_SECS, KRILL_HTTPS_ROOT_CERTS_ENV};
 
 
 //------------ KrillClient ---------------------------------------------------
@@ -37,6 +45,9 @@ pub struct KrillClient {
 
     /// The access token for the API.
     token: Option<Token>,
+
+    /// The HTTP client to make the requests. This is stateful.
+    http_client: reqwest::Client,
 }
 
 /// # Low-level commands
@@ -44,8 +55,50 @@ impl KrillClient {
     /// Creates a cient from a URI and token.
     pub fn new(
         base_uri: Uri, token: Option<Token>
-    ) -> Self {
-        Self { base_uri, token }
+    ) -> Result<Self, Error> {
+        let mut builder = reqwest::ClientBuilder::new()
+            .timeout(Duration::from_secs(HTTP_CLIENT_TIMEOUT_SECS));
+
+        if let Ok(cert_list) = env::var(KRILL_HTTPS_ROOT_CERTS_ENV) {
+            for path in cert_list.split(':') {
+                let cert = Self::load_root_cert(path)?;
+                builder = builder.add_root_certificate(cert);
+            }
+        }
+
+        match &base_uri {
+            #[cfg(unix)]
+            Uri::Unix(socket_path) => {
+                builder = builder.unix_socket(socket_path.as_str());
+                builder = builder.danger_accept_invalid_certs(true);
+            },
+            Uri::Https(uri) => {
+                if uri.starts_with("https://localhost")
+                    || uri.starts_with("https://127.0.0.1")
+                {
+                    builder = builder.danger_accept_invalid_certs(true);
+                }
+            }
+            _ => {}
+        };
+
+        let mut headers: HeaderMap = HeaderMap::new();
+        headers.insert(USER_AGENT, HeaderValue::from_static("krill"));
+
+        if let Some(token) = &token {
+            headers.insert(
+                hyper::header::AUTHORIZATION,
+                HeaderValue::from_str(&format!("Bearer {token}"))
+                    .map_err(|e| Error::request_build(base_uri.as_str(), e))?
+            );
+        }
+
+        builder = builder.default_headers(headers);
+
+        let http_client = builder.build()
+            .map_err(|e| Error::request_build(base_uri.as_str(), e))?;
+
+        Ok(Self { base_uri, token, http_client })
     }
 
     /// Returns the base URI of the server.
@@ -67,8 +120,8 @@ impl KrillClient {
     pub async fn get_ok<'a>(
         &self, path: impl IntoIterator<Item = Cow<'a, str>>
     ) -> Result<Success, Error> {
-        httpclient::get_ok(
-            &self.create_uri(path), self.token.as_ref()
+        httpcli::get_ok(
+            &self.http_client, &self.create_uri(path)
         ).await.map(|_| Success)
     }
 
@@ -76,8 +129,8 @@ impl KrillClient {
     pub async fn get_json<'a, T: DeserializeOwned>(
         &self, path: impl IntoIterator<Item = Cow<'a, str>>
     ) -> Result<T, Error> {
-        httpclient::get_json(
-            &self.create_uri(path), self.token.as_ref()
+        httpcli::get_json(
+            &self.http_client, &self.create_uri(path)
         ).await
     }
 
@@ -85,8 +138,8 @@ impl KrillClient {
     pub async fn post_empty<'a>(
         &self, path: impl IntoIterator<Item = Cow<'a, str>>
     ) -> Result<Success, Error> {
-        httpclient::post_empty(
-            &self.create_uri(path), self.token.as_ref()
+        httpcli::post_empty(
+            &self.http_client, &self.create_uri(path)
         ).await.map(|_| Success)
     }
 
@@ -95,8 +148,8 @@ impl KrillClient {
         &self,
         path: impl IntoIterator<Item = Cow<'a, str>>,
     ) -> Result<T, Error> {
-        httpclient::post_empty_with_response(
-            &self.create_uri(path), self.token.as_ref()
+        httpcli::post_empty_with_response(
+            &self.http_client, &self.create_uri(path)
         ).await
     }
 
@@ -106,8 +159,8 @@ impl KrillClient {
         path: impl IntoIterator<Item = Cow<'a, str>>,
         data: impl Serialize,
     ) -> Result<Success, Error> {
-        httpclient::post_json(
-            &self.create_uri(path), data, self.token.as_ref()
+        httpcli::post_json(
+            &self.http_client, &self.create_uri(path), data
         ).await.map(|_| Success)
     }
 
@@ -117,8 +170,8 @@ impl KrillClient {
         path: impl IntoIterator<Item = Cow<'a, str>>,
         data: impl Serialize,
     ) -> Result<T, Error> {
-        httpclient::post_json_with_response(
-            &self.create_uri(path), data, self.token.as_ref()
+        httpcli::post_json_with_response(
+            &self.http_client, &self.create_uri(path), data
         ).await
     }
 
@@ -128,8 +181,8 @@ impl KrillClient {
         path: impl IntoIterator<Item = Cow<'a, str>>,
         data: impl Serialize,
     ) -> Result<Option<T>, Error> {
-        httpclient::post_json_with_opt_response(
-            &self.create_uri(path), data, self.token.as_ref()
+        httpcli::post_json_with_opt_response(
+            &self.http_client, &self.create_uri(path), data
         ).await
     }
 
@@ -137,8 +190,8 @@ impl KrillClient {
     pub async fn delete<'a>(
         &self, path: impl IntoIterator<Item = Cow<'a, str>>
     ) -> Result<Success, Error> {
-        httpclient::delete(
-            &self.create_uri(path), self.token.as_ref()
+        httpcli::delete(
+            &self.http_client, &self.create_uri(path)
         ).await.map(|_| Success)
     }
 
@@ -146,7 +199,12 @@ impl KrillClient {
     fn create_uri<'a>(
         &self, path: impl IntoIterator<Item = Cow<'a, str>>
     ) -> String {
-        let mut res = String::from(self.base_uri.as_str());
+        let mut res = String::new();
+        match &self.base_uri {
+            Uri::Unix(_) => res.push_str("http://localhost"),
+            Uri::Https(uri) => res.push_str(uri),
+            Uri::Http(uri) => res.push_str(uri),
+        }
         for item in path {
             if !res.ends_with('/') {
                 res.push('/');
@@ -154,6 +212,18 @@ impl KrillClient {
             res.push_str(&item);
         }
         res
+    }
+
+    #[allow(clippy::result_large_err)]
+    fn load_root_cert(
+        path_str: &str
+    ) -> Result<reqwest::Certificate, Error> {
+        let path = PathBuf::from_str(path_str)
+            .map_err(|e| Error::request_build_https_cert(path_str, e))?;
+        let file = file::read(&path)
+            .map_err(|e| Error::request_build_https_cert(path_str, e))?;
+        reqwest::Certificate::from_pem(file.as_ref())
+            .map_err(|e| Error::request_build_https_cert(path_str, e))
     }
 }
 
@@ -701,8 +771,8 @@ impl KrillClient {
 /// # Testbed commands
 impl KrillClient {
     pub async fn testbed_enabled(&self) -> Result<Success, Error> {
-        httpclient::get_ok(
-            &self.create_uri(once("testbed/enabled")), None
+        httpcli::get_ok(
+            &self.http_client, &self.create_uri(once("testbed/enabled"))
         ).await.map(|_| Success)
     }
 
@@ -712,71 +782,71 @@ impl KrillClient {
         resources: ResourceSet,
         id_cert: IdCert
     ) -> Result<idexchange::ParentResponse, Error> {
-        httpclient::post_json_with_response(
+        httpcli::post_json_with_response(
+            &self.http_client, 
             &self.create_uri(once("testbed/children")),
             api::admin::AddChildRequest {
                 handle: child, resources, id_cert
-            },
-            None,
+            }
         ).await
     }
 
     pub async fn testbed_child_response(
         &self, child: &ChildHandle,
     ) -> Result<String, Error> {
-        httpclient::get_text(
+        httpcli::get_text(
+            &self.http_client,
             &self.create_uri([
                 "testbed/children".into(),
                 encode(child.as_str()),
                 "parent_response.xml".into()
             ]),
-            None,
         ).await
     }
 
     pub async fn testbed_child_delete(
         &self, ca: &CaHandle
     ) -> Result<Success, Error> {
-        httpclient::delete(
+        httpcli::delete(
+            &self.http_client, 
             &self.create_uri(
                 ["testbed/children".into(), encode(ca.as_str())]
             ),
-            None,
         ).await.map(|_| Success)
     }
 
     pub async fn testbed_publishers_add(
         &self, request: idexchange::PublisherRequest
     ) -> Result<idexchange::RepositoryResponse, Error> {
-        httpclient::post_json_with_response(
+        httpcli::post_json_with_response(
+            &self.http_client, 
             &self.create_uri(once("testbed/publishers")),
             request,
-            None,
         ).await
     }
 
     pub async fn testbed_publisher_delete(
         &self, ca: &CaHandle
     ) -> Result<Success, Error> {
-        httpclient::delete(
+        httpcli::delete(
+            &self.http_client, 
             &self.create_uri(
                 ["testbed/publishers".into(), ca.as_str().into()]
             ),
-            None,
         ).await.map(|_| Success)
     }
 
     pub async fn testbed_tal(&self) -> Result<String, Error> {
-        httpclient::get_text(
+        httpcli::get_text(
+            &self.http_client, 
             &self.create_uri(once("ta/ta.tal")),
-            None
         ).await
     }
 
     pub async fn testbed_renamed_tal(&self) -> Result<String, Error> {
-        httpclient::get_text(
+        httpcli::get_text(
+            &self.http_client, 
             &self.create_uri(once("testbed.tal")),
-            None
         ).await
     }
 }

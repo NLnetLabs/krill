@@ -603,7 +603,7 @@ impl Error {
         Error::ErrorResponse(uri.to_string(), status)
     }
 
-    async fn from_res(uri: &str, res: Response) -> Error {
+    pub async fn from_res(uri: &str, res: Response) -> Error {
         let status = res.status();
         match res.text().await {
             Ok(body) => {
