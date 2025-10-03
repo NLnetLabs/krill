@@ -128,11 +128,10 @@ impl Ident {
 }
 
 impl Ident {
-    /// Returns the length of the identifier in bytes.
-    #[allow(clippy::len_without_is_empty)] // never empty.
-    pub const fn len(&self) -> usize {
-        self.0.len()
-    }
+    // We don’t offer `len` and such. Previously, the scope was a sequence
+    // of idents and `len` was used to check if it was a single or multi
+    // element scope. So just to be sure to not break something, we leave it
+    // out.
 
     /// Converts the ident to a byte slice.
     pub const fn as_bytes(&self) -> &[u8] {
