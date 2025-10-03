@@ -215,7 +215,7 @@ impl Ident {
     /// Creates an ident from a key identifier.
     pub fn from_key_identifier(src: KeyIdentifier) -> Box<Ident> {
         unsafe {
-            Ident::boxed_from_string_unchecked(hex::encode(src.as_slice()))
+            Ident::boxed_from_string_unchecked(format!("{src}"))
         }
     }
 
@@ -393,11 +393,7 @@ impl IdentBuilder {
 
     /// Adds the hex representation of the key identifier to the builder.
     pub fn push_key_identifier(mut self, key: KeyIdentifier) -> Self {
-        let mut buf = [0u8; 40];
-        write!(self.content,
-            "{}",
-            rpki::util::hex::encode(key.as_ref(), &mut buf)
-        ).expect("format to string failed");
+        write!(self.content, "{key}").expect("format to string failed");
         self
     }
 
