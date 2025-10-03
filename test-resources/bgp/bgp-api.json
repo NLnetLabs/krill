@@ -155,9 +155,7 @@
             },
             {
                "type": "less-specific",
-               "members": [
-   
-               ]
+               "members": []
             },
             {
                "type": "more-specific",
@@ -340,7 +338,7 @@
             }
          ]
       }
-   },   
+   },
    "test/api/v1/prefix/10.0.0.0/22/search": {
       "type": "longest-match",
       "prefix": "10.0.0.0/22",
@@ -537,6 +535,947 @@
                "type": "exact-match"
             }
          ]
+      }
+   },
+   "test/api/v1/prefix/103.60.200.0/22/search": {
+      "type": "longest-match",
+      "prefix": "103.60.200.0/22",
+      "result": {
+         "prefix": "103.60.200.0/22",
+         "meta": [
+            {
+               "sourceType": "rir-alloc",
+               "sourceID": "apnic"
+            },
+            {
+               "sourceType": "bgp",
+               "sourceID": "riswhois",
+               "originASNs": [
+                  "AS7546"
+               ],
+               "type": "exact-match"
+            }
+         ],
+         "relations": [
+            {
+               "type": "same-org",
+               "members": [
+                  {
+                     "prefix": "103.60.200.0/22",
+                     "meta": [
+                        {
+                           "sourceType": "rir-alloc",
+                           "sourceID": "apnic"
+                        },
+                        {
+                           "sourceType": "bgp",
+                           "sourceID": "riswhois",
+                           "originASNs": [
+                              "AS7546"
+                           ]
+                        }
+                     ]
+                  },
+                  {
+                     "prefix": "122.99.120.0/22",
+                     "meta": [
+                        {
+                           "sourceType": "rir-alloc",
+                           "sourceID": "apnic"
+                        },
+                        {
+                           "sourceType": "bgp",
+                           "sourceID": "riswhois",
+                           "originASNs": [
+                              "AS7546"
+                           ]
+                        }
+                     ]
+                  },
+                  {
+                     "prefix": "203.7.196.0/23",
+                     "meta": [
+                        {
+                           "sourceType": "rir-alloc",
+                           "sourceID": "apnic"
+                        },
+                        {
+                           "sourceType": "bgp",
+                           "sourceID": "riswhois",
+                           "originASNs": [
+                              "AS7546"
+                           ]
+                        }
+                     ]
+                  },
+                  {
+                     "prefix": "203.30.60.0/24",
+                     "meta": [
+                        {
+                           "sourceType": "rir-alloc",
+                           "sourceID": "apnic"
+                        },
+                        {
+                           "sourceType": "bgp",
+                           "sourceID": "riswhois",
+                           "originASNs": [
+                              "AS7546"
+                           ]
+                        }
+                     ]
+                  },
+                  {
+                     "prefix": "2403:7e00::/32",
+                     "meta": [
+                        {
+                           "sourceType": "rir-alloc",
+                           "sourceID": "apnic"
+                        },
+                        {
+                           "sourceType": "bgp",
+                           "sourceID": "riswhois",
+                           "originASNs": [
+                              "AS7546"
+                           ]
+                        }
+                     ]
+                  }
+               ]
+            },
+            {
+               "type": "less-specific",
+               "members": []
+            },
+            {
+               "type": "more-specific",
+               "members": []
+            }
+         ]
+      }
+   },
+   "test/api/v1/prefix/103.160.116.0/23/search": {
+      "type": "longest-match",
+      "prefix": "103.160.116.0/23",
+      "result": {
+         "prefix": "103.160.116.0/23",
+         "meta": [
+            {
+               "sourceType": "rir-alloc",
+               "sourceID": "apnic"
+            }
+         ],
+         "relations": [
+            {
+               "type": "same-org",
+               "members": [
+                  {
+                     "prefix": "103.160.116.0/23",
+                     "meta": [
+                        {
+                           "sourceType": "rir-alloc",
+                           "sourceID": "apnic"
+                        }
+                     ]
+                  },
+                  {
+                     "prefix": "203.28.181.0/24",
+                     "meta": [
+                        {
+                           "sourceType": "rir-alloc",
+                           "sourceID": "apnic"
+                        },
+                        {
+                           "sourceType": "bgp",
+                           "sourceID": "riswhois",
+                           "originASNs": [
+                              "AS9449"
+                           ]
+                        }
+                     ]
+                  },
+                  {
+                     "prefix": "2406:e940::/32",
+                     "meta": [
+                        {
+                           "sourceType": "rir-alloc",
+                           "sourceID": "apnic"
+                        }
+                     ]
+                  }
+               ]
+            },
+            {
+               "type": "less-specific",
+               "members": []
+            },
+            {
+               "type": "more-specific",
+               "members": [
+                  {
+                     "prefix": "103.160.116.0/24",
+                     "meta": [
+                        {
+                           "sourceType": "bgp",
+                           "sourceID": "riswhois",
+                           "originASNs": [
+                              "AS9449"
+                           ]
+                        }
+                     ]
+                  },
+                  {
+                     "prefix": "103.160.117.0/24",
+                     "meta": [
+                        {
+                           "sourceType": "bgp",
+                           "sourceID": "riswhois",
+                           "originASNs": [
+                              "AS9449"
+                           ]
+                        }
+                     ]
+                  }
+               ]
+            }
+         ]
+      }
+   },
+   "test/api/v1/prefix/103.184.174.0/23/search": {
+      "type": "longest-match",
+      "prefix": "103.184.174.0/23",
+      "result": {
+         "prefix": "103.184.174.0/23",
+         "meta": [
+            {
+               "sourceType": "rir-alloc",
+               "sourceID": "apnic"
+            }
+         ],
+         "relations": [
+            {
+               "type": "same-org",
+               "members": [
+                  {
+                     "prefix": "103.184.174.0/23",
+                     "meta": [
+                        {
+                           "sourceType": "rir-alloc",
+                           "sourceID": "apnic"
+                        }
+                     ]
+                  },
+                  {
+                     "prefix": "2400:6820::/32",
+                     "meta": [
+                        {
+                           "sourceType": "rir-alloc",
+                           "sourceID": "apnic"
+                        }
+                     ]
+                  }
+               ]
+            },
+            {
+               "type": "less-specific",
+               "members": []
+            },
+            {
+               "type": "more-specific",
+               "members": [
+                  {
+                     "prefix": "103.184.174.0/24",
+                     "meta": [
+                        {
+                           "sourceType": "bgp",
+                           "sourceID": "riswhois",
+                           "originASNs": [
+                              "AS9888"
+                           ]
+                        }
+                     ]
+                  },
+                  {
+                     "prefix": "103.184.175.0/24",
+                     "meta": [
+                        {
+                           "sourceType": "bgp",
+                           "sourceID": "riswhois",
+                           "originASNs": [
+                              "AS9888"
+                           ]
+                        }
+                     ]
+                  }
+               ]
+            }
+         ]
+      }
+   },
+   "test/api/v1/prefix/103.233.208.0/22/search": {
+      "type": "longest-match",
+      "prefix": "103.233.208.0/22",
+      "result": {
+         "prefix": "103.233.208.0/22",
+         "meta": [
+            {
+               "sourceType": "rir-alloc",
+               "sourceID": "apnic"
+            }
+         ],
+         "relations": [
+            {
+               "type": "same-org",
+               "members": [
+                  {
+                     "prefix": "103.233.208.0/22",
+                     "meta": [
+                        {
+                           "sourceType": "rir-alloc",
+                           "sourceID": "apnic"
+                        }
+                     ]
+                  },
+                  {
+                     "prefix": "202.14.148.0/24",
+                     "meta": [
+                        {
+                           "sourceType": "rir-alloc",
+                           "sourceID": "apnic"
+                        },
+                        {
+                           "sourceType": "bgp",
+                           "sourceID": "riswhois",
+                           "originASNs": [
+                              "AS9913"
+                           ]
+                        }
+                     ]
+                  },
+                  {
+                     "prefix": "203.0.80.0/24",
+                     "meta": [
+                        {
+                           "sourceType": "rir-alloc",
+                           "sourceID": "apnic"
+                        },
+                        {
+                           "sourceType": "bgp",
+                           "sourceID": "riswhois",
+                           "originASNs": [
+                              "AS9913"
+                           ]
+                        }
+                     ]
+                  },
+                  {
+                     "prefix": "203.1.68.0/24",
+                     "meta": [
+                        {
+                           "sourceType": "rir-alloc",
+                           "sourceID": "apnic"
+                        },
+                        {
+                           "sourceType": "bgp",
+                           "sourceID": "riswhois",
+                           "originASNs": [
+                              "AS9913"
+                           ]
+                        }
+                     ]
+                  },
+                  {
+                     "prefix": "203.1.69.0/24",
+                     "meta": [
+                        {
+                           "sourceType": "rir-alloc",
+                           "sourceID": "apnic"
+                        },
+                        {
+                           "sourceType": "bgp",
+                           "sourceID": "riswhois",
+                           "originASNs": [
+                              "AS9913"
+                           ]
+                        }
+                     ]
+                  },
+                  {
+                     "prefix": "203.31.110.0/23",
+                     "meta": [
+                        {
+                           "sourceType": "rir-alloc",
+                           "sourceID": "apnic"
+                        }
+                     ]
+                  },
+                  {
+                     "prefix": "203.57.23.0/24",
+                     "meta": [
+                        {
+                           "sourceType": "rir-alloc",
+                           "sourceID": "apnic"
+                        },
+                        {
+                           "sourceType": "bgp",
+                           "sourceID": "riswhois",
+                           "originASNs": [
+                              "AS9913"
+                           ]
+                        }
+                     ]
+                  },
+                  {
+                     "prefix": "2400:9c20::/32",
+                     "meta": [
+                        {
+                           "sourceType": "rir-alloc",
+                           "sourceID": "apnic"
+                        },
+                        {
+                           "sourceType": "bgp",
+                           "sourceID": "riswhois",
+                           "originASNs": [
+                              "AS9913"
+                           ]
+                        }
+                     ]
+                  }
+               ]
+            },
+            {
+               "type": "less-specific",
+               "members": []
+            },
+            {
+               "type": "more-specific",
+               "members": [
+                  {
+                     "prefix": "103.233.208.0/24",
+                     "meta": [
+                        {
+                           "sourceType": "bgp",
+                           "sourceID": "riswhois",
+                           "originASNs": [
+                              "AS9913"
+                           ]
+                        }
+                     ]
+                  },
+                  {
+                     "prefix": "103.233.209.0/24",
+                     "meta": [
+                        {
+                           "sourceType": "bgp",
+                           "sourceID": "riswhois",
+                           "originASNs": [
+                              "AS9913"
+                           ]
+                        }
+                     ]
+                  },
+                  {
+                     "prefix": "103.233.210.0/24",
+                     "meta": [
+                        {
+                           "sourceType": "bgp",
+                           "sourceID": "riswhois",
+                           "originASNs": [
+                              "AS9913"
+                           ]
+                        }
+                     ]
+                  },
+                  {
+                     "prefix": "103.233.211.0/24",
+                     "meta": [
+                        {
+                           "sourceType": "bgp",
+                           "sourceID": "riswhois",
+                           "originASNs": [
+                              "AS9913"
+                           ]
+                        }
+                     ]
+                  }
+               ]
+            }
+         ]
+      }
+   },
+   "test/api/v1/prefix/122.99.120.0/22/search": {
+      "type": "longest-match",
+      "prefix": "122.99.120.0/22",
+      "result": {
+         "prefix": "122.99.120.0/22",
+         "meta": [
+            {
+               "sourceType": "rir-alloc",
+               "sourceID": "apnic"
+            },
+            {
+               "sourceType": "bgp",
+               "sourceID": "riswhois",
+               "originASNs": [
+                  "AS7546"
+               ],
+               "type": "exact-match"
+            }
+         ],
+         "relations": [
+            {
+               "type": "same-org",
+               "members": [
+                  {
+                     "prefix": "103.60.200.0/22",
+                     "meta": [
+                        {
+                           "sourceType": "rir-alloc",
+                           "sourceID": "apnic"
+                        },
+                        {
+                           "sourceType": "bgp",
+                           "sourceID": "riswhois",
+                           "originASNs": [
+                              "AS7546"
+                           ]
+                        }
+                     ]
+                  },
+                  {
+                     "prefix": "122.99.120.0/22",
+                     "meta": [
+                        {
+                           "sourceType": "rir-alloc",
+                           "sourceID": "apnic"
+                        },
+                        {
+                           "sourceType": "bgp",
+                           "sourceID": "riswhois",
+                           "originASNs": [
+                              "AS7546"
+                           ]
+                        }
+                     ]
+                  },
+                  {
+                     "prefix": "203.7.196.0/23",
+                     "meta": [
+                        {
+                           "sourceType": "rir-alloc",
+                           "sourceID": "apnic"
+                        },
+                        {
+                           "sourceType": "bgp",
+                           "sourceID": "riswhois",
+                           "originASNs": [
+                              "AS7546"
+                           ]
+                        }
+                     ]
+                  },
+                  {
+                     "prefix": "203.30.60.0/24",
+                     "meta": [
+                        {
+                           "sourceType": "rir-alloc",
+                           "sourceID": "apnic"
+                        },
+                        {
+                           "sourceType": "bgp",
+                           "sourceID": "riswhois",
+                           "originASNs": [
+                              "AS7546"
+                           ]
+                        }
+                     ]
+                  },
+                  {
+                     "prefix": "2403:7e00::/32",
+                     "meta": [
+                        {
+                           "sourceType": "rir-alloc",
+                           "sourceID": "apnic"
+                        },
+                        {
+                           "sourceType": "bgp",
+                           "sourceID": "riswhois",
+                           "originASNs": [
+                              "AS7546"
+                           ]
+                        }
+                     ]
+                  }
+               ]
+            },
+            {
+               "type": "less-specific",
+               "members": []
+            },
+            {
+               "type": "more-specific",
+               "members": [
+                  {
+                     "prefix": "122.99.120.0/24",
+                     "meta": [
+                        {
+                           "sourceType": "bgp",
+                           "sourceID": "riswhois",
+                           "originASNs": [
+                              "AS7546"
+                           ]
+                        }
+                     ]
+                  },
+                  {
+                     "prefix": "122.99.121.0/24",
+                     "meta": [
+                        {
+                           "sourceType": "bgp",
+                           "sourceID": "riswhois",
+                           "originASNs": [
+                              "AS7546"
+                           ]
+                        }
+                     ]
+                  },
+                  {
+                     "prefix": "122.99.122.0/24",
+                     "meta": [
+                        {
+                           "sourceType": "bgp",
+                           "sourceID": "riswhois",
+                           "originASNs": [
+                              "AS7546"
+                           ]
+                        }
+                     ]
+                  },
+                  {
+                     "prefix": "122.99.123.0/24",
+                     "meta": [
+                        {
+                           "sourceType": "bgp",
+                           "sourceID": "riswhois",
+                           "originASNs": [
+                              "AS7546"
+                           ]
+                        }
+                     ]
+                  }
+               ]
+            }
+         ]
+      }
+   },
+   "test/api/v1/prefix/202.14.148.0/24/search": {
+      "type": "longest-match",
+      "prefix": "202.14.148.0/24",
+      "result": {
+         "prefix": "202.14.148.0/24",
+         "meta": [
+            {
+               "sourceType": "rir-alloc",
+               "sourceID": "apnic"
+            },
+            {
+               "sourceType": "bgp",
+               "sourceID": "riswhois",
+               "originASNs": [
+                  "AS9913"
+               ],
+               "type": "exact-match"
+            }
+         ],
+         "relations": [
+            {
+               "type": "same-org",
+               "members": [
+                  {
+                     "prefix": "103.233.208.0/22",
+                     "meta": [
+                        {
+                           "sourceType": "rir-alloc",
+                           "sourceID": "apnic"
+                        }
+                     ]
+                  },
+                  {
+                     "prefix": "202.14.148.0/24",
+                     "meta": [
+                        {
+                           "sourceType": "rir-alloc",
+                           "sourceID": "apnic"
+                        },
+                        {
+                           "sourceType": "bgp",
+                           "sourceID": "riswhois",
+                           "originASNs": [
+                              "AS9913"
+                           ]
+                        }
+                     ]
+                  },
+                  {
+                     "prefix": "203.0.80.0/24",
+                     "meta": [
+                        {
+                           "sourceType": "rir-alloc",
+                           "sourceID": "apnic"
+                        },
+                        {
+                           "sourceType": "bgp",
+                           "sourceID": "riswhois",
+                           "originASNs": [
+                              "AS9913"
+                           ]
+                        }
+                     ]
+                  },
+                  {
+                     "prefix": "203.1.68.0/24",
+                     "meta": [
+                        {
+                           "sourceType": "rir-alloc",
+                           "sourceID": "apnic"
+                        },
+                        {
+                           "sourceType": "bgp",
+                           "sourceID": "riswhois",
+                           "originASNs": [
+                              "AS9913"
+                           ]
+                        }
+                     ]
+                  },
+                  {
+                     "prefix": "203.1.69.0/24",
+                     "meta": [
+                        {
+                           "sourceType": "rir-alloc",
+                           "sourceID": "apnic"
+                        },
+                        {
+                           "sourceType": "bgp",
+                           "sourceID": "riswhois",
+                           "originASNs": [
+                              "AS9913"
+                           ]
+                        }
+                     ]
+                  },
+                  {
+                     "prefix": "203.31.110.0/23",
+                     "meta": [
+                        {
+                           "sourceType": "rir-alloc",
+                           "sourceID": "apnic"
+                        }
+                     ]
+                  },
+                  {
+                     "prefix": "203.57.23.0/24",
+                     "meta": [
+                        {
+                           "sourceType": "rir-alloc",
+                           "sourceID": "apnic"
+                        },
+                        {
+                           "sourceType": "bgp",
+                           "sourceID": "riswhois",
+                           "originASNs": [
+                              "AS9913"
+                           ]
+                        }
+                     ]
+                  },
+                  {
+                     "prefix": "2400:9c20::/32",
+                     "meta": [
+                        {
+                           "sourceType": "rir-alloc",
+                           "sourceID": "apnic"
+                        },
+                        {
+                           "sourceType": "bgp",
+                           "sourceID": "riswhois",
+                           "originASNs": [
+                              "AS9913"
+                           ]
+                        }
+                     ]
+                  }
+               ]
+            },
+            {
+               "type": "less-specific",
+               "members": []
+            },
+            {
+               "type": "more-specific",
+               "members": []
+            }
+         ]
+      }
+   },
+   "test/api/v1/prefix/203.0.80.0/24/search": {
+      "type": "longest-match",
+      "prefix": "203.0.80.0/24",
+      "result": {
+         "prefix": "203.0.80.0/24",
+         "meta": [
+            {
+               "sourceType": "rir-alloc",
+               "sourceID": "apnic"
+            },
+            {
+               "sourceType": "bgp",
+               "sourceID": "riswhois",
+               "originASNs": [
+                  "AS9913"
+               ],
+               "type": "exact-match"
+            }
+         ],
+         "relations": [
+            {
+               "type": "same-org",
+               "members": [
+                  {
+                     "prefix": "103.233.208.0/22",
+                     "meta": [
+                        {
+                           "sourceType": "rir-alloc",
+                           "sourceID": "apnic"
+                        }
+                     ]
+                  },
+                  {
+                     "prefix": "202.14.148.0/24",
+                     "meta": [
+                        {
+                           "sourceType": "rir-alloc",
+                           "sourceID": "apnic"
+                        },
+                        {
+                           "sourceType": "bgp",
+                           "sourceID": "riswhois",
+                           "originASNs": [
+                              "AS9913"
+                           ]
+                        }
+                     ]
+                  },
+                  {
+                     "prefix": "203.0.80.0/24",
+                     "meta": [
+                        {
+                           "sourceType": "rir-alloc",
+                           "sourceID": "apnic"
+                        },
+                        {
+                           "sourceType": "bgp",
+                           "sourceID": "riswhois",
+                           "originASNs": [
+                              "AS9913"
+                           ]
+                        }
+                     ]
+                  },
+                  {
+                     "prefix": "203.1.68.0/24",
+                     "meta": [
+                        {
+                           "sourceType": "rir-alloc",
+                           "sourceID": "apnic"
+                        },
+                        {
+                           "sourceType": "bgp",
+                           "sourceID": "riswhois",
+                           "originASNs": [
+                              "AS9913"
+                           ]
+                        }
+                     ]
+                  },
+                  {
+                     "prefix": "203.1.69.0/24",
+                     "meta": [
+                        {
+                           "sourceType": "rir-alloc",
+                           "sourceID": "apnic"
+                        },
+                        {
+                           "sourceType": "bgp",
+                           "sourceID": "riswhois",
+                           "originASNs": [
+                              "AS9913"
+                           ]
+                        }
+                     ]
+                  },
+                  {
+                     "prefix": "203.31.110.0/23",
+                     "meta": [
+                        {
+                           "sourceType": "rir-alloc",
+                           "sourceID": "apnic"
+                        }
+                     ]
+                  },
+                  {
+                     "prefix": "203.57.23.0/24",
+                     "meta": [
+                        {
+                           "sourceType": "rir-alloc",
+                           "sourceID": "apnic"
+                        },
+                        {
+                           "sourceType": "bgp",
+                           "sourceID": "riswhois",
+                           "originASNs": [
+                              "AS9913"
+                           ]
+                        }
+                     ]
+                  },
+                  {
+                     "prefix": "2400:9c20::/32",
+                     "meta": [
+                        {
+                           "sourceType": "rir-alloc",
+                           "sourceID": "apnic"
+                        },
+                        {
+                           "sourceType": "bgp",
+                           "sourceID": "riswhois",
+                           "originASNs": [
+                              "AS9913"
+                           ]
+                        }
+                     ]
+                  }
+               ]
+            },
+            {
+               "type": "less-specific",
+               "members": []
+            },
+            {
+               "type": "more-specific",
+               "members": []
+            }
+         ]
+      }
+   },
+   "test/api/v1/prefix/203.1.68.0/23/search": {
+      "type": "longest-match",
+      "prefix": "203.1.68.0/23",
+      "result": {
+         "prefix": null,
+         "type": "empty-match",
+         "meta": [],
+         "members": [],
+         "relations": []
       }
    }
 }
