@@ -1,13 +1,13 @@
 //! A client to talk to the Krill server.
 
+use std::{env, fmt, process};
 use std::borrow::Cow;
-use std::env;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
-use hyper::header::{HeaderValue, USER_AGENT};
-use hyper::HeaderMap;
 use percent_encoding::{CONTROLS, AsciiSet, utf8_percent_encode};
+use reqwest::{Response, StatusCode};
+use reqwest::header::{CONTENT_TYPE, USER_AGENT, HeaderMap, HeaderValue};
 use rpki::uri;
 use rpki::crypto::KeyIdentifier;
 use rpki::ca::idexchange;
@@ -28,11 +28,11 @@ use crate::api::ta::{
     ApiTrustAnchorSignedRequest, TrustAnchorSignedResponse,
     TrustAnchorSignerInfo,
 };
-use crate::cli::httpcli;
 use crate::commons::file;
-use crate::commons::uri::Uri;
 use crate::commons::httpclient::Error;
-use crate::constants::{HTTP_CLIENT_TIMEOUT_SECS, KRILL_HTTPS_ROOT_CERTS_ENV};
+use crate::constants::{
+    HTTP_CLIENT_TIMEOUT_SECS, KRILL_CLI_API_ENV, KRILL_HTTPS_ROOT_CERTS_ENV,
+};
 
 
 //------------ KrillClient ---------------------------------------------------
@@ -41,17 +41,20 @@ use crate::constants::{HTTP_CLIENT_TIMEOUT_SECS, KRILL_HTTPS_ROOT_CERTS_ENV};
 #[derive(Clone, Debug)]
 pub struct KrillClient {
     /// The base URI of the API server.
-    base_uri: Uri,
+    base_uri: String,
 
     /// The HTTP client to make the requests. This is stateful.
     http_client: reqwest::Client,
+
+    /// Whether to print the API call and exit.
+    report_and_exit: bool,
 }
 
 /// # Low-level commands
 impl KrillClient {
     /// Creates a cient from a URI and token.
     pub fn new(
-        base_uri: Uri, token: Option<Token>
+        base_uri: ServerUri, token: Option<Token>
     ) -> Result<Self, Error> {
         let mut builder = reqwest::ClientBuilder::new()
             .timeout(Duration::from_secs(HTTP_CLIENT_TIMEOUT_SECS));
@@ -63,23 +66,26 @@ impl KrillClient {
             }
         }
 
-        match &base_uri {
-            #[cfg(unix)]
-            Uri::Unix(socket_path) => {
-                let socket_path = socket_path
-                    .strip_prefix("unix://")
-                    .unwrap_or(socket_path);
-                builder = builder.unix_socket(socket_path);
-                builder = builder.danger_accept_invalid_certs(true);
-            },
-            Uri::Https(uri) => {
+        let base_uri = match base_uri {
+            ServerUri::Http(uri) => {
+                // XXX 127.0.0.1 isn’t great. Maybe we should remove this
+                //     hidden feature now that we have Unix sockets?
                 if uri.starts_with("https://localhost")
                     || uri.starts_with("https://127.0.0.1")
                 {
                     builder = builder.danger_accept_invalid_certs(true);
                 }
+                uri
             }
-            _ => {}
+            #[cfg(unix)]
+            ServerUri::Unix(socket_path) => {
+                builder = builder.unix_socket(socket_path);
+                
+                // XXX Do we actually need this if we use an http: base URI?
+                builder = builder.danger_accept_invalid_certs(true);
+
+                String::from("http://localhost")
+            },
         };
 
         let mut headers: HeaderMap = HeaderMap::new();
@@ -95,14 +101,19 @@ impl KrillClient {
 
         builder = builder.default_headers(headers);
 
-        let http_client = builder.build()
-            .map_err(|e| Error::request_build(base_uri.as_str(), e))?;
+        let http_client = builder.build().map_err(|e| {
+            Error::request_build(base_uri.as_str(), e)
+        })?;
 
-        Ok(Self { base_uri, http_client })
+        Ok(Self {
+            base_uri,
+            http_client,
+            report_and_exit: env::var(KRILL_CLI_API_ENV).is_ok(),
+        })
     }
 
     /// Returns the base URI of the server.
-    pub fn base_uri(&self) -> &Uri {
+    pub fn base_uri(&self) -> &str {
         &self.base_uri
     }
 
@@ -110,27 +121,48 @@ impl KrillClient {
     pub async fn get_ok<'a>(
         &self, path: impl IntoIterator<Item = Cow<'a, str>>
     ) -> Result<Success, Error> {
-        httpcli::get_ok(
-            &self.http_client, &self.create_uri(path)
-        ).await.map(|_| Success)
+        let uri = self.create_uri(path);
+        self.report_get(&uri);
+        let res = self.http_client.get(&uri).headers(
+            Self::headers(None)
+        ).send().await.map_err(|e| Error::execute(&uri, e))?;
+        Self::opt_text_response(&uri, res).await?;
+        Ok(Success)
     }
 
     /// Performs a GET request expecting a JSON response.
     pub async fn get_json<'a, T: DeserializeOwned>(
         &self, path: impl IntoIterator<Item = Cow<'a, str>>
     ) -> Result<T, Error> {
-        httpcli::get_json(
-            &self.http_client, &self.create_uri(path)
-        ).await
+        let uri = self.create_uri(path);
+        self.report_get(&uri);
+        let response = self.http_client
+            .get(&uri).headers(Self::headers(Some(Self::JSON)))
+            .send().await
+            .map_err(|e| Error::execute(&uri, e))?;
+        Self::process_json_response(&uri, response).await
+    }
+
+    pub async fn get_text(
+        &self, path: impl IntoIterator<Item = Cow<'_, str>>
+    ) -> Result<String, Error> {
+        let uri = self.create_uri(path);
+        self.report_get(&uri);
+        let response = self.http_client
+            .get(&uri).headers(Self::headers(Some(Self::JSON)))
+            .send().await
+            .map_err(|e| Error::execute(&uri, e))?;
+        Self::text_response(&uri, response).await
     }
 
     /// Performs an empty POST request.
     pub async fn post_empty<'a>(
         &self, path: impl IntoIterator<Item = Cow<'a, str>>
     ) -> Result<Success, Error> {
-        httpcli::post_empty(
-            &self.http_client, &self.create_uri(path)
-        ).await.map(|_| Success)
+        let uri = self.create_uri(path);
+        Self::empty_response(
+            &uri, self.do_empty_post(&uri).await?
+        ).await
     }
 
     /// Posts JSON-encoded data and expects a JSON-encoded response.
@@ -138,9 +170,20 @@ impl KrillClient {
         &self,
         path: impl IntoIterator<Item = Cow<'a, str>>,
     ) -> Result<T, Error> {
-        httpcli::post_empty_with_response(
-            &self.http_client, &self.create_uri(path)
+        let uri = self.create_uri(path);
+        Self::process_json_response(
+            &uri, self.do_empty_post(&uri).await?
         ).await
+    }
+
+    async fn do_empty_post(
+        &self,
+        uri: &str,
+    ) -> Result<Response, Error> {
+        self.report_post(uri, None);
+        self.http_client.post(uri).headers(
+            Self::headers(Some(Self::JSON))
+        ).send().await.map_err(|e| Error::execute(uri, e))
     }
 
     /// Posts JSON-encoded data.
@@ -149,9 +192,10 @@ impl KrillClient {
         path: impl IntoIterator<Item = Cow<'a, str>>,
         data: impl Serialize,
     ) -> Result<Success, Error> {
-        httpcli::post_json(
-            &self.http_client, &self.create_uri(path), data
-        ).await.map(|_| Success)
+        let uri = self.create_uri(path);
+        Self::empty_response(
+            &uri, self.do_post(&uri, data).await?
+        ).await
     }
 
     /// Posts JSON-encoded data and expects a JSON-encoded response.
@@ -160,8 +204,9 @@ impl KrillClient {
         path: impl IntoIterator<Item = Cow<'a, str>>,
         data: impl Serialize,
     ) -> Result<T, Error> {
-        httpcli::post_json_with_response(
-            &self.http_client, &self.create_uri(path), data
+        let uri = self.create_uri(path);
+        Self::process_json_response(
+            &uri, self.do_post(&uri, data).await?
         ).await
     }
 
@@ -171,30 +216,46 @@ impl KrillClient {
         path: impl IntoIterator<Item = Cow<'a, str>>,
         data: impl Serialize,
     ) -> Result<Option<T>, Error> {
-        httpcli::post_json_with_opt_response(
-            &self.http_client, &self.create_uri(path), data
+        let uri = self.create_uri(path);
+        Self::process_opt_json_response(
+            &uri, self.do_post(&uri, data).await?
         ).await
+    }
+
+    async fn do_post(
+        &self,
+        uri: &str,
+        data: impl Serialize,
+    ) -> Result<Response, Error> {
+        let body = serde_json::to_string_pretty(&data).map_err(|e| {
+            Error::request_build_json(uri, e)
+        })?;
+        self.report_post(uri, Some(&body));
+        self.http_client.post(uri).headers(
+            Self::headers(Some(Self::JSON))
+        ).body(body).send().await.map_err(|e| Error::execute(uri, e))
     }
 
     /// Sends a DELETE request.
     pub async fn delete<'a>(
         &self, path: impl IntoIterator<Item = Cow<'a, str>>
     ) -> Result<Success, Error> {
-        httpcli::delete(
-            &self.http_client, &self.create_uri(path)
-        ).await.map(|_| Success)
+        let uri = self.create_uri(path);
+        self.report_delete(&uri);
+        let res = self.http_client.delete(&uri).headers(
+            Self::headers(None)
+        ).send().await.map_err(|e| Error::execute(&uri, e))?;
+        match res.status() {
+            StatusCode::OK => Ok(Success),
+            _ => Err(Error::from_res(&uri, res).await),
+        }
     }
 
     /// Creates the full URI for the HTTP request.
     fn create_uri<'a>(
         &self, path: impl IntoIterator<Item = Cow<'a, str>>
     ) -> String {
-        let mut res = String::new();
-        match &self.base_uri {
-            Uri::Unix(_) => res.push_str("http://localhost"),
-            Uri::Https(uri) => res.push_str(uri),
-            Uri::Http(uri) => res.push_str(uri),
-        }
+        let mut res = String::from(&self.base_uri);
         for item in path {
             if !res.ends_with('/') {
                 res.push('/');
@@ -761,9 +822,7 @@ impl KrillClient {
 /// # Testbed commands
 impl KrillClient {
     pub async fn testbed_enabled(&self) -> Result<Success, Error> {
-        httpcli::get_ok(
-            &self.http_client, &self.create_uri(once("testbed/enabled"))
-        ).await.map(|_| Success)
+        self.get_ok(once("testbed/enabled")).await
     }
 
     pub async fn testbed_child_add(
@@ -772,9 +831,8 @@ impl KrillClient {
         resources: ResourceSet,
         id_cert: IdCert
     ) -> Result<idexchange::ParentResponse, Error> {
-        httpcli::post_json_with_response(
-            &self.http_client, 
-            &self.create_uri(once("testbed/children")),
+        self.post_json_with_response(
+            once("testbed/children"),
             api::admin::AddChildRequest {
                 handle: child, resources, id_cert
             }
@@ -784,33 +842,28 @@ impl KrillClient {
     pub async fn testbed_child_response(
         &self, child: &ChildHandle,
     ) -> Result<String, Error> {
-        httpcli::get_text(
-            &self.http_client,
-            &self.create_uri([
+        self.get_text(
+            [
                 "testbed/children".into(),
                 encode(child.as_str()),
                 "parent_response.xml".into()
-            ]),
+            ],
         ).await
     }
 
     pub async fn testbed_child_delete(
         &self, ca: &CaHandle
     ) -> Result<Success, Error> {
-        httpcli::delete(
-            &self.http_client, 
-            &self.create_uri(
-                ["testbed/children".into(), encode(ca.as_str())]
-            ),
+        self.delete(
+            ["testbed/children".into(), encode(ca.as_str())]
         ).await.map(|_| Success)
     }
 
     pub async fn testbed_publishers_add(
         &self, request: idexchange::PublisherRequest
     ) -> Result<idexchange::RepositoryResponse, Error> {
-        httpcli::post_json_with_response(
-            &self.http_client, 
-            &self.create_uri(once("testbed/publishers")),
+        self.post_json_with_response(
+            once("testbed/publishers"),
             request,
         ).await
     }
@@ -818,25 +871,20 @@ impl KrillClient {
     pub async fn testbed_publisher_delete(
         &self, ca: &CaHandle
     ) -> Result<Success, Error> {
-        httpcli::delete(
-            &self.http_client, 
-            &self.create_uri(
-                ["testbed/publishers".into(), ca.as_str().into()]
-            ),
+        self.delete(
+            ["testbed/publishers".into(), ca.as_str().into()]
         ).await.map(|_| Success)
     }
 
     pub async fn testbed_tal(&self) -> Result<String, Error> {
-        httpcli::get_text(
-            &self.http_client, 
-            &self.create_uri(once("ta/ta.tal")),
+        self.get_text(
+            once("ta/ta.tal"),
         ).await
     }
 
     pub async fn testbed_renamed_tal(&self) -> Result<String, Error> {
-        httpcli::get_text(
-            &self.http_client, 
-            &self.create_uri(once("testbed.tal")),
+        self.get_text(
+            once("testbed.tal"),
         ).await
     }
 }
@@ -927,6 +975,178 @@ impl KrillClient {
     }
 }
 
+
+/// # Very-low level commands
+///
+impl KrillClient {
+    const JSON: &str = "application/json";
+
+    fn report_get(&self, uri: &str) {
+        if self.report_and_exit {
+            println!("GET:\n  {uri}");
+            process::exit(0);
+        }
+    }
+
+    fn report_post(
+        &self, uri: &str, body: Option<&str>,
+    ) {
+        if self.report_and_exit {
+            println!("POST:\n  {uri}");
+            if let Some(body) = body {
+                println!("Body:\n{body}");
+            }
+            std::process::exit(0);
+        }
+    }
+
+    fn report_delete(&self, uri: &str) {
+        if self.report_and_exit {
+            println!("DELETE:\n  {uri}");
+            std::process::exit(0);
+        }
+    }
+
+    fn headers(content_type: Option<&'static str>) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(USER_AGENT, HeaderValue::from_static("krill"));
+        if let Some(content_type) = content_type {
+            headers.insert(
+                CONTENT_TYPE,
+                HeaderValue::from_static(content_type)
+            );
+        }
+        headers
+    }
+
+    async fn process_json_response<T: DeserializeOwned>(
+        uri: &str,
+        res: Response,
+    ) -> Result<T, Error> {
+        match Self::process_opt_json_response(uri, res).await? {
+            None => Err(Error::response(uri, "got empty response body")),
+            Some(res) => Ok(res),
+        }
+    }
+
+    async fn process_opt_json_response<T: DeserializeOwned>(
+        uri: &str,
+        res: Response,
+    ) -> Result<Option<T>, Error> {
+        match Self::opt_text_response(uri, res).await? {
+            None => Ok(None),
+            Some(s) => {
+                let res: T = serde_json::from_str(&s).map_err(|e| {
+                    Error::response(
+                        uri,
+                        format!("could not parse JSON response: {e}"),
+                    )
+                })?;
+                Ok(Some(res))
+            }
+        }
+    }
+
+    async fn empty_response(
+        uri: &str, res: Response
+    ) -> Result<Success, Error> {
+        match Self::opt_text_response(uri, res).await? {
+            None => Ok(Success),
+            Some(_) => Err(Error::response(uri, "expected empty response")),
+        }
+    }
+
+    async fn text_response(
+        uri: &str, res: Response
+    ) -> Result<String, Error> {
+        match Self::opt_text_response(uri, res).await? {
+            None => Err(Error::response(uri, "expected response body")),
+            Some(s) => Ok(s),
+        }
+    }
+
+    async fn opt_text_response(
+        uri: &str,
+        res: Response,
+    ) -> Result<Option<String>, Error> {
+        match res.status() {
+            StatusCode::OK => match res.text().await.ok() {
+                None => Ok(None),
+                Some(s) => {
+                    if s.is_empty() {
+                        Ok(None)
+                    } else {
+                        Ok(Some(s))
+                    }
+                }
+            },
+            StatusCode::FORBIDDEN => Err(Error::Forbidden(uri.to_string())),
+            _ => Err(Error::from_res(uri, res).await),
+        }
+    }
+}
+
+
+//------------ ServerUri -----------------------------------------------------
+
+/// The URI to connect to the Krill server.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ServerUri {
+    /// A HTTP or HTTPS URI.
+    ///
+    /// The value is the URI including the scheme.
+    Http(String),
+
+    /// A URI for a Unix socket.
+    ///
+    /// The contained value is the path of the socket.
+    #[cfg(unix)]
+    Unix(PathBuf),
+}
+
+impl TryFrom<String> for ServerUri {
+    type Error = &'static str;
+
+    fn try_from(mut value: String) -> Result<Self, Self::Error> {
+        // Check for a four-character scheme.
+        if let Some(scheme) = value.as_bytes().get(0..7) {
+            if scheme.eq_ignore_ascii_case(b"http://") {
+                return Ok(Self::Http(value))
+            }
+            if scheme.eq_ignore_ascii_case(b"unix://") {
+                return Ok(Self::Unix(value.split_off(7).into()))
+            }
+        }
+
+        // Check for a five-character scheme.
+        if let Some(scheme) = value.as_bytes().get(0..8) {
+            if scheme.eq_ignore_ascii_case(b"https://") {
+                return Ok(Self::Http(value))
+            }
+        }
+
+        Err("unsupported URI scheme")
+    }
+}
+
+impl FromStr for ServerUri {
+    type Err = &'static str;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Self::try_from(String::from(value))
+    }
+}
+
+impl fmt::Display for ServerUri {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Http(string) => string.fmt(f),
+            Self::Unix(path) => {
+                write!(f, "unix://{}", path.display())
+            }
+        }
+    }
+}
 
 
 //------------ Path Helpers --------------------------------------------------

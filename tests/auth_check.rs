@@ -2,7 +2,8 @@
 //! REST API requires a valid bearer token.
 
 use hyper::StatusCode;
-use krill::{cli::client::KrillClient, commons::httpclient};
+use krill::cli::client::KrillClient;
+use krill::commons::httpclient;
 
 mod common;
 
@@ -11,10 +12,9 @@ mod common;
 async fn auth_check() {
     let (server, _tempdir) = common::KrillServer::start().await;
 
-    // Get a client and change its auth token.
-    let client = server.client().clone();
+    // Get a client with a changed auth token.
     let client = KrillClient::new(
-        client.base_uri().clone(), 
+        server.server_uri().clone(), 
         Some("wrong secret".into())
     ).unwrap();
 

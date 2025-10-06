@@ -10,7 +10,6 @@ pub mod httpclient;
 pub mod queue;
 pub mod storage;
 pub mod test;
-pub mod uri;
 pub mod util;
 pub mod version;
 
