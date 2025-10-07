@@ -48,13 +48,6 @@ impl Simple {
         let defaults = include_str!("../../../defaults/krill.conf");
         let mut config = defaults.to_string();
 
-        if let Some(token) = client.token() {
-            config = config.replace(
-                "### admin_token =",
-                &format!("admin_token = \"{token}\"")
-            );
-        }
-
         config = config.replace(
             "### service_uri = \"https://localhost:3000/\"",
             &format!("service_uri = \"{}\"", client.base_uri()),

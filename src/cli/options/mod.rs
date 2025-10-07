@@ -20,8 +20,7 @@ mod server;
 
 use clap::Parser;
 use crate::api::admin::Token;
-use crate::commons::uri::Uri;
-use super::client::KrillClient;
+use super::client::{KrillClient, ServerUri};
 use super::report::{Report, ReportFormat};
 
 
@@ -63,7 +62,7 @@ pub struct GeneralOptions {
         env = "KRILL_CLI_SERVER",
         default_value = "unix:///tmp/krill.sock"
     )]
-    pub server: Uri,
+    pub server: ServerUri,
 
     /// The secret token for the Krill server.
     #[arg(
