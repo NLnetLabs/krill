@@ -1113,6 +1113,7 @@ impl TryFrom<String> for ServerUri {
             if scheme.eq_ignore_ascii_case(b"http://") {
                 return Ok(Self::Http(value))
             }
+            #[cfg(unix)]
             if scheme.eq_ignore_ascii_case(b"unix://") {
                 return Ok(Self::Unix(value.split_off(7).into()))
             }
@@ -1141,6 +1142,7 @@ impl fmt::Display for ServerUri {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::Http(string) => string.fmt(f),
+            #[cfg(unix)]
             Self::Unix(path) => {
                 write!(f, "unix://{}", path.display())
             }
