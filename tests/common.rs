@@ -417,6 +417,37 @@ impl KrillServer {
         res
     }
 
+    /// Starts a test server with the given config over a UNIX socket
+    ///
+    /// This will start the server and wait for it to become ready.
+    #[cfg(unix)]
+    pub async fn start_with_config_unix(config: Config) -> Self {
+        let server_uri = ServerUri::from_str(
+            &format!(
+                "unix://{}",
+                config.unix_socket().unwrap().display()
+            )
+        ).unwrap();
+        let client = KrillClient::new(
+            server_uri.clone(), None
+        );
+        let (tx, running) = oneshot::channel();
+        let mut res = Self {
+            join: tokio::spawn(async {
+                if let Err(err) = start_krill_daemon(
+                    config.into(), Some(tx)
+                ).await {
+                    error!("Krill failed to start: {err}");
+                }
+            }),
+            running: Some(running),
+            server_uri,
+            client: client.unwrap(),
+        };
+        res.ready().await;
+        res
+    }
+
     pub fn server_uri(&self) -> &ServerUri {
         &self.server_uri
     }
