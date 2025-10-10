@@ -17,7 +17,7 @@ use crate::{
             Aggregate, AggregateStore, Storable,
             StoredCommand, StoredCommandBuilder, WithStorableDetails,
         },
-        storage::{KeyValueStore, Namespace},
+        storage::{Ident, KeyValueStore},
     },
     config::Config,
     server::{
@@ -189,14 +189,32 @@ impl OldStoredEffect {
 
 //------------ OldCommandKey -------------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OldCommandKey {
     pub sequence: u64,
     pub timestamp_secs: i64,
-    pub label: Label,
+    pub label: Box<Ident>,
 }
 
-pub type Label = String;
+impl OldCommandKey {
+    pub fn to_storage_key(&self) -> Box<Ident> {
+        Ident::builder(
+            const { Ident::make("command--") }
+        ).push_i64(
+            self.timestamp_secs
+        ).push_ident(
+            const { Ident::make("--") }
+        ).push_u64(
+            self.sequence
+        ).push_ident(
+            const { Ident::make("--") }
+        ).push_ident(
+            &self.label,
+        ).finish_with_extension(
+            const { Ident::make("json") }
+        )
+    }
+}
 
 impl fmt::Display for OldCommandKey {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -228,7 +246,9 @@ impl FromStr for OldCommandKey {
                 } else {
                     end.len()
                 };
-                (end[0..last]).to_string()
+                Ident::boxed_from_string(
+                    end[0..last].to_string()
+                ).map_err(|_| CommandKeyError(s.to_string()))?
             };
 
             Ok(OldCommandKey {
@@ -277,7 +297,7 @@ pub struct GenericUpgradeAggregateStore<A: Aggregate> {
 
 impl<A: Aggregate> GenericUpgradeAggregateStore<A> {
     pub fn upgrade(
-        name_space: &Namespace,
+        name_space: &Ident,
         mode: UpgradeMode,
         config: &Config,
     ) -> UpgradeResult<AspaMigrationConfigs> {
