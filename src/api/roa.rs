@@ -2,7 +2,7 @@
 
 use std::{error, fmt};
 use std::cmp::Ordering;
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::str::FromStr;
 use rpki::uri;
 use rpki::ca::publication::Base64;
@@ -661,16 +661,19 @@ impl TypedPrefix {
     }
 
     /// Returns the IP address part of the prefix.
-    pub fn ip_addr(&self) -> IpAddr {
+    pub fn ip_addr(self) -> IpAddr {
         match self {
-            Self::V4(v4) => IpAddr::V4(v4.0.to_v4()),
-            Self::V6(v6) => IpAddr::V6(v6.0.to_v6()),
+            Self::V4(v4) => v4.addr().into(),
+            Self::V6(v6) => v6.addr().into(),
         }
     }
 
     /// Returns the prefix length of the prefix.
-    pub fn addr_len(&self) -> u8 {
-        self.prefix().addr_len()
+    pub fn addr_len(self) -> u8 {
+        match self {
+            Self::V4(v4) => v4.addr_len(),
+            Self::V6(v6) => v6.addr_len(),
+        }
     }
 
     /// Returns whether `other` is of the same address family.
@@ -715,7 +718,7 @@ impl From<TypedPrefix> for ResourceSet {
         match tp {
             TypedPrefix::V4(v4) => {
                 let mut builder = IpBlocksBuilder::new();
-                builder.push(v4.0);
+                builder.push(Prefix::from(v4));
                 let blocks = builder.finalize();
 
                 ResourceSet::new(
@@ -726,7 +729,7 @@ impl From<TypedPrefix> for ResourceSet {
             }
             TypedPrefix::V6(v6) => {
                 let mut builder = IpBlocksBuilder::new();
-                builder.push(v6.0);
+                builder.push(Prefix::from(v6));
                 let blocks = builder.finalize();
 
                 ResourceSet::new(
@@ -744,12 +747,12 @@ impl FromStr for TypedPrefix {
 
     fn from_str(prefix: &str) -> Result<Self, Self::Err> {
         if prefix.contains('.') {
-            Ok(TypedPrefix::V4(Ipv4Prefix(
+            Ok(TypedPrefix::V4(Ipv4Prefix::from(
                 Prefix::from_v4_str(prefix.trim())
                     .map_err(|_| AuthorizationFmtError::pfx(prefix))?,
             )))
         } else {
-            Ok(TypedPrefix::V6(Ipv6Prefix(
+            Ok(TypedPrefix::V6(Ipv6Prefix::from(
                 Prefix::from_v6_str(prefix.trim())
                     .map_err(|_| AuthorizationFmtError::pfx(prefix))?,
             )))
@@ -822,18 +825,41 @@ impl Serialize for TypedPrefix {
 /// An IPv4 prefix.
 //
 //  *Warning:* This type is used in stored state.
-#[derive(Clone, Copy, Eq, Hash, PartialEq)]
-pub struct Ipv4Prefix(Prefix);
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Ipv4Prefix {
+    /// The address portion of the prefix.
+    ///
+    /// This cannot be pub because we need to enforce that non-prefix bits are
+    /// zero.
+    addr: Ipv4Addr,
 
-impl AsRef<Prefix> for Ipv4Prefix {
-    fn as_ref(&self) -> &Prefix {
-        &self.0
+    /// The address length.
+    ///
+    /// This cannot be pub because it needs to be less than 33.
+    addr_len: u8,
+}
+
+impl Ipv4Prefix {
+    /// Returns the address portion of the prefix.
+    pub fn addr(self) -> Ipv4Addr {
+        self.addr
+    }
+
+    /// Returns the address length.
+    pub fn addr_len(self) -> u8 {
+        self.addr_len
+    }
+}
+
+impl Default for Ipv4Prefix {
+    fn default() -> Self {
+        Self { addr: Ipv4Addr::UNSPECIFIED, addr_len: 0 }
     }
 }
 
 impl fmt::Display for Ipv4Prefix {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}/{}", self.0.to_v4(), self.0.addr_len())
+        write!(f, "{}/{}", self.addr, self.addr_len)
     }
 }
 
@@ -845,13 +871,16 @@ impl fmt::Debug for Ipv4Prefix {
 
 impl From<Prefix> for Ipv4Prefix {
     fn from(prefix: Prefix) -> Self {
-        Ipv4Prefix(prefix)
+        Self {
+            addr: prefix.to_v4(),
+            addr_len: prefix.addr_len(),
+        }
     }
 }
 
 impl From<Ipv4Prefix> for Prefix {
-    fn from(prefix: Ipv4Prefix) -> Self {
-        prefix.0
+    fn from(src: Ipv4Prefix) -> Self {
+        Self::new(src.addr, src.addr_len)
     }
 }
 
@@ -860,18 +889,41 @@ impl From<Ipv4Prefix> for Prefix {
 /// An IPv6 prefix.
 //
 //  *Warning:* This type is used in stored state.
-#[derive(Clone, Copy, Eq, Hash, PartialEq)]
-pub struct Ipv6Prefix(Prefix);
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Ipv6Prefix {
+    /// The address portion of the prefix.
+    ///
+    /// This cannot be pub because we need to enforce that non-prefix bits
+    /// are zero.
+    addr: Ipv6Addr,
 
-impl AsRef<Prefix> for Ipv6Prefix {
-    fn as_ref(&self) -> &Prefix {
-        &self.0
+    /// The address length.
+    ///
+    /// This cannot be pub because it needs to be less than 129.
+    addr_len: u8,
+}
+
+impl Ipv6Prefix {
+    /// Returns the address portion of the prefix.
+    pub fn addr(self) -> Ipv6Addr {
+        self.addr
+    }
+
+    /// Returns the address length.
+    pub fn addr_len(self) -> u8 {
+        self.addr_len
+    }
+}
+
+impl Default for Ipv6Prefix {
+    fn default() -> Self {
+        Self { addr: Ipv6Addr::UNSPECIFIED, addr_len: 0 }
     }
 }
 
 impl fmt::Display for Ipv6Prefix {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}/{}", self.0.to_v6(), self.0.addr_len())
+        write!(f, "{}/{}", self.addr, self.addr_len)
     }
 }
 
@@ -883,13 +935,16 @@ impl fmt::Debug for Ipv6Prefix {
 
 impl From<Prefix> for Ipv6Prefix {
     fn from(prefix: Prefix) -> Self {
-        Ipv6Prefix(prefix)
+        Self {
+            addr: prefix.to_v6(),
+            addr_len: prefix.addr_len(),
+        }
     }
 }
 
 impl From<Ipv6Prefix> for Prefix {
-    fn from(prefix: Ipv6Prefix) -> Self {
-        prefix.0
+    fn from(src: Ipv6Prefix) -> Self {
+        Self::new(src.addr, src.addr_len)
     }
 }
 

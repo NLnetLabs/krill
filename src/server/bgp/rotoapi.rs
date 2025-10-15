@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::str::FromStr;
 use intervaltree::IntervalTree;
-use rpki::repository::resources::{Addr, AddressRange, ResourceSet};
+use rpki::repository::resources::{Addr, AddressRange, Prefix, ResourceSet};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::Mutex;
@@ -414,7 +414,7 @@ impl BgpAnalyser {
             // When testing, the "test" URL is special. Also, unwrapping is
             // fine.
             let value = serde_json::from_str::<Value>(include_str!(
-                "../../test-resources/bgp/bgp-api.json")
+                "../../../test-resources/bgp/bgp-api.json")
             ).unwrap();
             let Value::Object(mut value) = value else {
                 panic!("not an object")
@@ -615,13 +615,13 @@ impl From<TypedPrefix> for IpRange {
     fn from(tp: TypedPrefix) -> Self {
         match tp {
             TypedPrefix::V4(pfx) => {
-                let (min, max) = pfx.as_ref().range();
+                let (min, max) = Prefix::from(pfx).range();
                 let start = min.to_v4().to_ipv6_mapped().into();
                 let end = max.to_v4().to_ipv6_mapped().into();
                 IpRange(Range { start, end })
             }
             TypedPrefix::V6(pfx) => {
-                let (min, max) = pfx.as_ref().range();
+                let (min, max) = Prefix::from(pfx).range();
                 let start = min.to_v6().into();
                 let end = max.to_v6().into();
                 IpRange(Range { start, end })
@@ -868,7 +868,7 @@ mod test {
             .await;
 
         let expected: BgpAnalysisReport = serde_json::from_str(include_str!(
-            "../../test-resources/bgp/expected_full_report.json"
+            "../../../test-resources/bgp/expected_full_report.json"
         ))
         .unwrap();
 
@@ -982,7 +982,7 @@ mod test {
 
         let expected: BgpAnalysisSuggestion =
             serde_json::from_str(include_str!(
-            "../../test-resources/bgp/expected_suggestion_some_roas.json"
+            "../../../test-resources/bgp/expected_suggestion_some_roas.json"
         ))
             .unwrap();
         assert_eq!(suggestion_resource_subset, expected);
@@ -992,7 +992,7 @@ mod test {
 
         let expected: BgpAnalysisSuggestion =
             serde_json::from_str(include_str!(
-            "../../test-resources/bgp/expected_suggestion_all_roas.json"
+            "../../../test-resources/bgp/expected_suggestion_all_roas.json"
         ))
             .unwrap();
 
