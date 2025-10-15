@@ -26,7 +26,7 @@ use crate::commons::KrillResult;
 use crate::commons::crypto::KrillSigner;
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::PreSaveEventListener;
-use crate::commons::storage::{Key, KeyValueStore, Scope, Segment};
+use crate::commons::storage::{Ident, KeyValueStore};
 use crate::constants::CA_OBJECTS_NS;
 use crate::config::IssuanceTimingConfig;
 use super::aspa::{AspaInfo, AspaObjectsUpdates};
@@ -208,26 +208,29 @@ impl PreSaveEventListener<CertAuth> for CaObjectsStore {
 
 impl CaObjectsStore {
     /// Returns the key for the given CA to be used in the store.
-    fn key(ca: &CaHandle) -> Key {
-        // CA handles should always be a valid segment
-        Key::new_global(
-            Segment::parse_lossy(&format!("{ca}.json"))
+    fn key(ca: &CaHandle) -> Box<Ident> {
+        // XXX This seems quite expensive to do. Maybe we should use the
+        //     handle as the scope and a static identifier for the key?
+        //
+        //     This would need a migration, though.
+        Ident::builder(
+            Ident::from_handle(ca).into_owned()
+        ).finish_with_extension(
+            const { Ident::make("json") }
         )
     }
 
     /// Returns all CA handles present in the object store.
     pub fn cas(&self) -> KrillResult<Vec<CaHandle>> {
+        // XXX The previous code only added keys that could directly be
+        //     parsed as handles. We keep to this for now because we convert
+        //     both slashes and backslashes into plusses and so can’t quite
+        //     distinguish the two cases. This ought to be changed once
+        //     we got rid of backslashes.
         Ok(
-            self.store.keys(&Scope::global(), ".json")?.iter().flat_map(|k| {
-                // Only add entries for which the first part can be parsed as
-                // a handle
-                let mut res = None;
-                if let Some(name) = k.name().as_str().strip_suffix(".json") {
-                    if let Ok(handle) = CaHandle::from_str(name) {
-                        res = Some(handle)
-                    }
-                }
-                res
+            self.store.keys(None, ".json")?.iter().filter_map(|k| {
+                let name = k.as_str().strip_suffix(".json")?;
+                CaHandle::from_str(name).ok()
             }).collect()
         )
     }
@@ -235,9 +238,9 @@ impl CaObjectsStore {
     /// Removes a CA from the store.
     pub fn remove_ca(&self, ca: &CaHandle) -> KrillResult<()> {
         let ca_key = Self::key(ca);
-        self.store.execute(&Scope::global(), |kv| {
-            if kv.has(&ca_key)? {
-                kv.delete(&ca_key)
+        self.store.execute(None, |kv| {
+            if kv.has(None, &ca_key)? {
+                kv.delete(None, &ca_key)
             } else {
                 Ok(())
             }
@@ -249,9 +252,9 @@ impl CaObjectsStore {
     /// If the CA isn’t present in the store yet, creates a new empty
     /// CA objects value and returns it.
     pub fn ca_objects(&self, ca: &CaHandle) -> KrillResult<CaObjects> {
-        let key = Self::key(ca);
-
-        match self.store.get(&key).map_err(Error::KeyValueError)? {
+        match self.store.get(
+            None, &Self::key(ca)
+        ).map_err(Error::KeyValueError)? {
             None => Ok(CaObjects::new(ca.clone())),
             Some(objects) => Ok(objects),
         }
@@ -269,10 +272,10 @@ impl CaObjectsStore {
     where
         F: Fn(&mut CaObjects) -> KrillResult<T>,
     {
-        self.store.execute(&Scope::global(), |kv| {
+        self.store.execute(None, |kv| {
             let key = Self::key(ca);
 
-            let mut objects: CaObjects = match kv.get(&key)? {
+            let mut objects: CaObjects = match kv.get(None, &key)? {
                 Some(value) => value,
                 None => CaObjects::new(ca.clone()),
             };
@@ -280,7 +283,7 @@ impl CaObjectsStore {
             match op(&mut objects) {
                 Err(e) => Ok(Err(e)),
                 Ok(t) => {
-                    kv.store(&key, &objects)?;
+                    kv.store(None, &key, &objects)?;
                     Ok(Ok(t))
                 }
             }

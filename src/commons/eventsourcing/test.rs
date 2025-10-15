@@ -9,8 +9,8 @@ use std::sync::{Arc, RwLock};
 use serde::{Deserialize, Serialize};
 use rpki::ca::idexchange::MyHandle;
 use crate::api::history::{CommandHistoryCriteria, CommandSummary};
-use crate::commons::storage::Namespace;
 use crate::constants::ACTOR_DEF_TEST;
+use crate::commons::storage::Ident;
 use crate::commons::test::mem_storage;
 use super::*;
 
@@ -398,7 +398,7 @@ fn event_sourcing_framework() {
 
     let mut manager = AggregateStore::<Person>::create(
         &storage_uri,
-        const { Namespace::make("person") },
+        const { Ident::make("person") },
         false,
     )
     .unwrap();
@@ -444,7 +444,7 @@ fn event_sourcing_framework() {
     // mapping.
     let manager = AggregateStore::<Person>::create(
         &storage_uri,
-        const { Namespace::make("person") },
+        const { Ident::make("person") },
         false,
     )
     .unwrap();

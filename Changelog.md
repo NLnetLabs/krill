@@ -8,7 +8,12 @@ New
 
 Bug fixes
 
+* Fixed an issue  with the new BGP API code which false returns missing
+  announcement info. ([#1326])
+
 Other changes
+
+[#1326]: https://github.com/NLnetLabs/krill/pull/1326
 
 
 ## 0.15.0 ‘But I Digress’
