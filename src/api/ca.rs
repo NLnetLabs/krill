@@ -909,8 +909,8 @@ impl ParentStatuses {
     }
 
     /// Removes the given parent CA.
-    pub fn remove(&mut self, parent: &ParentHandle) {
-        self.0.remove(parent);
+    pub fn remove(&mut self, parent: &ParentHandle) -> Option<ParentStatus> {
+        self.0.remove(parent)
     }
 
     /// Inserts the status for the given parent CA.
