@@ -800,7 +800,7 @@ impl CaManager {
             }
         }
 
-        if let Ok(_) = self.ca_store.get_latest(ca_handle) {
+        if self.ca_store.get_latest(ca_handle).is_ok() {
             self.ca_store.drop_aggregate(ca_handle)?;
         }
         self.ca_objects_store.remove_ca(ca_handle)?;
