@@ -215,12 +215,16 @@ mod tests {
             ).as_ref()).unwrap(),
         };
 
+        eprintln!("v4:\n   size: {},\n   tree len: {},\n   data len: {}",
+            ris.v4.size(), ris.v4.tree_len(), ris.v4.data_len()
+        );
+
         let v4 = ris.v4.iter().collect::<Vec<_>>();
         for item in v4.windows(2) {
             assert!(item[0][0].prefix < item[1][0].prefix)
         }
         let v6 = ris.v6.iter().collect::<Vec<_>>();
-        for item in v4.windows(2) {
+        for item in v6.windows(2) {
             assert!(item[0][0].prefix < item[1][0].prefix)
         }
     }

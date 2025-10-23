@@ -19,19 +19,31 @@ pub struct RouteOriginCollection<P> {
 
 impl<P: RoutePrefix> RouteOriginCollection<P> {
     pub fn new(data: Vec<RouteOrigin<P>>) -> Result<Self, LargeIndex> {
-        if data.is_empty() {
-            return Ok(Self {
-                tree: Box::new([]),
-                tree_root_idx: OptIndex::none(),
-                data: RouteOriginBox(Box::new([])),
-            })
-        }
-
         let mut data = data.into_boxed_slice();
         data.sort();
         let data = RouteOriginBox(data);
 
+        let Some(first) = data.0.first() else {
+           return Ok(Self {
+                tree: Box::new([]),
+                tree_root_idx: OptIndex::none(),
+                data: RouteOriginBox(Box::new([])),
+            })
+        };
+
         let mut tree = Vec::new();
+        let (tree_root_idx, data_idx) = Self::create_children(
+            &mut tree,
+            (first.prefix == P::default()).then_some(0),
+            &data
+        )?;
+
+        debug_assert!(data_idx.is_none());
+        Ok(Self {
+            tree: tree.into_boxed_slice(),
+            tree_root_idx,
+            data,
+        })
 
         /*
         let mut next_data_idx = 0;
@@ -111,23 +123,31 @@ impl<P: RoutePrefix> RouteOriginCollection<P> {
 
     fn create_children(
         tree: &mut Vec<TreeNode>,
-        data_idx: usize,
+        data_idx: Option<usize>,
         data: &RouteOriginBox<P>
     ) -> Result<(OptIndex, Option<usize>), LargeIndex> {
-        debug_assert!(data_idx < data.0.len());
-
         let opt_data_idx: OptIndex = data_idx.try_into()?;
 
-        // Get the index of the next prefix. If there isn’t one, add us as
-        // a leaf node and return.
-        let Some(mut next_data_idx) = data.next_prefix(data_idx) else {
-            return Ok((
-                Self::push_node(TreeNode::new(opt_data_idx), tree)?,
-                None
-            ))
+        let (my_prefix, mut next_data_idx) = match data_idx {
+            Some(data_idx) => {
+                debug_assert!(data_idx < data.0.len());
+
+                // Get the index of the next prefix. If there isn’t one, add
+                // us as a leaf node and return.
+                let Some(next_data_idx) = data.next_prefix(data_idx) else {
+                    return Ok((
+                        Self::push_node(TreeNode::new(opt_data_idx), tree)?,
+                        None
+                    ))
+                };
+
+                (data.0[data_idx].prefix, next_data_idx)
+            }
+            None => {
+                (P::default(), 0)
+            }
         };
 
-        let my_prefix = data.0[data_idx].prefix;
         let mut next_prefix = data.0[next_data_idx].prefix;
 
         // If we don’t cover the next prefix, we are a leaf node and can
@@ -155,7 +175,7 @@ impl<P: RoutePrefix> RouteOriginCollection<P> {
             && !next_prefix.bit(my_prefix.addr_len())
         {
             let (node_idx, post_data_idx) = Self::create_children(
-                tree, next_data_idx, data
+                tree, Some(next_data_idx), data
             )?;
 
             if left_idx.is_some() {
@@ -207,7 +227,7 @@ impl<P: RoutePrefix> RouteOriginCollection<P> {
         let mut right_idx = OptIndex::none();
         while my_prefix.covers(next_prefix) {
             let (node_idx, post_data_idx) = Self::create_children(
-                tree, next_data_idx, data
+                tree, Some(next_data_idx), data
             )?;
 
             if right_idx.is_some() {
@@ -332,10 +352,9 @@ impl RoutePrefix for Ipv4Prefix {
         if self.addr_len() == 32 {
             return self.addr() == other.addr()
         }
-        let my_bits = self.addr().to_bits();
-        let other_bits = other.addr().to_bits();
-        let mask = (u32::MAX >> self.addr_len()).reverse_bits();
-        my_bits == other_bits & mask
+
+        self.addr().to_bits()
+            == other.addr().to_bits() & !(u32::MAX >> self.addr_len())
     }
 
     fn addr_len(self) -> u8 {
@@ -358,10 +377,9 @@ impl RoutePrefix for Ipv6Prefix {
         if self.addr_len() == 128 {
             return self.addr() == other.addr()
         }
-        let my_bits = self.addr().to_bits();
-        let other_bits = other.addr().to_bits();
-        let mask = (u128::MAX >> self.addr_len()).reverse_bits();
-        my_bits == other_bits & mask
+
+        self.addr().to_bits()
+            == other.addr().to_bits() & !(u128::MAX >> self.addr_len())
     }
 
     fn addr_len(self) -> u8 {
@@ -700,7 +718,6 @@ impl<'a, P: RoutePrefix> Iterator for TreeIter<'a, P> {
     type Item = &'a [RouteOrigin<P>];
 
     fn next(&mut self) -> Option<Self::Item> {
-        let mut i = 0;
         loop {
             let node_idx = *self.tree_idx_stack.last()?;
             let node = self.collection.tree.get(node_idx)?;
@@ -714,10 +731,8 @@ impl<'a, P: RoutePrefix> Iterator for TreeIter<'a, P> {
             }
 
             if let Some(idx) = node.data.into_usize() {
-                eprintln!("{i}");
                 return Some(self.collection.data.prefix_slice(idx))
             }
-            i += 1;
         }
     }
 }
