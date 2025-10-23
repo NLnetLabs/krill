@@ -857,6 +857,29 @@ impl Default for Ipv4Prefix {
     }
 }
 
+impl FromStr for Ipv4Prefix {
+    type Err = ParsePrefixError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let Some((addr, len)) = s.split_once('/') else {
+            return Err(ParsePrefixError(()))
+        };
+        let addr = Ipv4Addr::from_str(addr).map_err(|_| {
+            ParsePrefixError(())
+        })?;
+        let addr_len = u8::from_str(len).map_err(|_| {
+            ParsePrefixError(())
+        })?;
+        if addr_len > 32 {
+            return Err(ParsePrefixError(()));
+        }
+        if addr.to_bits().trailing_zeros() < (32 - addr_len).into() {
+            return Err(ParsePrefixError(()));
+        }
+        Ok(Self { addr, addr_len })
+    }
+}
+
 impl fmt::Display for Ipv4Prefix {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}/{}", self.addr, self.addr_len)
@@ -918,6 +941,29 @@ impl Ipv6Prefix {
 impl Default for Ipv6Prefix {
     fn default() -> Self {
         Self { addr: Ipv6Addr::UNSPECIFIED, addr_len: 0 }
+    }
+}
+
+impl FromStr for Ipv6Prefix {
+    type Err = ParsePrefixError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let Some((addr, len)) = s.split_once('/') else {
+            return Err(ParsePrefixError(()))
+        };
+        let addr = Ipv6Addr::from_str(addr).map_err(|_| {
+            ParsePrefixError(())
+        })?;
+        let addr_len = u8::from_str(len).map_err(|_| {
+            ParsePrefixError(())
+        })?;
+        if addr_len > 128 {
+            return Err(ParsePrefixError(()));
+        }
+        if addr.to_bits().trailing_zeros() < (128 - addr_len).into() {
+            return Err(ParsePrefixError(()));
+        }
+        Ok(Self { addr, addr_len })
     }
 }
 
@@ -1062,6 +1108,22 @@ impl fmt::Display for AuthorizationFmtError {
 }
 
 impl error::Error for AuthorizationFmtError { }
+
+
+//------------ ParsePrefixError ----------------------------------------------
+
+/// An error happened while parsing a prefix.
+#[derive(Debug)]
+pub struct ParsePrefixError(());
+
+impl fmt::Display for ParsePrefixError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("invalid prefix")
+    }
+}
+
+impl error::Error for ParsePrefixError { }
+
 
 
 //============ Tests =========================================================

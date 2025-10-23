@@ -100,6 +100,10 @@ impl BgpAnalyser {
         // Now get all the necessary data from BGP API.
         //
         // Return early if this failed.
+        //
+        // If this succeeds, `scoped_announcements` will contain all
+        // announcements that overlap any of the IP address resources we
+        // are considering.
         let scope = IpRange::from_resource_set(
             match &limited_scope {
                 Some(limit) => limit,
@@ -124,27 +128,33 @@ impl BgpAnalyser {
             }
         }
 
+        // Now create a prefix tree for all the configured ROAs: `roa_tree`.
         let roa_tree = IpRangeStore::create(
             roas_held.iter().map(|configured| {
                 let payload = configured.roa_configuration.payload;
                 (payload.prefix.into(), payload)
             })
         );
+
+        // Now go over all announcements and determine their ROV status from
+        // our ROAs. Turn that into a prefix tree: `validated_tree`.
         let validated: Vec<ValidatedAnnouncement> = scoped_announcements
             .into_iter()
             .map(|a| roa_tree.validate_announcement(a))
             .collect();
-
-        // Check all ROAs.. and report ROA state in relation to validated
-        // announcements
         let validated_tree = IpRangeStore::create(
             validated.iter().map(|v| (v.announcement.prefix.into(), v.clone()))
         );
+
+        // Now we go over each individual configured ROA and check how it
+        // influenced the validated tree.
         for roa in roas_held {
+            // Get all announcements covered by the ROA.
             let covered = validated_tree.matching_or_more_specific(
                 roa.roa_configuration.payload.prefix
             );
 
+            // Get all other ROAs that cover the prefix of this ROA.
             let other_roas_covering_this_prefix: Vec<_> = roa_tree
                 .matching_or_less_specific(
                     roa.roa_configuration.payload.prefix
@@ -154,6 +164,7 @@ impl BgpAnalyser {
                 .cloned()
                 .collect();
 
+            // Get all ROAs that include this ROA.
             let other_roas_including_this_definition: Vec<_> =
                 other_roas_covering_this_prefix
                     .iter()

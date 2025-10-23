@@ -4,9 +4,8 @@
 compile_error!("cannot build on 16 bit systems");
 
 
-use std::fmt;
-use rpki::resources::Asn;
-use crate::api::roa::{Ipv4Prefix, Ipv6Prefix};
+use std::{fmt, mem};
+use crate::api::roa::{AsNumber, Ipv4Prefix, Ipv6Prefix};
 
 
 //------------ RouteOriginCollection -----------------------------------------
@@ -14,13 +13,18 @@ use crate::api::roa::{Ipv4Prefix, Ipv6Prefix};
 #[derive(Clone, Debug)]
 pub struct RouteOriginCollection<P> {
     tree: Box<[TreeNode]>,
+    tree_root_idx: OptIndex,
     data: RouteOriginBox<P>,
 }
 
 impl<P: RoutePrefix> RouteOriginCollection<P> {
     pub fn new(data: Vec<RouteOrigin<P>>) -> Result<Self, LargeIndex> {
         if data.is_empty() {
-            return Err(LargeIndex(())); // XXX Fix error type.
+            return Ok(Self {
+                tree: Box::new([]),
+                tree_root_idx: OptIndex::none(),
+                data: RouteOriginBox(Box::new([])),
+            })
         }
 
         let mut data = data.into_boxed_slice();
@@ -29,37 +33,80 @@ impl<P: RoutePrefix> RouteOriginCollection<P> {
 
         let mut tree = Vec::new();
 
-        if data.0[0].prefix != P::default() {
-            // Create an empty node for slash zero as the root so we can then
-            // use our regular insert mechanism for the actual data.
-            tree.push(TreeNode::default());
+        /*
+        let mut next_data_idx = 0;
+        let mut last_node_idx = OptIndex::none();
 
-            let (left, mut opt_next_data) = Self::create_children(
-                &mut tree, 0, &data
+        loop {
+            let (node_idx, data_idx) = Self::create_children(
+                &mut tree, next_data_idx, &data
             )?;
-            tree[0].left = left;
-            if let Some(next_data) = opt_next_data {
-                let (right, data_idx) = Self::create_children(
-                    &mut tree, next_data, &data
-                )?;
-                tree[0].right = right;
-                opt_next_data = data_idx;
+            if let Some(data_idx) = data_idx {
+                // There is more data. If we had a previous node, we need
+                // to add an empty node before continuing.
+                if last_node_idx.is_some() {
+                    last_node_idx = Self::push_node(
+                        TreeNode::with_children(
+                            OptIndex::none(),
+                            last_node_idx, node_idx
+                        ),
+                        &mut tree
+                    )?
+                }
+                else {
+                    last_node_idx = node_idx
+                }
+                next_data_idx = data_idx;
             }
-            debug_assert!(opt_next_data.is_none());
+            else {
+                // All data covered. If we have a previous node idx, we need
+                // to add an empty node. Otherwise the node_idx is the root.
+                let tree_root_idx = if last_node_idx.is_some() {
+                    Self::push_node(
+                        TreeNode::with_children(
+                            OptIndex::none(),
+                            last_node_idx, node_idx
+                        ),
+                        &mut tree
+                    )?
+                }
+                else {
+                    node_idx
+                };
 
+                return Ok(Self {
+                    tree: tree.into_boxed_slice(),
+                    tree_root_idx,
+                    data
+                })
+            }
         }
-        else {
-            let (node_idx, next_data) = Self::create_children(
-                &mut tree, 0, &data
-            )?;
-            debug_assert_eq!(node_idx, OptIndex(0));
-            debug_assert!(next_data.is_none());
-        }
+        */
+    }
 
-        Ok(Self {
-            tree: tree.into_boxed_slice(),
-            data
-        })
+    pub fn size(&self) -> usize {
+        mem::size_of::<TreeNode>() * self.tree.len()
+            + mem::size_of::<RouteOrigin<P>>() * self.data.0.len()
+    }
+
+    pub fn tree_size(&self) -> usize {
+        mem::size_of::<TreeNode>() * self.tree.len()
+    }
+
+    pub fn data_size(&self) -> usize {
+        mem::size_of::<RouteOrigin<P>>() * self.data.0.len()
+    }
+
+    pub fn tree_len(&self) -> usize {
+        self.tree.len()
+    }
+    
+    pub fn data_len(&self) -> usize {
+        self.data.0.len()
+    }
+
+    pub fn empty_tree_len(&self) -> usize {
+        self.tree.iter().filter(|item| item.data.is_none()).count()
     }
 
     fn create_children(
@@ -69,21 +116,13 @@ impl<P: RoutePrefix> RouteOriginCollection<P> {
     ) -> Result<(OptIndex, Option<usize>), LargeIndex> {
         debug_assert!(data_idx < data.0.len());
 
-        fn push_node(
-            node: TreeNode, tree: &mut Vec<TreeNode>
-        ) -> Result<OptIndex, LargeIndex> {
-            let idx = Some(tree.len()).try_into()?;
-            tree.push(node);
-            Ok(idx)
-        }
-
         let opt_data_idx: OptIndex = data_idx.try_into()?;
 
         // Get the index of the next prefix. If there isn’t one, add us as
         // a leaf node and return.
         let Some(mut next_data_idx) = data.next_prefix(data_idx) else {
             return Ok((
-                push_node(TreeNode::new(opt_data_idx), tree)?,
+                Self::push_node(TreeNode::new(opt_data_idx), tree)?,
                 None
             ))
         };
@@ -95,7 +134,7 @@ impl<P: RoutePrefix> RouteOriginCollection<P> {
         // return.
         if !my_prefix.covers(next_prefix) {
             return Ok((
-                push_node(TreeNode::new(opt_data_idx), tree)?,
+                Self::push_node(TreeNode::new(opt_data_idx), tree)?,
                 Some(next_data_idx)
             ))
         }
@@ -111,7 +150,10 @@ impl<P: RoutePrefix> RouteOriginCollection<P> {
         // the left and the second tree on the right. And then check the now
         // new next prefix again. And so on.
         let mut left_idx = OptIndex::none();
-        while !next_prefix.bit(my_prefix.addr_len()) {
+        while
+            my_prefix.covers(next_prefix)
+            && !next_prefix.bit(my_prefix.addr_len())
+        {
             let (node_idx, post_data_idx) = Self::create_children(
                 tree, next_data_idx, data
             )?;
@@ -119,7 +161,7 @@ impl<P: RoutePrefix> RouteOriginCollection<P> {
             if left_idx.is_some() {
                 // If we have a left_idx, we need to insert an empty node
                 // which will then become the new left_idx.
-                left_idx = push_node(
+                left_idx = Self::push_node(
                     TreeNode::with_children(
                         OptIndex::none(), left_idx, node_idx
                     ),
@@ -128,7 +170,7 @@ impl<P: RoutePrefix> RouteOriginCollection<P> {
 
                 let Some(post_data_idx) = post_data_idx else {
                     return Ok((
-                        push_node(
+                        Self::push_node(
                             TreeNode::with_children(
                                 opt_data_idx, left_idx, OptIndex::none()
                             ),
@@ -142,7 +184,7 @@ impl<P: RoutePrefix> RouteOriginCollection<P> {
             else {
                 let Some(post_data_idx) = post_data_idx else {
                     return Ok((
-                        push_node(
+                        Self::push_node(
                             TreeNode::with_children(
                                 opt_data_idx, node_idx, OptIndex::none()
                             ),
@@ -169,7 +211,7 @@ impl<P: RoutePrefix> RouteOriginCollection<P> {
             )?;
 
             if right_idx.is_some() {
-                right_idx = push_node(
+                right_idx = Self::push_node(
                     TreeNode::with_children(
                         OptIndex::none(), right_idx, node_idx
                     ),
@@ -178,7 +220,7 @@ impl<P: RoutePrefix> RouteOriginCollection<P> {
 
                 let Some(post_data_idx) = post_data_idx else {
                     return Ok((
-                        push_node(
+                        Self::push_node(
                             TreeNode::with_children(
                                 opt_data_idx, left_idx, right_idx
                             ),
@@ -192,7 +234,7 @@ impl<P: RoutePrefix> RouteOriginCollection<P> {
             else {
                 let Some(post_data_idx) = post_data_idx else {
                     return Ok((
-                        push_node(
+                        Self::push_node(
                             TreeNode::with_children(
                                 opt_data_idx, left_idx, node_idx
                             ),
@@ -208,7 +250,7 @@ impl<P: RoutePrefix> RouteOriginCollection<P> {
         }
 
         Ok((
-            push_node(
+            Self::push_node(
                 TreeNode::with_children(
                     opt_data_idx, left_idx, right_idx
                 ),
@@ -217,12 +259,20 @@ impl<P: RoutePrefix> RouteOriginCollection<P> {
             Some(next_data_idx),
         ))
     }
+
+    fn push_node(
+        node: TreeNode, tree: &mut Vec<TreeNode>
+    ) -> Result<OptIndex, LargeIndex> {
+        let idx = Some(tree.len()).try_into()?;
+        tree.push(node);
+        Ok(idx)
+    }
 }
 
 
 impl<P: RoutePrefix> RouteOriginCollection<P> {
     pub fn iter(&self) -> TreeIter<'_, P> {
-        TreeIter { collection: self, tree_idx_stack: vec![0] }
+        TreeIter::new(self)
     }
 
     pub fn matching_or_less_specific(
@@ -279,10 +329,13 @@ impl RoutePrefix for Ipv4Prefix {
         if self.addr_len() > other.addr_len() {
             return false
         }
+        if self.addr_len() == 32 {
+            return self.addr() == other.addr()
+        }
         let my_bits = self.addr().to_bits();
         let other_bits = other.addr().to_bits();
         let mask = (u32::MAX >> self.addr_len()).reverse_bits();
-        (my_bits ^ other_bits) & mask == 0
+        my_bits == other_bits & mask
     }
 
     fn addr_len(self) -> u8 {
@@ -290,7 +343,10 @@ impl RoutePrefix for Ipv4Prefix {
     }
 
     fn bit(self, idx: u8) -> bool {
-        (self.addr().to_bits() & (0x80000000 >> idx)) != 0
+        let Some(mask) = 0x8000_0000u32.checked_shr(idx.into()) else {
+            return false
+        };
+        (self.addr().to_bits() & mask) != 0
     }
 }
 
@@ -299,10 +355,13 @@ impl RoutePrefix for Ipv6Prefix {
         if self.addr_len() > other.addr_len() {
             return false
         }
+        if self.addr_len() == 128 {
+            return self.addr() == other.addr()
+        }
         let my_bits = self.addr().to_bits();
         let other_bits = other.addr().to_bits();
         let mask = (u128::MAX >> self.addr_len()).reverse_bits();
-        (my_bits ^ other_bits) & mask == 0
+        my_bits == other_bits & mask
     }
 
     fn addr_len(self) -> u8 {
@@ -310,10 +369,10 @@ impl RoutePrefix for Ipv6Prefix {
     }
 
     fn bit(self, idx: u8) -> bool {
-        (
-            self.addr().to_bits()
-            & (const { 1u128 << 127 } >> idx)
-        ) != 0
+        let Some(mask) = const { 1u128 << 127 }.checked_shr(idx.into()) else {
+            return false
+        };
+        (self.addr().to_bits() & mask) != 0
     }
 }
 
@@ -440,7 +499,7 @@ pub struct RouteOrigin<P> {
     pub prefix: P,
 
     /// The origin AS of this route origin.
-    pub origin: Asn,
+    pub origin: AsNumber,
 }
 
 
@@ -627,26 +686,38 @@ pub struct TreeIter<'a, P> {
     tree_idx_stack: Vec<usize>,
 }
 
+impl<'a, P> TreeIter<'a, P> {
+    fn new(collection: &'a RouteOriginCollection<P>) -> Self {
+        let mut tree_idx_stack = Vec::new();
+        if let Some(idx) = collection.tree_root_idx.into_usize() {
+            tree_idx_stack.push(idx);
+        }
+        Self { collection, tree_idx_stack, }
+    }
+}
+
 impl<'a, P: RoutePrefix> Iterator for TreeIter<'a, P> {
     type Item = &'a [RouteOrigin<P>];
 
     fn next(&mut self) -> Option<Self::Item> {
-        let node_idx = *self.tree_idx_stack.last()?;
-        let node = self.collection.tree.get(node_idx)?;
-        self.tree_idx_stack.pop();
+        let mut i = 0;
+        loop {
+            let node_idx = *self.tree_idx_stack.last()?;
+            let node = self.collection.tree.get(node_idx)?;
+            self.tree_idx_stack.pop();
 
-        if let Some(idx) = node.left.into_usize() {
-            self.tree_idx_stack.push(idx);
-        }
-        if let Some(idx) = node.right.into_usize() {
-            self.tree_idx_stack.push(idx);
-        }
+            if let Some(idx) = node.right.into_usize() {
+                self.tree_idx_stack.push(idx);
+            }
+            if let Some(idx) = node.left.into_usize() {
+                self.tree_idx_stack.push(idx);
+            }
 
-        if let Some(idx) = node.data.into_usize() {
-            Some(self.collection.data.prefix_slice(idx))
-        }
-        else {
-            self.next()
+            if let Some(idx) = node.data.into_usize() {
+                eprintln!("{i}");
+                return Some(self.collection.data.prefix_slice(idx))
+            }
+            i += 1;
         }
     }
 }
@@ -678,7 +749,7 @@ mod tests {
         let data = items.iter().map(|(prefix, asn)| {
             RouteOrigin {
                 prefix: Prefix::from_str(prefix).unwrap().into(),
-                origin: (*asn).into()
+                origin: AsNumber::from_u32(*asn)
             }
         }).collect();
         RouteOriginCollection::new(data).unwrap()
@@ -687,7 +758,7 @@ mod tests {
     fn ro(prefix: &'static str, origin: u32) -> RouteOrigin<Ipv4Prefix> {
         RouteOrigin {
             prefix: Prefix::from_str(prefix).unwrap().into(),
-            origin: origin.into()
+            origin: AsNumber::from_u32(origin)
         }
     }
 
@@ -709,6 +780,15 @@ mod tests {
                 [ro("10.0.0.0/24", 64496)],
                 [ro("10.0.1.0/24", 64496)],
             ]
+        );
+    }
+
+    #[test]
+    fn size() {
+        eprintln!("tree item: {},\n v4 data item: {}\n v6 data item: {}",
+            mem::size_of::<TreeNode>(),
+            mem::size_of::<RouteOrigin<Ipv4Prefix>>(),
+            mem::size_of::<RouteOrigin<Ipv6Prefix>>(),
         );
     }
 
