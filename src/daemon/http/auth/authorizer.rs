@@ -10,6 +10,8 @@ use crate::commons::KrillResult;
 use crate::commons::actor::Actor;
 use crate::commons::error::ApiAuthError;
 use crate::config::{AuthType, Config};
+#[cfg(unix)]
+use crate::daemon::http::auth::providers::unix_user;
 use crate::daemon::http::request::HyperRequest;
 use crate::daemon::http::response::HttpResponse;
 use super::{Permission, Role};
@@ -188,6 +190,11 @@ pub struct Authorizer {
     /// This is necessary to support the command line client which only
     /// supports admin token authentication.
     legacy_provider: Option<admin_token::AuthProvider>,
+
+    /// A UNIX socket auth provider, for when the command line client is used
+    /// from the local machine
+    #[cfg(unix)]
+    unix_socket_provider: unix_user::AuthProvider,
 }
 
 impl Authorizer {
@@ -200,20 +207,20 @@ impl Authorizer {
     ) -> KrillResult<Self> {
         let (primary_provider, legacy_provider) = match config.auth_type {
             AuthType::AdminToken => {
-                (admin_token::AuthProvider::new(config).into(), None)
+                (admin_token::AuthProvider::new(config.clone()).into(), None)
             }
             #[cfg(feature = "multi-user")]
             AuthType::ConfigFile => {
                 (
                     config_file::AuthProvider::new(&config)?.into(),
-                    Some(admin_token::AuthProvider::new(config))
+                    Some(admin_token::AuthProvider::new(config.clone()))
                 )
             }
             #[cfg(feature = "multi-user")]
             AuthType::OpenIDConnect => {
                 (
                     openid_connect::AuthProvider::new(config.clone())?.into(),
-                    Some(admin_token::AuthProvider::new(config))
+                    Some(admin_token::AuthProvider::new(config.clone()))
                 )
             }
         };
@@ -221,6 +228,8 @@ impl Authorizer {
         Ok(Authorizer {
             primary_provider,
             legacy_provider,
+            #[cfg(unix)]
+            unix_socket_provider: unix_user::AuthProvider::new(config.clone())
         })
     }
 
@@ -254,6 +263,13 @@ impl Authorizer {
         let authenticate_res = match authenticate_res {
             Ok(Some(res)) => Ok(Some(res)),
             _ => self.primary_provider.authenticate(request).await,
+        };
+
+        // Try whether this authentication came from a UNIX socket
+        #[cfg(unix)]
+        let authenticate_res = match authenticate_res {
+            Ok(Some(res)) => Ok(Some(res)),
+            _ => self.unix_socket_provider.authenticate(request),
         };
 
         // Create an actor based on the authentication result
