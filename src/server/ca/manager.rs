@@ -800,13 +800,9 @@ impl CaManager {
             }
         }
 
-        if self.ca_store.get_latest(ca_handle).is_ok() {
-            self.ca_store.drop_aggregate(ca_handle)?;
-        }
+        self.ca_store.drop_aggregate(ca_handle)?;
         self.ca_objects_store.remove_ca(ca_handle)?;
-        if self.status_store.get_ca_status(ca_handle) != CaStatus::default() {
-            self.status_store.remove_ca(ca_handle)?;
-        }
+        self.status_store.remove_ca(ca_handle)?;
 
         Ok(())
     }
