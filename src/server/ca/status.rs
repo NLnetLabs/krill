@@ -404,7 +404,7 @@ impl CaStatusStore {
     /// status will be re-generated when it is accessed for this CA.
     pub fn remove_ca(&self, ca: &CaHandle) -> KrillResult<()> {
         self.cache.write().unwrap().remove(ca);
-        self.store.drop_scope(&Self::scope(ca))?;
+        let _ = self.store.drop_scope(&Self::scope(ca));
         Ok(())
     }
 
