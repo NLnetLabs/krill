@@ -49,11 +49,6 @@ impl Simple {
         let mut config = defaults.to_string();
 
         config = config.replace(
-            "### admin_token =",
-            &format!("admin_token = \"{}\"", client.token()),
-        );
-
-        config = config.replace(
             "### service_uri = \"https://localhost:3000/\"",
             &format!("service_uri = \"{}\"", client.base_uri()),
         );
