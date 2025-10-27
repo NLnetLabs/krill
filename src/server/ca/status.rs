@@ -4,7 +4,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::RwLock;
-use log::info;
+use log::{info, trace};
 use rpki::ca::idexchange::{CaHandle, ChildHandle, ParentHandle, ServiceUri};
 use rpki::ca::provisioning::ResourceClassListResponse as Entitlements;
 use rpki::ca::publication::PublishDelta;
@@ -323,10 +323,14 @@ impl CaStatusStore {
         let mut cache = self.cache.write().unwrap();
 
         if let Some(ca_status) = cache.get_mut(ca) {
-            ca_status.parents.remove(parent);
-            self.store.drop_key(
-                Some(&Self::scope(ca)), &Self::parent_status_key(parent)
-            )?;
+            let parent_status = ca_status.parents.remove(parent);
+
+            if parent_status.is_some() {
+                trace!("Parent status for {} was found", parent);
+                self.store.drop_key(
+                    Some(&Self::scope(ca)), &Self::parent_status_key(parent)
+                )?;
+            }
         }
         Ok(())
     }
@@ -380,10 +384,14 @@ impl CaStatusStore {
         let mut cache = self.cache.write().unwrap();
 
         if let Some(ca_status) = cache.get_mut(ca) {
-            ca_status.children.remove(child);
-            self.store.drop_key(
-                Some(&Self::scope(ca)), &Self::child_status_key(child)
-            )?;
+            let child_status = ca_status.children.remove(child);
+
+            if child_status.is_some() {
+                trace!("Child status for {} was found", child);
+                self.store.drop_key(
+                    Some(&Self::scope(ca)), &Self::child_status_key(child)
+                )?;
+            }
         }
 
         Ok(())
@@ -396,7 +404,9 @@ impl CaStatusStore {
     /// status will be re-generated when it is accessed for this CA.
     pub fn remove_ca(&self, ca: &CaHandle) -> KrillResult<()> {
         self.cache.write().unwrap().remove(ca);
-        self.store.drop_scope(&Self::scope(ca))?;
+        // The status file needn't exist for a CA, hence do not fail if it
+        // cannot be removed.
+        let _ = self.store.drop_scope(&Self::scope(ca));
         Ok(())
     }
 
