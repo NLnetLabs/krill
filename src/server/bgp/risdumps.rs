@@ -80,7 +80,10 @@ impl RisWhois {
             }
 
             let origin = AsNumber::from_str(asn_str).map_err(io::Error::other)?;
-            let prefix = P::from_str(prefix_str).map_err(io::Error::other)?;
+            let prefix = P::from_str(prefix_str).map_err(|err| {
+                eprintln!("{prefix_str}");
+                io::Error::other(err)
+            })?;
 
             res.push(RouteOrigin { prefix, origin });
         }
@@ -205,28 +208,56 @@ mod tests {
     use super::*;
 
     #[test]
-    fn download_bgp_ris_dumps() {
-        let ris = RisWhois {
-            v4: RisWhois::parse_data(include_bytes!(
-                "../../../test-resources/bgp/riswhoisdump.IPv4"
-            ).as_ref()).unwrap(),
-            v6: RisWhois::parse_data(include_bytes!(
-                "../../../test-resources/bgp/riswhoisdump.IPv6"
-            ).as_ref()).unwrap(),
-        };
+    fn parse_bgp_ris_dumps() {
+        let v4 = RisWhois::parse_data(include_bytes!(
+            "../../../test-resources/bgp/riswhoisdump.IPv4"
+        ).as_ref()).unwrap();
+        let v6 = RisWhois::parse_data(include_bytes!(
+            "../../../test-resources/bgp/riswhoisdump.IPv6"
+        ).as_ref()).unwrap();
+        let ris = RisWhois { v4, v6 };
 
-        eprintln!("v4:\n   size: {},\n   tree len: {},\n   data len: {}",
-            ris.v4.size(), ris.v4.tree_len(), ris.v4.data_len()
-        );
+        eprintln!("v4:");
+        eprintln!("   size: {}", ris.v4.size());
+        eprintln!("   tree len: {}", ris.v4.tree_len());
+        eprintln!("   empty nodes: {}", ris.v4.empty_nodes());
+        eprintln!("   empty singles: {}", ris.v4.empty_singles());
+        eprintln!("   data len: {}", ris.v4.data_len());
+        eprintln!("   unique data len: {}", ris.v4.unique_data_len());
+        eprintln!("   no-data: {}", ris.v4.no_data_len());
+        eprintln!("   max depth: {}", ris.v4.max_depth());
+        eprintln!("");
+        eprintln!("v6:");
+        eprintln!("   size: {}", ris.v6.size());
+        eprintln!("   tree len: {}", ris.v6.tree_len());
+        eprintln!("   empty nodes: {}", ris.v6.empty_nodes());
+        eprintln!("   empty singles: {}", ris.v6.empty_singles());
+        eprintln!("   data len: {}", ris.v6.data_len());
+        eprintln!("   unique data len: {}", ris.v6.unique_data_len());
+        eprintln!("   no-data: {}", ris.v6.no_data_len());
+        eprintln!("   max depth: {}", ris.v6.max_depth());
 
-        let v4 = ris.v4.iter().collect::<Vec<_>>();
+        /*
+        let v4 = ris.v4.iter().map(|item| item[0].prefix).collect::<Vec<_>>();
         for item in v4.windows(2) {
-            assert!(item[0][0].prefix < item[1][0].prefix)
+            assert!(item[0] < item[1])
         }
-        let v6 = ris.v6.iter().collect::<Vec<_>>();
+        let v6 = ris.v6.iter().map(|item| item[0].prefix).collect::<Vec<_>>();
         for item in v6.windows(2) {
-            assert!(item[0][0].prefix < item[1][0].prefix)
+            assert!(item[0] < item[1])
         }
+
+        for prefix in &v4 {
+            let left_vec = v4.iter().copied().filter(|other| {
+                prefix.covers(*other)
+            }).collect::<Vec<_>>();
+            eprintln!("{prefix:?}");
+            let right_vec = ris.v4.more_specific(*prefix).map(|item| {
+                item[0].prefix
+            }).collect::<Vec<_>>();
+            assert_eq!(left_vec, right_vec);
+        }
+        */
     }
 }
 

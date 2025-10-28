@@ -849,6 +849,24 @@ impl Ipv4Prefix {
     pub fn addr_len(self) -> u8 {
         self.addr_len
     }
+
+    /// Returns a prefix with the same address but given length.
+    pub fn resize(self, addr_len: u8) -> Self {
+        if addr_len >= 32 {
+            Self {
+                addr: self.addr,
+                addr_len: 32,
+            }
+        }
+        else {
+            Self {
+                addr: Ipv4Addr::from_bits(
+                    self.addr.to_bits() & !(u32::MAX >> addr_len)
+                ),
+                addr_len
+            }
+        }
+    }
 }
 
 impl Default for Ipv4Prefix {
@@ -935,6 +953,24 @@ impl Ipv6Prefix {
     /// Returns the address length.
     pub fn addr_len(self) -> u8 {
         self.addr_len
+    }
+
+    /// Returns a prefix with the same address but given length.
+    pub fn resize(self, addr_len: u8) -> Self {
+        if addr_len >= 128 {
+            Self {
+                addr: self.addr,
+                addr_len: 128,
+            }
+        }
+        else {
+            Self {
+                addr: Ipv6Addr::from_bits(
+                    self.addr.to_bits() & !(u128::MAX >> addr_len)
+                ),
+                addr_len
+            }
+        }
     }
 }
 

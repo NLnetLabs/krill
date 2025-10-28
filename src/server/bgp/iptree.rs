@@ -1,10 +1,11 @@
+#![allow(dead_code)]
 
 // This code only works with `usize` of at least 32 bits.
 #[cfg(target_pointer_width = "16")]
 compile_error!("cannot build on 16 bit systems");
 
 
-use std::{fmt, mem};
+use std::{cmp, fmt, mem};
 use crate::api::roa::{AsNumber, Ipv4Prefix, Ipv6Prefix};
 
 
@@ -13,92 +14,18 @@ use crate::api::roa::{AsNumber, Ipv4Prefix, Ipv6Prefix};
 #[derive(Clone, Debug)]
 pub struct RouteOriginCollection<P> {
     tree: Box<[TreeNode]>,
-    tree_root_idx: OptIndex,
+    tree_root_idx: TreeIndex,
     data: RouteOriginBox<P>,
+    no_data: Box<[P]>,
 }
 
 impl<P: RoutePrefix> RouteOriginCollection<P> {
     pub fn new(data: Vec<RouteOrigin<P>>) -> Result<Self, LargeIndex> {
-        let mut data = data.into_boxed_slice();
-        data.sort();
-        let data = RouteOriginBox(data);
-
-        let Some(first) = data.0.first() else {
-           return Ok(Self {
-                tree: Box::new([]),
-                tree_root_idx: OptIndex::none(),
-                data: RouteOriginBox(Box::new([])),
-            })
-        };
-
-        let mut tree = Vec::new();
-        let (tree_root_idx, data_idx) = Self::create_children(
-            &mut tree,
-            (first.prefix == P::default()).then_some(0),
-            &data
-        )?;
-
-        debug_assert!(data_idx.is_none());
-        Ok(Self {
-            tree: tree.into_boxed_slice(),
-            tree_root_idx,
-            data,
-        })
-
-        /*
-        let mut next_data_idx = 0;
-        let mut last_node_idx = OptIndex::none();
-
-        loop {
-            let (node_idx, data_idx) = Self::create_children(
-                &mut tree, next_data_idx, &data
-            )?;
-            if let Some(data_idx) = data_idx {
-                // There is more data. If we had a previous node, we need
-                // to add an empty node before continuing.
-                if last_node_idx.is_some() {
-                    last_node_idx = Self::push_node(
-                        TreeNode::with_children(
-                            OptIndex::none(),
-                            last_node_idx, node_idx
-                        ),
-                        &mut tree
-                    )?
-                }
-                else {
-                    last_node_idx = node_idx
-                }
-                next_data_idx = data_idx;
-            }
-            else {
-                // All data covered. If we have a previous node idx, we need
-                // to add an empty node. Otherwise the node_idx is the root.
-                let tree_root_idx = if last_node_idx.is_some() {
-                    Self::push_node(
-                        TreeNode::with_children(
-                            OptIndex::none(),
-                            last_node_idx, node_idx
-                        ),
-                        &mut tree
-                    )?
-                }
-                else {
-                    node_idx
-                };
-
-                return Ok(Self {
-                    tree: tree.into_boxed_slice(),
-                    tree_root_idx,
-                    data
-                })
-            }
-        }
-        */
+        CollectionBuilder::new(data).process()
     }
 
     pub fn size(&self) -> usize {
-        mem::size_of::<TreeNode>() * self.tree.len()
-            + mem::size_of::<RouteOrigin<P>>() * self.data.0.len()
+        self.tree_size() + self.data_size() + self.no_data_size()
     }
 
     pub fn tree_size(&self) -> usize {
@@ -109,225 +36,250 @@ impl<P: RoutePrefix> RouteOriginCollection<P> {
         mem::size_of::<RouteOrigin<P>>() * self.data.0.len()
     }
 
+    pub fn no_data_size(&self) -> usize {
+        mem::size_of::<P>() * self.no_data.len()
+    }
+
     pub fn tree_len(&self) -> usize {
         self.tree.len()
     }
-    
+
     pub fn data_len(&self) -> usize {
         self.data.0.len()
     }
 
-    pub fn empty_tree_len(&self) -> usize {
-        self.tree.iter().filter(|item| item.data.is_none()).count()
+    pub fn unique_data_len(&self) -> usize {
+        let mut res = 0;
+        let mut idx = 0;
+        while idx < self.data.0.len() {
+            res += 1;
+            idx = self.data.next_prefix(idx);
+        }
+        res
     }
 
-    fn create_children(
-        tree: &mut Vec<TreeNode>,
-        data_idx: Option<usize>,
-        data: &RouteOriginBox<P>
-    ) -> Result<(OptIndex, Option<usize>), LargeIndex> {
-        let opt_data_idx: OptIndex = data_idx.try_into()?;
+    pub fn no_data_len(&self) -> usize {
+        self.no_data.len()
+    }
 
-        let (my_prefix, mut next_data_idx) = match data_idx {
-            Some(data_idx) => {
-                debug_assert!(data_idx < data.0.len());
+    pub fn max_depth(&self) -> usize {
+        self._max_depth(self.tree_root_idx, 0)
+    }
 
-                // Get the index of the next prefix. If there isn’t one, add
-                // us as a leaf node and return.
-                let Some(next_data_idx) = data.next_prefix(data_idx) else {
-                    return Ok((
-                        Self::push_node(TreeNode::new(opt_data_idx), tree)?,
-                        None
-                    ))
-                };
-
-                (data.0[data_idx].prefix, next_data_idx)
-            }
-            None => {
-                (P::default(), 0)
-            }
+    fn _max_depth(&self, tree_idx: TreeIndex, depth: usize) -> usize {
+        let Some(node) = self.get_tree_node(tree_idx) else {
+            return depth
         };
-
-        let mut next_prefix = data.0[next_data_idx].prefix;
-
-        // If we don’t cover the next prefix, we are a leaf node and can
-        // return.
-        if !my_prefix.covers(next_prefix) {
-            return Ok((
-                Self::push_node(TreeNode::new(opt_data_idx), tree)?,
-                Some(next_data_idx)
-            ))
-        }
-
-        // Now build the left sub-tree.
-        //
-        // We only have a left child if the next prefix has the next bit not
-        // set. In this case, we recursively build the sub-tree for the next
-        // node which will also give us an updated next prefix. Because we
-        // don’t have a complete tree, this next prefix may still be on the
-        // left side. If that happens, we to build the sub-tree for that new
-        // next node and then insert an empty node with the first tree on
-        // the left and the second tree on the right. And then check the now
-        // new next prefix again. And so on.
-        let mut left_idx = OptIndex::none();
-        while
-            my_prefix.covers(next_prefix)
-            && !next_prefix.bit(my_prefix.addr_len())
-        {
-            let (node_idx, post_data_idx) = Self::create_children(
-                tree, Some(next_data_idx), data
-            )?;
-
-            if left_idx.is_some() {
-                // If we have a left_idx, we need to insert an empty node
-                // which will then become the new left_idx.
-                left_idx = Self::push_node(
-                    TreeNode::with_children(
-                        OptIndex::none(), left_idx, node_idx
-                    ),
-                    tree,
-                )?;
-
-                let Some(post_data_idx) = post_data_idx else {
-                    return Ok((
-                        Self::push_node(
-                            TreeNode::with_children(
-                                opt_data_idx, left_idx, OptIndex::none()
-                            ),
-                            tree,
-                        )?,
-                        None
-                    ))
-                };
-                next_data_idx = post_data_idx;
-            }
-            else {
-                let Some(post_data_idx) = post_data_idx else {
-                    return Ok((
-                        Self::push_node(
-                            TreeNode::with_children(
-                                opt_data_idx, node_idx, OptIndex::none()
-                            ),
-                            tree,
-                        )?,
-                        None
-                    ))
-                };
-                left_idx = node_idx;
-                next_data_idx = post_data_idx;
-            }
-            next_prefix = data.0[next_data_idx].prefix;
-        }
-
-        // Now build the right sub-tree.
-        //
-        // This is basically the same as above, but we only check for
-        // coverage since, given that the data is sorted, anything covered
-        // must have the next bit set.
-        let mut right_idx = OptIndex::none();
-        while my_prefix.covers(next_prefix) {
-            let (node_idx, post_data_idx) = Self::create_children(
-                tree, Some(next_data_idx), data
-            )?;
-
-            if right_idx.is_some() {
-                right_idx = Self::push_node(
-                    TreeNode::with_children(
-                        OptIndex::none(), right_idx, node_idx
-                    ),
-                    tree,
-                )?;
-
-                let Some(post_data_idx) = post_data_idx else {
-                    return Ok((
-                        Self::push_node(
-                            TreeNode::with_children(
-                                opt_data_idx, left_idx, right_idx
-                            ),
-                            tree,
-                        )?,
-                        None
-                    ))
-                };
-                next_data_idx = post_data_idx;
-            }
-            else {
-                let Some(post_data_idx) = post_data_idx else {
-                    return Ok((
-                        Self::push_node(
-                            TreeNode::with_children(
-                                opt_data_idx, left_idx, node_idx
-                            ),
-                            tree,
-                        )?,
-                        None
-                    ))
-                };
-                right_idx = node_idx;
-                next_data_idx = post_data_idx;
-            }
-            next_prefix = data.0[next_data_idx].prefix;
-        }
-
-        Ok((
-            Self::push_node(
-                TreeNode::with_children(
-                    opt_data_idx, left_idx, right_idx
-                ),
-                tree,
-            )?,
-            Some(next_data_idx),
-        ))
+        cmp::max(
+            self._max_depth(node.left, depth + 1),
+            self._max_depth(node.right, depth + 1),
+        )
     }
 
-    fn push_node(
-        node: TreeNode, tree: &mut Vec<TreeNode>
-    ) -> Result<OptIndex, LargeIndex> {
-        let idx = Some(tree.len()).try_into()?;
-        tree.push(node);
-        Ok(idx)
+    pub fn empty_nodes(&self) -> usize {
+        self.tree.iter().filter(|item| {
+            item.data.into_data().is_err()
+        }).count()
     }
-}
 
+    pub fn empty_singles(&self) -> usize {
+        self.tree.iter().filter(|item| {
+            item.data.into_data().is_err()
+            & (
+                item.left.is_none() || item.right.is_none()
+            )
+        }).count()
+    }
 
-impl<P: RoutePrefix> RouteOriginCollection<P> {
     pub fn iter(&self) -> TreeIter<'_, P> {
         TreeIter::new(self)
     }
 
-    pub fn matching_or_less_specific(
-        &self, prefix: P
-    ) -> impl Iterator<Item = &'_ [RouteOrigin<P>]> + '_ {
+    pub fn less_specific(&self, prefix: P) -> LessSpecificIter<'_, P> {
         LessSpecificIter(LessSpecificIndexIter::new(self, prefix))
     }
 
-    pub fn matching_or_more_specific(
-        &self, prefix: P
-    ) -> impl Iterator<Item = &'_ [RouteOrigin<P>]> + '_ {
-        TreeIter {
-            collection: self,
-            tree_idx_stack: match self.get_top_for_more(prefix) {
-                Some(top) => vec![top],
-                None => vec![]
+    pub fn more_specific(&self, prefix: P) -> TreeIter<'_, P> {
+        TreeIter::more_specific(self, prefix)
+    }
+}
+
+impl<P: RoutePrefix> RouteOriginCollection<P> {
+    fn get_tree_node(&self, tree_idx: TreeIndex) -> Option<TreeNode> {
+        self.tree.get(tree_idx.into_usize()?).copied()
+    }
+
+    fn get_data_prefix(&self, data_idx: DataIndex) -> Option<P> {
+        match data_idx.into_data() {
+            Ok(data_idx) => Some(self.data.0.get(data_idx)?.prefix),
+            Err(no_data_idx) => self.no_data.get(no_data_idx).copied(),
+        }
+    }
+}
+
+
+//------------ CollectionBuilder ---------------------------------------------
+
+struct CollectionBuilder<P> {
+    tree: Vec<TreeNode>,
+    no_data: Vec<P>,
+    data: RouteOriginBox<P>,
+    next_data_idx: usize,
+}
+
+impl<P: RoutePrefix> CollectionBuilder<P> {
+    fn new(data: Vec<RouteOrigin<P>>) -> Self {
+        let mut data = data.into_boxed_slice();
+        data.sort();
+        let data = RouteOriginBox(data);
+
+        Self {
+            tree: Vec::new(),
+            no_data: Vec::new(),
+            data: data,
+            next_data_idx: 0,
+        }
+    }
+
+    fn process(mut self) -> Result<RouteOriginCollection<P>, LargeIndex> {
+        let Some(prefix) = self.next_prefix() else {
+            return Ok(RouteOriginCollection {
+                tree: Box::new([]),
+                tree_root_idx: TreeIndex::none(),
+                data: RouteOriginBox(Box::new([])),
+                no_data: Box::new([]),
+            })
+        };
+
+        let node = if prefix == P::default() {
+            self.advance_data();
+            self.process_node(
+                prefix, TreeNode::new(DataIndex::data(0)?)
+            )?
+        }
+        else {
+            let data = self.push_no_data(P::default())?;
+            self.process_node(
+                P::default(), TreeNode::new(data)
+            )?
+        };
+        let tree_root_idx = self.push_node(node)?;
+        Ok(RouteOriginCollection {
+            tree: self.tree.into_boxed_slice(),
+            tree_root_idx,
+            data: self.data,
+            no_data: self.no_data.into_boxed_slice()
+        })
+    }
+
+    fn process_node(
+        &mut self,
+        prefix: P,
+        mut node: TreeNode
+    ) -> Result<TreeNode, LargeIndex> {
+        loop {
+            // Get the next prefix or return the node as it is.
+            let Some(next_prefix) = self.next_prefix() else {
+                return Ok(node)
+            };
+
+            // If we don’t cover the next prefix, return the node as it is.
+            if !prefix.covers(next_prefix) {
+                return Ok(node)
+            }
+
+            if !next_prefix.bit(prefix.addr_len()) {
+                // Next prefix doesn’t have the next bit set, so it is a left
+                // child.
+                if let Some(left_idx) = node.left.into_usize() {
+                    // If there already is a left child, we need to insert
+                    // an empty node at the closest ancestor of the left
+                    // child’s prefix and whatever the next prefix turns into.
+                    let ancestor_prefix = self.node_prefix(
+                        left_idx
+                    ).closest_ancestor(next_prefix);
+                    let data = self.push_no_data(ancestor_prefix)?;
+                    let inter_node = self.process_node(
+                        ancestor_prefix,
+                        TreeNode::with_children(
+                            data, node.left, TreeIndex::none()
+                        )
+                    )?;
+                    node.left = self.push_node(inter_node)?;
+                }
+                else {
+                    // If there isn’t currently a left child, the next item
+                    // will become the left child.
+                    let left_node = TreeNode::new(
+                        DataIndex::data(self.next_data_idx)?
+                    );
+                    self.advance_data();
+                    let left_node = self.process_node(
+                        next_prefix, left_node,
+                    )?;
+                    node.left = self.push_node(left_node)?;
+                }
+            }
+            else {
+                // Next prefix doesn’t have the next bit set, so it is a right
+                // child.
+                if let Some(right_idx) = node.right.into_usize() {
+                    // If there already is a right child, we need an empty
+                    // node. The current right child will become the left
+                    // child of that node.
+                    let ancestor_prefix = self.node_prefix(
+                        right_idx
+                    ).closest_ancestor(next_prefix);
+                    let data = self.push_no_data(ancestor_prefix)?;
+                    let inter_node = self.process_node(
+                        ancestor_prefix,
+                        TreeNode::with_children(
+                            data, node.right, TreeIndex::none()
+                        )
+                    )?;
+                    node.right = self.push_node(inter_node)?;
+                }
+                else {
+                    // No current right child. Add it.
+                    let right_node = TreeNode::new(
+                        DataIndex::data(self.next_data_idx)?
+                    );
+                    self.advance_data();
+                    let right_node = self.process_node(
+                        next_prefix, right_node
+                    )?;
+                    node.right = self.push_node(right_node)?;
+                }
             }
         }
     }
 
-    fn get_top_for_more(
-        &self, prefix: P
-    ) -> Option<usize> {
-        let top_idx = LessSpecificIndexIter::new(self, prefix).last()?;
-        let node = self.tree.get(top_idx)?;
-        let data = self.data.0.get(node.data.into_usize()?)?;
-        if data.prefix == prefix {
-            Some(top_idx)
+    fn next_prefix(&self) -> Option<P> {
+        self.data.0.get(self.next_data_idx).map(|item| item.prefix)
+    }
+
+    fn advance_data(&mut self) {
+        self.next_data_idx = self.data.next_prefix(self.next_data_idx);
+    }
+
+    fn node_prefix(&self, node_idx: usize) -> P {
+        match self.tree[node_idx].data.into_data() {
+            Ok(idx) => self.data.0[idx].prefix,
+            Err(idx) => self.no_data[idx]
         }
-        else if prefix.bit(data.prefix.addr_len()) {
-            node.right.into_usize()
-        }
-        else {
-            node.left.into_usize()
-        }
+    }
+
+    fn push_node(&mut self, node: TreeNode) -> Result<TreeIndex, LargeIndex> {
+        let res = self.tree.len().try_into()?;
+        self.tree.push(node);
+        Ok(res)
+    }
+
+    /// Pushes the prefix to the no-data list and returns the data index.
+    fn push_no_data(&mut self, prefix: P) -> Result<DataIndex, LargeIndex> {
+        let res = DataIndex::no_data(self.no_data.len())?;
+        self.no_data.push(prefix);
+        Ok(res)
     }
 }
 
@@ -337,6 +289,8 @@ impl<P: RoutePrefix> RouteOriginCollection<P> {
 /// The implementatin of `Default` must return the slash zero prefix.
 pub trait RoutePrefix: Clone + Copy + Default + fmt::Debug + Eq + Ord {
     fn covers(self, other: Self) -> bool;
+
+    fn closest_ancestor(self, other: Self) -> Self;
 
     fn addr_len(self) -> u8;
 
@@ -355,6 +309,16 @@ impl RoutePrefix for Ipv4Prefix {
 
         self.addr().to_bits()
             == other.addr().to_bits() & !(u32::MAX >> self.addr_len())
+    }
+
+    fn closest_ancestor(self, other: Self) -> Self {
+        self.resize(
+            cmp::min(
+                (self.addr().to_bits() ^ other.addr().to_bits())
+                    .leading_zeros() as u8,
+                cmp::min(self.addr_len(), other.addr_len())
+            )
+        )
     }
 
     fn addr_len(self) -> u8 {
@@ -382,6 +346,16 @@ impl RoutePrefix for Ipv6Prefix {
             == other.addr().to_bits() & !(u128::MAX >> self.addr_len())
     }
 
+    fn closest_ancestor(self, other: Self) -> Self {
+        self.resize(
+            cmp::min(
+                (self.addr().to_bits() ^ other.addr().to_bits())
+                    .leading_zeros() as u8,
+                cmp::min(self.addr_len(), other.addr_len())
+            )
+        )
+    }
+
     fn addr_len(self) -> u8 {
         self.addr_len()
     }
@@ -395,16 +369,15 @@ impl RoutePrefix for Ipv6Prefix {
 }
 
 
-//------------ OptIndex ------------------------------------------------------
+//------------ TreeIndex ------------------------------------------------------
 
-/// An optional index into a slice.
+/// The optional index of a tree node.
 ///
-/// This type wraps a u32 to be smaller than a usize. It uses `u32::MAX`
-/// as the sentinel for `None`.
+/// The index is kept as a u32 and uses `u32::MAX` as the sentinel for `None`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct OptIndex(u32);
+struct TreeIndex(u32);
 
-impl OptIndex {
+impl TreeIndex {
     const fn none() -> Self {
         Self(u32::MAX)
     }
@@ -422,13 +395,13 @@ impl OptIndex {
     }
 }
 
-impl Default for OptIndex {
+impl Default for TreeIndex {
     fn default() -> Self {
         Self::none()
     }
 }
 
-impl TryFrom<Option<usize>> for OptIndex {
+impl TryFrom<Option<usize>> for TreeIndex {
     type Error = LargeIndex;
 
     fn try_from(src: Option<usize>) -> Result<Self, Self::Error> {
@@ -445,7 +418,7 @@ impl TryFrom<Option<usize>> for OptIndex {
     }
 }
 
-impl TryFrom<usize> for OptIndex {
+impl TryFrom<usize> for TreeIndex {
     type Error = LargeIndex;
 
     fn try_from(src: usize) -> Result<Self, Self::Error> {
@@ -453,8 +426,8 @@ impl TryFrom<usize> for OptIndex {
     }
 }
 
-impl From<OptIndex> for Option<usize> {
-    fn from(src: OptIndex) -> Self {
+impl From<TreeIndex> for Option<usize> {
+    fn from(src: TreeIndex) -> Self {
         if src.0 == u32::MAX {
             None
         }
@@ -465,15 +438,62 @@ impl From<OptIndex> for Option<usize> {
 }
 
 
+//------------ DataIndex -----------------------------------------------------
+
+/// The index of a data item.
+///
+/// This may either be an index into the data vec or an index into the 
+/// non-data vec.
+///
+/// The index is kept as an u32. If the left-most bit is set, the
+/// remaining bits are a data index. If it isn’t, it is a no-data index.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct DataIndex(u32);
+
+impl DataIndex {
+    fn usize_to_u31(idx: usize) -> Result<u32, LargeIndex> {
+        match u32::try_from(idx) {
+            Ok(idx) if idx & 0x8000_0000 != 0 => Err(LargeIndex(())),
+            Ok(idx) => Ok(idx),
+            Err(_) => Err(LargeIndex(())),
+        }
+    }
+
+    fn data(idx: usize) -> Result<Self, LargeIndex> {
+        Ok(Self(Self::usize_to_u31(idx)? | 0x8000_0000))
+    }
+
+    fn no_data(idx: usize) -> Result<Self, LargeIndex> {
+        Ok(Self(Self::usize_to_u31(idx)?))
+    }
+
+    fn into_data(self) -> Result<usize, usize> {
+        if self.0 & 0x8000_0000 != 0 {
+            Ok((self.0 & 0x7FFF_FFFF) as usize)
+        }
+        else {
+            Err(self.0 as usize)
+        }
+    }
+
+    fn into_no_data(self) -> Result<usize, usize> {
+        match self.into_data() {
+            Ok(res) => Err(res),
+            Err(res) => Ok(res)
+        }
+    }
+}
+
+
 //------------ TreeNode ------------------------------------------------------
 
 /// A node in the radix tree.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug)]
 struct TreeNode {
     /// The index of the data item referred to by this node.
     ///
     /// This is an optional index into the data slice.
-    data: OptIndex,
+    data: DataIndex,
 
     /// The index of the left child tree node.
     ///
@@ -481,7 +501,7 @@ struct TreeNode {
     ///
     /// The left child is the prefix with at least one more bit where the
     /// next bit is 0. 
-    left: OptIndex,
+    left: TreeIndex,
 
     /// The right child tree node.
     ///
@@ -489,20 +509,20 @@ struct TreeNode {
     ///
     /// The left child is the prefix with at least one more bit where the
     /// next bit is 1. 
-    right: OptIndex,
+    right: TreeIndex,
 }
 
 impl TreeNode {
-    fn new(data: OptIndex) -> Self {
+    fn new(data: DataIndex) -> Self {
         Self {
             data,
-            left: OptIndex::none(),
-            right: OptIndex::none(),
+            left: TreeIndex::none(),
+            right: TreeIndex::none(),
         }
     }
 
     fn with_children(
-        data: OptIndex, left: OptIndex, right: OptIndex
+        data: DataIndex, left: TreeIndex, right: TreeIndex
     ) -> Self {
         Self { data, left, right }
     }
@@ -528,166 +548,25 @@ pub struct RouteOrigin<P> {
 pub struct RouteOriginBox<P>(Box<[RouteOrigin<P>]>);
 
 impl<P: RoutePrefix> RouteOriginBox<P> {
-    fn next_prefix(&self, idx: usize) -> Option<usize> {
+    fn next_prefix(&self, idx: usize) -> usize {
         let mut next_idx = idx;
         loop {
             next_idx = match next_idx.checked_add(1) {
                 Some(idx) => idx,
-                None => return None,
+                None => return usize::MAX,
             };
             if next_idx >= self.0.len() {
-                return None;
+                return next_idx;
             }
             if self.0[next_idx].prefix != self.0[idx].prefix {
-                return next_idx.try_into().ok();
+                return next_idx;
             }
         }
     }
 
     fn prefix_slice(&self, idx: usize) -> &'_ [RouteOrigin<P>] {
-        let next = self.next_prefix(idx).unwrap_or(self.0.len());
+        let next = cmp::min(self.next_prefix(idx), self.0.len());
         self.0.get(idx..next).unwrap_or(&[])
-    }
-}
-
-
-//----------- LessSpecificIndexIter ------------------------------------------
-
-struct LessSpecificIndexIter<'a, P> {
-    collection: &'a RouteOriginCollection<P>,
-    prefix: P,
-    tree_idx: Option<usize>,
-}
-
-impl<'a, P: RoutePrefix> LessSpecificIndexIter<'a, P> {
-    fn new(collection: &'a RouteOriginCollection<P>, prefix: P) -> Self {
-        let mut res = Self { collection, prefix, tree_idx: None };
-        res.find_top();
-        res
-    }
-
-    fn find_top(&mut self) {
-        let Some(node) = self.collection.tree.get(0) else { return };
-        if let Some(data_idx) = node.data.into_usize() {
-            let Some(data) = self.collection.data.0.get(data_idx) else {
-                return
-            };
-            if data.prefix.covers(self.prefix) {
-                self.tree_idx = Some(0);
-            }
-        }
-        else {
-            if let Ok(Some(idx)) = self.find_recursive(node.left) {
-                self.tree_idx = Some(idx);
-            }
-            else if let Ok(Some(idx)) = self.find_recursive(node.right) {
-                self.tree_idx = Some(idx);
-            }
-        }
-    }
-
-    fn find_next(&self, current_node: TreeNode) -> Option<usize> {
-        let current_prefix = self.collection.data.0.get(
-            current_node.data.into_usize()?
-        )?.prefix;
-        if current_prefix.addr_len() >= self.prefix.addr_len() {
-            return None
-        }
-        if !self.prefix.bit(current_prefix.addr_len()) {
-            self.find_recursive(current_node.left)
-        }
-        else {
-            self.find_recursive(current_node.right)
-        }.ok().flatten()
-    }
-
-    // Returns `Ok(None)` if we are done. Returns `Err(())` if this is the
-    // wrong branch.
-    fn find_recursive(&self, tree_idx: OptIndex) -> Result<Option<usize>, ()> {
-        let Some(tree_idx) = tree_idx.into_usize() else {
-            return Ok(None)
-        };
-        let Some(node) = self.collection.tree.get(tree_idx) else {
-            return Ok(None)
-        };
-        match node.data.into_usize() {
-            Some(data_idx) => {
-                // We have data, so we can decide based on its prefix.
-                let Some(prefix) = self.collection.data.0.get(
-                    data_idx
-                ).map(|data| data.prefix)
-                else {
-                    return Ok(None)
-                };
-                if prefix == self.prefix {
-                    return Ok(Some(tree_idx))
-                }
-                if prefix.addr_len() > self.prefix.addr_len() {
-                    return Ok(None)
-                }
-                if !prefix.covers(self.prefix) {
-                    // We took a wrong turn somewhere.
-                    return Err(())
-                }
-                if !self.prefix.bit(prefix.addr_len()) {
-                    self.find_recursive(node.left)
-                }
-                else {
-                    self.find_recursive(node.right)
-                }
-            }
-            None => {
-                // We don’t have data, so we don’t know if we have to go
-                // left or right. Just try both.
-                if node.left.is_none() && node.right.is_none() {
-                    // An empty leaf? How strange.
-                    Ok(None)
-                }
-                else if node.right.is_none() {
-                    self.find_recursive(node.left)
-                }
-                else if node.left.is_none() {
-                    self.find_recursive(node.right)
-                }
-                // They both are some, try left first and try right if that
-                // returns an error.
-                else if let Ok(left) = self.find_recursive(node.left) {
-                    Ok(left)
-                }
-                else {
-                    self.find_recursive(node.right)
-                }
-            }
-        }
-    }
-}
-
-impl<'a, P: RoutePrefix> Iterator for LessSpecificIndexIter<'a, P> {
-    type Item = usize;
-
-    fn next(&mut self) -> Option<usize> {
-        let tree_idx = self.tree_idx?;
-        let node = self.collection.tree.get(tree_idx)?;
-        self.tree_idx = self.find_next(*node);
-        Some(tree_idx)
-    }
-}
-
-
-//----------- LessSpecificIter -----------------------------------------------
-
-struct LessSpecificIter<'a, P>(LessSpecificIndexIter<'a, P>);
-
-impl<'a, P: RoutePrefix> Iterator for LessSpecificIter<'a, P> {
-    type Item = &'a [RouteOrigin<P>];
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let tree_idx = self.0.next()?;
-        let node = self.0.collection.tree.get(tree_idx)?;
-        let Some(data_idx) = node.data.into_usize() else {
-            return None
-        };
-        Some(self.0.collection.data.prefix_slice(data_idx))
     }
 }
 
@@ -704,13 +583,45 @@ pub struct TreeIter<'a, P> {
     tree_idx_stack: Vec<usize>,
 }
 
-impl<'a, P> TreeIter<'a, P> {
+impl<'a, P: RoutePrefix> TreeIter<'a, P> {
     fn new(collection: &'a RouteOriginCollection<P>) -> Self {
         let mut tree_idx_stack = Vec::new();
         if let Some(idx) = collection.tree_root_idx.into_usize() {
             tree_idx_stack.push(idx);
         }
         Self { collection, tree_idx_stack, }
+    }
+
+    fn more_specific(
+        collection: &'a RouteOriginCollection<P>,
+        root_prefix: P
+    ) -> Self {
+        let mut tree_idx = collection.tree_root_idx;
+        while let Some(node) = collection.get_tree_node(tree_idx) {
+            let Some(prefix) = collection.get_data_prefix(node.data) else {
+                break;
+            };
+            if prefix.addr_len() >= root_prefix.addr_len() {
+                let Some(tree_idx) = tree_idx.into_usize() else {
+                    break
+                };
+                return Self {
+                    collection,
+                    tree_idx_stack: vec![tree_idx],
+                }
+            }
+            if !root_prefix.bit(prefix.addr_len()) {
+                tree_idx = node.left
+            }
+            else {
+                tree_idx = node.right
+            }
+        }
+
+        Self {
+            collection,
+            tree_idx_stack: Vec::new()
+        }
     }
 }
 
@@ -730,13 +641,120 @@ impl<'a, P: RoutePrefix> Iterator for TreeIter<'a, P> {
                 self.tree_idx_stack.push(idx);
             }
 
-            if let Some(idx) = node.data.into_usize() {
+            if let Ok(idx) = node.data.into_data() {
                 return Some(self.collection.data.prefix_slice(idx))
             }
         }
     }
 }
 
+
+//----------- LessSpecificIter -----------------------------------------------
+
+pub struct LessSpecificIter<'a, P>(LessSpecificIndexIter<'a, P>);
+
+impl<'a, P: RoutePrefix> Iterator for LessSpecificIter<'a, P> {
+    type Item = &'a [RouteOrigin<P>];
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let tree_idx = self.0.next()?;
+        let node = self.0.collection.tree.get(tree_idx)?;
+        let Ok(data_idx) = node.data.into_data() else {
+            return None
+        };
+        Some(self.0.collection.data.prefix_slice(data_idx))
+    }
+}
+
+
+//----------- LessSpecificIndexIter ------------------------------------------
+
+struct LessSpecificIndexIter<'a, P> {
+    collection: &'a RouteOriginCollection<P>,
+    prefix: P,
+    tree_idx: Option<usize>,
+}
+
+impl<'a, P: RoutePrefix> LessSpecificIndexIter<'a, P> {
+    fn new(collection: &'a RouteOriginCollection<P>, prefix: P) -> Self {
+        let mut res = Self { collection, prefix, tree_idx: None };
+        res.tree_idx = res.find_top();
+        res
+    }
+
+    fn find_top(&self) -> Option<usize> {
+        let root = self.collection.get_tree_node(
+            self.collection.tree_root_idx
+        )?;
+        match root.data.into_data() {
+            Ok(data_idx) => {
+                let root_prefix = self.collection.data.0.get(data_idx)?.prefix;
+                if root_prefix.covers(self.prefix) {
+                    self.collection.tree_root_idx.into()
+                }
+                else {
+                    None
+                }
+            }
+            Err(_) => {
+                self.find_recursive(self.collection.tree_root_idx)
+            }
+        }
+    }
+
+    fn find_next(&self, current_node: TreeNode) -> Option<usize> {
+        let current_prefix = self.collection.data.0.get(
+            current_node.data.into_data().ok()?
+        )?.prefix;
+        if current_prefix.addr_len() >= self.prefix.addr_len() {
+            return None
+        }
+        if !self.prefix.bit(current_prefix.addr_len()) {
+            self.find_recursive(current_node.left)
+        }
+        else {
+            self.find_recursive(current_node.right)
+        }
+    }
+
+    fn find_recursive(&self, tree_idx: TreeIndex) -> Option<usize> {
+        let node = self.collection.get_tree_node(tree_idx)?;
+        match node.data.into_data() {
+            Ok(data_idx) => {
+                let prefix = self.collection.data.0.get(data_idx)?.prefix;
+                if prefix.addr_len() > self.prefix.addr_len() {
+                    return None
+                }
+                else {
+                    return tree_idx.into()
+                }
+            }
+            Err(no_data_idx) => {
+                let prefix = *self.collection.no_data.get(no_data_idx)?;
+                if prefix.addr_len() >= self.prefix.addr_len() {
+                    return None
+                }
+                if !self.prefix.bit(prefix.addr_len()) {
+                    self.find_recursive(node.left)
+                }
+                else {
+                    self.find_recursive(node.right)
+                }
+             }
+        }
+    }
+}
+
+impl<'a, P: RoutePrefix> Iterator for LessSpecificIndexIter<'a, P> {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<usize> {
+        let tree_idx = self.tree_idx?;
+        let node = self.collection.tree.get(tree_idx)?;
+        self.tree_idx = self.find_next(*node);
+        Some(tree_idx)
+    }
+}
 
 
 //=========== Error Types ====================================================
@@ -745,138 +763,4 @@ impl<'a, P: RoutePrefix> Iterator for TreeIter<'a, P> {
 
 #[derive(Debug)]
 pub struct LargeIndex(());
-
-
-
-
-
-//------------ Tests --------------------------------------------------------
-
-#[cfg(test)]
-mod tests {
-    use std::str::FromStr;
-    use rpki::repository::resources::Prefix;
-    use super::*;
-
-    fn tree(
-        items: &[(&'static str, u32)]
-    ) -> RouteOriginCollection<Ipv4Prefix> {
-        let data = items.iter().map(|(prefix, asn)| {
-            RouteOrigin {
-                prefix: Prefix::from_str(prefix).unwrap().into(),
-                origin: AsNumber::from_u32(*asn)
-            }
-        }).collect();
-        RouteOriginCollection::new(data).unwrap()
-    }
-
-    fn ro(prefix: &'static str, origin: u32) -> RouteOrigin<Ipv4Prefix> {
-        RouteOrigin {
-            prefix: Prefix::from_str(prefix).unwrap().into(),
-            origin: AsNumber::from_u32(origin)
-        }
-    }
-
-    #[test]
-    fn iter() {
-        let tree = tree(&[
-            ("10.0.0.0/24", 64496),
-            ("10.0.1.0/24", 64496),
-            ("10.0.0.0/23", 64496),
-            ("10.0.0.0/20", 64496),
-            ("10.0.0.0/16", 64496),
-        ]);
-        assert_eq!(
-            tree.iter().collect::<Vec<_>>(),
-            [
-                [ro("10.0.0.0/16", 64496)],
-                [ro("10.0.0.0/20", 64496)],
-                [ro("10.0.0.0/23", 64496)],
-                [ro("10.0.0.0/24", 64496)],
-                [ro("10.0.1.0/24", 64496)],
-            ]
-        );
-    }
-
-    #[test]
-    fn size() {
-        eprintln!("tree item: {},\n v4 data item: {}\n v6 data item: {}",
-            mem::size_of::<TreeNode>(),
-            mem::size_of::<RouteOrigin<Ipv4Prefix>>(),
-            mem::size_of::<RouteOrigin<Ipv6Prefix>>(),
-        );
-    }
-
-/*
-    fn ann(s: &str) -> Announcement {
-        Announcement::from_str(s).unwrap()
-    }
-
-    fn pfx(s: &str) -> TypedPrefix {
-        TypedPrefix::from_str(s).unwrap()
-    }
-
-    fn range_pfx(s: &str) -> IpRange {
-        IpRange::from(&pfx(s))
-    }
-
-    fn make_test_tree() -> TypedPrefixTree<Announcement> {
-        let mut builder = TypedPrefixTreeBuilder::default();
-        builder.add(ann("10.0.0.0/24 => 64496"));
-        builder.add(ann("10.0.1.0/24 => 64496"));
-        builder.add(ann("10.0.0.0/23 => 64496"));
-        builder.add(ann("10.0.0.0/20 => 64496"));
-        builder.add(ann("10.0.0.0/16 => 64496"));
-        builder.build()
-    }
-
-    #[test]
-    fn range_contains() {
-        let more_specific_1 = range_pfx("10.0.0.0/24");
-        let more_specific_2 = range_pfx("10.0.1.0/24");
-        let test_pfx = range_pfx("10.0.0.0/23");
-
-        assert!(test_pfx.contains(&more_specific_1.0));
-        assert!(test_pfx.contains(&more_specific_2.0));
-    }
-
-    #[test]
-    fn typed_prefix_tree_more_specific() {
-        let tree = make_test_tree();
-        let search = TypedPrefix::from_str("10.0.0.0/23").unwrap();
-        assert_eq!(3, tree.matching_or_more_specific(search).len());
-
-        let search = TypedPrefix::from_str("10.0.2.0/24").unwrap();
-        assert_eq!(0, tree.matching_or_more_specific(search).len());
-    }
-
-    #[test]
-    fn typed_prefix_tree_less_specific() {
-        let tree = make_test_tree();
-        let search = TypedPrefix::from_str("10.0.0.0/23").unwrap();
-        assert_eq!(3, tree.matching_or_less_specific(search).len());
-
-        let search = TypedPrefix::from_str("10.0.0.0/24").unwrap();
-        assert_eq!(4, tree.matching_or_less_specific(search).len());
-
-        let search = TypedPrefix::from_str("10.0.0.0/16").unwrap();
-        assert_eq!(1, tree.matching_or_less_specific(search).len());
-
-        let search = TypedPrefix::from_str("10.0.0.0/15").unwrap();
-        assert_eq!(0, tree.matching_or_less_specific(search).len());
-    }
-
-    #[test]
-    fn set_to_ranges() {
-        let asns = "AS65000-AS65003, AS65005";
-        let ipv4s = "10.0.0.0/8, 192.168.0.0";
-        let ipv6s = "::1, 2001:db8::/32";
-        let set = ResourceSet::from_strs(asns, ipv4s, ipv6s).unwrap();
-
-        let (v4_ranges, v6_ranges) = IpRange::for_resource_set(&set);
-        assert_eq!(2, v4_ranges.len());
-        assert_eq!(2, v6_ranges.len());
-    }
-*/
-}
 
