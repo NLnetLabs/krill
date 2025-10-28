@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+
 
 // This code only works with `usize` of at least 32 bits.
 #[cfg(target_pointer_width = "16")]
@@ -136,7 +136,7 @@ impl<P: RoutePrefix> CollectionBuilder<P> {
         Self {
             tree: Vec::new(),
             no_data: Vec::new(),
-            data: data,
+            data,
             next_data_idx: 0,
         }
     }
@@ -723,10 +723,10 @@ impl<'a, P: RoutePrefix> LessSpecificIndexIter<'a, P> {
             Ok(data_idx) => {
                 let prefix = self.collection.data.0.get(data_idx)?.prefix;
                 if prefix.addr_len() > self.prefix.addr_len() {
-                    return None
+                    None
                 }
                 else {
-                    return tree_idx.into()
+                    tree_idx.into()
                 }
             }
             Err(no_data_idx) => {

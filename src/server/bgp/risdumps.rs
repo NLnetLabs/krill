@@ -226,7 +226,7 @@ mod tests {
         eprintln!("   unique data len: {}", ris.v4.unique_data_len());
         eprintln!("   no-data: {}", ris.v4.no_data_len());
         eprintln!("   max depth: {}", ris.v4.max_depth());
-        eprintln!("");
+        eprintln!();
         eprintln!("v6:");
         eprintln!("   size: {}", ris.v6.size());
         eprintln!("   tree len: {}", ris.v6.tree_len());
