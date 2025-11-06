@@ -39,7 +39,7 @@ impl AuthProvider {
                 unix_users.insert(k.clone(), role);
             } else {
                 return Err(Error::ConfigError(
-                    format!("Missing role mapping for {}!", v)
+                    format!("Unix user {} requested role mapping {} but it could not be found!", k, v)
                 ));
             }
         }
