@@ -1,4 +1,8 @@
-//! A tree to keep the RISwhois route origins in.
+//! The data from a RISwhois data set.
+//!
+//! These datasets provide the originating AS numbers for address prefixes
+//! as encountered in BGP data collected by RIS. The [`RisWhois`] type in
+//! this module collects all this data and makes it available for querying.
 
 // This code only works with `usize` of at least 32 bits.
 #[cfg(target_pointer_width = "16")]
@@ -12,49 +16,43 @@ use crate::api::roa::{AsNumber, Ipv4Prefix, Ipv6Prefix, TypedPrefix};
 use crate::api::bgp::Announcement;
 
 
+//------------ Configuration -------------------------------------------------
+
+/// How often to we need to see a route origin before accepting it.
+///
+/// For each pair of address prefix and origin AS number, RISwhois also lists
+/// how many of the peers of RIS have seen this pair in their BGP streams.
+/// Pairs that are only seen by very few peers are likely there by mistake
+/// and should be filtered out. This constant sets the minimum number of
+/// stream that have to have seen a pair for us to include it in our data.
+const MINIMUM_SEEN_BY: u32 = 6;
+
 //------------ RisWhoisLoader ------------------------------------------------
 
+/// A type that knows where RISwhois data lives and download it.
 pub struct RisWhoisLoader {
+    /// The HTTP(S) URL of the location of IPv4 data set.
     v4_url: String,
+
+    /// The HTTP(S) URL of the location of IPv6 data set.
     v6_url: String,
 }
 
 impl RisWhoisLoader {
+    /// Creates a new loader from the URLS of the IPv4 and IPv6 data sets.
     pub fn new(v4_url: String, v6_url: String) -> Self {
         Self { v4_url, v6_url }
     }
 
+    /// Downloads and processes a new data set.
     pub async fn load(&self) -> Result<RisWhois, RisWhoisError> {
-        RisWhois::load(&self.v4_url, &self.v6_url).await
-    }
-}
-
-
-//------------ RisWhois ------------------------------------------------------
-
-#[derive(Clone, Default)]
-pub struct RisWhois {
-    v4: RouteOriginCollection<Ipv4Prefix>,
-    v6: RouteOriginCollection<Ipv6Prefix>,
-}
-
-impl RisWhois {
-    pub fn new(
-        v4: RouteOriginCollection<Ipv4Prefix>,
-        v6: RouteOriginCollection<Ipv6Prefix>,
-    ) -> Self {
-        Self { v4, v6 }
+        Ok(RisWhois::new(
+            Self::load_tree(&self.v4_url).await?,
+            Self::load_tree(&self.v6_url).await?,
+        ))
     }
 
-    pub async fn load(
-        v4_uri: &str, v6_uri: &str
-    ) -> Result<Self, RisWhoisError> {
-        Ok(Self {
-            v4: Self::load_tree(v4_uri).await?,
-            v6: Self::load_tree(v6_uri).await?,
-        })
-    }
-
+    /// Downloads and process the tree for one address family.
     async fn load_tree<P: FromStr + RoutePrefix>(
         uri: &str
     ) -> Result<RouteOriginCollection<P>, RisWhoisError>
@@ -68,6 +66,7 @@ impl RisWhois {
         ).map_err(|err| RisWhoisError::new(uri, err))
     }
 
+    /// Parses the gzipped data.
     fn parse_gz_data<P: FromStr + RoutePrefix>(
         data: &[u8]
     ) -> Result<RouteOriginCollection<P>, io::Error>
@@ -78,12 +77,30 @@ impl RisWhois {
         Self::parse_data(data)
     }
 
+    /// Parses the raw data.
     fn parse_data<P: FromStr + RoutePrefix>(
         data: impl io::BufRead,
     ) -> Result<RouteOriginCollection<P>, io::Error>
     where <P as FromStr>::Err: error::Error + Send + Sync + 'static {
         let mut res = Vec::new();
         for line in data.lines() {
+            // Each line is as follows:
+            //
+            //    o  empty lines and lines starting with % are ignored.
+            //    o  all other lines consist of three string separated by
+            //       white space (technically: a single HTAB):
+            //
+            //          o  origin AS number as an integer,
+            //          o  prefix as IP address slash prefix length,
+            //          o  number of peers that have seen this pair.
+            //
+            //       Instead of the origin AS number, there may be an AS set
+            //       as a sequence of comma separated AS numbers surrounded by
+            //       curly braces. We ignore those.
+            //
+            //       If the number of peers that have seen a pair is smaller
+            //       than `MINIMUM_SEEN_BY`, the line is also ignored.
+
             let line = line?;
             if line.is_empty() || line.starts_with('%') {
                 continue;
@@ -101,7 +118,9 @@ impl RisWhois {
                 io::Error::other("missing column")
             )?;
 
-            if u32::from_str(peers).map_err(io::Error::other)? <= 5 {
+            if u32::from_str(peers).map_err(io::Error::other)?
+                < MINIMUM_SEEN_BY
+            {
                 continue;
             }
 
@@ -111,7 +130,6 @@ impl RisWhois {
 
             let origin = AsNumber::from_str(asn_str).map_err(io::Error::other)?;
             let prefix = P::from_str(prefix_str).map_err(|err| {
-                eprintln!("{prefix_str}");
                 io::Error::other(err)
             })?;
 
@@ -120,11 +138,39 @@ impl RisWhois {
 
         Ok(RouteOriginCollection::new(res).unwrap())
     }
+}
 
+
+//------------ RisWhois ------------------------------------------------------
+
+/// A set of RISwhois data.
+///
+/// This data consists of two route origin collections, one for IPv4 and one
+/// for IPv6.
+#[derive(Clone, Default)]
+pub struct RisWhois {
+    /// The IPv4 route origin collection.
+    v4: RouteOriginCollection<Ipv4Prefix>,
+
+    /// The IPv6 route origin collection.
+    v6: RouteOriginCollection<Ipv6Prefix>,
+}
+
+impl RisWhois {
+    /// Creates a new data set from the IPv4 and IPv6 data.
+    pub fn new(
+        v4: RouteOriginCollection<Ipv4Prefix>,
+        v6: RouteOriginCollection<Ipv6Prefix>,
+    ) -> Self {
+        Self { v4, v6 }
+    }
+
+    /// Returns the IPv4 route origin collection.
     pub fn v4(&self) -> &RouteOriginCollection<Ipv4Prefix> {
         &self.v4
     }
 
+    /// Returns the IPv6 route origin collection.
     pub fn v6(&self) -> &RouteOriginCollection<Ipv6Prefix> {
         &self.v6
     }
@@ -137,7 +183,10 @@ impl RisWhois {
 ///
 /// This type keeps the route origins for the prefix type `P`, which can be
 /// [`Ipv4Prefix`] or [`Ipv6Prefix`]. It is read-only, allowing to iterate
-/// over less or more specifics of a given prefix.
+/// over part of the data.
+///
+/// It currently only supports iterating over the more specifics of a given
+/// prefix since that is all we need for the BGP analyser.
 #[derive(Clone, Debug)]
 pub struct RouteOriginCollection<P> {
     /// The tree part of the collection.
@@ -186,22 +235,6 @@ impl<P: RoutePrefix> RouteOriginCollection<P> {
     /// Creates a new collection from the given list of route origins.
     pub fn new(data: Vec<RouteOrigin<P>>) -> Result<Self, LargeDataset> {
         CollectionBuilder::new(data).process()
-    }
-
-    /// Returns an iterator over all the route origins in the tree.
-    ///
-    /// The iterator will walk the tree in order of prefixes, i.e., smaller
-    /// addresses first and shorter prefix lengths first.
-    pub fn iter(&self) -> TreeIter<'_, P> {
-        TreeIter::new(self)
-    }
-
-    /// Returns an iterator over all equal or less specific route orgins.
-    ///
-    /// The iterator will start with the shortest prefix first. If present,
-    /// the items will include the origin for the prefix itself.
-    pub fn less_specific_or_eq(&self, prefix: P) -> LessSpecificIter<'_, P> {
-        LessSpecificIter::new(self, prefix)
     }
 
     /// Returns an iterator over all equal or more sepcific route origins.
@@ -711,30 +744,31 @@ impl<P: RoutePrefix> From<RouteOrigin<P>> for Announcement {
 
 //------------ RouteOriginSet ------------------------------------------------
 
+/// A set of route origins.
+///
+/// This is a thin wrapper around a non-empty slice of [`RouteOrigin<P>']
+/// with the same prefix, allowing access to the prefix with unwrapping and
+/// such.
 #[derive(Clone, Copy, Debug)]
 pub struct RouteOriginSet<'a, P> {
+    /// The underlying slice.
     slice: &'a [RouteOrigin<P>],
 }
 
 impl<'a, P: RoutePrefix> RouteOriginSet<'a, P> {
+    /// Creates a new value from a non-empty slice.
     fn new(slice: &'a [RouteOrigin<P>]) -> Self {
         debug_assert!(!slice.is_empty());
         Self { slice }
     }
 
+    /// Returns the prefix of the set.
     pub fn prefix(self) -> P {
         // Safety: self.slice is not empty.
         self.slice[0].prefix
     }
 
-    pub fn origins(self) -> impl Iterator<Item = AsNumber> + 'a {
-        self.slice.iter().map(|item| item.origin)
-    }
-
-    pub fn as_slice(self) -> &'a [RouteOrigin<P>] {
-        self.slice
-    }
-
+    /// Returns an iterator over the individual route origins of the set.
     pub fn iter(self) -> impl Iterator<Item = RouteOrigin<P>> + 'a {
         self.slice.iter().copied()
     }
@@ -801,13 +835,15 @@ pub struct TreeIter<'a, P> {
 }
 
 impl<'a, P: RoutePrefix> TreeIter<'a, P> {
-    /// Creates a new iterator for the given collection starting at the root.
+    #[cfg(test)]
     fn new(collection: &'a RouteOriginCollection<P>) -> Self {
-        let mut tree_idx_stack = Vec::new();
-        if let Some(idx) = collection.tree_root_idx.into_usize() {
-            tree_idx_stack.push(idx);
+        Self {
+            collection,
+            tree_idx_stack: match collection.tree_root_idx.into_usize() {
+                Some(idx) => vec![idx],
+                None => Vec::new()
+            }
         }
-        Self { collection, tree_idx_stack, }
     }
 
     /// Creates a new iterator starting at the given prefix.
@@ -869,113 +905,6 @@ impl<'a, P: RoutePrefix> Iterator for TreeIter<'a, P> {
 }
 
 
-//----------- LessSpecificIter -----------------------------------------------
-
-/// An iterator over the less specifc entries in a route origin collection.
-pub struct LessSpecificIter<'a, P> {
-    /// The collection to iterate over.
-    collection: &'a RouteOriginCollection<P>,
-
-    /// The prefix to provide less specifics for.
-    prefix: P,
-
-    /// The tree index of the item to provide next.
-    ///
-    /// The item behind this index is returned with the next call to `next`
-    /// and updated there before returning.
-    tree_idx: Option<usize>,
-}
-
-impl<'a, P: RoutePrefix> LessSpecificIter<'a, P> {
-    /// Creates a new iterator for the given collection and prefix.
-    fn new(collection: &'a RouteOriginCollection<P>, prefix: P) -> Self {
-        let mut res = Self { collection, prefix, tree_idx: None };
-        res.tree_idx = res.find_top();
-        res
-    }
-
-    /// Returns the tree index of the first item to return.
-    fn find_top(&self) -> Option<usize> {
-        let root = self.collection.get_tree_node(
-            self.collection.tree_root_idx
-        )?;
-        match root.data.into_data() {
-            Ok(data_idx) => {
-                let root_prefix = self.collection.data.0.get(data_idx)?.prefix;
-                if root_prefix.covers(self.prefix) {
-                    self.collection.tree_root_idx.into()
-                }
-                else {
-                    None
-                }
-            }
-            Err(_) => {
-                self.find_recursive(self.collection.tree_root_idx)
-            }
-        }
-    }
-
-    /// Finds the index of the item to return after node.
-    fn find_next(&self, current_node: TreeNode) -> Option<usize> {
-        let current_prefix = self.collection.data.0.get(
-            current_node.data.into_data().ok()?
-        )?.prefix;
-        if current_prefix.addr_len() >= self.prefix.addr_len() {
-            return None
-        }
-        if !self.prefix.bit(current_prefix.addr_len()) {
-            self.find_recursive(current_node.left)
-        }
-        else {
-            self.find_recursive(current_node.right)
-        }
-    }
-
-    /// Returns the index of the item to return for the given index.
-    ///
-    /// If the node is a data node, this is the index itself. Otherwise the
-    /// method recurses to find the next data node.,
-    fn find_recursive(&self, tree_idx: TreeIndex) -> Option<usize> {
-        let node = self.collection.get_tree_node(tree_idx)?;
-        match node.data.into_data() {
-            Ok(data_idx) => {
-                let prefix = self.collection.data.0.get(data_idx)?.prefix;
-                if prefix.addr_len() > self.prefix.addr_len() {
-                    None
-                }
-                else {
-                    tree_idx.into()
-                }
-            }
-            Err(no_data_idx) => {
-                let prefix = *self.collection.no_data.get(no_data_idx)?;
-                if prefix.addr_len() >= self.prefix.addr_len() {
-                    return None
-                }
-                if !self.prefix.bit(prefix.addr_len()) {
-                    self.find_recursive(node.left)
-                }
-                else {
-                    self.find_recursive(node.right)
-                }
-             }
-        }
-    }
-}
-
-impl<'a, P: RoutePrefix> Iterator for LessSpecificIter<'a, P> {
-    type Item = RouteOriginSet<'a, P>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let tree_idx = self.tree_idx?;
-        let node = self.collection.tree.get(tree_idx)?;
-        self.tree_idx = self.find_next(*node);
-        let data_idx = node.data.into_data().ok()?;
-        self.collection.data.origin_set(data_idx)
-    }
-}
-
-
 //=========== Error Types ====================================================
 
 //------------ RisWhoisError ------------------------------------------------
@@ -1023,35 +952,32 @@ mod tests {
 
     #[test]
     fn parse_bgp_ris_dumps() {
-        let v4 = RisWhois::parse_data(include_bytes!(
+        let v4 = RisWhoisLoader::parse_data(include_bytes!(
             "../../../test-resources/bgp/riswhoisdump.IPv4"
         ).as_ref()).unwrap();
-        let v6 = RisWhois::parse_data(include_bytes!(
+        let v6 = RisWhoisLoader::parse_data(include_bytes!(
             "../../../test-resources/bgp/riswhoisdump.IPv6"
         ).as_ref()).unwrap();
-        let _ris = RisWhois { v4, v6 };
+        let ris = RisWhois { v4, v6 };
 
-        /*
-        let v4 = ris.v4.iter().map(|item| item[0].prefix).collect::<Vec<_>>();
+        let v4 = TreeIter::new(&ris.v4).map(|item| {
+            for origin in item.iter() {
+                assert_eq!(origin.prefix, item.prefix());
+            }
+            item.prefix()
+        }).collect::<Vec<_>>();
         for item in v4.windows(2) {
             assert!(item[0] < item[1])
         }
-        let v6 = ris.v6.iter().map(|item| item[0].prefix).collect::<Vec<_>>();
+        let v6 = TreeIter::new(&ris.v6).map(|item| {
+            for origin in item.iter() {
+                assert_eq!(origin.prefix, item.prefix());
+            }
+            item.prefix()
+        }).collect::<Vec<_>>();
         for item in v6.windows(2) {
             assert!(item[0] < item[1])
         }
-
-        for prefix in &v4 {
-            let left_vec = v4.iter().copied().filter(|other| {
-                prefix.covers(*other)
-            }).collect::<Vec<_>>();
-            eprintln!("{prefix:?}");
-            let right_vec = ris.v4.more_specific(*prefix).map(|item| {
-                item[0].prefix
-            }).collect::<Vec<_>>();
-            assert_eq!(left_vec, right_vec);
-        }
-        */
     }
 }
 

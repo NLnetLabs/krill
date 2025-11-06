@@ -1,4 +1,5 @@
-use std::fmt;
+//! The actual BGP analyser and its supporting, private data structures.
+
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 use arc_swap::ArcSwapOption;
@@ -22,15 +23,40 @@ use super::riswhois::{
 
 //------------ BgpAnalyser -------------------------------------------------
 
-/// This type helps analyse ROAs vs BGP and vice versa.
+/// An analyser for the effects of ROAs against real-world BGP data.
+///
+/// The analyser is configured with the URLs of the RISwhois dumps and
+/// whether to download them at all and if so, how often. It doesn’t download
+/// data immediately but only when the [`update`][Self::update] method is
+/// called. 
+/// 
+/// There are two methods that perform an analyis: [`analyse`][Self::analyse]
+/// produces a report for an existing set of ROAs while
+/// [`suggest`][Self::suggest] also adds suggestions what ROAs should be
+/// created.
 pub struct BgpAnalyser {
+    /// The loader for RISwhois data.
+    ///
+    /// If this is `None`, loading data has been disabled.
     loader: Option<RisWhoisLoader>,
+
+    /// How long should we wait before downloading the data again.
     refresh_duration: Duration,
+
+    /// The last time we downloaded the data.
+    ///
+    /// This is the Unix timestamp in full seconds of that time. If we never
+    /// downloaded the data, this will be set to `i64::MIN`.
     last_checked: AtomicI64,
+
+    /// The current set of RISwhois data.
+    ///
+    /// This may be `None` if we haven’t downloaded a set (yet).
     riswhois: ArcSwapOption<RisWhois>,
 }
 
 impl BgpAnalyser {
+    /// Creates a new analyser using information in the config.
     pub fn new(config: &Config) -> Self {
         Self {
             loader: config.bgp_riswhois_enabled.then(|| {
@@ -45,6 +71,14 @@ impl BgpAnalyser {
         }
     }
 
+    /// Updates the RISwhois dataset.
+    ///
+    /// This can be called at any time and will only actually download data
+    /// if downloading has been enabled and if the configured refresh
+    /// duration has passed since the last download.
+    ///
+    /// Returns `Ok(true)` if it did do a download, `Ok(false)` if no download
+    /// was necessary, or an error if downloading was attempted but failed.
     pub async fn update(&self) -> Result<bool, RisWhoisError> {
         let Some(loader) = self.loader.as_ref() else {
             return Ok(false)
@@ -67,6 +101,17 @@ impl BgpAnalyser {
         Ok(true)
     }
 
+    /// Creates a BGP analysis report for a set of ROAs and resources.
+    ///
+    /// The ROAs to be analysed are given via `roas` and the resources held
+    /// by the CA publishing the ROAs via `resources_held`. If required,
+    /// the ROAs to be analysed can be limited to those covered by the
+    /// resource set given through `limited_scope`.
+    ///
+    /// The method returns a BGP analysis report providing information on
+    /// how the ROAs and resources based on the current RISwhois data. If no
+    /// data is currently available, the report will contain “no announcement
+    /// info” for each ROA.
     pub fn analyse(
         &self,
         roas: &[ConfiguredRoa],
@@ -169,6 +214,11 @@ impl BgpAnalyser {
         BgpAnalysisReport::new(entries)
     }
 
+    /// Create a BGP suggestions report for a set of ROAs and resources.
+    ///
+    /// This is very similar to the [`analyse`][Self::analyse] method but
+    /// the returned report also contains suggestions what ROAs the CA should
+    /// contain.
     pub fn suggest(
         &self,
         roas: &[ConfiguredRoa],
@@ -245,6 +295,10 @@ impl BgpAnalyser {
         suggestion
     }
 
+    /// Returns the address prefixes contained in a resource set.
+    ///
+    /// The function will return two vecs, one for IPv4 and one for IPv6
+    /// prefixes.
     fn get_prefixes_from_scope(
         scope: &ResourceSet
     ) -> (Vec<Ipv4Prefix>, Vec<Ipv6Prefix>) {
@@ -275,6 +329,10 @@ impl BgpAnalyser {
         (v4, v6)
     }
 
+    /// Splits a set of ROAs into those for IPv4 and IPv6.
+    ///
+    /// The function wraps each ROA into a type that also contains the
+    /// address prefix of the ROA and a reference to the [`ConfiguredRoa`].
     fn split_roas(
         roas: &[ConfiguredRoa]
     ) -> (Vec<Roa<'_, Ipv4Prefix>>, Vec<Roa<'_, Ipv6Prefix>>) {
@@ -289,6 +347,11 @@ impl BgpAnalyser {
         (v4, v6)
     }
 
+    /// Categorises a ROA for analysis.
+    ///
+    /// The function takes a roa, a set of validated route origins, and the
+    /// set of all ROAs and translates it into a [`BgpAnalysisEntry`] for the
+    /// report.
     fn categorise_roa<P: RoutePrefix>(
         roa: Roa<P>,
         validated_origins: &[ValidatedRouteOrigin<P>],
@@ -398,29 +461,44 @@ impl BgpAnalyser {
 
 //------------ Roa -----------------------------------------------------------
 
+/// A configured ROA plus its address prefix.
+///
+/// This type only exists to be generic over the address family. Thus, `P`
+/// can either be [`Ipv4Prefix`] or [`Ipv6Prefix`].
 #[derive(Clone, Copy, Debug)]
 pub struct Roa<'a, P> {
+    /// The address prefix of the ROA.
     prefix: P,
+
+    /// A reference to the actual ROA.
     roa: &'a ConfiguredRoa,
 }
 
 impl<'a, P: RoutePrefix> Roa<'a, P> {
+    /// Creates a new value from its parts.
     fn new(prefix: P, roa: &'a ConfiguredRoa) -> Self {
         Self { prefix, roa }
     }
 
+    /// Returns the ROA payload definition of the ROA.
     fn payload(self) -> RoaPayload {
         self.roa.roa_configuration.payload
     }
 
+    /// Returns the origin AS number of the ROA definition.
     fn origin(self) -> AsNumber {
         self.roa.roa_configuration.payload.asn
     }
 
+    /// Retuns the maximum prefix length of the ROA definition.
     fn max_len(self) -> Option<u8> {
         self.roa.roa_configuration.payload.max_length
     }
 
+    /// Returns the effective maximum prefix length of the ROA definition.
+    ///
+    /// This is the maximum prefix length if provided or the address prefix
+    /// length otherwise.
     fn effective_max_len(self) -> u8 {
         self.max_len().unwrap_or(self.prefix.addr_len())
     }
@@ -429,14 +507,24 @@ impl<'a, P: RoutePrefix> Roa<'a, P> {
 
 //------------ ValidatedRouteOrigin ------------------------------------------
 
+/// A route origin with route origin validation applied to it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ValidatedRouteOrigin<P> {
+    /// The route origin, i.e., address prefix and origin AS number.
     route_origin: RouteOrigin<P>,
+
+    /// The validation status of the route origin.
     validity: RouteOriginValidity,
+
+    /// The ROAs that contributed to invalidating the route origin.
     disallowing: Vec<RoaPayload>,
 }
 
 impl<P: RoutePrefix> ValidatedRouteOrigin<P> {
+    /// Validates a set of route origin against a set of ROAs.
+    ///
+    /// Appends the validation verdict for each route origin to the end of
+    /// `target`.
     fn validate_set(
         route_origins: RouteOriginSet<P>,
         roas: &[Roa<P>],
@@ -464,6 +552,9 @@ impl<P: RoutePrefix> ValidatedRouteOrigin<P> {
         }
     }
 
+    /// Validates a single route origin against a set of ROAs.
+    ///
+    /// Returns the verdict.
     fn validate(
         origin: RouteOrigin<P>,
         covering: &[Roa<P>]
@@ -507,10 +598,14 @@ impl<P: RoutePrefix> ValidatedRouteOrigin<P> {
         }
     }
 
+    /// Returns the announcement correlating with the route origin.
+    ///
+    /// “Announcement” is the term used in the API for a route origin.
     fn announcement(&self) -> Announcement {
         self.route_origin.into()
     }
 
+    /// Converts the value into a BGP analysis entry.
     fn into_analysis_entry(self) -> BgpAnalysisEntry {
         match self.validity {
             RouteOriginValidity::Valid(roa) => {
@@ -548,41 +643,33 @@ impl<P: RoutePrefix> ValidatedRouteOrigin<P> {
 
 //------------ RouteOriginValidity -------------------------------------------
 
+/// The status of a route origin after validation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RouteOriginValidity {
+    /// The route origin is valid.
+    ///
+    /// The included ROA is the one that made the origin valid.
     Valid(RoaPayload),
+
+    /// The route origin is invalid due to having an invalid prefix length.
     InvalidLength,
+
+    /// The route origin is invalid due to having an invalid origin AS number.
     InvalidAsn,
+
+    /// The route origin is invalid due to an AS0 ROA.
     Disallowed,
+
+    /// No covering ROA exists and the route origin is “not found.”
     NotFound,
 }
 
-
-//------------ Error --------------------------------------------------------
-
-#[derive(Debug)]
-pub enum BgpAnalyserError {
-    RisDump(RisWhoisError),
-}
-
-impl fmt::Display for BgpAnalyserError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            BgpAnalyserError::RisDump(e) => write!(f, "BGP RIS update error: {}", e),
-        }
-    }
-}
-
-impl From<RisWhoisError> for BgpAnalyserError {
-    fn from(e: RisWhoisError) -> Self {
-        BgpAnalyserError::RisDump(e)
-    }
-}
 
 //------------ Tests --------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
+    use std::fmt;
     use std::str::FromStr;
     use crate::api::roa::RoaConfigurationUpdates;
     use crate::commons::test::{configured_roa};
