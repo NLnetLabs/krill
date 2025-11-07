@@ -448,15 +448,23 @@ impl BgpAnalyser {
     ///
     /// Returns `None` if the JSON structure was in any way unexpected.
     fn obtain_announcements(&self, json: Value) -> Option<Vec<Announcement>> {
-        let mut anns: Vec<Announcement> = vec![];
+        let mut anns: Vec<Announcement> = Vec::new();
+        if let Some(result_type) = json.get("result")?.get("type") {
+            if result_type.as_str()? == "empty-match" {
+                return Some(anns);
+            }
+        }
+
         let prefix_str = json.get("result")?.get("prefix")?.as_str()?;
         for meta in json.get("result")?.get("meta")?.as_array()? {
             self.parse_meta(meta, prefix_str, &mut anns)?;
         }
-        for relation in json.get("result")?.get("relations")?.as_array()? {
-            if relation.get("type")?.as_str()? == "more-specific" {
-                for member in relation.get("members")?.as_array()? {
-                    self.parse_member(member, &mut anns)?;
+        if let Some(relations) = json.get("result")?.get("relations") {
+            for relation in relations.as_array()? {
+                if relation.get("type")?.as_str()? == "more-specific" {
+                    for member in relation.get("members")?.as_array()? {
+                        self.parse_member(member, &mut anns)?;
+                    }
                 }
             }
         }
@@ -1048,7 +1056,7 @@ mod test {
             true, "test".to_string(), Duration::default()
         );
 
-        let ipv4s = "1.1.1.1/32, 2.2.2.2/32, 3.3.3.3/32, 4.4.4.4/32";
+        let ipv4s = "1.1.1.1/32, 3.3.3.3/32, 4.4.4.4/32";
         let set = ResourceSet::from_strs("", ipv4s, "").unwrap();
         
         let ranges = IpRange::from_resource_set(&set);
@@ -1086,8 +1094,6 @@ mod test {
         ];
 
         let report = analyser.analyse(roas, &set, None).await;
-
-        dbg!(&report);
 
         let entry_expect_roa = |x: &str, y| {
             let x = x.to_string();
@@ -1233,5 +1239,64 @@ mod test {
         assert_eq!(2, ranges[1].len());
         assert_eq!(2, ranges[2].len());
         assert_eq!(1, ranges[3].len());
+    }
+
+    #[tokio::test]
+    async fn correct_analysis() {
+        let analyser = BgpAnalyser::new(
+            true, "test".to_string(), Duration::default()
+        );
+
+        let ipv4s = "103.60.200.0/22, 103.160.116.0/23, 103.184.174.0/23, 103.233.208.0/22, 122.99.120.0/22, 202.14.148.0/24, 203.0.80.0/24, 203.1.68.0/23";
+        let ipv6s = "";
+        let set = ResourceSet::from_strs("AS1000-1200", ipv4s, ipv6s).unwrap();
+
+        let roas = &[
+            configured_roa("103.60.200.0/22-22 => 211321"),
+            configured_roa("103.160.116.0/23-23 => 211321"),
+            configured_roa("103.184.174.0/23-23 => 211321"),
+            configured_roa("103.233.208.0/22-22 => 211321"),
+            configured_roa("122.99.120.0/22-22 => 211321"),
+            configured_roa("202.14.148.0/24-24 => 211321"),
+            configured_roa("203.0.80.0/24-24 => 211321"),
+            configured_roa("203.1.68.0/23-23 => 211321"),
+        ];
+
+        for block in IpRange::from_resource_set(&set) {
+            assert!(analyser.retrieve(block).await.is_ok());
+        }
+
+        let report = analyser.analyse(roas, &set, None).await;
+        
+        let mut expected_results = vec![
+            BgpAnalysisState::RoaUnseen,
+            BgpAnalysisState::RoaDisallowing,
+            BgpAnalysisState::RoaDisallowing,
+            BgpAnalysisState::RoaDisallowing,
+            BgpAnalysisState::RoaDisallowing,
+            BgpAnalysisState::RoaDisallowing,
+            BgpAnalysisState::RoaDisallowing,
+            BgpAnalysisState::RoaDisallowing,
+            BgpAnalysisState::AnnouncementInvalidAsn,
+            BgpAnalysisState::AnnouncementInvalidAsn,
+            BgpAnalysisState::AnnouncementInvalidAsn,
+            BgpAnalysisState::AnnouncementInvalidAsn,
+            BgpAnalysisState::AnnouncementInvalidAsn,
+            BgpAnalysisState::AnnouncementInvalidAsn,
+            BgpAnalysisState::AnnouncementInvalidAsn,
+            BgpAnalysisState::AnnouncementInvalidAsn,
+            BgpAnalysisState::AnnouncementInvalidAsn,
+            BgpAnalysisState::AnnouncementInvalidAsn,
+            BgpAnalysisState::AnnouncementInvalidAsn,
+            BgpAnalysisState::AnnouncementInvalidAsn,
+            BgpAnalysisState::AnnouncementInvalidAsn,
+            BgpAnalysisState::AnnouncementInvalidAsn,
+            BgpAnalysisState::AnnouncementInvalidAsn,
+            BgpAnalysisState::AnnouncementInvalidAsn,
+        ];
+        expected_results.reverse();
+        for entry in report.entries() {
+            assert_eq!(expected_results.pop().unwrap(), entry.state());
+        }
     }
 }

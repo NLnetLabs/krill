@@ -30,7 +30,7 @@ use crate::{
         ext_serde,
         crypto::{OpenSslSignerConfig, SignSupport},
         error::{Error, KrillIoError},
-        storage::{KeyValueStore, Namespace},
+        storage::{Ident, KeyValueStore},
         KrillResult,
     },
     constants::*,
@@ -927,9 +927,9 @@ impl Config {
 
     pub fn key_value_store(
         &self,
-        name_space: &Namespace,
+        namespace: &Ident,
     ) -> KrillResult<KeyValueStore> {
-        KeyValueStore::create(&self.storage_uri, name_space)
+        KeyValueStore::create(&self.storage_uri, namespace)
             .map_err(Error::KeyValueError)
     }
 

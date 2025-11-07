@@ -10,9 +10,7 @@ use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
 use serde_json::Value;
 use url::Url;
-use crate::commons::storage::{
-    Key, Namespace, NamespaceBuf, SegmentBuf, Scope
-};
+use crate::commons::storage::Ident;
 use super::{
     Error as SuperError,
     Transaction as SuperTransaction
@@ -32,7 +30,7 @@ impl Store {
     }
 
     pub fn from_uri(
-        uri: &Url, namespace: &Namespace
+        uri: &Url, namespace: &Ident, 
     ) -> Result<Option<Self>, Error> {
         if uri.scheme() != "memory" {
             return Ok(None)
@@ -46,7 +44,9 @@ impl Store {
         }))
     }
 
-    pub fn execute<F, T>(&self, scope: &Scope, op: F) -> Result<T, SuperError>
+    pub fn execute<F, T>(
+        &self, scope: Option<&Ident>, op: F
+    ) -> Result<T, SuperError>
     where
         F: for<'a> Fn(&mut SuperTransaction<'a>) -> Result<T, SuperError>
     {
@@ -54,19 +54,19 @@ impl Store {
         let tries = 1000;
 
         for i in 0..tries {
-            if self.namespace.locks().insert(scope.clone()) {
+            if self.namespace.locks().insert(scope.map(Into::into)) {
                 // The scope was not yet present. We’ve won and can go on.
                 break
             }
             else if i >= tries {
-                return Err(Error::ScopeLocked(scope.clone()).into())
+                return Err(Error::ScopeLocked(scope.map(Into::into)).into())
             }
             thread::sleep(wait);
         }
 
         let res = op(&mut SuperTransaction::from(self));
 
-        self.namespace.locks().remove(scope);
+        self.namespace.locks().remove(&scope.map(Into::into));
 
         res
     }
@@ -77,71 +77,67 @@ impl Store {
 impl Store {
     /// Returns whether the store is empty.
     pub fn is_empty(&self) -> Result<bool, Error> {
-        Ok(self.namespace.values().is_empty())
+        Ok(self.namespace.scopes().is_empty())
     }
 
     /// Returns whether the store contains the given key.
-    pub fn has(&self, key: &Key) -> Result<bool, Error> {
+    pub fn has(
+        &self, scope: Option<&Ident>, key: &Ident
+    ) -> Result<bool, Error> {
         Ok(
-            self.namespace.values().get(key.scope()).map(|scope| {
-                scope.contains_key(key.name())
+            self.namespace.scopes().get(scope).map(|scope| {
+                scope.contains_key(key)
             }).unwrap_or(false)
         )
     }
 
     /// Returns whether the store contains the given scope.
-    pub fn has_scope(&self, scope: &Scope) -> Result<bool, Error> {
-        Ok(self.namespace.values().contains_key(scope))
+    pub fn has_scope(&self, scope: &Ident) -> Result<bool, Error> {
+        Ok(self.namespace.scopes().contains(scope))
     }
 
     /// Returns the contents of the stored value with the given key.
     ///
     /// If the value does not exist, returns `Ok(None)?.
     pub fn get<T: DeserializeOwned>(
-        &self, key: &Key
+        &self, scope: Option<&Ident>, key: &Ident
     ) -> Result<Option<T>, Error> {
-        match self.namespace.values().get(key.scope()).and_then(|scope| {
-            scope.get(key.name())
+        match self.namespace.scopes().get(scope).and_then(|scope| {
+            scope.get(key)
         }) {
             Some(value) => {
                 serde_json::from_value(value.clone()).map_err(|err| {
-                    Error::deserialize(key.clone(), err)
+                    Error::deserialize(scope, key, err)
                 })
             }
             None => Ok(None)
         }
     }
 
-    pub fn get_any(&self, key: &Key) -> Result<Option<Value>, Error> {
-        self.get(key)
+    pub fn get_any(
+        &self, scope: Option<&Ident>, key: &Ident
+    ) -> Result<Option<Value>, Error> {
+        self.get(scope, key)
     }
 
     /// Returns all the keys in the given scope.
     ///
     /// This includes all keys directly under the given scope as well as
     /// all keys in sub-scopes.
-    pub fn list_keys(&self, scope: &Scope) -> Result<Vec<Key>, Error> {
-        let values = self.namespace.values();
-        let mut res = Vec::new();
-        for (stored_scope, stored_names) in values.iter() {
-            if !stored_scope.starts_with(scope) {
-                continue
-            }
-            for name in stored_names.keys() {
-                res.push(Key::new_scoped(stored_scope.clone(), name.clone()))
-            }
-        }
-        Ok(res)
+    pub fn list_keys(
+        &self, scope: Option<&Ident>
+    ) -> Result<Vec<Box<Ident>>, Error> {
+        let scopes = self.namespace.scopes();
+        let Some(scope) = scopes.get(scope) else {
+            return Ok(Vec::new())
+        };
+        Ok(scope.keys().cloned().collect())
     }
 
     /// Returns all the scopes in the score.
     ///
-    pub fn list_scopes(&self) -> Result<Vec<Scope>, Error> {
-        Ok(
-            self.namespace.values().keys().filter(|scope| {
-                !scope.is_global()
-            }).cloned().collect()
-        )
+    pub fn list_scopes(&self) -> Result<Vec<Box<Ident>>, Error> {
+        Ok(self.namespace.scopes().scopes())
     }
 }
 
@@ -152,83 +148,72 @@ impl Store {
     ///
     /// Quielty overwrites a possibly already existing value.
     pub fn store<T: Serialize>(
-        &self, key: &Key, value: &T
+        &self, scope: Option<&Ident>, key: &Ident, value: &T
     ) -> Result<(), Error> {
-        self.namespace.values().entry(
-            key.scope().clone()
-        ).or_default().insert(
-            key.name().into(),
+        self.namespace.scopes().get_or_create(scope).insert(
+            key.into(),
             serde_json::to_value(value).map_err(|err| {
-                Error::serialize(key.clone(), err)
+                Error::serialize(scope, key, err)
             })?,
         );
         Ok(())
     }
 
-    pub fn store_any(&self, key: &Key, value: &Value) -> Result<(), Error> {
-        self.store(key, value)
+    pub fn store_any(
+        &self, scope: Option<&Ident>, key: &Ident, value: &Value
+    ) -> Result<(), Error> {
+        self.store(scope, key, value)
     }
 
     /// Moves a value from one key to another.
-    pub fn move_value(&self, from: &Key, to: &Key) -> Result<(), Error> {
-        let mut values = self.namespace.values();
-        
-        let value = values.get_mut(from.scope()).and_then(|scope| {
-            scope.remove(from.name())
-        }).ok_or_else(|| Error::NotFound(from.clone()))?;
+    pub fn move_value(
+        &self, from_scope: Option<&Ident>, from_key: &Ident,
+        to_scope: Option<&Ident>, to_key: &Ident,
+    ) -> Result<(), Error> {
+        let mut scopes = self.namespace.scopes();
 
-        values.entry(to.scope().clone()).or_default().insert(
-            to.name().into(), value
-        );
+        let value = scopes.remove_value(from_scope, from_key)?;
+        scopes.get_or_create(to_scope).insert(to_key.into(), value);
         Ok(())
     }
 
     /// Moves an entire scope to a new scope.
     pub fn move_scope(
-        &self, from: &Scope, to: &Scope
+        &self, from: &Ident, to: &Ident
     ) -> Result<(), Error> {
-        let mut values = self.namespace.values();
+        let mut values = self.namespace.scopes();
         let scope = match values.remove(from) {
             Some(scope) => scope,
             None => {
-                return Err(Error::NoScope(from.clone()));
+                return Err(Error::NoScope(from.into()));
             }
         };
-        values.insert(to.clone(), scope);
+        values.insert(to, scope)?;
         Ok(())
     }
 
     /// Removes the stored value for a given key.
-    pub fn delete(&self, key: &Key) -> Result<(), Error> {
-        let mut values = self.namespace.values();
-        let scope = match values.get_mut(key.scope()) {
-            Some(scope) => scope,
-            None => return Err(Error::NotFound(key.clone()))
-        };
-        if scope.remove(key.name()).is_none() {
-            return Err(Error::NotFound(key.clone()))
-        }
-        if !scope.is_empty() {
-            return Ok(())
-        }
-        values.remove(key.scope());
+    pub fn delete(
+        &self, scope: Option<&Ident>, key: &Ident
+    ) -> Result<(), Error> {
+        let _ = self.namespace.scopes().remove_value(scope, key)?;
         Ok(())
     }
 
     /// Removes an entire scope.
-    pub fn delete_scope(&self, scope: &Scope) -> Result<(), Error> {
-        self.namespace.values().remove(scope);
+    pub fn delete_scope(&self, scope: &Ident) -> Result<(), Error> {
+        self.namespace.scopes().remove(scope);
         Ok(())
     }
 
     /// Removes the entire store.
     pub fn clear(&self) -> Result<(), Error> {
-        self.namespace.values().clear();
+        self.namespace.scopes().clear();
         Ok(())
     }
 
     pub fn migrate_namespace(
-        &mut self, target: &Namespace
+        &mut self, target: &Ident
     ) -> Result<(), Error> {
         if !self.namespace.locks().is_empty() {
             return Err(Error::PendingLocks);
@@ -240,13 +225,13 @@ impl Store {
         }).clone();
 
         // Check that new is empty.
-        let mut new_values = new.values();
+        let mut new_values = new.scopes();
         if !new_values.is_empty() {
             return Err(Error::NonemptyTargetNamespace(target.into()))
         }
 
         // Swap out the values.
-        mem::swap(new_values.deref_mut(), self.namespace.values().deref_mut());
+        mem::swap(new_values.deref_mut(), self.namespace.scopes().deref_mut());
 
         // Delete our namespace
         namespaces.remove(&self.namespace.ns_key);
@@ -261,10 +246,99 @@ impl Store {
 
 pub type Transaction<'a> = &'a Store;
 
-
 //------------ MemoryValues --------------------------------------------------
 
-type MemoryValues = HashMap<Scope, HashMap<SegmentBuf, Value>>;
+type MemoryValues = HashMap<Box<Ident>, Value>;
+
+//------------ MemoryScopes --------------------------------------------------
+
+#[derive(Debug, Default)]
+struct MemoryScopes {
+    global: MemoryValues,
+    scopes: HashMap<Box<Ident>, MemoryValues>,
+}
+
+impl MemoryScopes {
+    fn is_empty(&self) -> bool {
+        self.global.is_empty() && self.scopes.is_empty()
+    }
+
+    fn contains(&self, scope: &Ident) -> bool {
+        self.scopes.contains_key(scope)
+    }
+
+    fn get(&self, scope: Option<&Ident>) -> Option<&MemoryValues> {
+        match scope {
+            Some(scope) => self.scopes.get(scope),
+            None => Some(&self.global)
+        }
+    }
+
+    fn get_mut(
+        &mut self, scope: Option<&Ident>
+    ) -> Option<&mut MemoryValues> {
+        match scope {
+            Some(scope) => self.scopes.get_mut(scope),
+            None => Some(&mut self.global)
+        }
+    }
+
+    fn get_or_create(&mut self, scope: Option<&Ident>) -> &mut MemoryValues {
+        match scope {
+            Some(scope) => self.scopes.entry(scope.into()).or_default(),
+            None => &mut self.global
+        }
+    }
+
+    fn insert(
+        &mut self, scope: &Ident, values: MemoryValues
+    ) -> Result<(), Error> {
+        if self.scopes.contains_key(scope) {
+            return Err(Error::TargetScopeExists(scope.into()))
+        }
+        self.scopes.insert(scope.into(), values);
+        Ok(())
+    }
+
+    fn remove(&mut self, scope: &Ident) -> Option<MemoryValues> {
+        self.scopes.remove(scope)
+    }
+
+    fn clear(&mut self) {
+        self.global.clear();
+        self.scopes.clear();
+    }
+
+    fn scopes(&self) -> Vec<Box<Ident>> {
+        self.scopes.keys().cloned().collect()
+    }
+
+    fn remove_value(
+        &mut self, scope: Option<&Ident>, key: &Ident
+    ) -> Result<Value, Error> {
+        let values = match self.get_mut(scope) {
+            Some(scope) => scope,
+            None => {
+                return Err(Error::NotFound {
+                    scope: scope.map(Into::into),
+                    key: key.into()
+                })
+            }
+        };
+        let Some(value) = values.remove(key) else {
+            return Err(Error::NotFound {
+                scope: scope.map(Into::into),
+                key: key.into()
+            })
+        };
+        if let Some(scope) = scope {
+            if values.is_empty() {
+                self.remove(scope);
+            }
+        }
+        Ok(value)
+    }
+}
 
 
 //------------ MemoryNamespace -----------------------------------------------
@@ -272,24 +346,24 @@ type MemoryValues = HashMap<Scope, HashMap<SegmentBuf, Value>>;
 #[derive(Debug)]
 struct MemoryNamespace {
     ns_key: NsKey,
-    values: Mutex<MemoryValues>,
-    locks: Mutex<HashSet<Scope>>,
+    scopes: Mutex<MemoryScopes>,
+    locks: Mutex<HashSet<Option<Box<Ident>>>>,
 }
 
 impl MemoryNamespace {
     fn new(ns_key: NsKey) -> Self {
         Self {
             ns_key,
-            values: Default::default(),
+            scopes: Default::default(),
             locks: Default::default(),
         }
     }
 
-    fn values(&self) -> MutexGuard<'_, MemoryValues> {
-        self.values.lock().expect("poisoned lock")
+    fn scopes(&self) -> MutexGuard<'_, MemoryScopes> {
+        self.scopes.lock().expect("poisoned lock")
     }
 
-    fn locks(&self) -> MutexGuard<'_, HashSet<Scope>> {
+    fn locks(&self) -> MutexGuard<'_, HashSet<Option<Box<Ident>>>> {
         self.locks.lock().expect("poisoned lock")
     }
 }
@@ -297,7 +371,10 @@ impl MemoryNamespace {
 
 //------------ NsKey ---------------------------------------------------------
 
-type NsKey = (String, NamespaceBuf);
+/// The key for a store.
+///
+/// The first component is the URI, the second the namespace within that URI.
+type NsKey = (String, Box<Ident>);
 
 
 //------------ Memory --------------------------------------------------------
@@ -316,7 +393,7 @@ impl Memory {
     fn get_namespace(
         &self,
         prefix: String,
-        namespace: NamespaceBuf,
+        namespace: Box<Ident>,
     ) -> Arc<MemoryNamespace> {
         let ns_key = (prefix, namespace);
         let mut namespaces = self.namespaces.lock().expect("poisoned lock");
@@ -338,28 +415,46 @@ lazy_static! {
 
 #[derive(Debug)]
 pub enum Error {
-    ScopeLocked(Scope),
+    ScopeLocked(Option<Box<Ident>>),
     Deserialize {
-        key: Key,
+        scope: Option<Box<Ident>>,
+        key: Box<Ident>,
         err: String,
     },
     Serialize {
-        key: Key,
+        scope: Option<Box<Ident>>,
+        key: Box<Ident>,
         err: String,
     },
-    NotFound(Key),
-    NoScope(Scope),
-    NonemptyTargetNamespace(NamespaceBuf),
+    NotFound {
+        scope: Option<Box<Ident>>,
+        key: Box<Ident>,
+    },
+    NoScope(Box<Ident>),
+    TargetScopeExists(Box<Ident>),
+    NonemptyTargetNamespace(Box<Ident>),
     PendingLocks,
 }
 
 impl Error {
-    fn deserialize(key: Key, err: impl fmt::Display) -> Self {
-        Error::Deserialize { key, err: err.to_string() }
+    fn deserialize(
+        scope: Option<&Ident>, key: &Ident, err: impl fmt::Display
+    ) -> Self {
+        Error::Deserialize {
+            scope: scope.map(Into::into),
+            key: key.into(),
+            err: err.to_string()
+        }
     }
 
-    fn serialize(key: Key, err: impl fmt::Display) -> Self {
-        Error::Serialize { key, err: err.to_string() }
+    fn serialize(
+        scope: Option<&Ident>, key: &Ident, err: impl fmt::Display
+    ) -> Self {
+        Error::Serialize {
+            scope: scope.map(Into::into),
+            key: key.into(),
+            err: err.to_string()
+        }
     }
 }
 
@@ -367,20 +462,57 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Error::ScopeLocked(scope) => {
-                write!(f, "scope {scope} already locked")
+                match scope {
+                    Some(scope) => write!(f, "scope {scope} already locked"),
+                    None => write!(f, "global scope already locked")
+                }
             }
-            Error::Deserialize { key, err } => {
-                write!(f,
-                    "failed to deserialize value for key '{key}': {err}"
-                )
+            Error::Deserialize { scope, key, err } => {
+                match scope {
+                    Some(scope) => {
+                        write!(f,
+                            "failed to deserialize value for key '{key}' \
+                            in scope '{scope}': {err}"
+                        )
+                    }
+                    None => {
+                        write!(f,
+                            "failed to deserialize value for key '{key}' \
+                            in global scope: {err}"
+                        )
+                    }
+                }
             }
-            Error::Serialize { key, err } => {
-                write!(f,
-                    "failed to serialize value for key '{key}': {err}"
-                )
+            Error::Serialize { scope, key, err } => {
+                match scope {
+                    Some(scope) => {
+                        write!(f,
+                            "failed to serialize value for key '{key}' \
+                            in scope '{scope}': {err}"
+                        )
+                    }
+                    None => {
+                        write!(f,
+                            "failed to serialize value for key '{key}' \
+                            in global scope: {err}"
+                        )
+                    }
+                }
             }
-            Error::NotFound(key) => write!(f, "no such key '{key}'"),
+            Error::NotFound { scope, key } => {
+                match scope {
+                    Some(scope) => {
+                        write!(f, "no key '{key}' in scope '{scope}'")
+                    }
+                    None => {
+                        write!(f, "no key '{key}' in global scope")
+                    }
+                }
+            }
             Error::NoScope(scope) => write!(f, "no such scope '{scope}'"),
+            Error::TargetScopeExists(scope) => {
+                write!(f, "target scope '{scope}' exists")
+            }
             Error::NonemptyTargetNamespace(ns) => {
                 write!(f, "non-empty target namespace '{ns}'")
             }

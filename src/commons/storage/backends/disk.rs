@@ -1,6 +1,6 @@
 //! Filesystem-based storage.
 
-use std::{fmt, fs, io, path};
+use std::{fmt, fs, io};
 use std::borrow::Cow;
 use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
@@ -9,9 +9,7 @@ use serde::ser::Serialize;
 use serde_json::Value;
 use tempfile::NamedTempFile;
 use url::Url;
-use crate::commons::storage::types::{
-    Key, Namespace, Segment, SegmentBuf, Scope
-};
+use crate::commons::storage::Ident;
 use super::{
     Error as SuperError,
     Transaction as SuperTransaction
@@ -78,7 +76,7 @@ pub struct Store {
 
 impl Store {
     pub fn from_uri(
-        uri: &Url, namespace: &Namespace
+        uri: &Url, namespace: &Ident,
     ) -> Result<Option<Self>, Error> {
         if uri.scheme() != "local" {
             return Ok(None)
@@ -105,7 +103,9 @@ impl Store {
         Ok(Some(Self { root, tmp, locks }))
     }
 
-    pub fn execute<F, T>(&self, scope: &Scope, op: F) -> Result<T, SuperError>
+    pub fn execute<F, T>(
+        &self, scope: Option<&Ident>, op: F
+    ) -> Result<T, SuperError>
     where
         F: for<'a> Fn(&mut SuperTransaction<'a>) -> Result<T, SuperError>
     {
@@ -115,51 +115,28 @@ impl Store {
     }
 
     /// Returns the path for the given key.
-    fn key_path(&self, key: &Key) -> PathBuf {
-        let mut path = self.scope_path(key.scope());
-        path.push(key.name().as_str());
+    fn key_path(&self, scope: Option<&Ident>, key: &Ident) -> PathBuf {
+        let mut path = self.scope_path(scope);
+        path.push(key.as_str());
         path
     }
 
     /// Returns the path for the given scope.
-    fn scope_path(&self, scope: &Scope) -> PathBuf {
-        let mut path = self.root.to_path_buf();
-        for segment in scope {
-            path.push(segment.as_str());
+    fn scope_path(&self, scope: Option<&Ident>) -> PathBuf {
+        let mut res = self.root.clone();
+        if let Some(scope) = scope {
+            res.push(scope.as_str());
         }
-        path
+        res
     }
 
     /// Returns the lock file path for the given scope.
-    fn scope_lock_path(&self, scope: &Scope) -> PathBuf {
-        let mut path = self.locks.clone();
-        for segment in scope {
-            path.push(segment.as_str());
+    fn scope_lock_path(&self, scope: Option<&Ident>) -> PathBuf {
+        let mut res = self.locks.clone();
+        if let Some(scope) = scope {
+            res.push(scope.as_str());
         }
-        path
-    }
-
-    /// Returns a scope for the given path.
-    ///
-    /// Assumes that the path refers to a directory.
-    ///
-    /// Returns `None` if `path` isn’t under the root directory or if it
-    /// contains strange path components.
-    fn path_scope(&self, path: &Path) -> Option<Scope> {
-        let path = path.strip_prefix(&self.root).ok()?;
-
-        let mut scope = Scope::global();
-        for comp in path.components() {
-            match comp {
-                path::Component::Normal(segment) => {
-                    scope.add_sub_scope(
-                        Segment::parse(segment.to_str()?).ok()?
-                    );
-                }
-                _ => return None
-            }
-        }
-        Some(scope)
+        res
     }
 }
 
@@ -176,8 +153,10 @@ impl Store {
     }
 
     /// Returns whether the store contains the given key.
-    pub fn has(&self, key: &Key) -> Result<bool, Error> {
-        self.key_path(key).try_exists().map_err(|err| {
+    pub fn has(
+        &self, scope: Option<&Ident>, key: &Ident
+    ) -> Result<bool, Error> {
+        self.key_path(scope, key).try_exists().map_err(|err| {
             Error::io(
                 format!("failed to check existance of key '{key}'"),
                 err
@@ -186,8 +165,8 @@ impl Store {
     }
 
     /// Returns whether the store contains the given scope.
-    pub fn has_scope(&self, scope: &Scope) -> Result<bool, Error> {
-        self.scope_path(scope).try_exists().map_err(|err| {
+    pub fn has_scope(&self, scope: &Ident) -> Result<bool, Error> {
+        self.scope_path(Some(scope)).try_exists().map_err(|err| {
             Error::io(
                 format!("failed to check existance of scope '{scope}'"),
                 err
@@ -199,9 +178,9 @@ impl Store {
     ///
     /// If the value does not exist, returns `Ok(None)?.
     pub fn get<T: DeserializeOwned>(
-        &self, key: &Key
+        &self, scope: Option<&Ident>, key: &Ident
     ) -> Result<Option<T>, Error> {
-        let path = self.key_path(key);
+        let path = self.key_path(scope, key);
         let file = match File::open(&path) {
             Ok(file) => io::BufReader::new(file),
             Err(err) if err.kind() == io::ErrorKind::NotFound => {
@@ -229,37 +208,28 @@ impl Store {
                     ))
                 }
                 else {
-                    Err(Error::deserialize(key.clone(), err))
+                    Err(Error::deserialize(scope, key, err))
                 }
             }
         }
     }
 
-    pub fn get_any(&self, key: &Key) -> Result<Option<Value>, Error> {
-        self.get(key)
+    pub fn get_any(
+        &self, scope: Option<&Ident>, key: &Ident
+    ) -> Result<Option<Value>, Error> {
+        self.get(scope, key)
     }
 
     /// Returns all the keys in the given scope.
-    ///
-    /// This includes all keys directly under the given scope as well as
-    /// all keys in sub-scopes.
-    pub fn list_keys(&self, scope: &Scope) -> Result<Vec<Key>, Error> {
+    pub fn list_keys(
+        &self, scope: Option<&Ident>
+    ) -> Result<Vec<Box<Ident>>, Error> {
         let path = self.scope_path(scope);
         let mut res = Vec::new();
-        self.list_dir_keys(&path, &mut res)?;
-        Ok(res)
-    }
-
-    /// Adds all the keys in `path` to `res`.
-    ///
-    /// This is the recursive portion of `Self::list_keys`.
-    fn list_dir_keys(
-        &self, path: &Path, res: &mut Vec<Key>
-    ) -> Result<(), Error> {
-        let dir = match fs::read_dir(path) {
+        let dir = match fs::read_dir(&path) {
             Ok(dir) => dir,
             Err(err) if err.kind() == io::ErrorKind::NotFound => {
-                return Ok(());
+                return Ok(res);
             }
             Err(err) => {
                 return Err(Error::io(
@@ -269,10 +239,6 @@ impl Store {
                     err
                 ));
             }
-        };
-        let scope = match self.path_scope(path) {
-            Some(scope) => scope,
-            None => return Ok(())
         };
         for item in dir {
             let item = match item {
@@ -297,58 +263,37 @@ impl Store {
                     ));
                 }
             };
-            if file_type.is_dir() {
-                self.list_dir_keys(&item.path(), res)?;
-            }
-            else if file_type.is_file() {
+            if file_type.is_file() {
                 if let Some(name) =
                     item.file_name().into_string().ok().and_then(|name| {
-                        SegmentBuf::try_from(name).ok()
+                        Ident::boxed_from_string(name).ok()
                     })
                 {
-                    res.push(Key::new_scoped(scope.clone(), name))
+                    res.push(name)
                 }
             }
         }
 
-        Ok(())
+        Ok(res)
     }
 
     /// Returns all the scopes in the score.
     ///
-    pub fn list_scopes(&self) -> Result<Vec<Scope>, Error> {
+    pub fn list_scopes(&self) -> Result<Vec<Box<Ident>>, Error> {
         let mut res = Vec::new();
-        self.list_dir_scopes(&self.root, &mut res)?;
-        Ok(res)
-    }
-
-    /// Adds all the scopes under `path` to `res`.
-    ///
-    /// This is the recursive portion of `Self::list_scopes`.
-    fn list_dir_scopes(
-        &self, path: &Path, res: &mut Vec<Scope>
-    ) -> Result<(), Error> {
-        let dir = match fs::read_dir(path) {
+        let dir = match fs::read_dir(&self.root) {
             Ok(dir) => dir,
             Err(err) if err.kind() == io::ErrorKind::NotFound => {
-                return Ok(());
+                return Ok(res);
             }
             Err(err) => {
                 return Err(Error::io(
                     format!(
-                        "failed to read directory '{}'", path.display()
+                        "failed to read directory '{}'", self.root.display()
                     ),
                     err
                 ));
             }
-        };
-        match self.path_scope(path) {
-            Some(scope) => {
-                if !scope.is_global() {
-                    res.push(scope)
-                }
-            }
-            _ => return Ok(())
         };
         for item in dir {
             let item = match item {
@@ -356,7 +301,8 @@ impl Store {
                 Err(err) => {
                     return Err(Error::io(
                         format!(
-                            "failed to read directory '{}'", path.display()
+                            "failed to read directory '{}'",
+                            self.root.display()
                         ),
                         err
                     ));
@@ -367,18 +313,25 @@ impl Store {
                 Err(err) => {
                     return Err(Error::io(
                         format!(
-                            "failed to read directory '{}'", path.display()
+                            "failed to read directory '{}'",
+                            self.root.display()
                         ),
                         err
                     ));
                 }
             };
             if file_type.is_dir() {
-                self.list_dir_scopes(&item.path(), res)?;
+                if let Some(name) =
+                    item.file_name().into_string().ok().and_then(|name| {
+                        Ident::boxed_from_string(name).ok()
+                    })
+                {
+                    res.push(name)
+                }
             }
         }
 
-        Ok(())
+        Ok(res)
     }
 }
 
@@ -387,14 +340,13 @@ impl Store {
 impl Store {
     /// Stores the provided value under the gvien key.
     ///
-    /// Quielty overwrites a possibly already existing value.
+    /// Quietly overwrites a possibly already existing value.
     pub fn store<T: Serialize>(
-        &self, key: &Key, value: &T
+        &self, scope: Option<&Ident>, key: &Ident, value: &T
     ) -> Result<(), Error> {
-        let path = self.key_path(key);
+        let path = self.key_path(scope, key);
 
         Self::create_dirs(path.parent())?;
-
 
         // Write to a temporary file first to ensure that the file can be
         // written entirely.
@@ -426,7 +378,7 @@ impl Store {
                 ))
             }
             else {
-                return Err(Error::serialize(key.clone(), err))
+                return Err(Error::serialize(scope, key, err))
             }
         }
 
@@ -445,14 +397,20 @@ impl Store {
         Ok(())
     }
 
-    pub fn store_any(&self, key: &Key, value: &Value) -> Result<(), Error> {
-        self.store(key, value)
+    pub fn store_any(
+        &self, scope: Option<&Ident>, key: &Ident, value: &Value
+    ) -> Result<(), Error> {
+        self.store(scope, key, value)
     }
 
     /// Moves a value from one key to another.
-    pub fn move_value(&self, from: &Key, to: &Key) -> Result<(), Error> {
-        let from_path = self.key_path(from);
-        let to_path = self.key_path(to);
+    pub fn move_value(
+        &self,
+        from_scope: Option<&Ident>, from_key: &Ident,
+        to_scope: Option<&Ident>, to_key: &Ident
+    ) -> Result<(), Error> {
+        let from_path = self.key_path(from_scope, from_key);
+        let to_path = self.key_path(to_scope, to_key);
 
         Self::create_dirs(to_path.parent())?;
 
@@ -473,10 +431,10 @@ impl Store {
 
     /// Moves an entire scope to a new scope.
     pub fn move_scope(
-        &self, from: &Scope, to: &Scope
+        &self, from: &Ident, to: &Ident
     ) -> Result<(), Error> {
-        let from_path = self.scope_path(from);
-        let to_path = self.scope_path(to);
+        let from_path = self.scope_path(Some(from));
+        let to_path = self.scope_path(Some(to));
 
         Self::create_dirs(Some(&to_path))?;
 
@@ -496,8 +454,10 @@ impl Store {
     }
 
     /// Removes the stored value for a given key.
-    pub fn delete(&self, key: &Key) -> Result<(), Error> {
-        let path = self.key_path(key);
+    pub fn delete(
+        &self, scope: Option<&Ident>, key: &Ident
+    ) -> Result<(), Error> {
+        let path = self.key_path(scope, key);
 
         fs::remove_file(&path).map_err(|err| {
             Error::io(
@@ -513,8 +473,8 @@ impl Store {
     }
 
     /// Removes an entire scope.
-    pub fn delete_scope(&self, scope: &Scope) -> Result<(), Error> {
-        let path = self.scope_path(scope);
+    pub fn delete_scope(&self, scope: &Ident) -> Result<(), Error> {
+        let path = self.scope_path(Some(scope));
 
         fs::remove_dir_all(&path).map_err(|err| {
             Error::io(
@@ -541,7 +501,7 @@ impl Store {
     }
 
     pub fn migrate_namespace(
-        &mut self, namespace: &Namespace
+        &mut self, namespace: &Ident,
     ) -> Result<(), Error> {
         let root_parent = self.root.parent().ok_or_else(|| {
             Error::other(
@@ -666,11 +626,13 @@ pub enum Error {
         err: io::Error,
     },
     Deserialize {
-        key: Key,
+        scope: Option<Box<Ident>>,
+        key: Box<Ident>,
         err: String,
     },
     Serialize {
-        key: Key,
+        scope: Option<Box<Ident>>,
+        key: Box<Ident>,
         err: String,
     },
     Other(String),
@@ -681,12 +643,24 @@ impl Error {
         Error::Io { context: context.into(), err }
     }
 
-    fn deserialize(key: Key, err: impl fmt::Display) -> Self {
-        Error::Deserialize { key, err: err.to_string() }
+    fn deserialize(
+        scope: Option<&Ident>, key: &Ident, err: impl fmt::Display
+    ) -> Self {
+        Error::Deserialize {
+            scope: scope.map(Into::into),
+            key: key.into(),
+            err: err.to_string()
+        }
     }
 
-    fn serialize(key: Key, err: impl fmt::Display) -> Self {
-        Error::Serialize { key, err: err.to_string() }
+    fn serialize(
+        scope: Option<&Ident>, key: &Ident, err: impl fmt::Display
+    ) -> Self {
+        Error::Serialize {
+            scope: scope.map(Into::into),
+            key: key.into(),
+            err: err.to_string()
+        }
     }
 
     fn other(info: impl Into<String>) -> Self {
@@ -700,15 +674,37 @@ impl fmt::Display for Error {
             Error::Io { context, err } => {
                 write!(f, "{context}: {err}")
             }
-            Error::Deserialize { key, err } => {
-                write!(f,
-                    "failed to deserialize value for key '{key}': {err}"
-                )
+            Error::Deserialize { scope, key, err } => {
+                match scope {
+                    Some(scope) => {
+                        write!(f,
+                            "failed to deserialize value for key '{key}' \
+                            in scope '{scope}': {err}"
+                        )
+                    }
+                    None => {
+                        write!(f,
+                            "failed to deserialize value for key '{key}' \
+                            in global scope: {err}"
+                        )
+                    }
+                }
             }
-            Error::Serialize { key, err } => {
-                write!(f,
-                    "failed to serialize value for key '{key}': {err}"
-                )
+            Error::Serialize { scope, key, err } => {
+                match scope {
+                    Some(scope) => {
+                        write!(f,
+                            "failed to serialize value for key '{key}' \
+                            in scope '{scope}': {err}"
+                        )
+                    }
+                    None => {
+                        write!(f,
+                            "failed to serialize value for key '{key}' \
+                            in global scope: {err}"
+                        )
+                    }
+                }
             }
             Error::Other(s) => f.write_str(s)
         }

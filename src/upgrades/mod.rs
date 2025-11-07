@@ -23,7 +23,7 @@ use crate::{
             Storable, StoredCommand, WalStoreError,
             WithStorableDetails,
         },
-        storage::{Key, KeyValueError, KeyValueStore, Scope, Segment},
+        storage::{Ident, KeyValueError, KeyValueStore},
         version::KrillVersion,
         KrillResult,
     },
@@ -389,20 +389,6 @@ pub trait UpgradeAggregateStorePre0_14 {
         // Migrate the event sourced data for each scope and create new
         // snapshots
         for scope in self.deployed_store().scopes()? {
-            // We only need top-level scopes, not sub-scopes such as 'surplus'
-            // archive dirs
-            if scope.len() != 1 {
-                trace!("Skipping migration for sub-scope: {scope}");
-                continue;
-            }
-
-            // Skip a scope [`.locks`]. This is the old locks directory.
-            if let Some(segment) = scope.first_segment() {
-                if segment.as_str() == ".locks" {
-                    continue
-                }
-            }
-
             // Getting the Handle should never fail, but if it does then we
             // should bail out asap.
             let handle =
@@ -429,10 +415,10 @@ pub trait UpgradeAggregateStorePre0_14 {
             // run. This is a special event that has no command,
             // so we need to do this separately.
             if data_upgrade_info.last_migrated_command.is_none() {
-                let old_init_key = Self::event_key(scope.clone(), 0);
+                let old_init_key = Self::event_key(0);
 
                 let old_init: OldStoredEvent<Self::OldInitEvent> =
-                    self.get(&old_init_key)?;
+                    self.get(&scope, &old_init_key)?;
                 let old_init = old_init.into_details();
 
                 // From 0.14.x and up we will have command '0' for the init,
@@ -447,7 +433,7 @@ pub trait UpgradeAggregateStorePre0_14 {
                 // set it to now.
                 let time = if let Some(first_command) = old_cmd_keys.first() {
                     let cmd: OldStoredCommand<Self::OldStorableDetails> =
-                        self.get(first_command)?;
+                        self.get(&scope, first_command)?;
                     cmd.time()
                 } else {
                     Time::now()
@@ -484,7 +470,7 @@ pub trait UpgradeAggregateStorePre0_14 {
                 // Read and parse the command.
                 trace!("  +- command: {old_cmd_key}");
                 let old_command: OldStoredCommand<Self::OldStorableDetails> =
-                    self.get(&old_cmd_key)?;
+                    self.get(&scope, &old_cmd_key)?;
 
                 // And the unconverted effects
                 let old_effect = match old_command.effect() {
@@ -492,12 +478,11 @@ pub trait UpgradeAggregateStorePre0_14 {
                         let mut full_events: Vec<Self::OldEvent> = vec![]; // We just had numbers, we need to include the full
                                                                            // events
                         for v in events {
-                            let event_key =
-                                Self::event_key(scope.clone(), *v);
+                            let event_key = Self::event_key(*v);
                             trace!("    +- event: {event_key}");
                             let evt: OldStoredEvent<Self::OldEvent> = self
                                 .deployed_store()
-                                .get(&event_key)?
+                                .get(Some(&scope), &event_key)?
                                 .ok_or_else(|| {
                                     UpgradeError::Custom(format!(
                                         "Cannot parse old event: {event_key}"
@@ -616,10 +601,6 @@ pub trait UpgradeAggregateStorePre0_14 {
             UpgradeMode::PrepareToFinalise => {
                 let mut aspa_configs = AspaMigrationConfigs::default();
                 for scope in self.deployed_store().scopes()? {
-                    if scope.len() != 1 {
-                        continue;
-                    }
-
                     // Getting the Handle should never fail, but if it does
                     // then we should bail out asap.
                     let ca = MyHandle::from_str(&scope.to_string()).map_err(
@@ -660,13 +641,11 @@ pub trait UpgradeAggregateStorePre0_14 {
     /// another version set as the target.
     fn preparation_store_prepare(&self) -> UpgradeResult<()> {
         let code_version = KrillVersion::code_version();
-        let version_key = Key::new_global(
-            const { Segment::make("version") }
-        );
+        const VERSION: &Ident = Ident::make("version");
 
         if let Ok(Some(existing_migration_version)) = self
             .preparation_key_value_store()
-            .get::<KrillVersion>(&version_key)
+            .get::<KrillVersion>(None, VERSION)
         {
             if existing_migration_version != code_version {
                 warn!("Found prepared data for Krill version {existing_migration_version}, will remove it and start from scratch for {code_version}");
@@ -675,7 +654,7 @@ pub trait UpgradeAggregateStorePre0_14 {
         }
 
         self.preparation_key_value_store()
-            .store(&version_key, &code_version)?;
+            .store(None, VERSION, &code_version)?;
 
         Ok(())
     }
@@ -710,28 +689,24 @@ pub trait UpgradeAggregateStorePre0_14 {
 
     fn store_new_command(
         &self,
-        scope: &Scope,
+        scope: &Ident,
         command: &StoredCommand<Self::Aggregate>,
     ) -> UpgradeResult<()> {
-        let key =
-            Self::new_stored_command_key(scope.clone(), command.version());
-        self.preparation_key_value_store()
-            .store_new(&key, command)
-            .map_err(UpgradeError::KeyStoreError)
-    }
-
-    fn data_upgrade_info_key(scope: Scope) -> Key {
-        Key::new_scoped(scope, const { Segment::make("upgrade_info.json") })
+        Ok(self.preparation_key_value_store().store_new(
+            Some(scope),
+            &Self::new_stored_command_key(command.version()),
+            command
+        )?)
     }
 
     /// Return the DataUpgradeInfo telling us to where we got to with this
     /// migration.
     fn data_upgrade_info(
         &self,
-        scope: &Scope,
+        scope: &Ident,
     ) -> UpgradeResult<DataUpgradeInfo> {
         self.preparation_key_value_store()
-            .get(&Self::data_upgrade_info_key(scope.clone()))
+            .get(Some(scope), DATA_UPGRADE_INFO_KEY)
             .map(|opt| opt.unwrap_or_default())
             .map_err(UpgradeError::KeyStoreError)
     }
@@ -739,26 +714,23 @@ pub trait UpgradeAggregateStorePre0_14 {
     /// Update the DataUpgradeInfo
     fn update_data_upgrade_info(
         &self,
-        scope: &Scope,
+        scope: &Ident,
         info: &DataUpgradeInfo,
     ) -> UpgradeResult<()> {
         self.preparation_key_value_store()
-            .store(&Self::data_upgrade_info_key(scope.clone()), info)
+            .store(Some(scope), DATA_UPGRADE_INFO_KEY, info)
             .map_err(UpgradeError::KeyStoreError)
     }
 
     /// Clean up keys used for tracking migration progress
     fn clean_migration_help_files(&self) -> UpgradeResult<()> {
-        let version_key = Key::new_global(
-            const { Segment::make("version")
-        });
         self.preparation_key_value_store()
-            .drop_key(&version_key)
+            .drop_key(None, const { Ident::make("version") })
             .map_err(UpgradeError::KeyStoreError)?;
 
         for scope in self.preparation_key_value_store().scopes()? {
             self.preparation_key_value_store()
-                .drop_key(&Self::data_upgrade_info_key(scope))
+                .drop_key(Some(&scope), DATA_UPGRADE_INFO_KEY)
                 .map_err(UpgradeError::KeyStoreError)?;
         }
         Ok(())
@@ -768,19 +740,15 @@ pub trait UpgradeAggregateStorePre0_14 {
     /// sequence. Then sort them by sequence and turn them back into key
     /// store keys for further processing.
     fn command_keys(
-        &self,
-        scope: &Scope,
-        from: u64,
-    ) -> Result<Vec<Key>, UpgradeError> {
-        let keys = self.deployed_store().keys(scope, "command--")?;
+        &self, scope: &Ident, from: u64,
+    ) -> Result<Vec<Box<Ident>>, UpgradeError> {
+        let keys = self.deployed_store().keys(Some(scope), "command--")?;
         let mut cmd_keys: Vec<OldCommandKey> = vec![];
         for key in keys {
-            let cmd_key = OldCommandKey::from_str(key.name().as_str())
+            let cmd_key = OldCommandKey::from_str(key.as_str())
                 .map_err(|_| {
                     UpgradeError::Custom(format!(
-                        "Found invalid command key: {} for ca: {}",
-                        key.name(),
-                        scope
+                        "Found invalid command key: {key} for ca: {scope}",
                     ))
                 })?;
             if cmd_key.sequence > from {
@@ -788,37 +756,38 @@ pub trait UpgradeAggregateStorePre0_14 {
             }
         }
         cmd_keys.sort_by_key(|k| k.sequence);
-        let cmd_keys = cmd_keys
-            .into_iter()
-            .map(|ck| {
-                Key::new_scoped(
-                    scope.clone(),
-                    Segment::parse_lossy(&format!("{ck}.json")),
-                )
-            }) // ck should always be a valid Segment
-            .collect();
-
-        Ok(cmd_keys)
+        Ok(cmd_keys.into_iter().map(|ck| {
+            ck.to_storage_key()
+        }).collect())
     }
 
-    fn get<V: DeserializeOwned>(&self, key: &Key) -> Result<V, UpgradeError> {
-        self.deployed_store().get(key)?.ok_or_else(|| {
-            UpgradeError::Custom(format!("Cannot read key: {key}"))
+    fn get<V: DeserializeOwned>(
+        &self, scope: &Ident, key: &Ident
+    ) -> Result<V, UpgradeError> {
+        self.deployed_store().get(Some(scope), key)?.ok_or_else(|| {
+            UpgradeError::Custom(
+                format!("Cannot read key '{key}' in scope '{scope}'.")
+            )
         })
     }
 
-    fn event_key(scope: Scope, nr: u64) -> Key {
-        // cannot panic as a u64 cannot contain a Scope::SEPARATOR
-        Key::new_scoped(
-            scope,
-            Segment::parse(&format!("delta-{nr}.json")).unwrap(),
+    fn event_key(nr: u64) -> Box<Ident> {
+        Ident::builder(
+            const { Ident::make("delta-") }
+        ).push_u64(
+            nr
+        ).finish_with_extension(
+            const { Ident::make("json") }
         )
     }
 
-    fn new_stored_command_key(scope: Scope, version: u64) -> Key {
-        Key::new_scoped(
-            scope,
-            Segment::parse(&format!("command-{version}.json")).unwrap(),
+    fn new_stored_command_key(version: u64) -> Box<Ident> {
+        Ident::builder(
+            const { Ident::make("command-") }
+        ).push_u64(
+            version
+        ).finish_with_extension(
+            const { Ident::make("json") }
         )
     }
 }
@@ -871,11 +840,10 @@ pub fn prepare_upgrade_data_migrations(
             // easily be migrated to the new setup in 0.13.0.
             // Well.. it could be done, if there would be a strong use
             // case to put in the effort, but there really isn't.
-            let ca_kv_store =
-                KeyValueStore::create(&config.storage_uri, CASERVER_NS)?;
-            if ca_kv_store.has_scope(&Scope::from_segment(
-                    const { Segment::make("ta") }
-                ))? {
+            let ca_kv_store = KeyValueStore::create(
+                &config.storage_uri, CASERVER_NS
+            )?;
+            if ca_kv_store.has_scope(const { Ident::make("ta") })? {
                 return Err(UpgradeError::OldTaMigration);
             }
 
@@ -883,11 +851,13 @@ pub fn prepare_upgrade_data_migrations(
                 let msg = "Cannot upgrade Krill installations from before version 0.6.0. Please upgrade to 0.8.1 first, then upgrade to 0.12.3, and then upgrade to this version.";
                 error!("{msg}");
                 Err(UpgradeError::custom(msg))
-            } else if versions.from < KrillVersion::release(0, 9, 0) {
+            }
+            else if versions.from < KrillVersion::release(0, 9, 0) {
                 let msg = "Cannot upgrade Krill installations from before version 0.9.0. Please upgrade to 0.12.3 first, and then upgrade to this version.";
                 error!("{msg}");
                 Err(UpgradeError::custom(msg))
-            } else if versions.from < KrillVersion::candidate(0, 10, 0, 1) {
+            }
+            else if versions.from < KrillVersion::candidate(0, 10, 0, 1) {
                 // Complex migrations involving command / event conversions
                 pubd::pre_0_10_0::PublicationServerRepositoryAccessMigration::upgrade(mode, config, &versions)?;
                 let aspa_configs =
@@ -1042,24 +1012,18 @@ pub fn finalise_data_migration(
             // No migration needed, but check if we have a current store
             // for this namespace that still includes a version file. If
             // so, remove it.
-            let current_store =
-                KeyValueStore::create(&config.storage_uri, ns)?;
-            let version_key = Key::new_global(
-                const { Segment::make("version")
-            });
-            if current_store.has(&version_key)? {
+            let current_store = KeyValueStore::create(
+                &config.storage_uri, ns
+            )?;
+            if current_store.has(None,  VERSION_KEY)? {
                 debug!("Removing excess version key in ns: {ns}");
-                current_store.drop_key(&version_key)?;
+                current_store.drop_key(None, VERSION_KEY)?;
             }
 
             // If we migrate from before 0.15.0, delete the .locks scope.
-            if upgrade.from() < &KrillVersion::release(0, 15, 0) {
-                let _ = current_store.drop_scope(
-                    &Scope::from_segment(
-                        const { Segment::make(".locks") }
-                    )
-                );
-            }
+            //
+            // XXX This is not necessary any more since things starting with
+            //     a dot aren’t valid scopes any more.
         }
     }
 
@@ -1121,10 +1085,10 @@ fn record_preexisting_openssl_keys_in_signer_mapper(
 
         let mut openssl_signer_handle: Option<SignerHandle> = None;
 
-        for key in keys_key_store.keys(&Scope::global(), "")? {
+        for key in keys_key_store.keys(None, "")? {
             debug!("Found key: {key}");
             // Is it a key identifier?
-            if let Ok(key_id) = KeyIdentifier::from_str(key.name().as_str()) {
+            if let Ok(key_id) = KeyIdentifier::from_str(key.as_str()) {
                 // Is the key already recorded in the mapper? It shouldn't be,
                 // but asking will cause the initial
                 // registration of the OpenSSL signer to occur and for it to
@@ -1254,12 +1218,8 @@ fn upgrade_versions(
             PUBSERVER_CONTENT_NS,
         ] {
             let kv_store = KeyValueStore::create(&config.storage_uri, ns)?;
-            let key = Key::new_global(
-                const { Segment::make("version")
-            });
-
             if let Some(key_store_version) =
-                kv_store.get::<KrillVersion>(&key)?
+                kv_store.get::<KrillVersion>(None, VERSION_KEY)?
             {
                 if let Some(last_seen) = &current {
                     if &key_store_version > last_seen {
@@ -1280,7 +1240,13 @@ fn upgrade_versions(
     }
 }
 
-//------------ Tests ---------------------------------------------------------
+
+//============ Key Constants =================================================
+
+const DATA_UPGRADE_INFO_KEY: &Ident = Ident::make("upgrade_info.json");
+const VERSION_KEY: &Ident = const { Ident::make("version") };
+
+//============ Tests =========================================================
 
 #[cfg(test)]
 mod tests {
@@ -1289,7 +1255,7 @@ mod tests {
     use log::LevelFilter;
     use tempfile::tempdir;
     use url::Url;
-    use crate::commons::storage::Namespace;
+    use crate::commons::storage::Ident;
     use crate::commons::test;
     use crate::server::ca::{CaStatus, CaStatusStore};
     use super::*;
@@ -1334,7 +1300,7 @@ mod tests {
         )).unwrap();
 
         for ns in namespaces {
-            let namespace = Namespace::parse(ns).unwrap();
+            let namespace = Ident::from_str(ns).unwrap();
             let source_store = KeyValueStore::create(
                 &source_url, namespace
             ).unwrap();
@@ -1342,7 +1308,7 @@ mod tests {
                 &mem_storage_base_uri, namespace
             ).unwrap();
 
-            target_store.import(&source_store, |_| true).unwrap();
+            target_store.import(&source_store).unwrap();
         }
 
         let properties_manager = PropertiesManager::create(
@@ -1507,7 +1473,7 @@ mod tests {
         let target_store = KeyValueStore::create(
             &mem_storage_base_uri, KEYS_NS
         ).unwrap();
-        target_store.import(&source_store, |_| true).unwrap();
+        target_store.import(&source_store).unwrap();
 
         // This is needed for tls_dir etc, but will be ignored here.
         let bogus_path = PathBuf::from("/dev/null");
@@ -1600,25 +1566,15 @@ mod tests {
             KeyValueStore::create(&test_storage_uri, STATUS_NS).unwrap();
 
         // copy the source KV store (files) into the test KV store (in memory)
-        status_kv_store.import(
-            &source_store,
-            |scope| {
-                match scope.first_segment() {
-                    Some(segment) => segment.as_str() != ".locks",
-                    None => true
-                }
-            }
-        ).unwrap();
+        status_kv_store.import(&source_store).unwrap();
 
         // get the status for testbed before initialising a StatusStore
         // using the copied the data - that will be done next and start
         // a migration.
-        let testbed_status_key = Key::new_scoped(
-            Scope::from_segment(const { Segment::make("testbed") }),
-            Segment::parse("status.json").unwrap(),
-        );
-        let status_testbed_before_migration: CaStatus =
-            status_kv_store.get(&testbed_status_key).unwrap().unwrap();
+        let status_testbed_before_migration: CaStatus = status_kv_store.get(
+            Some(const { Ident::make("testbed") }),
+            const { Ident::make("status.json") },
+        ).unwrap().unwrap();
 
         // Initialise the StatusStore using the new (in memory) storage,
         // and migrate the data.

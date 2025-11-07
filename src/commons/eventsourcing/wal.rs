@@ -3,6 +3,7 @@
 //! This is a private module. Its public items are re-exported by the parent.
 
 use std::{error, fmt};
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
@@ -10,9 +11,7 @@ use log::{error, warn, trace};
 use rpki::ca::idexchange::MyHandle;
 use serde::{Deserialize, Serialize};
 use url::Url;
-use crate::commons::storage::{
-    Key, KeyValueError, KeyValueStore,Namespace, Scope, Segment
-};
+use crate::commons::storage::{Ident, KeyValueError, KeyValueStore};
 use super::store::Storable;
 
 
@@ -137,7 +136,7 @@ impl<T: WalSupport> WalStore<T> {
     /// Creates a new store using the given storage URL and namespace.
     pub fn create(
         storage_uri: &Url,
-        namespace: &Namespace,
+        namespace: &Ident,
     ) -> Result<Self, WalStoreError> {
         Ok(WalStore {
             kv: KeyValueStore::create(storage_uri, namespace)?,
@@ -171,9 +170,11 @@ impl<T: WalSupport> WalStore<T> {
         let scope = Self::scope_for_handle(handle);
         let instance = Arc::new(instance);
 
-        self.kv.execute(&scope, |kv| {
-            let key = Self::key_for_snapshot(handle);
-            kv.store(&key, instance.as_ref())?;
+        self.kv.execute(Some(&scope), |kv| {
+            kv.store(
+                Some(&scope), Self::key_for_snapshot(),
+                instance.as_ref()
+            )?;
 
             self.cache_update(handle, instance.clone());
 
@@ -206,7 +207,7 @@ impl<T: WalSupport> WalStore<T> {
             Err(WalStoreError::Unknown(handle.clone()))
         }
         else {
-            self.kv.execute(&scope, |kv| {
+            self.kv.execute(Some(&scope), |kv| {
                 kv.delete_scope(&scope)
             }).map_err(WalStoreError::KeyStoreError)?;
             self.cache_remove(handle);
@@ -268,7 +269,8 @@ impl<T: WalSupport> WalStore<T> {
         cmd_opt: Option<T::Command>,
         save_snapshot: bool,
     ) -> Result<Arc<T>, T::Error> {
-        self.kv.execute(&Self::scope_for_handle(handle), |kv| {
+        let scope = Self::scope_for_handle(handle);
+        self.kv.execute(Some(&scope), |kv| {
             // Do we need to update the cache when we are done?
             let mut changed_from_cached = false;
 
@@ -287,9 +289,7 @@ impl<T: WalSupport> WalStore<T> {
                     trace!("No cached instance found for '{handle}'");
                     changed_from_cached = true;
 
-                    let key = Self::key_for_snapshot(handle);
-
-                    match kv.get(&key)? {
+                    match kv.get(Some(&scope), Self::key_for_snapshot())? {
                         Some(value) => {
                             trace!(
                                 "Deserializing stored instance for '{handle}'"
@@ -320,7 +320,8 @@ impl<T: WalSupport> WalStore<T> {
                 // - there are no more changes
                 // - or we encountered an error
                 while let Some(value) = kv.get(
-                    &Self::key_for_wal_set(handle, latest_inner.revision())
+                    Some(&scope),
+                    &Self::key_for_wal_set(latest_inner.revision())
                 )? {
                     trace!("applying revision '{handle}'");
                     latest_inner.apply(value);
@@ -361,10 +362,10 @@ impl<T: WalSupport> WalStore<T> {
                                 };
 
                                 let key_for_wal_set = Self::key_for_wal_set(
-                                    handle, revision
+                                    revision
                                 );
 
-                                if kv.has(&key_for_wal_set)? {
+                                if kv.has(Some(&scope), &key_for_wal_set)? {
                                     error!(
                                         "Change set for '{handle}' version \
                                          '{revision}' already exists."
@@ -382,7 +383,9 @@ impl<T: WalSupport> WalStore<T> {
 
                                 latest_inner.apply(set.clone());
 
-                                kv.store(&key_for_wal_set, &set)?;
+                                kv.store(
+                                    Some(&scope), &key_for_wal_set, &set
+                                )?;
                             }
                         }
                     }
@@ -395,17 +398,18 @@ impl<T: WalSupport> WalStore<T> {
 
             if save_snapshot {
                 // Save the latest version as snapshot
-                let key = Self::key_for_snapshot(handle);
-                kv.store(&key, latest.as_ref())?;
+                kv.store(
+                    Some(&scope), Self::key_for_snapshot(), latest.as_ref()
+                )?;
 
                 // Delete all wal sets (changes), since we are doing
                 // this inside a transaction or locked scope we can
                 // assume that all changes were applied, and there
                 // are no other threads creating additional changes
                 // that we were not aware of.
-                for key in kv.list_keys(&Self::scope_for_handle(handle))? {
-                    if key.name().as_str().starts_with("wal-") {
-                        kv.delete(&key)?;
+                for key in kv.list_keys(Some(&scope))? {
+                    if key.as_str().starts_with("wal-") {
+                        kv.delete(Some(&scope), &key)?;
                     }
                 }
             }
@@ -440,30 +444,23 @@ impl<T: WalSupport> WalStore<T> {
 
 impl<T: WalSupport> WalStore<T> {
     /// Returns the scope for the instance with the given ID.
-    fn scope_for_handle(handle: &MyHandle) -> Scope {
-        // handle should always be a valid Segment
-        //
-        // XXX I’m not sure this is actually true. There may be something with
-        //     forward slashes.
-        Scope::from_segment(Segment::parse_lossy(handle.as_str()))
+    fn scope_for_handle(handle: &MyHandle) -> Cow<'_, Ident> {
+        Ident::from_handle(handle)
     }
 
     /// Returns the key for the snapshot of the aggregate with the given ID.
-    fn key_for_snapshot(handle: &MyHandle) -> Key {
-        Key::new_scoped(
-            Self::scope_for_handle(handle),
-            const { Segment::make("snapshot.json") },
-        )
+    const fn key_for_snapshot() -> &'static Ident {
+        const { Ident::make("snapshot.json") }
     }
 
     /// Returns the key for the command for an aggregate and version.
-    fn key_for_wal_set(handle: &MyHandle, revision: u64) -> Key {
-        Key::new_scoped(
-            Self::scope_for_handle(handle),
-            // Cannot panic as a u64 cannot contain a Scope::SEPARATOR.
-            Segment::parse(
-                &format!("wal-{revision}.json")
-            ).unwrap(),
+    fn key_for_wal_set(revision: u64) -> Box<Ident> {
+        Ident::builder(
+            const { Ident::make("wal-") }
+        ).push_u64(
+            revision
+        ).finish_with_extension(
+            const { Ident::make("json") }
         )
     }
 }

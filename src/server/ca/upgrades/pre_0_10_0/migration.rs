@@ -7,7 +7,7 @@ use crate::api::aspa::ProviderAsn;
 use crate::commons::eventsourcing::{
     AggregateStore, StoredCommand, StoredCommandBuilder
 };
-use crate::commons::storage::{Key, KeyValueStore, Segment};
+use crate::commons::storage::{Ident, KeyValueStore};
 use crate::constants::{CASERVER_NS, CA_OBJECTS_NS};
 use crate::server::ca::certauth::CertAuth;
 use crate::server::ca::commands::CertAuthStorableCommand;
@@ -268,14 +268,15 @@ impl CaObjectsMigration {
         &self,
         ca: &CaHandle,
     ) -> Result<(), UpgradeError> {
-        let key =
-            Key::new_global(Segment::parse_lossy(&format!("{ca}.json"))); // ca should always be a valid Segment
+        let key = Ident::builder(
+            Ident::from_handle(ca).into_owned()
+        ).finish_with_extension( const { Ident::make("json") });
 
         if let Some(old_objects) =
-            self.current_store.get::<OldCaObjects>(&key)?
+            self.current_store.get::<OldCaObjects>(None, &key)?
         {
             let converted: CaObjects = old_objects.try_into()?;
-            self.new_store.store(&key, &converted)?;
+            self.new_store.store(None, &key, &converted)?;
             debug!(
                 "Stored updated objects for CA {} in {:?}",
                 ca, self.new_store

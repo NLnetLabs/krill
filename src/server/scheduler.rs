@@ -19,7 +19,7 @@ use crate::{
         crypto::dispatch::signerinfo::SignerInfo,
         error::FatalError,
         eventsourcing::{Aggregate, AggregateStore, WalStore, WalSupport},
-        storage::{Key, Namespace},
+        storage::Ident,
         version::KrillVersion,
     },
     constants::{
@@ -72,11 +72,8 @@ impl Scheduler {
     /// for tasks and re-schedule new tasks as needed.
     pub async fn run(&self) {
         loop {
-            while let Some(running_task) = self.tasks.pop() {
-                // remember the key so we can finish or re-schedule the task.
-                let task_key = Key::from(&running_task);
-
-                match serde_json::from_value(running_task.value) {
+            while let Some((task_key, value)) = self.tasks.pop() {
+                match serde_json::from_value(value) {
                     Err(e) => {
                         // If we cannot parse the value of this task, then we
                         // have a major
@@ -508,7 +505,7 @@ impl Scheduler {
     fn update_snapshots(&self) -> Result<TaskResult, FatalError> {
         fn update_aggregate_store_snapshots<A: Aggregate>(
             storage_uri: &Url,
-            namespace: &Namespace,
+            namespace: &Ident,
         ) {
             match AggregateStore::<A>::create(storage_uri, namespace, false) {
                 Err(e) => {
@@ -536,7 +533,7 @@ impl Scheduler {
 
         fn update_wal_store_snapshots<W: WalSupport>(
             storage_uri: &Url,
-            namespace: &Namespace,
+            namespace: &Ident,
         ) {
             match WalStore::<W>::create(storage_uri, namespace) {
                 Err(e) => {

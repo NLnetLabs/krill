@@ -83,7 +83,7 @@ impl<'a> Request<'a> {
         }
     }
 
-    /// Checks whether the request is a POST or returns an error response.
+    /// Checks whether the request is a DELETE or returns an error response.
     pub fn check_delete(&self) -> Result<(), HttpResponse> {
         match *self.request.method() {
             Method::DELETE => Ok(()),

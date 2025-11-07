@@ -4,7 +4,7 @@
 //! entitlements.
 
 use std::fmt;
-use std::str::FromStr;
+use std::borrow::Cow;
 use log::{debug, error, trace, warn};
 use rpki::ca::idexchange::{CaHandle, ParentHandle};
 use rpki::ca::provisioning::{ResourceClassName, RevocationRequest};
@@ -15,8 +15,8 @@ use crate::api::ca::Timestamp;
 use crate::commons::eventsourcing;
 use crate::commons::{Error, KrillResult};
 use crate::commons::eventsourcing::Aggregate;
-use crate::commons::queue::{Queue, RunningTask, ScheduleMode};
-use crate::commons::storage::{Key, Segment, SegmentBuf};
+use crate::commons::queue::{Queue, ScheduleMode};
+use crate::commons::storage::Ident;
 use crate::constants::{TASK_QUEUE_NS, ta_handle};
 use crate::server::ca::{CertAuth, CertAuthEvent};
 use crate::server::taproxy::{TrustAnchorProxy, TrustAnchorProxyEvent};
@@ -94,71 +94,129 @@ pub enum Task {
 }
 
 impl Task {
-    fn name(&self) -> KrillResult<SegmentBuf> {
+    fn name(&self) -> Cow<'_, Ident> {
         match self {
             Task::SyncRepo { ca_handle: ca, .. } => {
-                SegmentBuf::from_str(&format!("sync_repo_{ca}"))
+                Cow::Owned(
+                    Ident::builder(
+                        const { Ident::make("sync_repo_") }
+                    ).push_handle(ca).finish()
+                )
             }
             Task::SyncParent {
                 ca_handle: ca,
                 parent,
                 ..
-            } => SegmentBuf::from_str(&format!(
-                "sync_{ca}_with_parent_{parent}"
-            )),
+            } => {
+                Cow::Owned(
+                    Ident::builder(
+                        const { Ident::make("sync_") }
+                    ).push_handle(
+                        ca
+                    ).push_ident(
+                        const { Ident::make("_with_parent_") }
+                    ).push_handle(
+                        parent
+                    ).finish()
+                )
+            }
             Task::SuspendChildrenIfNeeded { ca_handle: ca } => {
-                SegmentBuf::from_str(&format!(
-                    "suspend_children_if_needed_{ca}"
-                ))
+                Cow::Owned(
+                    Ident::builder(
+                        const { Ident::make("suspend_children_if_needed_") }
+                    ).push_handle(ca).finish()
+                )
             }
             Task::RepublishIfNeeded => {
-                Ok(Segment::make("all_cas_republish_if_needed").to_owned())
+                Cow::Borrowed(
+                    const { Ident::make("all_cas_republish_if_needed") }
+                )
             }
             Task::RenewObjectsIfNeeded => {
-                Ok(Segment::make("all_cas_renew_objects_if_needed").to_owned())
+                Cow::Borrowed(
+                    const { Ident::make("all_cas_renew_objects_if_needed") }
+                )
             }
             Task::ResourceClassRemoved {
                 ca_handle: ca,
                 parent,
                 rcn,
                 ..
-            } => SegmentBuf::from_str(&format!(
-                "resource_class_removed_ca_{ca}_parent_{parent}_rcn_{rcn}"
-            )),
+            } => {
+                Cow::Owned(
+                    Ident::builder(
+                        const { Ident::make("resource_class_removed_ca_") }
+                    ).push_handle(
+                        ca
+                    ).push_ident(
+                        const { Ident::make("_parent_") }
+                    ).push_handle(
+                        parent
+                    ).push_ident(
+                        const { Ident::make("_rcn_") }
+                    ).push_converted_str(
+                        rcn.as_ref()
+                    ).finish()
+                )
+            },
             Task::UnexpectedKey {
                 ca_handle: ca,
                 rcn,
                 revocation_request,
                 ..
-            } => SegmentBuf::from_str(&format!(
-                "unexpected_key_{}_ca_{}_rcn_{}",
-                revocation_request.key(),
-                ca,
-                rcn
-            )),
+            } => {
+                Cow::Owned(
+                    Ident::builder(
+                        const { Ident::make("unexpected_key_") }
+                    ).push_key_identifier(
+                        revocation_request.key()
+                    ).push_ident(
+                        const { Ident::make("_ca_") }
+                    ).push_handle(
+                        ca
+                    ).push_ident(
+                        const { Ident::make("_rcn_") }
+                    ).push_converted_str(
+                        rcn.as_ref()
+                    ).finish()
+                )
+            }
             Task::UpdateSnapshots => {
-                Ok(Segment::make("update_stored_snapshots").to_owned())
+                Cow::Borrowed(
+                    const { Ident::make("update_stored_snapshots") }
+                )
             }
             Task::RrdpUpdateIfNeeded => {
-                Ok(Segment::make("update_rrdp_if_needed").to_owned())
+                Cow::Borrowed(
+                    const { Ident::make("update_rrdp_if_needed") }
+                )
             }
             Task::RenewTestbedTa => {
-                Ok(Segment::make("renew_testbed_ta").to_owned())
+                Cow::Borrowed(
+                    const { Ident::make("renew_testbed_ta") }
+                )
             }
             Task::SyncTrustAnchorProxySignerIfPossible => {
-                Ok(Segment::make("sync_ta_proxy_signer").to_owned())
+                Cow::Borrowed(
+                    const { Ident::make("sync_ta_proxy_signer") }
+                )
             }
             Task::QueueStartTasks => {
-                Ok(Segment::make("queue_start_tasks").to_owned())
+                Cow::Borrowed(
+                    const { Ident::make("queue_start_tasks") }
+                )
             }
             Task::SweepLoginCache => {
-                Ok(Segment::make("sweep_login_cache").to_owned())
+                Cow::Borrowed(
+                    const { Ident::make("sweep_login_cache") }
+                )
             }
             Task::RefreshAnnouncementsInfo => {
-                Ok(Segment::make("refresh_bgp_announcements_info").to_owned())
+                Cow::Borrowed(
+                    const { Ident::make("refresh_bgp_announcements_info") }
+                )
             }
         }
-        .map_err(|e| Error::Custom(format!("could not create name: {e}")))
     }
 }
 
@@ -235,7 +293,7 @@ impl TaskQueue {
     }
 }
 impl TaskQueue {
-    pub fn pop(&self) -> Option<RunningTask> {
+    pub fn pop(&self) -> Option<(Box<Ident>, serde_json::Value)> {
         trace!("Try to get a task off the queue");
         match self.q.claim_scheduled_pending_task() {
             Err(e) => {
@@ -251,13 +309,9 @@ impl TaskQueue {
                 trace!("No pending task found.");
                 None
             }
-            Ok(Some(pending)) => {
-                trace!(
-                    "fnd task: {} with priority: {}",
-                    pending.name,
-                    Priority::from_timestamp_ms(pending.timestamp_millis)
-                );
-                Some(pending)
+            Ok(Some((key, value))) => {
+                trace!("found task: {key}");
+                Some((key, value))
             }
         }
     }
@@ -309,7 +363,7 @@ impl TaskQueue {
         mode: ScheduleMode,
         priority: Priority,
     ) -> KrillResult<()> {
-        let task_name = task.name()?;
+        let task_name = task.name();
         debug!(
             "add task: {task_name} with priority: {priority}",
         );
@@ -319,13 +373,13 @@ impl TaskQueue {
             ))
         })?;
 
-        self.q
-            .schedule_task(task_name, json, Some(priority.to_millis()), mode)
-            .map_err(Error::from)
+        self.q.schedule_task(
+            &task_name, &json, Some(priority.to_millis()), mode
+        ).map_err(Error::from)
     }
 
     /// Finish a running task, without rescheduling it.
-    pub fn finish(&self, task: &Key) -> KrillResult<()> {
+    pub fn finish(&self, task: &Ident) -> KrillResult<()> {
         debug!("Finish task: {task}");
         self.q.finish_running_task(task).map_err(Error::from)
     }
@@ -333,7 +387,7 @@ impl TaskQueue {
     /// Reschedule a running task, without finishing it.
     pub fn reschedule(
         &self,
-        task: &Key,
+        task: &Ident,
         priority: Priority,
     ) -> KrillResult<()> {
         debug!("Reschedule task: {task} to: {priority}");
@@ -347,13 +401,13 @@ impl TaskQueue {
     pub fn reschedule_tasks_at_startup(&self) -> KrillResult<()> {
         let keys = self.q.running_tasks_keys()?;
 
-        let queue_started_key_name = Task::QueueStartTasks.name()?;
+        let queue_started_key_name = Task::QueueStartTasks.name();
 
         if keys.len() > 1 {
             warn!("Rescheduling running tasks at startup, note that multi-node Krill servers are not yet supported.");
             for key in keys {
-                if key.name() != queue_started_key_name.as_ref() {
-                    warn!("  - rescheduling: {}", key.name());
+                if key.as_ref() != queue_started_key_name.as_ref() {
+                    warn!("  - rescheduling: {key}");
                     self.q.reschedule_running_task(&key, None)?;
                 }
             }

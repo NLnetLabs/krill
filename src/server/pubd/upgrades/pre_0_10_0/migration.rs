@@ -1,7 +1,7 @@
 use rpki::ca::idexchange::MyHandle;
 use rpki::repository::x509::Time;
 use crate::commons::eventsourcing::{AggregateStore, StoredCommandBuilder};
-use crate::commons::storage::{KeyValueStore, Scope, Segment};
+use crate::commons::storage::{Ident, KeyValueStore};
 use crate::commons::version::KrillVersion;
 use crate::constants::PUBSERVER_NS;
 use crate::config::Config;
@@ -55,7 +55,7 @@ impl PublicationServerRepositoryAccessMigration {
 
         if store_migration
             .current_kv_store
-            .has_scope(&Scope::from_segment(const { Segment::make("0") }))?
+            .has_scope(const { Ident::make("0") })?
             && versions.from >= KrillVersion::release(0, 9, 0)
             && versions.from < KrillVersion::candidate(0, 10, 0, 1)
         {
