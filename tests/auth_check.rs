@@ -47,6 +47,7 @@ async fn auth_check_unix() {
     let uid = nix::unistd::Uid::current();
     let user = nix::unistd::User::from_uid(uid).unwrap().unwrap();
     let file_sock = tempfile::NamedTempFile::new().unwrap();
+    config.unix_socket_enabled = true;
     config.unix_socket = Some(file_sock.path().into());
     config.unix_users = HashMap::from([(user.name, "readonly".to_string())]);
 

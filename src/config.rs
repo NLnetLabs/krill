@@ -74,13 +74,20 @@ impl ConfigDefaults {
     }
 
     #[cfg(unix)]
+    pub fn unix_socket_enabled() -> bool {
+        true
+    }
+
+    #[cfg(unix)]
     pub fn unix_socket() -> Option<PathBuf> {
-        None
+        Some(PathBuf::from("/run/krill/krill.sock"))
     }
 
     #[cfg(unix)]
     pub fn unix_users() -> HashMap<String, String> {
-        HashMap::new()
+        let mut users = HashMap::new();
+        users.insert("root".to_string(), "admin".to_string());
+        users
     }
 
     pub fn storage_uri() -> Url {
@@ -497,6 +504,10 @@ pub struct Config {
 
     #[serde(default = "ConfigDefaults::https_mode")]
     pub https_mode: HttpsMode,
+
+    #[cfg(unix)]
+    #[serde(default = "ConfigDefaults::unix_socket_enabled")]
+    pub unix_socket_enabled: bool,
 
     #[cfg(unix)]
     #[serde(default = "ConfigDefaults::unix_socket")]
@@ -988,6 +999,11 @@ impl Config {
     }
 
     #[cfg(unix)]
+    pub fn unix_socket_enabled(&self) -> bool {
+        self.unix_socket_enabled
+    }
+
+    #[cfg(unix)]
     pub fn unix_socket(&self) -> Option<&PathBuf> {
         self.unix_socket.as_ref()
     }
@@ -1251,6 +1267,8 @@ impl Config {
             storage_uri: storage_uri.clone(),
             use_history_cache: false,
             tls_keys_dir: data_dir.map(|d| d.join(HTTPS_SUB_DIR)),
+            #[cfg(unix)]
+            unix_socket_enabled: false,
             #[cfg(unix)]
             unix_socket: None,
             #[cfg(unix)]

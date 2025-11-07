@@ -30,6 +30,7 @@ SystemCallFilter=@system-service
 RestartSec=10
 StartLimitInterval=10m
 StartLimitBurst=5
+RuntimeDirectory=krill
 
 [Install]
 WantedBy=multi-user.target
