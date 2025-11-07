@@ -78,7 +78,7 @@ impl RisWhoisLoader {
     }
 
     /// Parses the raw data.
-    fn parse_data<P: FromStr + RoutePrefix>(
+    pub(super) fn parse_data<P: FromStr + RoutePrefix>(
         data: impl io::BufRead,
     ) -> Result<RouteOriginCollection<P>, io::Error>
     where <P as FromStr>::Err: error::Error + Send + Sync + 'static {

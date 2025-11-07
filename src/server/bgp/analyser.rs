@@ -718,6 +718,23 @@ mod tests {
         }
     }
 
+    fn test_analyser_full() -> BgpAnalyser {
+        let v4 = RisWhoisLoader::parse_data(include_bytes!(
+            "../../../test-resources/bgp/riswhoisdump.IPv4"
+        ).as_ref()).unwrap();
+        let v6 = RisWhoisLoader::parse_data(include_bytes!(
+            "../../../test-resources/bgp/riswhoisdump.IPv6"
+        ).as_ref()).unwrap();
+        let ris = RisWhois::new(v4, v6);
+
+        BgpAnalyser {
+            loader: None,
+            refresh_duration: Duration::seconds(12),
+            last_checked: i64::MIN.into(),
+            riswhois: ArcSwapOption::new(Some(Arc::new(ris))),
+        }
+    }
+
     fn empty_analyser() -> BgpAnalyser {
         BgpAnalyser {
             loader: None,
@@ -885,6 +902,97 @@ mod tests {
             .unwrap();
 
         assert_eq!(suggestion_all_roas_in_scope, expected);
+    }
+
+    #[test]
+    fn analyse_nlnet_labs_snapshot() {
+        let analyser = test_analyser_full();
+
+        let asns = "AS204325, AS211321";
+        let ipv4s = "185.49.140.0/22";
+        let ipv6s = "2a04:b900::/29";
+        let set = ResourceSet::from_strs(asns, ipv4s, ipv6s).unwrap();
+
+        let roas = &[
+            configured_roa("2a04:b906::/48-48 => 0"),
+            configured_roa("2a04:b907::/48-48 => 0"),
+            configured_roa("185.49.142.0/24-24 => 0"),
+            configured_roa("2a04:b900::/30-32 => 8587"),
+            configured_roa("185.49.140.0/23-23 => 8587"),
+            configured_roa("2a04:b900::/30-30 => 8587"),
+            configured_roa("2a04:b905::/48-48 => 16509"),
+            configured_roa("2a04:b904::/48-48 => 211321"),
+            configured_roa("2a04:b907::/47-47 => 211321"),
+            configured_roa("185.49.142.0/23-23 => 211321"),
+            configured_roa("2a04:b902::/48-48 => 211321"),
+            configured_roa("185.49.143.0/24-24 => 211321"),
+        ];
+
+        let report = analyser.analyse(roas, &set, None);
+
+        let entry_expect_roa = |x: &str, y| {
+            let x = x.to_string();
+            dbg!(&x, &y);
+            assert!(report.entries().iter().any(|s| 
+                s.state() == y &&
+                s.configured_roa().to_string() == x 
+            ));
+        };
+
+        let entry_expect_ann = |x: &str, y: u32, z: BgpAnalysisState| {
+            let x = x.to_string();
+            dbg!(&x, &y, &z);
+            assert!(report.entries().iter().any(|s|
+                s.state() == z &&
+                s.announcement().asn == AsNumber::from_u32(y) &&
+                s.announcement().prefix.to_string() == x
+            ));
+        };
+
+        entry_expect_roa(
+            "2a04:b906::/48-48 => 0", BgpAnalysisState::RoaAs0
+        );
+        entry_expect_roa(
+            "2a04:b907::/48-48 => 0", BgpAnalysisState::RoaAs0Redundant
+        );
+        entry_expect_roa(
+            "185.49.142.0/24-24 => 0", BgpAnalysisState::RoaAs0Redundant
+        );
+        entry_expect_roa(
+            "2a04:b900::/30-32 => 8587", BgpAnalysisState::RoaSeen
+        );
+        entry_expect_roa(
+            "185.49.140.0/23-23 => 8587", BgpAnalysisState::RoaSeen
+        );
+        entry_expect_roa(
+            "2a04:b900::/30-30 => 8587", BgpAnalysisState::RoaRedundant
+        );
+        entry_expect_roa(
+            "2a04:b905::/48-48 => 16509", BgpAnalysisState::RoaSeen
+        );
+        entry_expect_roa(
+            "2a04:b904::/48-48 => 211321", BgpAnalysisState::RoaSeen
+        );
+        entry_expect_roa(
+            "2a04:b907::/47-47 => 211321", BgpAnalysisState::RoaSeen
+        );
+        entry_expect_roa(
+            "185.49.142.0/23-23 => 211321", BgpAnalysisState::RoaSeen
+        );
+        entry_expect_ann(
+            "2a04:b907::/48", 211321,
+            BgpAnalysisState::AnnouncementInvalidLength
+        );
+        entry_expect_ann(
+            "185.49.142.0/24", 211321,
+            BgpAnalysisState::AnnouncementInvalidLength
+        );
+        entry_expect_roa(
+            "2a04:b902::/48-48 => 211321", BgpAnalysisState::RoaUnseen
+        );
+        entry_expect_roa(
+            "185.49.143.0/24-24 => 211321", BgpAnalysisState::RoaUnseen
+        );
     }
 }
 
