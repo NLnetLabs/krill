@@ -1510,7 +1510,7 @@ impl Config {
             warn!("The environment variable for setting the admin token has been updated from '{KRILL_ENV_ADMIN_TOKEN_DEPRECATED}' to '{KRILL_ENV_ADMIN_TOKEN}', please update as the old value may not be supported in future releases")
         }
 
-        if self.port < 1024 {
+        if self.port < 1024 && self.port != 0 {
             return Err(ConfigError::other("Port number must be >1024"));
         }
 
