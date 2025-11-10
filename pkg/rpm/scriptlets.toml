@@ -11,6 +11,1097 @@ KRILL_HOME_DIR_PERMS=700
 KRILL_CONF="/etc/krill.conf"
 KRILL_CONF_PERMS=640
 KRILL_DATA="${KRILL_HOME_DIR}/data/"
+KRILL_CONF_FILE=$(cat <<-'EOF'
+##############################################################################
+#
+#  DATA
+#
+##############################################################################
+
+# Specify the storage used by Krill.
+#
+# Currently, Krill supports disk based storage only.
+#
+# You can use a shared disk and a standby Krill node for redundancy.
+# However, data corruption issues can occur if you run multiple active
+# Krill nodes using a shared disk. Therefore, you MUST ensure that only
+# one Krill node is active at any given time.
+#
+# Example configurations:
+# storage_uri = "/var/lib/krill/data/"
+#
+# Default:
+# storage_uri = "./data"
+#
+# For backward compatibility 'data_dir' is accepted as an
+# alternative to 'storage_uri'.
+#
+### storage_uri = "./data"
+
+# TLS Keys Dir
+#
+# Specify the location of the TLS directory for Krill's
+# built-in HTTPS server. This MUST be set in case the
+# storage_uri maps to a database.
+#
+# Default:
+# tls_keys_dir = $storage_uri/ssl
+
+# Repository Directory
+#
+# This is the directory used by the Krill Publication Server
+# for the publication of RPKI objects.
+#
+# This defaults a directory called "repo" under your server's
+# data directory. If your server uses a database for storage,
+# this value MUST be set - even if you do not use Krill as a
+# Publication Server. This will change when issues #1092 and
+# #1093 are implemented.
+#
+# repo_dir = /path/to/repo/
+
+# Upgrade Storage Uri
+#
+# This MUST be set if a database is used. We will remove this
+# when we implement issue #1094.
+#
+# upgrade_storage_uri = $data_dir/upgrade-data/
+
+# History Cache
+#
+# Krill keeps meta-information on all past changes for each CA
+# and the Publication Server. This information is cached by default
+# to ensure that the history (audit log) API is fast.
+#
+# However, this data can add up over time, so operators of
+# instances with many CAs or a lot of historical may choose
+# to turn this off to save memory. Note that memory will still
+# be used temporarily in case the history API is accessed.
+#
+### use_history_cache = true
+
+# Specify the path to the PID file for Krill.
+#
+# Defaults to "krill.pid" under the 'data_dir' specified above.
+#
+### pid_file = "./data/krill.pid"
+
+
+##############################################################################
+#
+# LOGGING
+#
+##############################################################################
+
+# Log level
+#
+# The maximum log level ("off", "error", "warn", "info", or "debug") for
+# which to log messages.
+#
+# Defaults to "warn"
+#
+### log_level = "warn"
+
+# Log type
+#
+# Where to log to. One of "stderr" for stderr, "syslog" for syslog, or
+# "file" for a file. If "file" is given, the "log_file" field needs to be
+# given, too.
+#
+### log_type = "file"
+
+# Syslog facility
+#
+# The syslog facility to log to if syslog logging is used. Defaults to
+# "daemon".
+#
+### syslog_facility = "daemon"
+
+# Log file
+#
+# The path to the file to log to if file logging is used. If the path is
+# relative, it is relative to the current working directory from which
+# the binary is executed.
+#
+### log_file = "./krill.log"
+
+
+##############################################################################
+#
+# ACCESS
+#
+##############################################################################
+
+# Admin Token
+#
+# Define an admin token that can be used to interact with the API. Token use
+# is modelled after OAuth 2.0 Bearer Tokens (RFC 6750), which are expected
+# be included as an HTTP header in requests by clients.
+#
+# If you do not specify a value here, the server will insist that you
+# provide a token as an environment variable with the key
+# "KRILL_ADMIN_TOKEN".
+#
+### admin_token =
+
+# Specify the ip addresses and port number that the server will use.
+#
+# Note: by default Krill uses "127.0.0.1" (IPv4 localhost) as its IP
+# address. We recommend that you keep this setting and use a proxy server
+# such as NGINX or Apache if you must make your Krill instance accessible
+# remotely.
+#
+# You can use the 'ip' setting in this config file to override the default.
+# You can specify a single IP address or an array of addresses.
+#
+# If you want to support remote delegated CAs to be children under a CA
+# and/or publish their content, then you should set the "service uri"
+# setting described below. If you do not set this, then Krill will use the
+# (first) IP address as the hostname for this settting.
+#
+#
+### ip             = "127.0.0.1"            # default
+### ip             = [ "127.0.0.1", "::1" ] # multiple IP addresses
+### port           = 3000                   # applies to all ip addresses
+
+# Specify the HTTPS mode. Krill supports three modes:
+#
+# "generate" (DEFAULT)
+#
+# Krill will generate a key pair and create a self-signed certificate
+# if no previous key pair or certificate is found. File names used
+# are data_dir/ssl/key.pem and data_dir/ssl/cert.pem respectively.
+#
+# "existing"
+#
+# Krill expects an existing key pair and certificate in the same
+# locations where it would otherwise store its generated key pair
+# and self-signed certificate.
+#
+# "disable"
+#
+# Krill will use plain HTTP.
+#
+# This mode is not recommended as HTTPS adds little overhead, and
+# even with a self-signed certificate provides better security
+# out of the box.
+#
+# That said, if you are running an HTTPS proxy server on the same
+# host as Krill and Krill is listening on localhost only, then
+# using plain HTTP between Krill and your proxy server may be an
+# option you would want to use.
+#
+# We recommend STRONGLY that you do not use this option if your
+# Krill instance is configured to bind to a public IP address.
+#
+# **NOTE**: Even if you use "disable" here, Krill still insists on
+#           using HTTPS for its service_uri. See below.
+#
+### https_mode = "generate"
+
+# Specify the base public service URI hostname and port.
+#
+# The default service URI is set to https://localhost:3000/. This is fine
+# for setups where you use Krill to run your own CA only. You do not need to
+# set this to enable remote access to the UI or API (e.g. for using the CLI
+# remotely). Simply setting up a proxy suffices for this.
+#
+# However, if you are serving as a parent CA or Publication Server that
+# needs to be accessible by remote CAs, then you will need to tell your
+# Krill instance what its public (base) URI will be, so that it can include
+# the proper URIs in responses to those CAs.
+#
+# Note that Krill insists on HTTPS for this, even if you elect to use
+# "disable" for the https_mode. The reason is that, while RFC 6492
+# (provisioning) and RFC 8181 (publication) allow for plain HTTP and provide
+# security through signed messages, we believe it is better if this (remote)
+# traffic is also encrypted and one can (and should) use an HTTPS capable
+# proxy in this case.
+#
+# At present this MUST be an https URI with a hostname and optional port
+# number only. It is not allowed to use a Krill specific path prefix. If you
+# have a strong motivation for this, then please comment on the following
+# github issue: https://github.com/NLnetLabs/krill/issues/263
+#
+# Krill UI, API and service URIs will be derived as follows:
+#  <service_uri>api/v1/...                (api)
+#  <service_uri>rfc6492                   (for remote children)
+#  <service_uri>...                       (various UI resources)
+service_uri = "http://localhost"
+
+
+##############################################################################
+#
+# METRICS
+#
+##############################################################################
+
+# Krill exposes metrics for use with Prometheus under: <service_uri>/metrics
+#
+# By default a lot of details are included in these metrics. Generating
+# these metrics is not particularly hard on Krill, but in case you have many
+# CAs, children or publishers under your Krill instance you may still want
+# to disable certain metrics to reduce the amount of data fetched and stored
+# by Prometheus.
+#
+# Note that you can also get all of this information through the API, so
+# there are other ways than using Prometheus to monitor details.
+
+# Always enabled:
+#################
+#
+# krill_server_start              unix timestamp in seconds of last Krill server start
+# krill_version_major             Krill server major version number
+# krill_version_minor             Krill server minor version number
+# krill_version_patch             Krill server patch version number
+# krill_cas                       number of cas in Krill
+#
+# [with multi-user support enabled (default)]
+# krill_auth_session_cache_size   total number of cached login session tokens
+
+# Per CA details:
+#################
+#
+# There are a number of metrics which use a label like {ca="ca_name"}. You can disable
+# all of them by setting:
+#
+# metrics_hide_ca_details = true
+#
+# krill_ca_parent_success{ca="ca", parent="parent"}             status of last CA to parent connection (0=issue, 1=success)
+# krill_ca_parent_last_success_time{ca="ca", parent="parent"}   unix timestamp in seconds of last successful CA to parent connection
+# krill_ca_ps_success{ca="ca"}                                  status of last CA to Publication Server connection (0=issue, 1=success)
+# krill_ca_ps_last_success_time{ca="ca"}                        unix timestamp in seconds of last successful CA to Publication Server connection
+# krill_ca_ps_next_planned_time{ca="ca"}                        unix timestamp in seconds of next planned CA to Publication Server connection (unless e.g. ROAs are changed)
+#
+#  CA -> Child metrics
+#  -------------------
+# 
+# NOTE: These metrics are only shown if you have any child CAs under your CA(s) in Krill.
+#
+# By default Krill will also show metrics on child CAs for each CA. If you left the
+# showing CA details enabled, but you wish to hide these details then you can do so
+# by setting:
+#
+# metrics_hide_child_details = true
+#
+# krill_cas_children{ca="ca"}                                   number of children for CA
+# krill_ca_child_success{ca="ca", child="child"}                status of last child to CA connection (0=issue, 1=success)
+# krill_ca_child_state{ca="ca", child="child"}                  child state (see 'suspend_child_after_inactive_hours' config) (0=suspended, 1=active)
+# krill_ca_child_last_connection{ca="ca", child="child"}        unix timestamp in seconds of last child to CA connection
+# krill_ca_child_last_success{ca="ca", child="child"}           unix timestamp in seconds of last successful child to CA connection
+# krill_ca_child_agent_total{ca="ca", user_agent="ua string"}   total children per user agent based on their last connection
+#
+#  CA -> ROA metrics
+#  -----------------
+#
+# By default Krill will also show metrics on ROAs in relation to known BGP announcements
+# for each CA. If you left the showing CA details enabled, but you wish to hide these details
+# then you can do so by setting:
+#
+# metrics_hide_roa_details = true
+#
+# krill_cas_bgp_announcements_valid{ca="ca"}              number of announcements seen for CA resources with RPKI state VALID
+# krill_cas_bgp_announcements_invalid_asn{ca="ca"}        number of announcements seen for CA resources with RPKI state INVALID (ASN mismatch)
+# krill_cas_bgp_announcements_invalid_length{ca="ca"}     number of announcements seen for CA resources with RPKI state INVALID (prefix exceeds max length)
+# krill_cas_bgp_announcements_not_found{ca="ca"}          number of announcements seen for CA resources with RPKI state NOT FOUND (none of the CA's ROAs cover this)
+# krill_cas_bgp_roas_too_permissive{ca="ca"}              number of ROAs for this CA which allow excess announcements (0 may also indicate that no BGP info is available)
+# krill_cas_bgp_roas_redundant{ca="ca"}                   number of ROAs for this CA which are redundant (0 may also indicate that no BGP info is available)
+# krill_cas_bgp_roas_stale{ca="ca"}                       number of ROAs for this CA for which no announcements are seen (0 may also indicate that no BGP info is available)
+# krill_cas_bgp_roas_total{ca="ca"}                       total number of ROAs for this CA
+
+# Publication Server metrics
+############################
+
+# Always enabled if you have an active Publication Server
+#########################################################
+
+# krill_repo_publisher                    number of publishers in repository
+# krill_repo_rrdp_last_update             unix timestamp in seconds of last update by any publisher
+# krill_repo_rrdp_serial                  RRDP serial
+
+# Per Publisher metrics
+#######################
+
+# The following metrics can be disabled by setting:
+# metrics_hide_publisher_details = true
+#
+# krill_repo_objects{publisher="publisher"}        number of objects in repository for publisher
+# krill_repo_size{publisher="publisher"}           size of objects in bytes in repository for publisher
+# krill_repo_last_update{publisher="publisher"}    unix timestamp in seconds of last update for publisher
+
+
+##############################################################################
+#
+# OTHER SEVER SETTINGS
+#
+##############################################################################
+
+
+# CA certificate refresh rate
+#
+# This defines the rate, in seconds, for Krill CAs to to contact their
+# parent CA via the RFC 6492 up-down protocol and query for updates in
+# resource entitlements.
+#
+# Minimum value is 1 hour (3600 seconds), maximum is 3 days. Values below of
+# this range are set to the minimum, values above this range are capped at
+# the maximum.
+#
+# Defaults to 24 hours: 86400 seconds
+#
+# This value is specified in seconds for compatability with earlier Krill
+# versions.
+#
+### ca_refresh_seconds = 86400
+
+# CA certificate refresh jitter
+#
+# In order to avoid that many child CAs contact their parent at the same time
+# Krill adds a random extra 'jitter' time between 0 and the number of seconds
+# specified using 'ca_refresh_jitter_seconds'.
+#
+# Defaults to 12 hours: 43200 seconds.
+#
+# Values are capped to a maximum of: 50% of ca_refresh_seconds
+#
+### ca_refresh_jitter_seconds = 43200
+
+# Enable loading information from bgp-api.net for ROA vs BGP analysis.
+#
+### bgp_api_enabled = true
+### bgp_api_uri = "https://rest.bgp-api.net"
+### bgp_api_cache_seconds = 1800
+
+# Restrict size of messages sent to the API.
+#
+# Default 256 kB
+#
+### post_limit_api = 262144
+
+# Restrict size of messages sent to the RFC 6492 up-down protocol. Only
+# relevant if you operate Krill as a parent to other CAs.
+#
+# Default 1MB (enough for a keyroll with certs of ~400kb, the biggest known cert is 220kB)
+#
+### post_limit_rfc6492 = 1048576
+
+# Set the timeout for a complete RFC 6492 and RFC 8181 client HTTP
+# request-response round-trip to the parent or publisher, excluding the time
+# required to establish the connection.
+#
+# Default is double what it was in Krill <0.9.5 and should be long enough in
+# most cases. Change this if you see timeout errors.
+#
+# Defaults to 4 minutes
+#
+### post_protocol_msg_timeout_seconds = 240
+
+
+##############################################################################
+#
+# --------======== DANGER ZONE ========--------  
+#
+# Do not change the options below, unless you are really certain that you need
+# to override Krill's default behaviour.
+#
+##############################################################################
+
+
+#
+#                               ROA Aggregation
+#
+# It is recommended that separate ROAs are used for each authorized prefix,
+# even though the RFC allows for multiple prefixes for the same ASN to be
+# combined on a single ROA object. The reason for this is that the ROA will
+# become invalid if any of the listed prefixes no longer appears on your
+# CA's certificate. Note that Krill will automatically clean up
+# over-claiming ROAs when it finds that its resources have been shrunk, but
+# there is a possible time window where ROAs can be invalid before Krill
+# discovers the shrinkage.
+#
+# That said, if there would be too many ROAs then this will impact all RPKI
+# validators, therefore Krill will by default start aggregating ROAs per ASN
+# when more than 100 ROAs would be issued. Conversely, Krill will start de-
+# aggregating again when the number of authorizations drops below 90.
+#
+# This behaviour can be overridden with the following directives:
+# roa_aggregate_threshold = 100
+# roa_deaggregate_threshold = 90
+
+
+#
+#                               Republication Intervals
+#
+# The RPKI uses Manifests (RFC 6486) to communicate the list of current RPKI
+# objects (such as ROAs) to RPKI Validators. Manifests are used to protect
+# against attacks, or incidents, where Validators only see a partial view of
+# the RPKI repository. For this to work properly Validators will need to
+# know how 'fresh' the Manifests are - otherwise they would be vulnerable to
+# replay attacks where they are presented old versions of Manifests thus
+# withholding them from discovering new RPKI objects.
+#
+# Krill issues manifests with a default next update and validity period of
+# 24 hours, plus a random value between 0 and 4 hours. This random value is
+# added in order to spread out scheduled next publication times between CAs.
+#
+# This means that the maximum replay window is 28 hours. Krill checks every
+# 10 minutes whether the next update time is less then 8 hours (by default)
+# in the future, and in that case it will re-issue them to avoid that
+# Validators would end up with expired manifests. This means that an
+# operator has a minimum of just under 8 hours to deal with issues with
+# their CA or Publication Server before RPKI Validators would notice.
+#
+# The default values can be overridden, but with care.. make the next update
+# interval too short and this causes too much work for all RPKI validators,
+# puts load on your publication server and shortens your window to deal with
+# issues. Make it too long and you could be vulnerable to replay attacks.
+# Re-issue to quickly and again you cause extra load to RPKI validators and
+# publication server.
+#
+# All that said.. if you are willing to accept the, in practice, small risk
+# of a replay attack then you could for example opt for a
+# 'timing_publish_next_hours' value of 48 hours, and a
+# 'timing_publish_hours_before_next' value of 24 hours. That way you would
+# have a full day to fix issues.
+#
+# timing_publish_next_hours = 24           # (must be 2 or higher)
+# timing_publish_next_jitter_hours = 4     # must be 0 - timing_publish_next_hours / 2
+# timing_publish_hours_before_next = 8     # (must be 1 or higher)
+
+
+#
+#                 ROA and Delegate Certificate Times
+#
+# Krill will issue ROAs, and child CA certificates if you have delegated
+# resources to child CAs, with a "not after" time of 52 weeks from issuance,
+# and it will re-issue those ROAs and certificates 4 weeks before they would
+# expire.
+#
+# Because of the automatic renewal there should be no real need to use
+# longer validity times. In fact using longer times could have a negative
+# impact on Validator performance because the Certificate Revocation Lists
+# would become bigger.
+#
+# So, we do NOT recommend overriding the following values, except perhaps
+# for testing purposes:
+# timing_child_certificate_valid_weeks = 52
+# timing_child_certificate_reissue_weeks_before = 4
+# timing_roa_valid_weeks = 52
+# timing_roa_reissue_weeks_before = 4
+
+
+
+##############################################################################
+#                                                                            #
+#           ----==== WEB UI MULTI-USER LOGIN CONFIGURATION ====----          #
+#                                                                            #
+# The settings below can be used to permit multiple users with configurable  #
+# access rights to login to the Krill web interface.                         #
+#                                                                            #
+##############################################################################
+
+
+#                 Global auth(entication & authorization) settings
+#
+# These control which auth provider in Krill will be used to authenticate
+# users and settings common to all auth providers. See below for more details.
+#
+# auth_type = "admin-token"
+
+
+# Auth type (optional)
+#
+# Which provider to use for authentication (AuthN), identity (ID), and
+# authorization (AuthZ). Also affects which login form the Krill web UI
+# displays, or (in the case of auth_type = "openid-connect") the user is
+# redirected to.
+#
+# Supported values: "admin-token" (default), "config-file" or "openid-connect".
+#
+# At-a-glance comparison:
+# =======================
+#
+#   Setting Value     AuthN          ID                 AuthZ
+#   --------------------------------------------------------------------------
+#   "admin-token"     token matches  "admin-token"      special built-in
+#                     admin_token                       role with full access
+#                     config value
+#   --------------------------------------------------------------------------
+#   "config-file"     login username   login username   role name from user’s
+#                     appears as key                    role field in
+#                     in [auth_users]                   [auth_users] section
+#                     section
+#   ----------------------------------------------------------------------------
+#   "openid-connect"  provider       provider           role name provider
+#                     checked        supplied           supplied
+#
+# The role names determined by the "openid-connect" and "config-file" types
+# are looked up in the [auth_roles] section to determine access permissions.
+# See "Auth roles" below.
+#
+# NOTE: At present the admin-token provider is used as a fallback provider
+# when using "openid-connect" or "config-file" as the primary provider. This is
+# to ensure that krillc, which uses admin-token authentication, is still able
+# to communicate with the Krill daemon.
+#
+### auth_type = "admin-token"
+
+
+# Config File auth provider details (mandatory when auth_type = "config-file")
+#
+# The Config File auth provider allows you to define one or more users which
+# can then be used to login to the Krill web UI.
+#
+# Example:
+#   auth_type = "config-file"
+#
+#   [auth_users]
+#   "joe@example.com" = { role="admin", password_hash="...", salt="..." }
+#   "jill@example.com" = { role="read-ca1", password_hash="...", salt="..." }
+#
+# Syntax:
+#   auth_users = { "some id" = { ... } [, "another id" = { ... }, ...] }
+#
+# Alternative syntax:
+#  [auth_users]
+#  "some id" = { ... }
+#  "another id" = { ... }
+#
+#
+# The "some id" and "another id" terms indicate the email address or other
+# identifier for the user. It will need to be entered in the username form
+# field in the web UI when logging in. Krill also shows it in the event
+# history as the actor to which the action is attributed.
+#
+# The { ... } above can contain the following fields:
+#
+#   Field          Mandatory?  Notes
+#   --------------------------------------------------------------------------
+#
+#   password_hash  Yes         Generate these values using the
+#                              'krillc config user' command on the command
+#   salt           Yes         line. The web UI will hash the password entered
+#                              in the login form and submit it to Krill for
+#                              comparison to this hash, thereby ensuring that
+#                              passwords are neither transmitted nor
+#                              persisted. Per password salts prevents use of
+#                              rainbow table attacks. Dual salting prevents
+#                              use of stolen password hashes from the config
+#                              file being used to login without knowing the
+#                              passwords.
+#
+#   role           Yes         The name of the role which determines the
+#                              user’s access rights. See "Auth roles" below.
+#
+### auth_type = "config-file"
+###
+### [auth_users]
+### ...
+
+
+# OpenID Connect auth provider details
+# (mandatory when auth_type = "openid-connect")
+#
+# The OpenID Connect auth provider delegates authentication of users to an
+# external provider that implements the OpenID Connect Core 1.0 specification.
+# Krill uses user attributes (known as "claims" [*1]) from the provider to
+# determine the user ID and role name for a user.
+#
+# Syntax:
+#   auth_openidconnect = { issuer_url="...", client_id="...", client_secret="..." }
+#
+# Alternative syntax:
+#   [auth_openidconnect]
+#   issuer_url = "..."
+#   client_id = "..."
+#   client_secret = "..."
+#   insecure = false
+#   extra_login_scopes = ["...", ...]
+#   extra_login_params = ["...", ...]
+#   prompt_for_login = false
+#   logout_url = "..."
+#
+#   [[auth_openidconnect.id_claims]]
+#   ...
+#
+#   [[auth_openidconnect.role_claims]]
+#   ...
+#
+# Where [auth_openidconnect] can contain the following fields:
+#
+#   Field          Mandatory?  Notes
+#   --------------------------------------------------------------------------
+#   issuer_url          Yes    Provided by your OpenID Connect provider. This
+#                              is the URL of the OpenID Connect provider
+#                              discovery endpoint.
+#                              "/.well-known/openid_configuration"
+#                              will be appended if not present. Krill will
+#                              fetch the OpenID Connect Discovery 1.0
+#                              compliant JSON response from this URL when
+#                              Krill starts up. If this URL does not match the
+#                              "issuer" value in the discovery endpoint
+#                              response or if the discovery endpoint cannot be
+#                              contacted, Krill will fail to start.
+#
+#   client_id           Yes    Provided by your OpenID Connect provider.
+#
+#   client_secret       Yes    Provided by your OpenID Connect provider.
+#
+#   insecure            No     Defaults to false. Setting this to true will
+#                              disable verification of the signature of the
+#                              OpenID Connect provider token ID endpoint
+#                              response. Setting this to false may allow
+#                              attackers to modify responses from the provider
+#                              without being detected. Setting this to false
+#                              is strongly discouraged.
+#
+#   extra_login_scopes  No     Provider specific. Defaults to "". A
+#                              comma-separated list of OAuth 2.0 scopes to be
+#                              passed to the provider when a user is directed
+#                              to login with the provider. Scopes are
+#                              typically used to instruct the provider to send
+#                              additional user details along with provider
+#                              token responses. One common scope is "profile"
+#                              which often causes the server to respond with
+#                              email addresses and other personal details
+#                              about the user. If the OpenID Connect provider
+#                              discovery endpoint shows that "email" is a
+#                              supported scope then the "email" scope will be
+#                              requested automatically, you don't need to
+#                              specify it here in that case.
+#
+#   extra_login_params  No     A { key=value, ... } map of additional HTTP
+#                              query parameters to send with the authorization
+#                              request to the provider when redirecting the
+#                              user to the OpenID Connect provider login form.
+#                              Section 3.1.2.1. Authentication Request in the
+#                              OpenID Connect Core 1.0 specification [*2]
+#                              lists various parameters that can be sent but
+#                              the supported set varies by provider. The
+#                              prompt=login parameter is automatically sent by
+#                              the provider (though this behavior can be
+#                              disabled, see prompt_for_login below) and thus
+#                              does not need to be provided using this
+#                              setting. Can also be specified as a separate
+#                              TOML table, e.g.:
+#
+#                                [openid_connect.extra_login_params]
+#                                display=popup
+#                                ui_locales="fr-CA fr en"
+#
+#   prompt_for_login   No      Defaults to true. Setting this to false will
+#                              disable the default behaviour of sending the
+#                              prompt=login parameter to the provider. This
+#                              also allows a different prompt=<value> to be
+#                              specified using extra_login_params, from the
+#                              set defined in Section 3.1.2.1. Authentication
+#                              Request in the OpenID Connect Core 1.0
+#                              specification [*2]: "none", "login", "consent"
+#                              or "select_account".
+#
+#   logout_url          No     A URL to direct the browser to redirect the
+#                              user to in order to logout. Ideally this is not
+#                              needed as the provider OpenID Connect Discovery
+#                              response should contain the details Krill
+#                              needs, but for some providers a logout_url must
+#                              be specified explicitly. If the provider
+#                              discovery response doesn't announce support for
+#                              any supported mechanisms and no logout_url
+#                              value is set then Krill will default to
+#                              directing the user back to the Krill UI index
+#                              page from where the user will be directed to
+#                              login again via the OpenID Connect provider.
+#
+#   id_claims           No     A list used to extract the user ID from the
+#                              claim values in the OpenID Connect provider
+#                              response. These will typically given as
+#                              separate TOML array tables. The fields are
+#                              described in the following section.
+#
+#                              If this field is missing, the default rule
+#                              is used which uses the value of the "email"
+#                              claim as the user ID.
+#
+#
+#   role_claims         No     A list used to extract the user role from the
+#                              claim values in the OpenID Connect provider
+#                              response. These will typically given as
+#                              separate TOML array tables. The fields are
+#                              described in the following section.
+#
+#                              If this field is missing, the default rule
+#                              is used which uses the value of the "role"
+#                              claim as the user’s role.
+#
+#
+# Each [[auth_openidconnect.id_claims]] and [[auth_openidconnect.role_claims]]
+# occurence describes one claim transformation rule. Each rule describes a
+# test against the claim values contained in the OpenID Connect provider
+# response [*3, *4]. If a tests succeeds, the value is transformed and used as
+# either the user ID or user role. For each attribute of the two fields, only
+# the first succeeding rule is considered.
+# 
+#   Field          Mandatory?  Notes
+#   --------------------------------------------------------------------------
+#
+#   source               No    If the 'source' subfield is not provided, all
+#                              available token and userinfo claim responses
+#                              from the OpenID Connect provider will be
+#                              searched for a field that matches the 'claim'
+#                              value.
+#
+#                              If specified the value identifies a specific
+#                              claim set to search and can be one of the
+#                              following values:
+#
+#                                id-token-standard-claim
+#                                id-token-additional-claim
+#                                user-info-standard-claim
+#                                user-info-additional-claim
+#
+#   claim               No     The name of the field that is being looked at.
+#                              If this field is missing, then the 'subst'
+#                              field contains the value to be used for the
+#                              user ID or role, independently of any claims-
+#
+#   match               No     A regular expression that is applied to the
+#                              value of the claim provided by the 'claim'
+#                              field.
+#
+#                              A claim value matches if the regular expression
+#                              matches. This could be a partial match, i.e.,
+#                              the rexpression "foo" matches "foo" but also
+#                              "foobar" and "barfoobar". Enclose the text in
+#                              a leading hat and trailing dollar sign for a
+#                              full match, i.e., "^foo$" will only match "foo".
+#
+#                              If the expression matches, the claim value will
+#                              be transformed using the expression given in
+#                              the 'subst' field.
+#
+#                              Simple claim values are compared using their
+#                              string representation. E.g. a boolean value is
+#                              treated as having the string values "true" or
+#                              "false" and numbers are similarly converted
+#                              using standard JSON rules.
+#
+#                              For arrays, each element is matched and the
+#                              first match is used.
+#
+#                              Objects never match.
+#
+#                              If the 'match' field in missing, any simple
+#                              values matches and is used as is, i.e., the
+#                              expression in the 'subst' field is ignored.
+#                              For array claim values, the first element is
+#                              used.
+#
+#   subst               No     This field describes a transformation of a
+#                              value matched via the 'match'. It can be a
+#                              simple string or can contain references to
+#                              substrings captured by the 'match' regular
+#                              expression.
+#
+#                              All instances of "$ref" in the subst expression
+#                              are replaced with the substring corresponding
+#                              to the capture group identified by "ref".
+#
+#                              "ref" may be an integer corresponding to the
+#                              index of the capture group (counted by order
+#                              of opening parenthesis where 0 is the entire
+#                              match) or it can be a name (consisting of
+#                              letters, digits or underscores) corresponding
+#                              to a named capture group.
+#                              If "ref" isn’t a valid capture group (whether
+#                              the name doesn’t exist or isn’t a valid index),
+#                              then it is replaced with the empty string.
+#
+#                              The longest possible name is used. For example,
+#                              "$1a" looks up the capture group named "1a" and
+#                              not the capture group at index 1. To exert more
+#                              precise control over the name, use braces,
+#                              e.g., "${1}a".
+#
+#                              To write a literal "$" use "$$".
+#
+# References:
+#   *1: https://openid.net/specs/openid-connect-core-1_0.html#Claims
+#   *2: https://openid.net/specs/openid-connect-core-1_0.html#AuthRequest
+#   *3: https://openid.net/specs/openid-connect-core-1_0.html#TokenResponse
+#   *4: https://openid.net/specs/openid-connect-core-1_0.html#UserInfoResponse
+#
+#
+# ----------------------------------------------------------------------------
+# Registering Krill with an OpenID Connect provider:
+# ----------------------------------------------------------------------------
+# In order to communicate with an OpenID Connect provider, Krill must first be
+# registered with that provider. As a result of registration you will be
+# issued a client_id and a client_secret, and possibly also an issuer_url (or
+# you may have to consult the provider documentation to determine the
+# issuer_url).
+#
+# When registering you will usually need to specify a callback URL. For Krill
+# this should be <service_uri>auth/callback (replace <service_uri> with the
+# actual value set above).
+#
+# When auth_type = "openid-connect" the client details MUST be provided to
+# Krill via settings in the [auth_openidconnect] section of the configuration
+# file.
+#
+# ------------------------------------------------------------------------------
+# Required OpenID Connect provider capabilities:
+# ------------------------------------------------------------------------------
+#
+# The OpenID Connect provider must implement the following specifications:
+#
+#         https://openid.net/specs/openid-connect-core-1_0.html
+#         https://openid.net/specs/openid-connect-discovery-1_0.html
+#         https://openid.net/specs/openid-connect-rpinitiated-1_0.html
+#
+# At the issuer_url endpoint the provider MUST announce support for at least
+# the following:
+#
+#   "issuer": ".."
+#   "authorization_endpoint": "..",
+#   "token_endpoint": "..", ("userinfo_endpoint" is supported if available)
+#   "jkws_uri": "..",
+#   "scopes_supported": ["openid"]
+#   "response_types_supported": ["code"]
+#   "response_modes_supported": ["query"]
+#   "grant_types_supported": ["authorization_code"]
+#   "id_token_signing_alg_values_supported": ["RS256"]
+#   one of: "end_session_endpoint": ".." or "revocation_endpoint": ".."
+#
+# ------------------------------------------------------------------------------
+# A note about HTTPS certificates:
+# ------------------------------------------------------------------------------
+# If the provider URLS are HTTPS URLs (which they should be unless this
+# deployment of Krill is only for testing) then the HTTPS certificate must
+# have been issued by a CA in the O/S CA certificate store, i.e. either a well
+# known authority that is included in the store by default, or a custom CA
+# that you have added to the store yourself. Krill will fail to connect to a
+# provider that uses a self-signed certificate or a certificate from an
+# unknown root certificate authority. For more information see for example:
+# http://manpages.ubuntu.com/manpages/xenial/man8/update-ca-certificates.8.html
+# ----------------------------------------------------------------------------
+#
+# ------------------------------------------------------------------------------
+# A note about end_session_endpoint and revocation_endpoint:
+# ------------------------------------------------------------------------------
+# "end_session_endpoint" is defined by various [*1] OpenID Connect draft
+# specifications relating to logout. In Krill it is used for the purpose
+# defined in the OpenID Connect RP-Initiated Logout 1.0 spec [*1], namely for
+# Krill as the RP (OpenID Connect terms Krill a Relying Party in this context,
+# which is particularly confusing given that the term Relying Party also has
+# meaning in Krill's native RPKI domain) to be able to initiate logout of the
+# user at the provider. Krill also requires that the endpoint either honours
+# the "post_logout_redirect_uri" HTTP query parameter (defined as OPTIONAL in
+# the spec) or that the provider can be configured with corresponding
+# behaviour, i.e. to redirect the end-user user-agent (browser) back to Krill
+# after logout is completed at the provider. If support for this is lacking it
+# is undefined where the user will end up after logout, which is not an issue
+# if the user was finished with Krill, but is annoying if the logout was done
+# in order to re-login to Krill as a different user. At least one provider has
+# been observed which does NOT support this endpoint.
+#
+# As an alternative Krill also supports "revocation_endpoint"
+# (see https://tools.ietf.org/html/rfc7009 "OAuth 2.0 Token Revocation") which
+# is used to terminate the users login session at the provider without leaving
+# the Krill web UI.
+#
+# Finally if neither of these mechanisms are supported a logout_url can be
+# specified explicitly via configuration.
+#
+# References:
+#   *1: https://openid.net/specs/openid-connect-session-1_0.html
+#   *2: https://openid.net/specs/openid-connect-rpinitiated-1_0.html
+#   *3: https://tools.ietf.org/html/rfc7009
+#
+# ------------------------------------------------------------------------------
+# Example RedHat KeyCloak configuration:
+# ------------------------------------------------------------------------------
+# This example is for a local test deployment of RedHat KeyCloak:
+#
+#   [auth_openidconnect]
+#   issuer_url = "http://localhost:8082/auth/realms/myrealm"
+#   client_id = "krill"
+#   client_secret = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+#
+# That's it! For this to work you must already have configured your KeyCloak
+# instance e.g. with a realm, client (with redirect URI set), users and an
+# attribute mapper (to expose a custom user attribute as a "role" claim) and a
+# "role" attribute for each user.
+#
+# ------------------------------------------------------------------------------
+# Example Azure Active Directory configuration:
+# ------------------------------------------------------------------------------
+# This example is for a Microsoft Azure cloud Active Directory instance that
+# permits only read-only and read-write access to users that login via the
+# Krill web UI:
+#
+#   [auth_openidconnect]
+#   issuer_url = "https://login.microsoftonline.com/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx/v2.0"
+#   client_id = "yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy"
+#   client_secret = "zzzzzzzz"
+#   extra_login_scopes = ["offline_access"]
+#
+#   [[auth_openidconnect.id_claims]]
+#   claim = "name"
+#
+#   [[auth_openidconnect.role_claims]]
+#   claim = "role"
+#   match = "^gggggggg-gggg-gggg-gggg-gggggggggggg$"
+#   subst = "readonly"
+#
+#   [[auth_openidconnect.role_claims]]
+#   claim = "role"
+#   match = "^hhhhhhhh-hhhh-hhhh-hhhh-hhhhhhhhhhhh$"
+#   subst = "readwrite"
+#
+# For this to work you must already have configured in the Azure portal your
+# AD tenant, app registration and enterprise application settings (with
+# redirect URI), users, group assignments and optional claim configuration
+# (in the above example AD was configured to expose groups as roles).
+#
+# The 'match' expression matches on Azure AD group GUID values, taking the
+# first match it finds and then setting the "role" attribute to either
+# "readonly" or "readwrite" depending on which GUID was matched. The GUIDs
+# for your groups will be different than those used in this example, see your
+# Krill log for the GUIDs to match on.
+#
+# The offline_access scope is required in order to trigger Azure Active
+# Directory to issue a refresh token to Krill.
+#
+# ------------------------------------------------------------------------------
+# Example Amazon Web Services Cognito configuration:
+# ------------------------------------------------------------------------------
+#   [auth_openidconnect]
+#   issuer_url = "https://cognito-idp.eu-central-1.amazonaws.com/eu-central-1_xxxxxxx"
+#   client_id = "yyyyyyyy"
+#   client_secret = "zzzzzzzz"
+#   logout_url = "https://dddddddd.auth.eu-central-1.amazoncognito.com/logout?client_id=yyyyyyyy&logout_uri=https://your.krill.domain/"
+#
+#   [[auth_openidconnect.role_claims]]
+#   claim = "cognito:groups"
+#   match = "^KrillAdmins$"
+#   subst = "admin"
+#
+# For this to work you must already have configured in the AWS Cognito console
+# a group called KrillAdmins and have added the logging in user to that group.
+# Otherwise the "cognito:groups" claim will not be present in the ID token
+# response issued by AWS Cognito. You also need to have set a "Sign Out URL"
+# for in your AWS Cognito "App client settings" which should match the value
+# you use for the "logout_uri" query parameter in the logout_url Krill
+# setting.
+#
+# logout_url needs to be set because AWS Cognito doesn't advertise support for
+# any of the OpenID Connect logout mechanisms that Krill understands.
+#
+# dddddddd should be replaced by your AWS Cognito domain prefix that you
+# specified in hte AWS Cognito "App integration" -> "Domain name" console
+# setting. The regions in the URLs should also match those that you are using.
+#
+#
+# ------------------------------------------------------------------------------
+# Example Google Cloud Platform configuration:
+# ------------------------------------------------------------------------------
+#   [auth_openidconnect]
+#   issuer_url = "https://accounts.google.com/.well-known/openid-configuration"
+#   client_id = "xxxxxxxx.apps.googleusercontent.com"
+#   client_secret = "yyyyyyyy"
+#   extra_login_scopes = ["profile"]
+#   
+#   [[auth_openidconnect.role_claims]]
+#   claim = "picture"
+#   match = "^.+photo\.jpg$"
+#   subst = "admin"
+#
+# For this to work you must already have created Credentials in the Google
+# developer console and have set the redirect URI to your Krill API
+# /auth/callback public URL.
+#
+# In this example we have included the ".well-known/..." part of the
+# issuer_url to demonstrate that Krill will accept the URL with or without
+# it.
+#
+# The match expression in this example is not a useful real world example as
+# it grants "admin" rights to any Google account that has an associated
+# picture whose URL ends in photo.jpg.
+#
+# Note that, while not visible in the configuration above, the GCP OpenID
+# Connect provider advertizes an RFC 7009 OAuth 2.0 Token Revocation
+# compatible `revocation_endpoint` which Krill will use to revoke the Google
+# login token when the user logs out of Krill.
+
+
+# Auth roles (optional)
+#
+# What an authenticated user has access to is configured through roles. Each
+# role contains a set of permissions that are granted to any user having this
+# role. Optional, the role allows limiting the CAs that these permissions
+# apply to.
+#
+# Roles are defined through the 'auth_roles' configuration value.
+#
+# Syntax:
+#    auth_roles = { "role name": { ... }, ... }
+#
+# Alternative syntax:
+#    [auth_roles]
+#    "role_name" = { ... }
+#    ...
+#
+# "role_name" is the name of the role referenced in either the config file
+# provider’s user table or the OpenID Connect providers’s role attribute.
+#
+# The { ... } above can contain the following fields:
+#
+#   Field          Mandatory?  Notes
+#   --------------------------------------------------------------------------
+#
+#   permissions    Yes         A list of permissions to be granted to the
+#                              role. The following permissions currently
+#                              exist:
+#
+#                               login            log into the Krill UI
+#
+#                              Access to the publication server:
+#
+#                               pub-admin, pub-list, pub-read, pub-create,
+#                               pub-delete
+#
+#                              Access to CAs
+#
+#                               ca-list, ca-read, ca-create, ca-update,
+#                               ca-admin, ca-delete
+#
+#                              Access to the ROAs of a CA
+#
+#                               routes-read, routes-update, routes-analysis
+#
+#                              Access to the ASPAs of a CA
+#
+#                               aspas-read, aspas-update, aspas-analysis
+#
+#                              Access to the router keys of a CA
+#
+#                               bgpsec-read, bgpsec-update
+#
+#   cas            No          A list of CA handles that the role should
+#                              grant access to. If this field is missing,
+#                              access is granted to all CAs.
+#
+# If the [auth_roles] section is missing, three default roles will be
+# used. These are:
+#
+#   admin      Allows full acess to everything
+#   readonly   Allows list and read access to everything.
+#   readwrite  Allows read, create, update, and delete access to everything.
+#
+### [auth_roles]
+### ...
+EOF
+)
 
 if [ $EUID -ne 0 ]; then
     echo >&2 "ERROR: RTRTR postinst script must be run as root"
@@ -40,7 +1131,7 @@ init_systemd_service() {
 generate_password() {
     # Tries not to depend on too many other commmands
     # being installed.
-    date | md5sum | awk '{print $1}'
+    cat /dev/random | head -c 100 | md5sum | awk '{print $1}'
 }
 
 create_first_time_configuration() {
@@ -55,10 +1146,10 @@ create_first_time_configuration() {
         # boot, and Krill doesn't drop privileges yet so when run as a non-root
         # user has no right to create the file or missing /var/run/subdir.
         # See: https://stackoverflow.com/a/28312577
-        krillc \
-            --token "${ADMIN_TOKEN}" \
-	    config simple --data "${KRILL_DATA}" |
+        printf '%s' "$KRILL_CONF_FILE" |
             sed -e "s|^\(### log_type.\+\)|\1\nlog_type = \"syslog\"|" \
+            	-e "s|^\(### storage_uri.\+\)|\1\nstorage_uri = \"${KRILL_DATA}\"|" \
+            	-e "s|^\(### admin_token.\+\)|\1\nadmin_token = \"${ADMIN_TOKEN}\"|" \
                 > "${KRILL_CONF}"
 
         # Ensure that the config file has the correct ownership
