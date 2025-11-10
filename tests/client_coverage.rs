@@ -163,11 +163,14 @@ async fn client_coverage(server: KrillServer) {
     server.abort().await;
 }
 
+#[tokio::test]
 async fn http() {
     let (server, _tempdir) = common::KrillServer::start_with_testbed().await;
     client_coverage(server).await;
 }
 
+#[tokio::test]
+#[cfg(unix)]
 async fn unix() {
     use std::collections::HashMap;
 
@@ -183,11 +186,4 @@ async fn unix() {
     config.unix_users = HashMap::from([(user.name, "admin".to_string())]);
     let server = common::KrillServer::start_with_config_unix(config).await;
     client_coverage(server).await;
-}
-
-#[tokio::test]
-async fn client_coverage_test() {
-    http().await;
-    #[cfg(unix)]
-    unix().await;
 }
