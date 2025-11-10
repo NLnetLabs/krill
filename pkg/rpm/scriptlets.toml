@@ -1131,7 +1131,7 @@ init_systemd_service() {
 generate_password() {
     # Tries not to depend on too many other commmands
     # being installed.
-    cat /dev/random | head -c 100 | md5sum | awk '{print $1}'
+    cat /dev/random | tr -dc A-Za-z0-9 | head -c 32
 }
 
 create_first_time_configuration() {
