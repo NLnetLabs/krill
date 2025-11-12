@@ -31,6 +31,7 @@ use crate::{
     config::Config,
     server::{
         ca::{CaManager, CertAuth},
+        bgp::BgpAnalyser,
         mq::{
             in_hours, in_minutes, in_seconds, in_weeks, now, Task, TaskQueue,
         },
@@ -45,6 +46,7 @@ pub struct Scheduler {
     tasks: Arc<TaskQueue>,
     ca_manager: Arc<CaManager>,
     repo_manager: Arc<RepositoryManager>,
+    bgp_analyser: Arc<BgpAnalyser>,
     config: Arc<Config>,
     system_actor: Actor,
     started: Timestamp,
@@ -55,6 +57,7 @@ impl Scheduler {
         tasks: Arc<TaskQueue>,
         ca_manager: Arc<CaManager>,
         repo_manager: Arc<RepositoryManager>,
+        bgp_analyser: Arc<BgpAnalyser>,
         config: Arc<Config>,
         system_actor: Actor,
     ) -> Self {
@@ -62,6 +65,7 @@ impl Scheduler {
             tasks,
             ca_manager,
             repo_manager,
+            bgp_analyser,
             config,
             system_actor,
             started: Timestamp::now(),
@@ -190,7 +194,11 @@ impl Scheduler {
                     .await
             }
 
-            Task::SweepLoginCache | Task::RefreshAnnouncementsInfo => {
+            Task::RefreshAnnouncementsInfo => {
+                self.announcements_refresh().await
+            }
+
+            Task::SweepLoginCache => {
                 // Don’t do anything. These are deprecated.
                 Ok(TaskResult::Done)
             }
@@ -297,6 +305,15 @@ impl Scheduler {
         self.tasks
             .schedule_missing(Task::RenewObjectsIfNeeded, now())
             .map_err(FatalError)?;
+
+        // BGP announcement info is only kept in-memory, so it
+        // is lost after a restart, so schedule refreshing this
+        // immediately.
+        if self.config.bgp_riswhois_enabled {
+            self.tasks
+                .schedule(Task::RefreshAnnouncementsInfo, now())
+                .map_err(FatalError)?;
+        }
 
         // Plan updating snapshots soon after a restart.
         // This also ensures that this task gets triggered in long
@@ -482,6 +499,20 @@ impl Scheduler {
         Ok(TaskResult::FollowUp(
             Task::RepublishIfNeeded,
             in_minutes(SCHEDULER_INTERVAL_REPUBLISH_MINS),
+        ))
+    }
+
+    /// Update announcement info
+    async fn announcements_refresh(&self) -> Result<TaskResult, FatalError> {
+        if let Err(e) = self.bgp_analyser.update().await {
+            error!("Failed to update BGP announcements: {}", e)
+        }
+
+        // check again in 10 minutes, note.. this is a no-op in case the
+        // actual update was less then 1 hour ago.
+        // See BGP_RIS_REFRESH_MINUTES constant.
+        Ok(TaskResult::FollowUp(
+            Task::RefreshAnnouncementsInfo, in_minutes(10)
         ))
     }
 

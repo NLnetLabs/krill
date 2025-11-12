@@ -446,10 +446,9 @@ impl fmt::Display for BgpAnalysisReport {
                     writeln!(f)?;
                     writeln!(
                         f,
-                        "\ttConfiguration: {}",
+                        "\tConfiguration: {}",
                         roa.configured_roa()
                     )?;
-                    writeln!(f)?;
                     writeln!(f)?;
                     writeln!(f, "\t\tDisallows:")?;
                     for ann in roa.disallows.iter() {

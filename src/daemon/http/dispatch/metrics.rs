@@ -59,7 +59,7 @@ pub async fn dispatch(
         server.authorizer().login_session_cache_size().await,
     );
 
-    if let Ok(cas_stats) = server.krill().cas_stats().await {
+    if let Ok(cas_stats) = server.krill().cas_stats() {
         target.single(
             Metric::gauge("cas", "number of CAs in Krill"),
             cas_stats.len()

@@ -902,13 +902,13 @@ async fn routes_try(
         = request.read_json::<RoaConfigurationUpdates>().await?;
     let effect = server.krill().ca_routes_bgp_dry_run(
         &ca, updates.clone()
-    ).await?;
+    )?;
     if effect.contains_invalids() {
         updates.set_explicit_max_length();
         let resources = updates.affected_prefixes();
         let suggestion = server.krill().ca_routes_bgp_suggest(
             &ca, Some(resources)
-        ).await?;
+        )?;
         Ok(HttpResponse::json(
             &BgpAnalysisAdvice {
                 effect, suggestion,
@@ -927,14 +927,14 @@ async fn routes_analysis(
     ca: CaHandle,
 ) -> Result<HttpResponse, DispatchError> {
     match path.next() {
-        Some("full") => routes_analysis_full(request, path, ca).await,
+        Some("full") => routes_analysis_full(request, path, ca),
         Some("dryrun") => routes_analysis_dryrun(request, path, ca).await,
         Some("suggest") => routes_analysis_suggest(request, path, ca).await,
         _ => Ok(HttpResponse::not_found())
     }
 }
 
-async fn routes_analysis_full(
+fn routes_analysis_full(
     request: Request<'_>,
     path: PathIter<'_>,
     ca: CaHandle,
@@ -946,7 +946,7 @@ async fn routes_analysis_full(
     )?;
     let server = request.empty()?;
     Ok(HttpResponse::json(
-        &server.krill().ca_routes_bgp_analysis(&ca).await?
+        &server.krill().ca_routes_bgp_analysis(&ca)?
     ))
 }
 
@@ -962,7 +962,7 @@ async fn routes_analysis_dryrun(
     )?;
     let (server, updates) = request.read_json().await?;
     Ok(HttpResponse::json(
-        &server.krill().ca_routes_bgp_dry_run(&ca, updates).await?
+        &server.krill().ca_routes_bgp_dry_run(&ca, updates)?
     ))
 }
 
@@ -979,7 +979,7 @@ async fn routes_analysis_suggest(
             )?;
             let server = request.empty()?;
             Ok(HttpResponse::json(
-                &server.krill().ca_routes_bgp_suggest(&ca, None).await?
+                &server.krill().ca_routes_bgp_suggest(&ca, None)?
             ))
         }
         Method::POST => {
@@ -990,7 +990,7 @@ async fn routes_analysis_suggest(
             Ok(HttpResponse::json(
                 &server.krill().ca_routes_bgp_suggest(
                     &ca, Some(resources)
-                ).await?
+                )?
             ))
         }
         _ => Ok(HttpResponse::method_not_allowed())

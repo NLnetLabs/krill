@@ -151,13 +151,7 @@ impl KrillManager {
             .await?,
         );
 
-        let bgp_analyser = Arc::new(BgpAnalyser::new(
-            config.bgp_api_enabled,
-            config.bgp_api_uri.clone(),
-            config.bgp_api_cache_duration.to_std().unwrap_or(
-                std::time::Duration::from_secs(0)
-            )
-        ));
+        let bgp_analyser = Arc::new(BgpAnalyser::new(&config));
 
         // When multi-node set ups with a shared queue are
         // supported then we can no longer safely reschedule
@@ -277,6 +271,7 @@ impl KrillManager {
             self.mq.clone(),
             self.ca_manager.clone(),
             self.repo_manager.clone(),
+            self.bgp_analyser.clone(),
             self.config.clone(),
             self.system_actor.clone(),
         )
@@ -623,7 +618,7 @@ impl KrillManager {
 
 /// # Stats and status of CAS
 impl KrillManager {
-    pub async fn cas_stats(
+    pub fn cas_stats(
         &self,
     ) -> KrillResult<HashMap<CaHandle, CertAuthStats>> {
         let mut res = HashMap::new();
@@ -639,10 +634,11 @@ impl KrillManager {
                     || ca.handle().as_str() == "testbed"
                 {
                     BgpAnalysisReport::new(vec![])
-                } else {
-                    self.bgp_analyser
-                        .analyse(roas.as_slice(), &ca.all_resources(), None)
-                        .await
+                }
+                else {
+                    self.bgp_analyser.analyse(
+                        roas.as_slice(), &ca.all_resources(), None
+                    )
                 };
 
                 res.insert(
@@ -1146,20 +1142,19 @@ impl KrillManager {
         Ok(ca.configured_roas())
     }
 
-    pub async fn ca_routes_bgp_analysis(
+    pub fn ca_routes_bgp_analysis(
         &self,
         handle: &CaHandle,
     ) -> KrillResult<BgpAnalysisReport> {
         let ca = self.ca_manager.get_ca(handle)?;
         let definitions = ca.configured_roas();
         let resources_held = ca.all_resources();
-        Ok(self
-            .bgp_analyser
-            .analyse(definitions.as_slice(), &resources_held, None)
-            .await)
+        Ok(self.bgp_analyser.analyse(
+            definitions.as_slice(), &resources_held, None
+        ))
     }
 
-    pub async fn ca_routes_bgp_dry_run(
+    pub fn ca_routes_bgp_dry_run(
         &self,
         handle: &CaHandle,
         mut updates: RoaConfigurationUpdates,
@@ -1175,13 +1170,12 @@ impl KrillManager {
         let configured_roas =
             ca.configured_roas_for_configs(would_be_configurations);
 
-        Ok(self
-            .bgp_analyser
-            .analyse(&configured_roas, &resources_held, limit)
-            .await)
+        Ok(self.bgp_analyser.analyse(
+            &configured_roas, &resources_held, limit
+        ))
     }
 
-    pub async fn ca_routes_bgp_suggest(
+    pub fn ca_routes_bgp_suggest(
         &self,
         handle: &CaHandle,
         limit: Option<ResourceSet>,
@@ -1190,10 +1184,9 @@ impl KrillManager {
         let configured_roas = ca.configured_roas();
         let resources_held = ca.all_resources();
 
-        Ok(self
-            .bgp_analyser
-            .suggest(configured_roas.as_slice(), &resources_held, limit)
-            .await)
+        Ok(self.bgp_analyser.suggest(
+            configured_roas.as_slice(), &resources_held, limit
+        ))
     }
 
     /// Re-issue ROA objects so that they will use short subjects (see issue
