@@ -8,6 +8,7 @@ use bytes::Bytes;
 use log::LevelFilter;
 use rpki::repository::resources::{AsBlocks, IpBlocks};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+#[cfg(unix)]
 use syslog::Facility;
 
 
@@ -182,6 +183,7 @@ where
 
 //------------ Facility ------------------------------------------------------
 
+#[cfg(unix)]
 pub fn de_facility<'de, D>(d: D) -> Result<Facility, D::Error>
 where
     D: Deserializer<'de>,
