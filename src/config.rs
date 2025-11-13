@@ -30,7 +30,7 @@ use crate::{
         ext_serde,
         crypto::{OpenSslSignerConfig, SignSupport},
         error::{Error, KrillIoError},
-        storage::{KeyValueStore, Namespace},
+        storage::{Ident, KeyValueStore},
         KrillResult,
     },
     constants::*,
@@ -74,13 +74,20 @@ impl ConfigDefaults {
     }
 
     #[cfg(unix)]
+    pub fn unix_socket_enabled() -> bool {
+        true
+    }
+
+    #[cfg(unix)]
     pub fn unix_socket() -> Option<PathBuf> {
-        None
+        Some(PathBuf::from("/run/krill/krill.sock"))
     }
 
     #[cfg(unix)]
     pub fn unix_users() -> HashMap<String, String> {
-        HashMap::new()
+        let mut users = HashMap::new();
+        users.insert("root".to_string(), "admin".to_string());
+        users
     }
 
     pub fn storage_uri() -> Url {
@@ -497,6 +504,10 @@ pub struct Config {
 
     #[serde(default = "ConfigDefaults::https_mode")]
     pub https_mode: HttpsMode,
+
+    #[cfg(unix)]
+    #[serde(default = "ConfigDefaults::unix_socket_enabled")]
+    pub unix_socket_enabled: bool,
 
     #[cfg(unix)]
     #[serde(default = "ConfigDefaults::unix_socket")]
@@ -927,9 +938,9 @@ impl Config {
 
     pub fn key_value_store(
         &self,
-        name_space: &Namespace,
+        namespace: &Ident,
     ) -> KrillResult<KeyValueStore> {
-        KeyValueStore::create(&self.storage_uri, name_space)
+        KeyValueStore::create(&self.storage_uri, namespace)
             .map_err(Error::KeyValueError)
     }
 
@@ -985,6 +996,11 @@ impl Config {
         let mut path = self.tls_keys_dir().to_path_buf();
         path.push(tls_keys::KEY_FILE);
         path
+    }
+
+    #[cfg(unix)]
+    pub fn unix_socket_enabled(&self) -> bool {
+        self.unix_socket_enabled
     }
 
     #[cfg(unix)]
@@ -1252,6 +1268,8 @@ impl Config {
             use_history_cache: false,
             tls_keys_dir: data_dir.map(|d| d.join(HTTPS_SUB_DIR)),
             #[cfg(unix)]
+            unix_socket_enabled: false,
+            #[cfg(unix)]
             unix_socket: None,
             #[cfg(unix)]
             unix_users: HashMap::new(),
@@ -1492,7 +1510,7 @@ impl Config {
             warn!("The environment variable for setting the admin token has been updated from '{KRILL_ENV_ADMIN_TOKEN_DEPRECATED}' to '{KRILL_ENV_ADMIN_TOKEN}', please update as the old value may not be supported in future releases")
         }
 
-        if self.port < 1024 {
+        if self.port < 1024 && self.port != 0 {
             return Err(ConfigError::other("Port number must be >1024"));
         }
 

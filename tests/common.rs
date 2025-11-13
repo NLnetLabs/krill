@@ -93,6 +93,11 @@ impl TestConfig {
         self
     }
 
+    pub fn set_zero_port(mut self) -> Self {
+        self.port = 0;
+        self
+    }
+
     pub fn enable_testbed(mut self) -> Self {
         self.enable_testbed = true;
         self
@@ -254,6 +259,8 @@ impl TestConfig {
             ip,
             port,
             https_mode,
+            #[cfg(unix)]
+            unix_socket_enabled: false,
             #[cfg(unix)]
             unix_socket: None,
             #[cfg(unix)]

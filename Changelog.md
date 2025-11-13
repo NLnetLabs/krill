@@ -8,7 +8,18 @@ New
 
 Bug fixes
 
+* Fixed an issue  with the new BGP API code which false returns missing
+  announcement info. ([#1326])
+* Fixed an issue where deleting children or parents of a CA fails before a
+  successful communication with the remote CA. ([#1331])
+* Fixed an error message when trying to delete a CA which does not
+  have any parents, children, or repositories despite actually removing
+  the CA. ([#1331])
+
 Other changes
+
+[#1326]: https://github.com/NLnetLabs/krill/pull/1326
+[#1331]: https://github.com/NLnetLabs/krill/pull/1331
 
 
 ## 0.15.0 ‘But I Digress’

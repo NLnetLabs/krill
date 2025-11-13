@@ -229,7 +229,7 @@ impl Authorizer {
             primary_provider,
             legacy_provider,
             #[cfg(unix)]
-            unix_socket_provider: unix_user::AuthProvider::new(config.clone())
+            unix_socket_provider: unix_user::AuthProvider::new(config.clone())?
         })
     }
 

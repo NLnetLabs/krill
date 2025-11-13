@@ -3,6 +3,7 @@
 //! This is a private module. Its public items are re-exported by the parent.
 
 use std::{error, fmt};
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, RwLock};
@@ -16,9 +17,7 @@ use crate::api::history::{
     CommandHistory, CommandHistoryCriteria, CommandHistoryRecord
 };
 use crate::commons::error::KrillIoError;
-use crate::commons::storage::{
-    Key, KeyValueError, KeyValueStore, Namespace, Segment, Scope
-};
+use crate::commons::storage::{Ident, KeyValueError, KeyValueStore};
 use super::agg::{
     Aggregate, Command, InitCommand, PostSaveEventListener,
     PreSaveEventListener, StoredCommand
@@ -78,7 +77,7 @@ impl<A: Aggregate> AggregateStore<A> {
     /// history cache record created for any instance.
     pub fn create(
         storage_uri: &Url,
-        namespace: &Namespace,
+        namespace: &Ident,
         use_history_cache: bool,
     ) -> Result<Self, AggregateStoreError> {
         Ok(Self::create_from_kv(
@@ -92,7 +91,7 @@ impl<A: Aggregate> AggregateStore<A> {
     /// history cache record created for any instance.
     pub fn create_upgrade_store(
         storage_uri: &Url,
-        namespace: &Namespace,
+        namespace: &Ident,
         use_history_cache: bool,
     ) -> Result<Self, AggregateStoreError> {
         Ok(Self::create_from_kv(
@@ -159,7 +158,9 @@ impl<A: Aggregate> AggregateStore<A> {
 impl<A: Aggregate> AggregateStore<A> {
     /// Returns whether an instance with the given handle exists.
     pub fn has(&self, id: &MyHandle) -> Result<bool, AggregateStoreError> {
-        Ok(self.kv.has(&Self::key_for_command(id, 0))?)
+        Ok(self.kv.has(
+            Some(&Self::scope_for_agg(id)), &Self::key_for_command(0)
+        )?)
     }
 
     /// Lists all known ids.
@@ -189,7 +190,9 @@ impl<A: Aggregate> AggregateStore<A> {
         id: &MyHandle,
         version: u64,
     ) -> Result<StoredCommand<A>, AggregateStoreError> {
-        match self.kv.get(&Self::key_for_command(id, version))? {
+        match self.kv.get(
+            Some(&Self::scope_for_agg(id)), &Self::key_for_command(version)
+        )? {
             Some(cmd) => Ok(cmd),
             None => {
                 Err(AggregateStoreError::CommandNotFound(id.clone(), version))
@@ -217,10 +220,10 @@ impl<A: Aggregate> AggregateStore<A> {
     pub fn add(&self, cmd: A::InitCommand) -> Result<Arc<A>, A::Error> {
         let scope = Self::scope_for_agg(cmd.handle());
 
-        self.kv.execute(&scope, move |kv| {
-            let init_command_key = Self::key_for_command(cmd.handle(), 0);
+        self.kv.execute(Some(&scope), |kv| {
+            let init_command_key = Self::key_for_command(0);
 
-            if kv.has(&init_command_key)? {
+            if kv.has(Some(&scope), &init_command_key)? {
                 // This is no good.. this aggregate already exists.
                 Ok(Err(A::Error::from(
                     AggregateStoreError::DuplicateAggregate(
@@ -247,7 +250,10 @@ impl<A: Aggregate> AggregateStore<A> {
                         let processed_command = processed_command_builder
                             .finish_with_init_event(init_event);
 
-                        kv.store(&init_command_key, &processed_command)?;
+                        kv.store(
+                            Some(&scope), &init_command_key,
+                            &processed_command
+                        )?;
 
                         let arc = Arc::new(aggregate);
 
@@ -292,7 +298,8 @@ impl<A: Aggregate> AggregateStore<A> {
         cmd_opt: Option<&A::Command>,
         save_snapshot: bool,
     ) -> Result<Arc<A>, A::Error> {
-        self.kv.execute(&Self::scope_for_agg(handle), |kv| {
+        let scope = Self::scope_for_agg(handle);
+        self.kv.execute(Some(&scope), |kv| {
             // Do we need to update the cache when we are done?
             let mut changed_from_cached = false;
 
@@ -311,7 +318,9 @@ impl<A: Aggregate> AggregateStore<A> {
                     // later.
                     changed_from_cached = true;
 
-                    match kv.get(&Self::key_for_snapshot(handle))? {
+                    match kv.get(
+                        Some(&scope), Self::key_for_snapshot()
+                    )? {
                         Some(agg) => {
                             trace!("found snapshot for {handle}");
                             Arc::new(agg)
@@ -319,8 +328,10 @@ impl<A: Aggregate> AggregateStore<A> {
                         None => {
                             // No snapshot either. Get the init command and
                             // apply it.
-                            let init_key = Self::key_for_command(handle, 0);
-                            match kv.get::<StoredCommand<A>>(&init_key)? {
+                            let init_key = Self::key_for_command(0);
+                            match kv.get::<StoredCommand<A>>(
+                                Some(&scope), &init_key
+                            )? {
                                 Some(init_command) => {
                                     trace!("found init command for {handle}");
                                     match init_command.into_init() {
@@ -363,8 +374,8 @@ impl<A: Aggregate> AggregateStore<A> {
             //
             // XXX This looks up the next version twice which can probably
             //     be avoided.
-            let next_command = Self::key_for_command(handle, agg.version());
-            if kv.has(&next_command)? {
+            let next_command = Self::key_for_command(agg.version());
+            if kv.has(Some(&scope), &next_command)? {
                 let aggregate = Arc::make_mut(&mut agg);
 
                 // check and apply any applicable processed commands until:
@@ -373,9 +384,9 @@ impl<A: Aggregate> AggregateStore<A> {
                 loop {
                     let version = aggregate.version();
 
-                    let key = Self::key_for_command(handle, version);
+                    let key = Self::key_for_command(version);
 
-                    match kv.get::<StoredCommand<A>>(&key)? {
+                    match kv.get::<StoredCommand<A>>(Some(&scope), &key)? {
                         None => break,
                         Some(command) => {
                             trace!(
@@ -403,7 +414,7 @@ impl<A: Aggregate> AggregateStore<A> {
                     cmd.store(),
                 );
 
-                let command_key = Self::key_for_command(handle, version);
+                let command_key = Self::key_for_command(version);
 
                 // The new command key MUST NOT be in use. If it is in use,
                 // then this points to a bug in Krill transaction/locking
@@ -411,7 +422,7 @@ impl<A: Aggregate> AggregateStore<A> {
                 // there is nothing sensible we can do with this error.
                 //
                 // See issue: https://github.com/NLnetLabs/krill/issues/322
-                if kv.has(&command_key)? {
+                if kv.has(Some(&scope), &command_key)? {
                     error!(
                         "Command key for '{handle}' version '{version}' \
                          already exists."
@@ -433,7 +444,7 @@ impl<A: Aggregate> AggregateStore<A> {
                         let processed = processed.finish_with_error(&e);
                         aggregate.apply_command(processed.clone());
                         changed_from_cached = true;
-                        kv.store(&command_key, &processed)?;
+                        kv.store(Some(&scope), &command_key, &processed)?;
                         Err(e)
                     }
                     Ok(events) => {
@@ -482,7 +493,9 @@ impl<A: Aggregate> AggregateStore<A> {
                                 Err(e)
                             } else {
                                 // Save the latest command.
-                                kv.store(&command_key, &processed)?;
+                                kv.store(
+                                    Some(&scope), &command_key, &processed
+                                )?;
 
                                 // Now send the events to the 'post-save'
                                 // listeners.
@@ -512,7 +525,10 @@ impl<A: Aggregate> AggregateStore<A> {
             }
 
             if save_snapshot {
-                kv.store(&Self::key_for_snapshot(handle), agg.as_ref())?;
+                kv.store(
+                    Some(&scope), Self::key_for_snapshot(),
+                    agg.as_ref()
+                )?;
             }
 
             if let Err(e) = res {
@@ -533,7 +549,7 @@ impl<A: Aggregate> AggregateStore<A> {
         id: &MyHandle,
     ) -> Result<(), AggregateStoreError> {
         let scope = Self::scope_for_agg(id);
-        self.kv.execute(&scope, |kv| kv.delete_scope(&scope))?;
+        self.kv.execute(Some(&scope), |kv| kv.delete_scope(&scope))?;
         self.cache_remove(id);
         Ok(())
     }
@@ -641,30 +657,23 @@ impl<A: Aggregate> AggregateStore<A> {
 
 impl<A: Aggregate> AggregateStore<A> {
     /// Returns the scope for the aggregate with the given ID.
-    fn scope_for_agg(id: &MyHandle) -> Scope {
-        // id should always be a valid segment.
-        //
-        // XXX I’m not sure this is actually true. There is something with
-        //     forward slashes.
-        Scope::from_segment(Segment::parse_lossy(id.as_str())) 
+    fn scope_for_agg(id: &MyHandle) -> Cow<'_, Ident> {
+        Ident::from_handle(id)
     }
 
     /// Returns the key for the snapshot of the aggregate with the given ID.
-    fn key_for_snapshot(agg: &MyHandle) -> Key {
-        Key::new_scoped(
-            Self::scope_for_agg(agg),
-            const { Segment::make("snapshot.json") }
-        )
+    const fn key_for_snapshot() -> &'static Ident {
+        const { Ident::make("snapshot.json") }
     }
 
     /// Returns the key for the command for an aggregate and version.
-    fn key_for_command(agg: &MyHandle, version: u64) -> Key {
-        Key::new_scoped(
-            Self::scope_for_agg(agg),
-            // Cannot panic as a u64 cannot contain a Scope::SEPARATOR.
-            Segment::parse(
-                &format!("command-{version}.json")
-            ).unwrap(), 
+    fn key_for_command(version: u64) -> Box<Ident> {
+        Ident::builder(
+            const { Ident::make("command-") }
+        ).push_u64(
+            version
+        ).finish_with_extension(
+            const { Ident::make("json") }
         )
     }
 }

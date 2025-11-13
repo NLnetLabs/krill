@@ -60,7 +60,7 @@ pub struct GeneralOptions {
     #[arg(
         short, long,
         env = "KRILL_CLI_SERVER",
-        default_value = "unix:///tmp/krill.sock"
+        default_value = "unix:///run/krill/krill.sock"
     )]
     pub server: ServerUri,
 

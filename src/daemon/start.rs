@@ -127,14 +127,16 @@ pub async fn start_krill_daemon(
     // Start a hyper server for the configured unix sockets.
     // We do not await these, as they are not required
     #[cfg(unix)]
-    config.unix_socket().map(|path| {
-        tokio::spawn(single_unix_listener(
-            server.clone(),
-            path.clone(),
-            config.clone(),
-            signal_running.take(),
-        ))
-    });
+    if config.unix_socket_enabled() {
+        config.unix_socket().map(|path| {
+            tokio::spawn(single_unix_listener(
+                server.clone(),
+                path.clone(),
+                config.clone(),
+                signal_running.take(),
+            ))
+        });
+    }
 
     select!(
         _ = http_server_futures => error!("http server stopped unexpectedly"),

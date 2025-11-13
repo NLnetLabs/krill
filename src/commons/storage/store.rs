@@ -1,15 +1,12 @@
 //! The publicly exposed key-value store.
 
 use std::fmt;
-use std::str::FromStr;
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
 use url::Url;
 
 use crate::commons::storage;
-use crate::commons::storage::{
-    Backend, Key, Namespace, NamespaceBuf, Scope, Transaction,
-};
+use crate::commons::storage::{Backend, Ident, Transaction};
 
 
 //------------ KeyValueStore -------------------------------------------------
@@ -33,7 +30,7 @@ impl KeyValueStore {
     /// Creates a new store.
     pub fn create(
         storage_uri: &Url,
-        namespace: &Namespace,
+        namespace: &Ident,
     ) -> Result<Self, KeyValueError> {
         Ok(Self {
             inner: Backend::new(storage_uri, namespace)?.ok_or_else(|| {
@@ -52,12 +49,12 @@ impl KeyValueStore {
 
     /// Wipes the complete store.
     pub fn wipe(&self) -> Result<(), KeyValueError> {
-        self.execute(&Scope::global(), |kv| kv.clear())
+        self.execute(None, |kv| kv.clear())
     }
 
     pub fn execute<F, T>(
         &self,
-        scope: &Scope,
+        scope: Option<&Ident>,
         op: F,
     ) -> Result<T, KeyValueError>
     where
@@ -72,29 +69,31 @@ impl KeyValueStore {
     /// Stores a key value pair, serialized as json, overwrite existing
     pub fn store<V: Serialize>(
         &self,
-        key: &Key,
+        scope: Option<&Ident>,
+        key: &Ident,
         value: &V,
     ) -> Result<(), KeyValueError> {
         self.execute(
-            key.scope(),
-            |kv| kv.store(key, value),
+            scope,
+            |kv| kv.store(scope, key, value),
         )
     }
 
     /// Stores a key value pair, serialized as json, fails if existing
     pub fn store_new<V: Serialize>(
         &self,
-        key: &Key,
+        scope: Option<&Ident>,
+        key: &Ident,
         value: &V,
     ) -> Result<(), KeyValueError> {
         self.execute(
-            key.scope(),
+            scope,
             |kv| {
-                if kv.has(key)? {
-                    Ok(Err(KeyValueError::DuplicateKey(key.clone())))
+                if kv.has(scope, key)? {
+                    Ok(Err(KeyValueError::duplicate_key(scope, key)))
                 }
                 else {
-                    kv.store(key, value)?;
+                    kv.store(scope, key, value)?;
                     Ok(Ok(()))
                 }
             }
@@ -104,24 +103,27 @@ impl KeyValueStore {
     /// Gets a value for a key, returns an error if the value cannot be
     /// deserialized, returns None if it cannot be found.
     pub fn get<V: DeserializeOwned>(
-        &self,
-        key: &Key,
+        &self, scope: Option<&Ident>, key: &Ident,
     ) -> Result<Option<V>, KeyValueError> {
-        self.execute(key.scope(), |kv| {
-            kv.get(key)
+        self.execute(scope, |kv| {
+            kv.get(scope, key)
         })
     }
 
     /// Returns whether a key exists
-    pub fn has(&self, key: &Key) -> Result<bool, KeyValueError> {
-        self.execute(key.scope(), |kv| kv.has(key))
+    pub fn has(
+        &self, scope: Option<&Ident>, key: &Ident
+    ) -> Result<bool, KeyValueError> {
+        self.execute(scope, |kv| kv.has(scope, key))
     }
 
     /// Delete a key-value pair.
     ///
     /// Returns an error if the key does not exist.
-    pub fn drop_key(&self, key: &Key) -> Result<(), KeyValueError> {
-        self.execute(key.scope(), |kv| kv.delete(key))
+    pub fn drop_key(
+        &self, scope: Option<&Ident>, key: &Ident
+    ) -> Result<(), KeyValueError> {
+        self.execute(scope, |kv| kv.delete(scope, key))
     }
 
     /// Returns all keys under a scope (scopes are exact strings, 'sub'-scopes
@@ -130,20 +132,13 @@ impl KeyValueStore {
     ///
     /// If matching is not empty then the key must contain the given `&str`.
     pub fn keys(
-        &self,
-        scope: &Scope,
-        matching: &str,
-    ) -> Result<Vec<Key>, KeyValueError> {
+        &self, scope: Option<&Ident>, contains: &str,
+    ) -> Result<Vec<Box<Ident>>, KeyValueError> {
         self.execute(scope, |kv| {
             // storage list_keys returns keys in sub-scopes
-            kv.list_keys(scope).map(|keys| {
-                keys.into_iter()
-                    .filter(|key| {
-                        key.scope() == scope
-                            && (matching.is_empty()
-                                || key.name().as_str().contains(matching))
-                    })
-                    .collect()
+            kv.list_keys(scope).map(|mut res| {
+                res.retain(|item| item.as_str().contains(contains));
+                res
             })
         })
     }
@@ -152,21 +147,25 @@ impl KeyValueStore {
 // # Scopes
 impl KeyValueStore {
     /// Returns whether a scope exists
-    pub fn has_scope(&self, scope: &Scope) -> Result<bool, KeyValueError> {
-        self.execute(&Scope::global(), |kv| kv.has_scope(scope))
+    pub fn has_scope(
+        &self, scope: &Ident
+    ) -> Result<bool, KeyValueError> {
+        self.execute(None, |kv| kv.has_scope(scope))
     }
 
     /// Delete a scope
-    pub fn drop_scope(&self, scope: &Scope) -> Result<(), KeyValueError> {
-        self.execute(scope, |kv| kv.delete_scope(scope))
+    pub fn drop_scope(
+        &self, scope: &Ident
+    ) -> Result<(), KeyValueError> {
+        self.execute(None, |kv| kv.delete_scope(scope))
     }
 
     /// Returns all scopes.
     ///
     /// The returned vec will contain all scopes, including their subscopes.
     /// It will not, however, contain the global scope.
-    pub fn scopes(&self) -> Result<Vec<Scope>, KeyValueError> {
-        self.execute(&Scope::global(), |kv| kv.list_scopes())
+    pub fn scopes(&self) -> Result<Vec<Box<Ident>>, KeyValueError> {
+        self.execute(None, |kv| kv.list_scopes())
     }
 }
 
@@ -174,27 +173,28 @@ impl KeyValueStore {
 impl KeyValueStore {
     /// Creates a new KeyValueStore for upgrades.
     ///
-    /// Adds the implicit prefix "upgrade-{version}-" to the given namespace.
+    /// Adds the implicit prefix "upgrade_" to the given namespace.
     pub fn create_upgrade_store(
         storage_uri: &Url,
-        namespace: &Namespace,
+        namespace: &Ident,
     ) -> Result<Self, KeyValueError> {
         Self::create(
             storage_uri,
-            &Self::prefixed_namespace(namespace, "upgrade")?
+            &Self::prefixed_namespace(
+                namespace, const { Ident::make("upgrade") }
+            )
         )
     }
 
     fn prefixed_namespace(
-        namespace: &Namespace,
-        prefix: &str,
-    ) -> Result<NamespaceBuf, KeyValueError> {
-        let namespace_string = format!("{prefix}_{namespace}");
-        NamespaceBuf::from_str(&namespace_string).map_err(|e| {
-            KeyValueError::Other(format!(
-                "Cannot parse namespace: {namespace_string}. Error: {e}"
-            ))
-        })
+        namespace: &Ident,
+        prefix: &Ident,
+    ) -> Box<Ident> {
+        Ident::builder(prefix).push_ident(
+            const { Ident::make("_") }
+        ).push_ident(
+            namespace
+        ).finish()
     }
 
     /// Archive this store (i.e. for this namespace). Deletes
@@ -202,9 +202,12 @@ impl KeyValueStore {
     pub fn migrate_to_archive(
         &mut self,
         storage_uri: &Url,
-        namespace: &Namespace,
+        namespace: &Ident,
     ) -> Result<(), KeyValueError> {
-        let archive_ns = Self::prefixed_namespace(namespace, "archive")?;
+        let archive_ns = Self::prefixed_namespace(
+            namespace, const { Ident::make("archive") }
+        );
+
         // Wipe any existing archive, before archiving this store.
         // We don't want to keep too much old data. See issue: #1088.
         KeyValueStore::create(storage_uri, &archive_ns)?.wipe()?;
@@ -218,7 +221,7 @@ impl KeyValueStore {
     pub fn migrate_to_current(
         &mut self,
         storage_uri: &Url,
-        namespace: &Namespace,
+        namespace: &Ident,
     ) -> Result<(), KeyValueError> {
         let current_store = KeyValueStore::create(storage_uri, namespace)?;
         if !current_store.is_empty()? {
@@ -246,18 +249,17 @@ impl KeyValueStore {
     pub fn import(
         &self,
         other: &Self,
-        mut keep: impl FnMut(&Scope) -> bool,
     ) -> Result<(), KeyValueError> {
-        let mut scopes = other.scopes()?;
-        scopes.push(Scope::global());
+        let mut scopes: Vec<_>
+            = other.scopes()?.into_iter().map(Some).collect();
+        scopes.push(None);
 
         for scope in scopes {
-            if !keep(&scope) {
-                continue
-            }
-            for key in other.keys(&scope, "")? {
-                if let Some(value) = other.inner.get_any(&key)? {
-                    self.inner.store_any(&key, &value)?
+            for key in other.keys(scope.as_deref(), "")? {
+                if let Some(value)
+                    = other.inner.get_any(scope.as_deref(), &key)?
+                {
+                    self.inner.store_any(scope.as_deref(), &key, &value)?
                 }
             }
         }
@@ -273,9 +275,15 @@ impl KeyValueStore {
 #[derive(Debug)]
 pub enum KeyValueError {
     UnknownScheme(String),
-    DuplicateKey(Key),
+    DuplicateKey(Option<Box<Ident>>, Box<Ident>),
     Inner(storage::Error),
     Other(String),
+}
+
+impl KeyValueError {
+    fn duplicate_key(scope: Option<&Ident>, key: &Ident) -> Self {
+        Self::DuplicateKey(scope.map(Into::into), key.into())
+    }
 }
 
 impl From<storage::Error> for KeyValueError {
@@ -290,8 +298,15 @@ impl fmt::Display for KeyValueError {
             KeyValueError::UnknownScheme(e) => {
                 write!(f, "Unknown Scheme: {e}")
             }
-            KeyValueError::DuplicateKey(key) => {
-                write!(f, "Duplicate key: {key}")
+            KeyValueError::DuplicateKey(scope, key) => {
+                match scope {
+                    Some(scope) => {
+                        write!(f, "Duplicate key {key} in scope {scope}")
+                    }
+                    None => {
+                        write!(f, "Duplicate key {key} in global scope")
+                    }
+                }
             }
             KeyValueError::Inner(e) => write!(f, "Store error: {e}"),
             KeyValueError::Other(msg) => write!(f, "{msg}"),
