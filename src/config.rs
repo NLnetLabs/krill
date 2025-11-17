@@ -177,16 +177,20 @@ impl ConfigDefaults {
         240 // 4 minutes by default should be plenty in most cases
     }
 
-    pub fn bgp_api_enabled() -> bool {
+    pub fn bgp_riswhois_enabled() -> bool {
         true
     }
 
-    pub fn bgp_api_uri() -> String {
-        "https://rest.bgp-api.net".to_string()
+    pub fn bgp_riswhois_v4_uri() -> String {
+        "https://www.ris.ripe.net/dumps/riswhoisdump.IPv4.gz".into()
     }
 
-    pub fn bgp_api_cache_duration() -> Duration {
-        Duration::seconds(30 * 60)
+    pub fn bgp_riswhois_v6_uri() -> String {
+        "https://www.ris.ripe.net/dumps/riswhoisdump.IPv6.gz".into()
+    }
+
+    pub fn bgp_riswhois_refresh_interval() -> Duration {
+        Duration::seconds(60 * 60)
     }
 
     pub fn roa_aggregate_threshold() -> usize {
@@ -461,10 +465,12 @@ where
     }
 }
 
-fn deserialize_seconds_duration<'de, D: Deserializer<'de>>(
+fn deserialize_minutes_duration<'de, D: Deserializer<'de>>(
     deserializer: D
 ) -> Result<Duration, D::Error> {
-    u32::deserialize(deserializer).map(|secs| Duration::seconds(secs.into()))
+    u32::deserialize(deserializer).map(|secs| {
+        Duration::seconds(i64::from(secs) * 60)
+    })
 }
 
 
@@ -596,19 +602,22 @@ pub struct Config {
     #[serde(default = "ConfigDefaults::rfc6492_log_dir")]
     pub rfc6492_log_dir: Option<PathBuf>,
 
-    // RIS BGP
-    #[serde(default = "ConfigDefaults::bgp_api_enabled")]
-    pub bgp_api_enabled: bool,
+    // RISwhois data for the BGP analyser
+    #[serde(default = "ConfigDefaults::bgp_riswhois_enabled")]
+    pub bgp_riswhois_enabled: bool,
 
-    #[serde(default = "ConfigDefaults::bgp_api_uri")]
-    pub bgp_api_uri: String,
+    #[serde(default = "ConfigDefaults::bgp_riswhois_v4_uri")]
+    pub bgp_riswhois_v4_uri: String,
+
+    #[serde(default = "ConfigDefaults::bgp_riswhois_v6_uri")]
+    pub bgp_riswhois_v6_uri: String,
 
     #[serde(
-        rename = "bgp_api_cache_seconds",
-        default = "ConfigDefaults::bgp_api_cache_duration",
-        deserialize_with = "deserialize_seconds_duration",
+        rename = "bgp_riswhois_refresh_minutes",
+        default = "ConfigDefaults::bgp_riswhois_refresh_interval",
+        deserialize_with = "deserialize_minutes_duration",
     )]
-    pub bgp_api_cache_duration: Duration,
+    pub bgp_riswhois_refresh_interval: Duration,
 
     // ROA Aggregation per ASN
     #[serde(default = "ConfigDefaults::roa_aggregate_threshold")]
@@ -1140,9 +1149,11 @@ impl Config {
         let post_protocol_msg_timeout_seconds =
             ConfigDefaults::post_protocol_msg_timeout_seconds();
 
-        let bgp_api_enabled = false;
-        let bgp_api_uri = ConfigDefaults::bgp_api_uri();
-        let bgp_api_cache_duration = ConfigDefaults::bgp_api_cache_duration();
+        let bgp_riswhois_enabled = false;
+        let bgp_riswhois_v4_uri = ConfigDefaults::bgp_riswhois_v4_uri();
+        let bgp_riswhois_v6_uri = ConfigDefaults::bgp_riswhois_v6_uri();
+        let bgp_riswhois_refresh_interval
+            = ConfigDefaults::bgp_riswhois_refresh_interval();
 
         let roa_aggregate_threshold = 3;
         let roa_deaggregate_threshold = 2;
@@ -1252,9 +1263,10 @@ impl Config {
             post_limit_rfc6492,
             rfc6492_log_dir: None,
             post_protocol_msg_timeout_seconds,
-            bgp_api_enabled,
-            bgp_api_uri,
-            bgp_api_cache_duration,
+            bgp_riswhois_enabled,
+            bgp_riswhois_v4_uri,
+            bgp_riswhois_v6_uri,
+            bgp_riswhois_refresh_interval,
             roa_aggregate_threshold,
             roa_deaggregate_threshold,
             issuance_timing,
