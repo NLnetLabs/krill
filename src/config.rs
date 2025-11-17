@@ -182,14 +182,14 @@ impl ConfigDefaults {
     }
 
     pub fn bgp_riswhois_v4_uri() -> String {
-        "http://www.ris.ripe.net/dumps/riswhoisdump.IPv4.gz".into()
+        "https://www.ris.ripe.net/dumps/riswhoisdump.IPv4.gz".into()
     }
 
     pub fn bgp_riswhois_v6_uri() -> String {
-        "http://www.ris.ripe.net/dumps/riswhoisdump.IPv6.gz".into()
+        "https://www.ris.ripe.net/dumps/riswhoisdump.IPv6.gz".into()
     }
 
-    pub fn bgp_riswhois_refresh_duration() -> Duration {
+    pub fn bgp_riswhois_refresh_interval() -> Duration {
         Duration::seconds(60 * 60)
     }
 
@@ -614,10 +614,10 @@ pub struct Config {
 
     #[serde(
         rename = "bgp_riswhois_refresh_minutes",
-        default = "ConfigDefaults::bgp_riswhois_refresh_duration",
+        default = "ConfigDefaults::bgp_riswhois_refresh_interval",
         deserialize_with = "deserialize_minutes_duration",
     )]
-    pub bgp_riswhois_refresh_duration: Duration,
+    pub bgp_riswhois_refresh_interval: Duration,
 
     // ROA Aggregation per ASN
     #[serde(default = "ConfigDefaults::roa_aggregate_threshold")]
@@ -1152,8 +1152,8 @@ impl Config {
         let bgp_riswhois_enabled = false;
         let bgp_riswhois_v4_uri = ConfigDefaults::bgp_riswhois_v4_uri();
         let bgp_riswhois_v6_uri = ConfigDefaults::bgp_riswhois_v6_uri();
-        let bgp_riswhois_refresh_duration
-            = ConfigDefaults::bgp_riswhois_refresh_duration();
+        let bgp_riswhois_refresh_interval
+            = ConfigDefaults::bgp_riswhois_refresh_interval();
 
         let roa_aggregate_threshold = 3;
         let roa_deaggregate_threshold = 2;
@@ -1266,7 +1266,7 @@ impl Config {
             bgp_riswhois_enabled,
             bgp_riswhois_v4_uri,
             bgp_riswhois_v6_uri,
-            bgp_riswhois_refresh_duration,
+            bgp_riswhois_refresh_interval,
             roa_aggregate_threshold,
             roa_deaggregate_threshold,
             issuance_timing,

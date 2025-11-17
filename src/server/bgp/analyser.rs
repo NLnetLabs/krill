@@ -41,7 +41,7 @@ pub struct BgpAnalyser {
     loader: Option<RisWhoisLoader>,
 
     /// How long should we wait before downloading the data again.
-    refresh_duration: Duration,
+    refresh_interval: Duration,
 
     /// The last time we downloaded the data.
     ///
@@ -65,7 +65,7 @@ impl BgpAnalyser {
                     config.bgp_riswhois_v6_uri.clone(),
                 )
             }),
-            refresh_duration: config.bgp_riswhois_refresh_duration,
+            refresh_interval: config.bgp_riswhois_refresh_interval,
             last_checked: i64::MIN.into(),
             riswhois: ArcSwapOption::new(None),
         }
@@ -88,7 +88,7 @@ impl BgpAnalyser {
                 self.last_checked.load(Ordering::Relaxed), 0
             ).unwrap_or(DateTime::<Utc>::MIN_UTC)
         );
-        if last_checked + self.refresh_duration < Time::now() {
+        if last_checked + self.refresh_interval >= Time::now() {
             trace!(
                 "RISwhois update requested but refresh duration \
                  has not yet passed."
@@ -694,7 +694,7 @@ mod tests {
 
         BgpAnalyser {
             loader: None,
-            refresh_duration: Duration::seconds(12),
+            refresh_interval: Duration::seconds(12),
             last_checked: i64::MIN.into(),
             riswhois: ArcSwapOption::new(Some(Arc::new(RisWhois::new(
                 RouteOriginCollection::new(
@@ -729,7 +729,7 @@ mod tests {
 
         BgpAnalyser {
             loader: None,
-            refresh_duration: Duration::seconds(12),
+            refresh_interval: Duration::seconds(12),
             last_checked: i64::MIN.into(),
             riswhois: ArcSwapOption::new(Some(Arc::new(ris))),
         }
@@ -738,7 +738,7 @@ mod tests {
     fn empty_analyser() -> BgpAnalyser {
         BgpAnalyser {
             loader: None,
-            refresh_duration: Duration::seconds(12),
+            refresh_interval: Duration::seconds(12),
             last_checked: i64::MIN.into(),
             riswhois: ArcSwapOption::new(None),
         }

@@ -25,7 +25,10 @@ use crate::api::bgp::Announcement;
 /// Pairs that are only seen by very few peers are likely there by mistake
 /// and should be filtered out. This constant sets the minimum number of
 /// stream that have to have seen a pair for us to include it in our data.
-const MINIMUM_SEEN_BY: u32 = 6;
+///
+/// This number was at some point recommended by RIS.
+const MINIMUM_SEEN_BY: u32 = 13;
+
 
 //------------ RisWhoisLoader ------------------------------------------------
 
