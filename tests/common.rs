@@ -167,8 +167,8 @@ impl TestConfig {
         let bgp_riswhois_enabled = false;
         let bgp_riswhois_v4_uri = ConfigDefaults::bgp_riswhois_v4_uri();
         let bgp_riswhois_v6_uri = ConfigDefaults::bgp_riswhois_v6_uri();
-        let bgp_riswhois_refresh_duration
-            = ConfigDefaults::bgp_riswhois_refresh_duration();
+        let bgp_riswhois_refresh_interval
+            = ConfigDefaults::bgp_riswhois_refresh_interval();
 
         let roa_aggregate_threshold = 3;
         let roa_deaggregate_threshold = 2;
@@ -287,7 +287,7 @@ impl TestConfig {
             bgp_riswhois_enabled,
             bgp_riswhois_v4_uri,
             bgp_riswhois_v6_uri,
-            bgp_riswhois_refresh_duration,
+            bgp_riswhois_refresh_interval,
             roa_aggregate_threshold,
             roa_deaggregate_threshold,
             issuance_timing,
