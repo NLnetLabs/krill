@@ -1,18 +1,15 @@
 use log::{debug, error};
 use openidconnect::{
-    core::{
+    AdditionalClaims, AdditionalProviderMetadata, Client, EndpointMaybeSet, EndpointNotSet, EndpointSet, ExtraTokenFields, IdTokenClaims, IdTokenFields, ProviderMetadata, StandardErrorResponse, StandardTokenResponse, UserInfoClaims, core::{
         CoreAuthDisplay, CoreAuthPrompt, CoreClaimName, CoreClaimType,
         CoreClientAuthMethod, CoreErrorResponseType, CoreGenderClaim,
-        CoreGrantType, CoreJsonWebKey, CoreJsonWebKeyType, CoreJsonWebKeyUse,
+        CoreGrantType, CoreJsonWebKey,
         CoreJweContentEncryptionAlgorithm, CoreJweKeyManagementAlgorithm,
         CoreJwsSigningAlgorithm, CoreResponseMode, CoreResponseType,
         CoreRevocableToken, CoreRevocationErrorResponse,
         CoreSubjectIdentifierType, CoreTokenIntrospectionResponse,
         CoreTokenType,
-    },
-    AdditionalClaims, AdditionalProviderMetadata, Client, ExtraTokenFields,
-    IdTokenClaims, IdTokenFields, ProviderMetadata, StandardErrorResponse,
-    StandardTokenResponse, UserInfoClaims,
+    }
 };
 use serde::{Deserialize, Serialize};
 
@@ -37,11 +34,11 @@ use crate::commons::{error::Error, KrillResult};
 // additional claims struct, serde_json would fail to deserialize it if the
 // the field is not present or not structured as expected. Using this approach
 // we can inspect the structure when we receive it from the provider.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CustomerDefinedAdditionalClaims(serde_json::Value);
 impl AdditionalClaims for CustomerDefinedAdditionalClaims {}
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CustomerDefinedExtraTokenFields(serde_json::Value);
 impl ExtraTokenFields for CustomerDefinedExtraTokenFields {}
 
@@ -52,26 +49,34 @@ pub type FlexibleTokenResponse = StandardTokenResponse<
         CoreGenderClaim,
         CoreJweContentEncryptionAlgorithm,
         CoreJwsSigningAlgorithm,
-        CoreJsonWebKeyType,
     >,
     CoreTokenType,
 >;
-pub type FlexibleClient = Client<
+pub type FlexibleClient<
+    HasAuthUrl = EndpointSet,
+    HasDeviceAuthUrl = EndpointNotSet,
+    HasIntrospectionUrl = EndpointNotSet,
+    HasRevocationUrl = EndpointNotSet,
+    HasTokenUrl = EndpointMaybeSet,
+    HasUserInfoUrl = EndpointMaybeSet,
+> = Client<
     CustomerDefinedAdditionalClaims,
     CoreAuthDisplay,
     CoreGenderClaim,
     CoreJweContentEncryptionAlgorithm,
-    CoreJwsSigningAlgorithm,
-    CoreJsonWebKeyType,
-    CoreJsonWebKeyUse,
     CoreJsonWebKey,
     CoreAuthPrompt,
     StandardErrorResponse<CoreErrorResponseType>,
     FlexibleTokenResponse,
-    CoreTokenType,
     CoreTokenIntrospectionResponse,
     CoreRevocableToken,
     CoreRevocationErrorResponse,
+    HasAuthUrl,
+    HasDeviceAuthUrl,
+    HasIntrospectionUrl,
+    HasRevocationUrl,
+    HasTokenUrl,
+    HasUserInfoUrl,
 >;
 pub type FlexibleIdTokenClaims =
     IdTokenClaims<CustomerDefinedAdditionalClaims, CoreGenderClaim>;
@@ -102,9 +107,6 @@ pub type WantedMeta = ProviderMetadata<
     CoreGrantType,
     CoreJweContentEncryptionAlgorithm,
     CoreJweKeyManagementAlgorithm,
-    CoreJwsSigningAlgorithm,
-    CoreJsonWebKeyType,
-    CoreJsonWebKeyUse,
     CoreJsonWebKey,
     CoreResponseMode,
     CoreResponseType,
