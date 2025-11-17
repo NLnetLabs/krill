@@ -18,7 +18,7 @@ pub async fn logging_http_client(
         // Don't {:?} log the openidconnect::HTTPRequest req object
         // because that renders the body as an unreadable integer byte
         // array, instead try and decode it as UTF-8.
-        let body = match std::str::from_utf8(&req.body()) {
+        let body = match std::str::from_utf8(req.body()) {
             Ok(text) => text.to_string(),
             Err(_) => format!("{:?}", &req.body()),
         };
@@ -37,7 +37,7 @@ pub async fn logging_http_client(
                 // object because that renders the body as an unreadable
                 // integer byte array, instead try and decode it as
                 // UTF-8.
-                let body = match std::str::from_utf8(&res.body()) {
+                let body = match std::str::from_utf8(res.body()) {
                     Ok(text) => text.to_string(),
                     Err(_) => format!("{:?}", &res.body()),
                 };
