@@ -1,7 +1,7 @@
 //! Deal with asynchronous scheduled processes, either triggered by an
 //! event that occurred, or planned (e.g. re-publishing).
 
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{collections::HashMap, time::Duration};
 
 use tokio::time::sleep;
 
@@ -10,16 +10,13 @@ use rpki::ca::{
     idexchange::{CaHandle, ParentHandle},
     provisioning::{ResourceClassName, RevocationRequest},
 };
-use url::Url;
 
 use crate::{
-    api::ca::Timestamp,
     commons::{
-        actor::Actor,
         crypto::dispatch::signerinfo::SignerInfo,
         error::FatalError,
         eventsourcing::{Aggregate, AggregateStore, WalStore, WalSupport},
-        storage::Ident,
+        storage:: {Ident, StorageSystem},
         version::KrillVersion,
     },
     constants::{
@@ -28,49 +25,21 @@ use crate::{
         SCHEDULER_RESYNC_REPO_CAS_THRESHOLD,
         SCHEDULER_USE_JITTER_CAS_THRESHOLD, SIGNERS_NS,
     },
-    config::Config,
     server::{
-        ca::{CaManager, CertAuth},
-        mq::{
-            in_hours, in_minutes, in_seconds, in_weeks, now, Task, TaskQueue,
-        },
+        ca::CertAuth,
+        mq::{in_hours, in_minutes, in_seconds, in_weeks, now, Task},
         properties::Properties,
-        pubd::{RepositoryAccess, RepositoryContent, RepositoryManager},
+        pubd::{RepositoryAccess, RepositoryContent},
     },
 };
 
+use super::manager::KrillManager;
 use super::mq::TaskResult;
 
-pub struct Scheduler {
-    tasks: Arc<TaskQueue>,
-    ca_manager: Arc<CaManager>,
-    repo_manager: Arc<RepositoryManager>,
-    config: Arc<Config>,
-    system_actor: Actor,
-    started: Timestamp,
-}
-
-impl Scheduler {
-    pub fn build(
-        tasks: Arc<TaskQueue>,
-        ca_manager: Arc<CaManager>,
-        repo_manager: Arc<RepositoryManager>,
-        config: Arc<Config>,
-        system_actor: Actor,
-    ) -> Self {
-        Scheduler {
-            tasks,
-            ca_manager,
-            repo_manager,
-            config,
-            system_actor,
-            started: Timestamp::now(),
-        }
-    }
-
+impl KrillManager {
     /// Run the scheduler in the background. It will sweep the message queue
     /// for tasks and re-schedule new tasks as needed.
-    pub async fn run(&self) {
+    pub async fn run_scheduler(&self) {
         loop {
             while let Some((task_key, value)) = self.tasks.pop() {
                 match serde_json::from_value(value) {
@@ -504,10 +473,10 @@ impl Scheduler {
     // Call update_snapshots on all AggregateStores and WalStores
     fn update_snapshots(&self) -> Result<TaskResult, FatalError> {
         fn update_aggregate_store_snapshots<A: Aggregate>(
-            storage_uri: &Url,
+            storage: &StorageSystem,
             namespace: &Ident,
         ) {
-            match AggregateStore::<A>::create(storage_uri, namespace, false) {
+            match AggregateStore::<A>::create(storage, namespace, false) {
                 Err(e) => {
                     // Note: this is highly unlikely.. probably something else
                     // is broken and Krill       would
@@ -532,10 +501,10 @@ impl Scheduler {
         }
 
         fn update_wal_store_snapshots<W: WalSupport>(
-            storage_uri: &Url,
+            storage: &StorageSystem,
             namespace: &Ident,
         ) {
-            match WalStore::<W>::create(storage_uri, namespace) {
+            match WalStore::<W>::create(storage, namespace) {
                 Err(e) => {
                     // Note: this is highly unlikely.. probably something else
                     // is broken and Krill       would
@@ -558,24 +527,24 @@ impl Scheduler {
         }
 
         update_aggregate_store_snapshots::<CertAuth>(
-            &self.config.storage_uri,
+            &self.storage,
             CASERVER_NS,
         );
         update_aggregate_store_snapshots::<SignerInfo>(
-            &self.config.storage_uri,
+            &self.storage,
             SIGNERS_NS,
         );
         update_aggregate_store_snapshots::<Properties>(
-            &self.config.storage_uri,
+            &self.storage,
             PROPERTIES_NS,
         );
         update_aggregate_store_snapshots::<RepositoryAccess>(
-            &self.config.storage_uri,
+            &self.storage,
             PUBSERVER_NS,
         );
 
         update_wal_store_snapshots::<RepositoryContent>(
-            &self.config.storage_uri,
+            &self.storage,
             PUBSERVER_CONTENT_NS,
         );
 

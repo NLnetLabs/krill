@@ -26,9 +26,7 @@ use crate::{
     commons::{
         ext_serde,
         crypto::{OpenSslSignerConfig, SignSupport},
-        error::{Error, KrillIoError},
-        storage::{Ident, KeyValueStore},
-        KrillResult,
+        error::KrillIoError,
     },
     constants::*,
     daemon::{
@@ -897,21 +895,6 @@ pub struct Benchmark {
 
 /// # Accessors
 impl Config {
-    /// General purpose KV store, can be used to track server settings
-    /// etc not specific to any Aggregate or WalSupport type
-    pub fn general_key_value_store(&self) -> KrillResult<KeyValueStore> {
-        KeyValueStore::create(&self.storage_uri, PROPERTIES_NS)
-            .map_err(Error::KeyValueError)
-    }
-
-    pub fn key_value_store(
-        &self,
-        namespace: &Ident,
-    ) -> KrillResult<KeyValueStore> {
-        KeyValueStore::create(&self.storage_uri, namespace)
-            .map_err(Error::KeyValueError)
-    }
-
     /// Returns the data directory if disk was used for storage.
     /// This will always be true for upgrades of pre 0.14.0 versions
     fn data_dir(&self) -> Option<PathBuf> {

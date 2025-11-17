@@ -8,7 +8,6 @@ use rpki::{
     crypto::{KeyIdentifier, PublicKey},
 };
 use serde::{Deserialize, Serialize};
-use url::Url;
 
 use crate::{
     commons::{
@@ -19,6 +18,7 @@ use crate::{
             InitCommandDetails, InitEvent, SentCommand, SentInitCommand,
             WithStorableDetails,
         },
+        storage::StorageSystem,
         KrillResult,
     },
     constants::{ACTOR_DEF_KRILL, SIGNERS_NS},
@@ -442,11 +442,9 @@ impl std::fmt::Debug for SignerMapper {
 impl SignerMapper {
     /// Build a SignerMapper that will read/write its data in a subdirectory
     /// of the given work dir.
-    pub fn build(storage_uri: &Url) -> KrillResult<SignerMapper> {
+    pub fn build(storage: &StorageSystem) -> KrillResult<SignerMapper> {
         let store = AggregateStore::<SignerInfo>::create(
-            storage_uri,
-            SIGNERS_NS,
-            true,
+            storage, SIGNERS_NS, true,
         )?;
         Ok(SignerMapper { store })
     }

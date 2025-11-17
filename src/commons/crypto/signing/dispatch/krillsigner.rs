@@ -26,7 +26,6 @@ use rpki::{
         Cert, Crl, Manifest, Roa,
     },
 };
-use url::Url;
 
 use crate::{
     commons::{
@@ -40,6 +39,7 @@ use crate::{
             CryptoResult, OpenSslSigner, SignSupport,
         },
         error::Error,
+        storage::StorageSystem,
         KrillResult,
     },
     constants::ID_CERTIFICATE_VALIDITY_YEARS,
@@ -83,7 +83,7 @@ use crate::commons::crypto::{
 type SignerBuilderFn = fn(
     &SignerType,
     SignerFlags,
-    &Url,
+    &StorageSystem,
     &str,
     std::time::Duration,
     &Option<Arc<SignerMapper>>,
@@ -91,7 +91,7 @@ type SignerBuilderFn = fn(
 
 #[derive(Debug)]
 pub struct KrillSignerBuilder<'a> {
-    storage_uri: Url,
+    storage: &'a StorageSystem,
     probe_interval: Duration,
     signer_configs: &'a [SignerConfig],
     default_signer: Option<&'a SignerConfig>,
@@ -100,12 +100,12 @@ pub struct KrillSignerBuilder<'a> {
 
 impl<'a> KrillSignerBuilder<'a> {
     pub fn new(
-        storage_uri: &Url,
+        storage: &'a StorageSystem,
         probe_interval: Duration,
         signer_configs: &'a [SignerConfig],
     ) -> Self {
         Self {
-            storage_uri: storage_uri.clone(),
+            storage,
             probe_interval,
             signer_configs,
             default_signer: None,
@@ -174,7 +174,7 @@ impl<'a> KrillSignerBuilder<'a> {
         }
 
         KrillSigner::build(
-            &self.storage_uri,
+            self.storage,
             self.probe_interval,
             self.signer_configs,
             default_signer,
@@ -190,7 +190,7 @@ pub struct KrillSigner {
 
 impl KrillSigner {
     fn build(
-        storage_uri: &Url,
+        storage: &StorageSystem,
         probe_interval: Duration,
         signer_configs: &[SignerConfig],
         default_signer: &SignerConfig,
@@ -199,10 +199,10 @@ impl KrillSigner {
         #[cfg(not(feature = "hsm"))]
         let signer_mapper = None;
         #[cfg(feature = "hsm")]
-        let signer_mapper = Some(Arc::new(SignerMapper::build(storage_uri)?));
+        let signer_mapper = Some(Arc::new(SignerMapper::build(storage)?));
         let signers = Self::build_signers(
             signer_builder,
-            storage_uri,
+            storage,
             probe_interval,
             &signer_mapper,
             signer_configs,
@@ -419,7 +419,7 @@ impl KrillSigner {
 impl KrillSigner {
     fn build_signers(
         signer_builder: SignerBuilderFn,
-        storage_uri: &Url,
+        storage: &StorageSystem,
         probe_interval: std::time::Duration,
         mapper: &Option<Arc<SignerMapper>>,
         configs: &[SignerConfig],
@@ -449,7 +449,7 @@ impl KrillSigner {
             let signer = (signer_builder)(
                 &config.signer_type,
                 flags,
-                storage_uri,
+                storage,
                 &config.name,
                 probe_interval,
                 mapper,
@@ -465,7 +465,7 @@ impl KrillSigner {
 fn signer_builder(
     r#type: &SignerType,
     flags: SignerFlags,
-    storage_uri: &Url,
+    storage: &StorageSystem,
     name: &str,
     #[cfg(feature = "hsm")] probe_interval: Duration,
     #[cfg(not(feature = "hsm"))] _probe_interval: Duration,
@@ -473,10 +473,9 @@ fn signer_builder(
 ) -> KrillResult<SignerProvider> {
     match r#type {
         SignerType::OpenSsl(conf) => {
-            let storage_uri =
-                conf.keys_storage_uri.as_ref().unwrap_or(storage_uri);
-            let signer =
-                OpenSslSigner::build(storage_uri, name, mapper.clone())?;
+            let signer = OpenSslSigner::build(
+                storage, conf, name, mapper.clone()
+            )?;
             Ok(SignerProvider::OpenSsl(flags, signer))
         }
         #[cfg(feature = "hsm")]

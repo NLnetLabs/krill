@@ -8,7 +8,7 @@ use std::sync::{Mutex, MutexGuard};
 use lazy_static::lazy_static;
 use tempfile::{TempDir, tempdir};
 use url::Url;
-use super::{Ident, KeyValueStore};
+use super::{Ident, KeyValueStore, StorageSystem};
 
 
 //------------ Macro to Construct Tests --------------------------------------
@@ -73,7 +73,7 @@ const CONTENT_4: u32 = 45;
 
 // All the test functions.
 //
-// The all need to have the same signature taking one argument as an
+// They all need to have the same signature taking one argument as an
 // `impl Harness` and return unit. Each function will be transformed into a
 // test function for each of the backends (currently memory and disk). The
 // harness will give it access to a temporary test store atop that given
@@ -317,6 +317,7 @@ trait Harness {
 /// it clean before the test. This is why there are a lock and a guard here.
 struct MemoryHarness<'a> {
     _guard: MutexGuard<'a, ()>,
+    storage: StorageSystem,
 }
 
 lazy_static! {
@@ -338,21 +339,23 @@ impl<'a> MemoryHarness<'a> {
                 }
             };
             super::backends::memory::Store::wipe_all();
-            return Self { _guard }
+            return Self {
+                _guard,
+                storage: StorageSystem::new(
+                    Url::parse("memory:").unwrap()
+                ).unwrap(),
+            }
         }
     }
 }
 
 impl<'a> Harness for MemoryHarness<'a> {
     fn url(&self) -> Url {
-        Url::parse("memory:").unwrap()
+        self.storage.default_uri().clone()
     }
 
     fn store(&self, namespace: &Ident) -> KeyValueStore {
-        KeyValueStore::create(
-            &Url::parse("memory:").unwrap(),
-            namespace,
-        ).unwrap()
+        self.storage.open(namespace).unwrap()
     }
 }
 
@@ -365,25 +368,26 @@ impl<'a> Harness for MemoryHarness<'a> {
 /// removed automatically when the harness is dropped.
 struct DiskHarness {
     _dir: TempDir,
-    url: Url,
+    storage: StorageSystem,
 }
 
 impl DiskHarness {
     fn new() -> Self {
         let _dir = tempdir().unwrap();
         let url = format!("local://{}", _dir.path().display());
-        let url = Url::parse(&url).unwrap();
-        Self { _dir, url }
+        let storage = StorageSystem::new(Url::parse(&url).unwrap()).unwrap();
+
+        Self { _dir, storage }
     }
 }
 
 impl Harness for DiskHarness {
     fn url(&self) -> Url {
-        self.url.clone()
+        self.storage.default_uri().clone()
     }
 
     fn store(&self, namespace: &Ident) -> KeyValueStore {
-        KeyValueStore::create(&self.url, namespace).unwrap()
+        self.storage.open(namespace).unwrap()
     }
 }
 

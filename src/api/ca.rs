@@ -2230,7 +2230,7 @@ mod test {
     use bytes::Bytes;
     use rpki::crypto::PublicKeyFormat;
     use crate::api::ta::TrustAnchorLocator;
-    use crate::commons::crypto::OpenSslSigner;
+    use crate::commons::crypto::{OpenSslSigner, OpenSslSignerConfig};
     use crate::commons::test;
     use super::*;
 
@@ -2254,9 +2254,10 @@ mod test {
 
     #[test]
     fn mft_uri() {
-        test::test_in_memory(|storage_uri| {
-            let signer =
-                OpenSslSigner::build(storage_uri, "dummy", None).unwrap();
+        test::test_in_memory(|storage| {
+            let signer = OpenSslSigner::build(
+                storage, &OpenSslSignerConfig::default(), "dummy", None
+            ).unwrap();
             let key_id = signer.create_key(PublicKeyFormat::Rsa).unwrap();
             let pub_key = signer.get_key_info(&key_id).unwrap();
 

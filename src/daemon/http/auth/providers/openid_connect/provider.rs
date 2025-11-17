@@ -63,6 +63,7 @@ use crate::{
     commons::{
         httpclient,
         error::{ApiAuthError, Error},
+        storage::StorageSystem,
         util::sha256,
         KrillResult,
     },
@@ -178,9 +179,10 @@ pub struct AuthProvider {
 
 impl AuthProvider {
     pub fn new(
+        storage: &StorageSystem,
         config: Arc<Config>,
     ) -> KrillResult<Self> {
-        let session_key = Self::init_session_key(&config)?;
+        let session_key = Self::init_session_key(storage)?;
 
         Ok(Self {
             config,
@@ -741,9 +743,9 @@ impl AuthProvider {
         }
     }
 
-    fn init_session_key(config: &Config) -> KrillResult<CryptState> {
+    fn init_session_key(storage: &StorageSystem) -> KrillResult<CryptState> {
         debug!("Initializing session encryption key");
-        crypt::crypt_init(config)
+        crypt::crypt_init(storage)
     }
 
     fn oidc_conf(&self) -> KrillResult<&ConfigAuthOpenIDConnect> {

@@ -8,17 +8,16 @@ use rpki::uri;
 use rpki::ca::idcert::IdCert;
 use url::Url;
 use crate::api::roa::{ConfiguredRoa, RoaConfiguration, RoaPayload};
+use crate::commons::storage::StorageSystem;
 
 
 /// This method returns an in-memory Key-Value store and then runs the test
 /// provided in the closure using it
 pub fn test_in_memory<F>(op: F)
 where
-    F: FnOnce(&Url),
+    F: FnOnce(&StorageSystem),
 {
-    let storage_uri = mem_storage();
-
-    op(&storage_uri);
+    op(&mem_storage());
 }
 
 /// This method sets up a test directory with a random name (a number)
@@ -41,11 +40,13 @@ fn random_hex_string() -> String {
     hex::encode(bytes)
 }
 
-pub fn mem_storage() -> Url {
+pub fn mem_storage() -> StorageSystem {
     let mut bytes = [0; 8];
     openssl::rand::rand_bytes(&mut bytes).unwrap();
 
-    Url::parse(&format!("memory://{}", random_hex_string())).unwrap()
+    StorageSystem::new(
+        Url::parse(&format!("memory://{}", random_hex_string())).unwrap()
+    ).unwrap()
 }
 
 pub fn rsync(s: &str) -> uri::Rsync {

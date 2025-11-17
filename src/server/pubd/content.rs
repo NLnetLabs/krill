@@ -16,8 +16,9 @@ use crate::commons::error::Error;
 use crate::commons::eventsourcing::{
     WalChange, WalCommand, WalSet, WalStore, WalSupport,
 };
+use crate::commons::storage::StorageSystem;
 use crate::constants::PUBSERVER_CONTENT_NS;
-use crate::config::{Config, RrdpUpdatesConfig};
+use crate::config::RrdpUpdatesConfig;
 use super::rrdp::{
     CurrentObjects, DeltaElements, RrdpServer, RrdpSession, RrdpSessionReset,
     RrdpUpdated, RrdpUpdateNeeded,
@@ -43,9 +44,9 @@ pub struct RepositoryContentProxy {
 
 impl RepositoryContentProxy {
     /// Creates a new repository content proxy.
-    pub fn create(config: &Config) -> KrillResult<Self> {
+    pub fn create(storage: &StorageSystem) -> KrillResult<Self> {
         let store = Arc::new(WalStore::create(
-            &config.storage_uri, PUBSERVER_CONTENT_NS,
+            storage, PUBSERVER_CONTENT_NS,
         )?);
         store.warm()?;
 

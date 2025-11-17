@@ -7,13 +7,14 @@ use crate::api::aspa::ProviderAsn;
 use crate::commons::eventsourcing::{
     AggregateStore, StoredCommand, StoredCommandBuilder
 };
-use crate::commons::storage::{Ident, KeyValueStore};
+use crate::commons::storage::{
+    Ident, KeyValueStore, OpenStoreError, StorageSystem
+};
 use crate::constants::{CASERVER_NS, CA_OBJECTS_NS};
 use crate::server::ca::certauth::CertAuth;
 use crate::server::ca::commands::CertAuthStorableCommand;
 use crate::server::ca::events::{CertAuthEvent, CertAuthInitEvent};
 use crate::server::ca::publishing::CaObjects;
-use crate::config::Config;
 use crate::upgrades::{
     AspaMigrationConfigUpdates, AspaMigrationConfigs, CommandMigrationEffect,
     UpgradeAggregateStorePre0_14, UpgradeError, UpgradeMode, UpgradeResult,
@@ -50,22 +51,17 @@ impl CasMigration {
     /// Upgrades the CAs based on the upgrade mode and config.
     pub fn upgrade(
         mode: UpgradeMode,
-        config: &Config,
+        storage: &StorageSystem,
     ) -> UpgradeResult<AspaMigrationConfigs> {
         Self {
-            current_kv_store: KeyValueStore::create(
-                &config.storage_uri, CASERVER_NS
-            )?,
-            new_kv_store: KeyValueStore::create_upgrade_store(
-                &config.storage_uri,
-                CASERVER_NS,
-            )?,
+            current_kv_store: storage.open(CASERVER_NS)?,
+            new_kv_store: storage.open_upgrade(CASERVER_NS)?,
             new_agg_store: AggregateStore::<CertAuth>::create_upgrade_store(
-                &config.storage_uri,
+                storage,
                 CASERVER_NS,
-                config.use_history_cache,
+                false,
             )?,
-            ca_objects_migration: CaObjectsMigration::create(config)?,
+            ca_objects_migration: CaObjectsMigration::create(storage)?,
         }
         .upgrade(mode)
     }
@@ -252,15 +248,10 @@ struct CaObjectsMigration {
 
 impl CaObjectsMigration {
     /// Creates a new migration from the configuration.
-    fn create(config: &Config) -> Result<Self, UpgradeError> {
+    fn create(storage: &StorageSystem) -> Result<Self, OpenStoreError> {
         Ok(CaObjectsMigration {
-            current_store: KeyValueStore::create(
-                &config.storage_uri, CA_OBJECTS_NS
-            )?,
-            new_store: KeyValueStore::create_upgrade_store(
-                &config.storage_uri,
-                CA_OBJECTS_NS,
-            )?
+            current_store: storage.open(CA_OBJECTS_NS)?,
+            new_store: storage.open_upgrade(CA_OBJECTS_NS)?
         })
     }
 

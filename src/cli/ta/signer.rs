@@ -15,7 +15,7 @@ use crate::commons::crypto::KrillSigner;
 use crate::commons::actor::Actor;
 use crate::commons::error::Error as KrillError;
 use crate::commons::eventsourcing::{AggregateStore, AggregateStoreError};
-use crate::commons::storage::Ident;
+use crate::commons::storage::{Ident, StorageSystem};
 use crate::commons::httpclient;
 use crate::tasigner::{
     Config, TrustAnchorProxySignerExchanges,
@@ -122,13 +122,16 @@ pub struct TrustAnchorSignerManager {
 
 impl TrustAnchorSignerManager {
     pub fn create(config: Config) -> Result<Self, SignerClientError> {
+        let storage = StorageSystem::new(
+            config.storage_uri.clone()
+        ).map_err(KrillError::from)?;
         let store = AggregateStore::create(
-            &config.storage_uri,
+            &storage,
             const { Ident::make("signer") },
             config.use_history_cache,
         ).map_err(SignerClientError::other)?;
         let ta_handle = CaHandle::new("ta".into());
-        let signer = config.signer()?;
+        let signer = config.signer(&storage)?;
         let actor = crate::constants::ACTOR_DEF_KRILLTA;
 
         Ok(TrustAnchorSignerManager {

@@ -11,6 +11,7 @@ use url::Url;
 
 use crate::{
     commons::crypto::{KrillSigner, KrillSignerBuilder, OpenSslSignerConfig},
+    commons::storage::StorageSystem,
     constants::OPENSSL_ONE_OFF_SIGNER_NAME,
     config::{LogType, SignerConfig, SignerReference, SignerType},
 };
@@ -227,7 +228,9 @@ impl Config {
     }
 
     // Signer support
-    pub fn signer(&self) -> Result<Arc<KrillSigner>, ConfigError> {
+    pub fn signer(
+        &self, storage: &StorageSystem
+    ) -> Result<Arc<KrillSigner>, ConfigError> {
         // Assumes that Config::verify() has already ensured that the signer
         // configuration is valid and that Config::resolve() has been
         // used to update signer name references to resolve to the
@@ -235,7 +238,7 @@ impl Config {
         let probe_interval =
             std::time::Duration::from_secs(self.signer_probe_retry_seconds);
         let signer = KrillSignerBuilder::new(
-            &self.storage_uri,
+            storage,
             probe_interval,
             &self.signers,
         )
@@ -376,11 +379,11 @@ mod tests {
 
     #[test]
     fn initialise_default_signers() {
-        test::test_in_memory(|_storage_uri| {
+        test::test_in_memory(|storage| {
             let config_string =
                 include_str!("../../test-resources/ta/ta.conf");
             let config = Config::parse_str(config_string).unwrap();
-            config.signer().unwrap();
+            config.signer(storage).unwrap();
         })
     }
 }

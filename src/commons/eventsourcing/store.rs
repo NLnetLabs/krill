@@ -12,12 +12,13 @@ use rpki::ca::idexchange::MyHandle;
 use rpki::repository::x509::Time;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use url::Url;
 use crate::api::history::{
     CommandHistory, CommandHistoryCriteria, CommandHistoryRecord
 };
 use crate::commons::error::KrillIoError;
-use crate::commons::storage::{Ident, KeyValueError, KeyValueStore};
+use crate::commons::storage::{
+    Ident, KeyValueError, KeyValueStore, OpenStoreError, StorageSystem
+};
 use super::agg::{
     Aggregate, Command, InitCommand, PostSaveEventListener,
     PreSaveEventListener, StoredCommand
@@ -76,12 +77,12 @@ impl<A: Aggregate> AggregateStore<A> {
     /// If `use_history_cache` is `true`, the new store will cache any
     /// history cache record created for any instance.
     pub fn create(
-        storage_uri: &Url,
+        storage: &StorageSystem,
         namespace: &Ident,
         use_history_cache: bool,
-    ) -> Result<Self, AggregateStoreError> {
+    ) -> Result<Self, OpenStoreError> {
         Ok(Self::create_from_kv(
-            KeyValueStore::create(storage_uri, namespace)?, use_history_cache
+            storage.open(namespace)?, use_history_cache
         ))
     }
 
@@ -90,12 +91,12 @@ impl<A: Aggregate> AggregateStore<A> {
     /// If `use_history_cache` is `true`, the new store will cache any
     /// history cache record created for any instance.
     pub fn create_upgrade_store(
-        storage_uri: &Url,
+        storage: &StorageSystem,
         namespace: &Ident,
         use_history_cache: bool,
-    ) -> Result<Self, AggregateStoreError> {
+    ) -> Result<Self, OpenStoreError> {
         Ok(Self::create_from_kv(
-            KeyValueStore::create_upgrade_store(storage_uri, namespace)?,
+            storage.open_upgrade(namespace)?,
             use_history_cache,
         ))
     }

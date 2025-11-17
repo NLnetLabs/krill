@@ -34,7 +34,6 @@ use crate::{
         },
         mq::{now, Task, TaskQueue},
         pubd::RepositoryManager,
-        scheduler::Scheduler,
     },
 };
 use crate::api;
@@ -52,8 +51,7 @@ use crate::api::bgpsec::{BgpSecCsrInfoList, BgpSecDefinitionUpdates};
 use crate::api::ca::{
     CaRepoDetails, CertAuthInfo, CertAuthIssues,
     CertAuthList, CertAuthStats, ChildCaInfo, ChildrenConnectionStats,
-    IdCertInfo, RtaList, RtaName,
-    RtaPrepResponse,
+    IdCertInfo, RtaList, RtaName, RtaPrepResponse, Timestamp,
 };
 use crate::api::history::{
     CommandDetails, CommandHistory, CommandHistoryCriteria
@@ -70,6 +68,7 @@ use crate::api::ta::{
     ApiTrustAnchorSignedRequest, TaCertDetails, TrustAnchorSignedResponse,
     TrustAnchorSignerInfo,
 };
+use crate::commons::storage::StorageSystem;
 use crate::constants::{TA_NAME, ta_handle};
 use crate::server::bgp::BgpAnalyser;
 
@@ -80,31 +79,38 @@ use crate::server::bgp::BgpAnalyser;
 /// components.
 pub struct KrillManager {
     // The base URI for this service
-    service_uri: uri::Https,
+    pub(super) service_uri: uri::Https,
+    
+    /// The storage system used by all components.
+    pub(super) storage: StorageSystem,
 
     // Publication server, with configured publishers
-    repo_manager: Arc<RepositoryManager>,
+    pub(super) repo_manager: Arc<RepositoryManager>,
 
     // Handles the internal TA and/or CAs
-    ca_manager: Arc<ca::CaManager>,
+    pub(super) ca_manager: Arc<ca::CaManager>,
 
     // Handles the internal TA and/or CAs
-    bgp_analyser: Arc<BgpAnalyser>,
+    pub(super) bgp_analyser: Arc<BgpAnalyser>,
 
     // Shared message queue
-    mq: Arc<TaskQueue>,
+    pub(super) tasks: Arc<TaskQueue>,
 
     // System actor
-    system_actor: Actor,
+    pub(super) system_actor: Actor,
 
     pub config: Arc<Config>,
+
+    pub(super) started: Timestamp,
 }
 
 /// # Set up and initialization
 impl KrillManager {
     /// Creates a new publication server. Note that state is preserved
     /// in the data storage.
-    pub async fn build(config: Arc<Config>) -> KrillResult<Self> {
+    pub async fn build(
+        storage: StorageSystem, config: Arc<Config>
+    ) -> KrillResult<Self> {
         let service_uri = config.service_uri();
 
         info!("Starting {} v{}", KRILL_SERVER_APP, crate_version!());
@@ -117,7 +123,7 @@ impl KrillManager {
         let probe_interval =
             std::time::Duration::from_secs(config.signer_probe_retry_seconds);
         let signer = KrillSignerBuilder::new(
-            &config.storage_uri,
+            &storage,
             probe_interval,
             &config.signers,
         )
@@ -130,21 +136,23 @@ impl KrillManager {
 
         // Task queue Arc is shared between ca_manager, repo_manager and the
         // scheduler.
-        let mq = Arc::new(TaskQueue::new(&config.storage_uri)?);
+        let tasks = Arc::new(TaskQueue::new(&storage)?);
 
         // for now, support that existing embedded repositories are still
         // supported. this should be removed in future after people
         // have had a chance to separate.
         let repo_manager = Arc::new(RepositoryManager::build(
+            &storage,
             config.clone(),
-            mq.clone(),
+            tasks.clone(),
             signer.clone(),
         )?);
 
         let ca_manager = Arc::new(
             ca::CaManager::build(
                 config.clone(),
-                mq.clone(),
+                &storage,
+                tasks.clone(),
                 signer,
                 system_actor.clone(),
             )
@@ -162,18 +170,20 @@ impl KrillManager {
         // When multi-node set ups with a shared queue are
         // supported then we can no longer safely reschedule
         // ALL running tests. See issue: #1112
-        mq.reschedule_tasks_at_startup()?;
+        tasks.reschedule_tasks_at_startup()?;
 
-        mq.schedule(Task::QueueStartTasks, now())?;
+        tasks.schedule(Task::QueueStartTasks, now())?;
 
         let server = KrillManager {
             service_uri,
+            storage,
             repo_manager,
             ca_manager,
             bgp_analyser,
-            mq,
+            tasks,
             system_actor,
             config: config.clone(),
+            started: Timestamp::now(),
         };
 
         // Check if we need to do any testbed or benchmarking set up.
@@ -271,24 +281,18 @@ impl KrillManager {
 
         Ok(server)
     }
-
-    pub fn build_scheduler(&self) -> Scheduler {
-        Scheduler::build(
-            self.mq.clone(),
-            self.ca_manager.clone(),
-            self.repo_manager.clone(),
-            self.config.clone(),
-            self.system_actor.clone(),
-        )
-    }
-
-    pub fn service_base_uri(&self) -> &uri::Https {
-        &self.service_uri
-    }
 }
 
 /// # Access to components
 impl KrillManager {
+    pub fn service_base_uri(&self) -> &uri::Https {
+        &self.service_uri
+    }
+
+    pub fn storage(&self) -> &StorageSystem {
+        &self.storage
+    }
+
     pub fn system_actor(&self) -> &Actor {
         &self.system_actor
     }

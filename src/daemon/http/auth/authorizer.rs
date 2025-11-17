@@ -9,6 +9,7 @@ use crate::api::admin::Token;
 use crate::commons::KrillResult;
 use crate::commons::actor::Actor;
 use crate::commons::error::ApiAuthError;
+use crate::commons::storage::StorageSystem;
 use crate::config::{AuthType, Config};
 use crate::daemon::http::request::HyperRequest;
 use crate::daemon::http::response::HttpResponse;
@@ -196,6 +197,7 @@ impl Authorizer {
     /// The authorizer will be created according to information provided via
     /// `config`.
     pub fn new(
+        storage: &StorageSystem,
         config: Arc<Config>,
     ) -> KrillResult<Self> {
         let (primary_provider, legacy_provider) = match config.auth_type {
@@ -205,14 +207,18 @@ impl Authorizer {
             #[cfg(feature = "multi-user")]
             AuthType::ConfigFile => {
                 (
-                    config_file::AuthProvider::new(&config)?.into(),
+                    config_file::AuthProvider::new(
+                        storage, &config
+                    )?.into(),
                     Some(admin_token::AuthProvider::new(config))
                 )
             }
             #[cfg(feature = "multi-user")]
             AuthType::OpenIDConnect => {
                 (
-                    openid_connect::AuthProvider::new(config.clone())?.into(),
+                    openid_connect::AuthProvider::new(
+                        storage, config.clone()
+                    )?.into(),
                     Some(admin_token::AuthProvider::new(config))
                 )
             }

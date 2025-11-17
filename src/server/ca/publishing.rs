@@ -15,7 +15,6 @@ use rpki::repository::manifest::{FileAndHash, Manifest, ManifestContent};
 use rpki::repository::sigobj::SignedObjectBuilder;
 use rpki::repository::x509::{Name, Serial, Time, Validity};
 use serde::{Deserialize, Serialize};
-use url::Url;
 use crate::api::admin::{PublishedFile, RepositoryContact};
 use crate::api::ca::{
     CertInfo, IssuedCertificate, ObjectName, ReceivedCert, Revocation,
@@ -26,7 +25,9 @@ use crate::commons::KrillResult;
 use crate::commons::crypto::KrillSigner;
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::PreSaveEventListener;
-use crate::commons::storage::{Ident, KeyValueStore};
+use crate::commons::storage::{
+    Ident, KeyValueStore, OpenStoreError, StorageSystem
+};
 use crate::constants::CA_OBJECTS_NS;
 use crate::config::IssuanceTimingConfig;
 use super::aspa::{AspaInfo, AspaObjectsUpdates};
@@ -74,11 +75,11 @@ pub struct CaObjectsStore {
 impl CaObjectsStore {
     /// Creates a new CA objects store using the given configuration.
     pub fn create(
-        storage_uri: &Url,
+        storage: &StorageSystem,
         issuance_timing: IssuanceTimingConfig,
         signer: Arc<KrillSigner>,
-    ) -> KrillResult<Self> {
-        let store = KeyValueStore::create(storage_uri, CA_OBJECTS_NS)?;
+    ) -> Result<Self, OpenStoreError> {
+        let store = storage.open(CA_OBJECTS_NS)?;
         Ok(CaObjectsStore {
             store,
             signer,

@@ -10,12 +10,12 @@ use crate::{
     commons::{
         crypto::{
             dispatch::signerinfo::SignerInfo,
-            OpenSslSigner,
+            OpenSslSigner, OpenSslSignerConfig,
         },
         eventsourcing::{
             Aggregate, AggregateStore, WalStore, WalSupport,
         },
-        storage::{Ident, KeyValueStore},
+        storage::{Ident, StorageSystem},
     },
     constants::{
         KEYS_NS, PROPERTIES_NS, PUBSERVER_CONTENT_NS,
@@ -37,7 +37,9 @@ use crate::{
 
 use super::UpgradeResult;
 
-pub fn migrate(mut config: Config, target_storage: Url) -> UpgradeResult<()> {
+pub fn migrate(
+    config: Config, target_storage: &StorageSystem
+) -> UpgradeResult<()> {
     // Copy the source data from config unmodified into the target_storage
     info!("-----------------------------------------------------------");
     info!("                 Krill Data Migration");
@@ -47,18 +49,17 @@ pub fn migrate(mut config: Config, target_storage: Url) -> UpgradeResult<()> {
     info!("STEP 1: Copy data");
     info!("");
     info!("From: {}", &config.storage_uri);
-    info!("  To:   {}", &target_storage);
+    info!("  To:   {}", &target_storage.default_uri());
     info!("-----------------------------------------------------------");
     info!("");
 
-    copy_data_for_migration(&config, &target_storage)?;
+    copy_data_for_migration(target_storage, &config.storage_uri)?;
 
-    // Update the config file with the new target_storage
-    // and perform a normal data migration - the source data
-    // could be for an older version of Krill.
-    config.storage_uri = target_storage;
-    let properties_manager =
-        PropertiesManager::create(&config.storage_uri, false)?;
+    // Perform a normal data migration using the target storage - the source
+    // data could be for an older version of Krill.
+    let properties_manager = PropertiesManager::create(
+        target_storage, false
+    )?;
 
     info!("-----------------------------------------------------------");
     info!("STEP 2: Upgrade data to current Krill version (if needed)");
@@ -66,12 +67,13 @@ pub fn migrate(mut config: Config, target_storage: Url) -> UpgradeResult<()> {
     info!("");
     if let Some(upgrade) = prepare_upgrade_data_migrations(
         crate::upgrades::UpgradeMode::PrepareToFinalise,
+        target_storage,
         &config,
         &properties_manager,
     )? {
         finalise_data_migration(
             upgrade.versions(),
-            &config,
+            target_storage,
             &properties_manager,
         )?;
     }
@@ -92,53 +94,53 @@ pub fn migrate(mut config: Config, target_storage: Url) -> UpgradeResult<()> {
     // That said, it's a pretty easy check to perform and it kind of makes
     // sense to do it to now, even if it would be to point users at deeper
     // source data issues.
-    verify_target_data(&config)
+    verify_target_data(target_storage, &config)
 }
 
-fn verify_target_data(config: &Config) -> UpgradeResult<()> {
-    check_agg_store::<Properties>(config, PROPERTIES_NS, "Properties")?;
-    check_agg_store::<SignerInfo>(config, SIGNERS_NS, "Signer")?;
+fn verify_target_data(
+    storage: &StorageSystem, config: &Config
+) -> UpgradeResult<()> {
+    check_agg_store::<Properties>(storage, PROPERTIES_NS, "Properties")?;
+    check_agg_store::<SignerInfo>(storage, SIGNERS_NS, "Signer")?;
 
-    check_ca_objects(config)?;
+    check_ca_objects(storage, config)?;
 
     check_agg_store::<RepositoryAccess>(
-        config,
+        storage,
         PUBSERVER_NS,
         "Publication Server Access",
     )?;
     check_wal_store::<RepositoryContent>(
-        config,
+        storage,
         PUBSERVER_CONTENT_NS,
         "Publication Server Objects",
     )?;
     check_agg_store::<TrustAnchorProxy>(
-        config,
+        storage,
         TA_PROXY_SERVER_NS,
         "TA Proxy",
     )?;
     check_agg_store::<TrustAnchorSigner>(
-        config,
+        storage,
         TA_SIGNER_SERVER_NS,
         "TA Signer",
     )?;
 
-    check_openssl_keys(config)?;
+    check_openssl_keys(storage)?;
 
     Ok(())
 }
 
-fn check_openssl_keys(config: &Config) -> UpgradeResult<()> {
+fn check_openssl_keys(storage: &StorageSystem) -> UpgradeResult<()> {
     info!("");
     info!("Verify: OpenSSL keys");
+    // XXX This seems to assume that OpenSSL keys are always in the store?
     let open_ssl_signer = OpenSslSigner::build(
-        &config.storage_uri,
-        "test",
-        None,
-    )
-    .map_err(|e| {
+        storage, &OpenSslSignerConfig::default(), "test", None,
+    ).map_err(|e| {
         UpgradeError::Custom(format!("Cannot create openssl signer: {e}"))
     })?;
-    let keys_key_store = KeyValueStore::create(&config.storage_uri, KEYS_NS)?;
+    let keys_key_store = storage.open(KEYS_NS)?;
 
     for key in keys_key_store.keys(None, "")? {
         let key_id =
@@ -159,14 +161,15 @@ fn check_openssl_keys(config: &Config) -> UpgradeResult<()> {
 }
 
 pub fn check_agg_store<A: Aggregate>(
-    config: &Config,
+    storage: &StorageSystem,
     ns: &Ident,
     name: &str,
 ) -> UpgradeResult<AggregateStore<A>> {
     info!("");
     info!("Verify: {name}");
-    let store: AggregateStore<A> =
-        AggregateStore::create(&config.storage_uri, ns, false)?;
+    let store: AggregateStore<A> = AggregateStore::create(
+        storage, ns, false
+    )?;
     if !store.list()?.is_empty() {
         store.warm()?;
         info!("Ok");
@@ -177,13 +180,13 @@ pub fn check_agg_store<A: Aggregate>(
 }
 
 fn check_wal_store<W: WalSupport>(
-    config: &Config,
+    storage: &StorageSystem,
     ns: &Ident,
     name: &str,
 ) -> UpgradeResult<()> {
     info!("");
     info!("Verify: {name}");
-    let store: WalStore<W> = WalStore::create(&config.storage_uri, ns)?;
+    let store: WalStore<W> = WalStore::create(storage, ns)?;
     if !store.list()?.is_empty() {
         store.warm()?;
         info!("Ok");
@@ -194,8 +197,8 @@ fn check_wal_store<W: WalSupport>(
 }
 
 fn copy_data_for_migration(
-    config: &Config,
-    target_storage: &Url,
+    target_storage: &StorageSystem,
+    source_storage: &Url,
 ) -> UpgradeResult<()> {
     const NAMESPACES: &[&Ident] = &[
         Ident::make("ca_objects"),
@@ -209,13 +212,11 @@ fn copy_data_for_migration(
         Ident::make("ta_signer"),
     ];
     for namespace in NAMESPACES {
-        let source_kv_store = KeyValueStore::create(
-            &config.storage_uri, namespace
+        let source_kv_store = target_storage.open_uri(
+            source_storage, namespace
         )?;
         if !source_kv_store.is_empty()? {
-            let target_kv_store = KeyValueStore::create(
-                target_storage, namespace
-            )?;
+            let target_kv_store = target_storage.open(namespace)?;
             target_kv_store.import(&source_kv_store)?;
         }
     }
@@ -253,7 +254,7 @@ pub mod tests {
         // Create an in-memory target store to migrate to
         let target_store = test::mem_storage();
 
-        migrate(config, target_store).unwrap();
+        migrate(config, &target_store).unwrap();
     }
 }
 

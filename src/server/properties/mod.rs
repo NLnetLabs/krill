@@ -20,7 +20,6 @@ use std::{fmt, str::FromStr, sync::Arc};
 use log::{log_enabled, trace};
 use rpki::ca::idexchange::MyHandle;
 use serde::{Deserialize, Serialize};
-use url::Url;
 
 use crate::{
     commons::{
@@ -30,6 +29,7 @@ use crate::{
             self, Aggregate, AggregateStore, Event, InitCommandDetails,
             InitEvent, SentCommand, SentInitCommand, WithStorableDetails,
         },
+        storage::StorageSystem,
         version::KrillVersion,
         KrillResult,
     },
@@ -296,17 +296,19 @@ pub struct PropertiesManager {
 
 impl PropertiesManager {
     pub fn create(
-        storage_uri: &Url,
+        storage: &StorageSystem,
         use_history_cache: bool,
     ) -> KrillResult<Self> {
         let main_key = MyHandle::from_str(PROPERTIES_DFLT_NAME).unwrap();
-        AggregateStore::create(storage_uri, PROPERTIES_NS, use_history_cache)
-            .map(|store| PropertiesManager {
-                store,
-                main_key,
-                system_actor: ACTOR_DEF_KRILL,
-            })
-            .map_err(Error::AggregateStoreError)
+        let store = AggregateStore::create(
+            storage, PROPERTIES_NS, use_history_cache
+        )?;
+        
+        Ok(PropertiesManager {
+            store,
+            main_key,
+            system_actor: ACTOR_DEF_KRILL,
+        })
     }
 
     pub fn is_initialized(&self) -> bool {

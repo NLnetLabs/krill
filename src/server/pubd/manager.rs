@@ -19,6 +19,7 @@ use crate::commons::actor::Actor;
 use crate::commons::cmslogger::CmsLogger;
 use crate::commons::crypto::KrillSigner;
 use crate::commons::error::Error;
+use crate::commons::storage::StorageSystem;
 use crate::config::Config;
 use crate::server::mq::{now, Task, TaskQueue};
 use super::access::RepositoryAccessProxy;
@@ -53,13 +54,16 @@ pub struct RepositoryManager {
 impl RepositoryManager {
     /// Builds the repository manager.
     pub fn build(
+        storage: &StorageSystem,
         config: Arc<Config>,
         tasks: Arc<TaskQueue>,
         signer: Arc<KrillSigner>,
     ) -> Result<Self, Error> {
-        let access_proxy = Arc::new(RepositoryAccessProxy::create(&config)?);
+        let access_proxy = Arc::new(RepositoryAccessProxy::create(
+            storage, config.use_history_cache,
+        )?);
         let content_proxy = Arc::new(
-            RepositoryContentProxy::create(&config)?
+            RepositoryContentProxy::create(storage)?
         );
 
         Ok(RepositoryManager {
@@ -354,7 +358,6 @@ mod tests {
     use std::time::Duration;
     use bytes::Bytes;
     use tokio::time::sleep;
-    use url::Url;
     use rpki::uri;
     use rpki::ca::idexchange::Handle;
     use rpki::ca::publication::{ListElement, PublishDelta};
@@ -362,6 +365,7 @@ mod tests {
     use crate::commons::file;
     use crate::commons::crypto::{KrillSignerBuilder, OpenSslSignerConfig};
     use crate::commons::file::CurrentFile;
+    use crate::commons::storage::StorageSystem;
     use crate::commons::test::{self, https, rsync};
     use crate::constants::{
         ACTOR_DEF_TEST, RRDP_FIRST_SERIAL, enable_test_mode
@@ -371,7 +375,7 @@ mod tests {
     use crate::server::pubd::rrdp::{PublicationDeltaError, RrdpServer};
     use super::*;
 
-    fn publisher_alice(storage_uri: &Url) -> Publisher {
+    fn publisher_alice(storage: &StorageSystem) -> Publisher {
         // When the "hsm" feature is enabled we could be running the tests
         // with PKCS#11 as the default signer type. In that case, if
         // the backend signer is SoftHSMv2, attempting to create a second
@@ -387,7 +391,7 @@ mod tests {
                 SignerConfig::new("Alice".to_string(), signer_type);
             let signer_configs = &[signer_config];
             KrillSignerBuilder::new(
-                storage_uri,
+                storage,
                 Duration::from_secs(1),
                 signer_configs,
             )
@@ -415,13 +419,13 @@ mod tests {
     }
 
     fn make_server(
-        storage_uri: &Url
+        storage: &StorageSystem
     ) -> (RepositoryManager, tempfile::TempDir) {
         let data_dir = tempfile::tempdir().unwrap();
 
         enable_test_mode();
         let mut config = Config::test(
-            storage_uri,
+            storage.default_uri(),
             Some(data_dir.path()),
             true,
             false,
@@ -432,7 +436,7 @@ mod tests {
         config.process().unwrap();
 
         let signer = KrillSignerBuilder::new(
-            storage_uri,
+            storage,
             Duration::from_secs(1),
             &config.signers,
         )
@@ -443,9 +447,10 @@ mod tests {
 
         let signer = Arc::new(signer);
         let config = Arc::new(config);
-        let mq = Arc::new(TaskQueue::new(&config.storage_uri).unwrap());
-        let repository_manager =
-            RepositoryManager::build(config, mq, signer).unwrap();
+        let mq = Arc::new(TaskQueue::new(storage).unwrap());
+        let repository_manager = RepositoryManager::build(
+            storage, config, mq, signer
+        ).unwrap();
 
         let uris = PublicationServerUris {
             rrdp_base_uri: https("https://localhost/repo/rrdp/"),
@@ -460,10 +465,10 @@ mod tests {
     #[test]
     fn should_add_publisher() {
         // we need a disk, as repo_dir, etc. use data_dir by default
-        let storage_uri = test::mem_storage();
-        let (server, _data_dir) = make_server(&storage_uri);
+        let storage = test::mem_storage();
+        let (server, _data_dir) = make_server(&storage);
 
-        let alice = publisher_alice(&storage_uri);
+        let alice = publisher_alice(&storage);
 
         let alice_handle = Handle::from_str("alice").unwrap();
         let publisher_req =

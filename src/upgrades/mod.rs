@@ -23,7 +23,10 @@ use crate::{
             Storable, StoredCommand, WalStoreError,
             WithStorableDetails,
         },
-        storage::{Ident, KeyValueError, KeyValueStore},
+        storage::{
+            Ident, KeyValueError, OpenStoreError, KeyValueStore,
+            StorageConnectError, StorageSystem,
+        },
         version::KrillVersion,
         KrillResult,
     },
@@ -219,6 +222,18 @@ impl UpgradeError {
 impl From<AggregateStoreError> for UpgradeError {
     fn from(e: AggregateStoreError) -> Self {
         UpgradeError::AggregateStoreError(e)
+    }
+}
+
+impl From<StorageConnectError> for UpgradeError {
+    fn from(e: StorageConnectError) -> Self {
+        UpgradeError::custom(e)
+    }
+}
+
+impl From<OpenStoreError> for UpgradeError {
+    fn from(e: OpenStoreError) -> Self {
+        UpgradeError::custom(e)
     }
 }
 
@@ -811,6 +826,7 @@ pub trait UpgradeAggregateStorePre0_14 {
 /// time. After this, the migration will be finalised.
 pub fn prepare_upgrade_data_migrations(
     mode: UpgradeMode,
+    storage: &StorageSystem,
     config: &Config,
     properties_manager: &PropertiesManager,
 ) -> UpgradeResult<Option<UpgradeReport>> {
@@ -823,9 +839,9 @@ pub fn prepare_upgrade_data_migrations(
     // just do at startup. It is done here, because in effect it *is* a data
     // migration.
     #[cfg(feature = "hsm")]
-    record_preexisting_openssl_keys_in_signer_mapper(config)?;
+    record_preexisting_openssl_keys_in_signer_mapper(storage, config)?;
 
-    match upgrade_versions(config, properties_manager)? {
+    match upgrade_versions(storage, properties_manager)? {
         None => Ok(None),
         Some(versions) => {
             info!(
@@ -840,9 +856,7 @@ pub fn prepare_upgrade_data_migrations(
             // easily be migrated to the new setup in 0.13.0.
             // Well.. it could be done, if there would be a strong use
             // case to put in the effort, but there really isn't.
-            let ca_kv_store = KeyValueStore::create(
-                &config.storage_uri, CASERVER_NS
-            )?;
+            let ca_kv_store = storage.open(CASERVER_NS)?;
             if ca_kv_store.has_scope(const { Ident::make("ta") })? {
                 return Err(UpgradeError::OldTaMigration);
             }
@@ -859,19 +873,20 @@ pub fn prepare_upgrade_data_migrations(
             }
             else if versions.from < KrillVersion::candidate(0, 10, 0, 1) {
                 // Complex migrations involving command / event conversions
-                pubd::pre_0_10_0::PublicationServerRepositoryAccessMigration::upgrade(mode, config, &versions)?;
-                let aspa_configs =
-                    ca::pre_0_10_0::CasMigration::upgrade(mode, config)?;
+                pubd::pre_0_10_0::PublicationServerRepositoryAccessMigration::upgrade(mode, storage, &versions)?;
+                let aspa_configs = ca::pre_0_10_0::CasMigration::upgrade(
+                    mode, storage
+                )?;
 
                 // The way that pubd objects were stored was changed as well
                 // (since 0.13.0)
-                pubd::migrate_pre_0_12_pubd_objects(config)?;
+                pubd::migrate_pre_0_12_pubd_objects(storage)?;
 
                 // Migrate remaining aggregate stores used in < 0.10.0 to the
                 // new format in 0.14.0 where we combine
                 // commands and events into a single key-value pair.
                 pre_0_14_0::UpgradeAggregateStoreSignerInfo::upgrade(
-                    SIGNERS_NS, mode, config,
+                    SIGNERS_NS, mode, storage
                 )?;
 
                 Ok(Some(UpgradeReport::new(aspa_configs, true, versions)))
@@ -887,38 +902,38 @@ pub fn prepare_upgrade_data_migrations(
                 );
 
                 // The pubd objects storage changed in 0.13.0
-                pubd::migrate_pre_0_12_pubd_objects(config)?;
+                pubd::migrate_pre_0_12_pubd_objects(storage)?;
 
                 // Migrate aggregate stores used in < 0.12.0 to the new format
                 // in 0.14.0 where we combine commands and
                 // events into a single key-value pair.
                 pre_0_14_0::UpgradeAggregateStoreSignerInfo::upgrade(
-                    SIGNERS_NS, mode, config,
+                    SIGNERS_NS, mode, storage
                 )?;
-                let aspa_configs =
-                    ca::pre_0_14_0::CasMigration::upgrade(mode, config)?;
+                let aspa_configs = ca::pre_0_14_0::CasMigration::upgrade(
+                    mode, storage
+                )?;
                 pubd::pre_0_14_0::UpgradeAggregateStoreRepositoryAccess::upgrade(
                     PUBSERVER_NS,
                     mode,
-                    config,
+                    storage,
                 )?;
 
                 Ok(Some(UpgradeReport::new(aspa_configs, true, versions)))
             } else if versions.from < KrillVersion::candidate(0, 13, 0, 0) {
-                pubd::migrate_0_12_pubd_objects(config)?;
+                pubd::migrate_0_12_pubd_objects(storage)?;
 
                 // Migrate aggregate stores used in < 0.13.0 to the new format
                 // in 0.14.0 where we combine commands and
                 // events into a single key-value pair.
                 pre_0_14_0::UpgradeAggregateStoreSignerInfo::upgrade(
-                    SIGNERS_NS, mode, config,
+                    SIGNERS_NS, mode, storage
                 )?;
-                let aspa_configs =
-                    ca::pre_0_14_0::CasMigration::upgrade(mode, config)?;
+                let aspa_configs = ca::pre_0_14_0::CasMigration::upgrade(
+                    mode, storage
+                )?;
                 pubd::pre_0_14_0::UpgradeAggregateStoreRepositoryAccess::upgrade(
-                    PUBSERVER_NS,
-                    mode,
-                    config,
+                    PUBSERVER_NS, mode, storage
                 )?;
 
                 Ok(Some(UpgradeReport::new(aspa_configs, true, versions)))
@@ -926,25 +941,20 @@ pub fn prepare_upgrade_data_migrations(
                 // Migrate aggregate stores used in < 0.14.0 to the new format
                 // in 0.14.0 where we combine commands and
                 // events into a single key-value pair.
-                let aspa_configs =
-                    ca::pre_0_14_0::CasMigration::upgrade(mode, config)?;
+                let aspa_configs = ca::pre_0_14_0::CasMigration::upgrade(
+                    mode, storage
+                )?;
                 pubd::pre_0_14_0::UpgradeAggregateStoreRepositoryAccess::upgrade(
-                    PUBSERVER_NS,
-                    mode,
-                    config,
+                    PUBSERVER_NS, mode, storage
                 )?;
                 pre_0_14_0::UpgradeAggregateStoreSignerInfo::upgrade(
-                    SIGNERS_NS, mode, config,
+                    SIGNERS_NS, mode, storage
                 )?;
                 pre_0_14_0::UpgradeAggregateStoreTrustAnchorSigner::upgrade(
-                    TA_SIGNER_SERVER_NS,
-                    mode,
-                    config,
+                    TA_SIGNER_SERVER_NS, mode, storage
                 )?;
                 pre_0_14_0::UpgradeAggregateStoreTrustAnchorProxy::upgrade(
-                    TA_PROXY_SERVER_NS,
-                    mode,
-                    config,
+                    TA_PROXY_SERVER_NS, mode, storage
                 )?;
 
                 Ok(Some(UpgradeReport::new(aspa_configs, true, versions)))
@@ -966,7 +976,7 @@ pub fn prepare_upgrade_data_migrations(
 /// - make the prepared data current
 pub fn finalise_data_migration(
     upgrade: &UpgradeVersions,
-    config: &Config,
+    storage: &StorageSystem,
     properties_manager: &PropertiesManager,
 ) -> KrillResult<()> {
     // For each NS
@@ -997,24 +1007,20 @@ pub fn finalise_data_migration(
     ] {
         // Check if there is a non-empty upgrade store for this namespace
         // that would need to be migrated.
-        let mut upgrade_store =
-            KeyValueStore::create_upgrade_store(&config.storage_uri, ns)?;
+        let mut upgrade_store = storage.open_upgrade(ns)?;
         if !upgrade_store.is_empty()? {
             info!("Migrate new data for {ns} and archive old");
-            let mut current_store =
-                KeyValueStore::create(&config.storage_uri, ns)?;
+            let mut current_store = storage.open(ns)?;
             if !current_store.is_empty()? {
-                current_store.migrate_to_archive(&config.storage_uri, ns)?;
+                current_store.migrate_to_archive(storage.default_uri(), ns)?;
             }
 
-            upgrade_store.migrate_to_current(&config.storage_uri, ns)?;
+            upgrade_store.migrate_to_current(storage.default_uri(), ns)?;
         } else {
             // No migration needed, but check if we have a current store
             // for this namespace that still includes a version file. If
             // so, remove it.
-            let current_store = KeyValueStore::create(
-                &config.storage_uri, ns
-            )?;
+            let current_store = storage.open(ns)?;
             if current_store.has(None,  VERSION_KEY)? {
                 debug!("Removing excess version key in ns: {ns}");
                 current_store.drop_key(None, VERSION_KEY)?;
@@ -1051,10 +1057,10 @@ pub fn finalise_data_migration(
 /// adding the keys one by one to the mapping in the signer store, if any.
 #[cfg(feature = "hsm")]
 fn record_preexisting_openssl_keys_in_signer_mapper(
+    storage: &StorageSystem,
     config: &Config,
 ) -> Result<(), UpgradeError> {
-    let signers_key_store =
-        KeyValueStore::create(&config.storage_uri, SIGNERS_NS)?;
+    let signers_key_store = storage.open(SIGNERS_NS)?;
     if signers_key_store.is_empty()? {
         let mut num_recorded_keys = 0;
         // If the key value store for the "signers" namespace is empty, then
@@ -1062,19 +1068,16 @@ fn record_preexisting_openssl_keys_in_signer_mapper(
         // from a previous krill installation (earlier version, or a custom
         // build that has the hsm feature disabled.)
 
-        let keys_key_store =
-            KeyValueStore::create(&config.storage_uri, KEYS_NS)?;
+        let keys_key_store = storage.open(KEYS_NS)?;
         info!(
             "Mapping OpenSSL signer keys, using uri: {}",
-            config.storage_uri
+            storage.default_uri()
         );
 
         let probe_interval =
             std::time::Duration::from_secs(config.signer_probe_retry_seconds);
         let krill_signer = crate::commons::crypto::KrillSignerBuilder::new(
-            &config.storage_uri,
-            probe_interval,
-            &config.signers,
+            storage, probe_interval, &config.signers,
         )
         .with_default_signer(config.default_signer())
         .with_one_off_signer(config.one_off_signer())
@@ -1180,7 +1183,7 @@ pub async fn post_start_upgrade(
 ///  - if the code is the same version then we do not upgrade
 ///  - if the code is older then we need to error out
 fn upgrade_versions(
-    config: &Config,
+    storage: &StorageSystem,
     properties_manager: &PropertiesManager,
 ) -> Result<Option<UpgradeVersions>, UpgradeError> {
     if properties_manager.is_initialized() {
@@ -1217,7 +1220,7 @@ fn upgrade_versions(
             PUBSERVER_NS,
             PUBSERVER_CONTENT_NS,
         ] {
-            let kv_store = KeyValueStore::create(&config.storage_uri, ns)?;
+            let kv_store = storage.open(ns)?;
             if let Some(key_store_version) =
                 kv_store.get::<KrillVersion>(None, VERSION_KEY)?
             {
@@ -1282,13 +1285,13 @@ mod tests {
         copy_folder(base_dir, &temp_dir);
         
         // Copy data for the given names spaces into memory for testing.
-        let mem_storage_base_uri = test::mem_storage();
+        let mem_storage = test::mem_storage();
 
         // This is needed for tls_dir etc, but will be ignored here.
         let bogus_path = PathBuf::from("/dev/null");
 
         let mut config = Config::test(
-            &mem_storage_base_uri,
+            mem_storage.default_uri(),
             Some(&bogus_path),
             false, false, false, false,
         );
@@ -1301,23 +1304,22 @@ mod tests {
 
         for ns in namespaces {
             let namespace = Ident::from_str(ns).unwrap();
-            let source_store = KeyValueStore::create(
+            let source_store = mem_storage.open_uri(
                 &source_url, namespace
             ).unwrap();
-            let target_store = KeyValueStore::create(
-                &mem_storage_base_uri, namespace
-            ).unwrap();
+            let target_store = mem_storage.open(namespace).unwrap();
 
             target_store.import(&source_store).unwrap();
         }
 
         let properties_manager = PropertiesManager::create(
-            &config.storage_uri,
+            &mem_storage,
             config.use_history_cache,
         ).unwrap();
 
         prepare_upgrade_data_migrations(
             UpgradeMode::PrepareOnly,
+            &mem_storage,
             &config,
             &properties_manager,
         ).unwrap().unwrap();
@@ -1326,13 +1328,14 @@ mod tests {
         // again.
         let report = prepare_upgrade_data_migrations(
             UpgradeMode::PrepareToFinalise,
+            &mem_storage,
             &config,
             &properties_manager,
         ).unwrap().unwrap();
 
         finalise_data_migration(
             report.versions(),
-            &config,
+            &mem_storage,
             &properties_manager,
         ).unwrap();
     }
@@ -1461,18 +1464,16 @@ mod tests {
         ).unwrap();
 
         // Copy test data into test storage
-        let mem_storage_base_uri = test::mem_storage();
+        let mem_storage = test::mem_storage();
 
         let source_url = Url::parse(&format!(
             "local://{}", temp_dir.path().to_str().unwrap()
         )).unwrap();
-        let source_store = KeyValueStore::create(
+        let source_store = mem_storage.open_uri(
             &source_url, KEYS_NS
         ).unwrap();
 
-        let target_store = KeyValueStore::create(
-            &mem_storage_base_uri, KEYS_NS
-        ).unwrap();
+        let target_store = mem_storage.open(KEYS_NS).unwrap();
         target_store.import(&source_store).unwrap();
 
         // This is needed for tls_dir etc, but will be ignored here.
@@ -1558,12 +1559,13 @@ mod tests {
             &format!("local://{}", &temp_dir.path().to_str().unwrap()))
                 .unwrap();
 
-        let source_store =
-            KeyValueStore::create(&source_dir_url, STATUS_NS).unwrap();
+        let test_storage = test::mem_storage();
 
-        let test_storage_uri = test::mem_storage();
-        let status_kv_store =
-            KeyValueStore::create(&test_storage_uri, STATUS_NS).unwrap();
+        let source_store = test_storage.open_uri(
+            &source_dir_url, STATUS_NS
+        ).unwrap();
+
+        let status_kv_store = test_storage.open(STATUS_NS).unwrap();
 
         // copy the source KV store (files) into the test KV store (in memory)
         status_kv_store.import(&source_store).unwrap();
@@ -1578,8 +1580,7 @@ mod tests {
 
         // Initialise the StatusStore using the new (in memory) storage,
         // and migrate the data.
-        let store =
-            CaStatusStore::create(&test_storage_uri, STATUS_NS).unwrap();
+        let store = CaStatusStore::create(&test_storage, STATUS_NS).unwrap();
         let testbed = CaHandle::from_str("testbed").unwrap();
 
         // Get the migrated status for testbed and verify that it's equivalent

@@ -11,6 +11,7 @@ use tokio::sync::oneshot;
 use tokio_rustls::TlsAcceptor;
 use crate::commons::file;
 use crate::commons::error::Error;
+use crate::commons::storage::StorageSystem;
 use crate::commons::version::KrillVersion;
 use crate::config::Config;
 use crate::constants::KRILL_ENV_UPGRADE_ONLY;
@@ -31,16 +32,17 @@ pub async fn start_krill_daemon(
     write_pid_file_or_die(&config);
     test_data_dirs_or_die(&config);
 
+    let storage = StorageSystem::new(config.storage_uri.clone())?;
+
     // Set up the runtime properties manager, so that we can check
     // the version used for the current data in storage
     let properties_manager = PropertiesManager::create(
-        &config.storage_uri,
-        config.use_history_cache,
+        &storage, config.use_history_cache,
     )?;
 
     // Call upgrade, this will only do actual work if needed.
     let upgrade_report = prepare_upgrade_data_migrations(
-        UpgradeMode::PrepareToFinalise, &config, &properties_manager
+        UpgradeMode::PrepareToFinalise, &storage, &config, &properties_manager
     ).map_err(|e| {
         match e {
             UpgradeError::CodeOlderThanData(_,_) => {
@@ -58,7 +60,7 @@ pub async fn start_krill_daemon(
 
     if let Some(report) = &upgrade_report {
         finalise_data_migration(
-            report.versions(), &config, &properties_manager
+            report.versions(), &storage, &properties_manager
         ).map_err(|e| {
             Error::Custom(format!(
                 "Finishing prepared migration failed unexpectedly. Please \
@@ -82,7 +84,7 @@ pub async fn start_krill_daemon(
 
     // Create the Krill manager, this will create the necessary data
     // sub-directories if needed
-    let krill = KrillManager::build(config.clone()).await?;
+    let krill = Arc::new(KrillManager::build(storage, config.clone()).await?);
 
     // Call post-start upgrades to trigger any upgrade related runtime
     // actions, such as re-issuing ROAs because subject name strategy has
@@ -100,11 +102,10 @@ pub async fn start_krill_daemon(
 
     // Build the scheduler which will be responsible for executing
     // planned/triggered tasks
-    let scheduler = krill.build_scheduler();
-    let scheduler_future = scheduler.run();
+    let scheduler_future = krill.run_scheduler();
 
     // Create the HTTP server.
-    let server = HttpServer::new(krill, config.clone())?;
+    let server = HttpServer::new(krill.clone(), config.clone())?;
 
     // Create self-signed HTTPS cert if configured and not generated earlier.
     if config.https_mode().is_generate_https_cert() {

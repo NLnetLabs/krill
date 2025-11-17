@@ -9,18 +9,19 @@ use log::info;
 use rpki::ca::idexchange::MyHandle;
 use crate::commons::KrillResult;
 use crate::commons::eventsourcing::WalStore;
-use crate::commons::storage::{Ident, KeyValueStore};
+use crate::commons::storage::{Ident, StorageSystem};
 use crate::constants::PUBSERVER_CONTENT_NS;
-use crate::config::Config;
 use crate::server::pubd::content::RepositoryContent;
 use self::pre_0_13_0::OldRepositoryContent;
 
 
 /// Migrate v0.12.x RepositoryContent to the new 0.13.0+ format.
 /// Apply any open WAL changes to the source first.
-pub fn migrate_0_12_pubd_objects(config: &Config) -> KrillResult<bool> {
+pub fn migrate_0_12_pubd_objects(
+    storage: &StorageSystem
+) -> KrillResult<bool> {
     let old_store: WalStore<OldRepositoryContent> = WalStore::create(
-        &config.storage_uri, PUBSERVER_CONTENT_NS
+        storage, PUBSERVER_CONTENT_NS
     )?;
     let repo_content_handle = MyHandle::new("0".into());
 
@@ -29,10 +30,7 @@ pub fn migrate_0_12_pubd_objects(config: &Config) -> KrillResult<bool> {
             old_store.get_latest(&repo_content_handle)?.as_ref().clone();
         let repo_content: RepositoryContent =
             old_repo_content.try_into()?;
-        let upgrade_store = KeyValueStore::create_upgrade_store(
-            &config.storage_uri,
-            PUBSERVER_CONTENT_NS,
-        )?;
+        let upgrade_store = storage.open_upgrade(PUBSERVER_CONTENT_NS)?;
         upgrade_store.store(
             Some(const { Ident::make("0") }),
             const { Ident::make("snapshot.json") },
@@ -46,10 +44,10 @@ pub fn migrate_0_12_pubd_objects(config: &Config) -> KrillResult<bool> {
 
 /// The format of the RepositoryContent did not change in 0.12, but
 /// the location and way of storing it did. So, migrate if present.
-pub fn migrate_pre_0_12_pubd_objects(config: &Config) -> KrillResult<()> {
-    let old_store = KeyValueStore::create(
-        &config.storage_uri, PUBSERVER_CONTENT_NS
-    )?;
+pub fn migrate_pre_0_12_pubd_objects(
+    storage: &StorageSystem
+) -> KrillResult<()> {
+    let old_store = storage.open(PUBSERVER_CONTENT_NS)?;
     if let Ok(Some(old_repo_content)) =
         old_store.get::<OldRepositoryContent>(
             None, const { Ident::make("0.json") }
@@ -58,9 +56,7 @@ pub fn migrate_pre_0_12_pubd_objects(config: &Config) -> KrillResult<()> {
         info!("Found pre 0.12.0 RC2 publication server data. Migrating..");
         let repo_content: RepositoryContent = old_repo_content.try_into()?;
 
-        let upgrade_store = KeyValueStore::create_upgrade_store(
-            &config.storage_uri, PUBSERVER_CONTENT_NS,
-        )?;
+        let upgrade_store = storage.open_upgrade(PUBSERVER_CONTENT_NS)?;
         upgrade_store.store(
             Some(const { Ident::make("0") }),
             const { Ident::make("snapshot.json") },

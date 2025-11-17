@@ -10,10 +10,9 @@ use crate::upgrades::{
 use crate::{
     commons::{
         eventsourcing::AggregateStore,
-        storage::KeyValueStore,
+        storage::{KeyValueStore, StorageSystem},
     },
     constants::CASERVER_NS,
-    config::Config,
     upgrades::UpgradeResult,
 };
 
@@ -36,19 +35,13 @@ pub struct CasMigration {
 impl CasMigration {
     pub fn upgrade(
         mode: UpgradeMode,
-        config: &Config,
+        storage: &StorageSystem,
     ) -> UpgradeResult<AspaMigrationConfigs> {
-        let current_kv_store =
-            KeyValueStore::create(&config.storage_uri, CASERVER_NS)?;
-        let new_kv_store = KeyValueStore::create_upgrade_store(
-            &config.storage_uri,
-            CASERVER_NS,
-        )?;
+        let current_kv_store = storage.open(CASERVER_NS)?;
+        let new_kv_store = storage.open_upgrade(CASERVER_NS)?;
 
         let new_agg_store = AggregateStore::<CertAuth>::create_upgrade_store(
-            &config.storage_uri,
-            CASERVER_NS,
-            config.use_history_cache,
+            storage, CASERVER_NS, false,
         )?;
 
         CasMigration {

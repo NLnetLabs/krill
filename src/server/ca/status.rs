@@ -9,7 +9,6 @@ use rpki::ca::idexchange::{CaHandle, ChildHandle, ParentHandle, ServiceUri};
 use rpki::ca::provisioning::ResourceClassListResponse as Entitlements;
 use rpki::ca::publication::PublishDelta;
 use serde::{Deserialize, Serialize};
-use url::Url;
 use crate::api::ca::{
     ChildConnectionStats, ChildStatus, ChildrenConnectionStats, ParentStatus,
     ParentStatuses, RepoStatus,
@@ -18,7 +17,7 @@ use crate::api::status::ErrorResponse;
 use crate::commons::httpclient;
 use crate::commons::KrillResult;
 use crate::commons::error::Error;
-use crate::commons::storage::{Ident, KeyValueStore};
+use crate::commons::storage::{Ident, KeyValueStore, StorageSystem};
 
 const PARENTS_PREFIX: &Ident = Ident::make("parents-");
 const CHILDREN_PREFIX: &Ident = Ident::make("children-");
@@ -64,10 +63,10 @@ pub struct CaStatusStore {
 impl CaStatusStore {
     /// Creates a new status store with the givn storage URI and namespace.
     pub fn create(
-        storage_uri: &Url,
+        storage: &StorageSystem,
         namespace: &Ident,
     ) -> KrillResult<Self> {
-        let store = KeyValueStore::create(storage_uri, namespace)?;
+        let store = storage.open(namespace)?;
         let cache = RwLock::new(HashMap::new());
 
         let store = Self { store, cache };

@@ -1,12 +1,71 @@
 //! The publicly exposed key-value store.
 
-use std::fmt;
+use std::{error, fmt};
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
 use url::Url;
-
 use crate::commons::storage;
+use crate::commons::error::Error;
 use crate::commons::storage::{Backend, Ident, Transaction};
+
+
+//------------ StorageSystem -------------------------------------------------
+
+/// The system that provides the key-value stores.
+#[derive(Debug)]
+pub struct StorageSystem {
+    storage_uri: Url,
+}
+
+impl StorageSystem {
+    /// Creates a new storage system.
+    ///
+    /// The provided URI will be used as the default storage URI.
+    pub fn new(
+        storage_uri: Url
+    ) -> Result<Self, StorageConnectError> {
+        Ok(Self { storage_uri })
+    }
+
+    /// Opens the default store with the given namespace.
+    pub fn open(
+        &self, namespace: &Ident
+    ) -> Result<KeyValueStore, OpenStoreError> {
+        KeyValueStore::create(&self.storage_uri, namespace).map_err(
+            OpenStoreError
+        )
+    }
+
+    /// Opens a store for upgrades for the given namespace.
+    ///
+    /// Prefixes the namespace with `"upgrade_"`.
+    pub fn open_upgrade(
+        &self, namespace: &Ident
+    ) -> Result<KeyValueStore, OpenStoreError> {
+        KeyValueStore::create(
+            &self.storage_uri,
+            &KeyValueStore::prefixed_namespace(
+                namespace, const { Ident::make("upgrade") }
+            )
+        ).map_err(
+            OpenStoreError
+        )
+    }
+
+    /// Opens a store with the given storage URI and namespace.
+    pub fn open_uri(
+        &self, storage_uri: &Url, namespace: &Ident
+    ) -> Result<KeyValueStore, OpenStoreError> {
+        KeyValueStore::create(storage_uri, namespace).map_err(
+            OpenStoreError
+        )
+    }
+
+    /// Returns the default URI of the storage system.
+    pub fn default_uri(&self) -> &Url {
+        &self.storage_uri
+    }
+}
 
 
 //------------ KeyValueStore -------------------------------------------------
@@ -28,7 +87,7 @@ pub struct KeyValueStore {
 
 impl KeyValueStore {
     /// Creates a new store.
-    pub fn create(
+    fn create(
         storage_uri: &Url,
         namespace: &Ident,
     ) -> Result<Self, KeyValueError> {
@@ -171,21 +230,6 @@ impl KeyValueStore {
 
 // # Migration Support
 impl KeyValueStore {
-    /// Creates a new KeyValueStore for upgrades.
-    ///
-    /// Adds the implicit prefix "upgrade_" to the given namespace.
-    pub fn create_upgrade_store(
-        storage_uri: &Url,
-        namespace: &Ident,
-    ) -> Result<Self, KeyValueError> {
-        Self::create(
-            storage_uri,
-            &Self::prefixed_namespace(
-                namespace, const { Ident::make("upgrade") }
-            )
-        )
-    }
-
     fn prefixed_namespace(
         namespace: &Ident,
         prefix: &Ident,
@@ -265,6 +309,48 @@ impl KeyValueStore {
         }
 
         Ok(())
+    }
+}
+
+
+//------------ StorageConnectError -------------------------------------------
+
+/// An error occured while connecting to a storage system.
+#[derive(Debug)]
+pub struct StorageConnectError(());
+
+impl fmt::Display for StorageConnectError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("storage connect error")
+    }
+}
+
+impl error::Error for StorageConnectError { }
+
+impl From<StorageConnectError> for crate::commons::error::Error {
+    fn from(src: StorageConnectError) -> Self {
+        Self::custom(format_args!("{}", src))
+    }
+}
+
+
+//------------ OpenStoreError ------------------------------------------------
+
+/// An error occured while opening a store.
+#[derive(Debug)]
+pub struct OpenStoreError(KeyValueError);
+
+impl fmt::Display for OpenStoreError{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl error::Error for OpenStoreError { }
+
+impl From<OpenStoreError> for Error {
+    fn from(src: OpenStoreError) -> Error {
+        Error::custom(format_args!("{}", src))
     }
 }
 

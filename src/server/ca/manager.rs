@@ -54,6 +54,7 @@ use crate::commons::cmslogger::CmsLogger;
 use crate::commons::crypto::KrillSigner;
 use crate::commons::error::{Error, Error as KrillError};
 use crate::commons::eventsourcing::{Aggregate, AggregateStore, SentCommand};
+use crate::commons::storage::StorageSystem;
 use crate::constants::{
     CASERVER_NS, STATUS_NS, TA_PROXY_SERVER_NS, TA_SIGNER_SERVER_NS, TA_NAME,
     ta_handle,
@@ -138,6 +139,7 @@ impl CaManager {
     /// Return an error if any of the various stores cannot be initialized.
     pub async fn build(
         config: Arc<Config>,
+        storage: &StorageSystem,
         tasks: Arc<TaskQueue>,
         signer: Arc<KrillSigner>,
         system_actor: Actor,
@@ -145,9 +147,7 @@ impl CaManager {
         // Create the AggregateStore for the event-sourced `CertAuth`
         // structures that handle most CA functions.
         let mut ca_store = AggregateStore::<CertAuth>::create(
-            &config.storage_uri,
-            CASERVER_NS,
-            config.use_history_cache,
+            storage, CASERVER_NS, config.use_history_cache,
         )?;
 
         if let Err(e) = ca_store.warm() {
@@ -176,9 +176,7 @@ impl CaManager {
         // and issued certificates from the `CertAuth` and is responsible
         // for manifests and CRL generation.
         let ca_objects_store = Arc::new(CaObjectsStore::create(
-            &config.storage_uri,
-            config.issuance_timing.clone(),
-            signer.clone(),
+            storage, config.issuance_timing.clone(), signer.clone(),
         )?);
 
         // Register the `CaObjectsStore` as a pre-save listener to the
@@ -214,9 +212,7 @@ impl CaManager {
         // Create TA proxy store if we need it.
         let ta_proxy_store = if config.ta_proxy_enabled() {
             let mut store = AggregateStore::<TrustAnchorProxy>::create(
-                &config.storage_uri,
-                TA_PROXY_SERVER_NS,
-                config.use_history_cache,
+                storage, TA_PROXY_SERVER_NS, config.use_history_cache,
             )?;
 
             // We need a pre-save listener so that we can schedule:
@@ -238,9 +234,7 @@ impl CaManager {
 
         let ta_signer_store = if config.ta_signer_enabled() {
             Some(AggregateStore::create(
-                &config.storage_uri,
-                TA_SIGNER_SERVER_NS,
-                config.use_history_cache,
+                storage, TA_SIGNER_SERVER_NS, config.use_history_cache,
             )?)
         }
         else {
@@ -250,9 +244,7 @@ impl CaManager {
         // Create the status store which will maintain the last known
         // connection status between each CA and their parent(s) and
         // repository.
-        let status_store = CaStatusStore::create(
-            &config.storage_uri, STATUS_NS
-        )?;
+        let status_store = CaStatusStore::create(storage, STATUS_NS)?;
 
         Ok(CaManager {
             ca_store,

@@ -25,10 +25,10 @@ use crate::commons::eventsourcing::{
     Aggregate, AggregateStore, CommandDetails, Event, InitCommandDetails,
     InitEvent, SentCommand, SentInitCommand, WithStorableDetails,
 };
+use crate::commons::storage::StorageSystem;
 use crate::constants::{
     ACTOR_DEF_KRILL, PUBSERVER_DFLT, PUBSERVER_NS, TA_NAME
 };
-use crate::config::Config;
 use super::publishers::Publisher;
 
 
@@ -50,12 +50,13 @@ pub struct RepositoryAccessProxy {
 }
 
 impl RepositoryAccessProxy {
-    /// Creates a new repository access proxy from the config.
-    pub fn create(config: &Config) -> KrillResult<Self> {
+    /// Creates a new repository access proxy
+    pub fn create(
+        storage: &StorageSystem,
+        use_history_cache: bool
+    ) -> KrillResult<Self> {
         let store = AggregateStore::<RepositoryAccess>::create(
-            &config.storage_uri,
-            PUBSERVER_NS,
-            config.use_history_cache,
+            storage, PUBSERVER_NS, use_history_cache,
         )?;
         let key = MyHandle::from_str(PUBSERVER_DFLT).unwrap();
 

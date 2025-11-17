@@ -10,13 +10,12 @@ use rpki::ca::idexchange::{CaHandle, ParentHandle};
 use rpki::ca::provisioning::{ResourceClassName, RevocationRequest};
 use rpki::repository::x509::Time;
 use serde::{Deserialize, Serialize};
-use url::Url;
 use crate::api::ca::Timestamp;
 use crate::commons::eventsourcing;
 use crate::commons::{Error, KrillResult};
 use crate::commons::eventsourcing::Aggregate;
 use crate::commons::queue::{Queue, ScheduleMode};
-use crate::commons::storage::Ident;
+use crate::commons::storage::{Ident, StorageSystem};
 use crate::constants::{TASK_QUEUE_NS, ta_handle};
 use crate::server::ca::{CertAuth, CertAuthEvent};
 use crate::server::taproxy::{TrustAnchorProxy, TrustAnchorProxyEvent};
@@ -286,9 +285,9 @@ pub struct TaskQueue {
 }
 
 impl TaskQueue {
-    pub fn new(storage_uri: &Url) -> KrillResult<Self> {
+    pub fn new(storage: &StorageSystem) -> KrillResult<Self> {
         Ok(TaskQueue {
-            q: Queue::create(storage_uri, TASK_QUEUE_NS)?,
+            q: Queue::create(storage, TASK_QUEUE_NS)?,
         })
     }
 }
