@@ -18,13 +18,13 @@ pub async fn logging_http_client(
         // Don't {:?} log the openidconnect::HTTPRequest req object
         // because that renders the body as an unreadable integer byte
         // array, instead try and decode it as UTF-8.
-        let body = match std::str::from_utf8(&req.body) {
+        let body = match std::str::from_utf8(req.body()) {
             Ok(text) => text.to_string(),
-            Err(_) => format!("{:?}", &req.body),
+            Err(_) => format!("{:?}", req.body()),
         };
         debug!(
             "OpenID Connect request: url: {:?}, method: {:?}, headers: {:?}, body: {}",
-            req.url, req.method, req.headers, body
+            req.uri(), req.method(), req.headers(), body
         );
     }
 
@@ -37,13 +37,13 @@ pub async fn logging_http_client(
                 // object because that renders the body as an unreadable
                 // integer byte array, instead try and decode it as
                 // UTF-8.
-                let body = match std::str::from_utf8(&res.body) {
+                let body = match std::str::from_utf8(res.body()) {
                     Ok(text) => text.to_string(),
-                    Err(_) => format!("{:?}", &res.body),
+                    Err(_) => format!("{:?}", res.body()),
                 };
                 debug!(
                     "OpenID Connect response: status_code: {:?}, headers: {:?}, body: {}",
-                    res.status_code, res.headers, body
+                    res.status(), res.headers(), body
                 );
             }
             Err(err) => {
@@ -58,7 +58,7 @@ pub async fn logging_http_client(
 async fn dispatch_openid_request(
     request: openidconnect::HttpRequest,
 ) -> Result<openidconnect::HttpResponse, httpclient::Error> {
-    let request_uri = request.url.to_string();
+    let request_uri = request.uri().to_string();
 
     let client = {
         let timeout = openid_connect_provider_timeout();
@@ -82,22 +82,22 @@ fn convert_openid_request(
     request: openidconnect::HttpRequest,
     client: &reqwest::Client,
 ) -> Result<reqwest::Request, httpclient::Error> {
-    let request_uri = request.url.to_string();
+    let request_uri = request.uri().to_string();
 
-    let request_method = reqwest::Method::from_str(request.method.as_str())
+    let request_method = reqwest::Method::from_str(request.method().as_str())
         .map_err(|_| {
         httpclient::Error::request_build(
             &request_uri,
-            format!("invalid method: {}", request.method),
+            format!("invalid method: {}", request.method()),
         )
     })?;
 
     let mut request_builder = client
         .request(request_method, &request_uri)
-        .body(request.body);
+        .body(request.body().to_vec());
 
     // map openid connect headers to the request builder
-    for (name, value) in &request.headers {
+    for (name, value) in request.headers() {
         request_builder =
             request_builder.header(name.as_str(), value.as_bytes());
     }
@@ -159,11 +159,11 @@ async fn convert_to_openid_response(
         )
     })?;
 
-    Ok(openidconnect::HttpResponse {
-        status_code: response_status,
-        headers: response_headers,
-        body: response_body.to_vec(),
-    })
+    let mut response = 
+        openidconnect::HttpResponse::new(response_body.to_vec());
+    *response.status_mut() = response_status;
+    *response.headers_mut() = response_headers;
+    Ok(response)
 }
 
 fn openid_connect_provider_timeout() -> Duration {
