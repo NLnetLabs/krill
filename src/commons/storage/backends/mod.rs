@@ -16,10 +16,106 @@ use std::fmt;
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
 use url::Url;
-use super::Ident;
+use super::{Ident, KeyValueError};
 
 macro_rules! store {
     ( $( ( $variant:ident, $module:ident ) )* ) => {
+
+        //------------ BackendSystem -----------------------------------------
+
+        #[derive(Debug, Default)]
+        pub struct BackendSystem {
+            $(
+                $module: self::$module::System,
+            )*
+        }
+
+        impl BackendSystem {
+            fn location(
+                &self, uri: &Url
+            )  -> Result<Location, KeyValueError> {
+                $(
+                    match self.$module.location(uri) {
+                        Ok(Some(location)) => {
+                            return Ok(Location::$variant(location))
+                        }
+                        Ok(None) => { }
+                        Err(err) => {
+                            return Err(KeyValueError::Inner(err.into()))
+                        }
+                    }
+                )*
+                Err(KeyValueError::UnknownScheme(uri.scheme().into()))
+            }
+
+            pub fn open(
+                &self, storage_uri: &Url, namespace: &Ident,
+            ) -> Result<Backend, KeyValueError> {
+                Ok(self.location(storage_uri)?.open(namespace)?)
+            }
+
+            pub fn is_empty(
+                &self, storage_uri: &Url, namespace: &Ident,
+            ) -> Result<bool, KeyValueError> {
+                Ok(self.location(storage_uri)?.is_empty(namespace)?)
+            }
+
+            pub fn migrate(
+                &self, storage_uri: &Url, src_ns: &Ident, dst_ns: &Ident
+            ) -> Result<(), KeyValueError> {
+                Ok(self.location(storage_uri)?.migrate(src_ns, dst_ns)?)
+            }
+        }
+
+
+        //------------ Location ----------------------------------------------
+
+        #[derive(Debug)]
+        enum Location {
+            $(
+                $variant( self::$module::Location ),
+            )*
+        }
+
+        impl Location {
+            fn open(
+                &self, namespace: &Ident,
+            ) -> Result<Backend, Error> {
+                match self {
+                    $(
+                        Self::$variant(inner) => {
+                            Ok(Backend(StoreInner::$variant(
+                                inner.open(namespace)?
+                            )))
+                        }
+                    )*
+                }
+            }
+
+            fn is_empty(
+                &self, namespace: &Ident,
+            ) -> Result<bool, Error> {
+                match self {
+                    $(
+                        Self::$variant(inner) => {
+                            Ok(inner.is_empty(namespace)?)
+                        }
+                    )*
+                }
+            }
+
+            fn migrate(
+                &self, src_ns: &Ident, dst_ns: &Ident
+            ) -> Result<(), Error> {
+                match self {
+                    $(
+                        Self::$variant(inner) => {
+                            Ok(inner.migrate(src_ns, dst_ns)?)
+                        }
+                    )*
+                }
+            }
+        }
 
 
         //------------ Backend -----------------------------------------------
@@ -35,21 +131,6 @@ macro_rules! store {
         }
 
         impl Backend {
-            pub fn new(
-                storage_uri: &Url, namespace: &Ident,
-            ) -> Result<Option<Self>, Error> {
-                $(
-                    if let Some(inner) =
-                    self::$module::Store::from_uri(
-                        storage_uri, namespace
-                    )? {
-                        return Ok(Some(Backend(StoreInner::$variant(inner))))
-                    }
-                )*
-
-                Ok(None)
-            }
-
             pub fn execute<F, T>(
                 &self, scope: Option<&Ident>, op: F
             ) -> Result<T, Error>
@@ -99,6 +180,7 @@ macro_rules! store {
                 }
             }
 
+            /*
             pub fn migrate_namespace(
                 &mut self, to: &Ident,
             ) -> Result<(), Error> {
@@ -110,6 +192,7 @@ macro_rules! store {
                     )*
                 }
             }
+            */
         }
 
 

@@ -4,8 +4,6 @@
 //! requires a wee bit of macro magic.
 #![cfg(test)]
 
-use std::sync::{Mutex, MutexGuard};
-use lazy_static::lazy_static;
 use tempfile::{TempDir, tempdir};
 use url::Url;
 use super::{Ident, KeyValueStore, StorageSystem};
@@ -311,45 +309,21 @@ trait Harness {
 //------------ MemoryHarness -------------------------------------------------
 
 /// The test harness for the memory backend.
-///
-/// Because there is only a single shared memory store for the whole process,
-/// we can only run a single test using it at the same time and need to wipe
-/// it clean before the test. This is why there are a lock and a guard here.
-struct MemoryHarness<'a> {
-    _guard: MutexGuard<'a, ()>,
+struct MemoryHarness {
     storage: StorageSystem,
 }
 
-lazy_static! {
-    static ref MEMORY_LOCK: Mutex<()> = Mutex::new(());
-}
-
-impl<'a> MemoryHarness<'a> {
+impl MemoryHarness {
     fn new() -> Self {
-        loop {
-            let _guard = match MEMORY_LOCK.lock() {
-                Ok(guard) => guard,
-                Err(_) => {
-                    // If a thread panicked, the lock gets poisoned. But we
-                    // know that a panicked thread (and its test) has ended,
-                    // so we can clear the poison and try to acquire the
-                    // lock again.
-                    MEMORY_LOCK.clear_poison();
-                    continue;
-                }
-            };
-            super::backends::memory::Store::wipe_all();
-            return Self {
-                _guard,
-                storage: StorageSystem::new(
-                    Url::parse("memory:").unwrap()
-                ).unwrap(),
-            }
+        Self {
+            storage: StorageSystem::new(
+                Url::parse("memory:").unwrap()
+            ).unwrap(),
         }
     }
 }
 
-impl<'a> Harness for MemoryHarness<'a> {
+impl Harness for MemoryHarness {
     fn url(&self) -> Url {
         self.storage.default_uri().clone()
     }

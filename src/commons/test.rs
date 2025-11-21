@@ -45,7 +45,7 @@ pub fn mem_storage() -> StorageSystem {
     openssl::rand::rand_bytes(&mut bytes).unwrap();
 
     StorageSystem::new(
-        Url::parse(&format!("memory://{}", random_hex_string())).unwrap()
+        Url::parse(&format!("memory:{}", random_hex_string())).unwrap()
     ).unwrap()
 }
 

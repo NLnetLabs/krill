@@ -52,7 +52,7 @@ impl TestConfig {
         Self::new(
             Url::parse(
                 &format!(
-                    "memory://{}", hex::encode(rand::random::<[u8; 8]>())
+                    "memory:{}", hex::encode(rand::random::<[u8; 8]>())
                 )
             ).unwrap(),
             data_dir,

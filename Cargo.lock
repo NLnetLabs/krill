@@ -1391,7 +1391,6 @@ dependencies = [
  "hyper-util",
  "intervaltree",
  "kmip-protocol",
- "lazy_static",
  "log",
  "openidconnect",
  "openssl",

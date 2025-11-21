@@ -5,7 +5,6 @@ use std::collections::{HashMap, HashSet};
 use std::ops::DerefMut;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
-use lazy_static::lazy_static;
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
 use serde_json::Value;
@@ -17,6 +16,86 @@ use super::{
 };
 
 
+//------------ System --------------------------------------------------------
+
+#[derive(Debug, Default)]
+pub struct System {
+    locations: Mutex<HashMap<String, Location>>,
+}
+
+impl System {
+    pub fn location(&self, uri: &Url) -> Result<Option<Location>, Error> {
+        if uri.scheme() != "memory" {
+            return Ok(None)
+        }
+        let mut locations = self.locations.lock().expect("poisoned lock");
+        Ok(Some(
+            locations.entry(String::from(uri.path())).or_default().clone()
+        ))
+    }
+}
+
+
+//------------ Location ------------------------------------------------------
+
+#[derive(Clone, Debug, Default)]
+pub struct Location {
+    namespaces: Arc<Mutex<HashMap<Box<Ident>, Arc<MemoryNamespace>>>>,
+}
+
+impl Location {
+    pub fn open(
+        &self, namespace: &Ident,
+    ) -> Result<Store, Error> {
+        let mut namespaces = self.namespaces.lock().expect("poisoned lock");
+        Ok(Store::new(
+            namespaces.entry(namespace.into()).or_default().clone()
+        ))
+    }
+
+    pub fn is_empty(
+        &self, namespace: &Ident,
+    ) -> Result<bool, Error> {
+        let namespaces = self.namespaces.lock().expect("poisoned lock");
+        let Some(namespace) = namespaces.get(namespace) else {
+            return Ok(false)
+        };
+        Ok(namespace.scopes().is_empty())
+    }
+
+    pub fn migrate(
+        &self, src_ns: &Ident, dst_ns: &Ident
+    ) -> Result<(), Error> {
+        let mut namespaces = self.namespaces.lock().expect("poisoned lock");
+        {
+            let Some(src) = namespaces.get(src_ns).cloned() else {
+                return Err(Error::MissingSourceNamespace(src_ns.into()))
+            };
+
+            if !src.locks().is_empty() {
+                return Err(Error::PendingLocks);
+            }
+
+            let dst = namespaces.entry(dst_ns.into()).or_default().clone();
+            if !dst.locks().is_empty() {
+                return Err(Error::PendingLocks);
+            }
+
+            let mut dst_scopes = dst.scopes();
+            if !dst_scopes.is_empty() {
+                return Err(Error::NonemptyTargetNamespace(dst_ns.into()))
+            }
+
+            mem::swap(dst_scopes.deref_mut(), src.scopes().deref_mut());
+        }
+
+        namespaces.remove(src_ns);
+
+        Ok(())
+    }
+}
+
+
 //------------ Store ---------------------------------------------------------
 
 #[derive(Debug)]
@@ -25,23 +104,8 @@ pub struct Store {
 }
 
 impl Store {
-    pub fn wipe_all() {
-        MEMORY.wipe_all()
-    }
-
-    pub fn from_uri(
-        uri: &Url, namespace: &Ident, 
-    ) -> Result<Option<Self>, Error> {
-        if uri.scheme() != "memory" {
-            return Ok(None)
-        }
-    
-        Ok(Some(Store {
-            namespace: MEMORY.get_namespace(
-                uri.host_str().unwrap_or_default().into(),
-                namespace.into()
-            )
-        }))
+    fn new(namespace: Arc<MemoryNamespace>) -> Self {
+        Store { namespace }
     }
 
     pub fn execute<F, T>(
@@ -212,6 +276,7 @@ impl Store {
         Ok(())
     }
 
+        /*
     pub fn migrate_namespace(
         &mut self, target: &Ident
     ) -> Result<(), Error> {
@@ -239,6 +304,7 @@ impl Store {
         self.namespace = new.clone();
         Ok(())
     }
+        */
 }
 
 
@@ -343,22 +409,13 @@ impl MemoryScopes {
 
 //------------ MemoryNamespace -----------------------------------------------
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct MemoryNamespace {
-    ns_key: NsKey,
     scopes: Mutex<MemoryScopes>,
     locks: Mutex<HashSet<Option<Box<Ident>>>>,
 }
 
 impl MemoryNamespace {
-    fn new(ns_key: NsKey) -> Self {
-        Self {
-            ns_key,
-            scopes: Default::default(),
-            locks: Default::default(),
-        }
-    }
-
     fn scopes(&self) -> MutexGuard<'_, MemoryScopes> {
         self.scopes.lock().expect("poisoned lock")
     }
@@ -369,6 +426,7 @@ impl MemoryNamespace {
 }
 
 
+/*
 //------------ NsKey ---------------------------------------------------------
 
 /// The key for a store.
@@ -409,6 +467,7 @@ impl Memory {
 lazy_static! {
     static ref MEMORY: Memory = Memory::default();
 }
+*/
 
 
 //------------ Error ---------------------------------------------------------
@@ -432,6 +491,7 @@ pub enum Error {
     },
     NoScope(Box<Ident>),
     TargetScopeExists(Box<Ident>),
+    MissingSourceNamespace(Box<Ident>),
     NonemptyTargetNamespace(Box<Ident>),
     PendingLocks,
 }
@@ -512,6 +572,9 @@ impl fmt::Display for Error {
             Error::NoScope(scope) => write!(f, "no such scope '{scope}'"),
             Error::TargetScopeExists(scope) => {
                 write!(f, "target scope '{scope}' exists")
+            }
+            Error::MissingSourceNamespace(ns) => {
+                write!(f, "missing source namespace '{ns}'")
             }
             Error::NonemptyTargetNamespace(ns) => {
                 write!(f, "non-empty target namespace '{ns}'")

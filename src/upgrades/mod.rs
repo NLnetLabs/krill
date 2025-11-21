@@ -1007,15 +1007,13 @@ pub fn finalise_data_migration(
     ] {
         // Check if there is a non-empty upgrade store for this namespace
         // that would need to be migrated.
-        let mut upgrade_store = storage.open_upgrade(ns)?;
-        if !upgrade_store.is_empty()? {
+        if !storage.is_upgrade_empty(ns)? {
             info!("Migrate new data for {ns} and archive old");
-            let mut current_store = storage.open(ns)?;
-            if !current_store.is_empty()? {
-                current_store.migrate_to_archive(storage.default_uri(), ns)?;
+            if !storage.is_empty(ns)? {
+                storage.migrate_to_archive(ns)?;
             }
 
-            upgrade_store.migrate_to_current(storage.default_uri(), ns)?;
+            storage.migrate_to_current(ns)?;
         } else {
             // No migration needed, but check if we have a current store
             // for this namespace that still includes a version file. If

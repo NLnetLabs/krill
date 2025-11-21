@@ -458,7 +458,7 @@ mod tests {
     use super::*;
 
     fn storage_system() -> StorageSystem {
-        StorageSystem::new(Url::parse("memory://").unwrap()).unwrap()
+        StorageSystem::new(Url::parse("memory:").unwrap()).unwrap()
     }
 
     fn queue_store(storage: &StorageSystem, ns: &str) -> Queue {

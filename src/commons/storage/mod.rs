@@ -1,11 +1,13 @@
 //! Persistent storage of data.
 
-pub use self::backends::{Backend, Transaction, Error};
+pub use self::backends::{Transaction, Error};
 pub use self::ident::{Ident, IdentBuilder, IdentError};
 pub use self::store::{
     KeyValueStore, KeyValueError, OpenStoreError, StorageConnectError,
     StorageSystem
 };
+
+use self::backends::{Backend, BackendSystem};
 
 mod backends;
 mod ident;

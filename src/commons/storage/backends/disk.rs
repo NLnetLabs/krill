@@ -28,6 +28,103 @@ const LOCK_FILE_DIR: &str = ".locks";
 pub const LOCK_FILE_NAME: &str = "lockfile.lock";
 
 
+//------------ System --------------------------------------------------------
+
+#[derive(Debug, Default)]
+pub struct System(());
+
+impl System {
+    pub fn location(&self, uri: &Url) -> Result<Option<Location>, Error> {
+        if uri.scheme() != "local" {
+            return Ok(None)
+        }
+        let base = PathBuf::from(format!(
+            "{}{}", uri.host_str().unwrap_or_default(), uri.path()
+        ));
+        Ok(Some(Location { base }))
+    }
+}
+
+
+//------------ Location ------------------------------------------------------
+
+#[derive(Debug)]
+pub struct Location {
+    /// The base directory.
+    ///
+    /// All the namespaces plus a few extra repositories are under this
+    /// directory.
+    base: PathBuf,
+}
+
+impl Location {
+    pub fn open(
+        &self, namespace: &Ident,
+    ) -> Result<Store, Error> {
+        Store::new(&self.base, namespace)
+    }
+
+    pub fn is_empty(
+        &self, namespace: &Ident,
+    ) -> Result<bool, Error> {
+        self.open(namespace)?.is_empty()
+    }
+
+    pub fn migrate(
+        &self, src_ns: &Ident, dst_ns: &Ident
+    ) -> Result<(), Error> {
+        let src_store = self.open(src_ns)?;
+        let dst_root = self.base.join(dst_ns.as_str());
+
+        // Try removing the destination directory. If it isn’t there, that’s
+        // fine. Otherwise we error out.
+        if let Err(err) = fs::remove_dir(&dst_root) {
+            if err.kind() != io::ErrorKind::NotFound {
+                return Err(Error::other(format!(
+                    "target dir {} exists and cannot be removed ({})",
+                    dst_root.display(), err
+                )));
+            }
+        }
+
+        // The source store must not have any lock files.
+        if src_store.locks.exists() {
+            if src_store.locks
+                .read_dir()
+                .map_err(|err| {
+                    Error::io(
+                        format!(
+                            "cannot read directory '{}'",
+                            src_store.locks.display(),
+                        ),
+                        err
+                    )
+                })?
+                .next()
+                .is_some()
+            {
+                return Err(Error::other(format!(
+                    "store at '{}' has pending locks",
+                    src_store.root.display(),
+                )));
+            }
+        }
+
+        fs::rename(&src_store.root, &dst_root).map_err(|err| {
+            Error::io(
+                format!(
+                    "cannot rename dir from {} to {}",
+                    src_store.root.display(),
+                    dst_root.display(),
+                ),
+                err
+            )
+        })?;
+
+        Ok(())
+    }
+}
+
 
 //------------ Store ---------------------------------------------------------
 
@@ -75,16 +172,9 @@ pub struct Store {
 }
 
 impl Store {
-    pub fn from_uri(
-        uri: &Url, namespace: &Ident,
-    ) -> Result<Option<Self>, Error> {
-        if uri.scheme() != "local" {
-            return Ok(None)
-        }
-
-        let path = PathBuf::from(format!(
-            "{}{}", uri.host_str().unwrap_or_default(), uri.path()
-        ));
+    fn new(
+        path: &Path, namespace: &Ident,
+    ) -> Result<Self, Error> {
         let root = path.join(namespace.as_str());
         let tmp = path.join(TMP_FILE_DIR);
         let mut locks = path.join(LOCK_FILE_DIR);
@@ -100,7 +190,7 @@ impl Store {
             )
         })?;
 
-        Ok(Some(Self { root, tmp, locks }))
+        Ok(Self { root, tmp, locks })
     }
 
     pub fn execute<F, T>(
@@ -497,54 +587,6 @@ impl Store {
             let _ = fs::remove_dir_all(&self.root);
         }
 
-        Ok(())
-    }
-
-    pub fn migrate_namespace(
-        &mut self, namespace: &Ident,
-    ) -> Result<(), Error> {
-        let root_parent = self.root.parent().ok_or_else(|| {
-            Error::other(
-                format!("cannot get parent dir for: {}", self.root.display())
-            )
-        })?;
-
-        let new_root = root_parent.join(namespace.as_str());
-
-        if new_root.exists() {
-            // If the target directory already exists, then it must be empty.
-            if new_root
-                .read_dir()
-                .map_err(|err| {
-                    Error::io(
-                        format!(
-                            "cannot read directory '{}'",
-                            new_root.display(),
-                        ),
-                        err
-                    )
-                })?
-                .next()
-                .is_some()
-            {
-                return Err(Error::other(format!(
-                    "target dir {} already exists and is not empty",
-                    new_root.display(),
-                )));
-            }
-        }
-
-        fs::rename(&self.root, &new_root).map_err(|err| {
-            Error::io(
-                format!(
-                    "cannot rename dir from {} to {}",
-                    self.root.display(),
-                    new_root.display(),
-                ),
-                err
-            )
-        })?;
-        self.root = new_root;
         Ok(())
     }
 

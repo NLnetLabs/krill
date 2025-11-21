@@ -33,7 +33,6 @@ http-body-util  = "0.1"
 hyper           = { version = "1.6.0", features = ["server"] }
 hyper-util      = { version = "0.1", features = [ "server" ] }
 intervaltree    = "0.2.7"
-lazy_static     = "1.5"
 log             = "0.4"
 openssl         = { version = "0.10", features = ["v110"] }
 percent-encoding = "2.3.1"
