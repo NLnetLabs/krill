@@ -1,6 +1,10 @@
 use log::{debug, error};
 use openidconnect::{
-    AdditionalClaims, AdditionalProviderMetadata, Client, EndpointMaybeSet, EndpointNotSet, EndpointSet, ExtraTokenFields, IdTokenClaims, IdTokenFields, ProviderMetadata, StandardErrorResponse, StandardTokenResponse, UserInfoClaims, core::{
+    AdditionalClaims, AdditionalProviderMetadata, Client, EndpointMaybeSet, 
+    EndpointNotSet, EndpointSet, ExtraTokenFields, IdTokenClaims, 
+    IdTokenFields, ProviderMetadata, StandardErrorResponse, 
+    StandardTokenResponse, UserInfoClaims, 
+    core::{
         CoreAuthDisplay, CoreAuthPrompt, CoreClaimName, CoreClaimType,
         CoreClientAuthMethod, CoreErrorResponseType, CoreGenderClaim,
         CoreGrantType, CoreJsonWebKey,

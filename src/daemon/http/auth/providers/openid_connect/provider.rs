@@ -39,7 +39,11 @@ use basic_cookies::Cookie;
 use hyper::header::{HeaderValue, SET_COOKIE};
 use log::{debug, error, info, log_enabled, trace, warn};
 use openidconnect::{
-    AccessToken, AuthenticationFlow, AuthorizationCode, ClientId, ClientSecret, CsrfToken, IssuerUrl, Nonce, OAuth2TokenResponse, RedirectUrl, RefreshToken, RequestTokenError, RevocationErrorResponseType, RevocationUrl, Scope, UserInfoError, core::{
+    AccessToken, AuthenticationFlow, AuthorizationCode, ClientId, ClientSecret, 
+    CsrfToken, IssuerUrl, Nonce, OAuth2TokenResponse, RedirectUrl, 
+    RefreshToken, RequestTokenError, RevocationErrorResponseType, 
+    RevocationUrl, Scope, UserInfoError, 
+    core::{
         CoreAuthPrompt, CoreErrorResponseType, CoreIdTokenVerifier,
         CoreJwsSigningAlgorithm, CoreResponseMode, CoreResponseType,
         CoreRevocableToken,

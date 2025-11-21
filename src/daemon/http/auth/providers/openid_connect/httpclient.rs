@@ -20,7 +20,7 @@ pub async fn logging_http_client(
         // array, instead try and decode it as UTF-8.
         let body = match std::str::from_utf8(req.body()) {
             Ok(text) => text.to_string(),
-            Err(_) => format!("{:?}", &req.body()),
+            Err(_) => format!("{:?}", req.body()),
         };
         debug!(
             "OpenID Connect request: url: {:?}, method: {:?}, headers: {:?}, body: {}",
@@ -39,7 +39,7 @@ pub async fn logging_http_client(
                 // UTF-8.
                 let body = match std::str::from_utf8(res.body()) {
                     Ok(text) => text.to_string(),
-                    Err(_) => format!("{:?}", &res.body()),
+                    Err(_) => format!("{:?}", res.body()),
                 };
                 debug!(
                     "OpenID Connect response: status_code: {:?}, headers: {:?}, body: {}",
