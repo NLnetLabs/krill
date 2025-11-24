@@ -179,20 +179,6 @@ macro_rules! store {
                     )*
                 }
             }
-
-            /*
-            pub fn migrate_namespace(
-                &mut self, to: &Ident,
-            ) -> Result<(), Error> {
-                match &mut self.0 {
-                    $(
-                        StoreInner::$variant(inner) => {
-                            Ok(inner.migrate_namespace(to)?)
-                        }
-                    )*
-                }
-            }
-            */
         }
 
 

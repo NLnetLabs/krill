@@ -58,7 +58,7 @@ impl Location {
     ) -> Result<bool, Error> {
         let namespaces = self.namespaces.lock().expect("poisoned lock");
         let Some(namespace) = namespaces.get(namespace) else {
-            return Ok(false)
+            return Ok(true)
         };
         Ok(namespace.scopes().is_empty())
     }

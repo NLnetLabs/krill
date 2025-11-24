@@ -1008,11 +1008,12 @@ pub fn finalise_data_migration(
         // Check if there is a non-empty upgrade store for this namespace
         // that would need to be migrated.
         if !storage.is_upgrade_empty(ns)? {
-            info!("Migrate new data for {ns} and archive old");
             if !storage.is_empty(ns)? {
+                info!("Archiving old data for {ns}.");
                 storage.migrate_to_archive(ns)?;
             }
 
+            info!("Migrate new data for {ns}.");
             storage.migrate_to_current(ns)?;
         } else {
             // No migration needed, but check if we have a current store
@@ -1588,3 +1589,4 @@ mod tests {
         assert_eq!(status_testbed_before_migration, status_testbed_migrated);
     }
 }
+
