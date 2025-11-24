@@ -214,7 +214,7 @@ impl AuthProvider {
         let meta = self.discover().await?;
         let (email_scope_supported, userinfo_endpoint_supported, logout_mode) =
             self.check_provider_capabilities(&meta)?;
-        let client = self.build_client(meta, &logout_mode)?;
+        let client = self.build_client(meta)?;
         let time_established = Instant::now();
         let conn = ProviderConnectionProperties {
             client,
@@ -466,7 +466,6 @@ impl AuthProvider {
     fn build_client(
         &self,
         meta: WantedMeta,
-        _logout_mode: &LogoutMode,
     ) -> KrillResult<FlexibleClient> {
         // Read from config the credentials we should use to authenticate
         // ourselves with the identity provider. These details should have
@@ -547,7 +546,7 @@ impl AuthProvider {
     async fn try_revoke_token(
         &self,
         session: &Session,
-        revocation_url: &String
+        revocation_url: String
     ) -> Result<(), RevocationErrorResponseType> {
         // Connect to the OpenID Connect provider OAuth 2.0 token revocation
         // endpoint to terminate the provider session
@@ -580,7 +579,7 @@ impl AuthProvider {
         let client: FlexibleClient = conn.client.clone();
         let client = client.set_revocation_url(
             RevocationUrl::new(
-                revocation_url.to_owned(),
+                revocation_url,
             ).map_err(|err| RevocationErrorResponseType::Basic(
                     CoreErrorResponseType::Extension(
                         format!("URL parsing failure while revoking token: {err}")
@@ -1824,7 +1823,9 @@ impl AuthProvider {
                 revocation_url,
                 post_revocation_redirect_url,
             } => {
-                if let Err(err) = self.try_revoke_token(&session, revocation_url).await {
+                if let Err(err) = self.try_revoke_token(
+                    &session, revocation_url.clone()
+                ).await {
                     Self::internal_error(
                         format!(
                             "Error while revoking token for user '{}'",
