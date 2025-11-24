@@ -28,9 +28,7 @@
 //! [openid-connect-rpinitiated-1_0]: https://openid.net/specs/openid-connect-rpinitiated-1_0.html
 
 use std::{
-    ops::Deref,
-    sync::Arc, 
-    time::Instant,
+    ops::Deref, sync::Arc, time::Instant
 };
 
 use tokio::sync::{RwLock, RwLockReadGuard};
@@ -41,15 +39,15 @@ use basic_cookies::Cookie;
 use hyper::header::{HeaderValue, SET_COOKIE};
 use log::{debug, error, info, log_enabled, trace, warn};
 use openidconnect::{
+    AccessToken, AuthenticationFlow, AuthorizationCode, ClientId, ClientSecret, 
+    CsrfToken, IssuerUrl, Nonce, OAuth2TokenResponse, RedirectUrl, 
+    RefreshToken, RequestTokenError, RevocationErrorResponseType, 
+    RevocationUrl, Scope, UserInfoError, 
     core::{
         CoreAuthPrompt, CoreErrorResponseType, CoreIdTokenVerifier,
         CoreJwsSigningAlgorithm, CoreResponseMode, CoreResponseType,
         CoreRevocableToken,
-    },
-    AccessToken, AuthenticationFlow, AuthorizationCode, ClientId,
-    ClientSecret, CsrfToken, IssuerUrl, Nonce, OAuth2TokenResponse,
-    RedirectUrl, RefreshToken, RequestTokenError,
-    RevocationErrorResponseType, RevocationUrl, Scope, UserInfoError,
+    }
 };
 use serde::{Deserialize, Serialize};
 use tokio::runtime;
@@ -216,7 +214,7 @@ impl AuthProvider {
         let meta = self.discover().await?;
         let (email_scope_supported, userinfo_endpoint_supported, logout_mode) =
             self.check_provider_capabilities(&meta)?;
-        let client = self.build_client(meta, &logout_mode)?;
+        let client = self.build_client(meta)?;
         let time_established = Instant::now();
         let conn = ProviderConnectionProperties {
             client,
@@ -253,7 +251,7 @@ impl AuthProvider {
         // Contact the OpenID Connect: identity provider discovery endpoint to
         // learn about and configure ourselves to talk to it.
         let meta =
-            WantedMeta::discover_async(issuer.clone(), logging_http_client)
+            WantedMeta::discover_async(issuer.clone(), &logging_http_client)
                 .await
                 .map_err(|e| {
                     Error::custom(format!(
@@ -468,7 +466,6 @@ impl AuthProvider {
     fn build_client(
         &self,
         meta: WantedMeta,
-        logout_mode: &LogoutMode,
     ) -> KrillResult<FlexibleClient> {
         // Read from config the credentials we should use to authenticate
         // ourselves with the identity provider. These details should have
@@ -515,15 +512,7 @@ impl AuthProvider {
             redirect_uri.as_str()
         );
 
-        let mut client = client.set_redirect_uri(redirect_uri);
-
-        if let LogoutMode::OAuth2TokenRevocation { revocation_url, .. } =
-            logout_mode
-        {
-            client = client.set_revocation_uri(RevocationUrl::new(
-                revocation_url.to_owned(),
-            )?);
-        }
+        let client = client.set_redirect_uri(redirect_uri);
 
         Ok(client)
     }
@@ -557,6 +546,7 @@ impl AuthProvider {
     async fn try_revoke_token(
         &self,
         session: &Session,
+        revocation_url: String
     ) -> Result<(), RevocationErrorResponseType> {
         // Connect to the OpenID Connect provider OAuth 2.0 token revocation
         // endpoint to terminate the provider session
@@ -586,16 +576,25 @@ impl AuthProvider {
             )
         })?;
         let conn = lock_guard.deref().as_ref().unwrap(); // safe to unwrap as was tested in get_connection()
-
-        match conn
-            .client
+        let client: FlexibleClient = conn.client.clone();
+        let client = client.set_revocation_url(
+            RevocationUrl::new(
+                revocation_url,
+            ).map_err(|err| RevocationErrorResponseType::Basic(
+                    CoreErrorResponseType::Extension(
+                        format!("URL parsing failure while revoking token: {err}")
+                    )
+                )
+            )?
+         );
+        match client
             .revoke_token(token_to_revoke)
             .map_err(|err| {
                 RevocationErrorResponseType::Basic(CoreErrorResponseType::Extension(format!(
                     "Unexpected error while preparing to revoke token: {err}"
                 )))
             })?
-            .request_async(logging_http_client)
+            .request_async(&logging_http_client)
             .await
         {
             Ok(_) => Ok(()),
@@ -666,8 +665,10 @@ impl AuthProvider {
             .client
             .exchange_refresh_token(&RefreshToken::new(
                 refresh_token.to_string(),
-            ))
-            .request_async(logging_http_client)
+            )).map_err(|_err| {
+                CoreErrorResponseType::InvalidClient
+            })?
+            .request_async(&logging_http_client)
             .await;
 
         match token_response {
@@ -937,7 +938,13 @@ impl AuthProvider {
         let token_response: FlexibleTokenResponse = conn
             .client
             .exchange_code(AuthorizationCode::new(code.to_string()))
-            .request_async(logging_http_client)
+            .map_err(|err| {
+                Self::internal_error(
+                    "OpenID Connect: Configuration Error".to_string(), 
+                    Some(format!("{:?}", err))
+                )
+            })?
+            .request_async(&logging_http_client)
             .await
             .map_err(|e| {
                 let (msg, additional_info) = match e {
@@ -1060,7 +1067,7 @@ impl AuthProvider {
                     // don't require the response to be signed as the spec says
                     // signing it is optional: See: https://openid.net/specs/openid-connect-core-1_0.html#UserInfoResponse
                     .require_signed_response(false)
-                    .request_async(logging_http_client)
+                    .request_async(&logging_http_client)
                     .await
                     .map_err(|e| {
                         let msg = match e {
@@ -1813,10 +1820,12 @@ impl AuthProvider {
 
         let go_to_url = match &conn.logout_mode {
             LogoutMode::OAuth2TokenRevocation {
+                revocation_url,
                 post_revocation_redirect_url,
-                ..
             } => {
-                if let Err(err) = self.try_revoke_token(&session).await {
+                if let Err(err) = self.try_revoke_token(
+                    &session, revocation_url.clone()
+                ).await {
                     Self::internal_error(
                         format!(
                             "Error while revoking token for user '{}'",

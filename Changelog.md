@@ -4,6 +4,15 @@
 
 Breaking changes
 
+* Reverted the use of Roto API for the ROA analysis to downloading
+  RISwhois route origin data and optimized the way this data is stored in
+  memory.
+
+  Removed the `bgp_api_enabled`, `bgp_api_uri`, and `bgp_api_cache_duration`
+  fields and added `bgp_riswhois_enabled`, `bgp_riswhois_v4_uri`,
+  `bgp_riswhois_v6_uri`, and `bgp_riswhois_refresh_duration` fields, all of
+  which are optional. ([#1329]
+
 New
 
 Bug fixes
@@ -19,6 +28,7 @@ Bug fixes
 Other changes
 
 [#1326]: https://github.com/NLnetLabs/krill/pull/1326
+[#1329]: https://github.com/NLnetLabs/krill/pull/1329
 [#1331]: https://github.com/NLnetLabs/krill/pull/1331
 
 

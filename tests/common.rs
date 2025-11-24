@@ -171,9 +171,11 @@ impl TestConfig {
         let post_protocol_msg_timeout_seconds =
             ConfigDefaults::post_protocol_msg_timeout_seconds();
 
-        let bgp_api_enabled = false;
-        let bgp_api_uri = ConfigDefaults::bgp_api_uri();
-        let bgp_api_cache_duration = ConfigDefaults::bgp_api_cache_duration();
+        let bgp_riswhois_enabled = false;
+        let bgp_riswhois_v4_uri = ConfigDefaults::bgp_riswhois_v4_uri();
+        let bgp_riswhois_v6_uri = ConfigDefaults::bgp_riswhois_v6_uri();
+        let bgp_riswhois_refresh_interval
+            = ConfigDefaults::bgp_riswhois_refresh_interval();
 
         let roa_aggregate_threshold = 3;
         let roa_deaggregate_threshold = 2;
@@ -295,9 +297,10 @@ impl TestConfig {
             post_limit_rfc6492,
             rfc6492_log_dir: None,
             post_protocol_msg_timeout_seconds,
-            bgp_api_enabled,
-            bgp_api_uri,
-            bgp_api_cache_duration,
+            bgp_riswhois_enabled,
+            bgp_riswhois_v4_uri,
+            bgp_riswhois_v6_uri,
+            bgp_riswhois_refresh_interval,
             roa_aggregate_threshold,
             roa_deaggregate_threshold,
             issuance_timing,
