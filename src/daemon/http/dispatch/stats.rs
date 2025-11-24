@@ -58,6 +58,6 @@ async fn cas(
     request.check_get()?;
     let (request, _) = request.proceed_unchecked();
     let server = request.empty()?;
-    Ok(HttpResponse::json(&server.krill().cas_stats().await?))
+    Ok(HttpResponse::json(&server.krill().cas_stats()?))
 }
 
