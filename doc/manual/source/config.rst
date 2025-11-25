@@ -11,7 +11,8 @@ Krill can be tweaked using a lot of options in the config file. The config
 file can be found in `/etc/krill.conf`. Default installations of Krill set 
 three options: `admin_token`, `storage_uri`, and `log_type`. Changes to the
 config file will be applied after Krill is restarted. Most of the time you 
-will not need to change any of these configuration variables.
+will not need to change any of these configuration variables. The
+configuration file format is TOML.
 
 Options
 -------
