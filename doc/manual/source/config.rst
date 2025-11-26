@@ -484,6 +484,7 @@ default. If more than one signer is defined one must be explicitly set as the
 default. The name here refers to the signer configured in **signers**.
 
 .. code-block:: TOML
+
     default_signer = "My signer"
 
 
@@ -494,16 +495,18 @@ Only one signer may be designated as the oneoff signer. When not specified an
 OpenSSL signer will be used for this.
 
 .. code-block:: TOML
+
     default_signer = "My other signer"
 
 
 **signer_probe_retry_seconds**
 
 When initially connecting to the signer on first use after Krill startup, wait
- at least N seconds between attempts to connect and test the signer for 
- compatibility with Krill. Defaults to 30 seconds.
+at least N seconds between attempts to connect and test the signer for 
+compatibility with Krill. Defaults to 30 seconds.
 
 .. code-block:: TOML
+
     signer_probe_retry_seconds = 30
 
 
@@ -514,6 +517,7 @@ Krill supports three types of signer. See also :ref:`doc_krill_hsm`:
 * *OpenSSL*: Uses the OpenSSL library installed on the host O/S. On older
 operating systems it might be that a newer version of OpenSSL than is supported
 by the host O/S has been compiled into Krill itself and will be used instead.
+
 * *PKCS#11*: Uses a PKCS#11 v2.20 conformant library file from the filesystem.
 How the library handles the requests on behalf of Krill is library specific. A
 library such as SoftHSMv2 contains all of the code needed to handle the request
@@ -521,11 +525,13 @@ and stores generated keys on the host filesystem. Libraries provided by well
 known HSM vendors will dispatch requests to one or a cluster of hardware 
 security modules connected either physically or by network connection to the
 host on which Krill is running.
+
 * *KMIP*: Makes TLS encrypted TCP connections to an operator specified server
 running a KMIP v1.2 conformant service.
 
 
 .. code-block:: TOML
+    
     [[signers]]
     type = "OpenSSL"
     name = "Signer 1"
