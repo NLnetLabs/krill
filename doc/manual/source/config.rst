@@ -77,8 +77,8 @@ out of the box. We recommend STRONGLY that you do not use this
 option if your Krill instance is configured to bind to a public 
 IP address.
 
-*NOTE*: Even if you use "disable" here, Krill still insists on
-        using HTTPS for its service_uri. See below.
+Even if you use "disable" here, Krill still insists on using HTTPS for its 
+service_uri. See below.
 
 .. code-block:: TOML
 
@@ -215,9 +215,9 @@ number only. It is not allowed to use a Krill specific path prefix.
 Make sure to include a backslash at the end.
 
 Krill UI, API and service URIs will be derived as follows:
- <service_uri>api/v1/...                (api)
- <service_uri>rfc6492                   (for remote children)
- <service_uri>...                       (various UI resources)
+* <service_uri>api/v1/...                (api)  
+* <service_uri>rfc6492                   (for remote children)  
+* <service_uri>...                       (various UI resources)  
 
 .. code-block:: TOML
 
