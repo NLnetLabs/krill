@@ -121,8 +121,7 @@ impl User {
         };
 
         format!(
-            r#"[auth_users]\n\
-               "{id}" = {{ {attrs}password_hash="{ph}", salt="{salt}" }}"#,
+            "[auth_users]\n\n\"{id}\" = {{ {attrs}password_hash=\"{ph}\", salt=\"{salt}\" }}",
             id = self.id,
             attrs = attrs_fragment,
             ph = hex::encode(password_hash),
