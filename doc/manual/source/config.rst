@@ -514,24 +514,25 @@ compatibility with Krill. Defaults to 30 seconds.
 
 Krill supports three types of signer. See also :ref:`doc_krill_hsm`:
 
-* *OpenSSL*: Uses the OpenSSL library installed on the host O/S. On older
-operating systems it might be that a newer version of OpenSSL than is supported
-by the host O/S has been compiled into Krill itself and will be used instead.
+* | *OpenSSL*: Uses the OpenSSL library installed on the host O/S. On older
+  | operating systems it might be that a newer version of OpenSSL than is 
+  | supported by the host O/S has been compiled into Krill itself and will be 
+  | used instead.
 
-* *PKCS#11*: Uses a PKCS#11 v2.20 conformant library file from the filesystem.
-How the library handles the requests on behalf of Krill is library specific. A
-library such as SoftHSMv2 contains all of the code needed to handle the request
-and stores generated keys on the host filesystem. Libraries provided by well
-known HSM vendors will dispatch requests to one or a cluster of hardware 
-security modules connected either physically or by network connection to the
-host on which Krill is running.
+* | *PKCS#11*: Uses a PKCS#11 v2.20 conformant library file from the filesystem.
+  | How the library handles the requests on behalf of Krill is library specific. A
+  | library such as SoftHSMv2 contains all of the code needed to handle the request
+  | and stores generated keys on the host filesystem. Libraries provided by well
+  | known HSM vendors will dispatch requests to one or a cluster of hardware 
+  | security modules connected either physically or by network connection to the
+  | host on which Krill is running.
 
-* *KMIP*: Makes TLS encrypted TCP connections to an operator specified server
-running a KMIP v1.2 conformant service.
+* | *KMIP*: Makes TLS encrypted TCP connections to an operator specified server
+  | running a KMIP v1.2 conformant service.
 
 
 .. code-block:: TOML
-    
+
     [[signers]]
     type = "OpenSSL"
     name = "Signer 1"
@@ -554,9 +555,7 @@ running a KMIP v1.2 conformant service.
     lib_path = "/usr/local/lib/softhsm/libsofthsm2.so"
     user_pin = "xxxx"
     slot = 0x12a9f8f7
-    public_key_attributes = {
-    CKA_PRIVATE = false
-    }
+    public_key_attributes = { CKA_PRIVATE = false }
 
     [[signers]]
     type = "KMIP"
