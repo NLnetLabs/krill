@@ -168,7 +168,7 @@ of RPKI objects. By default it maps to $storage_uri/repo.
 
 Whether this Krill instance should have support to run as a Trust Anchor (TA).
 By default false. You probably don't want to touch this, but if you do, see 
-:ref:`_doc_krill_trust_anchor`.
+:ref:`doc_krill_trust_anchor`.
 
 .. code-block:: TOML
 
@@ -179,7 +179,7 @@ By default false. You probably don't want to touch this, but if you do, see
 
 Whether this Krill instance can initialise and send Trust Anchor (TA) signer
 commands. By default false. You probably don't want to touch this, but if you 
-do, see :ref:`_doc_krill_trust_anchor`.
+do, see :ref:`doc_krill_trust_anchor`.
 
 .. code-block:: TOML
 
@@ -215,6 +215,7 @@ number only. It is not allowed to use a Krill specific path prefix.
 Make sure to include a backslash at the end.
 
 Krill UI, API and service URIs will be derived as follows:
+
 * <service_uri>api/v1/...                (api)  
 * <service_uri>rfc6492                   (for remote children)  
 * <service_uri>...                       (various UI resources)  
@@ -314,7 +315,7 @@ Use an OpenID connect provider for authentication, see **auth_openidconnect**.
 If **auth_type** is set *config-file*, this provides the list of users that
 can authenticate with Krill. These users can be generated using 
 `krillc config user`. The role matches that of **auth_roles**. See also
-:ref:`_doc_krill_multi_user_config_file_provider`.
+:ref:`doc_krill_multi_user_config_file_provider`.
 
 .. code-block:: TOML
 
@@ -327,7 +328,7 @@ can authenticate with Krill. These users can be generated using
 
 If **auth_type** is set *openid-connect*, this provides the configuration for
 OpenID connect that can then be used for connections. You will want to look at
-:ref:`_doc_krill_multi_user_openid_connect_provider` for details.
+:ref:`doc_krill_multi_user_openid_connect_provider` for details.
 
 +---------------------+-------------+--------------------------------------------+
 | Field               | Mandatory?  | Notes                                      |
@@ -409,8 +410,8 @@ OpenID connect that can then be used for connections. You will want to look at
     client_id = "..."
     client_secret = "..."
     insecure = false
-    extra_login_scopes = ["...", ...]
-    extra_login_params = ["...", ...]
+    extra_login_scopes = ["..."]
+    extra_login_params = ["..."]
     prompt_for_login = false
     logout_url = "..."
 
@@ -477,14 +478,88 @@ These are the fields for a role:
 
 **default_signer**
 
+The signer will be used to generate new long-term key pairs. Only one signer 
+may be designated as the default. If only one signer is defined it will be the 
+default. If more than one signer is defined one must be explicitly set as the 
+default. The name here refers to the signer configured in **signers**.
+
+.. code-block:: TOML
+    default_signer = "My signer"
+
 
 **one_off_signer**
+
+The signer will be used to generate, sign with and destroy one-off key pairs. 
+Only one signer may be designated as the oneoff signer. When not specified an 
+OpenSSL signer will be used for this.
+
+.. code-block:: TOML
+    default_signer = "My other signer"
 
 
 **signer_probe_retry_seconds**
 
+When initially connecting to the signer on first use after Krill startup, wait
+ at least N seconds between attempts to connect and test the signer for 
+ compatibility with Krill. Defaults to 30 seconds.
+
+.. code-block:: TOML
+    signer_probe_retry_seconds = 30
+
 
 **signers**
+
+Krill supports three types of signer. See also :ref:`doc_krill_hsm`:
+
+* *OpenSSL*: Uses the OpenSSL library installed on the host O/S. On older
+operating systems it might be that a newer version of OpenSSL than is supported
+by the host O/S has been compiled into Krill itself and will be used instead.
+* *PKCS#11*: Uses a PKCS#11 v2.20 conformant library file from the filesystem.
+How the library handles the requests on behalf of Krill is library specific. A
+library such as SoftHSMv2 contains all of the code needed to handle the request
+and stores generated keys on the host filesystem. Libraries provided by well
+known HSM vendors will dispatch requests to one or a cluster of hardware 
+security modules connected either physically or by network connection to the
+host on which Krill is running.
+* *KMIP*: Makes TLS encrypted TCP connections to an operator specified server
+running a KMIP v1.2 conformant service.
+
+
+.. code-block:: TOML
+    [[signers]]
+    type = "OpenSSL"
+    name = "Signer 1"
+
+    [[signers]]
+    type = "OpenSSL"
+    name = "Signer 2"
+    keys_path = "/tmp/keys"
+
+    [[signers]]
+    type = "PKCS#11"
+    name = "Kryptus via PKCS#11"
+    lib_path = "/usr/local/lib/kryptus/libknetpkcs11_64/libkNETPKCS11.so"
+    user_pin = "xxxxxx"
+    slot = 313129207
+
+    [[signers]]
+    type = "PKCS#11"
+    name = "SoftHSMv2 via PKCS#11"
+    lib_path = "/usr/local/lib/softhsm/libsofthsm2.so"
+    user_pin = "xxxx"
+    slot = 0x12a9f8f7
+    public_key_attributes = {
+    CKA_PRIVATE = false
+    }
+
+    [[signers]]
+    type = "KMIP"
+    name = "Kryptus via KMIP"
+    host = "my.hsm.example.com"
+    port = 5696
+    server_ca_cert_path = "/path/to/some/ca.pem"
+    username = "user1"
+    password = "xxxxxx"
 
 
 **ca_refresh_seconds**
@@ -518,15 +593,6 @@ These are the fields for a role:
 
 
 **rfc6492_log_dir**
-
-
-**bgp_api_enabled**
-
-
-**bgp_api_uri**
-
-
-**bgp_api_cache_seconds**
 
 
 **roa_aggregate_threshold**
