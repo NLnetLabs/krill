@@ -12,7 +12,10 @@ file can be found in `/etc/krill.conf`. Default installations of Krill set
 three options: `admin_token`, `storage_uri`, and `log_type`. Changes to the
 config file will be applied after Krill is restarted. Most of the time you 
 will not need to change any of these configuration variables. The
-configuration file format is TOML.
+configuration file format is TOML. In short, it consists of a sequence of 
+key-value pairs, each on its own line. Strings are to be enclosed in double 
+quotes. Lists can be given by enclosing a comma-separated list of values in 
+square brackets.
 
 **Please note:** square brackets in TOML indicate a *table*. If you add e.g.
 `[auth_users]` to your configuration, all options below it will be interpreted
@@ -306,7 +309,6 @@ Use an OpenID connect provider for authentication, see **auth_openidconnect**.
     auth_type = "admin-token"
 
 
-
 **auth_users**
 
 If **auth_type** is set *config-file*, this provides the list of users that
@@ -396,7 +398,7 @@ OpenID connect that can then be used for connections. You will want to look at
 | role_claims         | No          | A list for extracting the user role from   |
 |                     |             | claim values. Typically provided as TOML   |
 |                     |             | array tables. If missing, the "role"       |
-|                     |             | claim is used as the user’s role.          |
+|                     |             | claim is used as the user's role.          |
 +---------------------+-------------+--------------------------------------------+
 
 
@@ -412,7 +414,65 @@ OpenID connect that can then be used for connections. You will want to look at
     prompt_for_login = false
     logout_url = "..."
 
+    [[auth_openidconnect.id_claims]]
+    claim = "email"
+
+    [[auth_openidconnect.role_claims]]
+    claim = "email"
+    match = "^.+@example\\.org$"
+    subst = "admin"
+
+
 **auth_roles**
+
+Auth roles determine what permissions a role can has. Three are defined by
+default:
+*admin*: Allows full acess to everything
+*readonly*: Allows list and read access to everything.
+*readwrite*: Allows read, create, update, and delete access to everything.
+
+These are the fields for a role:
+
++--------------+-------------+--------------------------------------------------+
+| Field        | Mandatory?  | Notes                                            |
++==============+=============+==================================================+
+| permissions  | Yes         | A list of permissions to be granted to the role. |
+|              |             | The following permissions exist:                 |
+|              |             |                                                  |
+|              |             |   login                                          |
+|              |             |                                                  |
+|              |             | Access to the publication server:                |
+|              |             |                                                  |
+|              |             |   pub-admin, pub-list, pub-read, pub-create,     |
+|              |             |   pub-delete                                     |
+|              |             |                                                  |
+|              |             | Access to CAs:                                   |
+|              |             |                                                  |
+|              |             |   ca-list, ca-read, ca-create, ca-update,        |
+|              |             |   ca-admin, ca-delete                            |
+|              |             |                                                  |
+|              |             | Access to the ROAs of a CA:                      |
+|              |             |                                                  |
+|              |             |   routes-read, routes-update, routes-analysis    |
+|              |             |                                                  |
+|              |             | Access to the ASPAs of a CA:                     |
+|              |             |                                                  |
+|              |             |   aspas-read, aspas-update, aspas-analysis       |
+|              |             |                                                  |
+|              |             | Access to the router keys of a CA:               |
+|              |             |                                                  |
+|              |             |   bgpsec-read, bgpsec-update                     |
++--------------+-------------+--------------------------------------------------+
+| cas          | No          | A list of CA handles that the role should grant  |
+|              |             | access to. If missing, access is granted to all  |
+|              |             | CAs.                                             |
++--------------+-------------+--------------------------------------------------+
+
+
+.. code-block:: TOML
+
+    [auth_roles]
+    "bgpsec" = { permissions = ["bgpsec-read", "bgpsec-update"], cas = ["myca"] }
 
 
 **default_signer**
