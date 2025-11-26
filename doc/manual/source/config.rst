@@ -14,6 +14,13 @@ config file will be applied after Krill is restarted. Most of the time you
 will not need to change any of these configuration variables. The
 configuration file format is TOML.
 
+**Please note:** square brackets in TOML indicate a *table*. If you add e.g.
+`[auth_users]` to your configuration, all options below it will be interpreted
+as part of *auth_users* until another table is started. Any option that is not
+part of a table (which is most options) should be defined before the first
+table. Apart from that options are not dependent on their order.
+
+
 Options
 -------
 
@@ -45,7 +52,7 @@ addresses.
 
 Specify the HTTPS mode. Krill supports three modes:
 
-"generate" (DEFAULT)
+"generate" (default)
 
 Krill will generate a key pair and create a self-signed certificate
 if no previous key pair or certificate is found. File names used
@@ -187,30 +194,223 @@ The path to the PID file for Krill. Defaults to $storage_uri/krill.pid
 
 **service_uri**
 
+Specify the base public service URI hostname and port.
+
+The default service URI is set to https://localhost:3000/. This is fine
+for setups where you use Krill to run your own CA only. You do not need to
+set this to enable remote access to the UI or API (e.g. for using the CLI
+remotely). Simply setting up a proxy suffices for this.
+
+However, if you are serving as a parent CA or Publication Server that
+needs to be accessible by remote CAs, then you will need to tell your
+Krill instance what its public (base) URI will be, so that it can include
+the proper URIs in responses to those CAs. HTTPS is required for this.
+
+At present this MUST be an https URI with a hostname and optional port
+number only. It is not allowed to use a Krill specific path prefix.
+
+Make sure to include a backslash at the end.
+
+Krill UI, API and service URIs will be derived as follows:
+ <service_uri>api/v1/...                (api)
+ <service_uri>rfc6492                   (for remote children)
+ <service_uri>...                       (various UI resources)
+
+.. code-block:: TOML
+
+    service_uri = "https://localhost:3000/"
+
 
 **log_level**
+
+The maximum log level to for which to log messages. Defaults to warn.
+Options are "off", "error", "warn", "info", "debug", and "trace". We advise
+against using "debug" or "trace" in production.
+
+.. code-block:: TOML
+
+    log_level = "warn"
 
 
 **log_type**
 
+Where to log to. One of "stderr" for stderr, "syslog" for syslog, or "file" 
+for a file. If "file" is given, the "log_file" field needs to be given too.
+Defaults to syslog on Krill installations.
+
+.. code-block:: TOML
+
+    log_type = "syslog"
+
 
 **log_file**
+
+The path to the file to log to if file logging is used. This should be an 
+absolute path. If the path is relative, it is relative to the current working 
+directory from which the binary is executed.
+
+.. code-block:: TOML
+
+    log_file = "/var/lib/krill/krill.log"
 
 
 **syslog_facility**
 
+The syslog facility to log to if syslog logging is used. Defaults to "daemon".
+
+.. code-block:: TOML
+
+    syslog_facility = "daemon"
+
 
 **admin_token**
+
+Define an admin token that can be used to interact with the API. This token is
+used to access the Krill API and the Krill server when not using UNIX sockets.
+
+If you do not specify a value here, the server will insist that you
+provide a token as an environment variable with the key
+"KRILL_ADMIN_TOKEN".
+
+Krill installations come with a randomly generated 32 character string as a 
+token. Krill does not enforce any password requirements but do think twice
+before using "1234" :-)
+
+.. code-block:: TOML
+
+    admin_token = "correct-horse-battery-staple"
 
 
 **auth_type**
 
+Which kind of authentication to use, primarily for the web interface. The
+**admin_token** will always work through the API.
+
+Currently there are three options:
+
+"admin-token" (default)
+
+Use the admin_token only.
+
+"config-file"
+
+Specify the users and their permissions in the **auth_users** in the config 
+file. 
+
+"openid-connect"
+
+Use an OpenID connect provider for authentication, see **auth_openidconnect**.
+
+.. code-block:: TOML
+
+    auth_type = "admin-token"
+
+
 
 **auth_users**
+
+If **auth_type** is set *config-file*, this provides the list of users that
+can authenticate with Krill. These users can be generated using 
+`krillc config user`. The role matches that of **auth_roles**. See also
+:ref:`_doc_krill_multi_user_config_file_provider`.
+
+.. code-block:: TOML
+
+    [auth_users]
+    "joe@example.com" = { role="admin", password_hash="...", salt="..." }
+    "jill@example.com" = { role="read-ca1", password_hash="...", salt="..." }
 
 
 **auth_openidconnect**
 
+If **auth_type** is set *openid-connect*, this provides the configuration for
+OpenID connect that can then be used for connections. You will want to look at
+:ref:`_doc_krill_multi_user_openid_connect_provider` for details.
+
++---------------------+-------------+--------------------------------------------+
+| Field               | Mandatory?  | Notes                                      |
++=====================+=============+============================================+
+| issuer_url          | Yes         | Provided by your OpenID Connect provider.  |
+|                     |             | This is the URL of the provider discovery  |
+|                     |             | endpoint. "/.well-known/openid_            |
+|                     |             | configuration" will be appended if not     |
+|                     |             | present. Krill will fetch the OpenID       |
+|                     |             | Connect Discovery 1.0 compliant JSON when  |
+|                     |             | starting. Krill will fail to start if the  |
+|                     |             | URL does not match the "issuer" value in   |
+|                     |             | the discovery response or if the endpoint  |
+|                     |             | cannot be contacted.                       |
++---------------------+-------------+--------------------------------------------+
+| client_id           | Yes         | Provided by your OpenID Connect provider.  |
++---------------------+-------------+--------------------------------------------+
+| client_secret       | Yes         | Provided by your OpenID Connect provider.  |
++---------------------+-------------+--------------------------------------------+
+| insecure            | No          | Defaults to false. Setting to true         |
+|                     |             | disables verification of signatures from   |
+|                     |             | the provider token ID endpoint. Setting    |
+|                     |             | this to true may allow attackers to modify |
+|                     |             | provider responses undetected. Strongly    |
+|                     |             | discouraged.                               |
++---------------------+-------------+--------------------------------------------+
+| extra_login_scopes  | No          | Provider specific. Defaults to "". A       |
+|                     |             | comma-separated list of OAuth 2.0 scopes   |
+|                     |             | passed when directing a user to login.     |
+|                     |             | Scopes request additional user details.    |
+|                     |             | "profile" commonly enables email and other |
+|                     |             | personal details. If the provider supports |
+|                     |             | the "email" scope, it is requested         |
+|                     |             | automatically.                             |
++---------------------+-------------+--------------------------------------------+
+| extra_login_params  | No          | A { key=value, ... } map of extra HTTP     |
+|                     |             | query parameters sent with the             |
+|                     |             | authorization request. Supported params    |
+|                     |             | vary by provider. prompt=login is sent     |
+|                     |             | automatically unless disabled via          |
+|                     |             | prompt_for_login. May also be specified as |
+|                     |             | a TOML table. Example:                     |
+|                     |             |                                            |
+|                     |             |   [openid_connect.extra_login_params]      |
+|                     |             |   display=popup                            |
+|                     |             |   ui_locales="fr-CA fr en"                 |
++---------------------+-------------+--------------------------------------------+
+| prompt_for_login    | No          | Defaults to true. Setting to false         |
+|                     |             | disables sending prompt=login. Allows      |
+|                     |             | specifying another prompt value through    |
+|                     |             | extra_login_params. Supported values:      |
+|                     |             | "none", "login", "consent", "              |
+|                     |             | select_account".                           |
++---------------------+-------------+--------------------------------------------+
+| logout_url          | No          | A URL to redirect the user to for logout.  |
+|                     |             | Usually unnecessary if discovery metadata  |
+|                     |             | provides logout details. Otherwise must be |
+|                     |             | specified. If discovery shows no supported |
+|                     |             | logout mechanism and no logout_url is set, |
+|                     |             | Krill redirects users to the UI index page |
+|                     |             | to restart login.                          |
++---------------------+-------------+--------------------------------------------+
+| id_claims           | No          | A list for extracting the user ID from     |
+|                     |             | claim values. Typically provided as TOML   |
+|                     |             | array tables. If missing, the "email"      |
+|                     |             | claim is used as the user ID.              |
++---------------------+-------------+--------------------------------------------+
+| role_claims         | No          | A list for extracting the user role from   |
+|                     |             | claim values. Typically provided as TOML   |
+|                     |             | array tables. If missing, the "role"       |
+|                     |             | claim is used as the user’s role.          |
++---------------------+-------------+--------------------------------------------+
+
+
+.. code-block:: TOML
+
+    [auth_openidconnect]
+    issuer_url = "..."
+    client_id = "..."
+    client_secret = "..."
+    insecure = false
+    extra_login_scopes = ["...", ...]
+    extra_login_params = ["...", ...]
+    prompt_for_login = false
+    logout_url = "..."
 
 **auth_roles**
 

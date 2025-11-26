@@ -111,7 +111,6 @@ line and through an API.
    :caption: Reference
    :name: toc-reference
 
-   config
    upgrade
    manage-children
    building-from-source
