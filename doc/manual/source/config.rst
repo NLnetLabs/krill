@@ -886,20 +886,76 @@ Do not change this unless you know what you are doing.
 
 **rrdp_delta_files_min_nr**
 
+Minimum number of RRDP delta files to keep. By default 5.
+
+.. code-block:: toml
+
+    rrdp_delta_files_min_nr = 5
+
 
 **rrdp_delta_files_min_seconds**
+
+The minimum number of RRDP delta files to keep in seconds, so that a
+relying party can always fetch the deltas rather than having to fetch
+the snapshot.
+
+By default set to 20 minutes.
+
+.. code-block:: toml
+
+    rrdp_delta_files_min_seconds = 1200
 
 
 **rrdp_delta_files_max_nr**
 
+The maximum number of RRDP deltas to keep. Older deltas will be removed when
+the number of deltas exceeds this number.
+
+By default set to 50.
+
+.. code-block:: toml
+
+    rrdp_delta_files_max_nr = 50
+
 
 **rrdp_delta_files_max_seconds**
+
+The maximum number of seconds an RRDP delta will be available for. If it is 
+older than this it will be removed. 
+
+By default set to 2 hours.
+
+.. code-block:: toml
+
+    rrdp_delta_files_max_seconds = 7200
 
 
 **rrdp_delta_interval_min_seconds**
 
+By default every change gets its own delta. This value can reduce the number
+of deltas generated and bundle deltas within an interval. 
+
+The default value is 0.
+
+.. code-block:: toml
+
+    rrdp_delta_interval_min_seconds = 0
+
 
 **rrdp_files_archive**
+
+Archive old snapshot and delta files. They can then be backed up and/deleted 
+at the repository operator's discretion. This may be particularly useful for
+audit or research.
+
+If set to true files will be archived in a directory under 
+`$storage_uri/repo/archive`.
+
+By default false.
+
+.. code-block:: toml
+
+    rrdp_files_archive = false
 
 
 ..
@@ -911,14 +967,49 @@ Do not change this unless you know what you are doing.
 
 **metrics_hide_ca_details**
 
+There are a number of metrics which use a label like {ca="ca_name"}. This
+setting disables all of them.
+
+By default false.
+
+.. code-block::
+
+    metrics_hide_ca_details = false
+
 
 **metrics_hide_child_details**
+
+Krill shows metrics on child CAs for each CA. This setting hides those if 
+**metrics_hide_ca_details** is false.
+
+By default false.
+
+.. code-block::
+
+    metrics_hide_child_details = false
 
 
 **metrics_hide_publisher_details**
 
+Krill shows metrics for every publisher. This setting hides those.
+
+By default false.
+
+.. code-block::
+
+    metrics_hide_publisher_details = false
+
 
 **metrics_hide_roa_details**
+
+Krill shows metrics on ROAs in relation to known BGP announcements for each CA. 
+This setting hides those if **metrics_hide_ca_details** is false.
+
+By default false.
+
+.. code-block::
+
+    metrics_hide_roa_details = false
 
 
 ..
@@ -927,40 +1018,109 @@ Do not change this unless you know what you are doing.
 
 **testbed**
 
+All these settings concern the Krill testbed. See :ref:`doc_krill_testbed` for
+more about how to run the Krill testbed.
+
 *ta_aia*
 
+Set the rsync location for your testbed trust anchor certificate.
+
+You need to configure an rsync server to expose another module for the
+TA certificate. Don't use the module for the repository as its
+content will be overwritten.
+
+Manually retrieve the TA certificate from Krill and copy it over.
+You can download it at https://<yourkrill>/ta/ta.cer
 
 *ta_uri*
 
+Set the HTTPS location for your testbed trust anchor certificate.
+
+Manually retrieve the TA certificate from Krill and copy it over.
+You can download it at https://<yourkrill>/ta/ta.cer
 
 *rrdp_base_uri*
 
+Set the base RRDP uri for the testbed repository server.
+
+It is highly recommended to use a proxy in front of Krill.
+
+To expose the RRDP files you can actually proxy back to your testbed
+Krill server (https://<yourkrill>/rrdp/), or you can expose the
+files as they are written to disk ($storage_uri/repo/rrdp/)
+
+Set *rrdp_base_uri* to your public proxy hostname and path.
 
 *rsync_jail*
+
+Set the base rsync URI (jail) for the testbed repository server.
+
+Make sure that you have an rsyncd running and a module which is
+configured to expose the rsync repository files. By default these
+files would be saved to: $storage_uri/repo/rsync/current/
+
+.. code-block::
+
+    [testbed]
+    ta_aia = "rsync://testbed.example.com/ta/ta.cer"
+    ta_uri = "https://testbed.example.com/ta/ta.cer"
+    rrdp_base_uri = "https://testbed.example.com/rrdp/"
+    rsync_jail = "rsync://testbed.example.com/repo/"
 
 
 **benchmark**
 
+These settings can be used for benchmarking Krill. Do not use in production.
+
 *cas*
 
+The number of CAs to create. 
 
 *ca_roas*
+
+The number of ROAs to create per CA.
+
+.. code-block::
+
+    [benchmark]
+    cas = 1337
+    ca_roas = 9001
 
 
 **ta_timing**
 
+All these settings concert the Trust Anchor timing. See 
+:ref:`doc_krill_trust_anchor` for more about running Krill as a Trust Anchor.
+
 *certificate_validity_years*
 
+How long the TA certificate is valid for. By default 100 years.
 
 *issued_certificate_validity_weeks*
 
+How long the certificate issued by the TA is valid in weeks. By default 1 year
+(52 weeks).
 
 *issued_certificate_reissue_weeks_before*
 
+How many weeks before the certificate issued by the TA expiration date it
+should be renewed. By default 26.
 
 *mft_next_update_weeks*
 
+How many weeks the manifest issued by the certificate issued by the TA is
+valid. By default 12 weeks.
 
 *signed_message_validity_days*
 
+How many days a signed message by the proxy for the signer is valid. By
+default two weeks (14 days).
 
+.. code-block:: toml
+
+    [ta_timing]
+    certificate_validity_years = 100
+    issued_certificate_validity_weeks = 52
+    issued_certificate_reissue_weeks_before = 26
+    mft_next_update_weeks = 12
+    signed_message_validity_days = 14
