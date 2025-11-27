@@ -79,7 +79,6 @@ line and through an API.
 
    parent-interactions
    cli
-   config
    multi-user
    monitoring
 
@@ -112,6 +111,7 @@ line and through an API.
    :name: toc-reference
 
    upgrade
+   config
    manage-children
    building-from-source
    docker
