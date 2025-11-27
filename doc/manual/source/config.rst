@@ -36,7 +36,7 @@ or Apache if you must make your Krill instance accessible remotely.
 
 Can be set to one or more IP addresses, e.g.:
 
-.. code-block:: TOML
+.. code-block:: toml
 
     ip = "127.0.0.1"
     ip = ["127.0.0.1", "::1"]
@@ -46,7 +46,7 @@ Can be set to one or more IP addresses, e.g.:
 Port number Krill listens on, by default 3000. This applies to all IP 
 addresses.
 
-.. code-block:: TOML
+.. code-block:: toml
 
     port = 3000
 
@@ -80,7 +80,7 @@ IP address.
 Even if you use "disable" here, Krill still insists on using HTTPS for its 
 service_uri. See below.
 
-.. code-block:: TOML
+.. code-block:: toml
 
     https_mode = "generate"
 
@@ -91,7 +91,7 @@ Whether UNIX socket support is enabled. By default this is true, unless you
 are on a non-UNIX system. This is the default way krillc communicates with
 Krill. 
 
-.. code-block:: TOML
+.. code-block:: toml
 
     unix_socket_enabled = true
 
@@ -102,7 +102,7 @@ The path to the UNIX socket. The default path is /run/krill/krill.sock. If not
 started using the systemd service, this path may require root access. This
 path is also used by default by krillc. 
 
-.. code-block:: TOML
+.. code-block:: toml
 
     unix_socket = "/run/krill/krill.sock"
 
@@ -112,9 +112,9 @@ path is also used by default by krillc.
 The mapping of UNIX users to Krill roles. The default maps the root user to
 admin. Can use any role defined in Krill, see also **auth_roles**.
 
-.. code-block:: TOML
+.. code-block:: toml
 
-    unix_users = {"root": "admin"}
+    unix_users = {root = "admin"}
 
 
 **storage_uri**
@@ -123,7 +123,7 @@ The path to where Krill stores its data. Must be set. Please ensure only one
 Krill instance uses this path. This path should be absolute. The default
 for Krill installations is /var/lib/krill/data/
 
-.. code-block:: TOML
+.. code-block:: toml
 
     storage_uri = "/var/lib/krill/data/"
 
@@ -139,7 +139,7 @@ instances with many CAs or a lot of historical may choose
 to turn this off to save memory. Note that memory will still
 be used temporarily in case the history API is accessed.
 
-.. code-block:: TOML
+.. code-block:: toml
 
     use_history_cache = true
 
@@ -149,7 +149,7 @@ be used temporarily in case the history API is accessed.
 Specify the location of the TLS directory for Krill's built-in HTTPS server. 
 By default it maps to $storage_uri/ssl.
 
-.. code-block:: TOML
+.. code-block:: toml
 
     tls_keys_dir = "/etc/ssl/krill"
 
@@ -159,7 +159,7 @@ By default it maps to $storage_uri/ssl.
 This is the directory used by the Krill Publication Server for the publication 
 of RPKI objects. By default it maps to $storage_uri/repo.
 
-.. code-block:: TOML
+.. code-block:: toml
 
     repo_dir = "/mnt/share/repo"
 
@@ -170,7 +170,7 @@ Whether this Krill instance should have support to run as a Trust Anchor (TA).
 By default false. You probably don't want to touch this, but if you do, see 
 :ref:`doc_krill_trust_anchor`.
 
-.. code-block:: TOML
+.. code-block:: toml
 
     ta_support_enabled = false
 
@@ -181,7 +181,7 @@ Whether this Krill instance can initialise and send Trust Anchor (TA) signer
 commands. By default false. You probably don't want to touch this, but if you 
 do, see :ref:`doc_krill_trust_anchor`.
 
-.. code-block:: TOML
+.. code-block:: toml
 
     ta_signer_enabled = false
 
@@ -190,7 +190,7 @@ do, see :ref:`doc_krill_trust_anchor`.
 
 The path to the PID file for Krill. Defaults to $storage_uri/krill.pid
 
-.. code-block:: TOML
+.. code-block:: toml
 
     pid_file = "/run/krill/krill.pid"
 
@@ -216,11 +216,11 @@ Make sure to include a backslash at the end.
 
 Krill UI, API and service URIs will be derived as follows:
 
-* <service_uri>api/v1/...                (api)  
+* <service_uri>api/v1/                   (api)  
 * <service_uri>rfc6492                   (for remote children)  
-* <service_uri>...                       (various UI resources)  
+* <service_uri>                          (various UI resources)  
 
-.. code-block:: TOML
+.. code-block:: toml
 
     service_uri = "https://localhost:3000/"
 
@@ -231,7 +231,7 @@ The maximum log level to for which to log messages. Defaults to warn.
 Options are "off", "error", "warn", "info", "debug", and "trace". We advise
 against using "debug" or "trace" in production.
 
-.. code-block:: TOML
+.. code-block:: toml
 
     log_level = "warn"
 
@@ -242,7 +242,7 @@ Where to log to. One of "stderr" for stderr, "syslog" for syslog, or "file"
 for a file. If "file" is given, the "log_file" field needs to be given too.
 Defaults to syslog on Krill installations.
 
-.. code-block:: TOML
+.. code-block:: toml
 
     log_type = "syslog"
 
@@ -253,7 +253,7 @@ The path to the file to log to if file logging is used. This should be an
 absolute path. If the path is relative, it is relative to the current working 
 directory from which the binary is executed.
 
-.. code-block:: TOML
+.. code-block:: toml
 
     log_file = "/var/lib/krill/krill.log"
 
@@ -262,7 +262,7 @@ directory from which the binary is executed.
 
 The syslog facility to log to if syslog logging is used. Defaults to "daemon".
 
-.. code-block:: TOML
+.. code-block:: toml
 
     syslog_facility = "daemon"
 
@@ -280,7 +280,7 @@ Krill installations come with a randomly generated 32 character string as a
 token. Krill does not enforce any password requirements but do think twice
 before using "1234" :-)
 
-.. code-block:: TOML
+.. code-block:: toml
 
     admin_token = "correct-horse-battery-staple"
 
@@ -305,7 +305,7 @@ file.
 
 Use an OpenID connect provider for authentication, see **auth_openidconnect**.
 
-.. code-block:: TOML
+.. code-block:: toml
 
     auth_type = "admin-token"
 
@@ -317,7 +317,7 @@ can authenticate with Krill. These users can be generated using
 `krillc config user`. The role matches that of **auth_roles**. See also
 :ref:`doc_krill_multi_user_config_file_provider`.
 
-.. code-block:: TOML
+.. code-block:: toml
 
     [auth_users]
     "joe@example.com" = { role="admin", password_hash="...", salt="..." }
@@ -326,84 +326,88 @@ can authenticate with Krill. These users can be generated using
 
 **auth_openidconnect**
 
-If **auth_type** is set *openid-connect*, this provides the configuration for
+If **auth_type** is set to "openid-connect", this provides the configuration for
 OpenID connect that can then be used for connections. You will want to look at
 :ref:`doc_krill_multi_user_openid_connect_provider` for details.
 
-+---------------------+-------------+--------------------------------------------+
-| Field               | Mandatory?  | Notes                                      |
-+=====================+=============+============================================+
-| issuer_url          | Yes         | Provided by your OpenID Connect provider.  |
-|                     |             | This is the URL of the provider discovery  |
-|                     |             | endpoint. "/.well-known/openid_            |
-|                     |             | configuration" will be appended if not     |
-|                     |             | present. Krill will fetch the OpenID       |
-|                     |             | Connect Discovery 1.0 compliant JSON when  |
-|                     |             | starting. Krill will fail to start if the  |
-|                     |             | URL does not match the "issuer" value in   |
-|                     |             | the discovery response or if the endpoint  |
-|                     |             | cannot be contacted.                       |
-+---------------------+-------------+--------------------------------------------+
-| client_id           | Yes         | Provided by your OpenID Connect provider.  |
-+---------------------+-------------+--------------------------------------------+
-| client_secret       | Yes         | Provided by your OpenID Connect provider.  |
-+---------------------+-------------+--------------------------------------------+
-| insecure            | No          | Defaults to false. Setting to true         |
-|                     |             | disables verification of signatures from   |
-|                     |             | the provider token ID endpoint. Setting    |
-|                     |             | this to true may allow attackers to modify |
-|                     |             | provider responses undetected. Strongly    |
-|                     |             | discouraged.                               |
-+---------------------+-------------+--------------------------------------------+
-| extra_login_scopes  | No          | Provider specific. Defaults to "". A       |
-|                     |             | comma-separated list of OAuth 2.0 scopes   |
-|                     |             | passed when directing a user to login.     |
-|                     |             | Scopes request additional user details.    |
-|                     |             | "profile" commonly enables email and other |
-|                     |             | personal details. If the provider supports |
-|                     |             | the "email" scope, it is requested         |
-|                     |             | automatically.                             |
-+---------------------+-------------+--------------------------------------------+
-| extra_login_params  | No          | A { key=value, ... } map of extra HTTP     |
-|                     |             | query parameters sent with the             |
-|                     |             | authorization request. Supported params    |
-|                     |             | vary by provider. prompt=login is sent     |
-|                     |             | automatically unless disabled via          |
-|                     |             | prompt_for_login. May also be specified as |
-|                     |             | a TOML table. Example:                     |
-|                     |             |                                            |
-|                     |             |   [openid_connect.extra_login_params]      |
-|                     |             |   display=popup                            |
-|                     |             |   ui_locales="fr-CA fr en"                 |
-+---------------------+-------------+--------------------------------------------+
-| prompt_for_login    | No          | Defaults to true. Setting to false         |
-|                     |             | disables sending prompt=login. Allows      |
-|                     |             | specifying another prompt value through    |
-|                     |             | extra_login_params. Supported values:      |
-|                     |             | "none", "login", "consent", "              |
-|                     |             | select_account".                           |
-+---------------------+-------------+--------------------------------------------+
-| logout_url          | No          | A URL to redirect the user to for logout.  |
-|                     |             | Usually unnecessary if discovery metadata  |
-|                     |             | provides logout details. Otherwise must be |
-|                     |             | specified. If discovery shows no supported |
-|                     |             | logout mechanism and no logout_url is set, |
-|                     |             | Krill redirects users to the UI index page |
-|                     |             | to restart login.                          |
-+---------------------+-------------+--------------------------------------------+
-| id_claims           | No          | A list for extracting the user ID from     |
-|                     |             | claim values. Typically provided as TOML   |
-|                     |             | array tables. If missing, the "email"      |
-|                     |             | claim is used as the user ID.              |
-+---------------------+-------------+--------------------------------------------+
-| role_claims         | No          | A list for extracting the user role from   |
-|                     |             | claim values. Typically provided as TOML   |
-|                     |             | array tables. If missing, the "role"       |
-|                     |             | claim is used as the user's role.          |
-+---------------------+-------------+--------------------------------------------+
+It provides the following fields:
+
+*issuer_url* (Mandatory)
+
+Provided by your OpenID Connect provider. This is the URL of the provider
+discovery endpoint. "/.well-known/openid_configuration" will be appended if not
+present. Krill will fetch the OpenID Connect Discovery 1.0 compliant JSON when
+starting. Krill will fail to start if the URL does not match the "issuer" value
+in the discovery response or if the endpoint cannot be contacted.
 
 
-.. code-block:: TOML
+*client_id* (Mandatory)
+
+Provided by your OpenID Connect provider.
+
+
+*client_secret* (Mandatory)
+
+Provided by your OpenID Connect provider.
+
+
+*insecure*
+
+Defaults to false. Setting to true disables verification of signatures from the
+provider token ID endpoint. Setting this to true may allow attackers to modify
+provider responses undetected. Strongly discouraged.
+
+
+*extra_login_scopes*
+
+Provider specific. Defaults to "". A comma-separated list of OAuth 2.0 scopes
+passed when directing a user to login. Scopes request additional user details.
+"profile" commonly enables email and other personal details. If the provider
+supports the "email" scope, it is requested automatically.
+
+
+*extra_login_params*
+
+A `{ key=value, ... }` map of extra HTTP query parameters sent with the
+authorization request. Supported params vary by provider. `prompt=login` is
+sent automatically unless disabled via `prompt_for_login`. May also be
+specified as a TOML table. Example:
+
+.. code-block::
+
+  [openid_connect.extra_login_params]
+  display=popup
+  ui_locales="fr-CA fr en"
+
+
+*prompt_for_login*
+
+Defaults to true. Setting to false disables sending `prompt=login`. Allows
+specifying another prompt value through `extra_login_params`. Supported
+values: `none`, `login`, `consent`, `select_account`.
+
+
+*logout_url*
+
+A URL to redirect the user to for logout. Usually unnecessary if discovery
+metadata provides logout details. Otherwise must be specified. If discovery
+shows no supported logout mechanism and no `logout_url` is set, Krill
+redirects users to the UI index page to restart login.
+
+
+*id_claims*
+
+A list for extracting the user ID from claim values. Typically provided as TOML
+array tables. If missing, the `email` claim is used as the user ID.
+
+
+*role_claims*
+
+A list for extracting the user role from claim values. Typically provided as
+TOML array tables. If missing, the `role` claim is used as the user's role.
+
+
+.. code-block:: toml
 
     [auth_openidconnect]
     issuer_url = "..."
@@ -428,49 +432,49 @@ OpenID connect that can then be used for connections. You will want to look at
 
 Auth roles determine what permissions a role can has. Three are defined by
 default:
-*admin*: Allows full acess to everything
-*readonly*: Allows list and read access to everything.
-*readwrite*: Allows read, create, update, and delete access to everything.
+
+* *admin*: Allows full acess to everything.
+* *readonly*: Allows list and read access to everything.
+* *readwrite*: Allows read, create, update, and delete access to everything.
 
 These are the fields for a role:
 
-+--------------+-------------+--------------------------------------------------+
-| Field        | Mandatory?  | Notes                                            |
-+==============+=============+==================================================+
-| permissions  | Yes         | A list of permissions to be granted to the role. |
-|              |             | The following permissions exist:                 |
-|              |             |                                                  |
-|              |             |   login                                          |
-|              |             |                                                  |
-|              |             | Access to the publication server:                |
-|              |             |                                                  |
-|              |             |   pub-admin, pub-list, pub-read, pub-create,     |
-|              |             |   pub-delete                                     |
-|              |             |                                                  |
-|              |             | Access to CAs:                                   |
-|              |             |                                                  |
-|              |             |   ca-list, ca-read, ca-create, ca-update,        |
-|              |             |   ca-admin, ca-delete                            |
-|              |             |                                                  |
-|              |             | Access to the ROAs of a CA:                      |
-|              |             |                                                  |
-|              |             |   routes-read, routes-update, routes-analysis    |
-|              |             |                                                  |
-|              |             | Access to the ASPAs of a CA:                     |
-|              |             |                                                  |
-|              |             |   aspas-read, aspas-update, aspas-analysis       |
-|              |             |                                                  |
-|              |             | Access to the router keys of a CA:               |
-|              |             |                                                  |
-|              |             |   bgpsec-read, bgpsec-update                     |
-+--------------+-------------+--------------------------------------------------+
-| cas          | No          | A list of CA handles that the role should grant  |
-|              |             | access to. If missing, access is granted to all  |
-|              |             | CAs.                                             |
-+--------------+-------------+--------------------------------------------------+
+*permissions* (Mandatory)
+
+A list of permissions to be granted to the role. The following permissions 
+exist:
+
+Access to log in:
+
+  login                                         
+                                                
+Access to the publication server:               
+                                                
+  pub-admin, pub-list, pub-read, pub-create, pub-delete                                    
+                                                
+Access to CAs:                                  
+                                                
+  ca-list, ca-read, ca-create, ca-update, ca-admin, ca-delete                           
+                                                
+Access to the ROAs of a CA:                     
+                                                
+  routes-read, routes-update, routes-analysis   
+                                                
+Access to the ASPAs of a CA:                    
+                                                
+  aspas-read, aspas-update, aspas-analysis      
+                                                
+Access to the router keys of a CA:              
+                                                
+  bgpsec-read, bgpsec-update
+
+*cas*
+
+A list of CA handles that the role should grant access to. If missing, access 
+is granted to all CAs. 
 
 
-.. code-block:: TOML
+.. code-block:: toml
 
     [auth_roles]
     "bgpsec" = { permissions = ["bgpsec-read", "bgpsec-update"], cas = ["myca"] }
@@ -483,7 +487,7 @@ may be designated as the default. If only one signer is defined it will be the
 default. If more than one signer is defined one must be explicitly set as the 
 default. The name here refers to the signer configured in **signers**.
 
-.. code-block:: TOML
+.. code-block:: toml
 
     default_signer = "My signer"
 
@@ -494,7 +498,7 @@ The signer will be used to generate, sign with and destroy one-off key pairs.
 Only one signer may be designated as the oneoff signer. When not specified an 
 OpenSSL signer will be used for this.
 
-.. code-block:: TOML
+.. code-block:: toml
 
     default_signer = "My other signer"
 
@@ -505,7 +509,7 @@ When initially connecting to the signer on first use after Krill startup, wait
 at least N seconds between attempts to connect and test the signer for 
 compatibility with Krill. Defaults to 30 seconds.
 
-.. code-block:: TOML
+.. code-block:: toml
 
     signer_probe_retry_seconds = 30
 
@@ -531,7 +535,7 @@ Krill supports three types of signer. See also :ref:`doc_krill_hsm`:
   | running a KMIP v1.2 conformant service.
 
 
-.. code-block:: TOML
+.. code-block:: toml
 
     [[signers]]
     type = "OpenSSL"
@@ -569,41 +573,177 @@ Krill supports three types of signer. See also :ref:`doc_krill_hsm`:
 
 **ca_refresh_seconds**
 
+This defines the rate, in seconds, for Krill CAs to to contact their
+parent CA via the RFC 6492 up-down protocol and query for updates in
+resource entitlements.
+
+Minimum value is 1 hour (3600 seconds), maximum is 3 days. Values below of
+this range are set to the minimum, values above this range are capped at
+the maximum.
+
+Defaults to 24 hours: 86400 seconds
+
+.. code-block:: toml
+
+    ca_refresh_seconds = 86400
+
 
 **ca_refresh_jitter_seconds**
+
+In order to avoid that many child CAs contact their parent at the same time
+Krill adds a random extra 'jitter' time between 0 and the number of seconds.
+
+Defaults to 12 hours: 43200 seconds.
+
+Values are capped to a maximum of: 50% of **ca_refresh_seconds**
+
+.. code-block:: toml
+
+    ca_refresh_jitter_seconds = 43200
 
 
 **ca_refresh_parents_batch_size**
 
+The amount of parents to synchronise at once. By default 25.
+
+.. code-block:: toml
+
+    ca_refresh_parents_batch_size = 25
+
+
 
 **suspend_child_after_inactive_seconds**
+
+Suspend children if they have not contacted the parent for longer than N
+seconds. By default not set, making it that children are never suspended.
+
+Same as **suspend_child_after_inactive_hours** but in seconds. Do not set 
+both at the same time.
+
+.. code-block:: toml
+
+    suspend_child_after_inactive_seconds = 604800
 
 
 **suspend_child_after_inactive_hours**
 
+Suspend children if they have not contacted the parent for longer than N
+hours. By default not set, making it that children are never suspended.
+
+Same as **suspend_child_after_inactive_seconds** but in hours. Do not set 
+both at the same time.
+
+.. code-block:: toml
+
+    suspend_child_after_inactive_hours = 168
+
 
 **post_limit_api**
+
+Restrict size of messages sent to the API. Default is 256 kB.
+
+.. code-block:: toml
+
+    post_limit_api = 262144
 
 
 **post_limit_rfc8181**
 
+Restrict size of messages sent to the RFC 8181 publication protocol. Default 
+is 32MB (enough for a keyroll with about 8000 issued certificates).
+
+.. code-block:: toml
+
+    post_limit_rfc8181 = 33554432
+
 
 **rfc8181_log_dir**
+
+Specify a log directory for logging RFC 8181 (publication protocol)
+exchanges. If this directive is set Krill will log all meaningful
+RFC 8181 exchanges in this directory, meaning exchanges that resulted
+in a change or an error.
+
+If this directive is not specified, Krill will NOT log these exchanges.
+
+Defaults to no logging.
+
+.. code-block:: toml
+
+    rfc8181_log_dir = "/usr/share/krill/rfc8181"
 
 
 **post_limit_rfc6492**
 
+Restrict size of messages sent to the RFC 6492 up-down protocol. Only
+relevant if you operate Krill as a parent to other CAs.
+
+Default 1MB (enough for a keyroll with certs of ~400kb, the biggest known cert 
+is 220kB)
+
+.. code-block:: toml
+
+    post_limit_rfc6492 = 1048576
+
 
 **post_protocol_msg_timeout_seconds**
+
+Set the timeout for a complete RFC 6492 and RFC 8181 client HTTP
+request-response round-trip to the parent or publisher, excluding the time
+required to establish the connection.
+
+Defaults to 4 minutes
+
+.. code-block:: toml
+
+    post_protocol_msg_timeout_seconds = 240
 
 
 **rfc6492_log_dir**
 
+Specify a log directory for logging RFC 6942 (provisioning protocol)
+exchanges. If this directive is set Krill will log all meaningful
+RFC 6492 exchanges in this directory, meaning exchanges that resulted
+in a change or an error.
+
+If this directive is not specified, Krill will NOT log these exchanges.
+
+Defaults to no logging.
+
+.. code-block:: toml
+
+    rfc6492_log_dir = "/usr/share/krill/rfc6492"
+
 
 **roa_aggregate_threshold**
 
+It is recommended that separate ROAs are used for each authorized prefix,
+even though the RFC allows for multiple prefixes for the same ASN to be
+combined on a single ROA object. The reason for this is that the ROA will
+become invalid if any of the listed prefixes no longer appears on your
+CA's certificate. Note that Krill will automatically clean up
+over-claiming ROAs when it finds that its resources have been shrunk, but
+there is a possible time window where ROAs can be invalid before Krill
+discovers the shrinkage.
+
+This value sets at how many separate ROAs Krill will start aggregating them
+into one big ROA. By default 100.
+
+Also see **roa_deaggregate_threshold**.
+
+.. code-block:: toml
+
+    roa_aggregate_threshold = 100
+
 
 **roa_deaggregate_threshold**
+
+Similar to **roa_aggregate_threshold**, this value sets at how many ROAs a
+big ROA will be split up into smaller ROAs again. By default 90.
+
+.. code-block:: toml
+
+    roa_deaggregate_threshold = 90
 
 
 .. 
@@ -611,35 +751,130 @@ Krill supports three types of signer. See also :ref:`doc_krill_hsm`:
 
 **timing_publish_next_hours**
 
+How long to set the validity period in manifests (without jitter) in hours.
+By default 24.
+
+Do not change this unless you know what you are doing.
+
+.. code-block:: toml
+
+    timing_publish_next_hours = 24
+
 
 **timing_publish_next_jitter_hours**
+
+How many hours of jitter to potentially add to the manifest validity period to 
+ensure the load is spread out. By default 4.
+
+Do not change this unless you know what you are doing.
+
+.. code-block:: toml
+
+    timing_publish_next_jitter_hours = 4
 
 
 **timing_publish_hours_before_next**
 
+How many hours before the validity expires to renew the manifest object. By
+default 8.
+
+Do not change this unless you know what you are doing.
+
+.. code-block:: toml
+
+    timing_publish_hours_before_next = 8
+
 
 **timing_child_certificate_valid_weeks**
+
+How many weeks a child certificate is valid for. By default 1 year (52 weeks).
+
+Do not change this unless you know what you are doing.
+
+.. code-block:: toml
+
+    timing_child_certificate_valid_weeks = 52
 
 
 **timing_child_certificate_reissue_weeks_before**
 
+How many weeks before a child certificate expires to renew the certificate.
+By default 4 weeks.
+
+Do not change this unless you know what you are doing.
+
+.. code-block:: toml
+
+    timing_child_certificate_reissue_weeks_before = 4
+
 
 **timing_roa_valid_weeks**
+
+How many weeks a ROA is valid. Default is 52.
+
+Do not change this unless you know what you are doing.
+
+.. code-block:: toml
+
+    timing_roa_valid_weeks = 52
 
 
 **timing_roa_reissue_weeks_before**
 
+How many weeks before a ROA expires to renew the ROA. By default 4 weeks.
+
+Do not change this unless you know what you are doing.
+
+.. code-block:: toml
+
+    timing_roa_reissue_weeks_before = 4
+
 
 **timing_aspa_valid_weeks**
+
+How many weeks a ASPA is valid. Default is 52.
+
+Do not change this unless you know what you are doing.
+
+.. code-block:: toml
+
+    timing_aspa_valid_weeks = 52
 
 
 **timing_aspa_reissue_weeks_before**
 
+How many weeks before a ASPA expires to renew the ASPA. By default 4 weeks.
+
+Do not change this unless you know what you are doing.
+
+.. code-block:: toml
+
+    timing_aspa_reissue_weeks_before = 4
+
+
 
 **timing_bgpsec_valid_weeks**
 
+How many weeks a BGPsec certificate is valid. Default is 52.
+
+Do not change this unless you know what you are doing.
+
+.. code-block:: toml
+
+    timing_bgpsec_valid_weeks = 52
+
 
 **timing_bgpsec_reissue_weeks_before**
+
+How many weeks before a BGPsec certificate expires to renew the certificate. 
+By default 4 weeks.
+
+Do not change this unless you know what you are doing.
+
+.. code-block:: toml
+
+    timing_bgpsec_reissue_weeks_before = 4
+
 
 
 ..
