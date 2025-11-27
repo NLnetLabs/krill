@@ -6,7 +6,6 @@ use std::str::FromStr;
 use bytes::Bytes;
 use rpki::uri;
 use rpki::ca::idcert::IdCert;
-use url::Url;
 use crate::api::roa::{ConfiguredRoa, RoaConfiguration, RoaPayload};
 use crate::commons::storage::StorageSystem;
 
@@ -34,19 +33,11 @@ where
     op(dir.path().into());
 }
 
-fn random_hex_string() -> String {
-    let mut bytes = [0; 8];
-    openssl::rand::rand_bytes(&mut bytes).unwrap();
-    hex::encode(bytes)
-}
-
 pub fn mem_storage() -> StorageSystem {
     let mut bytes = [0; 8];
     openssl::rand::rand_bytes(&mut bytes).unwrap();
 
-    StorageSystem::new(
-        Url::parse(&format!("memory:{}", random_hex_string())).unwrap()
-    ).unwrap()
+    StorageSystem::new_memory(Some(rand::random()))
 }
 
 pub fn rsync(s: &str) -> uri::Rsync {

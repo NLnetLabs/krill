@@ -122,9 +122,7 @@ pub struct TrustAnchorSignerManager {
 
 impl TrustAnchorSignerManager {
     pub fn create(config: Config) -> Result<Self, SignerClientError> {
-        let storage = StorageSystem::new(
-            config.storage_uri.clone()
-        ).map_err(KrillError::from)?;
+        let storage = StorageSystem::new(config.storage_uri.clone());
         let store = AggregateStore::create(
             &storage,
             const { Ident::make("signer") },

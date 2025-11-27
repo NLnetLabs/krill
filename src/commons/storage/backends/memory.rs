@@ -3,6 +3,7 @@
 use std::{error, fmt, mem, thread};
 use std::collections::{HashMap, HashSet};
 use std::ops::DerefMut;
+use std::str::FromStr;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 use serde::de::DeserializeOwned;
@@ -20,18 +21,13 @@ use super::{
 
 #[derive(Debug, Default)]
 pub struct System {
-    locations: Mutex<HashMap<String, Location>>,
+    locations: Mutex<HashMap<Option<u64>, Location>>,
 }
 
 impl System {
-    pub fn location(&self, uri: &Url) -> Result<Option<Location>, Error> {
-        if uri.scheme() != "memory" {
-            return Ok(None)
-        }
+    pub fn location(&self, uri: &Uri) -> Result<Location, Error> {
         let mut locations = self.locations.lock().expect("poisoned lock");
-        Ok(Some(
-            locations.entry(String::from(uri.path())).or_default().clone()
-        ))
+        Ok(locations.entry(uri.path).or_default().clone())
     }
 }
 
@@ -426,48 +422,41 @@ impl MemoryNamespace {
 }
 
 
-/*
-//------------ NsKey ---------------------------------------------------------
+//------------ Uri -----------------------------------------------------------
 
-/// The key for a store.
-///
-/// The first component is the URI, the second the namespace within that URI.
-type NsKey = (String, Box<Ident>);
-
-
-//------------ Memory --------------------------------------------------------
-
-/// The place where data is actually stored.
-#[derive(Debug, Default)]
-struct Memory {
-    namespaces: Mutex<HashMap<NsKey, Arc<MemoryNamespace>>>,
+#[derive(Clone, Debug, PartialEq)]
+pub struct Uri {
+    path: Option<u64>,
 }
 
-impl Memory {
-    fn wipe_all(&self) {
-        self.namespaces.lock().expect("poisoned lock").clear();
+impl Uri {
+    pub fn new(seed: Option<u64>) -> Self {
+        Uri { path: seed }
     }
 
-    fn get_namespace(
-        &self,
-        prefix: String,
-        namespace: Box<Ident>,
-    ) -> Arc<MemoryNamespace> {
-        let ns_key = (prefix, namespace);
-        let mut namespaces = self.namespaces.lock().expect("poisoned lock");
-        namespaces.entry(ns_key.clone()).or_insert_with(|| {
-            MemoryNamespace::new(ns_key).into()
-        }).clone()
+    pub fn parse_uri(uri: &Url) -> Result<Option<Uri>, UriError> {
+        if uri.scheme() != "memory" {
+            return Ok(None)
+        }
+        if uri.path().is_empty() {
+            return Ok(Some(Uri { path: None }))
+        }
+        if let Ok(path) = u64::from_str(uri.path()) {
+            return Ok(Some(Uri { path: Some(path) }))
+        }
+        Err(UriError::BadPath(uri.path().into()))
     }
 }
 
-
-//------------ MEMORY --------------------------------------------------------
-
-lazy_static! {
-    static ref MEMORY: Memory = Memory::default();
+impl fmt::Display for Uri {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("memory:")?;
+        if let Some(path) = self.path {
+            write!(f, "{path}")?
+        }
+        Ok(())
+    }
 }
-*/
 
 
 //------------ Error ---------------------------------------------------------
@@ -587,4 +576,22 @@ impl fmt::Display for Error {
 }
 
 impl error::Error for Error { }
+
+
+//------------ UriError ------------------------------------------------------
+
+#[derive(Debug)]
+pub enum UriError {
+    BadPath(String),
+}
+
+impl fmt::Display for UriError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::BadPath(path) => write!(f, "invalid memory path '{path}'"),
+        }
+    }
+}
+
+impl error::Error for UriError { }
 

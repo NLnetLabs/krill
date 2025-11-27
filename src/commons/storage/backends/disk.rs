@@ -1,6 +1,6 @@
 //! Filesystem-based storage.
 
-use std::{fmt, fs, io};
+use std::{error, fmt, fs, io};
 use std::borrow::Cow;
 use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
@@ -34,14 +34,8 @@ pub const LOCK_FILE_NAME: &str = "lockfile.lock";
 pub struct System(());
 
 impl System {
-    pub fn location(&self, uri: &Url) -> Result<Option<Location>, Error> {
-        if uri.scheme() != "local" {
-            return Ok(None)
-        }
-        let base = PathBuf::from(format!(
-            "{}{}", uri.host_str().unwrap_or_default(), uri.path()
-        ));
-        Ok(Some(Location { base }))
+    pub fn location(&self, uri: &Uri) -> Result<Location, Error> {
+        Ok(Location { base: uri.path.clone() })
     }
 }
 
@@ -88,6 +82,7 @@ impl Location {
         }
 
         // The source store must not have any lock files.
+        #[allow(clippy::collapsible_if)]
         if src_store.locks.exists() {
             if src_store.locks
                 .read_dir()
@@ -659,6 +654,50 @@ impl FileLock {
 }
 
 
+//------------ Uri -----------------------------------------------------------
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Uri {
+    path: PathBuf,
+}
+
+impl Uri {
+    pub fn new(path: PathBuf) -> Self {
+        Self { path }
+    }
+
+    pub fn parse_uri(uri: &Url) -> Result<Option<Uri>, UriError> {
+        if uri.scheme() != "file" && uri.scheme() != "local" {
+            return Ok(None)
+        }
+
+        if !uri.authority().is_empty() {
+            return Err(UriError::HasAuthority(uri.authority().into()))
+        }
+
+        Self::parse_str(uri.path()).map(Some)
+    }
+
+    pub fn parse_str(s: &str) -> Result<Uri, UriError> {
+        let path = PathBuf::from(s);
+        if !path.is_absolute() {
+            return Err(UriError::RelativePath(path))
+        }
+        Ok(Self { path })
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl fmt::Display for Uri {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "file://{}", self.path.display())
+    }
+}
+
+
 //------------ Error ---------------------------------------------------------
 
 #[derive(Debug)]
@@ -752,4 +791,34 @@ impl fmt::Display for Error {
         }
     }
 }
+
+impl error::Error for Error { }
+
+
+//------------ UriError ------------------------------------------------------
+
+#[derive(Debug)]
+pub enum UriError {
+    HasAuthority(String),
+    MissingPath,
+    RelativePath(PathBuf),
+}
+
+impl fmt::Display for UriError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::HasAuthority(host) => {
+                write!(f, "non-local path with host '{host}'")
+            }
+            Self::MissingPath => {
+                write!(f, "missing path")
+            }
+            Self::RelativePath(path) => {
+                write!(f, "{} is not absolute.", path.display())
+            }
+        }
+    }
+}
+
+impl error::Error for UriError { }
 

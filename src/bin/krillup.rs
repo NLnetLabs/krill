@@ -5,9 +5,8 @@ use std::path::PathBuf;
 use clap::Parser;
 use log::info;
 use log::LevelFilter;
-use url::Url;
 use krill::constants;
-use krill::commons::storage::StorageSystem;
+use krill::commons::storage::{StorageSystem, StorageUri};
 use krill::config::{Config, LogType};
 use krill::server::properties::PropertiesManager;
 use krill::upgrades::{prepare_upgrade_data_migrations, UpgradeMode};
@@ -34,26 +33,7 @@ fn main() {
 
     match options.command {
         Command::Prepare(_prepare) => {
-            let storage = match StorageSystem::new(
-                config.storage_uri.clone()
-            ) {
-                Ok(storage) => storage,
-                Err(err) => {
-                    eprintln!("*** Error Preparing Data Migration ***");
-                    eprintln!("Cannot connect to storage system: {err}");
-                    eprintln!();
-                    eprintln!(
-                        "Note that your server data has NOT been modified. \
-                         Do not upgrade krill"
-                    );
-                    eprintln!("itself yet!");
-                    eprintln!(
-                        "If you did upgrade krill, then downgrade it to \
-                         the previous installed version."
-                    );
-                    ::std::process::exit(1);
-                }
-            };
+            let storage = StorageSystem::new(config.storage_uri.clone());
             let properties_manager = match PropertiesManager::create(
                 &storage, config.use_history_cache,
             ) {
@@ -114,18 +94,7 @@ fn main() {
             }
         }
         Command::Migrate(cmd) => {
-            let storage = match StorageSystem::new(cmd.target) {
-                Ok(storage) => storage,
-                Err(err) => {
-                    eprintln!("*** Error Migrating DATA ***");
-                    eprintln!("Cannot connect to storage system: {err}");
-                    eprintln!(
-                        "Note that your server data has NOT been modified."
-                    );
-                    eprintln!();
-                    ::std::process::exit(1);
-                }
-            };
+            let storage = StorageSystem::new(cmd.target);
 
             if let Err(e) = migrate(config, &storage) {
                 eprintln!("*** Error Migrating DATA ***");
@@ -187,6 +156,6 @@ pub struct Prepare;
 pub struct Migrate {
     /// The storage target as a URI string.
     #[arg(short, long, value_name = "URI")]
-    pub target: Url,
+    pub target: StorageUri,
 }
 

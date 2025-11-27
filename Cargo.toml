@@ -47,6 +47,7 @@ serde           = { version = "1.0", features = ["derive", "rc"] }
 serde_json      = "1.0"
 tempfile        = "3.19.1"
 tokio           = { version = "1", features = [ "macros", "rt", "rt-multi-thread", "signal", "time" ] }
+tokio-postgres  = { version = "0.7.15", optional = true }
 tokio-rustls    = { version = "0.26", default-features = false, features = [ "ring", "logging", "tls12" ] }
 toml            = "0.9.5"
 url             = { version = "2.5.4", features = ["serde"] }
@@ -79,7 +80,8 @@ urlparse        = { version = "0.7", optional = true }
 syslog = "7.0.0"
 
 [features]
-default = ["multi-user", "hsm"]
+default = ["postgres", "multi-user", "hsm"]
+postgres = [ "dep:tokio-postgres" ]
 hsm = ["backoff", "kmip", "cryptoki", "r2d2", "secrecy"]
 multi-user = [
     "basic-cookies",

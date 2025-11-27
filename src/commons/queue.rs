@@ -454,11 +454,10 @@ mod tests {
     use std::thread;
     use std::time::Duration;
     use serde_json::Value;
-    use url::Url;
     use super::*;
 
     fn storage_system() -> StorageSystem {
-        StorageSystem::new(Url::parse("memory:").unwrap()).unwrap()
+        StorageSystem::new_memory(None)
     }
 
     fn queue_store(storage: &StorageSystem, ns: &str) -> Queue {

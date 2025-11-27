@@ -1,12 +1,14 @@
 //! The publicly exposed key-value store.
 
 use std::{error, fmt};
+use std::path::PathBuf;
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
-use url::Url;
 use crate::commons::storage;
 use crate::commons::error::Error;
-use crate::commons::storage::{Backend, BackendSystem, Ident, Transaction};
+use crate::commons::storage::{
+    Backend, BackendSystem, Ident, StorageUri, Transaction
+};
 
 
 //------------ StorageSystem -------------------------------------------------
@@ -15,7 +17,7 @@ use crate::commons::storage::{Backend, BackendSystem, Ident, Transaction};
 #[derive(Debug)]
 pub struct StorageSystem {
     /// The storage URI to use by default.
-    default_uri: Url,
+    default_uri: StorageUri,
 
     /// The storage systems of the various supported backends.
     backend: BackendSystem,
@@ -26,12 +28,24 @@ impl StorageSystem {
     ///
     /// The provided URI will be used as the default storage URI.
     pub fn new(
-        default_uri: Url
-    ) -> Result<Self, StorageConnectError> {
-        Ok(Self {
+        default_uri: StorageUri 
+    ) -> Self {
+        Self {
             default_uri,
             backend: Default::default(),
-        })
+        }
+    }
+
+    /// Creates a new memory storage system using the given seed.
+    ///
+    /// This is primarily used for testing.
+    pub fn new_memory(seed: Option<u64>) -> Self {
+        Self::new(StorageUri::memory(seed))
+    }
+
+    /// Creates a new disk storage system using the given path.
+    pub fn new_disk(path: PathBuf) -> Self {
+        Self::new(StorageUri::disk(path))
     }
 
     /// Opens the default store with the given namespace.
@@ -57,25 +71,25 @@ impl StorageSystem {
 
     /// Opens a store with the given storage URI and namespace.
     pub fn open_uri(
-        &self, storage_uri: &Url, namespace: &Ident
+        &self, storage_uri: &StorageUri, namespace: &Ident
     ) -> Result<KeyValueStore, OpenStoreError> {
         Ok(KeyValueStore {
             inner: self.backend.open(
                 storage_uri, namespace
             ).map_err(|err| {
-                OpenStoreError(err.into())
+                OpenStoreError(err)
             })?
         })
     }
 
     /// Returns the default URI of the storage system.
-    pub fn default_uri(&self) -> &Url {
+    pub fn default_uri(&self) -> &StorageUri {
         &self.default_uri
     }
 
     /// Checks whether the given namespace is empty.
     pub fn is_empty(&self, namespace: &Ident) -> Result<bool, KeyValueError> {
-        Ok(self.backend.is_empty(&self.default_uri, namespace)?)
+        self.backend.is_empty(&self.default_uri, namespace)
     }
 
     /// Checks whether the upgrade store for the given namespace is empty.
@@ -333,27 +347,6 @@ impl KeyValueStore {
 //============ Error Types ===================================================
 //
 // These need cleaning up.
-
-
-//------------ StorageConnectError -------------------------------------------
-
-/// An error occured while connecting to a storage system.
-#[derive(Debug)]
-pub struct StorageConnectError(());
-
-impl fmt::Display for StorageConnectError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str("storage connect error")
-    }
-}
-
-impl error::Error for StorageConnectError { }
-
-impl From<StorageConnectError> for crate::commons::error::Error {
-    fn from(src: StorageConnectError) -> Self {
-        Self::custom(format_args!("{}", src))
-    }
-}
 
 
 //------------ OpenStoreError ------------------------------------------------

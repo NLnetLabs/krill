@@ -12,7 +12,9 @@ pub(super) mod memory; // Test code wants to access the Store directly.
 
 //============ Backend Enum ==================================================
 
-use std::fmt;
+use std::{error, fmt};
+use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
 use url::Url;
@@ -32,36 +34,40 @@ macro_rules! store {
 
         impl BackendSystem {
             fn location(
-                &self, uri: &Url
+                &self, uri: &StorageUri
             )  -> Result<Location, KeyValueError> {
-                $(
-                    match self.$module.location(uri) {
-                        Ok(Some(location)) => {
-                            return Ok(Location::$variant(location))
+                match &uri.0 {
+                    $(
+                        UriInner::$variant(uri) => {
+                            Ok(Location::$variant(
+                                self.$module.location(uri).map_err(|err| {
+                                    KeyValueError::Inner(
+                                        Error(ErrorInner::$variant(err))
+                                    )
+                                })?
+                            ))
                         }
-                        Ok(None) => { }
-                        Err(err) => {
-                            return Err(KeyValueError::Inner(err.into()))
-                        }
-                    }
-                )*
-                Err(KeyValueError::UnknownScheme(uri.scheme().into()))
+                    )*
+                }
             }
 
             pub fn open(
-                &self, storage_uri: &Url, namespace: &Ident,
+                &self, storage_uri: &StorageUri, namespace: &Ident,
             ) -> Result<Backend, KeyValueError> {
                 Ok(self.location(storage_uri)?.open(namespace)?)
             }
 
             pub fn is_empty(
-                &self, storage_uri: &Url, namespace: &Ident,
+                &self, storage_uri: &StorageUri, namespace: &Ident,
             ) -> Result<bool, KeyValueError> {
                 Ok(self.location(storage_uri)?.is_empty(namespace)?)
             }
 
             pub fn migrate(
-                &self, storage_uri: &Url, src_ns: &Ident, dst_ns: &Ident
+                &self,
+                storage_uri: &StorageUri,
+                src_ns: &Ident,
+                dst_ns: &Ident
             ) -> Result<(), KeyValueError> {
                 Ok(self.location(storage_uri)?.migrate(src_ns, dst_ns)?)
             }
@@ -364,6 +370,89 @@ macro_rules! store {
         pub type Value = serde_json::Value;
 
 
+        //------------ StorageUri --------------------------------------------
+
+        #[derive(Clone, Debug, PartialEq)]
+        pub struct StorageUri(UriInner);
+
+        #[derive(Clone, Debug, PartialEq)]
+        enum UriInner {
+            $(
+                $variant(self::$module::Uri),
+            )*
+        }
+
+        impl StorageUri {
+            pub fn memory(seed: Option<u64>) -> Self {
+                Self(UriInner::Memory(self::memory::Uri::new(seed)))
+            }
+
+            pub fn disk(path: PathBuf) -> Self {
+                Self(UriInner::Disk(self::disk::Uri::new(path)))
+            }
+
+            pub fn data_dir(&self) -> Option<&Path> {
+                if let UriInner::Disk(inner) = &self.0 {
+                    Some(inner.path())
+                }
+                else {
+                    None
+                }
+            }
+        }
+
+        impl<'de> serde::Deserialize<'de> for StorageUri {
+            fn deserialize<D: serde::Deserializer<'de>>(
+                deserializer: D
+            ) -> Result<Self, D::Error> {
+                Self::from_str(&String::deserialize(deserializer)?).map_err(
+                    serde::de::Error::custom
+                )
+            }
+        }
+
+        impl FromStr for StorageUri {
+            type Err = ParseStorageUriError;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                match Url::parse(s) {
+                    Ok(url) => {
+                        $(
+                            if let Some(res) =
+                                self::$module::Uri::parse_uri(&url)?
+                            {
+                                return Ok(StorageUri(UriInner::$variant(res)))
+                            }
+                        )*
+
+                        Err(ParseStorageUriError(
+                            UriErrorInner::UnknownScheme(
+                                url.scheme().into()
+                            )
+                        ))
+                    }
+                    Err(_) => {
+                        self::disk::Uri::parse_str(s).map(|disk| {
+                            Self(UriInner::Disk(disk))
+                        }).map_err(|err| {
+                            ParseStorageUriError(UriErrorInner::Disk(err))
+                        })
+                    }
+                }
+            }
+        }
+
+        impl fmt::Display for StorageUri {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                match &self.0 {
+                    $(
+                        UriInner::$variant(inner) => inner.fmt(f),
+                    )*
+                }
+            }
+        }
+
+
         //------------ Error -------------------------------------------------
 
         #[derive(Debug)]
@@ -393,6 +482,45 @@ macro_rules! store {
                 }
             }
         }
+
+        impl error::Error for Error { }
+
+
+        //------------ ParseStorageUriError ----------------------------------
+
+        #[derive(Debug)]
+        pub struct ParseStorageUriError(UriErrorInner);
+
+        #[derive(Debug)]
+        enum UriErrorInner {
+            UnknownScheme(String),
+            $(
+                $variant(self::$module::UriError),
+            )*
+        }
+
+        $(
+            impl From<self::$module::UriError> for ParseStorageUriError {
+                fn from(src: self::$module::UriError) -> Self {
+                    Self(UriErrorInner::$variant(src))
+                }
+            }
+        )*
+
+        impl fmt::Display for ParseStorageUriError {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                match &self.0 {
+                    UriErrorInner::UnknownScheme(scheme) => {
+                        write!(f, "unknown scheme '{scheme}'")
+                    }
+                    $(
+                        UriErrorInner::$variant(err) => err.fmt(f),
+                    )*
+                }
+            }
+        }
+
+        impl error::Error for ParseStorageUriError { }
     }
 }
 

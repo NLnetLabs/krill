@@ -19,7 +19,6 @@ use rpki::crypto::{
     RpkiSignatureAlgorithm, Signature, SignatureAlgorithm, SigningError,
 };
 use serde::{de, ser, Deserialize, Deserializer, Serialize, Serializer};
-use url::Url;
 
 use crate::{
     commons::{
@@ -27,21 +26,23 @@ use crate::{
             dispatch::signerinfo::SignerMapper, signers::error::SignerError,
             SignerHandle,
         },
-        storage::{Ident, KeyValueStore, StorageSystem, OpenStoreError},
+        storage::{
+            Ident, KeyValueStore, StorageSystem, StorageUri, OpenStoreError,
+        },
     },
     constants::KEYS_NS,
 };
 
 //------------ OpenSslSigner -------------------------------------------------
 
-#[derive(Clone, Debug, Default, Deserialize, Hash, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 pub struct OpenSslSignerConfig {
     #[serde(default)]
-    pub keys_storage_uri: Option<Url>,
+    pub keys_storage_uri: Option<StorageUri>,
 }
 
 impl OpenSslSignerConfig {
-    pub fn new(storage_uri: Url) -> Self {
+    pub fn new(storage_uri: StorageUri) -> Self {
         Self {
             keys_storage_uri: Some(storage_uri),
         }

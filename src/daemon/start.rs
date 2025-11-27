@@ -32,7 +32,7 @@ pub async fn start_krill_daemon(
     write_pid_file_or_die(&config);
     test_data_dirs_or_die(&config);
 
-    let storage = StorageSystem::new(config.storage_uri.clone())?;
+    let storage = StorageSystem::new(config.storage_uri.clone());
 
     // Set up the runtime properties manager, so that we can check
     // the version used for the current data in storage

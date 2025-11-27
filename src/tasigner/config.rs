@@ -7,11 +7,10 @@ use std::{
 
 use log::LevelFilter;
 use serde::Deserialize;
-use url::Url;
 
 use crate::{
     commons::crypto::{KrillSigner, KrillSignerBuilder, OpenSslSignerConfig},
-    commons::storage::StorageSystem,
+    commons::storage::{StorageSystem, StorageUri},
     constants::OPENSSL_ONE_OFF_SIGNER_NAME,
     config::{LogType, SignerConfig, SignerReference, SignerType},
 };
@@ -93,9 +92,8 @@ impl TaTimingConfig {
 pub struct Config {
     #[serde(
         alias = "data_dir",
-        deserialize_with = "crate::config::deserialize_storage_uri"
     )]
-    pub storage_uri: Url,
+    pub storage_uri: StorageUri,
 
     #[serde(default)]
     pub use_history_cache: bool,

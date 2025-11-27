@@ -25,7 +25,7 @@ use crate::{
         },
         storage::{
             Ident, KeyValueError, OpenStoreError, KeyValueStore,
-            StorageConnectError, StorageSystem,
+            StorageSystem,
         },
         version::KrillVersion,
         KrillResult,
@@ -222,12 +222,6 @@ impl UpgradeError {
 impl From<AggregateStoreError> for UpgradeError {
     fn from(e: AggregateStoreError) -> Self {
         UpgradeError::AggregateStoreError(e)
-    }
-}
-
-impl From<StorageConnectError> for UpgradeError {
-    fn from(e: StorageConnectError) -> Self {
-        UpgradeError::custom(e)
     }
 }
 
@@ -1256,8 +1250,7 @@ mod tests {
     use std::path::PathBuf;
     use log::LevelFilter;
     use tempfile::tempdir;
-    use url::Url;
-    use crate::commons::storage::Ident;
+    use crate::commons::storage::{Ident, StorageUri};
     use crate::commons::test;
     use crate::server::ca::{CaStatus, CaStatusStore};
     use super::*;
@@ -1297,9 +1290,7 @@ mod tests {
         config.log_level = LevelFilter::Trace;
         let _ = config.init_logging();
 
-        let source_url = Url::parse(&format!(
-                "local://{}", temp_dir.path().to_str().unwrap()
-        )).unwrap();
+        let source_url = StorageUri::disk(temp_dir.path().into());
 
         for ns in namespaces {
             let namespace = Ident::from_str(ns).unwrap();
@@ -1554,9 +1545,7 @@ mod tests {
             "test-resources/status_store/migration-0.9.5/";
         let temp_dir = tempdir().unwrap();
         copy_folder(source_dir_path_str, &temp_dir);
-        let source_dir_url = Url::parse(
-            &format!("local://{}", &temp_dir.path().to_str().unwrap()))
-                .unwrap();
+        let source_dir_url = StorageUri::disk(temp_dir.path().into());
 
         let test_storage = test::mem_storage();
 

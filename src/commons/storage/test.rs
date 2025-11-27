@@ -5,8 +5,7 @@
 #![cfg(test)]
 
 use tempfile::{TempDir, tempdir};
-use url::Url;
-use super::{Ident, KeyValueStore, StorageSystem};
+use super::{Ident, KeyValueStore, StorageSystem, StorageUri};
 
 
 //------------ Macro to Construct Tests --------------------------------------
@@ -299,7 +298,7 @@ testfns! {
 trait Harness {
     /// Returns the URL of the backend.
     #[allow(dead_code)]
-    fn url(&self) -> Url;
+    fn uri(&self) -> &StorageUri;
 
     /// Creates a new store for the given namespace.
     fn store(&self, namespace: &Ident) -> KeyValueStore;
@@ -316,16 +315,14 @@ struct MemoryHarness {
 impl MemoryHarness {
     fn new() -> Self {
         Self {
-            storage: StorageSystem::new(
-                Url::parse("memory:").unwrap()
-            ).unwrap(),
+            storage: StorageSystem::new_memory(None)
         }
     }
 }
 
 impl Harness for MemoryHarness {
-    fn url(&self) -> Url {
-        self.storage.default_uri().clone()
+    fn uri(&self) -> &StorageUri {
+        self.storage.default_uri()
     }
 
     fn store(&self, namespace: &Ident) -> KeyValueStore {
@@ -348,16 +345,15 @@ struct DiskHarness {
 impl DiskHarness {
     fn new() -> Self {
         let _dir = tempdir().unwrap();
-        let url = format!("local://{}", _dir.path().display());
-        let storage = StorageSystem::new(Url::parse(&url).unwrap()).unwrap();
+        let storage = StorageSystem::new_disk(_dir.path().into());
 
         Self { _dir, storage }
     }
 }
 
 impl Harness for DiskHarness {
-    fn url(&self) -> Url {
-        self.storage.default_uri().clone()
+    fn uri(&self) -> &StorageUri {
+        self.storage.default_uri()
     }
 
     fn store(&self, namespace: &Ident) -> KeyValueStore {
