@@ -5,7 +5,7 @@ use std::sync::Arc;
 use log::error;
 use hyper::service::service_fn;
 use hyper_util::rt::{TokioExecutor, TokioIo};
-use tokio::select;
+use tokio::{runtime, select};
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 use tokio_rustls::TlsAcceptor;
@@ -104,7 +104,9 @@ pub async fn start_krill_daemon(
     let scheduler_future = scheduler.run();
 
     // Create the HTTP server.
-    let server = HttpServer::new(krill, config.clone())?;
+    let server = HttpServer::new(
+        krill, config.clone(), &runtime::Handle::current()
+    )?;
 
     // Create self-signed HTTPS cert if configured and not generated earlier.
     if config.https_mode().is_generate_https_cert() {
