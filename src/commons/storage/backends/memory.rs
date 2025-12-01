@@ -1,11 +1,10 @@
 //! In-memory storage.
 
-use std::{error, fmt, mem, thread};
-use std::collections::{HashMap, HashSet};
+use std::{error, fmt, mem};
+use std::collections::HashMap;
 use std::ops::DerefMut;
 use std::str::FromStr;
-use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::Duration;
+use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
 use serde_json::Value;
@@ -68,14 +67,10 @@ impl Location {
                 return Err(Error::MissingSourceNamespace(src_ns.into()))
             };
 
-            if !src.locks().is_empty() {
-                return Err(Error::PendingLocks);
-            }
+            src.try_clear_locks()?;
 
             let dst = namespaces.entry(dst_ns.into()).or_default().clone();
-            if !dst.locks().is_empty() {
-                return Err(Error::PendingLocks);
-            }
+            dst.try_clear_locks()?;
 
             let mut dst_scopes = dst.scopes();
             if !dst_scopes.is_empty() {
@@ -110,25 +105,34 @@ impl Store {
     where
         F: for<'a> Fn(&mut SuperTransaction<'a>) -> Result<T, SuperError>
     {
-        let wait = Duration::from_millis(10);
-        let tries = 1000;
-
-        for i in 0..tries {
-            if self.namespace.locks().insert(scope.map(Into::into)) {
-                // The scope was not yet present. We’ve won and can go on.
-                break
-            }
-            else if i >= tries {
-                return Err(Error::ScopeLocked(scope.map(Into::into)).into())
-            }
-            thread::sleep(wait);
+        match scope {
+            Some(scope) => self.execute_scoped(scope.into(), op),
+            None => self.execute_global(op),
         }
+    }
 
-        let res = op(&mut SuperTransaction::from(self));
+    fn execute_global<F, T>(
+        &self, op: F
+    ) -> Result<T, SuperError>
+    where
+        F: for<'a> Fn(&mut SuperTransaction<'a>) -> Result<T, SuperError>
+    {
+        let _lock = self.namespace.get_lock(None);
+        let _lock = _lock.write().expect("poisoned lock");
+        op(&mut SuperTransaction::from(self))
+    }
 
-        self.namespace.locks().remove(&scope.map(Into::into));
-
-        res
+    fn execute_scoped<F, T>(
+        &self, scope: Box<Ident>, op: F
+    ) -> Result<T, SuperError>
+    where
+        F: for<'a> Fn(&mut SuperTransaction<'a>) -> Result<T, SuperError>
+    {
+        let _root_lock = self.namespace.get_lock(None);
+        let _root_lock = _root_lock.read().expect("poisoned lock");
+        let _lock = self.namespace.get_lock(Some(scope));
+        let _lock = _lock.write().expect("poisoned lock");
+        op(&mut SuperTransaction::from(self))
     }
 }
 
@@ -408,7 +412,7 @@ impl MemoryScopes {
 #[derive(Debug, Default)]
 struct MemoryNamespace {
     scopes: Mutex<MemoryScopes>,
-    locks: Mutex<HashSet<Option<Box<Ident>>>>,
+    locks: Mutex<HashMap<Option<Box<Ident>>, Arc<RwLock<()>>>>,
 }
 
 impl MemoryNamespace {
@@ -416,8 +420,26 @@ impl MemoryNamespace {
         self.scopes.lock().expect("poisoned lock")
     }
 
-    fn locks(&self) -> MutexGuard<'_, HashSet<Option<Box<Ident>>>> {
+    fn get_lock(&self, scope: Option<Box<Ident>>) -> Arc<RwLock<()>> {
+        self.locks().entry(scope).or_default().clone()
+    }
+
+    fn locks(
+        &self
+    ) -> MutexGuard<'_, HashMap<Option<Box<Ident>>, Arc<RwLock<()>>>> {
         self.locks.lock().expect("poisoned lock")
+    }
+
+    fn try_clear_locks(&self) -> Result<(), Error> {
+        // Try to get a write lock on every present lock. If that succeeds,
+        // clear the hash map.
+
+        let mut locks = self.locks();
+        for lock in locks.values() {
+            drop(lock.try_write().map_err(|_| Error::PendingLocks)?);
+        }
+        locks.clear();
+        Ok(())
     }
 }
 

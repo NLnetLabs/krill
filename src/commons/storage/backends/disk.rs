@@ -194,9 +194,18 @@ impl Store {
     where
         F: for<'a> Fn(&mut SuperTransaction<'a>) -> Result<T, SuperError>
     {
-        let mut file_lock = FileLock::create(self.scope_lock_path(scope))?;
-        let _write_lock = file_lock.write()?;
-        op(&mut SuperTransaction::from(self))
+        if scope.is_none() {
+            let mut file_lock = FileLock::create(self.scope_lock_path(scope))?;
+            let _write_lock = file_lock.write()?;
+            op(&mut SuperTransaction::from(self))
+        }
+        else {
+            let mut root_lock = FileLock::create(self.scope_lock_path(None))?;
+            let _root_lock = root_lock.read()?;
+            let mut file_lock = FileLock::create(self.scope_lock_path(scope))?;
+            let _write_lock = file_lock.write()?;
+            op(&mut SuperTransaction::from(self))
+        }
     }
 
     /// Returns the path for the given key.
@@ -644,6 +653,12 @@ impl FileLock {
         })?;
 
         Ok(FileLock { lock: fd_lock::RwLock::new(lock_file) })
+    }
+
+    fn read(&mut self) -> Result<fd_lock::RwLockReadGuard<'_, File>, Error> {
+        self.lock
+            .read()
+            .map_err(|e| Error::other(format!("Cannot get file lock: {e}")))
     }
 
     fn write(&mut self) -> Result<fd_lock::RwLockWriteGuard<'_, File>, Error> {

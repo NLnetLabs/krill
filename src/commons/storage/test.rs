@@ -127,14 +127,21 @@ testfns! {
 
     fn drop_global_key(harness: impl Harness) {
         let store = harness.store(NAMESPACE);
+        eprintln!("1");
 
         assert!(store.drop_key(None, KEY).is_err());
 
+        eprintln!("2");
+
         store.store(None, KEY, &CONTENT).unwrap();
+        eprintln!("3");
         assert!(store.has(None, KEY).unwrap());
+        eprintln!("4");
 
         store.drop_key(None, KEY).unwrap();
+        eprintln!("5");
         assert!(!store.has(None, KEY).unwrap());
+        eprintln!("6");
     }
 
     fn drop_scoped_key(harness: impl Harness) {
