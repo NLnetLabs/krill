@@ -24,12 +24,16 @@ Bug fixes
 * Fixed an error message when trying to delete a CA which does not
   have any parents, children, or repositories despite actually removing
   the CA. ([#1331])
+* Start sweeping the authenticator cache upon daemon startup. This merely
+  reduces memory consumption of the cache. Expired authentication tokens
+  were not used either way. ([#1337])
 
 Other changes
 
 [#1326]: https://github.com/NLnetLabs/krill/pull/1326
 [#1329]: https://github.com/NLnetLabs/krill/pull/1329
 [#1331]: https://github.com/NLnetLabs/krill/pull/1331
+[#1337]: https://github.com/NLnetLabs/krill/pull/1337
 
 
 ## 0.15.0 ‘But I Digress’
