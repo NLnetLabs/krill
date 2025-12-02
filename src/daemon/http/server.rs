@@ -3,6 +3,7 @@ use std::sync::Arc;
 use clap::crate_version;
 use hyper::StatusCode;
 use log::{error, info, warn, trace};
+use tokio::runtime;
 use crate::api::admin::ServerInfo;
 use crate::api::ca::Timestamp;
 use crate::commons::KrillResult;
@@ -38,11 +39,14 @@ impl HttpServer {
     /// Creates a new server from a Krill manager and the configuration.
     pub fn new(
         krill: KrillManager,
-        config: Arc<Config>
+        config: Arc<Config>,
+        runtime: &runtime::Handle,
     ) -> KrillResult<Arc<Self>> {
+        let authorizer = Authorizer::new(config.clone())?;
+        authorizer.spawn_sweep(runtime);
         Ok(Self {
             krill,
-            authorizer: Authorizer::new(config.clone())?,
+            authorizer,
             config,
             started: Timestamp::now(),
         }.into())
