@@ -55,7 +55,7 @@ create_first_time_configuration() {
         # boot, and Krill doesn't drop privileges yet so when run as a non-root
         # user has no right to create the file or missing /var/run/subdir.
         # See: https://stackoverflow.com/a/28312577
-        echo -e "log_type = \"syslog\"\nstorage_uri = \"${KRILL_DATA}\"\nadmin_token = \"${ADMIN_TOKEN}\"" > "${KRILL_CONF}"
+        printf "log_type = \"syslog\"\nstorage_uri = \"${KRILL_DATA}\"\nadmin_token = \"${ADMIN_TOKEN}\"" > "${KRILL_CONF}"
 
         # Ensure that the config file has the correct ownership
         chown ${KRILL_USER}:${KRILL_GROUP} ${KRILL_CONF}
