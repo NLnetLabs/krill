@@ -498,6 +498,7 @@ fn deserialize_minutes_duration<'de, D: Deserializer<'de>>(
 
 /// Global configuration for the Krill Server.
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Config {
     #[serde(
         default = "ConfigDefaults::ip",
@@ -679,6 +680,7 @@ pub struct Config {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct IssuanceTimingConfig {
     #[serde(default = "ConfigDefaults::timing_publish_next_hours")]
     pub timing_publish_next_hours: u32,
@@ -814,6 +816,7 @@ impl IssuanceTimingConfig {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct RrdpUpdatesConfig {
     #[serde(default = "RrdpUpdatesConfig::dflt_rrdp_delta_files_min_nr")]
     pub rrdp_delta_files_min_nr: usize,
@@ -880,6 +883,7 @@ impl RrdpUpdatesConfig {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MetricsConfig {
     #[serde(default)] // false
     pub metrics_hide_ca_details: bool,
@@ -892,6 +896,7 @@ pub struct MetricsConfig {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TestBed {
     ta_aia: uri::Rsync,
     ta_uri: uri::Https,
@@ -931,6 +936,7 @@ impl TestBed {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct Benchmark {
     pub cas: usize,
     pub ca_roas: usize,
@@ -1725,7 +1731,7 @@ impl Config {
         toml::from_str(&v).map_err(|e| {
             ConfigError::Other(format!(
                 "Error parsing config file: {}, error: {}",
-                file.display(), e
+                file.display(), e.message()
             ))
         })
     }
