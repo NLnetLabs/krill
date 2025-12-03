@@ -27,7 +27,7 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "KRILL.CONF" "5" "Nov 27, 2025" "0.15.1-dev" "Krill"
+.TH "KRILL.CONF" "5" "Dec 03, 2025" "0.15.1-dev" "Krill"
 .SH NAME
 krill.conf \- Krill config
 .SH INTRODUCTION
@@ -87,19 +87,19 @@ port = 3000
 .sp
 Specify the HTTPS mode. Krill supports three modes:
 .sp
-“generate” (default)
+\(dqgenerate\(dq (default)
 .sp
 Krill will generate a key pair and create a self\-signed certificate
 if no previous key pair or certificate is found. File names used
 are data_dir/ssl/key.pem and data_dir/ssl/cert.pem respectively.
 .sp
-“existing”
+\(dqexisting\(dq
 .sp
 Krill expects an existing key pair and certificate in the same
 locations where it would otherwise store its generated key pair
 and self\-signed certificate.
 .sp
-“disable”
+\(dqdisable\(dq
 .sp
 Krill will use plain HTTP.
 .sp
@@ -109,7 +109,7 @@ out of the box. We recommend STRONGLY that you do not use this
 option if your Krill instance is configured to bind to a public
 IP address.
 .sp
-Even if you use “disable” here, Krill still insists on using HTTPS for its
+Even if you use \(dqdisable\(dq here, Krill still insists on using HTTPS for its
 service_uri. See below.
 .INDENT 0.0
 .INDENT 3.5
@@ -208,7 +208,7 @@ use_history_cache = true
 .sp
 \fBtls_keys_dir\fP
 .sp
-Specify the location of the TLS directory for Krill’s built\-in HTTPS server.
+Specify the location of the TLS directory for Krill\(aqs built\-in HTTPS server.
 By default it maps to $storage_uri/ssl.
 .INDENT 0.0
 .INDENT 3.5
@@ -239,7 +239,7 @@ repo_dir = \(dq/mnt/share/repo\(dq
 \fBta_support_enabled\fP
 .sp
 Whether this Krill instance should have support to run as a Trust Anchor (TA).
-By default false. You probably don’t want to touch this, but if you do, see
+By default false. You probably don\(aqt want to touch this, but if you do, see
 \fI\%Krill as a Trust Anchor\fP\&.
 .INDENT 0.0
 .INDENT 3.5
@@ -255,7 +255,7 @@ ta_support_enabled = false
 \fBta_signer_enabled\fP
 .sp
 Whether this Krill instance can initialise and send Trust Anchor (TA) signer
-commands. By default false. You probably don’t want to touch this, but if you
+commands. By default false. You probably don\(aqt want to touch this, but if you
 do, see \fI\%Krill as a Trust Anchor\fP\&.
 .INDENT 0.0
 .INDENT 3.5
@@ -324,8 +324,8 @@ service_uri = \(dqhttps://localhost:3000/\(dq
 \fBlog_level\fP
 .sp
 The maximum log level to for which to log messages. Defaults to warn.
-Options are “off”, “error”, “warn”, “info”, “debug”, and “trace”. We advise
-against using “debug” or “trace” in production.
+Options are \(dqoff\(dq, \(dqerror\(dq, \(dqwarn\(dq, \(dqinfo\(dq, \(dqdebug\(dq, and \(dqtrace\(dq. We advise
+against using \(dqdebug\(dq or \(dqtrace\(dq in production.
 .INDENT 0.0
 .INDENT 3.5
 .sp
@@ -339,8 +339,8 @@ log_level = \(dqwarn\(dq
 .sp
 \fBlog_type\fP
 .sp
-Where to log to. One of “stderr” for stderr, “syslog” for syslog, or “file”
-for a file. If “file” is given, the “log_file” field needs to be given too.
+Where to log to. One of \(dqstderr\(dq for stderr, \(dqsyslog\(dq for syslog, or \(dqfile\(dq
+for a file. If \(dqfile\(dq is given, the \(dqlog_file\(dq field needs to be given too.
 Defaults to syslog on Krill installations.
 .INDENT 0.0
 .INDENT 3.5
@@ -371,7 +371,7 @@ log_file = \(dq/var/lib/krill/krill.log\(dq
 .sp
 \fBsyslog_facility\fP
 .sp
-The syslog facility to log to if syslog logging is used. Defaults to “daemon”.
+The syslog facility to log to if syslog logging is used. Defaults to \(dqdaemon\(dq.
 .INDENT 0.0
 .INDENT 3.5
 .sp
@@ -390,11 +390,11 @@ used to access the Krill API and the Krill server when not using UNIX sockets.
 .sp
 If you do not specify a value here, the server will insist that you
 provide a token as an environment variable with the key
-“KRILL_ADMIN_TOKEN”.
+\(dqKRILL_ADMIN_TOKEN\(dq.
 .sp
 Krill installations come with a randomly generated 32 character string as a
 token. Krill does not enforce any password requirements but do think twice
-before using “1234” :\-)
+before using \(dq1234\(dq :\-)
 .INDENT 0.0
 .INDENT 3.5
 .sp
@@ -413,16 +413,16 @@ Which kind of authentication to use, primarily for the web interface. The
 .sp
 Currently there are three options:
 .sp
-“admin\-token” (default)
+\(dqadmin\-token\(dq (default)
 .sp
 Use the admin_token only.
 .sp
-“config\-file”
+\(dqconfig\-file\(dq
 .sp
 Specify the users and their permissions in the \fBauth_users\fP in the config
 file.
 .sp
-“openid\-connect”
+\(dqopenid\-connect\(dq
 .sp
 Use an OpenID connect provider for authentication, see \fBauth_openidconnect\fP\&.
 .INDENT 0.0
@@ -457,7 +457,7 @@ can authenticate with Krill. These users can be generated using
 .sp
 \fBauth_openidconnect\fP
 .sp
-If \fBauth_type\fP is set to “openid\-connect”, this provides the configuration for
+If \fBauth_type\fP is set to \(dqopenid\-connect\(dq, this provides the configuration for
 OpenID connect that can then be used for connections. You will want to look at
 \fI\%OpenID Connect Users\fP for details.
 .sp
@@ -466,9 +466,9 @@ It provides the following fields:
 \fIissuer_url\fP (Mandatory)
 .sp
 Provided by your OpenID Connect provider. This is the URL of the provider
-discovery endpoint. “/.well\-known/openid_configuration” will be appended if not
+discovery endpoint. \(dq/.well\-known/openid_configuration\(dq will be appended if not
 present. Krill will fetch the OpenID Connect Discovery 1.0 compliant JSON when
-starting. Krill will fail to start if the URL does not match the “issuer” value
+starting. Krill will fail to start if the URL does not match the \(dqissuer\(dq value
 in the discovery response or if the endpoint cannot be contacted.
 .sp
 \fIclient_id\fP (Mandatory)
@@ -487,14 +487,14 @@ provider responses undetected. Strongly discouraged.
 .sp
 \fIextra_login_scopes\fP
 .sp
-Provider specific. Defaults to “”. A comma\-separated list of OAuth 2.0 scopes
+Provider specific. Defaults to \(dq\(dq. A comma\-separated list of OAuth 2.0 scopes
 passed when directing a user to login. Scopes request additional user details.
-“profile” commonly enables email and other personal details. If the provider
-supports the “email” scope, it is requested automatically.
+\(dqprofile\(dq commonly enables email and other personal details. If the provider
+supports the \(dqemail\(dq scope, it is requested automatically.
 .sp
 \fIextra_login_params\fP
 .sp
-A \fI{ key=value, … }\fP map of extra HTTP query parameters sent with the
+A \fI{ key=value, ... }\fP map of extra HTTP query parameters sent with the
 authorization request. Supported params vary by provider. \fIprompt=login\fP is
 sent automatically unless disabled via \fIprompt_for_login\fP\&. May also be
 specified as a TOML table. Example:
@@ -532,7 +532,7 @@ array tables. If missing, the \fIemail\fP claim is used as the user ID.
 \fIrole_claims\fP
 .sp
 A list for extracting the user role from claim values. Typically provided as
-TOML array tables. If missing, the \fIrole\fP claim is used as the user’s role.
+TOML array tables. If missing, the \fIrole\fP claim is used as the user\(aqs role.
 .INDENT 0.0
 .INDENT 3.5
 .sp
@@ -784,7 +784,7 @@ ca_refresh_seconds = 86400
 \fBca_refresh_jitter_seconds\fP
 .sp
 In order to avoid that many child CAs contact their parent at the same time
-Krill adds a random extra ‘jitter’ time between 0 and the number of seconds.
+Krill adds a random extra \(aqjitter\(aq time between 0 and the number of seconds.
 .sp
 Defaults to 12 hours: 43200 seconds.
 .sp
@@ -963,7 +963,7 @@ It is recommended that separate ROAs are used for each authorized prefix,
 even though the RFC allows for multiple prefixes for the same ASN to be
 combined on a single ROA object. The reason for this is that the ROA will
 become invalid if any of the listed prefixes no longer appears on your
-CA’s certificate. Note that Krill will automatically clean up
+CA\(aqs certificate. Note that Krill will automatically clean up
 over\-claiming ROAs when it finds that its resources have been shrunk, but
 there is a possible time window where ROAs can be invalid before Krill
 discovers the shrinkage.
@@ -1265,7 +1265,7 @@ rrdp_delta_interval_min_seconds = 0
 \fBrrdp_files_archive\fP
 .sp
 Archive old snapshot and delta files. They can then be backed up and/deleted
-at the repository operator’s discretion. This may be particularly useful for
+at the repository operator\(aqs discretion. This may be particularly useful for
 audit or research.
 .sp
 If set to true files will be archived in a directory under
@@ -1285,7 +1285,7 @@ rrdp_files_archive = false
 .sp
 \fBmetrics_hide_ca_details\fP
 .sp
-There are a number of metrics which use a label like {ca=”ca_name”}. This
+There are a number of metrics which use a label like {ca=\(dqca_name\(dq}. This
 setting disables all of them.
 .sp
 By default false.
@@ -1360,7 +1360,7 @@ more about how to run the Krill testbed.
 Set the rsync location for your testbed trust anchor certificate.
 .sp
 You need to configure an rsync server to expose another module for the
-TA certificate. Don’t use the module for the repository as its
+TA certificate. Don\(aqt use the module for the repository as its
 content will be overwritten.
 .sp
 Manually retrieve the TA certificate from Krill and copy it over.

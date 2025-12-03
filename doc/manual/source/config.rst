@@ -1080,7 +1080,7 @@ The number of CAs to create.
 
 The number of ROAs to create per CA.
 
-.. code-block::
+.. code-block:: toml
 
     [benchmark]
     cas = 1337
