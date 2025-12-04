@@ -102,7 +102,7 @@ impl CaManager {
             repo_manager,
             message,
             server_info,
-            &ca_handle,
+            ca_handle,
             signing_key,
         );
 

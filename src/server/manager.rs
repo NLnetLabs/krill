@@ -690,7 +690,7 @@ impl KrillManager {
                     vec![import_ta.ta_uri],
                     import_ta.ta_key_pem,
                     &self.repo_manager,
-                    &actor,
+                    actor,
                 )?;
             }
             else {
