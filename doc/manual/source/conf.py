@@ -234,7 +234,7 @@ latex_documents = [
 man_pages = [
     (master_doc, 'krill', 'Krill User Manual',
      [author], 1),
-    ('config', 'krill', 'Krill config',
+    ('config', 'krill.conf', 'Krill config',
      [author], 5)
 ]
 
