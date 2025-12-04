@@ -279,9 +279,9 @@ assets = [
     { source = "target/release/krillc", dest = "/usr/bin/krillc", mode = "755" },
     { source = "target/rpm/krill.service", dest = "/lib/systemd/system/krill.service", mode = "644" },
     { source = "defaults/krill.conf", dest = "/usr/share/doc/krill/krill.conf", mode = "644", doc = true },
-    { source = "doc/krill.1", dest = "/usr/share/man/man1/krill.1", mode = "644", doc = true },
-    { source = "doc/krill.conf.5", dest = "/usr/share/man/man5/krill.conf.5", mode = "644", doc = true },
-    { source = "doc/krillc.1", dest = "/usr/share/man/man1/krillc.1", mode = "644", doc = true },
+    { source = "doc/krill.1.xz", dest = "/usr/share/man/man1/krill.1.xz", mode = "644", doc = true },
+    { source = "doc/krill.conf.5.xz", dest = "/usr/share/man/man5/krill.conf.5.xz", mode = "644", doc = true },
+    { source = "doc/krillc.1.xz", dest = "/usr/share/man/man1/krillc.1.xz", mode = "644", doc = true },
     { source = "pkg/common/krill.service.preset", dest = "/lib/systemd/system-preset/50-krill.preset", mode = "644" },
 ]
 # These get set using cargo-generate-rpm --set-metadata at package build time.
@@ -304,7 +304,7 @@ name = "krillup"
 license = "MPLv2.0"
 assets = [
     { source = "target/release/krillup", dest = "/usr/bin/krillup", mode = "755" },
-    { source = "doc/krillup.1", dest = "/usr/share/man/man1/krillup.1", mode = "644", doc = true },
+    { source = "doc/krillup.1.xz", dest = "/usr/share/man/man1/krillup.1.xz", mode = "644", doc = true },
 ]
 
 [package.metadata.generate-rpm-alt-base-krillta]
@@ -313,7 +313,7 @@ name = "krillta"
 license = "MPLv2.0"
 assets = [
     { source = "target/release/krillta", dest = "/usr/bin/krillta", mode = "755" },
-    { source = "doc/krillta.1", dest = "/usr/share/man/man1/krillta.1", mode = "644", doc = true },
+    { source = "doc/krillta.1.xz", dest = "/usr/share/man/man1/krillta.1.xz", mode = "644", doc = true },
 ]
 
 # END RPM PACKAGING
