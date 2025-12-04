@@ -32,15 +32,15 @@ include:
   - image: "almalinux:8"
     os: "centos:8"
     rpm_systemd_service_unit_file: "pkg/common/krill-ubuntu-focal.krill.service"
-    rpm_rpmlint_check_filters: unused-rpmlintrc-filter bad-manual-page-folder
+    rpm_rpmlint_check_filters: 
 
   - image: "almalinux:9"
     rpm_systemd_service_unit_file: "pkg/common/krill-ubuntu-focal.krill.service"
-    rpm_rpmlint_check_filters: unused-rpmlintrc-filter bad-manual-page-folder
+    rpm_rpmlint_check_filters: 
 
   - image: "almalinux:10"
     rpm_systemd_service_unit_file: "pkg/common/krill-ubuntu-focal.krill.service"
-    rpm_rpmlint_check_filters: unused-rpmlintrc-filter bad-manual-page-folder
+    rpm_rpmlint_check_filters: 
 
   - image: "debian:bullseye"
     deb_extra_lintian_args: "--suppress-tags systemd-service-file-outside-lib"
