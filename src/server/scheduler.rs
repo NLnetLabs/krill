@@ -145,7 +145,7 @@ impl Scheduler {
                 ca_handle: ca,
                 ca_version,
                 parent,
-            } => self.sync_parent(ca, ca_version, parent).await,
+            } => self.sync_parent(ca, ca_version, parent),
 
             Task::RenewTestbedTa => self.renew_testbed_ta().await,
 
@@ -181,7 +181,6 @@ impl Scheduler {
                     rcn,
                     revocation_requests,
                 )
-                .await
             }
 
             Task::UnexpectedKey {
@@ -191,7 +190,6 @@ impl Scheduler {
                 revocation_request,
             } => {
                 self.unexpected_key(ca, ca_version, rcn, revocation_request)
-                    .await
             }
 
             Task::RefreshAnnouncementsInfo => {
@@ -341,7 +339,6 @@ impl Scheduler {
         match self
             .ca_manager
             .cas_repo_sync_single(self.repo_manager.as_ref(), &ca, version)
-            .await
         {
             Err(e) => {
                 let next = self.config.requeue_remote_failed();
@@ -363,7 +360,7 @@ impl Scheduler {
 
     /// Try to synchronize a CA with a specific parent, reschedule if this
     /// fails
-    async fn sync_parent(
+    fn sync_parent(
         &self,
         ca: CaHandle,
         ca_version: u64,
@@ -374,7 +371,6 @@ impl Scheduler {
             match self
                 .ca_manager
                 .ca_sync_parent(&ca, ca_version, &parent, &self.system_actor)
-                .await
             {
                 Err(e) => {
                     let next = self.config.requeue_remote_failed();
@@ -635,7 +631,7 @@ impl Scheduler {
         }
     }
 
-    async fn resource_class_removed(
+    fn resource_class_removed(
         &self,
         ca_handle: CaHandle,
         ca_version: u64,
@@ -660,7 +656,6 @@ impl Scheduler {
             } else if self
                 .ca_manager
                 .send_revoke_requests(&ca_handle, &parent, requests)
-                .await
                 .is_err()
             {
                 debug!("Could not revoke key for resource class removed by parent - most likely already revoked.");
@@ -677,7 +672,7 @@ impl Scheduler {
         }
     }
 
-    async fn unexpected_key(
+    fn unexpected_key(
         &self,
         ca_handle: CaHandle,
         ca_version: u64,
@@ -707,7 +702,6 @@ impl Scheduler {
                         rcn,
                         revocation_request,
                     )
-                    .await
                 {
                     warn!(
                         "Could not revoke surplus key, most likely already revoked by parent. Error was: {e}"

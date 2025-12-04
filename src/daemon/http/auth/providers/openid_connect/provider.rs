@@ -50,7 +50,6 @@ use openidconnect::{
     }
 };
 use serde::{Deserialize, Serialize};
-use tokio::runtime;
 use urlparse::{urlparse, GetQuery};
 
 use crate::daemon::http::dispatch::AUTH_CALLBACK_ENDPOINT;
@@ -81,6 +80,7 @@ use crate::{
         },
         http::util::url_encode,
     },
+    server::runtime,
 };
 use super::claims::Claims;
 use super::config::ConfigAuthOpenIDConnect;

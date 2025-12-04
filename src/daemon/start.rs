@@ -16,6 +16,7 @@ use crate::config::Config;
 use crate::constants::KRILL_ENV_UPGRADE_ONLY;
 use crate::server::properties::PropertiesManager;
 use crate::server::manager::KrillManager;
+use crate::server::runtime;
 use crate::upgrades::{
     finalise_data_migration, post_start_upgrade,
     prepare_upgrade_data_migrations, UpgradeError, UpgradeMode,
@@ -82,13 +83,15 @@ pub async fn start_krill_daemon(
 
     // Create the Krill manager, this will create the necessary data
     // sub-directories if needed
-    let krill = KrillManager::build(config.clone()).await?;
+    let krill = KrillManager::build(
+        config.clone(), runtime::Handle::current()
+    )?;
 
     // Call post-start upgrades to trigger any upgrade related runtime
     // actions, such as re-issuing ROAs because subject name strategy has
     // changed.
     if let Some(report) = upgrade_report {
-        post_start_upgrade(report, &krill).await?;
+        post_start_upgrade(report, &krill)?;
     }
 
     // If the operator wanted to do the upgrade only, now is a good time to
@@ -104,7 +107,9 @@ pub async fn start_krill_daemon(
     let scheduler_future = scheduler.run();
 
     // Create the HTTP server.
-    let server = HttpServer::new(krill, config.clone())?;
+    let server = HttpServer::new(
+        krill, config.clone(), &runtime::Handle::current()
+    )?;
 
     // Create self-signed HTTPS cert if configured and not generated earlier.
     if config.https_mode().is_generate_https_cert() {

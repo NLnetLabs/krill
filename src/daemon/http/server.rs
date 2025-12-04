@@ -9,6 +9,7 @@ use crate::commons::KrillResult;
 use crate::commons::error::FatalError;
 use crate::config::Config;
 use crate::constants::KRILL_ENV_HTTP_LOG_INFO;
+use crate::server::runtime;
 use crate::server::manager::KrillManager;
 use super::auth::Authorizer;
 use super::dispatch::{DispatchError, dispatch_request};
@@ -22,7 +23,7 @@ use super::response::{HyperResponse, HttpResponse};
 /// The Krill HTTP server.
 pub struct HttpServer {
     /// The Krill “business logic.”
-    krill: KrillManager,
+    krill: Arc<KrillManager>,
 
     /// The component responsible for API authorization checks
     authorizer: Authorizer,
@@ -38,11 +39,14 @@ impl HttpServer {
     /// Creates a new server from a Krill manager and the configuration.
     pub fn new(
         krill: KrillManager,
-        config: Arc<Config>
+        config: Arc<Config>,
+        runtime: &runtime::Handle,
     ) -> KrillResult<Arc<Self>> {
+        let authorizer = Authorizer::new(config.clone())?;
+        authorizer.spawn_sweep(runtime);
         Ok(Self {
-            krill,
-            authorizer: Authorizer::new(config.clone())?,
+            krill: krill.into(),
+            authorizer,
             config,
             started: Timestamp::now(),
         }.into())
@@ -93,6 +97,23 @@ impl HttpServer {
     /// Returns a reference to the Krill manager.
     pub(super) fn krill(&self) -> &KrillManager {
         &self.krill
+    }
+
+    /// Synchronously runs a closure using the Krill manager.
+    pub(super) async fn with_krill<F, R>(
+        &self, op: F
+    ) -> Result<R, DispatchError>
+    where
+        F: FnOnce(&KrillManager) -> Result<R, DispatchError> + Send + 'static,
+        R: Send + 'static
+    {
+        // XXX This uses tokio::spawn_blocking without any protection for
+        //     now. There should probably be some specific (configurable?)
+        //     limit here.
+        let krill = self.krill.clone();
+        tokio::task::spawn_blocking(move || op(&krill)).await.map_err(|err| {
+            DispatchError::from(HttpResponse::server_error(err))
+        })?
     }
 
     /// Returns a reference to the authorizer.

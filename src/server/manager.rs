@@ -6,7 +6,6 @@ use std::sync::Arc;
 use bytes::Bytes;
 use clap::crate_version;
 use chrono::Duration;
-use futures_util::future::try_join_all;
 use log::info;
 
 use rpki::{
@@ -30,7 +29,7 @@ use crate::{
     config::Config,
     server::{
         ca::{
-            self, CaManager, CaStatus,
+            self, CaStatus,
         },
         mq::{now, Task, TaskQueue},
         pubd::RepositoryManager,
@@ -72,6 +71,7 @@ use crate::api::ta::{
 };
 use crate::constants::{TA_NAME, ta_handle};
 use crate::server::bgp::BgpAnalyser;
+use crate::server::runtime;
 
 
 //------------ KrillManager ---------------------------------------------------
@@ -104,7 +104,10 @@ pub struct KrillManager {
 impl KrillManager {
     /// Creates a new publication server. Note that state is preserved
     /// in the data storage.
-    pub async fn build(config: Arc<Config>) -> KrillResult<Self> {
+    pub fn build(
+        config: Arc<Config>,
+        runtime: runtime::Handle,
+    ) -> KrillResult<Self> {
         let service_uri = config.service_uri();
 
         info!("Starting {} v{}", KRILL_SERVER_APP, crate_version!());
@@ -147,8 +150,8 @@ impl KrillManager {
                 mq.clone(),
                 signer,
                 system_actor.clone(),
-            )
-            .await?,
+                runtime,
+            )?,
         );
 
         let bgp_analyser = Arc::new(BgpAnalyser::new(&config));
@@ -259,7 +262,7 @@ impl KrillManager {
                     testbed.publication_server_uris(),
                     import_cas,
                 );
-                server.cas_import(startup_structure).await?;
+                server.cas_import(startup_structure)?;
             }
         }
 
@@ -492,7 +495,7 @@ impl KrillManager {
     }
 
     /// Shows the parent contact for a child.
-    pub async fn ca_parent_contact(
+    pub fn ca_parent_contact(
         &self,
         ca: &CaHandle,
         child: ChildHandle,
@@ -582,7 +585,7 @@ impl KrillManager {
     }
 
     /// Updates a parent contact for a CA
-    pub async fn ca_parent_add_or_update(
+    pub fn ca_parent_add_or_update(
         &self,
         ca: CaHandle,
         parent_req: ParentCaReq,
@@ -598,21 +601,19 @@ impl KrillManager {
         })?;
         self.ca_manager.get_entitlements_from_contact(
             &ca, &parent_req.handle, &contact, false
-        ).await?;
+        )?;
 
         // Seems good. Add/update the parent.
         self.ca_manager.ca_parent_add_or_update(ca, parent_req, actor)
     }
 
-    pub async fn ca_parent_remove(
+    pub fn ca_parent_remove(
         &self,
         handle: CaHandle,
         parent: ParentHandle,
         actor: &Actor,
     ) -> KrillEmptyResult {
-        self.ca_manager
-            .ca_parent_remove(handle, parent, actor)
-            .await
+        self.ca_manager.ca_parent_remove(handle, parent, actor)
     }
 }
 
@@ -655,11 +656,11 @@ impl KrillManager {
         Ok(res)
     }
 
-    pub async fn cas_import(
+    pub fn cas_import(
         &self,
         structure: api::import::Structure,
     ) -> KrillResult<()> {
-        let actor = Arc::new(self.system_actor().clone());
+        let actor = self.system_actor();
 
         // We need to know which CAs already exist. They should not be
         // imported again, but can serve as parents.
@@ -684,49 +685,31 @@ impl KrillManager {
                 && self.config.ta_signer_enabled()
             {
                 info!("Creating embedded Trust Anchor");
-                self.ca_manager
-                    .ta_init_fully_embedded(
-                        import_ta.ta_aia,
-                        vec![import_ta.ta_uri],
-                        import_ta.ta_key_pem,
-                        &self.repo_manager,
-                        &actor,
-                    )
-                    .await?;
-            } else {
+                self.ca_manager.ta_init_fully_embedded(
+                    import_ta.ta_aia,
+                    vec![import_ta.ta_uri],
+                    import_ta.ta_key_pem,
+                    &self.repo_manager,
+                    &actor,
+                )?;
+            }
+            else {
                 return Err(Error::custom(
-                    "Import TA requires ta_support_enabled = true and ta_signer_enabled = true",
+                    "Import TA requires ta_support_enabled = true and \
+                     ta_signer_enabled = true",
                 ));
             }
         }
 
         info!("Bulk import {} CAs", structure.cas.len());
-        // Set up each online TA child with local repo, do this in parallel.
-        let mut import_fns = vec![];
-        let service_uri = Arc::new(self.config.service_uri());
         for ca in structure.cas {
-            import_fns.push(tokio::spawn(Self::import_ca(
-                ca,
-                self.ca_manager.clone(),
-                self.repo_manager.clone(),
-                service_uri.clone(),
-                actor.clone(),
-            )));
+            self.import_ca(ca)?;
         }
-        try_join_all(import_fns).await.map_err(|e| {
-            Error::Custom(format!("Could not import CAs: {e}"))
-        })?;
 
         Ok(())
     }
 
-    async fn import_ca(
-        import: api::import::ImportCa,
-        ca_manager: Arc<CaManager>,
-        repo_manager: Arc<RepositoryManager>,
-        service_uri: Arc<uri::Https>,
-        actor: Arc<Actor>,
-    ) -> KrillEmptyResult {
+    fn import_ca(&self, import: api::import::ImportCa) -> KrillEmptyResult {
         // outline:
         // - init ca
         // - set up under repo
@@ -736,11 +719,11 @@ impl KrillManager {
         info!("Importing CA: '{}'", import.handle);
 
         // init CA
-        ca_manager.init_ca(import.handle.clone())?;
+        self.ca_manager.init_ca(import.handle.clone())?;
 
         // Get Publisher Request
         let pub_req = {
-            let ca = ca_manager.get_ca(&import.handle)?;
+            let ca = self.ca_manager.get_ca(&import.handle)?;
             idexchange::PublisherRequest::new(
                 ca.id_cert().base64.clone(),
                 import.handle.convert(),
@@ -749,26 +732,26 @@ impl KrillManager {
         };
 
         // Add Publisher
-        repo_manager.create_publisher(pub_req, &actor)?;
+        self.repo_manager.create_publisher(pub_req, self.system_actor())?;
 
         // Get Repository Contact for CA
         let repo_contact = {
-            let repo_response =
-                repo_manager.repository_response(&import.handle.convert())?;
-            RepositoryContact::try_from_response(repo_response)
-                .map_err(Error::rfc8183)?
+            let repo_response = self.repo_manager.repository_response(
+                &import.handle.convert()
+            )?;
+            RepositoryContact::try_from_response(
+                repo_response
+            ).map_err(Error::rfc8183)?
         };
 
         // Add Repository to CA
-        ca_manager
-            .update_repo(
-                &repo_manager,
-                import.handle.clone(),
-                repo_contact,
-                false,
-                &actor,
-            )
-            .await?;
+        self.ca_manager.update_repo(
+            &self.repo_manager,
+            import.handle.clone(),
+            repo_contact,
+            false,
+            self.system_actor(),
+        )?;
 
         for import_parent in import.parents {
             // The parent should have been created. If it wasn't created yet,
@@ -776,104 +759,89 @@ impl KrillManager {
             // be sure that it will be created because we verified
             // that all parents are either "ta" (which is always created) or
             // another CA that appeared on the list before this CA.
-            //
-            // But.. you know.. just to be safe, let's not hang in here
-            // forever..
-            let wait_ms = 100;
-            let max_tries = 3000; // *100ms -> 5 mins, should be enough even on slow systems
-            let mut tried = 0;
+
+            // XXX Previously, we were waiting here if things wen’t wrong, but
+            //     that was probably only because import happened in parallel.
+            //     For now we do this one-by-one though, so I think we can
+            //     rely on the parent being there and ready.
+
             let parent_as_ca: CaHandle = import_parent.handle.convert();
 
-            // If the parent is the TA, then there is no need to wait.
             if import_parent.handle.as_str() != TA_NAME {
-                loop {
-                    tried += 1;
-                    if let Ok(parent) = ca_manager.get_ca(&parent_as_ca)
-                    {
-                        if parent.all_resources().contains(
-                            &import_parent.resources
-                        ) {
-                            break;
-                        }
-                        else {
-                            info!(
-                                "Parent {} does not (yet) have resources for {}. Will wait a bit and try again",
-                                parent.handle(),
-                                import.handle
-                            );
-                        }
-                    } else {
-                        info!(
-                            "Parent {} for CA {} is not yet created. Will wait a bit and try again",
-                            parent_as_ca, import.handle
-                        );
-                    }
-                    tokio::time::sleep(std::time::Duration::from_millis(
-                        wait_ms,
-                    ))
-                    .await;
-                    if tried >= max_tries {
+                if let Ok(parent) = self.ca_manager.get_ca(&parent_as_ca) {
+                    if !parent.all_resources().contains(
+                        &import_parent.resources
+                    ) {
                         return Err(Error::Custom(format!(
-                            "Could not import CA {}. Parent: {} is not created",
-                            import.handle, parent_as_ca
+                            "Could not import CA {}: parent {} does not \
+                             required resources.",
+                            import.handle,
+                            parent.handle(),
                         )));
                     }
+                }
+                else {
+                    return Err(Error::Custom(format!(
+                        "Could not import CA {}. Parent: {} does not exist.",
+                        import.handle, parent_as_ca
+                    )));
                 }
             }
 
             // Add the CA as the child of parent and get the parent response
             let response = {
-                let ca = ca_manager.get_ca(&import.handle)?;
-                let id_cert =
-                    ca.child_request().validate().map_err(Error::rfc8183)?;
+                let ca = self.ca_manager.get_ca(&import.handle)?;
+                let id_cert = ca.child_request().validate().map_err(
+                    Error::rfc8183
+                )?;
                 let child_req = AddChildRequest {
                     handle: import.handle.convert(),
                     resources: import_parent.resources,
                     id_cert,
                 };
 
-                ca_manager
-                    .ca_add_child(
-                        &import_parent.handle.convert(),
-                        child_req,
-                        &service_uri,
-                        &actor,
-                    )?
+                self.ca_manager.ca_add_child(
+                    &import_parent.handle.convert(),
+                    child_req,
+                    &self.service_uri,
+                    self.system_actor(),
+                )?
             };
 
             // Add the parent to the child and force sync
-            {
-                let parent_req = ParentCaReq {
-                    handle: import_parent.handle.clone(),
-                    response
-                };
-                ca_manager.ca_parent_add_or_update(
-                    import.handle.clone(),
-                    parent_req,
-                    &actor,
+            let parent_req = ParentCaReq {
+                handle: import_parent.handle.clone(),
+                response
+            };
+            self.ca_manager.ca_parent_add_or_update(
+                import.handle.clone(),
+                parent_req,
+                self.system_actor(),
+            )?;
+
+            // First sync will inform child of its entitlements and
+            // trigger that CSR is created.
+            self.ca_manager.ca_sync_parent(
+                &import.handle, 0, &import_parent.handle,
+                self.system_actor(),
+            )?;
+
+            // Second sync will send that CSR to the parent
+            self.ca_manager.ca_sync_parent(
+                &import.handle, 0, &import_parent.handle,
+                self.system_actor(),
+            )?;
+
+            // If the parent is a TA, then we will need to push a bit
+            // more.. Normally this should be handled by
+            // triggered tasks, but the task scheduler is
+            // not running when we do this at startup.
+            if import_parent.handle.as_str() == TA_NAME {
+                self.ca_manager.sync_ta_proxy_signer_if_possible()?;
+                self.ca_manager.ca_sync_parent(
+                    &import.handle, 0, &import_parent.handle,
+                    self.system_actor(),
                 )?;
-
-                // First sync will inform child of its entitlements and
-                // trigger that CSR is created.
-                ca_manager.ca_sync_parent(
-                    &import.handle, 0, &import_parent.handle, &actor
-                ).await?;
-
-                // Second sync will send that CSR to the parent
-                ca_manager.ca_sync_parent(
-                    &import.handle, 0, &import_parent.handle, &actor
-                ).await?;
-
-                // If the parent is a TA, then we will need to push a bit
-                // more.. Normally this should be handled by
-                // triggered tasks, but the task scheduler is
-                // not running when we do this at startup.
-                if import_parent.handle.as_str() == TA_NAME {
-                    ca_manager.sync_ta_proxy_signer_if_possible()?;
-                    ca_manager.ca_sync_parent(
-                        &import.handle, 0, &import_parent.handle, &actor
-                    ).await?;
-                }
             }
         }
 
@@ -882,7 +850,10 @@ impl KrillManager {
             added: import.roas,
             removed: vec![]
         };
-        ca_manager.ca_routes_update(import.handle, roa_updates, &actor)?;
+        self.ca_manager.ca_routes_update(
+            import.handle, roa_updates,
+            self.system_actor()
+        )?;
 
         Ok(())
     }
@@ -960,14 +931,12 @@ impl KrillManager {
     /// all its objects first. Note that any children of this CA will be left
     /// orphaned, and they will only learn of this sad fact when they choose
     /// to call home.
-    pub async fn ca_delete(
+    pub fn ca_delete(
         &self,
         ca: &CaHandle,
         actor: &Actor,
     ) -> KrillResult<()> {
-        self.ca_manager
-            .delete_ca(self.repo_manager.as_ref(), ca, actor)
-            .await
+        self.ca_manager.delete_ca(self.repo_manager.as_ref(), ca, actor)
     }
 
     /// Returns the parent contact for a CA and parent, or NONE if either the
@@ -1026,15 +995,15 @@ impl KrillManager {
 
     /// Update the repository for a CA, or return an error. (see
     /// `CertAuth::repo_update`)
-    pub async fn ca_repo_update(
+    pub fn ca_repo_update(
         &self,
         ca: CaHandle,
         contact: RepositoryContact,
         actor: &Actor,
     ) -> KrillEmptyResult {
-        self.ca_manager
-            .update_repo(self.repo_manager.as_ref(), ca, contact, true, actor)
-            .await
+        self.ca_manager.update_repo(
+            self.repo_manager.as_ref(), ca, contact, true, actor
+        )
     }
 
     pub fn ca_update_id(
@@ -1191,7 +1160,7 @@ impl KrillManager {
 
     /// Re-issue ROA objects so that they will use short subjects (see issue
     /// #700)
-    pub async fn force_renew_roas(&self) -> KrillResult<()> {
+    pub fn force_renew_roas(&self) -> KrillResult<()> {
         self.ca_manager.force_renew_roas_all(self.system_actor())
     }
 }
@@ -1240,7 +1209,7 @@ impl KrillManager {
     }
 
     /// Sign an RTA - either a new, or a prepared RTA
-    pub async fn rta_sign(
+    pub fn rta_sign(
         &self,
         ca: CaHandle,
         name: RtaName,
@@ -1251,7 +1220,7 @@ impl KrillManager {
     }
 
     /// Prepare a multi
-    pub async fn rta_multi_prep(
+    pub fn rta_multi_prep(
         &self,
         ca: CaHandle,
         name: RtaName,
@@ -1264,7 +1233,7 @@ impl KrillManager {
     }
 
     /// Co-sign an existing RTA
-    pub async fn rta_multi_cosign(
+    pub fn rta_multi_cosign(
         &self,
         ca: CaHandle,
         name: RtaName,

@@ -9,11 +9,11 @@ use base64::engine::Engine as _;
 use log::{debug, trace, warn};
 use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
-use tokio::runtime;
 use tokio::sync::RwLock;
 use crate::api::admin::Token;
 use crate::commons::KrillResult;
 use crate::commons::error::{ApiAuthError, Error};
+use crate::server::runtime;
 use super::crypt;
 use super::crypt::{CryptState, NonceState};
 
@@ -397,7 +397,7 @@ mod tests {
 
         // Start the sweeper to sweep every five seconds.
         cache.spawn_sweep_with_duration(
-            &tokio::runtime::Handle::current(),
+            &runtime::Handle::current(),
             Duration::from_secs(5),
         );
 

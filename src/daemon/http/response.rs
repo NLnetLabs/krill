@@ -1,3 +1,4 @@
+use std::fmt;
 use bytes::Bytes;
 use http_body_util::{Either, Empty, Full};
 use hyper::{HeaderMap, StatusCode};
@@ -344,6 +345,13 @@ impl HttpResponse {
 
     pub fn forbidden(err: String) -> Self {
         Self::response_from_error(Error::ApiInsufficientRights(err))
+    }
+
+    pub fn server_error(msg: impl fmt::Display) -> Self {
+        Self::error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            ErrorResponse::new("general-error", msg),
+        )
     }
 
     pub fn method_not_allowed() -> Self {

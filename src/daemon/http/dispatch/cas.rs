@@ -37,29 +37,31 @@ async fn index(
     request: Request<'_>,
 ) -> Result<HttpResponse, DispatchError> {
     match *request.method() {
-        Method::GET => index_get(request),
+        Method::GET => index_get(request).await,
         Method::POST => index_post(request).await,
         _ => Ok(HttpResponse::method_not_allowed())
     }
 }
 
-fn index_get(
+async fn index_get(
     request: Request<'_>,
 ) -> Result<HttpResponse, DispatchError> {
     let (request, auth) = request.proceed_unchecked();
     let server = request.empty()?;
 
-    Ok(HttpResponse::json(
-        &CertAuthList {
-            cas: {
-                server.krill().ca_handles()?.filter_map(|handle| {
-                    auth.has_permission(
-                        Permission::CaRead, Some(&handle)
-                    ).then_some(CertAuthSummary { handle })
-                }).collect()
+    server.with_krill(move |krill| {
+        Ok(HttpResponse::json(
+            &CertAuthList {
+                cas: {
+                    krill.ca_handles()?.filter_map(|handle| {
+                        auth.has_permission(
+                            Permission::CaRead, Some(&handle)
+                        ).then_some(CertAuthSummary { handle })
+                    }).collect()
+                }
             }
-        }
-    ))
+        ))
+    }).await
 }
 
 async fn index_post(
@@ -69,7 +71,7 @@ async fn index_post(
         Permission::CaCreate, None
     )?;
     let (server, init) = request.read_json().await?;
-    server.krill().ca_init(init)?;
+    server.with_krill(move |krill| Ok(krill.ca_init(init)?)).await?;
     Ok(HttpResponse::ok())
 }
 
@@ -110,17 +112,18 @@ async fn ca_index(
             let (request, _) = request.proceed_permitted(
                 Permission::CaRead, Some(&ca)
             )?;
-            let server = request.empty()?;
-            Ok(HttpResponse::json(
-                &server.krill().ca_info(&ca)?
-            ))
+            request.empty()?.with_krill(move |krill| {
+                Ok(HttpResponse::json(
+                    &krill.ca_info(&ca)?
+                ))
+            }).await
         }
         Method::DELETE => {
             let (request, auth) = request.proceed_permitted(
                 Permission::CaDelete, Some(&ca)
             )?;
             let server = request.empty()?;
-            server.krill().ca_delete(&ca, auth.actor()).await?;
+            server.krill().ca_delete(&ca, auth.actor())?;
             Ok(HttpResponse::ok())
         }
         _ => Ok(HttpResponse::method_not_allowed())
@@ -673,7 +676,7 @@ async fn parents_index(
             let parent_req = extract_parent_ca_req(&ca, bytes, None)?;
             server.krill().ca_parent_add_or_update(
                 ca, parent_req, auth.actor()
-            ).await?;
+            )?;
             Ok(HttpResponse::ok())
         }
         _ => Ok(HttpResponse::method_not_allowed())
@@ -707,7 +710,7 @@ async fn parents_parent(
             )?;
             server.krill().ca_parent_add_or_update(
                 ca, parent_req, auth.actor()
-            ).await?;
+            )?;
             Ok(HttpResponse::ok())
         }
         Method::DELETE => {
@@ -715,7 +718,7 @@ async fn parents_parent(
                 Permission::CaUpdate, Some(&ca)
             )?;
             let server = request.empty()?;
-            server.krill().ca_parent_remove(ca, parent, auth.actor()).await?;
+            server.krill().ca_parent_remove(ca, parent, auth.actor())?;
             Ok(HttpResponse::ok())
         }
         _ => Ok(HttpResponse::method_not_allowed())
@@ -797,7 +800,7 @@ async fn repo_index(
             )?;
             let (server, update) = request.read_bytes().await?;
             let update = extract_repository_contact(&ca, update)?;
-            server.krill().ca_repo_update(ca, update, auth.actor()).await?;
+            server.krill().ca_repo_update(ca, update, auth.actor())?;
             Ok(HttpResponse::ok())
         }
         _ => Ok(HttpResponse::method_not_allowed())
