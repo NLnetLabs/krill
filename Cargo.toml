@@ -160,18 +160,18 @@ assets = [
         "644",
     ],
     [
-        "doc/krill.1",
-        "/usr/share/man/man1/krill.1",
+        "doc/krill.1.gz",
+        "/usr/share/man/man1/krill.1.gz",
         "644",
     ],
     [
-        "doc/krill.conf.5",
-        "/usr/share/man/man5/krill.conf.5",
+        "doc/krill.conf.5.gz",
+        "/usr/share/man/man5/krill.conf.5.gz",
         "644",
     ],
     [
-        "doc/krillc.1",
-        "/usr/share/man/man1/krillc.1",
+        "doc/krillc.1.gz",
+        "/usr/share/man/man1/krillc.1.gz",
         "644",
     ],
     [
@@ -207,8 +207,8 @@ assets = [
         "755",
     ],
     [
-        "doc/krillup.1",
-        "/usr/share/man/man1/krillup.1",
+        "doc/krillup.1.gz",
+        "/usr/share/man/man1/krillup.1.gz",
         "644",
     ],
 ]
@@ -229,8 +229,8 @@ assets = [
         "755",
     ],
     [
-        "doc/krillta.1",
-        "/usr/share/man/man1/krillta.1",
+        "doc/krillta.1.gz",
+        "/usr/share/man/man1/krillta.1.gz",
         "644",
     ],
 ]
