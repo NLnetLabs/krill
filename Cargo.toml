@@ -280,10 +280,11 @@ assets = [
     { source = "target/rpm/krill.service", dest = "/lib/systemd/system/krill.service", mode = "644" },
     { source = "defaults/krill.conf", dest = "/usr/share/doc/krill/krill.conf", mode = "644", doc = true },
     { source = "doc/krill.1.gz", dest = "/usr/share/man/man1/krill.1.gz", mode = "644" },
-    { source = "doc/krill.conf.5.gz", dest = "/usr/share/man/man5/krill.conf.5.gz", mode = "644" },
-    { source = "doc/krillc.1.gz", dest = "/usr/share/man/man1/krillc.1.gz", mode = "644" },
+    # { source = "doc/krill.conf.5.gz", dest = "/usr/share/man/man5/krill.conf.5.gz", mode = "644" },
+    # { source = "doc/krillc.1.gz", dest = "/usr/share/man/man1/krillc.1.gz", mode = "644" },
     { source = "pkg/common/krill.service.preset", dest = "/lib/systemd/system-preset/50-krill.preset", mode = "644" },
 ]
+auto-req = "disabled"
 # These get set using cargo-generate-rpm --set-metadata at package build time.
 #post_install_script = ...
 #pre_uninstall_script = ...
@@ -306,6 +307,7 @@ assets = [
     { source = "target/release/krillup", dest = "/usr/bin/krillup", mode = "755" },
     { source = "doc/krillup.1.gz", dest = "/usr/share/man/man1/krillup.1.gz", mode = "644" },
 ]
+auto-req = "disabled"
 
 [package.metadata.generate-rpm-alt-base-krillta]
 name = "krillta"
@@ -315,6 +317,7 @@ assets = [
     { source = "target/release/krillta", dest = "/usr/bin/krillta", mode = "755" },
     { source = "doc/krillta.1.gz", dest = "/usr/share/man/man1/krillta.1.gz", mode = "644" },
 ]
+auto-req = "disabled"
 
 # END RPM PACKAGING
 # ------------------------------------------------------------------------------
