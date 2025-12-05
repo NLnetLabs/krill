@@ -5,7 +5,7 @@ use std::sync::Arc;
 use log::error;
 use hyper::service::service_fn;
 use hyper_util::rt::{TokioExecutor, TokioIo};
-use tokio::{runtime, select};
+use tokio::select;
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 use tokio_rustls::TlsAcceptor;
@@ -16,6 +16,7 @@ use crate::config::Config;
 use crate::constants::KRILL_ENV_UPGRADE_ONLY;
 use crate::server::properties::PropertiesManager;
 use crate::server::manager::KrillManager;
+use crate::server::runtime;
 use crate::upgrades::{
     finalise_data_migration, post_start_upgrade,
     prepare_upgrade_data_migrations, UpgradeError, UpgradeMode,
@@ -82,13 +83,15 @@ pub async fn start_krill_daemon(
 
     // Create the Krill manager, this will create the necessary data
     // sub-directories if needed
-    let krill = KrillManager::build(config.clone()).await?;
+    let krill = Arc::new(KrillManager::build(
+        config.clone(), runtime::Handle::current()
+    )?);
 
     // Call post-start upgrades to trigger any upgrade related runtime
     // actions, such as re-issuing ROAs because subject name strategy has
     // changed.
     if let Some(report) = upgrade_report {
-        post_start_upgrade(report, &krill).await?;
+        post_start_upgrade(report, &krill)?;
     }
 
     // If the operator wanted to do the upgrade only, now is a good time to
@@ -100,8 +103,7 @@ pub async fn start_krill_daemon(
 
     // Build the scheduler which will be responsible for executing
     // planned/triggered tasks
-    let scheduler = krill.build_scheduler();
-    let scheduler_future = scheduler.run();
+    let scheduler_future = krill.clone().run_scheduler();
 
     // Create the HTTP server.
     let server = HttpServer::new(

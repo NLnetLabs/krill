@@ -29,8 +29,6 @@ pub fn check_ca_objects(config: &Config) -> UpgradeResult<()> {
 
     let ca_objects_store = CaObjectsStore::create(
         &config.storage_uri,
-        config.issuance_timing.clone(),
-        signer,
     )?;
 
     let cas_with_objects = ca_objects_store.cas()?;

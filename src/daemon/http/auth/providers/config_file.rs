@@ -6,7 +6,6 @@ use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
 use base64::engine::Engine as _;
 use log::{debug, info, log_enabled, trace, warn};
 use serde::{Deserialize, Serialize};
-use tokio::runtime;
 use unicode_normalization::UnicodeNormalization;
 use crate::api::admin::Token;
 use crate::commons::httpclient;
@@ -19,6 +18,7 @@ use crate::daemon::http::auth::{AuthInfo, LoggedInUser, Permission, RoleMap};
 use crate::daemon::http::auth::session::{ClientSession, LoginSessionCache};
 use crate::daemon::http::request::HyperRequest;
 use crate::daemon::http::response::HttpResponse;
+use crate::server::runtime;
 
 
 //------------ Constants -----------------------------------------------------

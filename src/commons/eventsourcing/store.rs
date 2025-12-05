@@ -217,7 +217,7 @@ impl<A: Aggregate> AggregateStore<A> {
     }
 
     /// Adds a new aggregate instance based on the init command.
-    pub fn add(&self, cmd: A::InitCommand) -> Result<Arc<A>, A::Error> {
+    pub fn add(&self, cmd: A::InitCommand<'_>) -> Result<Arc<A>, A::Error> {
         let scope = Self::scope_for_agg(cmd.handle());
 
         self.kv.execute(Some(&scope), |kv| {
@@ -285,7 +285,7 @@ impl<A: Aggregate> AggregateStore<A> {
     ///
     /// On error, it will save the command and the error, then return the
     /// error.
-    pub fn command(&self, cmd: A::Command) -> Result<Arc<A>, A::Error> {
+    pub fn command(&self, cmd: A::Command<'_>) -> Result<Arc<A>, A::Error> {
         self.execute_opt_command(cmd.handle(), Some(&cmd), false)
     }
 
@@ -295,7 +295,7 @@ impl<A: Aggregate> AggregateStore<A> {
     fn execute_opt_command(
         &self,
         handle: &MyHandle,
-        cmd_opt: Option<&A::Command>,
+        cmd_opt: Option<&A::Command<'_>>,
         save_snapshot: bool,
     ) -> Result<Arc<A>, A::Error> {
         let scope = Self::scope_for_agg(handle);
