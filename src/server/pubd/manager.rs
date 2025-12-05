@@ -38,24 +38,14 @@ pub struct RepositoryManager {
     /// The repository content manager portion.
     content: Arc<RepositoryContentProxy>,
 
-    /// Shared task queue.
-    ///
-    /// Used to schedule RRDP updates when content is updated.
-    tasks: Arc<TaskQueue>,
-
     /// Shared server config.
     config: Arc<Config>,
-
-    /// Shared signer.
-    signer: Arc<KrillSigner>,
 }
 
 impl RepositoryManager {
     /// Builds the repository manager.
     pub fn build(
         config: Arc<Config>,
-        tasks: Arc<TaskQueue>,
-        signer: Arc<KrillSigner>,
     ) -> Result<Self, Error> {
         let access_proxy = Arc::new(RepositoryAccessProxy::create(&config)?);
         let content_proxy = Arc::new(
@@ -65,9 +55,7 @@ impl RepositoryManager {
         Ok(RepositoryManager {
             access: access_proxy,
             content: content_proxy,
-            tasks,
             config,
-            signer,
         })
     }
 
@@ -77,9 +65,11 @@ impl RepositoryManager {
     }
 
     /// Create the publication server, will fail if it was already created.
-    pub fn init(&self, uris: PublicationServerUris) -> KrillResult<()> {
+    pub fn init(
+        &self, uris: PublicationServerUris, signer: &KrillSigner,
+    ) -> KrillResult<()> {
         info!("Initializing repository");
-        self.access.init(uris.clone(), self.signer.clone())?;
+        self.access.init(uris.clone(), signer)?;
         self.content.init(self.config.repo_dir(), uris)?;
         self.content
             .write_repository(self.config.rrdp_updates_config)?;
@@ -127,6 +117,8 @@ impl RepositoryManager {
         &self,
         publisher_handle: PublisherHandle,
         msg_bytes: Bytes,
+        tasks: &TaskQueue,
+        signer: &KrillSigner,
     ) -> KrillResult<Bytes> {
         let cms_logger = CmsLogger::for_rfc8181_rcvd(
             self.config.rfc8181_log_dir.as_ref(),
@@ -145,7 +137,9 @@ impl RepositoryManager {
 
         let is_list_query = query == publication::Query::List;
 
-        let response_result = self.rfc8181_message(&publisher_handle, query);
+        let response_result = self.rfc8181_message(
+            &publisher_handle, query, tasks
+        );
 
         let should_log_cms = response_result.is_err() || !is_list_query;
 
@@ -163,7 +157,7 @@ impl RepositoryManager {
         };
 
         let response_bytes = self.access.create_response(
-            response, &self.signer
+            response, signer
         )?.to_bytes();
 
         if should_log_cms {
@@ -179,6 +173,7 @@ impl RepositoryManager {
         &self,
         publisher_handle: &PublisherHandle,
         query: publication::Query,
+        tasks: &TaskQueue,
     ) -> KrillResult<publication::Message> {
         match query {
             publication::Query::List => {
@@ -192,7 +187,7 @@ impl RepositoryManager {
                 debug!(
                     "Received RFC 8181 delta query for {publisher_handle}"
                 );
-                self.publish(publisher_handle, delta)?;
+                self.publish(publisher_handle, delta, tasks)?;
                 Ok(publication::Message::success())
             }
         }
@@ -208,6 +203,7 @@ impl RepositoryManager {
         &self,
         publisher_handle: &PublisherHandle,
         delta: PublishDelta,
+        tasks: &TaskQueue,
     ) -> KrillResult<()> {
         let publisher = self.access.get_publisher(publisher_handle)?;
 
@@ -217,7 +213,7 @@ impl RepositoryManager {
             publisher.base_uri(),
         )?;
 
-        self.tasks.schedule(Task::RrdpUpdateIfNeeded, now())
+        tasks.schedule(Task::RrdpUpdateIfNeeded, now())
     }
 
     /// Updates RRDP and makes new delta if needed.
@@ -326,11 +322,12 @@ impl RepositoryManager {
         &self,
         name: PublisherHandle,
         actor: &Actor,
+        tasks: &TaskQueue,
     ) -> KrillResult<()> {
         self.content.remove_publisher(name.clone())?;
         self.access.remove_publisher(name, actor)?;
 
-        self.tasks.schedule(Task::RrdpUpdateIfNeeded, now())
+        tasks.schedule(Task::RrdpUpdateIfNeeded, now())
     }
 }
 
@@ -414,66 +411,76 @@ mod tests {
         )
     }
 
-    fn make_server(
-        storage_uri: &Url
-    ) -> (RepositoryManager, tempfile::TempDir) {
-        let data_dir = tempfile::tempdir().unwrap();
+    struct Server {
+        storage_uri: Url,
+        repo: RepositoryManager,
+        tasks: TaskQueue,
+        data_dir: tempfile::TempDir
+    }
 
-        enable_test_mode();
-        let mut config = Config::test(
-            storage_uri,
-            Some(data_dir.path()),
-            true,
-            false,
-            false,
-            false,
-        );
-        let _ = config.init_logging();
-        config.process().unwrap();
+    impl Server {
+        fn build() -> Self {
+            let storage_uri = test::mem_storage();
+            let data_dir = tempfile::tempdir().unwrap();
 
-        let signer = KrillSignerBuilder::new(
-            storage_uri,
-            Duration::from_secs(1),
-            &config.signers,
-        )
-        .with_default_signer(config.default_signer())
-        .with_one_off_signer(config.one_off_signer())
-        .build()
-        .unwrap();
+            enable_test_mode();
+            let mut config = Config::test(
+                &storage_uri,
+                Some(data_dir.path()),
+                true,
+                false,
+                false,
+                false,
+            );
+            let _ = config.init_logging();
+            config.process().unwrap();
 
-        let signer = Arc::new(signer);
-        let config = Arc::new(config);
-        let mq = Arc::new(TaskQueue::new(&config.storage_uri).unwrap());
-        let repository_manager =
-            RepositoryManager::build(config, mq, signer).unwrap();
+            let signer = KrillSignerBuilder::new(
+                &storage_uri,
+                Duration::from_secs(1),
+                &config.signers,
+            )
+            .with_default_signer(config.default_signer())
+            .with_one_off_signer(config.one_off_signer())
+            .build()
+            .unwrap();
 
-        let uris = PublicationServerUris {
-            rrdp_base_uri: https("https://localhost/repo/rrdp/"),
-            rsync_jail: rsync("rsync://localhost/repo/"),
-        };
+            let config = Arc::new(config);
+            let tasks = TaskQueue::new(&config.storage_uri).unwrap();
+            let repo = RepositoryManager::build(config).unwrap();
 
-        repository_manager.init(uris).unwrap();
+            let uris = PublicationServerUris {
+                rrdp_base_uri: https("https://localhost/repo/rrdp/"),
+                rsync_jail: rsync("rsync://localhost/repo/"),
+            };
 
-        (repository_manager, data_dir)
+            repo.init(uris, &signer).unwrap();
+
+            Self {
+                storage_uri,
+                repo,
+                tasks,
+                data_dir,
+            }
+        }
     }
 
     #[test]
     fn should_add_publisher() {
         // we need a disk, as repo_dir, etc. use data_dir by default
-        let storage_uri = test::mem_storage();
-        let (server, _data_dir) = make_server(&storage_uri);
+        let server = Server::build();
 
-        let alice = publisher_alice(&storage_uri);
+        let alice = publisher_alice(&server.storage_uri);
 
         let alice_handle = Handle::from_str("alice").unwrap();
         let publisher_req =
             make_publisher_req(alice_handle.as_str(), alice.id_cert());
 
         let actor = ACTOR_DEF_TEST;
-        server.create_publisher(publisher_req, &actor).unwrap();
+        server.repo.create_publisher(publisher_req, &actor).unwrap();
 
         let alice_found =
-            server.get_publisher_details(alice_handle).unwrap();
+            server.repo.get_publisher_details(alice_handle).unwrap();
 
         assert_eq!(alice_found.base_uri, alice.base_uri());
         assert_eq!(alice_found.id_cert, *alice.id_cert());
@@ -482,21 +489,20 @@ mod tests {
 
     #[test]
     fn should_not_add_publisher_twice() {
-        let storage_uri = test::mem_storage();
-        let (server, _data_dir) = make_server(&storage_uri);
+        let server = Server::build();
 
-        let alice = publisher_alice(&storage_uri);
+        let alice = publisher_alice(&server.storage_uri);
 
         let alice_handle = Handle::from_str("alice").unwrap();
         let publisher_req =
             make_publisher_req(alice_handle.as_str(), alice.id_cert());
 
         let actor = ACTOR_DEF_TEST;
-        server
+        server.repo
             .create_publisher(publisher_req.clone(), &actor)
             .unwrap();
 
-        match server.create_publisher(publisher_req, &actor) {
+        match server.repo.create_publisher(publisher_req, &actor) {
             Err(Error::PublisherDuplicate(name)) => {
                 assert_eq!(name, alice_handle)
             }
@@ -506,29 +512,25 @@ mod tests {
 
     #[test]
     fn should_list_files() {
-        let storage_uri = test::mem_storage();
-        let (server, _data_dir) = make_server(&storage_uri);
+        let server = Server::build();
 
-        let alice = publisher_alice(&storage_uri);
+        let alice = publisher_alice(&server.storage_uri);
 
         let alice_handle = Handle::from_str("alice").unwrap();
         let publisher_req =
             make_publisher_req(alice_handle.as_str(), alice.id_cert());
 
         let actor = ACTOR_DEF_TEST;
-        server.create_publisher(publisher_req, &actor).unwrap();
+        server.repo.create_publisher(publisher_req, &actor).unwrap();
 
-        let list_reply = server.list(&alice_handle).unwrap();
+        let list_reply = server.repo.list(&alice_handle).unwrap();
         assert_eq!(0, list_reply.elements().len());
     }
 
     #[tokio::test]
     async fn should_publish_files() {
-        // we need a disk, as repo_dir, etc. use data_dir by default
-        let storage_uri = test::mem_storage();
-        let (server, data_dir) = make_server(&storage_uri);
-
-        let session = session_dir(data_dir.path());
+        let server = Server::build();
+        let session = session_dir(server.data_dir.path());
 
         // Check that the server starts with dir for serial 1 for RRDP
         // and does not use 0 (RFC 8182)
@@ -536,14 +538,14 @@ mod tests {
         assert!(session_dir_contains_serial(&session, RRDP_FIRST_SERIAL));
 
         // set up server with default repository, and publisher alice
-        let alice = publisher_alice(&storage_uri);
+        let alice = publisher_alice(&server.storage_uri);
 
         let alice_handle = Handle::from_str("alice").unwrap();
         let publisher_req =
             make_publisher_req(alice_handle.as_str(), alice.id_cert());
 
         let actor = ACTOR_DEF_TEST;
-        server.create_publisher(publisher_req, &actor).unwrap();
+        server.repo.create_publisher(publisher_req, &actor).unwrap();
 
         // get the file out of a list_reply
         fn find_in_reply<'a>(
@@ -568,12 +570,12 @@ mod tests {
         delta.add_publish(file1.as_publish());
         delta.add_publish(file2.as_publish());
 
-        server.publish(&alice_handle, delta).unwrap();
-        server.update_rrdp_if_needed().unwrap();
-        server.write_repository().unwrap();
+        server.repo.publish(&alice_handle, delta, &server.tasks).unwrap();
+        server.repo.update_rrdp_if_needed().unwrap();
+        server.repo.write_repository().unwrap();
 
         // Two files should now appear in the list
-        let list_reply = server.list(&alice_handle).unwrap();
+        let list_reply = server.repo.list(&alice_handle).unwrap();
         assert_eq!(2, list_reply.elements().len());
         assert!(find_in_reply(
             &list_reply,
@@ -609,12 +611,12 @@ mod tests {
         delta.add_withdraw(file2.as_withdraw());
         delta.add_publish(file3.as_publish());
 
-        server.publish(&alice_handle, delta).unwrap();
-        server.update_rrdp_if_needed().unwrap();
-        server.write_repository().unwrap();
+        server.repo.publish(&alice_handle, delta, &server.tasks).unwrap();
+        server.repo.update_rrdp_if_needed().unwrap();
+        server.repo.write_repository().unwrap();
 
         // Two files should now appear in the list
-        let list_reply = server.list(&alice_handle).unwrap();
+        let list_reply = server.repo.list(&alice_handle).unwrap();
 
         assert_eq!(2, list_reply.elements().len());
         assert!(find_in_reply(
@@ -645,7 +647,7 @@ mod tests {
         let mut delta = PublishDelta::empty();
         delta.add_publish(file_outside.as_publish());
 
-        match server.publish(&alice_handle, delta) {
+        match server.repo.publish(&alice_handle, delta, &server.tasks) {
             Err(Error::Rfc8181Delta(
                 PublicationDeltaError::UriOutsideJail(_, _),
             )) => {} // ok
@@ -660,7 +662,7 @@ mod tests {
         let mut delta = PublishDelta::empty();
         delta.add_update(file2_update.as_update(file2.hash()));
 
-        match server.publish(&alice_handle, delta) {
+        match server.repo.publish(&alice_handle, delta, &server.tasks) {
             Err(Error::Rfc8181Delta(
                 PublicationDeltaError::NoObjectForHashAndOrUri(_),
             )) => {}
@@ -671,7 +673,7 @@ mod tests {
         let mut delta = PublishDelta::empty();
         delta.add_withdraw(file2.as_withdraw());
 
-        match server.publish(&alice_handle, delta) {
+        match server.repo.publish(&alice_handle, delta, &server.tasks) {
             Err(Error::Rfc8181Delta(
                 PublicationDeltaError::NoObjectForHashAndOrUri(_),
             )) => {} // ok
@@ -684,7 +686,7 @@ mod tests {
         let mut delta = PublishDelta::empty();
         delta.add_publish(file3.as_publish());
 
-        match server.publish(&alice_handle, delta) {
+        match server.repo.publish(&alice_handle, delta, &server.tasks) {
             Err(Error::Rfc8181Delta(
                 PublicationDeltaError::ObjectAlreadyPresent(uri),
             )) => {
@@ -717,9 +719,9 @@ mod tests {
         let mut delta = PublishDelta::empty();
         delta.add_publish(file4.as_publish());
 
-        server.publish(&alice_handle, delta).unwrap();
-        server.update_rrdp_if_needed().unwrap();
-        server.write_repository().unwrap();
+        server.repo.publish(&alice_handle, delta, &server.tasks).unwrap();
+        server.repo.update_rrdp_if_needed().unwrap();
+        server.repo.write_repository().unwrap();
 
         // Should include new snapshot and delta
         assert!(session_dir_contains_serial(&session, RRDP_FIRST_SERIAL + 3));
@@ -733,9 +735,11 @@ mod tests {
         assert!(session_dir_contains_delta(&session, RRDP_FIRST_SERIAL + 2));
 
         // Removing the publisher should remove its contents
-        server.remove_publisher(alice_handle, &actor).unwrap();
-        server.update_rrdp_if_needed().unwrap();
-        server.write_repository().unwrap();
+        server.repo.remove_publisher(
+            alice_handle, &actor, &server.tasks
+        ).unwrap();
+        server.repo.update_rrdp_if_needed().unwrap();
+        server.repo.write_repository().unwrap();
 
         // new snapshot should be published, and should be empty now
         assert!(session_dir_contains_snapshot(
@@ -768,18 +772,17 @@ mod tests {
 
     #[test]
     pub fn repository_session_reset() {
-        let storage_uri = test::mem_storage();
-        let (server, data_dir) = make_server(&storage_uri);
+        let server = Server::build();
 
         // set up server with default repository, and publisher alice
-        let alice = publisher_alice(&storage_uri);
+        let alice = publisher_alice(&server.storage_uri);
 
         let alice_handle = Handle::from_str("alice").unwrap();
         let publisher_req =
             make_publisher_req(alice_handle.as_str(), alice.id_cert());
 
         let actor = ACTOR_DEF_TEST;
-        server.create_publisher(publisher_req, &actor).unwrap();
+        server.repo.create_publisher(publisher_req, &actor).unwrap();
 
         // get the file out of a list_reply
         fn find_in_reply<'a>(
@@ -804,12 +807,12 @@ mod tests {
         delta.add_publish(file1.as_publish());
         delta.add_publish(file2.as_publish());
 
-        server.publish(&alice_handle, delta).unwrap();
-        server.update_rrdp_if_needed().unwrap();
-        server.write_repository().unwrap();
+        server.repo.publish(&alice_handle, delta, &server.tasks).unwrap();
+        server.repo.update_rrdp_if_needed().unwrap();
+        server.repo.write_repository().unwrap();
 
         // Two files should now appear in the list
-        let list_reply = server.list(&alice_handle).unwrap();
+        let list_reply = server.repo.list(&alice_handle).unwrap();
         assert_eq!(2, list_reply.elements().len());
         assert!(find_in_reply(
             &list_reply,
@@ -823,10 +826,10 @@ mod tests {
         .is_some());
 
         // Find RRDP files on disk
-        let stats_before = server.repo_stats().unwrap();
+        let stats_before = server.repo.repo_stats().unwrap();
         let session_before = stats_before.session;
         let snapshot_before_session_reset = find_in_session_and_serial_dir(
-            data_dir.path(),
+            server.data_dir.path(),
             session_before,
             RRDP_FIRST_SERIAL + 1,
             "snapshot.xml",
@@ -835,14 +838,14 @@ mod tests {
         assert!(snapshot_before_session_reset.is_some());
 
         // Now test that a session reset works...
-        server.rrdp_session_reset().unwrap();
+        server.repo.rrdp_session_reset().unwrap();
 
         // Should write new session and snapshot
-        let stats_after = server.repo_stats().unwrap();
+        let stats_after = server.repo.repo_stats().unwrap();
         let session_after = stats_after.session;
 
         let snapshot_after_session_reset = find_in_session_and_serial_dir(
-            data_dir.path(),
+            server.data_dir.path(),
             session_after,
             RRDP_FIRST_SERIAL,
             "snapshot.xml",
@@ -856,7 +859,7 @@ mod tests {
 
         // and clean up old dir
         let snapshot_before_session_reset = find_in_session_and_serial_dir(
-            data_dir.path(),
+            server.data_dir.path(),
             session_before,
             RRDP_FIRST_SERIAL + 1,
             "snapshot.xml",

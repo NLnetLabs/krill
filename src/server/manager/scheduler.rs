@@ -305,9 +305,9 @@ impl KrillManager {
     ) -> Result<TaskResult, FatalError> {
         info!("Synchronize CA {ca} with repository");
 
-        match self
-            .ca_manager
-            .cas_repo_sync_single(self.repo_manager.as_ref(), &ca, version)
+        match self.ca_manager.cas_repo_sync_single(
+            &self.repo_manager, &ca, version, &self.signer, &self.tasks,
+        )
         {
             Err(e) => {
                 let next = self.config.requeue_remote_failed();
@@ -337,10 +337,10 @@ impl KrillManager {
     ) -> Result<TaskResult, FatalError> {
         if self.ca_manager.has_ca(&ca).map_err(FatalError)? {
             info!("Synchronize CA '{ca}' with its parent '{parent}'");
-            match self
-                .ca_manager
-                .ca_sync_parent(&ca, ca_version, &parent, &self.system_actor)
-            {
+            match self.ca_manager.ca_sync_parent(
+                &ca, ca_version, &parent, &self.system_actor,
+                self.signer.clone(),
+            ) {
                 Err(e) => {
                     let next = self.config.requeue_remote_failed();
 
@@ -379,7 +379,9 @@ impl KrillManager {
 
     /// Resync the testbed TA signer and proxy
     async fn renew_testbed_ta(&self) -> Result<TaskResult, FatalError> {
-        if let Err(e) = self.ca_manager.ta_renew_testbed_ta() {
+        if let Err(e) = self.ca_manager.ta_renew_testbed_ta(
+            self.signer.clone()
+        ) {
             error!("There was an issue renewing the testbed TA: {e}");
         }
         let weeks_to_resync = self.config.ta_timing.mft_next_update_weeks / 2;
@@ -395,9 +397,9 @@ impl KrillManager {
         &self,
     ) -> Result<TaskResult, FatalError> {
         debug!("Synchronise Trust Anchor Proxy with Signer - if Signer is local.");
-        if let Err(e) =
-            self.ca_manager.sync_ta_proxy_signer_if_possible()
-        {
+        if let Err(e) = self.ca_manager.sync_ta_proxy_signer_if_possible(
+            self.signer.clone()
+        ) {
             error!("There was an issue synchronising the TA Proxy and Signer: {e}");
         }
         Ok(TaskResult::Done)
@@ -440,7 +442,7 @@ impl KrillManager {
         // schedule a synchronisation for each of them here.
         let cas = self
             .ca_manager
-            .republish_all(false)
+            .republish_all(false, &self.signer)
             .map_err(FatalError)?;
 
         for ca_handle in cas {
@@ -485,7 +487,9 @@ impl KrillManager {
     async fn renew_objects_if_needed(
         &self,
     ) -> Result<TaskResult, FatalError> {
-        self.ca_manager.renew_objects_all(&self.system_actor).map_err(
+        self.ca_manager.renew_objects_all(
+            &self.system_actor, self.signer.clone()
+        ).map_err(
             FatalError
         )?;
 
@@ -622,11 +626,10 @@ impl KrillManager {
             if ca.version() < ca_version {
                 // premature, we need to wait for the CA to be committed.
                 Ok(TaskResult::Reschedule(in_seconds(1)))
-            } else if self
-                .ca_manager
-                .send_revoke_requests(&ca_handle, &parent, requests)
-                .is_err()
-            {
+            }
+            else if self.ca_manager.send_revoke_requests(
+                &ca_handle, &parent, requests, self.signer.clone()
+            ).is_err() {
                 debug!("Could not revoke key for resource class removed by parent - most likely already revoked.");
                 Ok(TaskResult::Done)
             } else {
@@ -670,6 +673,7 @@ impl KrillManager {
                         &ca_handle,
                         rcn,
                         revocation_request,
+                        self.signer.clone(),
                     )
                 {
                     warn!(

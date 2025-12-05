@@ -1,5 +1,6 @@
 //! CA as a parent.
 
+use std::sync::Arc;
 use bytes::Bytes;
 use log::info;
 use rpki::ca::provisioning;
@@ -13,6 +14,7 @@ use crate::api::ta::ProvisioningRequest;
 use crate::commons::KrillResult;
 use crate::commons::actor::Actor;
 use crate::commons::cmslogger::CmsLogger;
+use crate::commons::crypto::KrillSigner;
 use crate::commons::error::Error;
 use crate::constants::TA_NAME;
 use crate::server::ca::CertAuth;
@@ -35,6 +37,7 @@ impl CaManager {
         msg_bytes: Bytes,
         user_agent: Option<String>,
         actor: &Actor,
+        signer: Arc<KrillSigner>,
     ) -> KrillResult<Bytes> {
         if ca_handle.as_str() == TA_NAME {
             return Err(Error::custom(
@@ -54,12 +57,12 @@ impl CaManager {
         );
 
         match self.rfc6492_process_request(
-            ca_handle, req_msg, user_agent, actor
+            ca_handle, req_msg, user_agent, actor, signer.clone()
         ) {
             Ok(msg) => {
                 let should_log_cms = !msg.is_list_response();
                 let reply_bytes = ca.sign_rfc6492_response(
-                    msg, &self.signer
+                    msg, &signer
                 )?;
 
                 if should_log_cms {
@@ -85,6 +88,7 @@ impl CaManager {
         req_msg: provisioning::Message,
         user_agent: Option<String>,
         actor: &Actor,
+        signer: Arc<KrillSigner>,
     ) -> KrillResult<provisioning::Message> {
         let (sender, _recipient, payload) = req_msg.unpack();
 
@@ -126,7 +130,7 @@ impl CaManager {
             }
             provisioning::Payload::Issue(req) => {
                 self.rfc6492_issue(
-                    ca_handle, child_handle.clone(), req, actor
+                    ca_handle, child_handle.clone(), req, actor, signer
                 )
             }
             _ => Err(Error::custom("Unsupported RFC6492 message")),
@@ -205,6 +209,7 @@ impl CaManager {
         child_handle: ChildHandle,
         issue_req: IssuanceRequest,
         actor: &Actor,
+        signer: Arc<KrillSigner>,
     ) -> KrillResult<provisioning::Message> {
         if ca_handle.as_str() == TA_NAME {
             let request = ProvisioningRequest::Issuance(issue_req);
@@ -225,7 +230,7 @@ impl CaManager {
                     child_handle.clone(),
                     issue_req.clone(),
                     self.config.clone(),
-                    self.signer.clone(),
+                    signer,
                 )
             )?;
 

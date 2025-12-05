@@ -65,6 +65,8 @@ pub struct CaObjectsStore {
     store: KeyValueStore,
 
     /// The signer used when generate objects.
+    ///
+    /// We need it for now because of the listener.
     signer: Arc<KrillSigner>,
 
     /// Configuration for timing of object creation.
@@ -298,13 +300,14 @@ impl CaObjectsStore {
         &self,
         force: bool,
         ca_handle: &CaHandle,
+        signer: &KrillSigner,
     ) -> KrillResult<bool> {
         debug!("Re-issue for CA {ca_handle} using force: {force}");
         self.with_ca_objects(ca_handle, |objects| {
             objects.re_issue(
                 force,
                 &self.issuance_timing,
-                &self.signer,
+                signer,
             )
         })
     }

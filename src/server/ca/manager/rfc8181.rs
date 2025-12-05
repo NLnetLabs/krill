@@ -14,7 +14,9 @@ use crate::api::admin::{
 use crate::api::ca::IdCertInfo;
 use crate::commons::KrillResult;
 use crate::commons::cmslogger::CmsLogger;
+use crate::commons::crypto::KrillSigner;
 use crate::commons::error::Error;
+use crate::server::mq::TaskQueue;
 use crate::server::pubd::RepositoryManager;
 use super::CaManager;
 
@@ -30,6 +32,8 @@ impl CaManager {
         id_cert: &IdCertInfo,
         repo_contact: &RepositoryContact,
         publish_elements: Vec<PublishedFile>,
+        signer: &KrillSigner,
+        tasks: &TaskQueue,
     ) -> KrillResult<()> {
         debug!("CA '{ca_handle}' sends list query to repo");
         let list_reply = self.send_rfc8181_list(
@@ -37,6 +41,8 @@ impl CaManager {
             ca_handle,
             id_cert,
             &repo_contact.server_info,
+            signer,
+            tasks,
         )?;
 
         // XXX Do we really need hash maps here? In particular, this will
@@ -76,6 +82,8 @@ impl CaManager {
                 id_cert,
                 &repo_contact.server_info,
                 delta,
+                signer,
+                tasks,
             )?;
             debug!("CA '{ca_handle}' sent delta");
         }
@@ -93,6 +101,8 @@ impl CaManager {
         ca_handle: &CaHandle,
         id_cert: &IdCertInfo,
         server_info: &PublicationServerInfo,
+        signer: &KrillSigner,
+        tasks: &TaskQueue,
     ) -> KrillResult<ListReply> {
         let signing_key = id_cert.public_key.key_identifier();
 
@@ -103,7 +113,9 @@ impl CaManager {
             message,
             server_info,
             ca_handle,
+            signer,
             signing_key,
+            tasks,
         );
 
         let reply = match reply {
@@ -156,6 +168,8 @@ impl CaManager {
         id_cert: &IdCertInfo,
         server_info: &PublicationServerInfo,
         delta: PublishDelta,
+        signer: &KrillSigner,
+        tasks: &TaskQueue,
     ) -> KrillResult<()> {
         let signing_key = id_cert.public_key.key_identifier();
 
@@ -166,7 +180,9 @@ impl CaManager {
             message,
             server_info,
             ca_handle,
+            signer,
             signing_key,
+            tasks
         );
 
         let reply = match reply {
@@ -217,7 +233,9 @@ impl CaManager {
         message: publication::Message,
         server_info: &PublicationServerInfo,
         ca_handle: &CaHandle,
+        signer: &KrillSigner,
         signing_key: KeyIdentifier,
+        tasks: &TaskQueue,
     ) -> KrillResult<publication::Reply> {
         if server_info.service_uri.as_str().starts_with(
             self.config.service_uri().as_str()
@@ -226,7 +244,7 @@ impl CaManager {
             let query = message.as_query()?;
             let publisher_handle = ca_handle.convert();
             let response = repo_manager.rfc8181_message(
-                &publisher_handle, query
+                &publisher_handle, query, tasks
             )?;
             response.as_reply().map_err(Error::Rfc8181)
         }
@@ -237,7 +255,7 @@ impl CaManager {
                 ca_handle,
             );
 
-            let cms = match self.signer.create_rfc8181_cms(
+            let cms = match signer.create_rfc8181_cms(
                 message, &signing_key
             ) {
                 Ok(cms) => cms.to_bytes(),

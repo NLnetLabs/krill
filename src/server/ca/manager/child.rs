@@ -4,6 +4,7 @@
 
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::Arc;
 use bytes::Bytes;
 use log::{debug, error, info, trace, warn};
 use rpki::uri;
@@ -24,6 +25,7 @@ use crate::commons::httpclient;
 use crate::commons::KrillResult;
 use crate::commons::actor::Actor;
 use crate::commons::cmslogger::CmsLogger;
+use crate::commons::crypto::KrillSigner;
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::Aggregate;
 use crate::constants::{TA_NAME, ta_handle};
@@ -35,120 +37,6 @@ use super::CaManager;
 
 
 //------------ super::CaManager ----------------------------------------------
-
-impl CaManager {
-    /// Sends a provisioning message and validates the response.
-    // Not pub.
-    pub async fn async_send_rfc6492_and_validate_response(
-        &self,
-        message: provisioning::Message,
-        server_info: &ParentServerInfo,
-        signing_key: &KeyIdentifier,
-    ) -> KrillResult<provisioning::Message> {
-        let service_uri = &server_info.service_uri;
-        if let Some(parent) = Self::local_parent(
-            service_uri, &self.config.service_uri()
-        ) {
-            let ca_handle = parent.into_converted();
-            let user_agent = Some("local-child".to_string());
-
-            self.rfc6492_process_request(
-                &ca_handle,
-                message,
-                user_agent,
-                &self.system_actor,
-            )
-        }
-        else {
-            // Set up a logger for CMS exchanges. Note that this logger is
-            // always set up and used, but.. it will only actually
-            // save files in case the given rfc6492_log_dir is
-            // Some.
-            let sender = message.sender().clone();
-            let recipient = message.recipient().clone();
-
-            let cms_logger = CmsLogger::for_rfc6492_sent(
-                self.config.rfc6492_log_dir.as_ref(),
-                &sender,
-                &recipient,
-            );
-
-            let cms = self.signer.create_rfc6492_cms(
-                message, signing_key
-            )?.to_bytes();
-
-            let res_bytes = self.async_post_protocol_cms_binary(
-                &cms,
-                service_uri,
-                provisioning::CONTENT_TYPE,
-                &cms_logger,
-            ).await?;
-
-            match ProvisioningCms::decode(&res_bytes) {
-                Err(e) => {
-                    error!(
-                        "Could not decode response from parent (handle): \
-                         {recipient}, for ca (handle): {sender}, at URI: {service_uri}. Error: {e}"
-                    );
-                    cms_logger.err(format!("Could not decode CMS: {e}"))?;
-                    Err(Error::Rfc6492(e))
-                }
-                Ok(cms) => {
-                    match cms.validate(&server_info.id_cert.public_key)
-                    {
-                        Ok(()) => Ok(cms.into_message()),
-                        Err(e) => {
-                            error!(
-                                "Could not validate response from parent \
-                                (handle): {recipient}, for ca (handle): {sender}, \
-                                at URI: {service_uri}. Error: {e}"
-                            );
-                            cms_logger.err(
-                                format!("Response invalid: {e}")
-                            )?;
-                            Err(Error::Rfc6492(e))
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /// Posts a protocol message via HTTP and receives a response.
-    async fn async_post_protocol_cms_binary(
-        &self,
-        msg: &Bytes,
-        service_uri: &ServiceUri,
-        content_type: &str,
-        cms_logger: &CmsLogger,
-    ) -> KrillResult<Bytes> {
-        cms_logger.sent(msg)?;
-
-        let timeout = self.config.post_protocol_msg_timeout_seconds;
-
-        match httpclient::post_binary_with_full_ua(
-            service_uri.as_str(),
-            msg,
-            content_type,
-            timeout,
-        ).await {
-            Err(e) => {
-                cms_logger.err(format!(
-                    "Error posting CMS to {service_uri}: {e}"
-                ))?;
-                Err(Error::HttpClientError(e))
-            }
-            Ok(bytes) => {
-                cms_logger.reply(&bytes)?;
-                Ok(bytes)
-            }
-        }
-    }
-}
-
-
-//------------ super::CaManager ----------------------------------------------
-
 
 /// # RFC 6492 client
 impl CaManager {
@@ -176,6 +64,7 @@ impl CaManager {
         min_ca_version: u64, // set this 0 if it does not matter
         parent: &ParentHandle,
         actor: &Actor,
+        signer: Arc<KrillSigner>,
     ) -> KrillResult<bool> {
         let ca = self.get_ca(handle)?;
 
@@ -189,10 +78,10 @@ impl CaManager {
         }
         else {
             if ca.has_pending_requests(parent) {
-                self.send_requests(handle, parent, actor)?;
+                self.send_requests(handle, parent, actor, signer)?;
             }
             else {
-                self.get_updates_from_parent(handle, parent, actor)?;
+                self.get_updates_from_parent(handle, parent, actor, signer)?;
             }
             Ok(true)
         }
@@ -203,7 +92,10 @@ impl CaManager {
     /// If the TA signer is remote, logs a warning suggesting doing a
     /// manual synchronization, assuming that this method is only ever called
     /// if the TA proxy requires synchronization.
-    pub fn sync_ta_proxy_signer_if_possible(&self) -> KrillResult<()> {
+    pub fn sync_ta_proxy_signer_if_possible(
+        &self,
+        signer: Arc<KrillSigner>,
+    ) -> KrillResult<()> {
         let ta_handle = ta_handle();
 
         if self.get_trust_anchor_proxy().is_err() {
@@ -232,27 +124,26 @@ impl CaManager {
 
         // Get sign request for signer.
         let signed_request = proxy.get_signer_request(
-            self.config.ta_timing,
-            &self.signer,
+            self.config.ta_timing, &signer
         )?;
 
         // Remember the noce of the request so we can retrieve it.
         let request_nonce = signed_request.request.nonce.clone();
 
         // Let signer process request.
-        let signer = self.send_ta_signer_command(
+        let ta_signer = self.send_ta_signer_command(
             TrustAnchorSignerCommand::make_process_request_command(
                 &ta_handle,
                 signed_request.into(),
                 self.config.ta_timing,
                 None, // do not override next manifest number
-                self.signer.clone(),
+                signer,
                 &self.system_actor,
             )
         )?;
 
         // Get the response from the signer and give it to the proxy.
-        let exchange = signer.get_exchange(&request_nonce).unwrap();
+        let exchange = ta_signer.get_exchange(&request_nonce).unwrap();
         self.send_ta_proxy_command(
             TrustAnchorProxyCommand::process_signer_response(
                 &ta_handle,
@@ -271,6 +162,7 @@ impl CaManager {
         handle: &CaHandle,
         parent: &ParentHandle,
         actor: &Actor,
+        signer: Arc<KrillSigner>,
     ) -> KrillResult<()> {
         if handle == &ta_handle() {
             return Ok(())
@@ -285,11 +177,11 @@ impl CaManager {
         let ca = self.get_ca(handle)?;
         let parent_contact = ca.parent(parent)?;
         let entitlements = self.get_entitlements_from_contact(
-            handle, parent, parent_contact, true,
+            handle, parent, parent_contact, true, signer.clone()
         )?;
 
         self.update_entitlements(
-            handle, parent.clone(), entitlements, actor,
+            handle, parent.clone(), entitlements, actor, signer
         )?;
 
         Ok(())
@@ -301,24 +193,26 @@ impl CaManager {
     /// certificate requests.
     fn send_requests(
         &self, handle: &CaHandle, parent: &ParentHandle, actor: &Actor,
+        signer: Arc<KrillSigner>,
     ) -> KrillResult<()> {
         self.send_revoke_requests_handle_responses(
-            handle, parent, actor
+            handle, parent, actor, signer.clone()
         )?;
         self.send_cert_requests_handle_responses(
-            handle, parent, actor
+            handle, parent, actor, signer
         )
     }
 
     /// Sends all open revocation requests and handles the responses.
     fn send_revoke_requests_handle_responses(
         &self, handle: &CaHandle, parent: &ParentHandle, actor: &Actor,
+        signer: Arc<KrillSigner>,
     ) -> KrillResult<()> {
         let child = self.get_ca(handle)?;
         let requests = child.revoke_requests(parent);
 
         let revoke_responses = self.send_revoke_requests(
-            handle, parent, requests
+            handle, parent, requests, signer,
         )?;
 
         for (rcn, revoke_responses) in revoke_responses {
@@ -344,13 +238,15 @@ impl CaManager {
         handle: &CaHandle,
         parent: &ParentHandle,
         revoke_requests: HashMap<ResourceClassName, Vec<RevocationRequest>>,
+        signer: Arc<KrillSigner>,
     ) -> KrillResult<HashMap<ResourceClassName, Vec<RevocationResponse>>> {
         let child = self.get_ca(handle)?;
         let server_info = child.parent(parent)?.parent_server_info();
 
         match self.send_revoke_requests_rfc6492(
             revoke_requests,
-            &child.id_cert().public_key.key_identifier(),
+            signer,
+            child.id_cert().public_key.key_identifier(),
             server_info,
         ) {
             Err(e) => {
@@ -374,6 +270,7 @@ impl CaManager {
         handle: &CaHandle,
         rcn: ResourceClassName,
         revocation: RevocationRequest,
+        signer: Arc<KrillSigner>,
     ) -> KrillResult<HashMap<ResourceClassName, Vec<RevocationResponse>>>
     {
         let child = self.ca_store.get_latest(handle)?;
@@ -381,15 +278,15 @@ impl CaManager {
         let mut requests = HashMap::new();
         requests.insert(rcn, vec![revocation]);
 
-        self.send_revoke_requests(handle, parent, requests)
+        self.send_revoke_requests(handle, parent, requests, signer)
     }
 
     /// Sends revoke requests using the provisioning protocol.
-    pub
     fn send_revoke_requests_rfc6492(
         &self,
         revoke_requests: HashMap<ResourceClassName, Vec<RevocationRequest>>,
-        signing_key: &KeyIdentifier,
+        signer: Arc<KrillSigner>,
+        signing_key: KeyIdentifier,
         server_info: &ParentServerInfo,
     ) -> KrillResult<HashMap<ResourceClassName, Vec<RevocationResponse>>> {
         let mut revoke_map = HashMap::new();
@@ -405,7 +302,7 @@ impl CaManager {
                 );
 
                 let response = self.send_rfc6492_and_validate_response(
-                    revoke, server_info, signing_key
+                    revoke, server_info, signer.clone(), signing_key
                 )?;
 
                 let payload = response.into_payload();
@@ -485,9 +382,9 @@ impl CaManager {
     }
 
     /// Sends certification requests to a parent CA and proceses the response.
-    pub
     fn send_cert_requests_handle_responses(
         &self, ca_handle: &CaHandle, parent: &ParentHandle, actor: &Actor,
+        signer: Arc<KrillSigner>,
     ) -> KrillResult<()> {
         let ca = self.get_ca(ca_handle)?;
         let requests = ca.cert_requests(parent);
@@ -517,7 +414,8 @@ impl CaManager {
                         sender, recipient, req
                     ),
                     server_info,
-                    &signing_key,
+                    signer.clone(),
+                    signing_key,
                 ) {
                     Err(e) => {
                         // If any of the requests for an RC results in an
@@ -533,7 +431,8 @@ impl CaManager {
                     }
                     Ok(response) => {
                         if let Err(err) = self.handle_cert_response(
-                            ca_handle, parent, &rcn, actor, response
+                            ca_handle, parent, &rcn, actor, response,
+                            signer.clone()
                         ) {
                             errors.push(err);
                             break;
@@ -571,6 +470,7 @@ impl CaManager {
         rcn: &ResourceClassName,
         actor: &Actor,
         response: provisioning::Message,
+        signer: Arc<KrillSigner>,
     ) -> KrillResult<()> {
         let payload = response.into_payload();
         let payload_type = payload.payload_type();
@@ -644,7 +544,7 @@ impl CaManager {
                         rcn.clone(),
                         rcvd_cert,
                         self.config.clone(),
-                        self.signer.clone(),
+                        signer.clone(),
                     )
                 ) {
                     // Note that sending the command to update a received
@@ -668,7 +568,7 @@ impl CaManager {
                         CertAuthCommandDetails::DropResourceClass(
                             rcn.clone(),
                             reason.clone(),
-                            self.signer.clone(),
+                            signer,
                         )
                     )?;
 
@@ -724,7 +624,7 @@ impl CaManager {
                             CertAuthCommandDetails::DropResourceClass(
                                 rcn.clone(),
                                 reason.to_string(),
-                                self.signer.clone(),
+                                signer.clone(),
                             )
                         )?;
 
@@ -763,7 +663,7 @@ impl CaManager {
                             CertAuthCommandDetails::DropResourceClass(
                                 rcn.clone(),
                                 reason.to_string(),
-                                self.signer.clone(),
+                                signer,
                             )
                         )?;
 
@@ -822,13 +722,13 @@ impl CaManager {
     ///
     /// Returns `Ok(true)` in case there were any updates, implying that
     /// there will be open requests for the parent CA.
-    pub
     fn update_entitlements(
         &self,
         ca: &CaHandle,
         parent: ParentHandle,
         entitlements: ResourceClassListResponse,
         actor: &Actor,
+        signer: Arc<KrillSigner>,
     ) -> KrillResult<bool> {
         let current_version = self.get_ca(ca)?.version();
         let new_version = self.process_ca_command(
@@ -836,7 +736,7 @@ impl CaManager {
             CertAuthCommandDetails::UpdateEntitlements(
                 parent,
                 entitlements,
-                self.signer.clone(),
+                signer,
             ),
         )?.version();
         Ok(new_version > current_version)
@@ -849,11 +749,12 @@ impl CaManager {
         parent: &ParentHandle,
         contact: &ParentCaContact,
         existing_parent: bool,
+        signer: Arc<KrillSigner>,
     ) -> KrillResult<ResourceClassListResponse> {
         let server_info = contact.parent_server_info();
         let uri = &server_info.service_uri;
 
-        let result = self.get_entitlements_rfc6492(ca, server_info);
+        let result = self.get_entitlements_rfc6492(ca, server_info, signer);
 
         match &result {
             Err(error) => {
@@ -884,6 +785,7 @@ impl CaManager {
         &self,
         handle: &CaHandle,
         server_info: &ParentServerInfo,
+        signer: Arc<KrillSigner>,
     ) -> KrillResult<ResourceClassListResponse> {
         debug!(
             "Getting entitlements for CA '{}' from parent '{}'",
@@ -902,7 +804,8 @@ impl CaManager {
         let response = self.send_rfc6492_and_validate_response(
             list,
             server_info,
-            &child.id_cert().public_key.key_identifier(),
+            signer,
+            child.id_cert().public_key.key_identifier(),
         )?;
 
         let payload = response.into_payload();
@@ -925,7 +828,8 @@ impl CaManager {
         &self,
         message: provisioning::Message,
         server_info: &ParentServerInfo,
-        signing_key: &KeyIdentifier,
+        signer: Arc<KrillSigner>,
+        signing_key: KeyIdentifier,
     ) -> KrillResult<provisioning::Message> {
         let service_uri = &server_info.service_uri;
         if let Some(parent) = Self::local_parent(
@@ -939,6 +843,7 @@ impl CaManager {
                 message,
                 user_agent,
                 &self.system_actor,
+                signer,
             )
         }
         else {
@@ -955,8 +860,8 @@ impl CaManager {
                 &recipient,
             );
 
-            let cms = self.signer.create_rfc6492_cms(
-                message, signing_key
+            let cms = signer.create_rfc6492_cms(
+                message, &signing_key
             )?.to_bytes();
 
             let (res_bytes, cms_logger) = self.post_protocol_cms_binary(

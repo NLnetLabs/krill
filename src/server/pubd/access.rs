@@ -96,7 +96,7 @@ impl RepositoryAccessProxy {
     pub fn init(
         &self,
         uris: PublicationServerUris,
-        signer: Arc<KrillSigner>,
+        signer: &KrillSigner,
     ) -> KrillResult<()> {
         if self.is_initialized()? {
             return Err(Error::RepositoryServerAlreadyInitialized)
@@ -109,7 +109,7 @@ impl RepositoryAccessProxy {
             RepositoryAccessInitCommandDetails {
                 rrdp_base_uri: uris.rrdp_base_uri,
                 rsync_jail: uris.rsync_jail,
-                signer,
+                id_cert_info: signer.create_self_signed_id_cert()?.into(),
             },
             &actor,
         );
@@ -312,10 +312,8 @@ impl Aggregate for RepositoryAccess {
     ) -> Result<Self::InitEvent, Self::Error> {
         let details = command.into_details();
 
-        let id_cert_info = details.signer.create_self_signed_id_cert()?.into();
-
         Ok(RepositoryAccessInitEvent {
-            id_cert: id_cert_info,
+            id_cert: details.id_cert_info,
             rrdp_base_uri: details.rrdp_base_uri,
             rsync_jail: details.rsync_jail,
         })
@@ -492,8 +490,8 @@ pub struct RepositoryAccessInitCommandDetails {
     /// The base URI of the rsync server used by the repository.
     pub rsync_jail: uri::Rsync,
 
-    /// A Krill signer to use for signing.
-    pub signer: Arc<KrillSigner>,
+    /// The ID certfificate of the repository.
+    pub id_cert_info: IdCertInfo,
 }
 
 impl InitCommandDetails for RepositoryAccessInitCommandDetails {
