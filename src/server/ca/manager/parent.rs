@@ -13,11 +13,11 @@ use crate::api::ta::ProvisioningRequest;
 use crate::commons::KrillResult;
 use crate::commons::actor::Actor;
 use crate::commons::cmslogger::CmsLogger;
-use crate::commons::crypto::KrillSigner;
 use crate::commons::error::Error;
 use crate::constants::TA_NAME;
 use crate::server::ca::CertAuth;
 use crate::server::ca::commands::CertAuthCommandDetails;
+use crate::server::manager::KrillHandle;
 use crate::server::taproxy::TrustAnchorProxyCommand;
 use super::CaManager;
 
@@ -36,7 +36,7 @@ impl CaManager {
         msg_bytes: Bytes,
         user_agent: Option<String>,
         actor: &Actor,
-        signer: &KrillSigner,
+        krill: &KrillHandle,
     ) -> KrillResult<Bytes> {
         if ca_handle.as_str() == TA_NAME {
             return Err(Error::custom(
@@ -50,18 +50,18 @@ impl CaManager {
 
         // Create a logger for CMS (avoid cloning recipient)
         let cms_logger = CmsLogger::for_rfc6492_rcvd(
-            self.config.rfc6492_log_dir.as_ref(),
+            krill.config().rfc6492_log_dir.as_ref(),
             req_msg.recipient(),
             req_msg.sender(),
         );
 
         match self.rfc6492_process_request(
-            ca_handle, req_msg, user_agent, actor, signer
+            ca_handle, req_msg, user_agent, actor, krill
         ) {
             Ok(msg) => {
                 let should_log_cms = !msg.is_list_response();
                 let reply_bytes = ca.sign_rfc6492_response(
-                    msg, signer
+                    msg, krill.signer()
                 )?;
 
                 if should_log_cms {
@@ -87,7 +87,7 @@ impl CaManager {
         req_msg: provisioning::Message,
         user_agent: Option<String>,
         actor: &Actor,
-        signer: &KrillSigner,
+        krill: &KrillHandle,
     ) -> KrillResult<provisioning::Message> {
         let (sender, _recipient, payload) = req_msg.unpack();
 
@@ -125,11 +125,11 @@ impl CaManager {
                 )
             }
             provisioning::Payload::List => {
-                self.rfc6492_list(ca_handle, &child_handle)
+                self.rfc6492_list(ca_handle, &child_handle, krill)
             }
             provisioning::Payload::Issue(req) => {
                 self.rfc6492_issue(
-                    ca_handle, child_handle.clone(), req, actor, signer
+                    ca_handle, child_handle.clone(), req, actor, krill
                 )
             }
             _ => Err(Error::custom("Unsupported RFC6492 message")),
@@ -180,13 +180,14 @@ impl CaManager {
         &self,
         ca_handle: &CaHandle,
         child: &ChildHandle,
+        krill: &KrillHandle,
     ) -> KrillResult<provisioning::Message> {
         let list_response = if ca_handle.as_str() != TA_NAME {
-            self.get_ca(ca_handle)?.list(child, &self.config.issuance_timing)
+            self.get_ca(ca_handle)?.list(child, &krill.config().issuance_timing)
         }
         else {
             self.get_trust_anchor_proxy()?.entitlements(
-                child, &self.config.ta_timing
+                child, &krill.config().ta_timing
             ).map(|entitlements| {
                 ResourceClassListResponse::new(vec![entitlements])
             })
@@ -208,7 +209,7 @@ impl CaManager {
         child_handle: ChildHandle,
         issue_req: IssuanceRequest,
         actor: &Actor,
-        signer: &KrillSigner,
+        krill: &KrillHandle,
     ) -> KrillResult<provisioning::Message> {
         if ca_handle.as_str() == TA_NAME {
             let request = ProvisioningRequest::Issuance(issue_req);
@@ -228,8 +229,8 @@ impl CaManager {
                 CertAuthCommandDetails::ChildCertify(
                     child_handle.clone(),
                     issue_req.clone(),
-                    &self.config,
-                    signer,
+                    krill.config(),
+                    krill.signer(),
                 )
             )?;
 
@@ -241,7 +242,7 @@ impl CaManager {
                 &child_handle,
                 &my_rcn,
                 pub_key,
-                &self.config.issuance_timing,
+                &krill.config().issuance_timing,
             )?;
 
             Ok(provisioning::Message::issue_response(

@@ -20,6 +20,7 @@ use crate::commons::cmslogger::CmsLogger;
 use crate::commons::crypto::KrillSigner;
 use crate::commons::error::Error;
 use crate::config::Config;
+use crate::server::manager::KrillHandle;
 use crate::server::mq::{now, Task, TaskQueue};
 use super::access::RepositoryAccessProxy;
 use super::content::RepositoryContentProxy;
@@ -117,8 +118,7 @@ impl RepositoryManager {
         &self,
         publisher_handle: PublisherHandle,
         msg_bytes: Bytes,
-        tasks: &TaskQueue,
-        signer: &KrillSigner,
+        krill: &KrillHandle,
     ) -> KrillResult<Bytes> {
         let cms_logger = CmsLogger::for_rfc8181_rcvd(
             self.config.rfc8181_log_dir.as_ref(),
@@ -138,7 +138,7 @@ impl RepositoryManager {
         let is_list_query = query == publication::Query::List;
 
         let response_result = self.rfc8181_message(
-            &publisher_handle, query, tasks
+            &publisher_handle, query, krill
         );
 
         let should_log_cms = response_result.is_err() || !is_list_query;
@@ -157,7 +157,7 @@ impl RepositoryManager {
         };
 
         let response_bytes = self.access.create_response(
-            response, signer
+            response, krill
         )?.to_bytes();
 
         if should_log_cms {
@@ -173,7 +173,7 @@ impl RepositoryManager {
         &self,
         publisher_handle: &PublisherHandle,
         query: publication::Query,
-        tasks: &TaskQueue,
+        krill: &KrillHandle,
     ) -> KrillResult<publication::Message> {
         match query {
             publication::Query::List => {
@@ -187,7 +187,7 @@ impl RepositoryManager {
                 debug!(
                     "Received RFC 8181 delta query for {publisher_handle}"
                 );
-                self.publish(publisher_handle, delta, tasks)?;
+                self.publish(publisher_handle, delta, krill.tasks())?;
                 Ok(publication::Message::success())
             }
         }
@@ -322,12 +322,12 @@ impl RepositoryManager {
         &self,
         name: PublisherHandle,
         actor: &Actor,
-        tasks: &TaskQueue,
+        krill: &KrillHandle,
     ) -> KrillResult<()> {
         self.content.remove_publisher(name.clone())?;
         self.access.remove_publisher(name, actor)?;
 
-        tasks.schedule(Task::RrdpUpdateIfNeeded, now())
+        krill.tasks().schedule(Task::RrdpUpdateIfNeeded, now())
     }
 }
 

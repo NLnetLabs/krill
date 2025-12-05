@@ -14,10 +14,8 @@ use crate::api::admin::{
 use crate::api::ca::IdCertInfo;
 use crate::commons::KrillResult;
 use crate::commons::cmslogger::CmsLogger;
-use crate::commons::crypto::KrillSigner;
 use crate::commons::error::Error;
-use crate::server::mq::TaskQueue;
-use crate::server::pubd::RepositoryManager;
+use crate::server::manager::KrillHandle;
 use super::CaManager;
 
 
@@ -25,25 +23,17 @@ use super::CaManager;
 
 impl CaManager {
     /// Synchronizes with the repository.
-    #[allow(clippy::too_many_arguments)]
     pub fn ca_repo_sync(
         &self,
-        repo_manager: &RepositoryManager,
         ca_handle: &CaHandle,
         id_cert: &IdCertInfo,
         repo_contact: &RepositoryContact,
         publish_elements: Vec<PublishedFile>,
-        signer: &KrillSigner,
-        tasks: &TaskQueue,
+        krill: &KrillHandle,
     ) -> KrillResult<()> {
         debug!("CA '{ca_handle}' sends list query to repo");
         let list_reply = self.send_rfc8181_list(
-            repo_manager,
-            ca_handle,
-            id_cert,
-            &repo_contact.server_info,
-            signer,
-            tasks,
+            ca_handle, id_cert, &repo_contact.server_info, krill
         )?;
 
         // XXX Do we really need hash maps here? In particular, this will
@@ -78,13 +68,7 @@ impl CaManager {
         if !delta.is_empty() {
             debug!("CA '{ca_handle}' sends delta");
             self.send_rfc8181_delta(
-                repo_manager,
-                ca_handle,
-                id_cert,
-                &repo_contact.server_info,
-                delta,
-                signer,
-                tasks,
+                ca_handle, id_cert, &repo_contact.server_info, delta, krill
             )?;
             debug!("CA '{ca_handle}' sent delta");
         }
@@ -98,25 +82,17 @@ impl CaManager {
     /// Sends a publication protocol list request and returns the reply.
     pub fn send_rfc8181_list(
         &self,
-        repo_manager: &RepositoryManager,
         ca_handle: &CaHandle,
         id_cert: &IdCertInfo,
         server_info: &PublicationServerInfo,
-        signer: &KrillSigner,
-        tasks: &TaskQueue,
+        krill: &KrillHandle,
     ) -> KrillResult<ListReply> {
         let signing_key = id_cert.public_key.key_identifier();
 
         let message = publication::Message::list_query();
 
         let reply = self.send_rfc8181_and_validate_response(
-            repo_manager,
-            message,
-            server_info,
-            ca_handle,
-            signer,
-            signing_key,
-            tasks,
+            message, server_info, ca_handle, signing_key, krill
         );
 
         let reply = match reply {
@@ -162,29 +138,20 @@ impl CaManager {
     }
 
     /// Sends a publication protocol delta request.
-    #[allow(clippy::too_many_arguments)]
     fn send_rfc8181_delta(
         &self,
-        repo_manager: &RepositoryManager,
         ca_handle: &CaHandle,
         id_cert: &IdCertInfo,
         server_info: &PublicationServerInfo,
         delta: PublishDelta,
-        signer: &KrillSigner,
-        tasks: &TaskQueue,
+        krill: &KrillHandle,
     ) -> KrillResult<()> {
         let signing_key = id_cert.public_key.key_identifier();
 
         let message = publication::Message::delta(delta.clone());
 
         let reply = self.send_rfc8181_and_validate_response(
-            repo_manager,
-            message,
-            server_info,
-            ca_handle,
-            signer,
-            signing_key,
-            tasks
+            message, server_info, ca_handle, signing_key, krill
         );
 
         let reply = match reply {
@@ -229,36 +196,33 @@ impl CaManager {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn send_rfc8181_and_validate_response(
         &self,
-        repo_manager: &RepositoryManager,
         message: publication::Message,
         server_info: &PublicationServerInfo,
         ca_handle: &CaHandle,
-        signer: &KrillSigner,
         signing_key: KeyIdentifier,
-        tasks: &TaskQueue,
+        krill: &KrillHandle,
     ) -> KrillResult<publication::Reply> {
         if server_info.service_uri.as_str().starts_with(
-            self.config.service_uri().as_str()
+            krill.service_uri().as_str()
         ) {
             // this maps back to *this* Krill instance
             let query = message.as_query()?;
             let publisher_handle = ca_handle.convert();
-            let response = repo_manager.rfc8181_message(
-                &publisher_handle, query, tasks
+            let response = krill.repo_manager().rfc8181_message(
+                &publisher_handle, query, krill
             )?;
             response.as_reply().map_err(Error::Rfc8181)
         }
         else {
             // Set up a logger for CMS exchanges.
             let cms_logger = CmsLogger::for_rfc8181_sent(
-                self.config.rfc8181_log_dir.as_ref(),
+                krill.config().rfc8181_log_dir.as_ref(),
                 ca_handle,
             );
 
-            let cms = match signer.create_rfc8181_cms(
+            let cms = match krill.signer().create_rfc8181_cms(
                 message, &signing_key
             ) {
                 Ok(cms) => cms.to_bytes(),
@@ -272,7 +236,7 @@ impl CaManager {
                 cms,
                 &server_info.service_uri,
                 publication::CONTENT_TYPE,
-                cms_logger
+                cms_logger, krill,
             ).block().map_err(|_| Error::custom("publication post failed"))?;
 
             match publication::PublicationCms::decode(

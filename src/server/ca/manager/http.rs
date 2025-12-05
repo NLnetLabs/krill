@@ -6,6 +6,7 @@ use crate::commons::httpclient;
 use crate::commons::KrillResult;
 use crate::commons::cmslogger::CmsLogger;
 use crate::commons::error::Error;
+use crate::server::manager::KrillHandle;
 use crate::server::runtime::Errand;
 use super::CaManager;
 
@@ -18,8 +19,9 @@ impl CaManager {
         service_uri: &ServiceUri,
         content_type: &'static str,
         cms_logger: CmsLogger,
+        krill: &KrillHandle,
     ) -> Errand<(KrillResult<Bytes>, CmsLogger)> {
-        let timeout = self.config.post_protocol_msg_timeout_seconds;
+        let timeout = krill.config().post_protocol_msg_timeout_seconds;
         let service_uri = service_uri.clone(); // XXX This will go away when
                                                //     we rewrite the HTTP
                                                //     client.
