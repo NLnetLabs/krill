@@ -1,4 +1,8 @@
 //! An RPKI publication protocol server.
+
+
+mod scheduler;
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -33,7 +37,6 @@ use crate::{
         },
         mq::{now, Task, TaskQueue},
         pubd::RepositoryManager,
-        scheduler::Scheduler,
     },
 };
 use crate::api;
@@ -49,10 +52,9 @@ use crate::api::aspa::{
 use crate::api::bgp::{BgpAnalysisReport, BgpAnalysisSuggestion};
 use crate::api::bgpsec::{BgpSecCsrInfoList, BgpSecDefinitionUpdates};
 use crate::api::ca::{
-    CaRepoDetails, CertAuthInfo, CertAuthIssues,
-    CertAuthList, CertAuthStats, ChildCaInfo, ChildrenConnectionStats,
-    IdCertInfo, RtaList, RtaName,
-    RtaPrepResponse,
+    CaRepoDetails, CertAuthInfo, CertAuthIssues, CertAuthList, CertAuthStats,
+    ChildCaInfo, ChildrenConnectionStats, IdCertInfo, RtaList, RtaName,
+    RtaPrepResponse, Timestamp,
 };
 use crate::api::history::{
     CommandDetails, CommandHistory, CommandHistoryCriteria
@@ -79,25 +81,29 @@ use crate::server::runtime;
 /// This is the Krill server that is doing all the orchestration for all
 /// components.
 pub struct KrillManager {
-    // The base URI for this service
+    /// The base URI for communicating with this server.
     service_uri: uri::Https,
 
-    // Publication server, with configured publishers
+    /// Publication server, with configured publishers
     repo_manager: Arc<RepositoryManager>,
 
-    // Handles the internal TA and/or CAs
+    /// Handles the internal TA and/or CAs
     ca_manager: Arc<ca::CaManager>,
 
-    // Handles the internal TA and/or CAs
+    /// The analyser for ROAs etc. 
     bgp_analyser: Arc<BgpAnalyser>,
 
-    // Shared message queue
-    mq: Arc<TaskQueue>,
+    /// Shared message queue
+    tasks: Arc<TaskQueue>,
 
-    // System actor
+    /// The actor user for actions initiated by the server itself.
     system_actor: Actor,
 
+    /// The server configuration.
     pub config: Arc<Config>,
+
+    /// The time this server was started.
+    started: Timestamp,
 }
 
 /// # Set up and initialization
@@ -133,21 +139,21 @@ impl KrillManager {
 
         // Task queue Arc is shared between ca_manager, repo_manager and the
         // scheduler.
-        let mq = Arc::new(TaskQueue::new(&config.storage_uri)?);
+        let tasks = Arc::new(TaskQueue::new(&config.storage_uri)?);
 
         // for now, support that existing embedded repositories are still
         // supported. this should be removed in future after people
         // have had a chance to separate.
         let repo_manager = Arc::new(RepositoryManager::build(
             config.clone(),
-            mq.clone(),
+            tasks.clone(),
             signer.clone(),
         )?);
 
         let ca_manager = Arc::new(
             ca::CaManager::build(
                 config.clone(),
-                mq.clone(),
+                tasks.clone(),
                 signer,
                 system_actor.clone(),
                 runtime,
@@ -159,18 +165,19 @@ impl KrillManager {
         // When multi-node set ups with a shared queue are
         // supported then we can no longer safely reschedule
         // ALL running tests. See issue: #1112
-        mq.reschedule_tasks_at_startup()?;
+        tasks.reschedule_tasks_at_startup()?;
 
-        mq.schedule(Task::QueueStartTasks, now())?;
+        tasks.schedule(Task::QueueStartTasks, now())?;
 
         let server = KrillManager {
             service_uri,
             repo_manager,
             ca_manager,
             bgp_analyser,
-            mq,
+            tasks,
             system_actor,
             config: config.clone(),
+            started: Timestamp::now(),
         };
 
         // Check if we need to do any testbed or benchmarking set up.
@@ -267,17 +274,6 @@ impl KrillManager {
         }
 
         Ok(server)
-    }
-
-    pub fn build_scheduler(&self) -> Scheduler {
-        Scheduler::build(
-            self.mq.clone(),
-            self.ca_manager.clone(),
-            self.repo_manager.clone(),
-            self.bgp_analyser.clone(),
-            self.config.clone(),
-            self.system_actor.clone(),
-        )
     }
 
     pub fn service_base_uri(&self) -> &uri::Https {

@@ -83,9 +83,9 @@ pub async fn start_krill_daemon(
 
     // Create the Krill manager, this will create the necessary data
     // sub-directories if needed
-    let krill = KrillManager::build(
+    let krill = Arc::new(KrillManager::build(
         config.clone(), runtime::Handle::current()
-    )?;
+    )?);
 
     // Call post-start upgrades to trigger any upgrade related runtime
     // actions, such as re-issuing ROAs because subject name strategy has
@@ -103,8 +103,7 @@ pub async fn start_krill_daemon(
 
     // Build the scheduler which will be responsible for executing
     // planned/triggered tasks
-    let scheduler = krill.build_scheduler();
-    let scheduler_future = scheduler.run();
+    let scheduler_future = krill.clone().run_scheduler();
 
     // Create the HTTP server.
     let server = HttpServer::new(

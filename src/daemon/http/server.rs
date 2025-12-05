@@ -38,14 +38,14 @@ pub struct HttpServer {
 impl HttpServer {
     /// Creates a new server from a Krill manager and the configuration.
     pub fn new(
-        krill: KrillManager,
+        krill: Arc<KrillManager>,
         config: Arc<Config>,
         runtime: &runtime::Handle,
     ) -> KrillResult<Arc<Self>> {
         let authorizer = Authorizer::new(config.clone())?;
         authorizer.spawn_sweep(runtime);
         Ok(Self {
-            krill: krill.into(),
+            krill,
             authorizer,
             config,
             started: Timestamp::now(),

@@ -1,7 +1,9 @@
 //! Deal with asynchronous scheduled processes, either triggered by an
 //! event that occurred, or planned (e.g. re-publishing).
 
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::Duration;
 
 use tokio::time::sleep;
 
@@ -13,9 +15,7 @@ use rpki::ca::{
 use url::Url;
 
 use crate::{
-    api::ca::Timestamp,
     commons::{
-        actor::Actor,
         crypto::dispatch::signerinfo::SignerInfo,
         error::FatalError,
         eventsourcing::{Aggregate, AggregateStore, WalStore, WalSupport},
@@ -28,53 +28,22 @@ use crate::{
         SCHEDULER_RESYNC_REPO_CAS_THRESHOLD,
         SCHEDULER_USE_JITTER_CAS_THRESHOLD, SIGNERS_NS,
     },
-    config::Config,
     server::{
-        ca::{CaManager, CertAuth},
-        bgp::BgpAnalyser,
+        ca::CertAuth,
+        manager::KrillManager,
         mq::{
-            in_hours, in_minutes, in_seconds, in_weeks, now, Task, TaskQueue,
+            in_hours, in_minutes, in_seconds, in_weeks, now, Task, TaskResult,
         },
         properties::Properties,
-        pubd::{RepositoryAccess, RepositoryContent, RepositoryManager},
+        pubd::{RepositoryAccess, RepositoryContent},
     },
 };
 
-use super::mq::TaskResult;
 
-pub struct Scheduler {
-    tasks: Arc<TaskQueue>,
-    ca_manager: Arc<CaManager>,
-    repo_manager: Arc<RepositoryManager>,
-    bgp_analyser: Arc<BgpAnalyser>,
-    config: Arc<Config>,
-    system_actor: Actor,
-    started: Timestamp,
-}
-
-impl Scheduler {
-    pub fn build(
-        tasks: Arc<TaskQueue>,
-        ca_manager: Arc<CaManager>,
-        repo_manager: Arc<RepositoryManager>,
-        bgp_analyser: Arc<BgpAnalyser>,
-        config: Arc<Config>,
-        system_actor: Actor,
-    ) -> Self {
-        Scheduler {
-            tasks,
-            ca_manager,
-            repo_manager,
-            bgp_analyser,
-            config,
-            system_actor,
-            started: Timestamp::now(),
-        }
-    }
-
+impl KrillManager {
     /// Run the scheduler in the background. It will sweep the message queue
     /// for tasks and re-schedule new tasks as needed.
-    pub async fn run(&self) {
+    pub async fn run_scheduler(self: Arc<Self>) {
         loop {
             while let Some((task_key, value)) = self.tasks.pop() {
                 match serde_json::from_value(value) {
