@@ -20,6 +20,9 @@ use serde::{Deserialize, Deserializer, Serialize};
 use url::Url;
 
 #[cfg(unix)]
+use std::collections::HashMap;
+
+#[cfg(unix)]
 use syslog::Facility;
 
 use crate::{
@@ -68,6 +71,23 @@ impl ConfigDefaults {
 
     pub fn https_mode() -> HttpsMode {
         HttpsMode::Generate
+    }
+
+    #[cfg(unix)]
+    pub fn unix_socket_enabled() -> bool {
+        true
+    }
+
+    #[cfg(unix)]
+    pub fn unix_socket() -> Option<PathBuf> {
+        Some(PathBuf::from("/run/krill/krill.sock"))
+    }
+
+    #[cfg(unix)]
+    pub fn unix_users() -> HashMap<String, String> {
+        let mut users = HashMap::new();
+        users.insert("root".to_string(), "admin".to_string());
+        users
     }
 
     pub fn storage_uri() -> Url {
@@ -478,6 +498,7 @@ fn deserialize_minutes_duration<'de, D: Deserializer<'de>>(
 
 /// Global configuration for the Krill Server.
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Config {
     #[serde(
         default = "ConfigDefaults::ip",
@@ -490,6 +511,18 @@ pub struct Config {
 
     #[serde(default = "ConfigDefaults::https_mode")]
     pub https_mode: HttpsMode,
+
+    #[cfg(unix)]
+    #[serde(default = "ConfigDefaults::unix_socket_enabled")]
+    pub unix_socket_enabled: bool,
+
+    #[cfg(unix)]
+    #[serde(default = "ConfigDefaults::unix_socket")]
+    pub unix_socket: Option<PathBuf>,
+
+    #[cfg(unix)]
+    #[serde(default = "ConfigDefaults::unix_users")]
+    pub unix_users: HashMap<String, String>,
 
     // Deserialize this field from data_dir or storage_uri
     #[serde(
@@ -647,6 +680,7 @@ pub struct Config {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct IssuanceTimingConfig {
     #[serde(default = "ConfigDefaults::timing_publish_next_hours")]
     pub timing_publish_next_hours: u32,
@@ -782,6 +816,7 @@ impl IssuanceTimingConfig {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct RrdpUpdatesConfig {
     #[serde(default = "RrdpUpdatesConfig::dflt_rrdp_delta_files_min_nr")]
     pub rrdp_delta_files_min_nr: usize,
@@ -848,6 +883,7 @@ impl RrdpUpdatesConfig {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MetricsConfig {
     #[serde(default)] // false
     pub metrics_hide_ca_details: bool,
@@ -860,6 +896,7 @@ pub struct MetricsConfig {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TestBed {
     ta_aia: uri::Rsync,
     ta_uri: uri::Https,
@@ -899,6 +936,7 @@ impl TestBed {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct Benchmark {
     pub cas: usize,
     pub ca_roas: usize,
@@ -973,6 +1011,21 @@ impl Config {
         let mut path = self.tls_keys_dir().to_path_buf();
         path.push(tls_keys::KEY_FILE);
         path
+    }
+
+    #[cfg(unix)]
+    pub fn unix_socket_enabled(&self) -> bool {
+        self.unix_socket_enabled
+    }
+
+    #[cfg(unix)]
+    pub fn unix_socket(&self) -> Option<&PathBuf> {
+        self.unix_socket.as_ref()
+    }
+
+    #[cfg(unix)]
+    pub fn unix_users(&self) -> &HashMap<String, String> {
+        &self.unix_users
     }
 
     pub fn service_uri(&self) -> uri::Https {
@@ -1231,6 +1284,12 @@ impl Config {
             storage_uri: storage_uri.clone(),
             use_history_cache: false,
             tls_keys_dir: data_dir.map(|d| d.join(HTTPS_SUB_DIR)),
+            #[cfg(unix)]
+            unix_socket_enabled: false,
+            #[cfg(unix)]
+            unix_socket: None,
+            #[cfg(unix)]
+            unix_users: HashMap::new(),
             repo_dir: data_dir.map(|d| d.join(REPOSITORY_DIR)),
             ta_support_enabled: false, /* but, enabled by testbed where
                                         * applicable */
@@ -1469,7 +1528,7 @@ impl Config {
             warn!("The environment variable for setting the admin token has been updated from '{KRILL_ENV_ADMIN_TOKEN_DEPRECATED}' to '{KRILL_ENV_ADMIN_TOKEN}', please update as the old value may not be supported in future releases")
         }
 
-        if self.port < 1024 {
+        if self.port < 1024 && self.port != 0 {
             return Err(ConfigError::other("Port number must be >1024"));
         }
 
@@ -1672,7 +1731,7 @@ impl Config {
         toml::from_str(&v).map_err(|e| {
             ConfigError::Other(format!(
                 "Error parsing config file: {}, error: {}",
-                file.display(), e
+                file.display(), e.message()
             ))
         })
     }

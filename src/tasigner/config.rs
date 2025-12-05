@@ -26,6 +26,7 @@ const DFLT_TA_SIGNED_MESSAGE_VALIDITY_DAYS: i64 = 14;
 //------------------------ ---------------------------------------
 
 #[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TaTimingConfig {
     #[serde(default = "TaTimingConfig::dflt_ta_certificate_validity_years")]
     pub certificate_validity_years: i32,
@@ -89,6 +90,7 @@ impl TaTimingConfig {
 //------------------------ Config -----------------------------------------------
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Config {
     #[serde(
         alias = "data_dir",
