@@ -114,13 +114,13 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
             cmd.tal_rsync,
             cmd.private_key_pem,
             timing.certificate_validity_years,
-            &signer,
+            signer,
         )?;
         let objects = TrustAnchorObjects::create(
             &ta_cert_details.cert,
             cmd.ta_mft_nr_override.unwrap_or(1),
             timing.mft_next_update_weeks,
-            &signer,
+            signer,
         )?;
 
         Ok(TrustAnchorSignerInitEvent {
@@ -183,7 +183,7 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
                 signed_request,
                 ta_timing_config,
                 ta_mft_number_override,
-                &signer,
+                signer,
             ),
             TrustAnchorSignerCommandDetails::TrustAnchorSignerReissueRequest { 
                 repo_info, 
@@ -198,7 +198,7 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
                     tal_https, 
                     tal_rsync, 
                     years, 
-                    &signer
+                    signer
                 );
                 match res {
                     Err(r) => Err(r),

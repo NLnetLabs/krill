@@ -25,6 +25,7 @@ use super::CaManager;
 
 impl CaManager {
     /// Synchronizes with the repository.
+    #[allow(clippy::too_many_arguments)]
     pub fn ca_repo_sync(
         &self,
         repo_manager: &RepositoryManager,
@@ -161,6 +162,7 @@ impl CaManager {
     }
 
     /// Sends a publication protocol delta request.
+    #[allow(clippy::too_many_arguments)]
     fn send_rfc8181_delta(
         &self,
         repo_manager: &RepositoryManager,
@@ -227,6 +229,7 @@ impl CaManager {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn send_rfc8181_and_validate_response(
         &self,
         repo_manager: &RepositoryManager,

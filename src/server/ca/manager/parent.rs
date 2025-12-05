@@ -61,7 +61,7 @@ impl CaManager {
             Ok(msg) => {
                 let should_log_cms = !msg.is_list_response();
                 let reply_bytes = ca.sign_rfc6492_response(
-                    msg, &signer
+                    msg, signer
                 )?;
 
                 if should_log_cms {
@@ -228,7 +228,7 @@ impl CaManager {
                 CertAuthCommandDetails::ChildCertify(
                     child_handle.clone(),
                     issue_req.clone(),
-                    self.config.clone(),
+                    &self.config,
                     signer,
                 )
             )?;

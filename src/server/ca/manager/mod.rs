@@ -554,6 +554,7 @@ impl CaManager {
     }
 
     /// Initializes an embedded trust anchor with all resources.
+    #[allow(clippy::too_many_arguments)]
     pub fn ta_init_fully_embedded(
         &self,
         ta_aia: uri::Rsync,
@@ -567,7 +568,7 @@ impl CaManager {
         let ta_handle = ta_handle();
 
         // Initialise proxy
-        self.ta_proxy_init(&signer)?;
+        self.ta_proxy_init(signer)?;
 
         // Add repository
         let pub_req = self.ta_proxy_publisher_request()?;
@@ -584,7 +585,7 @@ impl CaManager {
         self.ta_proxy_repository_update(contact, &self.system_actor)?;
 
         // Initialise signer
-        self.ta_signer_init(ta_uris, ta_aia, ta_key_pem, &signer)?;
+        self.ta_signer_init(ta_uris, ta_aia, ta_key_pem, signer)?;
 
         // Add signer to proxy
         let signer_info = self.get_trust_anchor_signer()?.get_signer_info();
@@ -592,7 +593,7 @@ impl CaManager {
 
         self.sync_ta_proxy_signer_if_possible(signer)?;
         self.cas_repo_sync_single(
-            repo_manager, &ta_handle, 0, &signer, tasks
+            repo_manager, &ta_handle, 0, signer, tasks
         )?;
 
         Ok(())
@@ -805,7 +806,7 @@ impl CaManager {
                     ca.id_cert(),
                     &repo_contact,
                     vec![],
-                    &signer,
+                    signer,
                     tasks,
             ).is_err() {
                 info!(
@@ -929,7 +930,7 @@ impl CaManager {
         self.process_ca_command(ca.clone(), actor,
             CertAuthCommandDetails::ChildImport(
                 import_child,
-                self.config.clone(),
+                &self.config,
                 signer,
             )
         )?;
@@ -1141,7 +1142,7 @@ impl CaManager {
         signer: &KrillSigner,
     ) -> KrillResult<()> {
         let ca = self.get_ca(handle)?;
-        let revoke_requests = ca.revoke_under_parent(parent, &signer)?;
+        let revoke_requests = ca.revoke_under_parent(parent, signer)?;
         self.send_revoke_requests(handle, parent, revoke_requests, signer)?;
         Ok(())
     }
@@ -1512,6 +1513,7 @@ impl CaManager {
     ///
     /// If `check_repo` is `true`, checks that the repository can be reached
     /// and returns an error if not.
+    #[allow(clippy::too_many_arguments)]
     pub fn update_repo(
         &self,
         repo_manager: &RepositoryManager,
@@ -1531,7 +1533,7 @@ impl CaManager {
                 &ca_handle,
                 ca.id_cert(),
                 &new_contact.server_info,
-                &signer,
+                signer,
                 tasks,
             ).map_err(|e| {
                 Error::CaRepoIssue(ca_handle.clone(), e.to_string())
@@ -1571,7 +1573,7 @@ impl CaManager {
             ca, actor,
             CertAuthCommandDetails::AspasUpdate(
                 updates,
-                self.config.clone(),
+                &self.config,
                 signer,
             ),
         )?;
@@ -1592,7 +1594,7 @@ impl CaManager {
             CertAuthCommandDetails::AspasUpdateExisting(
                 customer,
                 update,
-                self.config.clone(),
+                &self.config,
                 signer,
             )
         )?;
@@ -1622,7 +1624,7 @@ impl CaManager {
             ca.clone(), actor,
             CertAuthCommandDetails::BgpSecUpdateDefinitions(
                 updates,
-                self.config.clone(),
+                &self.config,
                 signer,
             ),
         )?;
@@ -1654,7 +1656,7 @@ impl CaManager {
             ca.clone(), actor,
             CertAuthCommandDetails::RouteAuthorizationsUpdate(
                 updates,
-                self.config.clone(),
+                &self.config,
                 signer,
             ),
         )?;
@@ -1678,7 +1680,7 @@ impl CaManager {
             if let Err(e) = self.process_ca_command(
                 ca.clone(), actor,
                 CertAuthCommandDetails::RouteAuthorizationsRenew(
-                    self.config.clone(),
+                    &self.config,
                     signer,
                 )
             ) {
@@ -1690,7 +1692,7 @@ impl CaManager {
             if let Err(e) = self.process_ca_command(
                 ca.clone(), actor,
                 CertAuthCommandDetails::AspasRenew(
-                    self.config.clone(),
+                    &self.config,
                     signer,
                 ),
             ) {
@@ -1702,7 +1704,7 @@ impl CaManager {
             if let Err(e) = self.process_ca_command(
                 ca.clone(), actor,
                 CertAuthCommandDetails::BgpSecRenew(
-                    self.config.clone(),
+                    &self.config,
                     signer,
                 ),
             ) {
@@ -1731,7 +1733,7 @@ impl CaManager {
             if let Err(e) = self.process_ca_command(
                 ca.clone(), actor,
                 CertAuthCommandDetails::RouteAuthorizationsForceRenew(
-                    self.config.clone(),
+                    &self.config,
                     signer,
                 ),
             ) {
@@ -1848,7 +1850,7 @@ impl CaManager {
             handle.clone(), actor,
             CertAuthCommandDetails::KeyRollActivate(
                 staging,
-                self.config.clone(),
+                &self.config,
                 signer,
             )
         )?;

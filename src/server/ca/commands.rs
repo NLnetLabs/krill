@@ -1,7 +1,6 @@
 //! The commands issued to an RPKI CA.
 
 use std::fmt;
-use std::sync::Arc;
 use chrono::Duration;
 use rpki::ca::idexchange::{ChildHandle, ParentHandle, ServiceUri};
 use rpki::ca::provisioning::{
@@ -86,7 +85,7 @@ pub enum CertAuthCommandDetails<'a> {
     ChildAdd(ChildHandle, IdCertInfo, ResourceSet),
 
     /// Import a child under this parent CA
-    ChildImport(ImportChild, Arc<Config>, &'a KrillSigner),
+    ChildImport(ImportChild, &'a Config, &'a KrillSigner),
 
     /// Update the resource entitlements for an existing child.
     ChildUpdateResources(ChildHandle, ResourceSet),
@@ -101,7 +100,7 @@ pub enum CertAuthCommandDetails<'a> {
     ),
 
     /// Process an issuance request sent by an existing child.
-    ChildCertify(ChildHandle, IssuanceRequest, Arc<Config>, &'a KrillSigner),
+    ChildCertify(ChildHandle, IssuanceRequest, &'a Config, &'a KrillSigner),
 
     /// Process a revoke request by an existing child.
     ChildRevokeKey(ChildHandle, RevocationRequest),
@@ -165,7 +164,7 @@ pub enum CertAuthCommandDetails<'a> {
     UpdateRcvdCert(
         ResourceClassName,
         ReceivedCert,
-        Arc<Config>,
+        &'a Config,
         &'a KrillSigner,
     ),
 
@@ -197,7 +196,7 @@ pub enum CertAuthCommandDetails<'a> {
     /// RFC6489 dictates that 24 hours must be observed. However, shorter
     /// time frames can be used for testing, and in case of emergency
     /// rolls.
-    KeyRollActivate(Duration, Arc<Config>, &'a KrillSigner),
+    KeyRollActivate(Duration, &'a Config, &'a KrillSigner),
 
     /// Finish the keyroll.
     ///
@@ -215,7 +214,7 @@ pub enum CertAuthCommandDetails<'a> {
     /// authorized.
     RouteAuthorizationsUpdate(
         RoaConfigurationUpdates,
-        Arc<Config>,
+        &'a Config,
         &'a KrillSigner,
     ),
 
@@ -225,21 +224,21 @@ pub enum CertAuthCommandDetails<'a> {
     /// Note that this command is intended to be sent by the scheduler -
     /// once a day is fine - and will only be stored if there are any
     /// updates to be done.
-    RouteAuthorizationsRenew(Arc<Config>, &'a KrillSigner),
+    RouteAuthorizationsRenew(&'a Config, &'a KrillSigner),
 
     /// Re-issue all ROA objects regardless of their expiration time.
-    RouteAuthorizationsForceRenew(Arc<Config>, &'a KrillSigner),
+    RouteAuthorizationsForceRenew(&'a Config, &'a KrillSigner),
 
     //--- ASPA
 
     /// Update ASPA definitions
-    AspasUpdate(AspaDefinitionUpdates, Arc<Config>, &'a KrillSigner),
+    AspasUpdate(AspaDefinitionUpdates, &'a Config, &'a KrillSigner),
 
     /// Update an existing AspaProviders for the given AspaCustomer
     AspasUpdateExisting(
         CustomerAsn,
         AspaProvidersUpdate,
-        Arc<Config>,
+        &'a Config,
         &'a KrillSigner,
     ),
 
@@ -249,7 +248,7 @@ pub enum CertAuthCommandDetails<'a> {
     /// 
     /// This command is intended to be sent by the scheduler – once a day is
     /// fine – and will only be stored if there are any updates to be done.
-    AspasRenew(Arc<Config>, &'a KrillSigner),
+    AspasRenew(&'a Config, &'a KrillSigner),
 
 
     //--- BGPsec router keys
@@ -257,12 +256,12 @@ pub enum CertAuthCommandDetails<'a> {
     /// Update BgpSecDefinitions
     BgpSecUpdateDefinitions(
         BgpSecDefinitionUpdates,
-        Arc<Config>,
+        &'a Config,
         &'a KrillSigner,
     ),
 
     /// Re-issue any and all BGPsec certificates which are soon to expire.
-    BgpSecRenew(Arc<Config>, &'a KrillSigner),
+    BgpSecRenew(&'a Config, &'a KrillSigner),
 
 
     //--- Publishing

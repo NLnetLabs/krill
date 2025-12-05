@@ -124,7 +124,7 @@ impl CaManager {
 
         // Get sign request for signer.
         let signed_request = proxy.get_signer_request(
-            self.config.ta_timing, &signer
+            self.config.ta_timing, signer
         )?;
 
         // Remember the noce of the request so we can retrieve it.
@@ -137,7 +137,7 @@ impl CaManager {
                 signed_request.into(),
                 self.config.ta_timing,
                 None, // do not override next manifest number
-                &signer,
+                signer,
                 &self.system_actor,
             )
         )?;
@@ -543,7 +543,7 @@ impl CaManager {
                     CertAuthCommandDetails::UpdateRcvdCert(
                         rcn.clone(),
                         rcvd_cert,
-                        self.config.clone(),
+                        &self.config,
                         signer,
                     )
                 ) {
