@@ -288,11 +288,11 @@ impl RepositoryAccess {
 
 /// # Event Sourcing support
 impl Aggregate for RepositoryAccess {
-    type Command = RepositoryAccessCommand;
+    type Command<'a> = RepositoryAccessCommand;
     type StorableCommandDetails = StorableRepositoryCommand;
     type Event = RepositoryAccessEvent;
 
-    type InitCommand = RepositoryAccessInitCommand;
+    type InitCommand<'a> = RepositoryAccessInitCommand;
     type InitEvent = RepositoryAccessInitEvent;
     type Error = Error;
 
@@ -307,8 +307,8 @@ impl Aggregate for RepositoryAccess {
         }
     }
 
-    fn process_init_command(
-        command: Self::InitCommand,
+    fn process_init_command<'a>(
+        command: Self::InitCommand<'a>,
     ) -> Result<Self::InitEvent, Self::Error> {
         let details = command.into_details();
 
@@ -338,9 +338,9 @@ impl Aggregate for RepositoryAccess {
         }
     }
 
-    fn process_command(
+    fn process_command<'a>(
         &self,
-        command: Self::Command,
+        command: Self::Command<'a>,
     ) -> Result<Vec<Self::Event>, Self::Error> {
         info!(
             "Processing command for publisher '{}', version: {}: {}",

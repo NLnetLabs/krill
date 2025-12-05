@@ -35,12 +35,14 @@ use super::store::{AggregateStoreError, Storable};
 //      store.
 pub trait Aggregate: Storable + 'static {
     /// The type representing the initial command.
-    type InitCommand: InitCommand<
+    type InitCommand<'a>: InitCommand<
         StorableDetails = Self::StorableCommandDetails,
-    >;
+    > where Self: 'a;
 
     /// The type representing consecutive commands.
-    type Command: Command<StorableDetails = Self::StorableCommandDetails>;
+    type Command<'a>: Command<
+        StorableDetails = Self::StorableCommandDetails
+    > where Self: 'a;
 
     /// The type representing the details of a command to be stored.
     type StorableCommandDetails: WithStorableDetails;
@@ -75,8 +77,8 @@ pub trait Aggregate: Storable + 'static {
     /// This can fail. The init event resulting from successfull processing
     /// is not applied here, but returned so that we can re-build state from
     /// history.
-    fn process_init_command(
-        command: Self::InitCommand,
+    fn process_init_command<'a>(
+        command: Self::InitCommand<'a>,
     ) -> Result<Self::InitEvent, Self::Error>;
 
     /// Processes a command.
@@ -88,9 +90,9 @@ pub trait Aggregate: Storable + 'static {
     /// The events are not applied here, but need to be applied using
     /// [`apply_command`][Self::apply_command] so that we can re-build
     /// state from history.
-    fn process_command(
+    fn process_command<'a>(
         &self,
-        command: Self::Command,
+        command: Self::Command<'a>,
     ) -> Result<Vec<Self::Event>, Self::Error>;
 
     /// Returns the current version of the aggregate.

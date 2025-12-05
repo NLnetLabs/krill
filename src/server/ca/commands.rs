@@ -41,19 +41,20 @@ use super::rc::DropReason;
 
 //------------ CertAuthInitCommand -----------------------------------------
 
-pub type CertAuthInitCommand = SentInitCommand<CertAuthInitCommandDetails>;
+pub type CertAuthInitCommand<'a>
+    = SentInitCommand<CertAuthInitCommandDetails<'a>>;
 
 
 //------------ CertAuthInitCommandDetails ----------------------------------
 
 /// The details for the init command for a `CertAuth` instance.
 #[derive(Clone, Debug)]
-pub struct CertAuthInitCommandDetails {
+pub struct CertAuthInitCommandDetails<'a> {
     /// The signer to use for initializing the CA.
-    pub signer: Arc<KrillSigner>,
+    pub signer: &'a KrillSigner,
 }
 
-impl InitCommandDetails for CertAuthInitCommandDetails {
+impl InitCommandDetails for CertAuthInitCommandDetails<'_> {
     type StorableDetails = CertAuthStorableCommand;
 
     fn store(&self) -> Self::StorableDetails {
@@ -61,7 +62,7 @@ impl InitCommandDetails for CertAuthInitCommandDetails {
     }
 }
 
-impl fmt::Display for CertAuthInitCommandDetails {
+impl fmt::Display for CertAuthInitCommandDetails<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.store().fmt(f)
     }
@@ -69,14 +70,14 @@ impl fmt::Display for CertAuthInitCommandDetails {
 
 //------------ CertAuthCommand ---------------------------------------------
 
-pub type CertAuthCommand = SentCommand<CertAuthCommandDetails>;
+pub type CertAuthCommand<'a> = SentCommand<CertAuthCommandDetails<'a>>;
 
 //------------ CertAuthCommandDetails --------------------------------------
 
 /// The details for the commands for a `CertAuth` instance.
 #[derive(Clone, Debug)]
 #[allow(clippy::large_enum_variant)]
-pub enum CertAuthCommandDetails {
+pub enum CertAuthCommandDetails<'a> {
     //--- Child commands.
     //
     // These relate to child CAs of this CA.
@@ -85,7 +86,7 @@ pub enum CertAuthCommandDetails {
     ChildAdd(ChildHandle, IdCertInfo, ResourceSet),
 
     /// Import a child under this parent CA
-    ChildImport(ImportChild, Arc<Config>, Arc<KrillSigner>),
+    ChildImport(ImportChild, Arc<Config>, &'a KrillSigner),
 
     /// Update the resource entitlements for an existing child.
     ChildUpdateResources(ChildHandle, ResourceSet),
@@ -100,7 +101,7 @@ pub enum CertAuthCommandDetails {
     ),
 
     /// Process an issuance request sent by an existing child.
-    ChildCertify(ChildHandle, IssuanceRequest, Arc<Config>, Arc<KrillSigner>),
+    ChildCertify(ChildHandle, IssuanceRequest, Arc<Config>, &'a KrillSigner),
 
     /// Process a revoke request by an existing child.
     ChildRevokeKey(ChildHandle, RevocationRequest),
@@ -139,7 +140,7 @@ pub enum CertAuthCommandDetails {
     /// this ID for parents, and children. In practice however, one may not
     /// want to use this until RFC8183 is extended with some words/ on how
     /// to re-do the ID exchange.
-    GenerateNewIdKey(Arc<KrillSigner>),
+    GenerateNewIdKey(&'a KrillSigner),
 
     /// Add a parent to this CA.
     ///
@@ -158,20 +159,20 @@ pub enum CertAuthCommandDetails {
     ///
     /// Remove/create/update resource classes and certificate requests or key
     /// revocation requests as needed.
-    UpdateEntitlements(ParentHandle, Entitlements, Arc<KrillSigner>),
+    UpdateEntitlements(ParentHandle, Entitlements, &'a KrillSigner),
 
     /// Process a new certificate received from a parent.
     UpdateRcvdCert(
         ResourceClassName,
         ReceivedCert,
         Arc<Config>,
-        Arc<KrillSigner>,
+        &'a KrillSigner,
     ),
 
     /// Drop a resource class under a parent.
     ///
     /// This is usually done because of issues obtaining a certificate for it.
-    DropResourceClass(ResourceClassName, DropReason, Arc<KrillSigner>),
+    DropResourceClass(ResourceClassName, DropReason, &'a KrillSigner),
 
     //--- Key rolls
 
@@ -180,7 +181,7 @@ pub enum CertAuthCommandDetails {
     /// A key roll is only initiated for resource classes where there is a
     /// current active key only, i.e. there is no roll in progress, and this
     /// key's age exceeds the given duration.
-    KeyRollInitiate(Duration, Arc<KrillSigner>),
+    KeyRollInitiate(Duration, &'a KrillSigner),
 
     /// Activate a rolled key.
     ///
@@ -196,7 +197,7 @@ pub enum CertAuthCommandDetails {
     /// RFC6489 dictates that 24 hours must be observed. However, shorter
     /// time frames can be used for testing, and in case of emergency
     /// rolls.
-    KeyRollActivate(Duration, Arc<Config>, Arc<KrillSigner>),
+    KeyRollActivate(Duration, Arc<Config>, &'a KrillSigner),
 
     /// Finish the keyroll.
     ///
@@ -215,7 +216,7 @@ pub enum CertAuthCommandDetails {
     RouteAuthorizationsUpdate(
         RoaConfigurationUpdates,
         Arc<Config>,
-        Arc<KrillSigner>,
+        &'a KrillSigner,
     ),
 
     /// Re-issue all ROA objects which would otherwise expire soon.
@@ -224,22 +225,22 @@ pub enum CertAuthCommandDetails {
     /// Note that this command is intended to be sent by the scheduler -
     /// once a day is fine - and will only be stored if there are any
     /// updates to be done.
-    RouteAuthorizationsRenew(Arc<Config>, Arc<KrillSigner>),
+    RouteAuthorizationsRenew(Arc<Config>, &'a KrillSigner),
 
     /// Re-issue all ROA objects regardless of their expiration time.
-    RouteAuthorizationsForceRenew(Arc<Config>, Arc<KrillSigner>),
+    RouteAuthorizationsForceRenew(Arc<Config>, &'a KrillSigner),
 
     //--- ASPA
 
     /// Update ASPA definitions
-    AspasUpdate(AspaDefinitionUpdates, Arc<Config>, Arc<KrillSigner>),
+    AspasUpdate(AspaDefinitionUpdates, Arc<Config>, &'a KrillSigner),
 
     /// Update an existing AspaProviders for the given AspaCustomer
     AspasUpdateExisting(
         CustomerAsn,
         AspaProvidersUpdate,
         Arc<Config>,
-        Arc<KrillSigner>,
+        &'a KrillSigner,
     ),
 
     /// Re-issue any and all ASPA objects which would otherwise expire soon.
@@ -248,7 +249,7 @@ pub enum CertAuthCommandDetails {
     /// 
     /// This command is intended to be sent by the scheduler – once a day is
     /// fine – and will only be stored if there are any updates to be done.
-    AspasRenew(Arc<Config>, Arc<KrillSigner>),
+    AspasRenew(Arc<Config>, &'a KrillSigner),
 
 
     //--- BGPsec router keys
@@ -257,32 +258,32 @@ pub enum CertAuthCommandDetails {
     BgpSecUpdateDefinitions(
         BgpSecDefinitionUpdates,
         Arc<Config>,
-        Arc<KrillSigner>,
+        &'a KrillSigner,
     ),
 
     /// Re-issue any and all BGPsec certificates which are soon to expire.
-    BgpSecRenew(Arc<Config>, Arc<KrillSigner>),
+    BgpSecRenew(Arc<Config>, &'a KrillSigner),
 
 
     //--- Publishing
 
     // Update the repository where this CA publishes.
-    RepoUpdate(RepositoryContact, Arc<KrillSigner>),
+    RepoUpdate(RepositoryContact, &'a KrillSigner),
 
 
     //--- RTA
 
     /// Sign a new RTA
-    RtaSign(RtaName, RtaContentRequest, Arc<KrillSigner>),
+    RtaSign(RtaName, RtaContentRequest, &'a KrillSigner),
 
     /// Prepare a multi-signed RTA
-    RtaMultiPrepare(RtaName, RtaPrepareRequest, Arc<KrillSigner>),
+    RtaMultiPrepare(RtaName, RtaPrepareRequest, &'a KrillSigner),
 
     /// Co-sign an existing multi-signed RTA
-    RtaCoSign(RtaName, ResourceTaggedAttestation, Arc<KrillSigner>),
+    RtaCoSign(RtaName, ResourceTaggedAttestation, &'a KrillSigner),
 }
 
-impl eventsourcing::CommandDetails for CertAuthCommandDetails {
+impl eventsourcing::CommandDetails for CertAuthCommandDetails<'_> {
     type Event = CertAuthEvent;
     type StorableDetails = CertAuthStorableCommand;
 
@@ -291,7 +292,7 @@ impl eventsourcing::CommandDetails for CertAuthCommandDetails {
     }
 }
 
-impl fmt::Display for CertAuthCommandDetails {
+impl fmt::Display for CertAuthCommandDetails<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         CertAuthStorableCommand::from(self.clone()).fmt(f)
     }
@@ -412,7 +413,7 @@ pub enum CertAuthStorableCommand {
     Deactivate,
 }
 
-impl From<CertAuthCommandDetails> for CertAuthStorableCommand {
+impl From<CertAuthCommandDetails<'_>> for CertAuthStorableCommand {
     fn from(d: CertAuthCommandDetails) -> Self {
         match d {
             CertAuthCommandDetails::ChildAdd(child, id_cert, resources) => {

@@ -292,10 +292,10 @@ impl Person {
 }
 
 impl Aggregate for Person {
-    type InitCommand = PersonInitCommand;
+    type InitCommand<'a> = PersonInitCommand;
     type InitEvent = PersonInitEvent;
 
-    type Command = PersonCommand;
+    type Command<'a> = PersonCommand;
     type Event = PersonEvent;
 
     type StorableCommandDetails = PersonStorableCommand;
@@ -311,8 +311,8 @@ impl Aggregate for Person {
         }
     }
 
-    fn process_init_command(
-        command: Self::InitCommand,
+    fn process_init_command<'a>(
+        command: Self::InitCommand<'a>,
     ) -> Result<Self::InitEvent, Self::Error> {
         Ok(PersonInitEvent {
             name: command.into_details().name,
@@ -334,9 +334,9 @@ impl Aggregate for Person {
         }
     }
 
-    fn process_command(
+    fn process_command<'a>(
         &self,
-        command: Self::Command,
+        command: Self::Command<'a>,
     ) -> Result<Vec<Self::Event>, Self::Error> {
         match command.into_details() {
             PersonCommandDetails::ChangeName(name) => {

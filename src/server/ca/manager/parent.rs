@@ -1,6 +1,5 @@
 //! CA as a parent.
 
-use std::sync::Arc;
 use bytes::Bytes;
 use log::info;
 use rpki::ca::provisioning;
@@ -37,7 +36,7 @@ impl CaManager {
         msg_bytes: Bytes,
         user_agent: Option<String>,
         actor: &Actor,
-        signer: Arc<KrillSigner>,
+        signer: &KrillSigner,
     ) -> KrillResult<Bytes> {
         if ca_handle.as_str() == TA_NAME {
             return Err(Error::custom(
@@ -57,7 +56,7 @@ impl CaManager {
         );
 
         match self.rfc6492_process_request(
-            ca_handle, req_msg, user_agent, actor, signer.clone()
+            ca_handle, req_msg, user_agent, actor, signer
         ) {
             Ok(msg) => {
                 let should_log_cms = !msg.is_list_response();
@@ -88,7 +87,7 @@ impl CaManager {
         req_msg: provisioning::Message,
         user_agent: Option<String>,
         actor: &Actor,
-        signer: Arc<KrillSigner>,
+        signer: &KrillSigner,
     ) -> KrillResult<provisioning::Message> {
         let (sender, _recipient, payload) = req_msg.unpack();
 
@@ -209,7 +208,7 @@ impl CaManager {
         child_handle: ChildHandle,
         issue_req: IssuanceRequest,
         actor: &Actor,
-        signer: Arc<KrillSigner>,
+        signer: &KrillSigner,
     ) -> KrillResult<provisioning::Message> {
         if ca_handle.as_str() == TA_NAME {
             let request = ProvisioningRequest::Issuance(issue_req);

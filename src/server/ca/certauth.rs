@@ -2,7 +2,6 @@
 
 use std::vec;
 use std::collections::HashMap;
-use std::ops::Deref;
 use std::sync::Arc;
 use bytes::Bytes;
 use chrono::Duration;
@@ -123,11 +122,11 @@ pub struct CertAuth {
 }
 
 impl Aggregate for CertAuth {
-    type Command = CertAuthCommand;
+    type Command<'a> = CertAuthCommand<'a>;
     type StorableCommandDetails = CertAuthStorableCommand;
     type Event = CertAuthEvent;
 
-    type InitCommand = CertAuthInitCommand;
+    type InitCommand<'a> = CertAuthInitCommand<'a>;
     type InitEvent = CertAuthInitEvent;
 
     type Error = Error;
@@ -154,8 +153,8 @@ impl Aggregate for CertAuth {
         }
     }
 
-    fn process_init_command(
-        command: CertAuthInitCommand,
+    fn process_init_command<'a>(
+        command: Self::InitCommand<'a>
     ) -> Result<CertAuthInitEvent, Error> {
         Rfc8183Id::generate(
             &command.details().signer
@@ -170,9 +169,9 @@ impl Aggregate for CertAuth {
         self.version += 1;
     }
 
-    fn process_command(
+    fn process_command<'a>(
         &self,
-        command: CertAuthCommand,
+        command: Self::Command<'a>,
     ) -> Result<Vec<CertAuthEvent>, Error> {
         trace!(
             "Sending command to CA '{}', version: {}: {}",
@@ -357,11 +356,11 @@ impl Aggregate for CertAuth {
             }
 
             CertAuthCommandDetails::RtaCoSign(name, rta, signer) => {
-                self.process_rta_cosign(name, rta, signer.deref())
+                self.process_rta_cosign(name, rta, signer)
             }
 
             CertAuthCommandDetails::RtaSign(name, request, signer) => {
-                self.process_rta_sign(name, request, signer.deref())
+                self.process_rta_sign(name, request, signer)
             }
         }
     }
@@ -1101,7 +1100,7 @@ impl CertAuth {
         &self,
         import_child: ImportChild,
         config: &Config,
-        signer: Arc<KrillSigner>,
+        signer: &KrillSigner,
     ) -> KrillResult<Vec<CertAuthEvent>> {
         // overview:
         // - perform checks (e.g. not supported in case we have multiple RCs)
@@ -1303,7 +1302,7 @@ impl CertAuth {
         child_handle: ChildHandle,
         request: IssuanceRequest,
         config: &Config,
-        signer: Arc<KrillSigner>,
+        signer: &KrillSigner,
     ) -> KrillResult<Vec<CertAuthEvent>> {
         let (child_rcn, limit, csr) = request.unpack();
 
@@ -1335,7 +1334,7 @@ impl CertAuth {
         csr_info: CsrInfo,
         limit: RequestResourceLimit,
         config: &Config,
-        signer: Arc<KrillSigner>,
+        signer: &KrillSigner,
         events: &mut Vec<CertAuthEvent>,
     ) -> KrillResult<()> {
         if !csr_info.global_uris() && !test_mode_enabled() {
@@ -1716,7 +1715,7 @@ impl CertAuth {
     /// Processes the “generate new ID key” command.
     fn process_generate_new_id_key(
         &self,
-        signer: Arc<KrillSigner>,
+        signer: &KrillSigner,
     ) -> KrillResult<Vec<CertAuthEvent>> {
         let id = Rfc8183Id::generate(&signer)?;
 
@@ -1831,7 +1830,7 @@ impl CertAuth {
         &self,
         parent_handle: ParentHandle,
         entitlements: ResourceClassListResponse,
-        signer: Arc<KrillSigner>,
+        signer: &KrillSigner,
     ) -> KrillResult<Vec<CertAuthEvent>> {
         let mut res = Vec::new();
 
@@ -1856,7 +1855,7 @@ impl CertAuth {
                     && !entitled_classes.contains(&class.parent_rc_name())
             })
         {
-            let revoke_requests = rc.revoke(signer.deref())?;
+            let revoke_requests = rc.revoke(signer)?;
 
             info!(
                 "Updating Entitlements for CA: {}, Removing RC: {}",
@@ -1996,7 +1995,7 @@ impl CertAuth {
         &self,
         rcn: ResourceClassName,
         reason: DropReason,
-        signer: Arc<KrillSigner>,
+        signer: &KrillSigner,
     ) -> KrillResult<Vec<CertAuthEvent>> {
         warn!(
             "Dropping resource class '{rcn}' because of reason: {reason}"
@@ -2005,7 +2004,7 @@ impl CertAuth {
             Error::ResourceClassUnknown(rcn.clone())
         })?;
 
-        rc.revoke(signer.deref()).map(|revoke_requests| {
+        rc.revoke(signer).map(|revoke_requests| {
             vec![CertAuthEvent::ResourceClassRemoved {
                 resource_class_name: rcn,
                 parent: rc.parent_handle().clone(),
@@ -2021,7 +2020,7 @@ impl CertAuth {
     fn process_keyroll_initiate(
         &self,
         duration: Duration,
-        signer: Arc<KrillSigner>,
+        signer: &KrillSigner,
     ) -> KrillResult<Vec<CertAuthEvent>> {
         let mut res = Vec::new();
 
@@ -2047,7 +2046,7 @@ impl CertAuth {
         &self,
         staging_time: Duration,
         config: Arc<Config>,
-        signer: Arc<KrillSigner>,
+        signer: &KrillSigner,
     ) -> KrillResult<Vec<CertAuthEvent>> {
         let mut res = vec![];
 

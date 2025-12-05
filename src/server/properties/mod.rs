@@ -209,11 +209,11 @@ pub struct Properties {
 }
 
 impl Aggregate for Properties {
-    type Command = PropertiesCommand;
+    type Command<'a> = PropertiesCommand;
     type StorableCommandDetails = StorablePropertiesCommand;
     type Event = PropertiesEvent;
 
-    type InitCommand = PropertiesInitCommand;
+    type InitCommand<'a> = PropertiesInitCommand;
     type InitEvent = PropertiesInitEvent;
 
     type Error = Error;
@@ -250,9 +250,9 @@ impl Aggregate for Properties {
         }
     }
 
-    fn process_command(
+    fn process_command<'a>(
         &self,
-        command: Self::Command,
+        command: Self::Command<'a>,
     ) -> Result<Vec<Self::Event>, Self::Error> {
         if log_enabled!(log::Level::Trace) {
             trace!(

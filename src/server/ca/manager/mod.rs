@@ -173,7 +173,7 @@ impl CaManager {
         let ca_objects_store = Arc::new(CaObjectsStore::create(
             &config.storage_uri,
             config.issuance_timing.clone(),
-            signer.clone(),
+            signer
         )?);
 
         // Register the `CaObjectsStore` as a pre-save listener to the
@@ -372,7 +372,7 @@ impl CaManager {
     /// alreay initialized.
     pub fn ta_proxy_init(
         &self,
-        signer: Arc<KrillSigner>,
+        signer: &KrillSigner,
     ) -> KrillResult<()> {
         let ta_handle = ta_handle();
 
@@ -405,7 +405,7 @@ impl CaManager {
         tal_https: Vec<uri::Https>,
         tal_rsync: uri::Rsync,
         private_key_pem: Option<String>,
-        signer: Arc<KrillSigner>,
+        signer: &KrillSigner,
     ) -> KrillResult<()> {
         let handle = ta_handle();
 
@@ -561,13 +561,13 @@ impl CaManager {
         ta_key_pem: Option<String>,
         repo_manager: &RepositoryManager,
         actor: &Actor,
-        signer: Arc<KrillSigner>,
+        signer: &KrillSigner,
         tasks: &TaskQueue,
     ) -> KrillResult<()> {
         let ta_handle = ta_handle();
 
         // Initialise proxy
-        self.ta_proxy_init(signer.clone())?;
+        self.ta_proxy_init(&signer)?;
 
         // Add repository
         let pub_req = self.ta_proxy_publisher_request()?;
@@ -584,13 +584,13 @@ impl CaManager {
         self.ta_proxy_repository_update(contact, &self.system_actor)?;
 
         // Initialise signer
-        self.ta_signer_init(ta_uris, ta_aia, ta_key_pem, signer.clone())?;
+        self.ta_signer_init(ta_uris, ta_aia, ta_key_pem, &signer)?;
 
         // Add signer to proxy
         let signer_info = self.get_trust_anchor_signer()?.get_signer_info();
         self.ta_proxy_signer_add(signer_info, &self.system_actor)?;
 
-        self.sync_ta_proxy_signer_if_possible(signer.clone())?;
+        self.sync_ta_proxy_signer_if_possible(signer)?;
         self.cas_repo_sync_single(
             repo_manager, &ta_handle, 0, &signer, tasks
         )?;
@@ -600,7 +600,7 @@ impl CaManager {
 
     /// Renews the embedded testbed TA;
     pub fn ta_renew_testbed_ta(
-        &self, signer: Arc<KrillSigner>,
+        &self, signer: &KrillSigner,
     ) -> KrillResult<()> {
         if self.testbed_enabled() {
             let proxy = self.get_trust_anchor_proxy()?;
@@ -618,7 +618,7 @@ impl CaManager {
 impl CaManager {
     /// Initializes a CA without a repo, no parents, no children, no nothing
     pub fn init_ca(
-        &self, handle: CaHandle, signer: Arc<KrillSigner>,
+        &self, handle: CaHandle, signer: &KrillSigner,
     ) -> KrillResult<()> {
         if handle == ta_handle() || handle.as_str() == "version" {
             return Err(Error::TaNameReserved)
@@ -653,7 +653,7 @@ impl CaManager {
         &self,
         handle: CaHandle,
         actor: &Actor,
-        signer: Arc<KrillSigner>
+        signer: &KrillSigner
     ) -> KrillResult<()> {
         self.process_ca_command(
             handle, actor,
@@ -759,7 +759,7 @@ impl CaManager {
         repo_manager: &RepositoryManager,
         ca_handle: &CaHandle,
         actor: &Actor,
-        signer: Arc<KrillSigner>,
+        signer: &KrillSigner,
         tasks: &TaskQueue,
     ) -> KrillResult<()> {
         warn!("Deleting CA '{ca_handle}' as requested by: {actor}");
@@ -773,7 +773,7 @@ impl CaManager {
         );
         for parent in ca.parents() {
             if let Err(e) = self.ca_parent_revoke(
-                ca_handle, parent, signer.clone()
+                ca_handle, parent, signer
             ) {
                 warn!(
                     "Removing CA '{ca_handle}', but could not send revoke request \
@@ -923,7 +923,7 @@ impl CaManager {
         ca: &CaHandle,
         import_child: ImportChild,
         actor: &Actor,
-        signer: Arc<KrillSigner>,
+        signer: &KrillSigner,
     ) -> KrillResult<()> {
         trace!("Importing CA: {} under parent: {}", import_child.name, ca);
         self.process_ca_command(ca.clone(), actor,
@@ -1114,7 +1114,7 @@ impl CaManager {
         handle: CaHandle,
         parent: ParentHandle,
         actor: &Actor,
-        signer: Arc<KrillSigner>,
+        signer: &KrillSigner,
     ) -> KrillResult<()> {
         // Best effort, request revocations for any remaining keys under this
         // parent.
@@ -1138,7 +1138,7 @@ impl CaManager {
         &self,
         handle: &CaHandle,
         parent: &ParentHandle,
-        signer: Arc<KrillSigner>,
+        signer: &KrillSigner,
     ) -> KrillResult<()> {
         let ca = self.get_ca(handle)?;
         let revoke_requests = ca.revoke_under_parent(parent, &signer)?;
@@ -1519,7 +1519,7 @@ impl CaManager {
         new_contact: RepositoryContact,
         check_repo: bool,
         actor: &Actor,
-        signer: Arc<KrillSigner>,
+        signer: &KrillSigner,
         tasks: &TaskQueue,
     ) -> KrillResult<()> {
         let ca = self.get_ca(&ca_handle)?;
@@ -1565,7 +1565,7 @@ impl CaManager {
         ca: CaHandle,
         updates: AspaDefinitionUpdates,
         actor: &Actor,
-        signer: Arc<KrillSigner>,
+        signer: &KrillSigner,
     ) -> KrillResult<()> {
         self.process_ca_command(
             ca, actor,
@@ -1585,7 +1585,7 @@ impl CaManager {
         customer: CustomerAsn,
         update: AspaProvidersUpdate,
         actor: &Actor,
-        signer: Arc<KrillSigner>,
+        signer: &KrillSigner,
     ) -> KrillResult<()> {
         self.process_ca_command(
             ca.clone(), actor,
@@ -1616,7 +1616,7 @@ impl CaManager {
         ca: CaHandle,
         updates: BgpSecDefinitionUpdates,
         actor: &Actor,
-        signer: Arc<KrillSigner>,
+        signer: &KrillSigner,
     ) -> KrillResult<()> {
         self.process_ca_command(
             ca.clone(), actor,
@@ -1648,7 +1648,7 @@ impl CaManager {
         ca: CaHandle,
         updates: RoaConfigurationUpdates,
         actor: &Actor,
-        signer: Arc<KrillSigner>,
+        signer: &KrillSigner,
     ) -> KrillResult<()> {
         self.process_ca_command(
             ca.clone(), actor,
@@ -1672,14 +1672,14 @@ impl CaManager {
     /// CAs are expected to note extended validity eligibility and request
     /// updated certificates themselves.
     pub fn renew_objects_all(
-        &self, actor: &Actor, signer: Arc<KrillSigner>
+        &self, actor: &Actor, signer: &KrillSigner
     ) -> KrillResult<()> {
         for ca in self.ca_store.list()? {
             if let Err(e) = self.process_ca_command(
                 ca.clone(), actor,
                 CertAuthCommandDetails::RouteAuthorizationsRenew(
                     self.config.clone(),
-                    signer.clone(),
+                    signer,
                 )
             ) {
                 error!(
@@ -1691,7 +1691,7 @@ impl CaManager {
                 ca.clone(), actor,
                 CertAuthCommandDetails::AspasRenew(
                     self.config.clone(),
-                    signer.clone(),
+                    signer,
                 ),
             ) {
                 error!(
@@ -1703,7 +1703,7 @@ impl CaManager {
                 ca.clone(), actor,
                 CertAuthCommandDetails::BgpSecRenew(
                     self.config.clone(),
-                    signer.clone(),
+                    signer,
                 ),
             ) {
                 error!(
@@ -1725,14 +1725,14 @@ impl CaManager {
     pub fn force_renew_roas_all(
         &self,
         actor: &Actor,
-        signer: Arc<KrillSigner>,
+        signer: &KrillSigner,
     ) -> KrillResult<()> {
         for ca in self.ca_store.list()? {
             if let Err(e) = self.process_ca_command(
                 ca.clone(), actor,
                 CertAuthCommandDetails::RouteAuthorizationsForceRenew(
                     self.config.clone(),
-                    signer.clone(),
+                    signer,
                 ),
             ) {
                 error!(
@@ -1754,7 +1754,7 @@ impl CaManager {
         name: RtaName,
         request: RtaContentRequest,
         actor: &Actor,
-        signer: Arc<KrillSigner>,
+        signer: &KrillSigner,
     ) -> KrillResult<()> {
         self.process_ca_command(
             ca.clone(), actor,
@@ -1774,7 +1774,7 @@ impl CaManager {
         name: RtaName,
         request: RtaPrepareRequest,
         actor: &Actor,
-        signer: Arc<KrillSigner>,
+        signer: &KrillSigner,
     ) -> KrillResult<()> {
         self.process_ca_command(
             ca.clone(), actor,
@@ -1794,7 +1794,7 @@ impl CaManager {
         name: RtaName,
         rta: ResourceTaggedAttestation,
         actor: &Actor,
-        signer: Arc<KrillSigner>,
+        signer: &KrillSigner,
     ) -> KrillResult<()> {
         self.process_ca_command(
             ca.clone(), actor,
@@ -1819,7 +1819,7 @@ impl CaManager {
         handle: CaHandle,
         max_age: Duration,
         actor: &Actor,
-        signer: Arc<KrillSigner>,
+        signer: &KrillSigner,
     ) -> KrillResult<()> {
         self.process_ca_command(
             handle.clone(), actor,
@@ -1842,7 +1842,7 @@ impl CaManager {
         handle: CaHandle,
         staging: Duration,
         actor: &Actor,
-        signer: Arc<KrillSigner>,
+        signer: &KrillSigner,
     ) -> KrillResult<()> {
         self.process_ca_command(
             handle.clone(), actor,

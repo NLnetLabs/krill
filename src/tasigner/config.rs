@@ -2,7 +2,6 @@ use std::{
     fs::File,
     io::{self, Read},
     path::PathBuf,
-    sync::Arc,
 };
 
 use log::LevelFilter;
@@ -227,7 +226,7 @@ impl Config {
     }
 
     // Signer support
-    pub fn signer(&self) -> Result<Arc<KrillSigner>, ConfigError> {
+    pub fn signer(&self) -> Result<KrillSigner, ConfigError> {
         // Assumes that Config::verify() has already ensured that the signer
         // configuration is valid and that Config::resolve() has been
         // used to update signer name references to resolve to the
@@ -246,7 +245,7 @@ impl Config {
             ConfigError::Other(format!("Could not create KrillSigner: {e}"))
         })?;
 
-        Ok(Arc::new(signer))
+        Ok(signer)
     }
 
     /// Returns a reference to the default signer configuration.

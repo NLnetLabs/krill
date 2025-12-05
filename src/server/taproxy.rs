@@ -4,7 +4,7 @@
 //! *except* for signing using the Trust Anchor private key. That
 //! function is handled by the Trust Anchor Signer instead.
 
-use std::{collections::HashMap, fmt, sync::Arc};
+use std::{collections::HashMap, fmt};
 
 use chrono::Duration;
 use log::{log_enabled, trace};
@@ -106,11 +106,11 @@ pub struct TrustAnchorProxy {
 }
 
 impl eventsourcing::Aggregate for TrustAnchorProxy {
-    type Command = TrustAnchorProxyCommand;
+    type Command<'a> = TrustAnchorProxyCommand;
     type StorableCommandDetails = TrustAnchorProxyCommandDetails;
     type Event = TrustAnchorProxyEvent;
 
-    type InitCommand = TrustAnchorProxyInitCommand;
+    type InitCommand<'a> = TrustAnchorProxyInitCommand<'a>;
     type InitEvent = TrustAnchorProxyInitEvent;
     type Error = Error;
 
@@ -235,9 +235,9 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
         }
     }
 
-    fn process_command(
+    fn process_command<'a>(
         &self,
-        command: Self::Command,
+        command: Self::Command<'a>,
     ) -> Result<Vec<Self::Event>, Self::Error> {
         if log_enabled!(log::Level::Trace) {
             trace!(
@@ -748,13 +748,13 @@ impl TrustAnchorProxy {
 
 //------------ TrustAnchorProxyInitCommand -----------------------------------
 
-pub type TrustAnchorProxyInitCommand =
-    eventsourcing::SentInitCommand<TrustAnchorProxyInitCommandDetails>;
+pub type TrustAnchorProxyInitCommand<'a> =
+    eventsourcing::SentInitCommand<TrustAnchorProxyInitCommandDetails<'a>>;
 
-impl TrustAnchorProxyInitCommand {
+impl<'a> TrustAnchorProxyInitCommand<'a> {
     pub fn make(
         id: MyHandle,
-        signer: Arc<KrillSigner>,
+        signer: &'a KrillSigner,
         actor: &Actor,
     ) -> Self {
         TrustAnchorProxyInitCommand::new(
@@ -769,17 +769,17 @@ impl TrustAnchorProxyInitCommand {
 //------------ TrustAnchorProxyInitCommandDetails ----------------------------
 
 #[derive(Clone, Debug)]
-pub struct TrustAnchorProxyInitCommandDetails {
-    signer: Arc<KrillSigner>,
+pub struct TrustAnchorProxyInitCommandDetails<'a> {
+    signer: &'a KrillSigner,
 }
 
-impl fmt::Display for TrustAnchorProxyInitCommandDetails {
+impl fmt::Display for TrustAnchorProxyInitCommandDetails<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.store().fmt(f)
     }
 }
 
-impl InitCommandDetails for TrustAnchorProxyInitCommandDetails {
+impl InitCommandDetails for TrustAnchorProxyInitCommandDetails<'_> {
     type StorableDetails = TrustAnchorProxyCommandDetails;
 
     fn store(&self) -> Self::StorableDetails {
@@ -1282,7 +1282,7 @@ mod tests {
             let proxy_handle = CaHandle::new("proxy".into());
             let proxy_init = TrustAnchorProxyInitCommand::make(
                 proxy_handle.clone(),
-                signer.clone(),
+                &signer,
                 &actor,
             );
 
@@ -1338,7 +1338,7 @@ mod tests {
                     private_key_pem: Some(import_key_pem.to_string()),
                     ta_mft_nr_override: Some(42),
                     timing,
-                    signer: signer.clone(),
+                    signer: &signer,
                 },
                 &actor,
             );
@@ -1382,7 +1382,7 @@ mod tests {
                     signed_request.into(),
                     timing,
                     Some(55), // override the next manifest number again
-                    signer,
+                    &signer,
                     &actor,
                 );
             ta_signer = ta_signer_store

@@ -339,7 +339,7 @@ impl KrillManager {
             info!("Synchronize CA '{ca}' with its parent '{parent}'");
             match self.ca_manager.ca_sync_parent(
                 &ca, ca_version, &parent, &self.system_actor,
-                self.signer.clone(),
+                &self.signer,
             ) {
                 Err(e) => {
                     let next = self.config.requeue_remote_failed();
@@ -380,7 +380,7 @@ impl KrillManager {
     /// Resync the testbed TA signer and proxy
     async fn renew_testbed_ta(&self) -> Result<TaskResult, FatalError> {
         if let Err(e) = self.ca_manager.ta_renew_testbed_ta(
-            self.signer.clone()
+            &self.signer
         ) {
             error!("There was an issue renewing the testbed TA: {e}");
         }
@@ -398,7 +398,7 @@ impl KrillManager {
     ) -> Result<TaskResult, FatalError> {
         debug!("Synchronise Trust Anchor Proxy with Signer - if Signer is local.");
         if let Err(e) = self.ca_manager.sync_ta_proxy_signer_if_possible(
-            self.signer.clone()
+            &self.signer
         ) {
             error!("There was an issue synchronising the TA Proxy and Signer: {e}");
         }
@@ -488,7 +488,7 @@ impl KrillManager {
         &self,
     ) -> Result<TaskResult, FatalError> {
         self.ca_manager.renew_objects_all(
-            &self.system_actor, self.signer.clone()
+            &self.system_actor, &self.signer
         ).map_err(
             FatalError
         )?;
@@ -628,7 +628,7 @@ impl KrillManager {
                 Ok(TaskResult::Reschedule(in_seconds(1)))
             }
             else if self.ca_manager.send_revoke_requests(
-                &ca_handle, &parent, requests, self.signer.clone()
+                &ca_handle, &parent, requests, &self.signer
             ).is_err() {
                 debug!("Could not revoke key for resource class removed by parent - most likely already revoked.");
                 Ok(TaskResult::Done)
@@ -673,7 +673,7 @@ impl KrillManager {
                         &ca_handle,
                         rcn,
                         revocation_request,
-                        self.signer.clone(),
+                        &self.signer,
                     )
                 {
                     warn!(
