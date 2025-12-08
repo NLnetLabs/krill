@@ -234,7 +234,15 @@ latex_documents = [
 man_pages = [
     (master_doc, 'krill', 'Krill User Manual',
      [author], 1),
-    ('config', 'krill.conf', 'Krill config',
+    ('get-started', 'krill', 'Krill Server',
+     [author], 1),
+    ('cli', 'krillc', 'Krill CLI',
+     [author], 1),
+    ('upgrade', 'krillup', 'Krill Upgrade',
+     [author], 1),
+    ('trust-anchor', 'krillta', 'Krill Trust Anchor',
+     [author], 1),
+    ('config', 'krill.conf', 'Krill Configuration',
      [author], 5)
 ]
 
