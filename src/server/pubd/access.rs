@@ -29,7 +29,7 @@ use crate::constants::{
     ACTOR_DEF_KRILL, PUBSERVER_DFLT, PUBSERVER_NS, TA_NAME
 };
 use crate::config::Config;
-use crate::server::manager::KrillHandle;
+use crate::server::manager::KrillContext;
 use super::publishers::Publisher;
 
 
@@ -239,7 +239,7 @@ impl RepositoryAccessProxy {
     pub fn create_response(
         &self,
         message: publication::Message,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<PublicationCms> {
         let key_id = self.read()?.key_id();
         krill.signer().create_rfc8181_cms(

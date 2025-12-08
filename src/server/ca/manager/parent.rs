@@ -17,7 +17,7 @@ use crate::commons::error::Error;
 use crate::constants::TA_NAME;
 use crate::server::ca::CertAuth;
 use crate::server::ca::commands::CertAuthCommandDetails;
-use crate::server::manager::KrillHandle;
+use crate::server::manager::KrillContext;
 use crate::server::taproxy::TrustAnchorProxyCommand;
 use super::CaManager;
 
@@ -36,7 +36,7 @@ impl CaManager {
         msg_bytes: Bytes,
         user_agent: Option<String>,
         actor: &Actor,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<Bytes> {
         if ca_handle.as_str() == TA_NAME {
             return Err(Error::custom(
@@ -87,7 +87,7 @@ impl CaManager {
         req_msg: provisioning::Message,
         user_agent: Option<String>,
         actor: &Actor,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<provisioning::Message> {
         let (sender, _recipient, payload) = req_msg.unpack();
 
@@ -180,7 +180,7 @@ impl CaManager {
         &self,
         ca_handle: &CaHandle,
         child: &ChildHandle,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<provisioning::Message> {
         let list_response = if ca_handle.as_str() != TA_NAME {
             self.get_ca(ca_handle)?.list(child, &krill.config().issuance_timing)
@@ -209,7 +209,7 @@ impl CaManager {
         child_handle: ChildHandle,
         issue_req: IssuanceRequest,
         actor: &Actor,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<provisioning::Message> {
         if ca_handle.as_str() == TA_NAME {
             let request = ProvisioningRequest::Issuance(issue_req);

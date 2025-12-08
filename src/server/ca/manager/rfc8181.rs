@@ -15,7 +15,7 @@ use crate::api::ca::IdCertInfo;
 use crate::commons::KrillResult;
 use crate::commons::cmslogger::CmsLogger;
 use crate::commons::error::Error;
-use crate::server::manager::KrillHandle;
+use crate::server::manager::KrillContext;
 use super::CaManager;
 
 
@@ -29,7 +29,7 @@ impl CaManager {
         id_cert: &IdCertInfo,
         repo_contact: &RepositoryContact,
         publish_elements: Vec<PublishedFile>,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<()> {
         debug!("CA '{ca_handle}' sends list query to repo");
         let list_reply = self.send_rfc8181_list(
@@ -85,7 +85,7 @@ impl CaManager {
         ca_handle: &CaHandle,
         id_cert: &IdCertInfo,
         server_info: &PublicationServerInfo,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<ListReply> {
         let signing_key = id_cert.public_key.key_identifier();
 
@@ -144,7 +144,7 @@ impl CaManager {
         id_cert: &IdCertInfo,
         server_info: &PublicationServerInfo,
         delta: PublishDelta,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<()> {
         let signing_key = id_cert.public_key.key_identifier();
 
@@ -202,7 +202,7 @@ impl CaManager {
         server_info: &PublicationServerInfo,
         ca_handle: &CaHandle,
         signing_key: KeyIdentifier,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<publication::Reply> {
         if server_info.service_uri.as_str().starts_with(
             krill.service_uri().as_str()

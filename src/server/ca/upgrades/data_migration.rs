@@ -1,6 +1,4 @@
-use std::sync::Arc;
 use log::{debug, warn};
-use crate::commons::crypto::KrillSignerBuilder;
 use crate::constants::CASERVER_NS;
 use crate::server::ca::certauth::CertAuth;
 use crate::server::ca::publishing::CaObjectsStore;
@@ -11,22 +9,6 @@ use crate::upgrades::data_migration::check_agg_store;
 
 pub fn check_ca_objects(config: &Config) -> UpgradeResult<()> {
     let ca_store = check_agg_store::<CertAuth>(config, CASERVER_NS, "CAs")?;
-
-    // make a dummy Signer to use for the CaObjectsStore - it won't be used,
-    // but it's needed for construction.
-    let probe_interval =
-        std::time::Duration::from_secs(config.signer_probe_retry_seconds);
-    let signer = Arc::new(
-        KrillSignerBuilder::new(
-            &config.storage_uri,
-            probe_interval,
-            &config.signers,
-        )
-        .with_default_signer(config.default_signer())
-        .with_one_off_signer(config.one_off_signer())
-        .build()?,
-    );
-
     let ca_objects_store = CaObjectsStore::create(
         &config.storage_uri,
     )?;

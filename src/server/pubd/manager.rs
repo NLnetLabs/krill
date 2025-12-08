@@ -20,7 +20,7 @@ use crate::commons::cmslogger::CmsLogger;
 use crate::commons::crypto::KrillSigner;
 use crate::commons::error::Error;
 use crate::config::Config;
-use crate::server::manager::KrillHandle;
+use crate::server::manager::KrillContext;
 use crate::server::mq::{now, Task, TaskQueue};
 use super::access::RepositoryAccessProxy;
 use super::content::RepositoryContentProxy;
@@ -118,7 +118,7 @@ impl RepositoryManager {
         &self,
         publisher_handle: PublisherHandle,
         msg_bytes: Bytes,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<Bytes> {
         let cms_logger = CmsLogger::for_rfc8181_rcvd(
             self.config.rfc8181_log_dir.as_ref(),
@@ -173,7 +173,7 @@ impl RepositoryManager {
         &self,
         publisher_handle: &PublisherHandle,
         query: publication::Query,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<publication::Message> {
         match query {
             publication::Query::List => {
@@ -322,12 +322,12 @@ impl RepositoryManager {
         &self,
         name: PublisherHandle,
         actor: &Actor,
-        krill: &KrillHandle,
+        tasks: &TaskQueue,
     ) -> KrillResult<()> {
         self.content.remove_publisher(name.clone())?;
         self.access.remove_publisher(name, actor)?;
 
-        krill.tasks().schedule(Task::RrdpUpdateIfNeeded, now())
+        tasks.schedule(Task::RrdpUpdateIfNeeded, now())
     }
 }
 

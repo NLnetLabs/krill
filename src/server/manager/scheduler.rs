@@ -306,7 +306,7 @@ impl KrillManager {
         info!("Synchronize CA {ca} with repository");
 
         match self.ca_manager().cas_repo_sync_single(
-            &ca, version, self.handle()
+            &ca, version, self.context()
         ) {
             Err(e) => {
                 let next = self.config().requeue_remote_failed();
@@ -337,8 +337,8 @@ impl KrillManager {
         if self.ca_manager().has_ca(&ca).map_err(FatalError)? {
             info!("Synchronize CA '{ca}' with its parent '{parent}'");
             match self.ca_manager().ca_sync_parent(
-                &ca, ca_version, &parent, self.components.system_actor(),
-                self.handle(),
+                &ca, ca_version, &parent, self.context.system_actor(),
+                self.context(),
             ) {
                 Err(e) => {
                     let next = self.config().requeue_remote_failed();
@@ -379,7 +379,7 @@ impl KrillManager {
     /// Resync the testbed TA signer and proxy
     async fn renew_testbed_ta(&self) -> Result<TaskResult, FatalError> {
         if let Err(e) = self.ca_manager().ta_renew_testbed_ta(
-            self.handle()
+            self.context()
         ) {
             error!("There was an issue renewing the testbed TA: {e}");
         }
@@ -397,7 +397,7 @@ impl KrillManager {
     ) -> Result<TaskResult, FatalError> {
         debug!("Synchronise Trust Anchor Proxy with Signer - if Signer is local.");
         if let Err(e) = self.ca_manager().sync_ta_proxy_signer_if_possible(
-            self.handle()
+            self.context()
         ) {
             error!("There was an issue synchronising the TA Proxy and Signer: {e}");
         }
@@ -414,8 +414,8 @@ impl KrillManager {
                 "Verify if CA '{ca_handle}' has children that need to be suspended"
             );
             self.ca_manager().ca_suspend_inactive_children(
-                &ca_handle, self.started, self.components.system_actor(),
-                self.handle(),
+                &ca_handle, self.started, self.context.system_actor(),
+                self.context(),
             );
 
             Ok(TaskResult::FollowUp(
@@ -442,7 +442,7 @@ impl KrillManager {
         // schedule a synchronisation for each of them here.
         let cas = self
             .ca_manager()
-            .republish_all(false, self.handle())
+            .republish_all(false, self.context())
             .map_err(FatalError)?;
 
         for ca_handle in cas {
@@ -488,7 +488,7 @@ impl KrillManager {
         &self,
     ) -> Result<TaskResult, FatalError> {
         self.ca_manager().renew_objects_all(
-            self.system_actor(), self.handle()
+            self.system_actor(), self.context()
         ).map_err(FatalError)?;
 
         // check again in a short while.. note that this is usually a cheap
@@ -626,7 +626,7 @@ impl KrillManager {
                 Ok(TaskResult::Reschedule(in_seconds(1)))
             }
             else if self.ca_manager().send_revoke_requests(
-                &ca_handle, &parent, requests, self.handle()
+                &ca_handle, &parent, requests, self.context()
             ).is_err() {
                 debug!("Could not revoke key for resource class removed by parent - most likely already revoked.");
                 Ok(TaskResult::Done)
@@ -671,7 +671,7 @@ impl KrillManager {
                         &ca_handle,
                         rcn,
                         revocation_request,
-                        self.handle(),
+                        self.context(),
                     )
                 {
                     warn!(

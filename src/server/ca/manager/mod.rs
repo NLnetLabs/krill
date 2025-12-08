@@ -54,12 +54,13 @@ use crate::commons::KrillResult;
 use crate::commons::actor::Actor;
 use crate::commons::error::{Error, Error as KrillError};
 use crate::commons::eventsourcing::{Aggregate, AggregateStore, SentCommand};
+use crate::config::Config;
 use crate::constants::{
     CASERVER_NS, STATUS_NS, TA_PROXY_SERVER_NS, TA_SIGNER_SERVER_NS, TA_NAME,
     ta_handle,
 };
 use crate::daemon::http::auth::{AuthInfo, Permission}; // XXX remove
-use crate::server::manager::KrillHandle;
+use crate::server::manager::KrillContext;
 use crate::server::mq::{now, Task, TaskQueue};
 use crate::server::runtime;
 use crate::server::taproxy::{
@@ -73,9 +74,7 @@ use super::certauth::CertAuth;
 use super::commands::{
     CertAuthCommandDetails, CertAuthInitCommand, CertAuthInitCommandDetails,
 };
-use super::publishing::{
-    CaObjectsStore, DeprecatedRepository, ObjectsStoreListener
-};
+use super::publishing::{CaObjectsStore, DeprecatedRepository};
 use super::status::{CaStatus, CaStatusStore};
 
 
@@ -122,15 +121,16 @@ impl CaManager {
     ///
     /// Return an error if any of the various stores cannot be initialized.
     pub fn build(
-        krill: &KrillHandle,
+        config: &Config,
+        tasks: &Arc<TaskQueue>,
         runtime: runtime::Handle,
     ) -> KrillResult<Self> {
         // Create the AggregateStore for the event-sourced `CertAuth`
         // structures that handle most CA functions.
         let mut ca_store = AggregateStore::<CertAuth>::create(
-            &krill.config().storage_uri,
+            &config.storage_uri,
             CASERVER_NS,
-            krill.config().use_history_cache,
+            config.use_history_cache,
         )?;
 
         if let Err(e) = ca_store.warm() {
@@ -159,18 +159,14 @@ impl CaManager {
         // and issued certificates from the `CertAuth` and is responsible
         // for manifests and CRL generation.
         let ca_objects_store = Arc::new(CaObjectsStore::create(
-            &krill.config().storage_uri
+            &config.storage_uri
         )?);
 
         // Register the `CaObjectsStore` as a pre-save listener to the
         // 'ca_store' so that it can update its ROAs and issued
         // certificates and/or generate manifests and CRLs when relevant
         // changes occur in a `CertAuth`.
-        ca_store.add_pre_save_listener(
-            ObjectsStoreListener::new(
-                ca_objects_store.clone(), krill.clone()
-            ).into()
-        );
+        ca_store.add_pre_save_listener(ca_objects_store.clone());
 
         // Register the `MessageQueue` as a pre-save listener to 'ca_store' so
         // that relevant changes in a `CertAuth` can trigger follow-up
@@ -187,33 +183,33 @@ impl CaManager {
         // An example of a triggered task: schedule a synchronisation with the
         // repository (publication server) in case ROAs have been
         // updated.
-        ca_store.add_pre_save_listener(krill.tasks().clone());
+        ca_store.add_pre_save_listener(tasks.clone());
 
         // Now also register the `MessageQueue` as a post-save listener. We
         // use this to send best-effort post-save signals to children
         // in case a certificate was updated or a child key was revoked.
         // This is a no-op for remote children (we cannot send a signal over
         // RFC 6492).
-        ca_store.add_post_save_listener(krill.tasks().clone());
+        ca_store.add_post_save_listener(tasks.clone());
 
         // Create TA proxy store if we need it.
-        let ta_proxy_store = if krill.config().ta_proxy_enabled() {
+        let ta_proxy_store = if config.ta_proxy_enabled() {
             let mut store = AggregateStore::<TrustAnchorProxy>::create(
-                &krill.config().storage_uri,
+                &config.storage_uri,
                 TA_PROXY_SERVER_NS,
-                krill.config().use_history_cache,
+                config.use_history_cache,
             )?;
 
             // We need a pre-save listener so that we can schedule:
             // - publication on updates
             // - signing by the Trust Anchor Signer when there are requests
             //   [in testbed mode]
-            store.add_pre_save_listener(krill.tasks().clone());
+            store.add_pre_save_listener(tasks.clone());
 
             // We need a post-save listener so that we can schedule:
             // - re-sync for local children when the proxy has new responses
             //   AND is saved
-            store.add_post_save_listener(krill.tasks().clone());
+            store.add_post_save_listener(tasks.clone());
 
             Some(store)
         }
@@ -221,11 +217,11 @@ impl CaManager {
             None
         };
 
-        let ta_signer_store = if krill.config().ta_signer_enabled() {
+        let ta_signer_store = if config.ta_signer_enabled() {
             Some(AggregateStore::create(
-                &krill.config().storage_uri,
+                &config.storage_uri,
                 TA_SIGNER_SERVER_NS,
-                krill.config().use_history_cache,
+                config.use_history_cache,
             )?)
         }
         else {
@@ -236,7 +232,7 @@ impl CaManager {
         // connection status between each CA and their parent(s) and
         // repository.
         let status_store = CaStatusStore::create(
-            &krill.config().storage_uri, STATUS_NS
+            &config.storage_uri, STATUS_NS
         )?;
 
         Ok(CaManager {
@@ -272,7 +268,7 @@ impl CaManager {
     pub fn republish_all(
         &self,
         force: bool,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<Vec<CaHandle>> {
         let mut res = vec![];
         for ca in self.ca_store.list()? {
@@ -357,7 +353,7 @@ impl CaManager {
     /// alreay initialized.
     pub fn ta_proxy_init(
         &self,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<()> {
         let ta_handle = ta_handle();
 
@@ -390,7 +386,7 @@ impl CaManager {
         tal_https: Vec<uri::Https>,
         tal_rsync: uri::Rsync,
         private_key_pem: Option<String>,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<()> {
         let handle = ta_handle();
 
@@ -504,7 +500,7 @@ impl CaManager {
     ///
     /// Errors if there is no proxy or the proxy already has a request.
     pub fn ta_proxy_signer_make_request(
-        &self, actor: &Actor, krill: &KrillHandle,
+        &self, actor: &Actor, krill: &KrillContext,
     ) -> KrillResult<ApiTrustAnchorSignedRequest> {
         self.send_ta_proxy_command(
             TrustAnchorProxyCommand::make_signer_request(&ta_handle(), actor)
@@ -513,7 +509,7 @@ impl CaManager {
 
     /// Returns the current request for the signer.
     pub fn ta_proxy_signer_get_request(
-        &self, krill: &KrillHandle
+        &self, krill: &KrillContext
     ) -> KrillResult<ApiTrustAnchorSignedRequest> {
         self.get_trust_anchor_proxy()?.get_signer_request(
             krill.config().ta_timing, krill.signer()
@@ -543,7 +539,7 @@ impl CaManager {
         ta_uris: Vec<uri::Https>,
         ta_key_pem: Option<String>,
         actor: &Actor,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<()> {
         let ta_handle = ta_handle();
 
@@ -580,7 +576,7 @@ impl CaManager {
 
     /// Renews the embedded testbed TA;
     pub fn ta_renew_testbed_ta(
-        &self, krill: &KrillHandle,
+        &self, krill: &KrillContext,
     ) -> KrillResult<()> {
         if krill.is_testbed_enabled() {
             let proxy = self.get_trust_anchor_proxy()?;
@@ -598,7 +594,7 @@ impl CaManager {
 impl CaManager {
     /// Initializes a CA without a repo, no parents, no children, no nothing
     pub fn init_ca(
-        &self, handle: CaHandle, krill: &KrillHandle,
+        &self, handle: CaHandle, krill: &KrillContext,
     ) -> KrillResult<()> {
         if handle == ta_handle() || handle.as_str() == "version" {
             return Err(Error::TaNameReserved)
@@ -633,7 +629,7 @@ impl CaManager {
         &self,
         handle: CaHandle,
         actor: &Actor,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<()> {
         self.process_ca_command(
             handle, actor,
@@ -738,7 +734,7 @@ impl CaManager {
         &self,
         ca_handle: &CaHandle,
         actor: &Actor,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<()> {
         warn!("Deleting CA '{ca_handle}' as requested by: {actor}");
 
@@ -895,7 +891,7 @@ impl CaManager {
         ca: &CaHandle,
         import_child: ImportChild,
         actor: &Actor,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<()> {
         trace!("Importing CA: {} under parent: {}", import_child.name, ca);
         self.process_ca_command(ca.clone(), actor,
@@ -1086,7 +1082,7 @@ impl CaManager {
         handle: CaHandle,
         parent: ParentHandle,
         actor: &Actor,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<()> {
         // Best effort, request revocations for any remaining keys under this
         // parent.
@@ -1110,7 +1106,7 @@ impl CaManager {
         &self,
         handle: &CaHandle,
         parent: &ParentHandle,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<()> {
         let ca = self.get_ca(handle)?;
         let revoke_requests = ca.revoke_under_parent(parent, krill.signer())?;
@@ -1125,7 +1121,7 @@ impl CaManager {
     /// queue automatically.
     pub fn cas_schedule_refresh_all(
         &self,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<()> {
         if let Ok(cas) = self.ca_store.list() {
             for ca_handle in cas {
@@ -1141,7 +1137,7 @@ impl CaManager {
     pub fn cas_schedule_refresh_single(
         &self,
         ca_handle: CaHandle,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<()> {
         self.ca_schedule_sync_parents(&ca_handle, krill)
     }
@@ -1156,7 +1152,7 @@ impl CaManager {
     /// enabled.
     pub fn cas_schedule_suspend_all(
         &self,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<()> {
         if krill.config().suspend_child_after_inactive_seconds().is_some() {
             if let Ok(cas) = self.ca_store.list() {
@@ -1179,7 +1175,7 @@ impl CaManager {
     //  XXX PANICS
     pub fn ca_suspend_inactive_children(
         &self, ca_handle: &CaHandle, started: Timestamp, actor: &Actor,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) {
         // Set threshold hours if it was configured AND this server has been
         // started longer ago than the hours specified. Otherwise we
@@ -1240,7 +1236,7 @@ impl CaManager {
     fn ca_schedule_sync_parents(
         &self,
         ca_handle: &CaHandle,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<()> {
         let Ok(ca) = self.get_ca(ca_handle) else {
             return Ok(())
@@ -1290,7 +1286,7 @@ impl CaManager {
 impl CaManager {
     /// Schedules synchronizing all CAs with their repositories.
     pub fn cas_schedule_repo_sync_all(
-        &self, krill: &KrillHandle,
+        &self, krill: &KrillContext,
     ) -> KrillResult<()> {
         for ca in self.ca_handles()? {
             self.cas_schedule_repo_sync(ca, krill)?;
@@ -1300,7 +1296,7 @@ impl CaManager {
 
     /// Schedules synchronizing a CA with its repositories.
     pub fn cas_schedule_repo_sync(
-        &self, ca_handle: CaHandle, krill: &KrillHandle,
+        &self, ca_handle: CaHandle, krill: &KrillContext,
     ) -> KrillResult<()> {
         // no need to wait for an updated CA to be committed. 
         let ca_version = 0;
@@ -1335,7 +1331,7 @@ impl CaManager {
         &self,
         ca_handle: &CaHandle,
         ca_version: u64,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<bool> {
         // Note that this is a no-op for new CAs which do not yet have any
         // repository configured.
@@ -1480,7 +1476,7 @@ impl CaManager {
         new_contact: RepositoryContact,
         check_repo: bool,
         actor: &Actor,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<()> {
         let ca = self.get_ca(&ca_handle)?;
         if check_repo {
@@ -1520,7 +1516,7 @@ impl CaManager {
         ca: CaHandle,
         updates: AspaDefinitionUpdates,
         actor: &Actor,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<()> {
         self.process_ca_command(
             ca, actor,
@@ -1540,7 +1536,7 @@ impl CaManager {
         customer: CustomerAsn,
         update: AspaProvidersUpdate,
         actor: &Actor,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<()> {
         self.process_ca_command(
             ca.clone(), actor,
@@ -1571,7 +1567,7 @@ impl CaManager {
         ca: CaHandle,
         updates: BgpSecDefinitionUpdates,
         actor: &Actor,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<()> {
         self.process_ca_command(
             ca.clone(), actor,
@@ -1603,7 +1599,7 @@ impl CaManager {
         ca: CaHandle,
         updates: RoaConfigurationUpdates,
         actor: &Actor,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<()> {
         self.process_ca_command(
             ca.clone(), actor,
@@ -1627,7 +1623,7 @@ impl CaManager {
     /// CAs are expected to note extended validity eligibility and request
     /// updated certificates themselves.
     pub fn renew_objects_all(
-        &self, actor: &Actor, krill: &KrillHandle,
+        &self, actor: &Actor, krill: &KrillContext,
     ) -> KrillResult<()> {
         for ca in self.ca_store.list()? {
             if let Err(e) = self.process_ca_command(
@@ -1680,7 +1676,7 @@ impl CaManager {
     pub fn force_renew_roas_all(
         &self,
         actor: &Actor,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<()> {
         for ca in self.ca_store.list()? {
             if let Err(e) = self.process_ca_command(
@@ -1709,7 +1705,7 @@ impl CaManager {
         name: RtaName,
         request: RtaContentRequest,
         actor: &Actor,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<()> {
         self.process_ca_command(
             ca.clone(), actor,
@@ -1729,7 +1725,7 @@ impl CaManager {
         name: RtaName,
         request: RtaPrepareRequest,
         actor: &Actor,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<()> {
         self.process_ca_command(
             ca.clone(), actor,
@@ -1749,7 +1745,7 @@ impl CaManager {
         name: RtaName,
         rta: ResourceTaggedAttestation,
         actor: &Actor,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<()> {
         self.process_ca_command(
             ca.clone(), actor,
@@ -1774,7 +1770,7 @@ impl CaManager {
         handle: CaHandle,
         max_age: Duration,
         actor: &Actor,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<()> {
         self.process_ca_command(
             handle.clone(), actor,
@@ -1797,7 +1793,7 @@ impl CaManager {
         handle: CaHandle,
         staging: Duration,
         actor: &Actor,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<()> {
         self.process_ca_command(
             handle.clone(), actor,

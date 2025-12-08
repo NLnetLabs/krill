@@ -30,7 +30,7 @@ use crate::commons::eventsourcing::Aggregate;
 use crate::constants::{TA_NAME, ta_handle};
 use crate::server::ca::CertAuth;
 use crate::server::ca::commands::CertAuthCommandDetails;
-use crate::server::manager::KrillHandle;
+use crate::server::manager::KrillContext;
 use crate::server::taproxy::TrustAnchorProxyCommand;
 use crate::tasigner::TrustAnchorSignerCommand;
 use super::CaManager;
@@ -64,7 +64,7 @@ impl CaManager {
         min_ca_version: u64, // set this 0 if it does not matter
         parent: &ParentHandle,
         actor: &Actor,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<bool> {
         let ca = self.get_ca(handle)?;
 
@@ -93,7 +93,7 @@ impl CaManager {
     /// manual synchronization, assuming that this method is only ever called
     /// if the TA proxy requires synchronization.
     pub fn sync_ta_proxy_signer_if_possible(
-        &self, krill: &KrillHandle,
+        &self, krill: &KrillContext,
     ) -> KrillResult<()> {
         let ta_handle = ta_handle();
 
@@ -161,7 +161,7 @@ impl CaManager {
         handle: &CaHandle,
         parent: &ParentHandle,
         actor: &Actor,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<()> {
         if handle == &ta_handle() {
             return Ok(())
@@ -192,7 +192,7 @@ impl CaManager {
     /// certificate requests.
     fn send_requests(
         &self, handle: &CaHandle, parent: &ParentHandle, actor: &Actor,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<()> {
         self.send_revoke_requests_handle_responses(
             handle, parent, actor, krill
@@ -205,7 +205,7 @@ impl CaManager {
     /// Sends all open revocation requests and handles the responses.
     fn send_revoke_requests_handle_responses(
         &self, handle: &CaHandle, parent: &ParentHandle, actor: &Actor,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<()> {
         let child = self.get_ca(handle)?;
         let requests = child.revoke_requests(parent);
@@ -237,7 +237,7 @@ impl CaManager {
         handle: &CaHandle,
         parent: &ParentHandle,
         revoke_requests: HashMap<ResourceClassName, Vec<RevocationRequest>>,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<HashMap<ResourceClassName, Vec<RevocationResponse>>> {
         let child = self.get_ca(handle)?;
         let server_info = child.parent(parent)?.parent_server_info();
@@ -269,7 +269,7 @@ impl CaManager {
         handle: &CaHandle,
         rcn: ResourceClassName,
         revocation: RevocationRequest,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<HashMap<ResourceClassName, Vec<RevocationResponse>>>
     {
         let child = self.ca_store.get_latest(handle)?;
@@ -286,7 +286,7 @@ impl CaManager {
         revoke_requests: HashMap<ResourceClassName, Vec<RevocationRequest>>,
         signing_key: KeyIdentifier,
         server_info: &ParentServerInfo,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<HashMap<ResourceClassName, Vec<RevocationResponse>>> {
         let mut revoke_map = HashMap::new();
 
@@ -383,7 +383,7 @@ impl CaManager {
     /// Sends certification requests to a parent CA and proceses the response.
     fn send_cert_requests_handle_responses(
         &self, ca_handle: &CaHandle, parent: &ParentHandle, actor: &Actor,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<()> {
         let ca = self.get_ca(ca_handle)?;
         let requests = ca.cert_requests(parent);
@@ -469,7 +469,7 @@ impl CaManager {
         rcn: &ResourceClassName,
         actor: &Actor,
         response: provisioning::Message,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<()> {
         let payload = response.into_payload();
         let payload_type = payload.payload_type();
@@ -727,7 +727,7 @@ impl CaManager {
         parent: ParentHandle,
         entitlements: ResourceClassListResponse,
         actor: &Actor,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<bool> {
         let current_version = self.get_ca(ca)?.version();
         let new_version = self.process_ca_command(
@@ -748,7 +748,7 @@ impl CaManager {
         parent: &ParentHandle,
         contact: &ParentCaContact,
         existing_parent: bool,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<ResourceClassListResponse> {
         let server_info = contact.parent_server_info();
         let uri = &server_info.service_uri;
@@ -784,7 +784,7 @@ impl CaManager {
         &self,
         handle: &CaHandle,
         server_info: &ParentServerInfo,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<ResourceClassListResponse> {
         debug!(
             "Getting entitlements for CA '{}' from parent '{}'",
@@ -828,7 +828,7 @@ impl CaManager {
         message: provisioning::Message,
         server_info: &ParentServerInfo,
         signing_key: KeyIdentifier,
-        krill: &KrillHandle,
+        krill: &KrillContext,
     ) -> KrillResult<provisioning::Message> {
         let service_uri = &server_info.service_uri;
         if let Some(parent) = Self::local_parent(
