@@ -26,7 +26,7 @@ use super::http::server::HttpServer;
 
 
 pub async fn start_krill_daemon(
-    config: Arc<Config>,
+    config: Config,
     mut signal_running: Option<oneshot::Sender<()>>,
 ) -> Result<(), Error> {
     write_pid_file_or_die(&config);
@@ -84,7 +84,7 @@ pub async fn start_krill_daemon(
     // Create the Krill manager, this will create the necessary data
     // sub-directories if needed
     let krill = Arc::new(KrillManager::build(
-        config.clone(), runtime::Handle::current()
+        config, runtime::Handle::current()
     )?);
 
     // Call post-start upgrades to trigger any upgrade related runtime
@@ -107,22 +107,21 @@ pub async fn start_krill_daemon(
 
     // Create the HTTP server.
     let server = HttpServer::new(
-        krill, config.clone(), &runtime::Handle::current()
+        krill, &runtime::Handle::current()
     )?;
 
     // Create self-signed HTTPS cert if configured and not generated earlier.
-    if config.https_mode().is_generate_https_cert() {
-        tls_keys::create_key_cert_if_needed(config.tls_keys_dir())
+    if server.config().https_mode().is_generate_https_cert() {
+        tls_keys::create_key_cert_if_needed(server.config().tls_keys_dir())
             .map_err(|e| Error::HttpsSetup(format!("{e}")))?;
     }
 
     // Start a hyper server for the configured socket.
     let server_futures = futures_util::future::select_all(
-        config.socket_addresses().into_iter().map(|socket_addr| {
+        server.config().socket_addresses().into_iter().map(|socket_addr| {
             tokio::spawn(single_http_listener(
                 server.clone(),
                 socket_addr,
-                config.clone(),
                 signal_running.take(),
             ))
         }),
@@ -140,7 +139,6 @@ pub async fn start_krill_daemon(
 async fn single_http_listener(
     server: Arc<HttpServer>,
     addr: SocketAddr,
-    config: Arc<Config>,
     signal_running: Option<oneshot::Sender<()>>,
 ) {
     let listener = match TcpListener::bind(addr).await {
@@ -151,12 +149,12 @@ async fn single_http_listener(
         }
     };
 
-    let tls = if config.https_mode().is_disable_https() {
+    let tls = if server.config().https_mode().is_disable_https() {
         None
     } else {
         match tls::create_server_config(
-            &tls_keys::key_file_path(config.tls_keys_dir()),
-            &tls_keys::cert_file_path(config.tls_keys_dir()),
+            &tls_keys::key_file_path(server.config().tls_keys_dir()),
+            &tls_keys::cert_file_path(server.config().tls_keys_dir()),
         ) {
             Ok(config) => Some(TlsAcceptor::from(Arc::new(config))),
             Err(err) => {

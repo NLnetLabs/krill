@@ -28,9 +28,6 @@ pub struct HttpServer {
     /// The component responsible for API authorization checks
     authorizer: Authorizer,
 
-    /// A copy of the configuration.
-    config: Arc<Config>,
-
     /// Time this server was started
     started: Timestamp,
 }
@@ -39,15 +36,13 @@ impl HttpServer {
     /// Creates a new server from a Krill manager and the configuration.
     pub fn new(
         krill: Arc<KrillManager>,
-        config: Arc<Config>,
         runtime: &runtime::Handle,
     ) -> KrillResult<Arc<Self>> {
-        let authorizer = Authorizer::new(config.clone())?;
+        let authorizer = Authorizer::new(krill.config())?;
         authorizer.spawn_sweep(runtime);
         Ok(Self {
             krill,
             authorizer,
-            config,
             started: Timestamp::now(),
         }.into())
     }
@@ -61,7 +56,7 @@ impl HttpServer {
             &request
         ).await;
         let request = Request::new(
-            request, self, auth, BodyLimits::from_config(&self.config)
+            request, self, auth, BodyLimits::from_config(self.krill.config())
         );
         let path = match request.path() {
             Ok(path) => path,
@@ -122,8 +117,8 @@ impl HttpServer {
     }
 
     /// Returns a reference to the configuration.
-    pub(super) fn config(&self) -> &Config {
-        &self.config
+    pub fn config(&self) -> &Config {
+        self.krill.config()
     }
 
     pub(super) fn server_info(&self) -> ServerInfo {

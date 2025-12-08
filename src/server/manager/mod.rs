@@ -124,7 +124,7 @@ struct Components {
     /// The server configuration.
     ///
     /// This has to be an arc for now since some components keep a copy.
-    config: Arc<Config>,
+    config: Config,
 
     /// The base URI for communicating with this server.
     ///
@@ -176,7 +176,7 @@ impl KrillManager {
     /// Creates a new publication server. Note that state is preserved
     /// in the data storage.
     pub fn build(
-        config: Arc<Config>,
+        config: Config,
         runtime: runtime::Handle,
     ) -> KrillResult<Self> {
         let service_uri = config.service_uri();
@@ -209,7 +209,7 @@ impl KrillManager {
         // for now, support that existing embedded repositories are still
         // supported. this should be removed in future after people
         // have had a chance to separate.
-        let repo_manager = RepositoryManager::build(config.clone())?;
+        let repo_manager = RepositoryManager::build(&config)?;
 
         let ca_manager = CaManager::build(
             &config,
@@ -348,7 +348,7 @@ impl KrillManager {
         &self.context
     }
 
-    fn config(&self) -> &Config {
+    pub fn config(&self) -> &Config {
         self.context.config()
     }
 
@@ -362,10 +362,6 @@ impl KrillManager {
 
     fn tasks(&self) -> &TaskQueue {
         self.context.tasks()
-    }
-
-    fn signer(&self) -> &KrillSigner {
-        self.context.signer()
     }
 
     pub fn system_actor(&self) -> &Actor {
@@ -769,7 +765,11 @@ impl KrillManager {
             structure.publication_server.clone()
         {
             info!("Initialising publication server");
-            self.repo_manager().init(publication_server_uris, self.signer())?;
+            self.repo_manager().init(
+                publication_server_uris,
+                self.context().config(),
+                self.context().signer(),
+            )?;
         }
 
         if let Some(import_ta) = structure.ta.clone() {
@@ -1283,7 +1283,9 @@ impl KrillManager {
         &self,
         uris: PublicationServerUris,
     ) -> KrillResult<()> {
-        self.repo_manager().init(uris, self.signer())
+        self.repo_manager().init(
+            uris, self.context().config(), self.context.signer()
+        )
     }
 
     /// Clear the publication server. Will fail if it still has publishers. Or

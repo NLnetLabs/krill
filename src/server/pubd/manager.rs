@@ -1,12 +1,12 @@
 //! The manager for the publication server.
 
 use std::path::PathBuf;
-use std::sync::Arc;
 use bytes::Bytes;
 use log::{debug, info};
+use rpki::uri;
 use rpki::ca::publication;
 use rpki::ca::idexchange::{
-    PublisherHandle, PublisherRequest, RepositoryResponse
+    PublisherHandle, PublisherRequest, RepositoryResponse,
 };
 use rpki::ca::publication::{ListReply, PublishDelta};
 use rpki::repository::x509::Time;
@@ -19,7 +19,7 @@ use crate::commons::actor::Actor;
 use crate::commons::cmslogger::CmsLogger;
 use crate::commons::crypto::KrillSigner;
 use crate::commons::error::Error;
-use crate::config::Config;
+use crate::config::{Config, RrdpUpdatesConfig};
 use crate::server::manager::KrillContext;
 use crate::server::mq::{now, Task, TaskQueue};
 use super::access::RepositoryAccessProxy;
@@ -34,29 +34,40 @@ use super::rrdp::RrdpUpdateNeeded;
 /// * publish content to RRDP and rsync
 pub struct RepositoryManager {
     /// The repository access manager portion.
-    access: Arc<RepositoryAccessProxy>,
+    access: RepositoryAccessProxy,
 
     /// The repository content manager portion.
-    content: Arc<RepositoryContentProxy>,
+    content: RepositoryContentProxy,
 
-    /// Shared server config.
-    config: Arc<Config>,
+    /// The base URI where we expect request to be sent to.
+    ///
+    /// This is the configured `service_uri` followed by `/rfc8181/`. The
+    /// publisher handle will then be added to it.
+    ///
+    /// We keep it as a string since we have to format it anyway.
+    rfc8181_uri: String,
+
+    /// The directory to log CMS exchanges into.
+    rfc8181_log_dir: Option<PathBuf>,
+
+    /// The configuration for RRDP updates.
+    rrdp_updates_config: RrdpUpdatesConfig,
 }
 
 impl RepositoryManager {
     /// Builds the repository manager.
     pub fn build(
-        config: Arc<Config>,
+        config: &Config,
     ) -> Result<Self, Error> {
-        let access_proxy = Arc::new(RepositoryAccessProxy::create(&config)?);
-        let content_proxy = Arc::new(
-            RepositoryContentProxy::create(&config)?
-        );
+        let access_proxy = RepositoryAccessProxy::create(&config)?;
+        let content_proxy = RepositoryContentProxy::create(&config)?;
 
         Ok(RepositoryManager {
             access: access_proxy,
             content: content_proxy,
-            config,
+            rfc8181_uri: format!("{}rfc8181/", config.service_uri()),
+            rfc8181_log_dir: config.rfc8181_log_dir.clone(),
+            rrdp_updates_config: config.rrdp_updates_config,
         })
     }
 
@@ -67,13 +78,15 @@ impl RepositoryManager {
 
     /// Create the publication server, will fail if it was already created.
     pub fn init(
-        &self, uris: PublicationServerUris, signer: &KrillSigner,
+        &self,
+        uris: PublicationServerUris,
+        config: &Config,
+        signer: &KrillSigner,
     ) -> KrillResult<()> {
         info!("Initializing repository");
         self.access.init(uris.clone(), signer)?;
-        self.content.init(self.config.repo_dir(), uris)?;
-        self.content
-            .write_repository(self.config.rrdp_updates_config)?;
+        self.content.init(config.repo_dir(), uris)?;
+        self.content.write_repository(self.rrdp_updates_config)?;
 
         Ok(())
     }
@@ -121,15 +134,15 @@ impl RepositoryManager {
         krill: &KrillContext,
     ) -> KrillResult<Bytes> {
         let cms_logger = CmsLogger::for_rfc8181_rcvd(
-            self.config.rfc8181_log_dir.as_ref(),
-            &publisher_handle,
+            self.rfc8181_log_dir.as_ref(), &publisher_handle,
         );
 
         let cms = self.access.decode_and_validate(
             &publisher_handle, &msg_bytes
         ).map_err(|e| {
             Error::Custom(format!(
-                "Issue with publication request by publisher '{publisher_handle}': {e}"
+                "Issue with publication request by publisher \
+                 '{publisher_handle}': {e}"
             ))
         })?;
         let message = cms.into_message();
@@ -195,7 +208,7 @@ impl RepositoryManager {
 
     /// Performs an RRDP session reset.
     pub fn rrdp_session_reset(&self) -> KrillResult<()> {
-        self.content.session_reset(self.config.rrdp_updates_config)
+        self.content.session_reset(self.rrdp_updates_config)
     }
 
     /// Lets a known publisher publish in a repository.
@@ -222,18 +235,14 @@ impl RepositoryManager {
     /// last_update has not passed, then no update is done, but the eligible
     /// time for the next update is returned.
     pub fn update_rrdp_if_needed(&self) -> KrillResult<Option<Time>> {
-        match self.content.rrdp_update_needed(
-            self.config.rrdp_updates_config)?
-        {
+        match self.content.rrdp_update_needed(self.rrdp_updates_config)? {
             RrdpUpdateNeeded::No => return Ok(None),
             RrdpUpdateNeeded::Later(time) => return Ok(Some(time)),
             RrdpUpdateNeeded::Yes => {} // proceed
         }
 
-        let content = self.content.update_rrdp(
-            self.config.rrdp_updates_config
-        )?;
-        content.write_repository(self.config.rrdp_updates_config)?;
+        let content = self.content.update_rrdp(self.rrdp_updates_config)?;
+        content.write_repository(self.rrdp_updates_config)?;
 
         Ok(None)
     }
@@ -244,7 +253,7 @@ impl RepositoryManager {
         criteria: RepoFileDeleteCriteria,
     ) -> KrillResult<()> {
         // update RRDP first so we apply any staged deltas.
-        self.content.update_rrdp(self.config.rrdp_updates_config)?;
+        self.content.update_rrdp(self.rrdp_updates_config)?;
 
         // delete matching files using the updated snapshot and stage a delta
         // if needed.
@@ -252,10 +261,10 @@ impl RepositoryManager {
 
         // update RRDP again to make the delta effective immediately.
         let content =
-            self.content.update_rrdp(self.config.rrdp_updates_config)?;
+            self.content.update_rrdp(self.rrdp_updates_config)?;
 
         // Write the updated repository - NOTE: we no longer lock it.
-        content.write_repository(self.config.rrdp_updates_config)?;
+        content.write_repository(self.rrdp_updates_config)?;
 
         Ok(())
     }
@@ -298,8 +307,16 @@ impl RepositoryManager {
         &self,
         publisher: &PublisherHandle,
     ) -> KrillResult<RepositoryResponse> {
-        let rfc8181_uri = self.config.rfc8181_uri(publisher);
-        self.access.repository_response(rfc8181_uri, publisher)
+        self.access.repository_response(
+            uri::Https::from_string(
+                format!("{}{}", self.rfc8181_uri, publisher)
+            ).map_err(|_| {
+                Error::custom(
+                    "Invalid RFC 8181 base URI. This is a bug."
+                )
+            })?,
+            publisher
+        )
     }
 
     /// Adds a publisher.
@@ -336,7 +353,7 @@ impl RepositoryManager {
     /// Updates the RRDP files and rsync content on disk.
     pub fn write_repository(&self) -> KrillResult<()> {
         self.content
-            .write_repository(self.config.rrdp_updates_config)
+            .write_repository(self.rrdp_updates_config)
     }
 }
 
@@ -445,16 +462,15 @@ mod tests {
             .build()
             .unwrap();
 
-            let config = Arc::new(config);
             let tasks = TaskQueue::new(&config.storage_uri).unwrap();
-            let repo = RepositoryManager::build(config).unwrap();
+            let repo = RepositoryManager::build(&config).unwrap();
 
             let uris = PublicationServerUris {
                 rrdp_base_uri: https("https://localhost/repo/rrdp/"),
                 rsync_jail: rsync("rsync://localhost/repo/"),
             };
 
-            repo.init(uris, &signer).unwrap();
+            repo.init(uris, &config, &signer).unwrap();
 
             Self {
                 storage_uri,
