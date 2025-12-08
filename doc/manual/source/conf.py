@@ -234,7 +234,7 @@ latex_documents = [
 man_pages = [
     (master_doc, 'krill', 'Krill User Manual',
      [author], 1),
-    ('get-started', 'krill', 'Krill Server',
+    ('man/krill', 'krill', 'Resource Public Key Infrastructure (RPKI) daemon',
      [author], 1),
     ('cli', 'krillc', 'Krill CLI',
      [author], 1),

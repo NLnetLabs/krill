@@ -1,3 +1,4 @@
+cd manual
 make man
 gzip -cvf ./build/man/krill.1 > ../krill.1.gz
 gzip -cvf ./build/man/krillc.1 > ../krillc.1.gz
