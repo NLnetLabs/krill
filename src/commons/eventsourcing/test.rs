@@ -301,6 +301,7 @@ impl Aggregate for Person {
     type StorableCommandDetails = PersonStorableCommand;
 
     type Error = PersonError;
+    type Context = ();
 
     fn init(id: &MyHandle, event: PersonInitEvent) -> Self {
         Person {
@@ -313,6 +314,7 @@ impl Aggregate for Person {
 
     fn process_init_command<'a>(
         command: Self::InitCommand<'a>,
+        _context: &Self::Context,
     ) -> Result<Self::InitEvent, Self::Error> {
         Ok(PersonInitEvent {
             name: command.into_details().name,
@@ -337,6 +339,7 @@ impl Aggregate for Person {
     fn process_command<'a>(
         &self,
         command: Self::Command<'a>,
+        _context: &Self::Context,
     ) -> Result<Vec<Self::Event>, Self::Error> {
         match command.into_details() {
             PersonCommandDetails::ChangeName(name) => {
@@ -382,7 +385,9 @@ impl EventCounter {
 }
 
 impl<A: Aggregate> PostSaveEventListener<A> for EventCounter {
-    fn listen(&self, _agg: &A, events: &[A::Event]) {
+    fn listen(
+        &self, _agg: &A, events: &[A::Event], _context: &A::Context,
+    ) {
         self.counter.write().unwrap().total += events.len();
     }
 }

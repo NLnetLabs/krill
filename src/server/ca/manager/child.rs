@@ -221,7 +221,8 @@ impl CaManager {
                     CertAuthCommandDetails::KeyRollFinish(
                         rcn.clone(),
                         response,
-                    )
+                    ),
+                    krill,
                 )?;
             }
         }
@@ -544,7 +545,8 @@ impl CaManager {
                         rcvd_cert,
                         krill.config(),
                         krill.signer(),
-                    )
+                    ),
+                    krill,
                 ) {
                     // Note that sending the command to update a received
                     // certificate cannot fail unless there are bigger issues
@@ -568,7 +570,8 @@ impl CaManager {
                             rcn.clone(),
                             reason.clone(),
                             krill.signer(),
-                        )
+                        ),
+                        krill,
                     )?;
 
                     return Err(Error::CaParentSyncError(
@@ -624,7 +627,8 @@ impl CaManager {
                                 rcn.clone(),
                                 reason.to_string(),
                                 krill.signer(),
-                            )
+                            ),
+                            krill,
                         )?;
 
                         // Push the error for reporting, this will also
@@ -663,7 +667,8 @@ impl CaManager {
                                 rcn.clone(),
                                 reason.to_string(),
                                 krill.signer(),
-                            )
+                            ),
+                            krill,
                         )?;
 
                         // Push the error for reporting, this will also
@@ -737,6 +742,7 @@ impl CaManager {
                 entitlements,
                 krill.signer(),
             ),
+            krill,
         )?.version();
         Ok(new_version > current_version)
     }

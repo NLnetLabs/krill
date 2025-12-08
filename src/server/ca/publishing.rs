@@ -30,6 +30,7 @@ use crate::commons::eventsourcing::PreSaveEventListener;
 use crate::commons::storage::{Ident, KeyValueStore};
 use crate::constants::CA_OBJECTS_NS;
 use crate::config::IssuanceTimingConfig;
+use crate::server::manager::KrillContext;
 use super::aspa::{AspaInfo, AspaObjectsUpdates};
 use super::bgpsec::{BgpSecCertInfo, BgpSecCertificateUpdates};
 use super::certauth::CertAuth;
@@ -184,15 +185,14 @@ impl CaObjectsStore {
 impl PreSaveEventListener<CertAuth> for CaObjectsStore {
     fn listen(
         &self,
-        _ca: &CertAuth,
-        _events: &[CertAuthEvent],
+        ca: &CertAuth,
+        events: &[CertAuthEvent],
+        krill: &KrillContext,
     ) -> KrillResult<()> {
         // Note that the `CertAuth` which is passed in has already been
         // updated with the state changes contained in the event.
 
-        todo!();
-        /*
-        self.ca_objects.with_ca_objects(ca.handle(), |objects| {
+        self.with_ca_objects(ca.handle(), |objects| {
             let mut force_reissue = false;
 
             for event in events {
@@ -235,8 +235,8 @@ impl PreSaveEventListener<CertAuth> for CaObjectsStore {
                         objects.add_class(
                             resource_class_name,
                             current_key,
-                            &self.krill.config().issuance_timing,
-                            self.krill.signer(),
+                            &krill.config().issuance_timing,
+                            krill.signer(),
                         )?;
                     }
                     CertAuthEvent::KeyPendingToNew {
@@ -246,8 +246,8 @@ impl PreSaveEventListener<CertAuth> for CaObjectsStore {
                         objects.keyroll_stage(
                             resource_class_name,
                             new_key,
-                            &self.krill.config().issuance_timing,
-                            self.krill.signer(),
+                            &krill.config().issuance_timing,
+                            krill.signer(),
                         )?;
                     }
                     CertAuthEvent::KeyRollActivated {
@@ -295,12 +295,11 @@ impl PreSaveEventListener<CertAuth> for CaObjectsStore {
             }
             objects.re_issue(
                 force_reissue,
-                &self.krill.config().issuance_timing,
-                self.krill.signer()
+                &krill.config().issuance_timing,
+                krill.signer()
             )?;
             Ok(())
         })
-    */
     }
 }
 

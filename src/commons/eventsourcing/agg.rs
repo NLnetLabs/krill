@@ -56,6 +56,9 @@ pub trait Aggregate: Storable + 'static {
     /// The type returned when processing a command fails.
     type Error: std::error::Error + Send + Sync + From<AggregateStoreError>;
 
+    /// The type for passing context into processing.
+    type Context;
+
     /// Creates a new instance.
     ///
     /// Expects an [`InitEvent`][Self::InitEvent] with data needed to
@@ -79,6 +82,7 @@ pub trait Aggregate: Storable + 'static {
     /// history.
     fn process_init_command<'a>(
         command: Self::InitCommand<'a>,
+        context: &Self::Context,
     ) -> Result<Self::InitEvent, Self::Error>;
 
     /// Processes a command.
@@ -93,6 +97,7 @@ pub trait Aggregate: Storable + 'static {
     fn process_command<'a>(
         &self,
         command: Self::Command<'a>,
+        context: &Self::Context,
     ) -> Result<Vec<Self::Event>, Self::Error>;
 
     /// Returns the current version of the aggregate.
@@ -688,7 +693,9 @@ impl<E: Event, I: InitEvent> StoredEffect<E, I> {
 /// The listener is allowed to return an error in case of issues, which will
 /// will result in rolling back the intended change to an aggregate.
 pub trait PreSaveEventListener<A: Aggregate>: Send + Sync + 'static {
-    fn listen(&self, agg: &A, events: &[A::Event]) -> Result<(), A::Error>;
+    fn listen(
+        &self, agg: &A, events: &[A::Event], context: &A::Context,
+    ) -> Result<(), A::Error>;
 }
 
 //------------ PostSaveEventListener -----------------------------------------
@@ -697,7 +704,9 @@ pub trait PreSaveEventListener<A: Aggregate>: Send + Sync + 'static {
 ///
 /// The listener is not allowed to fail.
 pub trait PostSaveEventListener<A: Aggregate>: Send + Sync + 'static {
-    fn listen(&self, agg: &A, events: &[A::Event]);
+    fn listen(
+        &self, agg: &A, events: &[A::Event], context: &A::Context,
+    );
 }
 
 

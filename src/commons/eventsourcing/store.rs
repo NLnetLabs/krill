@@ -217,7 +217,9 @@ impl<A: Aggregate> AggregateStore<A> {
     }
 
     /// Adds a new aggregate instance based on the init command.
-    pub fn add(&self, cmd: A::InitCommand<'_>) -> Result<Arc<A>, A::Error> {
+    pub fn add_with_context(
+        &self, cmd: A::InitCommand<'_>, context: &A::Context,
+    ) -> Result<Arc<A>, A::Error> {
         let scope = Self::scope_for_agg(cmd.handle());
 
         self.kv.execute(Some(&scope), |kv| {
@@ -242,7 +244,7 @@ impl<A: Aggregate> AggregateStore<A> {
 
                 // XXX cmd needs to be cloned here because of the Fn
                 //     closure of execute.
-                match A::process_init_command(cmd.clone()) {
+                match A::process_init_command(cmd.clone(), context) {
                     Ok(init_event) => {
                         let aggregate = A::init(
                             cmd.handle(), init_event.clone(),
@@ -285,8 +287,10 @@ impl<A: Aggregate> AggregateStore<A> {
     ///
     /// On error, it will save the command and the error, then return the
     /// error.
-    pub fn command(&self, cmd: A::Command<'_>) -> Result<Arc<A>, A::Error> {
-        self.execute_opt_command(cmd.handle(), Some(&cmd), false)
+    pub fn command_with_context(
+        &self, cmd: A::Command<'_>, context: &A::Context
+    ) -> Result<Arc<A>, A::Error> {
+        self.execute_opt_command(cmd.handle(), Some((&cmd, context)), false)
     }
 
     /// Get the latest aggregate and optionally apply a command to it.
@@ -295,7 +299,7 @@ impl<A: Aggregate> AggregateStore<A> {
     fn execute_opt_command(
         &self,
         handle: &MyHandle,
-        cmd_opt: Option<&A::Command<'_>>,
+        cmd_opt: Option<(&A::Command<'_>, &A::Context)>,
         save_snapshot: bool,
     ) -> Result<Arc<A>, A::Error> {
         let scope = Self::scope_for_agg(handle);
@@ -401,7 +405,7 @@ impl<A: Aggregate> AggregateStore<A> {
 
             // If a command was passed in, try to apply it, and make sure that
             // it is preserved.
-            let res = if let Some(cmd) = cmd_opt {
+            let res = if let Some((cmd, context)) = cmd_opt {
                 let aggregate = Arc::make_mut(&mut agg);
 
                 let version = aggregate.version();
@@ -438,7 +442,7 @@ impl<A: Aggregate> AggregateStore<A> {
                     std::process::exit(1);
                 }
 
-                match aggregate.process_command(cmd.clone()) {
+                match aggregate.process_command(cmd.clone(), context) {
                     Err(e) => {
                         // Store the processed command with the error.
                         let processed = processed.finish_with_error(&e);
@@ -476,8 +480,9 @@ impl<A: Aggregate> AggregateStore<A> {
                                 for pre_save_listener
                                 in &self.pre_save_listeners {
                                     if let Err(e)
-                                        = pre_save_listener.as_ref()
-                                            .listen(aggregate, events)
+                                        = pre_save_listener.as_ref().listen(
+                                             aggregate, events, context
+                                          )
                                     {
                                         opt_err = Some(e);
                                         break;
@@ -502,7 +507,7 @@ impl<A: Aggregate> AggregateStore<A> {
                                 if let Some(events) = processed.events() {
                                     for listener in &self.post_save_listeners {
                                         listener.as_ref().listen(
-                                            aggregate, events
+                                            aggregate, events, context
                                         );
                                     }
                                 }
@@ -552,6 +557,20 @@ impl<A: Aggregate> AggregateStore<A> {
         self.kv.execute(Some(&scope), |kv| kv.delete_scope(&scope))?;
         self.cache_remove(id);
         Ok(())
+    }
+}
+
+impl<A: Aggregate<Context = ()>> AggregateStore<A> {
+    pub fn add(
+        &self, cmd: A::InitCommand<'_>,
+    ) -> Result<Arc<A>, A::Error> {
+        self.add_with_context(cmd, &())
+    }
+
+    pub fn command(
+        &self, cmd: A::Command<'_>
+    ) -> Result<Arc<A>, A::Error> {
+        self.command_with_context(cmd, &())
     }
 }
 

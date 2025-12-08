@@ -113,6 +113,7 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
     type InitCommand<'a> = TrustAnchorProxyInitCommand<'a>;
     type InitEvent = TrustAnchorProxyInitEvent;
     type Error = Error;
+    type Context = ();
 
     fn init(
         handle: &CaHandle, event: TrustAnchorProxyInitEvent,
@@ -130,6 +131,7 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
 
     fn process_init_command(
         command: TrustAnchorProxyInitCommand,
+        _context: &Self::Context,
     ) -> Result<TrustAnchorProxyInitEvent, Error> {
         Ok(TrustAnchorProxyInitEvent {
             id: {
@@ -238,6 +240,7 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
     fn process_command<'a>(
         &self,
         command: Self::Command<'a>,
+        _context: &Self::Context,
     ) -> Result<Vec<Self::Event>, Self::Error> {
         if log_enabled!(log::Level::Trace) {
             trace!(

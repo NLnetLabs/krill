@@ -114,6 +114,7 @@ impl CaManager {
                     child_handle.clone(),
                     UpdateChildRequest::unsuspend(),
                     actor,
+                    krill,
                 )?;
             }
         }
@@ -121,7 +122,7 @@ impl CaManager {
         let res_msg = match payload {
             provisioning::Payload::Revoke(req) => {
                 self.rfc6492_revoke(
-                    ca_handle, child_handle.clone(), req, actor
+                    ca_handle, child_handle.clone(), req, actor, krill
                 )
             }
             provisioning::Payload::List => {
@@ -231,7 +232,8 @@ impl CaManager {
                     issue_req.clone(),
                     krill.config(),
                     krill.signer(),
-                )
+                ),
+                krill,
             )?;
 
             // The updated CA will now include the newly issued certificate.
@@ -260,6 +262,7 @@ impl CaManager {
         child: ChildHandle,
         revoke_request: RevocationRequest,
         actor: &Actor,
+        krill: &KrillContext,
     ) -> KrillResult<provisioning::Message> {
         if ca_handle.as_str() == TA_NAME {
             let request = ProvisioningRequest::Revocation(revoke_request);
@@ -273,7 +276,8 @@ impl CaManager {
                 res,
             );
             self.process_ca_command(ca_handle.clone(), actor,
-                CertAuthCommandDetails::ChildRevokeKey(child, revoke_request)
+                CertAuthCommandDetails::ChildRevokeKey(child, revoke_request),
+                krill,
             )?;
             Ok(msg)
         }

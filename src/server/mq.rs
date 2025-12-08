@@ -19,6 +19,7 @@ use crate::commons::queue::{Queue, ScheduleMode};
 use crate::commons::storage::Ident;
 use crate::constants::{TASK_QUEUE_NS, ta_handle};
 use crate::server::ca::{CertAuth, CertAuthEvent};
+use crate::server::manager::KrillContext;
 use crate::server::taproxy::{TrustAnchorProxy, TrustAnchorProxyEvent};
 
 
@@ -590,6 +591,7 @@ impl eventsourcing::PreSaveEventListener<CertAuth> for TaskQueue {
         &self,
         ca: &CertAuth,
         events: &[CertAuthEvent],
+        _context: &KrillContext,
     ) -> KrillResult<()> {
         for event in events {
             self.schedule_for_ca_event(ca, ca.version(), event)?;
@@ -603,7 +605,12 @@ impl eventsourcing::PreSaveEventListener<CertAuth> for TaskQueue {
 /// Used for best effort signaling to local child CAs that a sync with
 /// their parent is needed.
 impl eventsourcing::PostSaveEventListener<CertAuth> for TaskQueue {
-    fn listen(&self, ca: &CertAuth, events: &[CertAuthEvent]) {
+    fn listen(
+        &self,
+        ca: &CertAuth,
+        events: &[CertAuthEvent],
+        _context: &KrillContext,
+    ) {
         for event in events {
             match event {
                 CertAuthEvent::ChildUpdatedResources { child, .. }
@@ -641,6 +648,7 @@ impl eventsourcing::PreSaveEventListener<TrustAnchorProxy> for TaskQueue {
         &self,
         proxy: &TrustAnchorProxy,
         events: &[TrustAnchorProxyEvent],
+        _context: &(),
     ) -> KrillResult<()> {
         for event in events {
             trace!("Seen TrustAnchorProxy event '{event}'");
@@ -685,6 +693,7 @@ impl eventsourcing::PostSaveEventListener<TrustAnchorProxy> for TaskQueue {
         &self,
         _proxy: &TrustAnchorProxy,
         events: &[TrustAnchorProxyEvent],
+        _context: &(),
     ) {
         for event in events {
             match event {

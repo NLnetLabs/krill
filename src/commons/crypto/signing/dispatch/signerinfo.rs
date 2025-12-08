@@ -334,6 +334,8 @@ impl Aggregate for SignerInfo {
 
     type Error = Error;
 
+    type Context = ();
+
     fn init(handle: &MyHandle, init: SignerInfoInitEvent) -> Self {
         SignerInfo {
             version: 0,
@@ -373,6 +375,7 @@ impl Aggregate for SignerInfo {
     fn process_command<'a>(
         &self,
         command: Self::Command<'a>,
+        _context: &Self::Context,
     ) -> Result<Vec<Self::Event>, Self::Error> {
         Ok(match command.into_details() {
             SignerInfoCommandDetails::Init => {
@@ -413,6 +416,7 @@ impl Aggregate for SignerInfo {
 
     fn process_init_command(
         command: SignerInfoInitCommand,
+        _context: &Self::Context,
     ) -> Result<SignerInfoInitEvent, Self::Error> {
         let details = command.into_details();
         Ok(SignerInfoInitEvent {

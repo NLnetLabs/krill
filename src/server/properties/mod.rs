@@ -218,6 +218,8 @@ impl Aggregate for Properties {
 
     type Error = Error;
 
+    type Context = ();
+
     fn init(handle: &MyHandle, event: PropertiesInitEvent) -> Self {
         Properties {
             handle: handle.clone(),
@@ -228,6 +230,7 @@ impl Aggregate for Properties {
 
     fn process_init_command(
         command: PropertiesInitCommand,
+        _context: &Self::Context,
     ) -> Result<Self::InitEvent, Self::Error> {
         Ok(PropertiesInitEvent {
             krill_version: command.into_details().krill_version,
@@ -253,6 +256,7 @@ impl Aggregate for Properties {
     fn process_command<'a>(
         &self,
         command: Self::Command<'a>,
+        _context: &Self::Context,
     ) -> Result<Vec<Self::Event>, Self::Error> {
         if log_enabled!(log::Level::Trace) {
             trace!(

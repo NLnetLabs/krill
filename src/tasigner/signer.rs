@@ -85,6 +85,7 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
     type InitCommand<'a> = TrustAnchorSignerInitCommand<'a>;
     type InitEvent = TrustAnchorSignerInitEvent;
     type Error = Error;
+    type Context = ();
 
     fn init(handle: &CaHandle, event: Self::InitEvent) -> Self {
         TrustAnchorSigner {
@@ -100,6 +101,7 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
 
     fn process_init_command(
         command: TrustAnchorSignerInitCommand,
+        _context: &Self::Context,
     ) -> Result<TrustAnchorSignerInitEvent, Error> {
         let cmd = command.into_details();
         let timing = cmd.timing;
@@ -163,6 +165,7 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
     fn process_command<'a>(
         &self,
         command: Self::Command<'a>,
+        _context: &Self::Context,
     ) -> Result<Vec<Self::Event>, Self::Error> {
         if log_enabled!(log::Level::Trace) {
             trace!(

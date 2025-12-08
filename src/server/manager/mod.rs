@@ -555,6 +555,7 @@ impl KrillManager {
             child_request,
             &self.config().service_uri(),
             actor,
+            self.context(),
         )
     }
 
@@ -574,7 +575,9 @@ impl KrillManager {
         req: AddChildRequest,
         actor: &Actor,
     ) -> KrillResult<idexchange::ParentResponse> {
-        self.ca_manager().ca_add_child(ca, req, self.service_uri(), actor)
+        self.ca_manager().ca_add_child(
+            ca, req, self.service_uri(), actor, self.context(),
+        )
     }
 
     /// Shows the parent contact for a child.
@@ -603,7 +606,9 @@ impl KrillManager {
         req: UpdateChildRequest,
         actor: &Actor,
     ) -> KrillEmptyResult {
-        self.ca_manager().ca_child_update(ca, child, req, actor)
+        self.ca_manager().ca_child_update(
+            ca, child, req, actor, self.context()
+        )
     }
 
     /// Update IdCert or resources of a child.
@@ -613,7 +618,7 @@ impl KrillManager {
         child: ChildHandle,
         actor: &Actor,
     ) -> KrillEmptyResult {
-        self.ca_manager().ca_child_remove(ca, child, actor)
+        self.ca_manager().ca_child_remove(ca, child, actor, self.context())
     }
 
     /// Show details for a child under the CA.
@@ -687,7 +692,9 @@ impl KrillManager {
         )?;
 
         // Seems good. Add/update the parent.
-        self.ca_manager().ca_parent_add_or_update(ca, parent_req, actor)
+        self.ca_manager().ca_parent_add_or_update(
+            ca, parent_req, actor, self.context()
+        )
     }
 
     pub fn ca_parent_remove(
@@ -890,6 +897,7 @@ impl KrillManager {
                     child_req,
                     self.service_uri(),
                     self.system_actor(),
+                    self.context(),
                 )?
             };
 
@@ -902,6 +910,7 @@ impl KrillManager {
                 import.handle.clone(),
                 parent_req,
                 self.system_actor(),
+                self.context(),
             )?;
 
             // First sync will inform child of its entitlements and

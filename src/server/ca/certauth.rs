@@ -46,6 +46,7 @@ use crate::commons::error::Error;
 use crate::commons::eventsourcing::Aggregate;
 use crate::constants::test_mode_enabled;
 use crate::config::{Config, IssuanceTimingConfig};
+use crate::server::manager::KrillContext;
 use super::aspa::AspaDefinitions;
 use super::bgpsec::BgpSecDefinitions;
 use super::child::{ChildDetails, ChildCertificateUpdates, UsedKeyState};
@@ -130,6 +131,8 @@ impl Aggregate for CertAuth {
 
     type Error = Error;
 
+    type Context = KrillContext;
+
     fn init(handle: &MyHandle, event: CertAuthInitEvent) -> Self {
         CertAuth {
             handle: handle.clone(),
@@ -153,7 +156,8 @@ impl Aggregate for CertAuth {
     }
 
     fn process_init_command<'a>(
-        command: Self::InitCommand<'a>
+        command: Self::InitCommand<'a>,
+        _context: &Self::Context,
     ) -> Result<CertAuthInitEvent, Error> {
         Rfc8183Id::generate(
             command.details().signer
@@ -171,6 +175,7 @@ impl Aggregate for CertAuth {
     fn process_command<'a>(
         &self,
         command: Self::Command<'a>,
+        _context: &Self::Context,
     ) -> Result<Vec<CertAuthEvent>, Error> {
         trace!(
             "Sending command to CA '{}', version: {}: {}",
