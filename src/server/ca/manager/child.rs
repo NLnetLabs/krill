@@ -543,8 +543,6 @@ impl CaManager {
                     CertAuthCommandDetails::UpdateRcvdCert(
                         rcn.clone(),
                         rcvd_cert,
-                        krill.config(),
-                        krill.signer(),
                     ),
                     krill,
                 ) {
@@ -569,7 +567,6 @@ impl CaManager {
                         CertAuthCommandDetails::DropResourceClass(
                             rcn.clone(),
                             reason.clone(),
-                            krill.signer(),
                         ),
                         krill,
                     )?;
@@ -626,7 +623,6 @@ impl CaManager {
                             CertAuthCommandDetails::DropResourceClass(
                                 rcn.clone(),
                                 reason.to_string(),
-                                krill.signer(),
                             ),
                             krill,
                         )?;
@@ -666,7 +662,6 @@ impl CaManager {
                             CertAuthCommandDetails::DropResourceClass(
                                 rcn.clone(),
                                 reason.to_string(),
-                                krill.signer(),
                             ),
                             krill,
                         )?;
@@ -740,7 +735,6 @@ impl CaManager {
             CertAuthCommandDetails::UpdateEntitlements(
                 parent,
                 entitlements,
-                krill.signer(),
             ),
             krill,
         )?.version();

@@ -230,8 +230,6 @@ impl CaManager {
                 CertAuthCommandDetails::ChildCertify(
                     child_handle.clone(),
                     issue_req.clone(),
-                    krill.config(),
-                    krill.signer(),
                 ),
                 krill,
             )?;

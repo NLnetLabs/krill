@@ -614,7 +614,7 @@ impl CaManager {
         self.ca_store.add_with_context(
             CertAuthInitCommand::new(
                 handle,
-                CertAuthInitCommandDetails { signer: krill.signer() },
+                CertAuthInitCommandDetails,
                 krill.system_actor(),
             ),
             krill,
@@ -638,7 +638,7 @@ impl CaManager {
     ) -> KrillResult<()> {
         self.process_ca_command(
             handle, actor,
-            CertAuthCommandDetails::GenerateNewIdKey(krill.signer()),
+            CertAuthCommandDetails::GenerateNewIdKey,
             krill,
         )?;
         Ok(())
@@ -904,11 +904,7 @@ impl CaManager {
     ) -> KrillResult<()> {
         trace!("Importing CA: {} under parent: {}", import_child.name, ca);
         self.process_ca_command(ca.clone(), actor,
-            CertAuthCommandDetails::ChildImport(
-                import_child,
-                krill.config(),
-                krill.signer(),
-            ),
+            CertAuthCommandDetails::ChildImport(import_child),
             krill,
         )?;
         Ok(())
@@ -1511,10 +1507,7 @@ impl CaManager {
         }
         self.process_ca_command(
             ca_handle, actor,
-            CertAuthCommandDetails::RepoUpdate(
-                new_contact,
-                krill.signer()
-            ),
+            CertAuthCommandDetails::RepoUpdate(new_contact),
             krill,
         )?;
         Ok(())
@@ -1542,11 +1535,7 @@ impl CaManager {
     ) -> KrillResult<()> {
         self.process_ca_command(
             ca, actor,
-            CertAuthCommandDetails::AspasUpdate(
-                updates,
-                krill.config(),
-                krill.signer(),
-            ),
+            CertAuthCommandDetails::AspasUpdate(updates),
             krill,
         )?;
         Ok(())
@@ -1563,12 +1552,7 @@ impl CaManager {
     ) -> KrillResult<()> {
         self.process_ca_command(
             ca.clone(), actor,
-            CertAuthCommandDetails::AspasUpdateExisting(
-                customer,
-                update,
-                krill.config(),
-                krill.signer(),
-            ),
+            CertAuthCommandDetails::AspasUpdateExisting(customer, update),
             krill,
         )?;
         Ok(())
@@ -1595,11 +1579,7 @@ impl CaManager {
     ) -> KrillResult<()> {
         self.process_ca_command(
             ca.clone(), actor,
-            CertAuthCommandDetails::BgpSecUpdateDefinitions(
-                updates,
-                krill.config(),
-                krill.signer(),
-            ),
+            CertAuthCommandDetails::BgpSecUpdateDefinitions(updates),
             krill,
         )?;
         Ok(())
@@ -1630,8 +1610,6 @@ impl CaManager {
             ca.clone(), actor,
             CertAuthCommandDetails::RouteAuthorizationsUpdate(
                 updates,
-                krill.config(),
-                krill.signer(),
             ),
             krill,
         )?;
@@ -1654,10 +1632,7 @@ impl CaManager {
         for ca in self.ca_store.list()? {
             if let Err(e) = self.process_ca_command(
                 ca.clone(), actor,
-                CertAuthCommandDetails::RouteAuthorizationsRenew(
-                    krill.config(),
-                    krill.signer(),
-                ),
+                CertAuthCommandDetails::RouteAuthorizationsRenew,
                 krill,
             ) {
                 error!(
@@ -1667,10 +1642,7 @@ impl CaManager {
 
             if let Err(e) = self.process_ca_command(
                 ca.clone(), actor,
-                CertAuthCommandDetails::AspasRenew(
-                    krill.config(),
-                    krill.signer(),
-                ),
+                CertAuthCommandDetails::AspasRenew,
                 krill,
             ) {
                 error!(
@@ -1680,10 +1652,7 @@ impl CaManager {
 
             if let Err(e) = self.process_ca_command(
                 ca.clone(), actor,
-                CertAuthCommandDetails::BgpSecRenew(
-                    krill.config(),
-                    krill.signer(),
-                ),
+                CertAuthCommandDetails::BgpSecRenew,
                 krill,
             ) {
                 error!(
@@ -1710,10 +1679,7 @@ impl CaManager {
         for ca in self.ca_store.list()? {
             if let Err(e) = self.process_ca_command(
                 ca.clone(), actor,
-                CertAuthCommandDetails::RouteAuthorizationsForceRenew(
-                    krill.config(),
-                    krill.signer(),
-                ),
+                CertAuthCommandDetails::RouteAuthorizationsForceRenew,
                 krill,
             ) {
                 error!(
@@ -1739,11 +1705,7 @@ impl CaManager {
     ) -> KrillResult<()> {
         self.process_ca_command(
             ca.clone(), actor,
-            CertAuthCommandDetails::RtaSign(
-                name,
-                request,
-                krill.signer(),
-            ),
+            CertAuthCommandDetails::RtaSign(name, request),
             krill,
         )?;
         Ok(())
@@ -1760,11 +1722,7 @@ impl CaManager {
     ) -> KrillResult<()> {
         self.process_ca_command(
             ca.clone(), actor,
-            CertAuthCommandDetails::RtaMultiPrepare(
-                name,
-                request,
-                krill.signer(),
-            ),
+            CertAuthCommandDetails::RtaMultiPrepare(name, request),
             krill,
         )?;
         Ok(())
@@ -1781,11 +1739,7 @@ impl CaManager {
     ) -> KrillResult<()> {
         self.process_ca_command(
             ca.clone(), actor,
-            CertAuthCommandDetails::RtaCoSign(
-                name,
-                rta,
-                krill.signer(),
-            ),
+            CertAuthCommandDetails::RtaCoSign(name, rta),
             krill,
         )?;
         Ok(())
@@ -1809,7 +1763,6 @@ impl CaManager {
             handle.clone(), actor,
             CertAuthCommandDetails::KeyRollInitiate(
                 max_age,
-                krill.signer(),
             ),
             krill,
         )?;
@@ -1833,8 +1786,6 @@ impl CaManager {
             handle.clone(), actor,
             CertAuthCommandDetails::KeyRollActivate(
                 staging,
-                krill.config(),
-                krill.signer(),
             ),
             krill,
         )?;
