@@ -18,10 +18,7 @@ use crate::api::history::{
 };
 use crate::commons::error::KrillIoError;
 use crate::commons::storage::{Ident, KeyValueError, KeyValueStore};
-use super::agg::{
-    Aggregate, Command, InitCommand, PostSaveEventListener,
-    PreSaveEventListener, StoredCommand
-};
+use super::agg::{Aggregate, Command, InitCommand, StoredCommand};
 
 
 //------------ Storable ------------------------------------------------------
@@ -61,12 +58,6 @@ pub struct AggregateStore<A: Aggregate> {
 
     /// A cache for the command history of an instance.
     history_cache: Option<Mutex<HashMap<MyHandle, Vec<CommandHistoryRecord>>>>,
-
-    /// The pre-save listeners.
-    pre_save_listeners: Vec<Arc<dyn PreSaveEventListener<A>>>,
-
-    /// The post-save listeners.
-    post_save_listeners: Vec<Arc<dyn PostSaveEventListener<A>>>,
 }
 
 /// # Starting up
@@ -114,8 +105,6 @@ impl<A: Aggregate> AggregateStore<A> {
             else {
                 None
             },
-            pre_save_listeners: Vec::new(),
-            post_save_listeners: Vec::new(),
         }
     }
 
@@ -134,23 +123,6 @@ impl<A: Aggregate> AggregateStore<A> {
             })?;
         }
         Ok(())
-    }
-
-    /// Adds a listener that will receive all events before they are stored.
-    pub fn add_pre_save_listener<L: PreSaveEventListener<A>>(
-        &mut self,
-        sync_listener: Arc<L>,
-    ) {
-        self.pre_save_listeners.push(sync_listener);
-    }
-
-    /// Adds a listener that will receive a reference to all events after they
-    /// are stored.
-    pub fn add_post_save_listener<L: PostSaveEventListener<A>>(
-        &mut self,
-        listener: Arc<L>,
-    ) {
-        self.post_save_listeners.push(listener);
     }
 }
 
@@ -475,18 +447,12 @@ impl<A: Aggregate> AggregateStore<A> {
                             // should inform the pre-save listeners. They may
                             // still generate errors, and if they do, then we
                             // return with an error, without saving.
-                            let mut opt_err: Option<A::Error> = None;
+                            let mut opt_err = None;
                             if let Some(events) = processed.events() {
-                                for pre_save_listener
-                                in &self.pre_save_listeners {
-                                    if let Err(e)
-                                        = pre_save_listener.as_ref().listen(
-                                             aggregate, events, context
-                                          )
-                                    {
-                                        opt_err = Some(e);
-                                        break;
-                                    }
+                                if let Err(err) = aggregate.pre_save_events(
+                                    events, context
+                                ) {
+                                    opt_err = Some(err);
                                 }
                             }
 
@@ -505,11 +471,9 @@ impl<A: Aggregate> AggregateStore<A> {
                                 // Now send the events to the 'post-save'
                                 // listeners.
                                 if let Some(events) = processed.events() {
-                                    for listener in &self.post_save_listeners {
-                                        listener.as_ref().listen(
-                                            aggregate, events, context
-                                        );
-                                    }
+                                    aggregate.post_save_events(
+                                        events, context
+                                    );
                                 }
 
                                 Ok(())

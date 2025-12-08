@@ -301,9 +301,8 @@ mod wal;
 
 pub use self::agg::{
     Aggregate, Command, CommandDetails, Event, InitCommand,
-    InitCommandDetails, InitEvent, PostSaveEventListener,
-    PreSaveEventListener, SentCommand, SentInitCommand, StoredCommand,
-    StoredCommandBuilder, StoredEffect, WithStorableDetails
+    InitCommandDetails, InitEvent, SentCommand, SentInitCommand,
+    StoredCommand, StoredCommandBuilder, StoredEffect, WithStorableDetails
 };
 pub use self::store::{AggregateStore, AggregateStoreError, Storable};
 pub use self::wal::{

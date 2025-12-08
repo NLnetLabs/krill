@@ -118,7 +118,8 @@ impl CaManager {
             TrustAnchorProxyCommand::make_signer_request(
                 &ta_handle,
                 krill.system_actor(),
-            )
+            ),
+            krill,
         )?;
 
         // Get sign request for signer.
@@ -138,7 +139,7 @@ impl CaManager {
                 None, // do not override next manifest number
                 krill.signer(),
                 krill.system_actor(),
-            )
+            ),
         )?;
 
         // Get the response from the signer and give it to the proxy.
@@ -148,7 +149,8 @@ impl CaManager {
                 &ta_handle,
                 exchange.clone().response,
                 krill.system_actor(),
-            )
+            ),
+            krill,
         )?;
         Ok(())
     }

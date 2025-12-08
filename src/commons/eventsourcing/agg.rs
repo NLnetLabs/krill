@@ -131,6 +131,36 @@ pub trait Aggregate: Storable + 'static {
             }
         }
     }
+
+    /// Process events before they are saved.
+    ///
+    /// This method is called on the updated aggregate, i.e., the events
+    /// given by `events` have already been applied to it.
+    ///
+    /// The method is allowed to return an error, in which case all the
+    /// changes made by `events` are rolled back to the previous version of
+    /// the aggregate.
+    ///
+    /// The default implementation of this method does nothing and returns
+    /// `Ok(())`.
+    fn pre_save_events(
+        &self, events: &[Self::Event], context: &Self::Context
+    ) -> Result<(), Self::Error> {
+        let _ = (events, context);
+        Ok(())
+    }
+
+    /// Process events after they have been saved.
+    ///
+    /// This method is called on the updated aggregate, i.e., the events
+    /// given by `events` have already been applied to it.
+    ///
+    /// The default implementation does nothing.
+    fn post_save_events(
+        &self, events: &[Self::Event], context: &Self::Context
+    ) {
+        let _ = (events, context);
+    }
 }
 
 
@@ -683,30 +713,6 @@ impl<E: Event, I: InitEvent> StoredEffect<E, I> {
             }
         }
     }
-}
-
-
-//------------ PreSaveEventListener ------------------------------------------
-
-/// A listener that receives events before the aggregate is saved.
-///
-/// The listener is allowed to return an error in case of issues, which will
-/// will result in rolling back the intended change to an aggregate.
-pub trait PreSaveEventListener<A: Aggregate>: Send + Sync + 'static {
-    fn listen(
-        &self, agg: &A, events: &[A::Event], context: &A::Context,
-    ) -> Result<(), A::Error>;
-}
-
-//------------ PostSaveEventListener -----------------------------------------
-
-/// A listener that receives events after the aggregate is saved.
-///
-/// The listener is not allowed to fail.
-pub trait PostSaveEventListener<A: Aggregate>: Send + Sync + 'static {
-    fn listen(
-        &self, agg: &A, events: &[A::Event], context: &A::Context,
-    );
 }
 
 

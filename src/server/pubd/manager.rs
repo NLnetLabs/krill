@@ -59,8 +59,8 @@ impl RepositoryManager {
     pub fn build(
         config: &Config,
     ) -> Result<Self, Error> {
-        let access_proxy = RepositoryAccessProxy::create(&config)?;
-        let content_proxy = RepositoryContentProxy::create(&config)?;
+        let access_proxy = RepositoryAccessProxy::create(config)?;
+        let content_proxy = RepositoryContentProxy::create(config)?;
 
         Ok(RepositoryManager {
             access: access_proxy,

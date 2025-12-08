@@ -219,6 +219,7 @@ impl CaManager {
                 child_handle,
                 request,
                 actor,
+                krill,
             )
         }
         else {
@@ -264,7 +265,9 @@ impl CaManager {
     ) -> KrillResult<provisioning::Message> {
         if ca_handle.as_str() == TA_NAME {
             let request = ProvisioningRequest::Revocation(revoke_request);
-            self.ta_slow_rfc6492_request(ca_handle, child, request, actor)
+            self.ta_slow_rfc6492_request(
+                ca_handle, child, request, actor, krill
+            )
         }
         else {
             let res = RevocationResponse::from(&revoke_request);
@@ -291,6 +294,7 @@ impl CaManager {
         child: ChildHandle,
         request: ProvisioningRequest,
         actor: &Actor,
+        krill: &KrillContext,
     ) -> KrillResult<provisioning::Message> {
         let proxy = self.get_trust_anchor_proxy()?;
         if let Some(response) = proxy.response_for_child(&child, &request)? {
@@ -307,7 +311,8 @@ impl CaManager {
                     child,
                     request.key_identifier(),
                     actor,
-                )
+                ),
+                krill,
             )?;
 
             Ok(response)
@@ -335,7 +340,8 @@ impl CaManager {
                     child.clone(),
                     request,
                     actor,
-                )
+                ),
+                krill,
             )?;
 
             provisioning::Message::not_performed_response(

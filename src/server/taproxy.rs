@@ -40,6 +40,7 @@ use crate::api::ta::{
 };
 use crate::constants::ta_resource_class_name;
 use crate::server::ca::UsedKeyState;
+use crate::server::mq::TaskQueue;
 use crate::tasigner::TaTimingConfig;
 
 
@@ -113,7 +114,7 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
     type InitCommand<'a> = TrustAnchorProxyInitCommand<'a>;
     type InitEvent = TrustAnchorProxyInitEvent;
     type Error = Error;
-    type Context = ();
+    type Context = TaskQueue;
 
     fn init(
         handle: &CaHandle, event: TrustAnchorProxyInitEvent,
@@ -298,6 +299,19 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
                 key,
             ) => self.process_give_child_response(child_handle, key),
         }
+    }
+
+    fn pre_save_events(
+        &self, events: &[Self::Event], context: &Self::Context
+    ) -> Result<(), Self::Error> {
+        context.ta_proxy_pre_save_events(self, events)?;
+        Ok(())
+    }
+
+    fn post_save_events(
+        &self, events: &[Self::Event], context: &Self::Context
+    ) {
+        context.ta_proxy_post_save_events(self, events)
     }
 }
 
@@ -1278,6 +1292,8 @@ mod tests {
                 .unwrap(),
             );
 
+            let tasks = TaskQueue::new(storage_uri).unwrap();
+
             let timing = TaTimingConfig::default();
 
             let actor = crate::constants::ACTOR_DEF_KRILL;
@@ -1289,7 +1305,7 @@ mod tests {
                 &actor,
             );
 
-            ta_proxy_store.add(proxy_init).unwrap();
+            ta_proxy_store.add_with_context(proxy_init, &tasks).unwrap();
 
             let repository = {
                 let repo_info = RepoInfo::new(
@@ -1316,7 +1332,9 @@ mod tests {
                 repository,
                 &actor,
             );
-            let mut proxy = ta_proxy_store.command(add_repo_cmd).unwrap();
+            let mut proxy = ta_proxy_store.command_with_context(
+                add_repo_cmd, &tasks
+            ).unwrap();
 
             let signer_handle = CaHandle::new("signer".into());
             let tal_https =
@@ -1354,7 +1372,9 @@ mod tests {
                 &actor,
             );
 
-            proxy = ta_proxy_store.command(add_signer_cmd).unwrap();
+            proxy = ta_proxy_store.command_with_context(
+                add_signer_cmd, &tasks,
+            ).unwrap();
 
             // The initial signer starts off with a TA certificate
             // and a CRL and manifest with revision number 42, as specified in
@@ -1373,7 +1393,9 @@ mod tests {
                     &proxy_handle,
                     &actor,
                 );
-            proxy = ta_proxy_store.command(make_publish_request_cmd).unwrap();
+            proxy = ta_proxy_store.command_with_context(
+                make_publish_request_cmd, &tasks,
+            ).unwrap();
 
             let signed_request =
                 proxy.get_signer_request(timing, &signer).unwrap();
@@ -1400,9 +1422,9 @@ mod tests {
                     &actor,
                 );
 
-            proxy = ta_proxy_store
-                .command(ta_proxy_process_signer_response_command)
-                .unwrap();
+            proxy = ta_proxy_store.command_with_context(
+                ta_proxy_process_signer_response_command, &tasks,
+            ).unwrap();
 
             // The TA should have published again, the revision used for
             // manifest and crl will have been updated to the

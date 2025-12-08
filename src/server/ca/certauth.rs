@@ -645,6 +645,22 @@ impl Aggregate for CertAuth {
             }
         }
     }
+
+    fn pre_save_events(
+        &self, events: &[Self::Event], context: &Self::Context
+    ) -> Result<(), Self::Error> {
+        context.ca_manager().cert_auth_pre_save_events(
+            self, events, context
+        )?;
+        context.tasks().cert_auth_pre_save_events(self, events, context)?;
+        Ok(())
+    }
+
+    fn post_save_events(
+        &self, events: &[Self::Event], context: &Self::Context
+    ) {
+        context.tasks().cert_auth_post_save_events(self, events, context);
+    }
 }
 
 /// # Data presentation

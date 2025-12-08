@@ -213,7 +213,6 @@ impl KrillManager {
 
         let ca_manager = CaManager::build(
             &config,
-            &tasks,
             runtime,
         )?;
 
@@ -492,8 +491,9 @@ impl KrillManager {
         contact: RepositoryContact,
         actor: &Actor,
     ) -> KrillResult<()> {
-        self.ca_manager()
-            .ta_proxy_repository_update(contact, actor)
+        self.ca_manager().ta_proxy_repository_update(
+            contact, actor, self.context()
+        )
     }
 
     pub fn ta_proxy_repository_contact(
@@ -507,7 +507,7 @@ impl KrillManager {
         info: TrustAnchorSignerInfo,
         actor: &Actor,
     ) -> KrillResult<()> {
-        self.ca_manager().ta_proxy_signer_add(info, actor)
+        self.ca_manager().ta_proxy_signer_add(info, actor, self.context())
     }
 
     pub fn ta_proxy_signer_update(
@@ -515,7 +515,7 @@ impl KrillManager {
         info: TrustAnchorSignerInfo,
         actor: &Actor,
     ) -> KrillResult<()> {
-        self.ca_manager().ta_proxy_signer_update(info, actor)
+        self.ca_manager().ta_proxy_signer_update(info, actor, self.context())
     }
 
     pub fn ta_proxy_signer_make_request(
@@ -536,8 +536,9 @@ impl KrillManager {
         response: TrustAnchorSignedResponse,
         actor: &Actor,
     ) -> KrillResult<()> {
-        self.ca_manager()
-            .ta_proxy_signer_process_response(response, actor)
+        self.ca_manager().ta_proxy_signer_process_response(
+            response, actor, self.context()
+        )
     }
 
     pub fn ta_proxy_children_add(

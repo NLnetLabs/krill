@@ -37,6 +37,7 @@ use super::providers::{config_file, openid_connect};
 ///
 /// This type is a wrapper around the available backend specific auth
 /// providers that can be found in the [super::providers] module.
+#[allow(clippy::large_enum_variant)]
 enum AuthProvider {
     Token(admin_token::AuthProvider),
 
@@ -205,7 +206,7 @@ impl Authorizer {
             #[cfg(feature = "multi-user")]
             AuthType::ConfigFile => {
                 (
-                    config_file::AuthProvider::new(&config)?.into(),
+                    config_file::AuthProvider::new(config)?.into(),
                     Some(admin_token::AuthProvider::new(config))
                 )
             }

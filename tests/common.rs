@@ -398,7 +398,7 @@ impl KrillServer {
         let mut res = Self {
             join: tokio::spawn(async {
                 if let Err(err) = start_krill_daemon(
-                    config.into(), Some(tx)
+                    config, Some(tx)
                 ).await {
                     error!("Krill failed to start: {err}");
                 }

@@ -61,7 +61,7 @@ use crate::constants::{
 };
 use crate::daemon::http::auth::{AuthInfo, Permission}; // XXX remove
 use crate::server::manager::KrillContext;
-use crate::server::mq::{now, Task, TaskQueue};
+use crate::server::mq::{now, Task};
 use crate::server::runtime;
 use crate::server::taproxy::{
     TrustAnchorProxy, TrustAnchorProxyCommand, TrustAnchorProxyInitCommand,
@@ -74,6 +74,7 @@ use super::certauth::CertAuth;
 use super::commands::{
     CertAuthCommandDetails, CertAuthInitCommand, CertAuthInitCommandDetails,
 };
+use super::events::CertAuthEvent;
 use super::publishing::{CaObjectsStore, DeprecatedRepository};
 use super::status::{CaStatus, CaStatusStore};
 
@@ -122,12 +123,11 @@ impl CaManager {
     /// Return an error if any of the various stores cannot be initialized.
     pub fn build(
         config: &Config,
-        tasks: &Arc<TaskQueue>,
         runtime: runtime::Handle,
     ) -> KrillResult<Self> {
         // Create the AggregateStore for the event-sourced `CertAuth`
         // structures that handle most CA functions.
-        let mut ca_store = AggregateStore::<CertAuth>::create(
+        let ca_store = AggregateStore::<CertAuth>::create(
             &config.storage_uri,
             CASERVER_NS,
             config.use_history_cache,
@@ -162,56 +162,13 @@ impl CaManager {
             &config.storage_uri
         )?);
 
-        // Register the `CaObjectsStore` as a pre-save listener to the
-        // 'ca_store' so that it can update its ROAs and issued
-        // certificates and/or generate manifests and CRLs when relevant
-        // changes occur in a `CertAuth`.
-        ca_store.add_pre_save_listener(ca_objects_store.clone());
-
-        // Register the `MessageQueue` as a pre-save listener to 'ca_store' so
-        // that relevant changes in a `CertAuth` can trigger follow-up
-        // actions. This is done as pre-save listener, because commands
-        // that would result in a follow-up should fail, if the task cannot be
-        // planned.
-        //
-        // Tasks will typically be picked up after the CA changes are
-        // committed, but they may also be picked up sooner by another
-        // thread. Because of that the tasks will remember which minimal
-        // version of the CA they are intended for, so that they can
-        // be rescheduled should they have been picked up too soon.
-        //
-        // An example of a triggered task: schedule a synchronisation with the
-        // repository (publication server) in case ROAs have been
-        // updated.
-        ca_store.add_pre_save_listener(tasks.clone());
-
-        // Now also register the `MessageQueue` as a post-save listener. We
-        // use this to send best-effort post-save signals to children
-        // in case a certificate was updated or a child key was revoked.
-        // This is a no-op for remote children (we cannot send a signal over
-        // RFC 6492).
-        ca_store.add_post_save_listener(tasks.clone());
-
         // Create TA proxy store if we need it.
         let ta_proxy_store = if config.ta_proxy_enabled() {
-            let mut store = AggregateStore::<TrustAnchorProxy>::create(
+            Some(AggregateStore::<TrustAnchorProxy>::create(
                 &config.storage_uri,
                 TA_PROXY_SERVER_NS,
                 config.use_history_cache,
-            )?;
-
-            // We need a pre-save listener so that we can schedule:
-            // - publication on updates
-            // - signing by the Trust Anchor Signer when there are requests
-            //   [in testbed mode]
-            store.add_pre_save_listener(tasks.clone());
-
-            // We need a post-save listener so that we can schedule:
-            // - re-sync for local children when the proxy has new responses
-            //   AND is saved
-            store.add_post_save_listener(tasks.clone());
-
-            Some(store)
+            )?)
         }
         else {
             None
@@ -298,6 +255,16 @@ impl CaManager {
         }
         Ok(res)
     }
+
+
+    pub(super) fn cert_auth_pre_save_events(
+        &self,
+        ca: &CertAuth,
+        events: &[CertAuthEvent],
+        krill: &KrillContext,
+    ) -> KrillResult<()> {
+        self.ca_objects_store.cert_auth_pre_save_events(ca, events, krill)
+    }
 }
 
 /// # Trust Anchor Support
@@ -309,10 +276,11 @@ impl CaManager {
     fn send_ta_proxy_command(
         &self,
         cmd: TrustAnchorProxyCommand,
+        krill: &KrillContext,
     ) -> KrillResult<Arc<TrustAnchorProxy>> {
         self.ta_proxy_store.as_ref().ok_or_else(|| {
             Error::custom("ta_support_enabled is false")
-        })?.command(cmd)
+        })?.command_with_context(cmd, krill.tasks())
     }
 
     /// Sends a command to the TA signer.
@@ -371,12 +339,13 @@ impl CaManager {
 
 
 
-        ta_proxy_store.add(
+        ta_proxy_store.add_with_context(
             TrustAnchorProxyInitCommand::make(
                 ta_handle,
                 krill.signer(),
                 krill.system_actor(),
-            )
+            ),
+            krill.tasks(),
         )?;
         Ok(())
     }
@@ -449,13 +418,15 @@ impl CaManager {
         &self,
         contact: RepositoryContact,
         actor: &Actor,
+        krill: &KrillContext,
     ) -> KrillResult<()> {
         self.send_ta_proxy_command(
             TrustAnchorProxyCommand::add_repo(
                 &ta_handle(),
                 contact,
                 actor,
-            )
+            ),
+            krill,
         )?;
         Ok(())
     }
@@ -479,9 +450,11 @@ impl CaManager {
         &self,
         info: TrustAnchorSignerInfo,
         actor: &Actor,
+        krill: &KrillContext,
     ) -> KrillResult<()> {
         self.send_ta_proxy_command(
-            TrustAnchorProxyCommand::add_signer(&ta_handle(), info, actor)
+            TrustAnchorProxyCommand::add_signer(&ta_handle(), info, actor),
+            krill,
         )?;
         Ok(())
     }
@@ -493,9 +466,11 @@ impl CaManager {
         &self,
         info: TrustAnchorSignerInfo,
         actor: &Actor,
+        krill: &KrillContext,
     ) -> KrillResult<()> {            
         self.send_ta_proxy_command(
-            TrustAnchorProxyCommand::update_signer(&ta_handle(), info, actor)
+            TrustAnchorProxyCommand::update_signer(&ta_handle(), info, actor),
+            krill,
         )?;
         Ok(())
     }
@@ -507,7 +482,8 @@ impl CaManager {
         &self, actor: &Actor, krill: &KrillContext,
     ) -> KrillResult<ApiTrustAnchorSignedRequest> {
         self.send_ta_proxy_command(
-            TrustAnchorProxyCommand::make_signer_request(&ta_handle(), actor)
+            TrustAnchorProxyCommand::make_signer_request(&ta_handle(), actor),
+            krill,
         )?.get_signer_request(krill.config().ta_timing, krill.signer())
     }
 
@@ -525,13 +501,15 @@ impl CaManager {
         &self,
         response: TrustAnchorSignedResponse,
         actor: &Actor,
+        krill: &KrillContext,
     ) -> KrillResult<()> {
         self.send_ta_proxy_command(
             TrustAnchorProxyCommand::process_signer_response(
                 &ta_handle(),
                 response,
                 actor,
-            )
+            ),
+            krill,
         )?;
         Ok(())
     }
@@ -563,14 +541,16 @@ impl CaManager {
         let contact = RepositoryContact::try_from_response(
             repository_response
         ).map_err(Error::rfc8183)?;
-        self.ta_proxy_repository_update(contact, krill.system_actor())?;
+        self.ta_proxy_repository_update(
+            contact, krill.system_actor(), krill
+        )?;
 
         // Initialise signer
         self.ta_signer_init(ta_uris, ta_aia, ta_key_pem, krill)?;
 
         // Add signer to proxy
         let signer_info = self.get_trust_anchor_signer()?.get_signer_info();
-        self.ta_proxy_signer_add(signer_info, krill.system_actor())?;
+        self.ta_proxy_signer_add(signer_info, krill.system_actor(), krill)?;
 
         self.sync_ta_proxy_signer_if_possible(krill)?;
         self.cas_repo_sync_single(&ta_handle, 0, krill)?;
@@ -853,7 +833,7 @@ impl CaManager {
             let child_handle = req.handle.clone();
             let add_child_cmd =
                 TrustAnchorProxyCommand::add_child(ca, req, actor);
-            self.send_ta_proxy_command(add_child_cmd)?;
+            self.send_ta_proxy_command(add_child_cmd, krill)?;
             self.ca_parent_response(ca, child_handle, service_uri)
         }
     }

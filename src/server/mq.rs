@@ -12,7 +12,6 @@ use rpki::repository::x509::Time;
 use serde::{Deserialize, Serialize};
 use url::Url;
 use crate::api::ca::Timestamp;
-use crate::commons::eventsourcing;
 use crate::commons::{Error, KrillResult};
 use crate::commons::eventsourcing::Aggregate;
 use crate::commons::queue::{Queue, ScheduleMode};
@@ -583,11 +582,8 @@ impl TaskQueue {
             _ => Ok(()),
         }
     }
-}
 
-/// Implement pre-save listening for CertAuth events.
-impl eventsourcing::PreSaveEventListener<CertAuth> for TaskQueue {
-    fn listen(
+    pub fn cert_auth_pre_save_events(
         &self,
         ca: &CertAuth,
         events: &[CertAuthEvent],
@@ -598,14 +594,8 @@ impl eventsourcing::PreSaveEventListener<CertAuth> for TaskQueue {
         }
         Ok(())
     }
-}
 
-/// Implement post-save listening for CertAuth events.
-///
-/// Used for best effort signaling to local child CAs that a sync with
-/// their parent is needed.
-impl eventsourcing::PostSaveEventListener<CertAuth> for TaskQueue {
-    fn listen(
+    pub fn cert_auth_post_save_events(
         &self,
         ca: &CertAuth,
         events: &[CertAuthEvent],
@@ -640,15 +630,11 @@ impl eventsourcing::PostSaveEventListener<CertAuth> for TaskQueue {
             }
         }
     }
-}
 
-/// Implement pre-save listening for TrustAnchorProxy events.
-impl eventsourcing::PreSaveEventListener<TrustAnchorProxy> for TaskQueue {
-    fn listen(
+    pub fn ta_proxy_pre_save_events(
         &self,
         proxy: &TrustAnchorProxy,
         events: &[TrustAnchorProxyEvent],
-        _context: &(),
     ) -> KrillResult<()> {
         for event in events {
             trace!("Seen TrustAnchorProxy event '{event}'");
@@ -685,15 +671,11 @@ impl eventsourcing::PreSaveEventListener<TrustAnchorProxy> for TaskQueue {
         }
         Ok(())
     }
-}
 
-/// Implement post-save listening for TrustAnchorProxy events.
-impl eventsourcing::PostSaveEventListener<TrustAnchorProxy> for TaskQueue {
-    fn listen(
+    pub fn ta_proxy_post_save_events(
         &self,
         _proxy: &TrustAnchorProxy,
         events: &[TrustAnchorProxyEvent],
-        _context: &(),
     ) {
         for event in events {
             match event {

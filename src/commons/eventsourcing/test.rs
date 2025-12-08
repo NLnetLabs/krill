@@ -384,14 +384,6 @@ impl EventCounter {
     }
 }
 
-impl<A: Aggregate> PostSaveEventListener<A> for EventCounter {
-    fn listen(
-        &self, _agg: &A, events: &[A::Event], _context: &A::Context,
-    ) {
-        self.counter.write().unwrap().total += events.len();
-    }
-}
-
 
 //------------ Test Function -------------------------------------------------
 
@@ -401,13 +393,12 @@ fn event_sourcing_framework() {
 
     let counter = Arc::new(EventCounter::default());
 
-    let mut manager = AggregateStore::<Person>::create(
+    let manager = AggregateStore::<Person>::create(
         &storage_uri,
         const { Ident::make("person") },
         false,
     )
     .unwrap();
-    manager.add_post_save_listener(counter.clone());
 
     let alice_name = "alice smith".to_string();
     let alice_handle = MyHandle::from_str("alice").unwrap();
