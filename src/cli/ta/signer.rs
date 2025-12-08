@@ -116,7 +116,7 @@ pub struct TrustAnchorSignerManager {
     store: AggregateStore<TrustAnchorSigner>,
     ta_handle: CaHandle,
     config: Config,
-    signer: Arc<KrillSigner>,
+    signer: KrillSigner,
     actor: Actor,
 }
 
@@ -159,7 +159,7 @@ impl TrustAnchorSignerManager {
                     private_key_pem: info.private_key_pem,
                     ta_mft_nr_override: info.ta_mft_nr_override,
                     timing: self.config.ta_timing,
-                    signer: self.signer.clone(),
+                    signer: &self.signer,
                 },
                 &self.actor,
             );
@@ -182,7 +182,7 @@ impl TrustAnchorSignerManager {
             info.tal_https,
             info.tal_rsync,
             self.config.ta_timing,
-            self.signer.clone(),
+            &self.signer,
             &self.actor,
         );
 
@@ -206,7 +206,7 @@ impl TrustAnchorSignerManager {
             signed_request,
             self.config.ta_timing,
             ta_mft_number_override,
-            self.signer.clone(),
+            &self.signer,
             &self.actor,
         );
         self.store.command(cmd)?;

@@ -3,13 +3,13 @@ use std::sync::Arc;
 use clap::crate_version;
 use hyper::StatusCode;
 use log::{error, info, warn, trace};
-use tokio::runtime;
 use crate::api::admin::ServerInfo;
 use crate::api::ca::Timestamp;
 use crate::commons::KrillResult;
 use crate::commons::error::FatalError;
 use crate::config::Config;
 use crate::constants::KRILL_ENV_HTTP_LOG_INFO;
+use crate::server::runtime;
 use crate::server::manager::KrillManager;
 use super::auth::Authorizer;
 use super::dispatch::{DispatchError, dispatch_request};
@@ -23,13 +23,10 @@ use super::response::{HyperResponse, HttpResponse};
 /// The Krill HTTP server.
 pub struct HttpServer {
     /// The Krill “business logic.”
-    krill: KrillManager,
+    krill: Arc<KrillManager>,
 
     /// The component responsible for API authorization checks
     authorizer: Authorizer,
-
-    /// A copy of the configuration.
-    config: Arc<Config>,
 
     /// Time this server was started
     started: Timestamp,
@@ -38,16 +35,14 @@ pub struct HttpServer {
 impl HttpServer {
     /// Creates a new server from a Krill manager and the configuration.
     pub fn new(
-        krill: KrillManager,
-        config: Arc<Config>,
+        krill: Arc<KrillManager>,
         runtime: &runtime::Handle,
     ) -> KrillResult<Arc<Self>> {
-        let authorizer = Authorizer::new(config.clone())?;
+        let authorizer = Authorizer::new(krill.config())?;
         authorizer.spawn_sweep(runtime);
         Ok(Self {
             krill,
             authorizer,
-            config,
             started: Timestamp::now(),
         }.into())
     }
@@ -61,7 +56,7 @@ impl HttpServer {
             &request
         ).await;
         let request = Request::new(
-            request, self, auth, BodyLimits::from_config(&self.config)
+            request, self, auth, BodyLimits::from_config(self.krill.config())
         );
         let path = match request.path() {
             Ok(path) => path,
@@ -99,14 +94,31 @@ impl HttpServer {
         &self.krill
     }
 
+    /// Synchronously runs a closure using the Krill manager.
+    pub(super) async fn with_krill<F, R>(
+        &self, op: F
+    ) -> Result<R, DispatchError>
+    where
+        F: FnOnce(&KrillManager) -> Result<R, DispatchError> + Send + 'static,
+        R: Send + 'static
+    {
+        // XXX This uses tokio::spawn_blocking without any protection for
+        //     now. There should probably be some specific (configurable?)
+        //     limit here.
+        let krill = self.krill.clone();
+        tokio::task::spawn_blocking(move || op(&krill)).await.map_err(|err| {
+            DispatchError::from(HttpResponse::server_error(err))
+        })?
+    }
+
     /// Returns a reference to the authorizer.
     pub(super) fn authorizer(&self) -> &Authorizer {
         &self.authorizer
     }
 
     /// Returns a reference to the configuration.
-    pub(super) fn config(&self) -> &Config {
-        &self.config
+    pub fn config(&self) -> &Config {
+        self.krill.config()
     }
 
     pub(super) fn server_info(&self) -> ServerInfo {

@@ -40,7 +40,7 @@ async fn cas_import(
     request.check_post()?;
     let (request, _) = request.proceed_permitted(Permission::CaAdmin, None)?;
     let (server, structure) = request.read_json().await?;
-    server.krill().cas_import(structure).await?;
+    server.krill().cas_import(structure)?;
     Ok(HttpResponse::ok())
 }
 

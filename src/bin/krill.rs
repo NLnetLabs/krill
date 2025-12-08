@@ -1,7 +1,6 @@
 //! The Krill daemon binary.
 
 use std::path::PathBuf;
-use std::sync::Arc;
 use clap::Parser;
 use clap::crate_version;
 use log::error;
@@ -19,7 +18,7 @@ async fn main() {
     match Config::create(&args.config, false) {
         Ok(config) => {
             if let Err(e) = start_krill_daemon(
-                Arc::new(config), None
+                config, None
             ).await {
                 error!("Krill failed to start: {e}");
                 ::std::process::exit(1);

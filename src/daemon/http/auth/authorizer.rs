@@ -4,7 +4,6 @@ use std::sync::Arc;
 use log::{info, log_enabled, trace};
 use rpki::ca::idexchange::MyHandle;
 use serde::Serialize;
-use tokio::runtime;
 use crate::api::admin::Token;
 use crate::commons::KrillResult;
 use crate::commons::actor::Actor;
@@ -12,6 +11,7 @@ use crate::commons::error::ApiAuthError;
 use crate::config::{AuthType, Config};
 use crate::daemon::http::request::HyperRequest;
 use crate::daemon::http::response::HttpResponse;
+use crate::server::runtime;
 use super::{Permission, Role};
 use super::providers::admin_token;
 #[cfg(feature = "multi-user")]
@@ -37,6 +37,7 @@ use super::providers::{config_file, openid_connect};
 ///
 /// This type is a wrapper around the available backend specific auth
 /// providers that can be found in the [super::providers] module.
+#[allow(clippy::large_enum_variant)]
 enum AuthProvider {
     Token(admin_token::AuthProvider),
 
@@ -196,7 +197,7 @@ impl Authorizer {
     /// The authorizer will be created according to information provided via
     /// `config`.
     pub fn new(
-        config: Arc<Config>,
+        config: &Config,
     ) -> KrillResult<Self> {
         let (primary_provider, legacy_provider) = match config.auth_type {
             AuthType::AdminToken => {
@@ -205,14 +206,14 @@ impl Authorizer {
             #[cfg(feature = "multi-user")]
             AuthType::ConfigFile => {
                 (
-                    config_file::AuthProvider::new(&config)?.into(),
+                    config_file::AuthProvider::new(config)?.into(),
                     Some(admin_token::AuthProvider::new(config))
                 )
             }
             #[cfg(feature = "multi-user")]
             AuthType::OpenIDConnect => {
                 (
-                    openid_connect::AuthProvider::new(config.clone())?.into(),
+                    openid_connect::AuthProvider::new(config)?.into(),
                     Some(admin_token::AuthProvider::new(config))
                 )
             }

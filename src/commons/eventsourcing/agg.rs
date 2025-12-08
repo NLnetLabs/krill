@@ -35,12 +35,14 @@ use super::store::{AggregateStoreError, Storable};
 //      store.
 pub trait Aggregate: Storable + 'static {
     /// The type representing the initial command.
-    type InitCommand: InitCommand<
+    type InitCommand<'a>: InitCommand<
         StorableDetails = Self::StorableCommandDetails,
-    >;
+    > where Self: 'a;
 
     /// The type representing consecutive commands.
-    type Command: Command<StorableDetails = Self::StorableCommandDetails>;
+    type Command<'a>: Command<
+        StorableDetails = Self::StorableCommandDetails
+    > where Self: 'a;
 
     /// The type representing the details of a command to be stored.
     type StorableCommandDetails: WithStorableDetails;
@@ -53,6 +55,9 @@ pub trait Aggregate: Storable + 'static {
 
     /// The type returned when processing a command fails.
     type Error: std::error::Error + Send + Sync + From<AggregateStoreError>;
+
+    /// The type for passing context into processing.
+    type Context;
 
     /// Creates a new instance.
     ///
@@ -75,8 +80,9 @@ pub trait Aggregate: Storable + 'static {
     /// This can fail. The init event resulting from successfull processing
     /// is not applied here, but returned so that we can re-build state from
     /// history.
-    fn process_init_command(
-        command: Self::InitCommand,
+    fn process_init_command<'a>(
+        command: Self::InitCommand<'a>,
+        context: &Self::Context,
     ) -> Result<Self::InitEvent, Self::Error>;
 
     /// Processes a command.
@@ -88,9 +94,10 @@ pub trait Aggregate: Storable + 'static {
     /// The events are not applied here, but need to be applied using
     /// [`apply_command`][Self::apply_command] so that we can re-build
     /// state from history.
-    fn process_command(
+    fn process_command<'a>(
         &self,
-        command: Self::Command,
+        command: Self::Command<'a>,
+        context: &Self::Context,
     ) -> Result<Vec<Self::Event>, Self::Error>;
 
     /// Returns the current version of the aggregate.
@@ -123,6 +130,36 @@ pub trait Aggregate: Storable + 'static {
                 self.apply(event);
             }
         }
+    }
+
+    /// Process events before they are saved.
+    ///
+    /// This method is called on the updated aggregate, i.e., the events
+    /// given by `events` have already been applied to it.
+    ///
+    /// The method is allowed to return an error, in which case all the
+    /// changes made by `events` are rolled back to the previous version of
+    /// the aggregate.
+    ///
+    /// The default implementation of this method does nothing and returns
+    /// `Ok(())`.
+    fn pre_save_events(
+        &self, events: &[Self::Event], context: &Self::Context
+    ) -> Result<(), Self::Error> {
+        let _ = (events, context);
+        Ok(())
+    }
+
+    /// Process events after they have been saved.
+    ///
+    /// This method is called on the updated aggregate, i.e., the events
+    /// given by `events` have already been applied to it.
+    ///
+    /// The default implementation does nothing.
+    fn post_save_events(
+        &self, events: &[Self::Event], context: &Self::Context
+    ) {
+        let _ = (events, context);
     }
 }
 
@@ -676,26 +713,6 @@ impl<E: Event, I: InitEvent> StoredEffect<E, I> {
             }
         }
     }
-}
-
-
-//------------ PreSaveEventListener ------------------------------------------
-
-/// A listener that receives events before the aggregate is saved.
-///
-/// The listener is allowed to return an error in case of issues, which will
-/// will result in rolling back the intended change to an aggregate.
-pub trait PreSaveEventListener<A: Aggregate>: Send + Sync + 'static {
-    fn listen(&self, agg: &A, events: &[A::Event]) -> Result<(), A::Error>;
-}
-
-//------------ PostSaveEventListener -----------------------------------------
-
-/// A listener that receives events after the aggregate is saved.
-///
-/// The listener is not allowed to fail.
-pub trait PostSaveEventListener<A: Aggregate>: Send + Sync + 'static {
-    fn listen(&self, agg: &A, events: &[A::Event]);
 }
 
 

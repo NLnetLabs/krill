@@ -29,6 +29,7 @@ use crate::constants::{
     ACTOR_DEF_KRILL, PUBSERVER_DFLT, PUBSERVER_NS, TA_NAME
 };
 use crate::config::Config;
+use crate::server::manager::KrillContext;
 use super::publishers::Publisher;
 
 
@@ -96,7 +97,7 @@ impl RepositoryAccessProxy {
     pub fn init(
         &self,
         uris: PublicationServerUris,
-        signer: Arc<KrillSigner>,
+        signer: &KrillSigner,
     ) -> KrillResult<()> {
         if self.is_initialized()? {
             return Err(Error::RepositoryServerAlreadyInitialized)
@@ -109,7 +110,7 @@ impl RepositoryAccessProxy {
             RepositoryAccessInitCommandDetails {
                 rrdp_base_uri: uris.rrdp_base_uri,
                 rsync_jail: uris.rsync_jail,
-                signer,
+                id_cert_info: signer.create_self_signed_id_cert()?.into(),
             },
             &actor,
         );
@@ -238,12 +239,12 @@ impl RepositoryAccessProxy {
     pub fn create_response(
         &self,
         message: publication::Message,
-        signer: &KrillSigner,
+        krill: &KrillContext,
     ) -> KrillResult<PublicationCms> {
         let key_id = self.read()?.key_id();
-        signer
-            .create_rfc8181_cms(message, &key_id)
-            .map_err(Error::signer)
+        krill.signer().create_rfc8181_cms(
+            message, &key_id
+        ).map_err(Error::signer)
     }
 }
 
@@ -288,13 +289,15 @@ impl RepositoryAccess {
 
 /// # Event Sourcing support
 impl Aggregate for RepositoryAccess {
-    type Command = RepositoryAccessCommand;
+    type Command<'a> = RepositoryAccessCommand;
     type StorableCommandDetails = StorableRepositoryCommand;
     type Event = RepositoryAccessEvent;
 
-    type InitCommand = RepositoryAccessInitCommand;
+    type InitCommand<'a> = RepositoryAccessInitCommand;
     type InitEvent = RepositoryAccessInitEvent;
     type Error = Error;
+
+    type Context = ();
 
     fn init(handle: &MyHandle, event: Self::InitEvent) -> Self {
         RepositoryAccess {
@@ -307,15 +310,14 @@ impl Aggregate for RepositoryAccess {
         }
     }
 
-    fn process_init_command(
-        command: Self::InitCommand,
+    fn process_init_command<'a>(
+        command: Self::InitCommand<'a>,
+        _context: &Self::Context,
     ) -> Result<Self::InitEvent, Self::Error> {
         let details = command.into_details();
 
-        let id_cert_info = details.signer.create_self_signed_id_cert()?.into();
-
         Ok(RepositoryAccessInitEvent {
-            id_cert: id_cert_info,
+            id_cert: details.id_cert_info,
             rrdp_base_uri: details.rrdp_base_uri,
             rsync_jail: details.rsync_jail,
         })
@@ -340,9 +342,10 @@ impl Aggregate for RepositoryAccess {
         }
     }
 
-    fn process_command(
+    fn process_command<'a>(
         &self,
-        command: Self::Command,
+        command: Self::Command<'a>,
+        _context: &Self::Context,
     ) -> Result<Vec<Self::Event>, Self::Error> {
         info!(
             "Processing command for publisher '{}', version: {}: {}",
@@ -492,8 +495,8 @@ pub struct RepositoryAccessInitCommandDetails {
     /// The base URI of the rsync server used by the repository.
     pub rsync_jail: uri::Rsync,
 
-    /// A Krill signer to use for signing.
-    pub signer: Arc<KrillSigner>,
+    /// The ID certfificate of the repository.
+    pub id_cert_info: IdCertInfo,
 }
 
 impl InitCommandDetails for RepositoryAccessInitCommandDetails {
