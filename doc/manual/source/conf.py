@@ -238,9 +238,9 @@ man_pages = [
      [author], 1),
     ('man/krillc', 'krillc', 'Krill CLI',
      [author], 1),
-    ('upgrade', 'krillup', 'Krill Upgrade',
+    ('man/krillup', 'krillup', 'Krill Upgrade',
      [author], 1),
-    ('trust-anchor', 'krillta', 'Krill Trust Anchor',
+    ('man/krillta', 'krillta', 'Krill Trust Anchor',
      [author], 1),
     ('config', 'krill.conf', 'Krill Configuration',
      [author], 5)

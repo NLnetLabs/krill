@@ -36,17 +36,16 @@ The available global options are:
 Subcommands
 -----------
 
-
-
 .. subcmd:: config
 
-    Creates a configuration file for Krill and prints it to stdout
+Creates a configuration file for Krill and prints it to stdout
     
     .. subcmd:: user
     
-        Generate a user authentication configuration file fragment
+    Generate a user authentication configuration file fragment
     
-        **OPTIONS**
+    
+    *OPTIONS*
     
         .. option:: --id=<ID>
 
@@ -58,21 +57,22 @@ Subcommands
 
 .. subcmd:: health
 
-    Perform an authenticated health check
+Perform an authenticated health check
 
 .. subcmd:: info
 
-    Show server info
+Show server info
 
 .. subcmd:: list
 
-    List the current CAs
+List the current CAs
 
 .. subcmd:: show
 
-    Show details of a CA
+Show details of a CA
 
-    **OPTIONS**
+
+*OPTIONS*
 
     .. option:: -c <CA>, --ca=<CA>
 
@@ -80,13 +80,14 @@ Subcommands
 
 .. subcmd:: history
 
-    Show the history of a CA
+Show the history of a CA
     
     .. subcmd:: commands
     
-        Show the commands sent to a CA
+    Show the commands sent to a CA
     
-        **OPTIONS**
+    
+    *OPTIONS*
     
         .. option:: -c <CA>, --ca=<CA>
 
@@ -110,9 +111,10 @@ Subcommands
     
     .. subcmd:: details
     
-        Show details for a command in the history of a CA
+    Show details for a command in the history of a CA
     
-        **OPTIONS**
+    
+    *OPTIONS*
     
         .. option:: -c <CA>, --ca=<CA>
 
@@ -124,9 +126,10 @@ Subcommands
 
 .. subcmd:: add
 
-    Add a new CA
+Add a new CA
 
-    **OPTIONS**
+
+*OPTIONS*
 
     .. option:: -c <CA>, --ca=<CA>
 
@@ -134,9 +137,10 @@ Subcommands
 
 .. subcmd:: delete
 
-    Delete a CA and let it withdraw its objects and request revocation. WARNING: Irreversible!
+Delete a CA and let it withdraw its objects and request revocation. WARNING: Irreversible!
 
-    **OPTIONS**
+
+*OPTIONS*
 
     .. option:: -c <CA>, --ca=<CA>
 
@@ -144,9 +148,10 @@ Subcommands
 
 .. subcmd:: issues
 
-    Show issues
+Show issues
 
-    **OPTIONS**
+
+*OPTIONS*
 
     .. option:: -c <CA>, --ca=<CA>
 
@@ -154,13 +159,14 @@ Subcommands
 
 .. subcmd:: children
 
-    Manage children of a CA
+Manage children of a CA
     
     .. subcmd:: add
     
-        Add a child to a CA
+    Add a child to a CA
     
-        **OPTIONS**
+    
+    *OPTIONS*
     
         .. option:: -c <CA>, --ca=<CA>
 
@@ -188,9 +194,10 @@ Subcommands
     
     .. subcmd:: update
     
-        Update an existing child of a CA
+    Update an existing child of a CA
     
-        **OPTIONS**
+    
+    *OPTIONS*
     
         .. option:: -c <CA>, --ca=<CA>
 
@@ -218,9 +225,10 @@ Subcommands
     
     .. subcmd:: info
     
-        Show info for a child
+    Show info for a child
     
-        **OPTIONS**
+    
+    *OPTIONS*
     
         .. option:: -c <CA>, --ca=<CA>
 
@@ -232,9 +240,10 @@ Subcommands
     
     .. subcmd:: remove
     
-        Remove an existing child from a CA
+    Remove an existing child from a CA
     
-        **OPTIONS**
+    
+    *OPTIONS*
     
         .. option:: -c <CA>, --ca=<CA>
 
@@ -246,9 +255,10 @@ Subcommands
     
     .. subcmd:: response
     
-        Show the RFC 8183 Parent Response XML
+    Show the RFC 8183 Parent Response XML
     
-        **OPTIONS**
+    
+    *OPTIONS*
     
         .. option:: -c <CA>, --ca=<CA>
 
@@ -260,9 +270,10 @@ Subcommands
     
     .. subcmd:: connections
     
-        Show connections stats for children of a CA
+    Show connections stats for children of a CA
     
-        **OPTIONS**
+    
+    *OPTIONS*
     
         .. option:: -c <CA>, --ca=<CA>
 
@@ -270,9 +281,10 @@ Subcommands
     
     .. subcmd:: suspend
     
-        Suspend a child CA: un-publish certificate(s) issued to child
+    Suspend a child CA: un-publish certificate(s) issued to child
     
-        **OPTIONS**
+    
+    *OPTIONS*
     
         .. option:: -c <CA>, --ca=<CA>
 
@@ -284,9 +296,10 @@ Subcommands
     
     .. subcmd:: unsuspend
     
-        Unsuspend a child CA: publish certificate(s) issued to child
+    Unsuspend a child CA: publish certificate(s) issued to child
     
-        **OPTIONS**
+    
+    *OPTIONS*
     
         .. option:: -c <CA>, --ca=<CA>
 
@@ -298,13 +311,14 @@ Subcommands
 
 .. subcmd:: parents
 
-    Manage parents for a CA
+Manage parents for a CA
     
     .. subcmd:: request
     
-        Show RFC 8183 Child Request XML
+    Show RFC 8183 Child Request XML
     
-        **OPTIONS**
+    
+    *OPTIONS*
     
         .. option:: -c <CA>, --ca=<CA>
 
@@ -312,9 +326,10 @@ Subcommands
     
     .. subcmd:: add
     
-        Add a parent to, or update a parent of a CA
+    Add a parent to, or update a parent of a CA
     
-        **OPTIONS**
+    
+    *OPTIONS*
     
         .. option:: -c <CA>, --ca=<CA>
 
@@ -330,9 +345,10 @@ Subcommands
     
     .. subcmd:: contact
     
-        Show contact information for a parent of a CA
+    Show contact information for a parent of a CA
     
-        **OPTIONS**
+    
+    *OPTIONS*
     
         .. option:: -c <CA>, --ca=<CA>
 
@@ -344,9 +360,10 @@ Subcommands
     
     .. subcmd:: statuses
     
-        Show overview of all parent statuses of a CA
+    Show overview of all parent statuses of a CA
     
-        **OPTIONS**
+    
+    *OPTIONS*
     
         .. option:: -c <CA>, --ca=<CA>
 
@@ -354,9 +371,10 @@ Subcommands
     
     .. subcmd:: remove
     
-        Remove an existing parent from a CA
+    Remove an existing parent from a CA
     
-        **OPTIONS**
+    
+    *OPTIONS*
     
         .. option:: -c <CA>, --ca=<CA>
 
@@ -368,13 +386,14 @@ Subcommands
 
 .. subcmd:: keyroll
 
-    Perform a manual key rollover for a CA
+Perform a manual key rollover for a CA
     
     .. subcmd:: init
     
-        Initialize roll for all keys held by a CA
+    Initialize roll for all keys held by a CA
     
-        **OPTIONS**
+    
+    *OPTIONS*
     
         .. option:: -c <CA>, --ca=<CA>
 
@@ -382,9 +401,10 @@ Subcommands
     
     .. subcmd:: activate
     
-        Finish roll for all keys held by a CA
+    Finish roll for all keys held by a CA
     
-        **OPTIONS**
+    
+    *OPTIONS*
     
         .. option:: -c <CA>, --ca=<CA>
 
@@ -392,13 +412,14 @@ Subcommands
 
 .. subcmd:: repo
 
-    Manage the repository of a CA
+Manage the repository of a CA
     
     .. subcmd:: request
     
-        Show RFC 8183 Publisher Request XML
+    Show RFC 8183 Publisher Request XML
     
-        **OPTIONS**
+    
+    *OPTIONS*
     
         .. option:: -c <CA>, --ca=<CA>
 
@@ -406,9 +427,10 @@ Subcommands
     
     .. subcmd:: show
     
-        Show current repo configuration
+    Show current repo configuration
     
-        **OPTIONS**
+    
+    *OPTIONS*
     
         .. option:: -c <CA>, --ca=<CA>
 
@@ -416,9 +438,10 @@ Subcommands
     
     .. subcmd:: status
     
-        Show current repo status
+    Show current repo status
     
-        **OPTIONS**
+    
+    *OPTIONS*
     
         .. option:: -c <CA>, --ca=<CA>
 
@@ -426,9 +449,10 @@ Subcommands
     
     .. subcmd:: configure
     
-        Configure which repository a CA uses
+    Configure which repository a CA uses
     
-        **OPTIONS**
+    
+    *OPTIONS*
     
         .. option:: -c <CA>, --ca=<CA>
 
@@ -440,13 +464,14 @@ Subcommands
 
 .. subcmd:: roas
 
-    Manage the ROAs of a CA
+Manage the ROAs of a CA
     
     .. subcmd:: list
     
-        List current ROAs
+    List current ROAs
     
-        **OPTIONS**
+    
+    *OPTIONS*
     
         .. option:: -c <CA>, --ca=<CA>
 
@@ -454,9 +479,10 @@ Subcommands
     
     .. subcmd:: update
     
-        Add and remove ROAs
+    Add and remove ROAs
     
-        **OPTIONS**
+    
+    *OPTIONS*
     
         .. option:: -c <CA>, --ca=<CA>
 
@@ -484,13 +510,14 @@ Subcommands
     
     .. subcmd:: bgp
     
-        Show current authorizations in relation to known announcements
+    Show current authorizations in relation to known announcements
         
         .. subcmd:: analyze
         
-            Show full report of ROAs vs known BGP announcements
+        Show full report of ROAs vs known BGP announcements
         
-            **OPTIONS**
+        
+        *OPTIONS*
         
             .. option:: -c <CA>, --ca=<CA>
 
@@ -498,9 +525,10 @@ Subcommands
         
         .. subcmd:: suggest
         
-            Show ROA suggestions based on known BGP announcements
+        Show ROA suggestions based on known BGP announcements
         
-            **OPTIONS**
+        
+        *OPTIONS*
         
             .. option:: -c <CA>, --ca=<CA>
 
@@ -516,13 +544,14 @@ Subcommands
 
 .. subcmd:: bgpsec
 
-    Manage the BGPsec router keys of a CA
+Manage the BGPsec router keys of a CA
     
     .. subcmd:: list
     
-        Show current BGPsec router keys
+    Show current BGPsec router keys
     
-        **OPTIONS**
+    
+    *OPTIONS*
     
         .. option:: -c <CA>, --ca=<CA>
 
@@ -530,9 +559,10 @@ Subcommands
     
     .. subcmd:: add
     
-        Add a BGPsec router key
+    Add a BGPsec router key
     
-        **OPTIONS**
+    
+    *OPTIONS*
     
         .. option:: -c <CA>, --ca=<CA>
 
@@ -548,9 +578,10 @@ Subcommands
     
     .. subcmd:: remove
     
-        Remove a BGPsec router key
+    Remove a BGPsec router key
     
-        **OPTIONS**
+    
+    *OPTIONS*
     
         .. option:: -c <CA>, --ca=<CA>
 
@@ -566,13 +597,14 @@ Subcommands
 
 .. subcmd:: aspas
 
-    Manage the ASPAs of a CA
+Manage the ASPAs of a CA
     
     .. subcmd:: list
     
-        Show current ASPAs
+    Show current ASPAs
     
-        **OPTIONS**
+    
+    *OPTIONS*
     
         .. option:: -c <CA>, --ca=<CA>
 
@@ -580,9 +612,10 @@ Subcommands
     
     .. subcmd:: add
     
-        Add or replace an ASPA
+    Add or replace an ASPA
     
-        **OPTIONS**
+    
+    *OPTIONS*
     
         .. option:: -c <CA>, --ca=<CA>
 
@@ -594,9 +627,10 @@ Subcommands
     
     .. subcmd:: remove
     
-        Remove the ASPA for a customer ASN
+    Remove the ASPA for a customer ASN
     
-        **OPTIONS**
+    
+    *OPTIONS*
     
         .. option:: -c <CA>, --ca=<CA>
 
@@ -608,9 +642,10 @@ Subcommands
     
     .. subcmd:: update
     
-        Update an existing ASPA
+    Update an existing ASPA
     
-        **OPTIONS**
+    
+    *OPTIONS*
     
         .. option:: -c <CA>, --ca=<CA>
 
@@ -630,21 +665,22 @@ Subcommands
 
 .. subcmd:: pubserver
 
-    Manage the Publication Server
+Manage the Publication Server
     
     .. subcmd:: publishers
     
-        Manage the publishers of the publication server
+    Manage the publishers of the publication server
         
         .. subcmd:: list
         
-            List all publishers
+        List all publishers
         
         .. subcmd:: stale
         
-            List all publishers which have not published in a while
+        List all publishers which have not published in a while
         
-            **OPTIONS**
+        
+        *OPTIONS*
         
             .. option:: --seconds=<SECONDS>
 
@@ -652,9 +688,10 @@ Subcommands
         
         .. subcmd:: add
         
-            Add a publisher
+        Add a publisher
         
-            **OPTIONS**
+        
+        *OPTIONS*
         
             .. option:: --request=<REQUEST>
 
@@ -666,9 +703,10 @@ Subcommands
         
         .. subcmd:: response
         
-            Show RFC 8183 Repository Response XML
+        Show RFC 8183 Repository Response XML
         
-            **OPTIONS**
+        
+        *OPTIONS*
         
             .. option:: -p <PUBLISHER>, --publisher=<PUBLISHER>
 
@@ -676,9 +714,10 @@ Subcommands
         
         .. subcmd:: show
         
-            Show details for a publisher
+        Show details for a publisher
         
-            **OPTIONS**
+        
+        *OPTIONS*
         
             .. option:: -p <PUBLISHER>, --publisher=<PUBLISHER>
 
@@ -686,9 +725,10 @@ Subcommands
         
         .. subcmd:: remove
         
-            Remove a publisher
+        Remove a publisher
         
-            **OPTIONS**
+        
+        *OPTIONS*
         
             .. option:: -p <PUBLISHER>, --publisher=<PUBLISHER>
 
@@ -696,17 +736,18 @@ Subcommands
     
     .. subcmd:: delete
     
-        Delete specific files from the publication server
+    Delete specific files from the publication server
     
     .. subcmd:: server
     
-        Manage the publication server
+    Manage the publication server
         
         .. subcmd:: init
         
-            Initialize the publication server
+        Initialize the publication server
         
-            **OPTIONS**
+        
+        *OPTIONS*
         
             .. option:: --rrdp=<RRDP>
 
@@ -718,35 +759,35 @@ Subcommands
         
         .. subcmd:: stats
         
-            Show publication server statistics
+        Show publication server statistics
         
         .. subcmd:: session-reset
         
-            Reset the RRDP session
+        Reset the RRDP session
         
         .. subcmd:: clear
         
-            Clear the publication server so it can re-initialized
+        Clear the publication server so it can re-initialized
 
 .. subcmd:: bulk
 
-    Manually trigger refresh/republish/resync for all CAs
+Manually trigger refresh/republish/resync for all CAs
     
     .. subcmd:: refresh
     
-        Force all CAs to ask their parents for updated certificates
+    Force all CAs to ask their parents for updated certificates
     
     .. subcmd:: publish
     
-        Force all CAs to create new objects if needed (in which case they will also sync)
+    Force all CAs to create new objects if needed (in which case they will also sync)
     
     .. subcmd:: sync
     
-        Force all CAs to sync with their repo server
+    Force all CAs to sync with their repo server
 
 
 See also
 --------
 
-**krill**\ (1), **krill.conf**\ (5), **krillc**\ (1), **krillta**\ (1), **krillup**\ (1)
+**krill**\ (1), **krill.conf**\ (5), **krillta**\ (1), **krillup**\ (1)
 

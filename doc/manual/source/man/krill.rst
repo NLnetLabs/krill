@@ -41,5 +41,5 @@ The available options are:
 See also
 --------
 
-**krill**\ (1), **krill.conf**\ (5), **krillc**\ (1), **krillta**\ (1), **krillup**\ (1)
+**krill.conf**\ (5), **krillc**\ (1), **krillta**\ (1), **krillup**\ (1)
 
