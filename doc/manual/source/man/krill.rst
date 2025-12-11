@@ -6,9 +6,10 @@ Synopsis
 
 .. code-block:: bash
 
-    -c, --config <CONFIG>  Override the path to the config file [default: /etc/krill.conf]
-    -h, --help             Print help
-    -V, --version          Print version
+:program:`krill` [``options``]
+
+Description
+-----------
 
 Krill is a free, open source RPKI Certificate Authority that lets you
 run delegated RPKI under one or multiple Regional Internet Registries
@@ -16,19 +17,26 @@ run delegated RPKI under one or multiple Regional Internet Registries
 Route Origin Authorizations (ROAs) on your own servers or with a third
 party.
 
-This manual page documents the krill daemon.
+Options
+-------
 
-For more information please consult the online documentation at:
-https://krill.docs.nlnetlabs.nl/en/stable/
+The available options are:
 
-Krill is normally started as systemd service. The status can be shown with:
+.. option:: -c path, --config=path
 
-.. code-block:: bash
+        Provides the path to a file containing basic configuration. If this
+        option is not given, Krill will try to use :file:`/etc/krill.conf`.
+        See **krill.conf**\ (5) for more about the format of the configuration
+        file.
 
-    systemctl status krill
+.. option:: -h, --help
 
-The default config file lives in `/etc/krill.conf`. A config file needs at
-least a `storage_uri` and `admin_token`. See **krill.conf**\ (5) for more.
+        Print some help information.
+
+.. option:: -V, --version
+
+        Print version information.
+
 
 See also
 --------

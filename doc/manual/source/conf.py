@@ -236,7 +236,7 @@ man_pages = [
      [author], 1),
     ('man/krill', 'krill', 'Resource Public Key Infrastructure (RPKI) daemon',
      [author], 1),
-    ('cli', 'krillc', 'Krill CLI',
+    ('man/krillc', 'krillc', 'Krill CLI',
      [author], 1),
     ('upgrade', 'krillup', 'Krill Upgrade',
      [author], 1),
