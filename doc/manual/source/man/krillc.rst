@@ -74,7 +74,7 @@ Show details of a CA
 
 *OPTIONS*
 
-    .. option:: -c <CA>, --ca=<CA>
+    .. option:: -c <CA>, --ca=<CA> [env: KRILL_CLI_MY_CA]
 
     Name of the CA to control
 
@@ -89,7 +89,7 @@ Show the history of a CA
     
     *OPTIONS*
     
-        .. option:: -c <CA>, --ca=<CA>
+        .. option:: -c <CA>, --ca=<CA> [env: KRILL_CLI_MY_CA]
 
         Name of the CA to control
     
@@ -116,7 +116,7 @@ Show the history of a CA
     
     *OPTIONS*
     
-        .. option:: -c <CA>, --ca=<CA>
+        .. option:: -c <CA>, --ca=<CA> [env: KRILL_CLI_MY_CA]
 
         Name of the CA to control
     
@@ -131,7 +131,7 @@ Add a new CA
 
 *OPTIONS*
 
-    .. option:: -c <CA>, --ca=<CA>
+    .. option:: -c <CA>, --ca=<CA> [env: KRILL_CLI_MY_CA]
 
     Name of the CA to control
 
@@ -142,7 +142,7 @@ Delete a CA and let it withdraw its objects and request revocation. WARNING: Irr
 
 *OPTIONS*
 
-    .. option:: -c <CA>, --ca=<CA>
+    .. option:: -c <CA>, --ca=<CA> [env: KRILL_CLI_MY_CA]
 
     Name of the CA to control
 
@@ -153,7 +153,7 @@ Show issues
 
 *OPTIONS*
 
-    .. option:: -c <CA>, --ca=<CA>
+    .. option:: -c <CA>, --ca=<CA> [env: KRILL_CLI_MY_CA]
 
     Name of the CA to check for issues
 
@@ -168,7 +168,7 @@ Manage children of a CA
     
     *OPTIONS*
     
-        .. option:: -c <CA>, --ca=<CA>
+        .. option:: -c <CA>, --ca=<CA> [env: KRILL_CLI_MY_CA]
 
         Name of the CA to control
     
@@ -199,7 +199,7 @@ Manage children of a CA
     
     *OPTIONS*
     
-        .. option:: -c <CA>, --ca=<CA>
+        .. option:: -c <CA>, --ca=<CA> [env: KRILL_CLI_MY_CA]
 
         Name of the CA to control
     
@@ -230,7 +230,7 @@ Manage children of a CA
     
     *OPTIONS*
     
-        .. option:: -c <CA>, --ca=<CA>
+        .. option:: -c <CA>, --ca=<CA> [env: KRILL_CLI_MY_CA]
 
         Name of the CA to control
     
@@ -245,7 +245,7 @@ Manage children of a CA
     
     *OPTIONS*
     
-        .. option:: -c <CA>, --ca=<CA>
+        .. option:: -c <CA>, --ca=<CA> [env: KRILL_CLI_MY_CA]
 
         Name of the CA to control
     
@@ -260,7 +260,7 @@ Manage children of a CA
     
     *OPTIONS*
     
-        .. option:: -c <CA>, --ca=<CA>
+        .. option:: -c <CA>, --ca=<CA> [env: KRILL_CLI_MY_CA]
 
         Name of the CA to control
     
@@ -275,7 +275,7 @@ Manage children of a CA
     
     *OPTIONS*
     
-        .. option:: -c <CA>, --ca=<CA>
+        .. option:: -c <CA>, --ca=<CA> [env: KRILL_CLI_MY_CA]
 
         Name of the CA to control
     
@@ -286,7 +286,7 @@ Manage children of a CA
     
     *OPTIONS*
     
-        .. option:: -c <CA>, --ca=<CA>
+        .. option:: -c <CA>, --ca=<CA> [env: KRILL_CLI_MY_CA]
 
         Name of the CA to control
     
@@ -301,7 +301,7 @@ Manage children of a CA
     
     *OPTIONS*
     
-        .. option:: -c <CA>, --ca=<CA>
+        .. option:: -c <CA>, --ca=<CA> [env: KRILL_CLI_MY_CA]
 
         Name of the CA to control
     
@@ -320,7 +320,7 @@ Manage parents for a CA
     
     *OPTIONS*
     
-        .. option:: -c <CA>, --ca=<CA>
+        .. option:: -c <CA>, --ca=<CA> [env: KRILL_CLI_MY_CA]
 
         Name of the CA to control
     
@@ -331,7 +331,7 @@ Manage parents for a CA
     
     *OPTIONS*
     
-        .. option:: -c <CA>, --ca=<CA>
+        .. option:: -c <CA>, --ca=<CA> [env: KRILL_CLI_MY_CA]
 
         Name of the CA to control
     
@@ -350,7 +350,7 @@ Manage parents for a CA
     
     *OPTIONS*
     
-        .. option:: -c <CA>, --ca=<CA>
+        .. option:: -c <CA>, --ca=<CA> [env: KRILL_CLI_MY_CA]
 
         Name of the CA to control
     
@@ -365,7 +365,7 @@ Manage parents for a CA
     
     *OPTIONS*
     
-        .. option:: -c <CA>, --ca=<CA>
+        .. option:: -c <CA>, --ca=<CA> [env: KRILL_CLI_MY_CA]
 
         Name of the CA to control
     
@@ -376,7 +376,7 @@ Manage parents for a CA
     
     *OPTIONS*
     
-        .. option:: -c <CA>, --ca=<CA>
+        .. option:: -c <CA>, --ca=<CA> [env: KRILL_CLI_MY_CA]
 
         Name of the CA to control
     
@@ -395,7 +395,7 @@ Perform a manual key rollover for a CA
     
     *OPTIONS*
     
-        .. option:: -c <CA>, --ca=<CA>
+        .. option:: -c <CA>, --ca=<CA> [env: KRILL_CLI_MY_CA]
 
         Name of the CA to control
     
@@ -406,7 +406,7 @@ Perform a manual key rollover for a CA
     
     *OPTIONS*
     
-        .. option:: -c <CA>, --ca=<CA>
+        .. option:: -c <CA>, --ca=<CA> [env: KRILL_CLI_MY_CA]
 
         Name of the CA to control
 
@@ -421,7 +421,7 @@ Manage the repository of a CA
     
     *OPTIONS*
     
-        .. option:: -c <CA>, --ca=<CA>
+        .. option:: -c <CA>, --ca=<CA> [env: KRILL_CLI_MY_CA]
 
         Name of the CA to control
     
@@ -432,7 +432,7 @@ Manage the repository of a CA
     
     *OPTIONS*
     
-        .. option:: -c <CA>, --ca=<CA>
+        .. option:: -c <CA>, --ca=<CA> [env: KRILL_CLI_MY_CA]
 
         Name of the CA to control
     
@@ -443,7 +443,7 @@ Manage the repository of a CA
     
     *OPTIONS*
     
-        .. option:: -c <CA>, --ca=<CA>
+        .. option:: -c <CA>, --ca=<CA> [env: KRILL_CLI_MY_CA]
 
         Name of the CA to control
     
@@ -454,7 +454,7 @@ Manage the repository of a CA
     
     *OPTIONS*
     
-        .. option:: -c <CA>, --ca=<CA>
+        .. option:: -c <CA>, --ca=<CA> [env: KRILL_CLI_MY_CA]
 
         Name of the CA to control
     
@@ -473,7 +473,7 @@ Manage the ROAs of a CA
     
     *OPTIONS*
     
-        .. option:: -c <CA>, --ca=<CA>
+        .. option:: -c <CA>, --ca=<CA> [env: KRILL_CLI_MY_CA]
 
         Name of the CA to control
     
@@ -484,7 +484,7 @@ Manage the ROAs of a CA
     
     *OPTIONS*
     
-        .. option:: -c <CA>, --ca=<CA>
+        .. option:: -c <CA>, --ca=<CA> [env: KRILL_CLI_MY_CA]
 
         Name of the CA to control
     
@@ -519,7 +519,7 @@ Manage the ROAs of a CA
         
         *OPTIONS*
         
-            .. option:: -c <CA>, --ca=<CA>
+            .. option:: -c <CA>, --ca=<CA> [env: KRILL_CLI_MY_CA]
 
             Name of the CA to control
         
@@ -530,7 +530,7 @@ Manage the ROAs of a CA
         
         *OPTIONS*
         
-            .. option:: -c <CA>, --ca=<CA>
+            .. option:: -c <CA>, --ca=<CA> [env: KRILL_CLI_MY_CA]
 
             Name of the CA to control
         
@@ -553,7 +553,7 @@ Manage the BGPsec router keys of a CA
     
     *OPTIONS*
     
-        .. option:: -c <CA>, --ca=<CA>
+        .. option:: -c <CA>, --ca=<CA> [env: KRILL_CLI_MY_CA]
 
         Name of the CA to control
     
@@ -564,7 +564,7 @@ Manage the BGPsec router keys of a CA
     
     *OPTIONS*
     
-        .. option:: -c <CA>, --ca=<CA>
+        .. option:: -c <CA>, --ca=<CA> [env: KRILL_CLI_MY_CA]
 
         Name of the CA to control
     
@@ -583,7 +583,7 @@ Manage the BGPsec router keys of a CA
     
     *OPTIONS*
     
-        .. option:: -c <CA>, --ca=<CA>
+        .. option:: -c <CA>, --ca=<CA> [env: KRILL_CLI_MY_CA]
 
         Name of the CA to control
     
@@ -606,7 +606,7 @@ Manage the ASPAs of a CA
     
     *OPTIONS*
     
-        .. option:: -c <CA>, --ca=<CA>
+        .. option:: -c <CA>, --ca=<CA> [env: KRILL_CLI_MY_CA]
 
         Name of the CA to control
     
@@ -617,7 +617,7 @@ Manage the ASPAs of a CA
     
     *OPTIONS*
     
-        .. option:: -c <CA>, --ca=<CA>
+        .. option:: -c <CA>, --ca=<CA> [env: KRILL_CLI_MY_CA]
 
         Name of the CA to control
     
@@ -632,7 +632,7 @@ Manage the ASPAs of a CA
     
     *OPTIONS*
     
-        .. option:: -c <CA>, --ca=<CA>
+        .. option:: -c <CA>, --ca=<CA> [env: KRILL_CLI_MY_CA]
 
         Name of the CA to control
     
@@ -647,7 +647,7 @@ Manage the ASPAs of a CA
     
     *OPTIONS*
     
-        .. option:: -c <CA>, --ca=<CA>
+        .. option:: -c <CA>, --ca=<CA> [env: KRILL_CLI_MY_CA]
 
         Name of the CA to control
     
@@ -784,7 +784,6 @@ Manually trigger refresh/republish/resync for all CAs
     .. subcmd:: sync
     
     Force all CAs to sync with their repo server
-
 
 See also
 --------

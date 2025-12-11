@@ -138,15 +138,15 @@ Manage the Trust Anchor Proxy
 
 *OPTIONS*
 
-    .. option:: -s <SERVER>, --server=<SERVER>
+    .. option:: -s <SERVER>, --server=<SERVER> [env: KRILL_CLI_SERVER]
 
     The full URI to the Krill server
 
-    .. option:: -t <TOKEN>, --token=<TOKEN>
+    .. option:: -t <TOKEN>, --token=<TOKEN> [env: KRILL_CLI_TOKEN]
 
     The secret token for the Krill server
 
-    .. option:: -f <FORMAT>, --format=<FORMAT>
+    .. option:: -f <FORMAT>, --format=<FORMAT> [env: KRILL_CLI_FORMAT]
 
     Report format
 
@@ -246,10 +246,9 @@ Manage the Trust Anchor Signer
 
     Path to config file
 
-    .. option:: -f <FORMAT>, --format=<FORMAT>
+    .. option:: -f <FORMAT>, --format=<FORMAT> [env: KRILL_CLI_FORMAT]
 
     Report format
-
 
 See also
 --------
