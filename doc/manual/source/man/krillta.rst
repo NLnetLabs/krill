@@ -16,28 +16,10 @@ The krillta tool is used for managing a Krill based RPKI Trust Anchor.
 Subcommands
 -----------
 
+
 .. subcmd:: proxy
 
 Manage the Trust Anchor Proxy
-
-
-*OPTIONS*
-
-    .. option:: -s <SERVER>, --server=<SERVER>
-
-    The full URI to the Krill server
-
-    .. option:: -t <TOKEN>, --token=<TOKEN>
-
-    The secret token for the Krill server
-
-    .. option:: -f <FORMAT>, --format=<FORMAT>
-
-    Report format
-
-    .. option:: --api=<API>
-
-    Only show the API call and exit
     
     .. subcmd:: init
     
@@ -153,20 +135,28 @@ Manage the Trust Anchor Proxy
 
             Name of the child CA
 
-.. subcmd:: signer
-
-Manage the Trust Anchor Signer
-
 
 *OPTIONS*
 
-    .. option:: -c <CONFIG>, --config=<CONFIG>
+    .. option:: -s <SERVER>, --server=<SERVER>
 
-    Path to config file
+    The full URI to the Krill server
+
+    .. option:: -t <TOKEN>, --token=<TOKEN>
+
+    The secret token for the Krill server
 
     .. option:: -f <FORMAT>, --format=<FORMAT>
 
     Report format
+
+    .. option:: --api=<API>
+
+    Only show the API call and exit
+
+.. subcmd:: signer
+
+Manage the Trust Anchor Signer
     
     .. subcmd:: init
     
@@ -248,6 +238,17 @@ Manage the Trust Anchor Signer
     .. subcmd:: exchanges
     
     Show full history of proxy signer exchanges
+
+
+*OPTIONS*
+
+    .. option:: -c <CONFIG>, --config=<CONFIG>
+
+    Path to config file
+
+    .. option:: -f <FORMAT>, --format=<FORMAT>
+
+    Report format
 
 
 See also
