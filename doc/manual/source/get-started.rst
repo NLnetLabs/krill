@@ -33,6 +33,14 @@ running Krill, or set up local port forwarding with SSH, for example:
 Here we will guide you through the set up process using the UI, but we will also
 link to the relevant subcommands of the :ref:`command line interface (CLI)<doc_krill_cli>`
 
+If you did not install Krill as a service, Krill can be can be started by 
+running:
+
+.. code-block:: bash
+
+  krill -c krill.conf
+
+The default config file needs to contain at least an `admin_token`.
 
 Login
 -----
