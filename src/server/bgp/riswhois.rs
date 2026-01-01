@@ -859,7 +859,7 @@ impl<'a, P: RoutePrefix> TreeIter<'a, P> {
             let Some(prefix) = collection.get_data_prefix(node.data) else {
                 break;
             };
-            if prefix.addr_len() >= root_prefix.addr_len() {
+            if prefix.addr_len() >= root_prefix.addr_len() && (root_prefix == prefix || root_prefix.covers(prefix)) {
                 let Some(tree_idx) = tree_idx.into_usize() else {
                     break
                 };
@@ -983,4 +983,3 @@ mod tests {
         }
     }
 }
-
