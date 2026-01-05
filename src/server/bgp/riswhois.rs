@@ -859,7 +859,9 @@ impl<'a, P: RoutePrefix> TreeIter<'a, P> {
             let Some(prefix) = collection.get_data_prefix(node.data) else {
                 break;
             };
-            if prefix.addr_len() >= root_prefix.addr_len() && (root_prefix == prefix || root_prefix.covers(prefix)) {
+            if prefix.addr_len() >= root_prefix.addr_len()
+                && (root_prefix == prefix || root_prefix.covers(prefix)) 
+            {
                 let Some(tree_idx) = tree_idx.into_usize() else {
                     break
                 };
@@ -981,5 +983,51 @@ mod tests {
         for item in v6.windows(2) {
             assert!(item[0] < item[1])
         }
+    }
+
+    #[test]
+    fn ipv6_subprefixes() {
+        fn origin(prefix: &str, origin: u32) -> RouteOrigin<Ipv6Prefix>
+        {
+            RouteOrigin {
+                prefix: Ipv6Prefix::from_str(prefix).unwrap(),
+                origin: AsNumber::from_u32(origin)
+            }
+        }
+
+        fn prefix(prefix: &str) -> Ipv6Prefix 
+        {
+            Ipv6Prefix::from_str(prefix).unwrap()
+        }
+
+        let data = vec![
+            origin("2a0f::/16", 123),
+            origin("2a0f:1cc5:f00::/48", 456),
+        ];
+        let collection = RouteOriginCollection::new(data).unwrap();
+        assert_eq!(
+            0, 
+            collection.eq_or_more_specific(
+                prefix("2a0f:1cc5:2d00::/40")
+            ).count()
+        );
+        assert_eq!(
+            1, 
+            collection.eq_or_more_specific(
+                prefix("2a0f:1cc5:f00::/48")
+            ).count()
+        );
+        assert_eq!(
+            0, 
+            collection.eq_or_more_specific(
+                prefix("2a0f:1cc5:f01::/48")
+            ).count()
+        );
+        assert_eq!(
+            2, 
+            collection.eq_or_more_specific(
+                prefix("2a0f::/16")
+            ).count()
+        );
     }
 }
