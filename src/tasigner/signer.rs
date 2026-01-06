@@ -4,9 +4,9 @@
 //! Designed to work with a single associated proxy which is responsible
 //! for all other functions, like publishing and talking to child CAs.
 //! The proxy makes sign requests for the signer to sign.
-use super::*;
 
-use std::{collections::HashMap, fmt, sync::Arc};
+use std::fmt;
+use std::collections::HashMap;
 
 use chrono::SecondsFormat;
 use log::{log_enabled, trace};
@@ -46,6 +46,7 @@ use crate::api::ta::{
     TrustAnchorSignerResponse,
 };
 use crate::constants::ta_resource_class_name;
+use super::*;
 
 
 //------------ TrustAnchorSigner ---------------------------------------------
@@ -77,13 +78,14 @@ pub struct TrustAnchorSigner {
 }
 
 impl eventsourcing::Aggregate for TrustAnchorSigner {
-    type Command = TrustAnchorSignerCommand;
+    type Command<'a> = TrustAnchorSignerCommand<'a>;
     type StorableCommandDetails = TrustAnchorSignerStorableCommand;
     type Event = TrustAnchorSignerEvent;
 
-    type InitCommand = TrustAnchorSignerInitCommand;
+    type InitCommand<'a> = TrustAnchorSignerInitCommand<'a>;
     type InitEvent = TrustAnchorSignerInitEvent;
     type Error = Error;
+    type Context = ();
 
     fn init(handle: &CaHandle, event: Self::InitEvent) -> Self {
         TrustAnchorSigner {
@@ -99,6 +101,7 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
 
     fn process_init_command(
         command: TrustAnchorSignerInitCommand,
+        _context: &Self::Context,
     ) -> Result<TrustAnchorSignerInitEvent, Error> {
         let cmd = command.into_details();
         let timing = cmd.timing;
@@ -113,13 +116,13 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
             cmd.tal_rsync,
             cmd.private_key_pem,
             timing.certificate_validity_years,
-            &signer,
+            signer,
         )?;
         let objects = TrustAnchorObjects::create(
             &ta_cert_details.cert,
             cmd.ta_mft_nr_override.unwrap_or(1),
             timing.mft_next_update_weeks,
-            &signer,
+            signer,
         )?;
 
         Ok(TrustAnchorSignerInitEvent {
@@ -159,9 +162,10 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
         }
     }
 
-    fn process_command(
+    fn process_command<'a>(
         &self,
-        command: Self::Command,
+        command: Self::Command<'a>,
+        _context: &Self::Context,
     ) -> Result<Vec<Self::Event>, Self::Error> {
         if log_enabled!(log::Level::Trace) {
             trace!(
@@ -182,7 +186,7 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
                 signed_request,
                 ta_timing_config,
                 ta_mft_number_override,
-                &signer,
+                signer,
             ),
             TrustAnchorSignerCommandDetails::TrustAnchorSignerReissueRequest { 
                 repo_info, 
@@ -197,7 +201,7 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
                     tal_https, 
                     tal_rsync, 
                     years, 
-                    &signer
+                    signer
                 );
                 match res {
                     Err(r) => Err(r),
@@ -540,14 +544,14 @@ impl TrustAnchorSigner {
 
 //------------ TrustAnchorSignerInitCommand ----------------------------------
 
-pub type TrustAnchorSignerInitCommand =
-    eventsourcing::SentInitCommand<TrustAnchorSignerInitCommandDetails>;
+pub type TrustAnchorSignerInitCommand<'a> =
+    eventsourcing::SentInitCommand<TrustAnchorSignerInitCommandDetails<'a>>;
 
 
 //------------ TrustAnchorSignerInitCommandDetails ---------------------------
 
 #[derive(Clone, Debug)]
-pub struct TrustAnchorSignerInitCommandDetails {
+pub struct TrustAnchorSignerInitCommandDetails<'a> {
     pub proxy_id: IdCertInfo,
     pub repo_info: RepoInfo,
     pub tal_https: Vec<uri::Https>,
@@ -555,16 +559,16 @@ pub struct TrustAnchorSignerInitCommandDetails {
     pub private_key_pem: Option<String>,
     pub ta_mft_nr_override: Option<u64>,
     pub timing: TaTimingConfig,
-    pub signer: Arc<KrillSigner>,
+    pub signer: &'a KrillSigner,
 }
 
-impl fmt::Display for TrustAnchorSignerInitCommandDetails {
+impl fmt::Display for TrustAnchorSignerInitCommandDetails<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.store().fmt(f)
     }
 }
 
-impl InitCommandDetails for TrustAnchorSignerInitCommandDetails {
+impl InitCommandDetails for TrustAnchorSignerInitCommandDetails<'_> {
     type StorableDetails = TrustAnchorSignerStorableCommand;
 
     fn store(&self) -> Self::StorableDetails {
@@ -575,18 +579,18 @@ impl InitCommandDetails for TrustAnchorSignerInitCommandDetails {
 
 //------------ TrustAnchorSignerCommand --------------------------------------
 
-pub type TrustAnchorSignerCommand =
-    eventsourcing::SentCommand<TrustAnchorSignerCommandDetails>;
+pub type TrustAnchorSignerCommand<'a> =
+    eventsourcing::SentCommand<TrustAnchorSignerCommandDetails<'a>>;
 
-impl TrustAnchorSignerCommand {
+impl<'a> TrustAnchorSignerCommand<'a> {
     pub fn make_process_request_command(
         id: &CaHandle,
         signed_request: TrustAnchorSignedRequest,
         ta_timing_config: TaTimingConfig,
         ta_mft_number_override: Option<u64>,
-        signer: Arc<KrillSigner>,
+        signer: &'a KrillSigner,
         actor: &Actor,
-    ) -> TrustAnchorSignerCommand {
+    ) -> Self {
         TrustAnchorSignerCommand::new(
             id.clone(),
             None,
@@ -606,9 +610,9 @@ impl TrustAnchorSignerCommand {
         tal_https: Vec<uri::Https>,
         tal_rsync: uri::Rsync,
         ta_timing_config: TaTimingConfig,
-        signer: Arc<KrillSigner>,
+        signer: &'a KrillSigner,
         actor: &Actor,
-    ) -> TrustAnchorSignerCommand {
+    ) -> Self {
         TrustAnchorSignerCommand::new(
             id.clone(),
             None,
@@ -628,23 +632,23 @@ impl TrustAnchorSignerCommand {
 //------------ TrustAnchorSignerCommandDetails -------------------------------
 
 #[derive(Clone, Debug)]
-pub enum TrustAnchorSignerCommandDetails {
+pub enum TrustAnchorSignerCommandDetails<'a> {
     TrustAnchorSignerRequest {
         signed_request: TrustAnchorSignedRequest,
         ta_timing_config: TaTimingConfig,
         ta_mft_number_override: Option<u64>,
-        signer: Arc<KrillSigner>,
+        signer: &'a KrillSigner,
     },
     TrustAnchorSignerReissueRequest {
         repo_info: RepoInfo,
         tal_https: Vec<uri::Https>,
         tal_rsync: uri::Rsync,
         timing: TaTimingConfig,
-        signer: Arc<KrillSigner>,
+        signer: &'a KrillSigner,
     },
 }
 
-impl eventsourcing::CommandDetails for TrustAnchorSignerCommandDetails {
+impl eventsourcing::CommandDetails for TrustAnchorSignerCommandDetails<'_> {
     type Event = TrustAnchorSignerEvent;
     type StorableDetails = TrustAnchorSignerStorableCommand;
 
@@ -653,7 +657,7 @@ impl eventsourcing::CommandDetails for TrustAnchorSignerCommandDetails {
     }
 }
 
-impl fmt::Display for TrustAnchorSignerCommandDetails {
+impl fmt::Display for TrustAnchorSignerCommandDetails<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         TrustAnchorSignerStorableCommand::from(self).fmt(f)
     }
@@ -670,7 +674,7 @@ pub enum TrustAnchorSignerStorableCommand {
     TrustAnchorSignerReissueRequest(TrustAnchorReissueRequest),
 }
 
-impl From<&TrustAnchorSignerCommandDetails>
+impl From<&TrustAnchorSignerCommandDetails<'_>>
     for TrustAnchorSignerStorableCommand
 {
     fn from(details: &TrustAnchorSignerCommandDetails) -> Self {

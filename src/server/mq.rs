@@ -12,13 +12,13 @@ use rpki::repository::x509::Time;
 use serde::{Deserialize, Serialize};
 use url::Url;
 use crate::api::ca::Timestamp;
-use crate::commons::eventsourcing;
 use crate::commons::{Error, KrillResult};
 use crate::commons::eventsourcing::Aggregate;
 use crate::commons::queue::{Queue, ScheduleMode};
 use crate::commons::storage::Ident;
 use crate::constants::{TASK_QUEUE_NS, ta_handle};
 use crate::server::ca::{CertAuth, CertAuthEvent};
+use crate::server::manager::KrillContext;
 use crate::server::taproxy::{TrustAnchorProxy, TrustAnchorProxyEvent};
 
 
@@ -582,28 +582,25 @@ impl TaskQueue {
             _ => Ok(()),
         }
     }
-}
 
-/// Implement pre-save listening for CertAuth events.
-impl eventsourcing::PreSaveEventListener<CertAuth> for TaskQueue {
-    fn listen(
+    pub fn cert_auth_pre_save_events(
         &self,
         ca: &CertAuth,
         events: &[CertAuthEvent],
+        _context: &KrillContext,
     ) -> KrillResult<()> {
         for event in events {
             self.schedule_for_ca_event(ca, ca.version(), event)?;
         }
         Ok(())
     }
-}
 
-/// Implement post-save listening for CertAuth events.
-///
-/// Used for best effort signaling to local child CAs that a sync with
-/// their parent is needed.
-impl eventsourcing::PostSaveEventListener<CertAuth> for TaskQueue {
-    fn listen(&self, ca: &CertAuth, events: &[CertAuthEvent]) {
+    pub fn cert_auth_post_save_events(
+        &self,
+        ca: &CertAuth,
+        events: &[CertAuthEvent],
+        _context: &KrillContext,
+    ) {
         for event in events {
             match event {
                 CertAuthEvent::ChildUpdatedResources { child, .. }
@@ -633,11 +630,8 @@ impl eventsourcing::PostSaveEventListener<CertAuth> for TaskQueue {
             }
         }
     }
-}
 
-/// Implement pre-save listening for TrustAnchorProxy events.
-impl eventsourcing::PreSaveEventListener<TrustAnchorProxy> for TaskQueue {
-    fn listen(
+    pub fn ta_proxy_pre_save_events(
         &self,
         proxy: &TrustAnchorProxy,
         events: &[TrustAnchorProxyEvent],
@@ -677,11 +671,8 @@ impl eventsourcing::PreSaveEventListener<TrustAnchorProxy> for TaskQueue {
         }
         Ok(())
     }
-}
 
-/// Implement post-save listening for TrustAnchorProxy events.
-impl eventsourcing::PostSaveEventListener<TrustAnchorProxy> for TaskQueue {
-    fn listen(
+    pub fn ta_proxy_post_save_events(
         &self,
         _proxy: &TrustAnchorProxy,
         events: &[TrustAnchorProxyEvent],

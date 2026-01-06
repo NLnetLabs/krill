@@ -292,15 +292,16 @@ impl Person {
 }
 
 impl Aggregate for Person {
-    type InitCommand = PersonInitCommand;
+    type InitCommand<'a> = PersonInitCommand;
     type InitEvent = PersonInitEvent;
 
-    type Command = PersonCommand;
+    type Command<'a> = PersonCommand;
     type Event = PersonEvent;
 
     type StorableCommandDetails = PersonStorableCommand;
 
     type Error = PersonError;
+    type Context = ();
 
     fn init(id: &MyHandle, event: PersonInitEvent) -> Self {
         Person {
@@ -311,8 +312,9 @@ impl Aggregate for Person {
         }
     }
 
-    fn process_init_command(
-        command: Self::InitCommand,
+    fn process_init_command<'a>(
+        command: Self::InitCommand<'a>,
+        _context: &Self::Context,
     ) -> Result<Self::InitEvent, Self::Error> {
         Ok(PersonInitEvent {
             name: command.into_details().name,
@@ -334,9 +336,10 @@ impl Aggregate for Person {
         }
     }
 
-    fn process_command(
+    fn process_command<'a>(
         &self,
-        command: Self::Command,
+        command: Self::Command<'a>,
+        _context: &Self::Context,
     ) -> Result<Vec<Self::Event>, Self::Error> {
         match command.into_details() {
             PersonCommandDetails::ChangeName(name) => {
@@ -381,12 +384,6 @@ impl EventCounter {
     }
 }
 
-impl<A: Aggregate> PostSaveEventListener<A> for EventCounter {
-    fn listen(&self, _agg: &A, events: &[A::Event]) {
-        self.counter.write().unwrap().total += events.len();
-    }
-}
-
 
 //------------ Test Function -------------------------------------------------
 
@@ -396,13 +393,12 @@ fn event_sourcing_framework() {
 
     let counter = Arc::new(EventCounter::default());
 
-    let mut manager = AggregateStore::<Person>::create(
+    let manager = AggregateStore::<Person>::create(
         &storage_uri,
         const { Ident::make("person") },
         false,
     )
     .unwrap();
-    manager.add_post_save_listener(counter.clone());
 
     let alice_name = "alice smith".to_string();
     let alice_handle = MyHandle::from_str("alice").unwrap();

@@ -1,8 +1,9 @@
 //! Management of objects published by a CA.
 
+#![allow(dead_code)]
+
 use std::collections::HashMap;
 use std::str::FromStr;
-use std::sync::Arc;
 use chrono::Duration;
 use log::debug;
 use rpki::{rrdp, uri};
@@ -25,10 +26,10 @@ use crate::api::roa::RoaInfo;
 use crate::commons::KrillResult;
 use crate::commons::crypto::KrillSigner;
 use crate::commons::error::Error;
-use crate::commons::eventsourcing::PreSaveEventListener;
 use crate::commons::storage::{Ident, KeyValueStore};
 use crate::constants::CA_OBJECTS_NS;
 use crate::config::IssuanceTimingConfig;
+use crate::server::manager::KrillContext;
 use super::aspa::{AspaInfo, AspaObjectsUpdates};
 use super::bgpsec::{BgpSecCertInfo, BgpSecCertificateUpdates};
 use super::certauth::CertAuth;
@@ -63,145 +64,16 @@ use super::roa::RoaUpdates;
 pub struct CaObjectsStore {
     /// The key-value store where objects are stored.
     store: KeyValueStore,
-
-    /// The signer used when generate objects.
-    signer: Arc<KrillSigner>,
-
-    /// Configuration for timing of object creation.
-    issuance_timing: IssuanceTimingConfig,
 }
 
 impl CaObjectsStore {
     /// Creates a new CA objects store using the given configuration.
-    pub fn create(
-        storage_uri: &Url,
-        issuance_timing: IssuanceTimingConfig,
-        signer: Arc<KrillSigner>,
-    ) -> KrillResult<Self> {
-        let store = KeyValueStore::create(storage_uri, CA_OBJECTS_NS)?;
+    pub fn create(storage_uri: &Url) -> KrillResult<Self> {
+        let store = KeyValueStore::create(
+            storage_uri, CA_OBJECTS_NS
+        )?;
         Ok(CaObjectsStore {
             store,
-            signer,
-            issuance_timing,
-        })
-    }
-}
-
-/// React to any events on a CA that cause the set of object to change.
-impl PreSaveEventListener<CertAuth> for CaObjectsStore {
-    fn listen(
-        &self,
-        ca: &CertAuth,
-        events: &[CertAuthEvent],
-    ) -> KrillResult<()> {
-        // Note that the `CertAuth` which is passed in has already been
-        // updated with the state changes contained in the event.
-
-        self.with_ca_objects(ca.handle(), |objects| {
-            let mut force_reissue = false;
-
-            for event in events {
-                match event {
-                    CertAuthEvent::RoasUpdated {
-                        resource_class_name,
-                        updates,
-                    } => {
-                        objects.update_roas(resource_class_name, updates)?;
-                        force_reissue = true;
-                    }
-                    CertAuthEvent::AspaObjectsUpdated {
-                        resource_class_name,
-                        updates,
-                    } => {
-                        objects.update_aspas(resource_class_name, updates)?;
-                        force_reissue = true;
-                    }
-                    CertAuthEvent::BgpSecCertificatesUpdated {
-                        resource_class_name,
-                        updates,
-                    } => {
-                        objects.update_bgpsec_certs(
-                            resource_class_name,
-                            updates,
-                        )?;
-                        force_reissue = true;
-                    }
-                    CertAuthEvent::ChildCertificatesUpdated {
-                        resource_class_name,
-                        updates,
-                    } => {
-                        objects.update_certs(resource_class_name, updates)?;
-                        force_reissue = true;
-                    }
-                    CertAuthEvent::KeyPendingToActive {
-                        resource_class_name,
-                        current_key,
-                    } => {
-                        objects.add_class(
-                            resource_class_name,
-                            current_key,
-                            &self.issuance_timing,
-                            &self.signer,
-                        )?;
-                    }
-                    CertAuthEvent::KeyPendingToNew {
-                        resource_class_name,
-                        new_key,
-                    } => {
-                        objects.keyroll_stage(
-                            resource_class_name,
-                            new_key,
-                            &self.issuance_timing,
-                            &self.signer,
-                        )?;
-                    }
-                    CertAuthEvent::KeyRollActivated {
-                        resource_class_name,
-                        ..
-                    } => {
-                        objects.keyroll_activate(resource_class_name)?;
-                        force_reissue = true;
-                    }
-                    CertAuthEvent::KeyRollFinished {
-                        resource_class_name,
-                    } => {
-                        objects.keyroll_finish(resource_class_name)?;
-                    }
-                    CertAuthEvent::CertificateReceived {
-                        resource_class_name,
-                        rcvd_cert,
-                        ..
-                    } => {
-                        objects.update_received_cert(
-                            resource_class_name,
-                            rcvd_cert,
-                        )?;
-                        // this in itself constitutes no need to force
-                        // re-issuance if the new
-                        // certificate triggered that the set of objects
-                        // changed, e.g. because a ROA
-                        // became overclaiming, then we would see another
-                        // event for that which *will* result in forcing
-                        // re-issuance.
-                    }
-                    CertAuthEvent::ResourceClassRemoved {
-                        resource_class_name,
-                        ..
-                    } => {
-                        objects.remove_class(resource_class_name);
-                        force_reissue = true;
-                    }
-                    CertAuthEvent::RepoUpdated { contact } => {
-                        objects.update_repo(contact);
-                        force_reissue = true;
-                    }
-                    _ => {}
-                }
-            }
-            objects.re_issue(
-                force_reissue, &self.issuance_timing, &self.signer
-            )?;
-            Ok(())
         })
     }
 }
@@ -298,14 +170,131 @@ impl CaObjectsStore {
         &self,
         force: bool,
         ca_handle: &CaHandle,
+        issuance_timing: &IssuanceTimingConfig,
+        signer: &KrillSigner,
     ) -> KrillResult<bool> {
         debug!("Re-issue for CA {ca_handle} using force: {force}");
         self.with_ca_objects(ca_handle, |objects| {
+            objects.re_issue(force, issuance_timing, signer)
+        })
+    }
+
+    pub(super) fn cert_auth_pre_save_events(
+        &self,
+        ca: &CertAuth,
+        events: &[CertAuthEvent],
+        krill: &KrillContext,
+    ) -> KrillResult<()> {
+        // Note that the `CertAuth` which is passed in has already been
+        // updated with the state changes contained in the event.
+
+        self.with_ca_objects(ca.handle(), |objects| {
+            let mut force_reissue = false;
+
+            for event in events {
+                match event {
+                    CertAuthEvent::RoasUpdated {
+                        resource_class_name,
+                        updates,
+                    } => {
+                        objects.update_roas(resource_class_name, updates)?;
+                        force_reissue = true;
+                    }
+                    CertAuthEvent::AspaObjectsUpdated {
+                        resource_class_name,
+                        updates,
+                    } => {
+                        objects.update_aspas(resource_class_name, updates)?;
+                        force_reissue = true;
+                    }
+                    CertAuthEvent::BgpSecCertificatesUpdated {
+                        resource_class_name,
+                        updates,
+                    } => {
+                        objects.update_bgpsec_certs(
+                            resource_class_name,
+                            updates,
+                        )?;
+                        force_reissue = true;
+                    }
+                    CertAuthEvent::ChildCertificatesUpdated {
+                        resource_class_name,
+                        updates,
+                    } => {
+                        objects.update_certs(resource_class_name, updates)?;
+                        force_reissue = true;
+                    }
+                    CertAuthEvent::KeyPendingToActive {
+                        resource_class_name,
+                        current_key,
+                    } => {
+                        objects.add_class(
+                            resource_class_name,
+                            current_key,
+                            &krill.config().issuance_timing,
+                            krill.signer(),
+                        )?;
+                    }
+                    CertAuthEvent::KeyPendingToNew {
+                        resource_class_name,
+                        new_key,
+                    } => {
+                        objects.keyroll_stage(
+                            resource_class_name,
+                            new_key,
+                            &krill.config().issuance_timing,
+                            krill.signer(),
+                        )?;
+                    }
+                    CertAuthEvent::KeyRollActivated {
+                        resource_class_name,
+                        ..
+                    } => {
+                        objects.keyroll_activate(resource_class_name)?;
+                        force_reissue = true;
+                    }
+                    CertAuthEvent::KeyRollFinished {
+                        resource_class_name,
+                    } => {
+                        objects.keyroll_finish(resource_class_name)?;
+                    }
+                    CertAuthEvent::CertificateReceived {
+                        resource_class_name,
+                        rcvd_cert,
+                        ..
+                    } => {
+                        objects.update_received_cert(
+                            resource_class_name,
+                            rcvd_cert,
+                        )?;
+                        // this in itself constitutes no need to force
+                        // re-issuance if the new
+                        // certificate triggered that the set of objects
+                        // changed, e.g. because a ROA
+                        // became overclaiming, then we would see another
+                        // event for that which *will* result in forcing
+                        // re-issuance.
+                    }
+                    CertAuthEvent::ResourceClassRemoved {
+                        resource_class_name,
+                        ..
+                    } => {
+                        objects.remove_class(resource_class_name);
+                        force_reissue = true;
+                    }
+                    CertAuthEvent::RepoUpdated { contact } => {
+                        objects.update_repo(contact);
+                        force_reissue = true;
+                    }
+                    _ => {}
+                }
+            }
             objects.re_issue(
-                force,
-                &self.issuance_timing,
-                &self.signer,
-            )
+                force_reissue,
+                &krill.config().issuance_timing,
+                krill.signer()
+            )?;
+            Ok(())
         })
     }
 }
@@ -573,16 +562,16 @@ impl CaObjects {
     fn re_issue(
         &mut self,
         force: bool,
-        timing: &IssuanceTimingConfig,
+        issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<bool> {
-        let hours = timing.publish_hours_before_next();
+        let hours = issuance_timing.publish_hours_before_next();
         let mut required = false;
 
         for (_, resource_class_objects) in self.classes.iter_mut() {
             if force || resource_class_objects.requires_re_issuance(hours) {
                 required = true;
-                resource_class_objects.reissue(timing, signer)?;
+                resource_class_objects.reissue(issuance_timing, signer)?;
             }
         }
 
@@ -1757,3 +1746,4 @@ impl ManifestBuilder {
         Ok(manifest)
     }
 }
+

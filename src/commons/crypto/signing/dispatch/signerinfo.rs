@@ -325,14 +325,16 @@ pub struct SignerInfo {
 }
 
 impl Aggregate for SignerInfo {
-    type Command = SignerInfoCommand;
+    type Command<'a> = SignerInfoCommand;
     type StorableCommandDetails = SignerInfoCommandDetails;
     type Event = SignerInfoEvent;
 
-    type InitCommand = SignerInfoInitCommand;
+    type InitCommand<'a> = SignerInfoInitCommand;
     type InitEvent = SignerInfoInitEvent;
 
     type Error = Error;
+
+    type Context = ();
 
     fn init(handle: &MyHandle, init: SignerInfoInitEvent) -> Self {
         SignerInfo {
@@ -370,9 +372,10 @@ impl Aggregate for SignerInfo {
         }
     }
 
-    fn process_command(
+    fn process_command<'a>(
         &self,
-        command: Self::Command,
+        command: Self::Command<'a>,
+        _context: &Self::Context,
     ) -> Result<Vec<Self::Event>, Self::Error> {
         Ok(match command.into_details() {
             SignerInfoCommandDetails::Init => {
@@ -413,6 +416,7 @@ impl Aggregate for SignerInfo {
 
     fn process_init_command(
         command: SignerInfoInitCommand,
+        _context: &Self::Context,
     ) -> Result<SignerInfoInitEvent, Self::Error> {
         let details = command.into_details();
         Ok(SignerInfoInitEvent {

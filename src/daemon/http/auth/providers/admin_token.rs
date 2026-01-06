@@ -41,7 +41,7 @@ pub struct AuthProvider {
 
 impl AuthProvider {
     /// Creates a new admin token auth provider from the given config.
-    pub fn new(config: Arc<Config>) -> Self {
+    pub fn new(config: &Config) -> Self {
         AuthProvider {
             required_token: config.admin_token.clone(),
             user_id: "admin-token".into(),

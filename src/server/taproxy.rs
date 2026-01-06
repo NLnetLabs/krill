@@ -4,7 +4,7 @@
 //! *except* for signing using the Trust Anchor private key. That
 //! function is handled by the Trust Anchor Signer instead.
 
-use std::{collections::HashMap, fmt, sync::Arc};
+use std::{collections::HashMap, fmt};
 
 use chrono::Duration;
 use log::{log_enabled, trace};
@@ -40,6 +40,7 @@ use crate::api::ta::{
 };
 use crate::constants::ta_resource_class_name;
 use crate::server::ca::UsedKeyState;
+use crate::server::mq::TaskQueue;
 use crate::tasigner::TaTimingConfig;
 
 
@@ -106,13 +107,14 @@ pub struct TrustAnchorProxy {
 }
 
 impl eventsourcing::Aggregate for TrustAnchorProxy {
-    type Command = TrustAnchorProxyCommand;
+    type Command<'a> = TrustAnchorProxyCommand;
     type StorableCommandDetails = TrustAnchorProxyCommandDetails;
     type Event = TrustAnchorProxyEvent;
 
-    type InitCommand = TrustAnchorProxyInitCommand;
+    type InitCommand<'a> = TrustAnchorProxyInitCommand<'a>;
     type InitEvent = TrustAnchorProxyInitEvent;
     type Error = Error;
+    type Context = TaskQueue;
 
     fn init(
         handle: &CaHandle, event: TrustAnchorProxyInitEvent,
@@ -130,6 +132,7 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
 
     fn process_init_command(
         command: TrustAnchorProxyInitCommand,
+        _context: &Self::Context,
     ) -> Result<TrustAnchorProxyInitEvent, Error> {
         Ok(TrustAnchorProxyInitEvent {
             id: {
@@ -235,9 +238,10 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
         }
     }
 
-    fn process_command(
+    fn process_command<'a>(
         &self,
-        command: Self::Command,
+        command: Self::Command<'a>,
+        _context: &Self::Context,
     ) -> Result<Vec<Self::Event>, Self::Error> {
         if log_enabled!(log::Level::Trace) {
             trace!(
@@ -295,6 +299,19 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
                 key,
             ) => self.process_give_child_response(child_handle, key),
         }
+    }
+
+    fn pre_save_events(
+        &self, events: &[Self::Event], context: &Self::Context
+    ) -> Result<(), Self::Error> {
+        context.ta_proxy_pre_save_events(self, events)?;
+        Ok(())
+    }
+
+    fn post_save_events(
+        &self, events: &[Self::Event], context: &Self::Context
+    ) {
+        context.ta_proxy_post_save_events(self, events)
     }
 }
 
@@ -748,13 +765,13 @@ impl TrustAnchorProxy {
 
 //------------ TrustAnchorProxyInitCommand -----------------------------------
 
-pub type TrustAnchorProxyInitCommand =
-    eventsourcing::SentInitCommand<TrustAnchorProxyInitCommandDetails>;
+pub type TrustAnchorProxyInitCommand<'a> =
+    eventsourcing::SentInitCommand<TrustAnchorProxyInitCommandDetails<'a>>;
 
-impl TrustAnchorProxyInitCommand {
+impl<'a> TrustAnchorProxyInitCommand<'a> {
     pub fn make(
         id: MyHandle,
-        signer: Arc<KrillSigner>,
+        signer: &'a KrillSigner,
         actor: &Actor,
     ) -> Self {
         TrustAnchorProxyInitCommand::new(
@@ -769,17 +786,17 @@ impl TrustAnchorProxyInitCommand {
 //------------ TrustAnchorProxyInitCommandDetails ----------------------------
 
 #[derive(Clone, Debug)]
-pub struct TrustAnchorProxyInitCommandDetails {
-    signer: Arc<KrillSigner>,
+pub struct TrustAnchorProxyInitCommandDetails<'a> {
+    signer: &'a KrillSigner,
 }
 
-impl fmt::Display for TrustAnchorProxyInitCommandDetails {
+impl fmt::Display for TrustAnchorProxyInitCommandDetails<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.store().fmt(f)
     }
 }
 
-impl InitCommandDetails for TrustAnchorProxyInitCommandDetails {
+impl InitCommandDetails for TrustAnchorProxyInitCommandDetails<'_> {
     type StorableDetails = TrustAnchorProxyCommandDetails;
 
     fn store(&self) -> Self::StorableDetails {
@@ -1275,6 +1292,8 @@ mod tests {
                 .unwrap(),
             );
 
+            let tasks = TaskQueue::new(storage_uri).unwrap();
+
             let timing = TaTimingConfig::default();
 
             let actor = crate::constants::ACTOR_DEF_KRILL;
@@ -1282,11 +1301,11 @@ mod tests {
             let proxy_handle = CaHandle::new("proxy".into());
             let proxy_init = TrustAnchorProxyInitCommand::make(
                 proxy_handle.clone(),
-                signer.clone(),
+                &signer,
                 &actor,
             );
 
-            ta_proxy_store.add(proxy_init).unwrap();
+            ta_proxy_store.add_with_context(proxy_init, &tasks).unwrap();
 
             let repository = {
                 let repo_info = RepoInfo::new(
@@ -1313,7 +1332,9 @@ mod tests {
                 repository,
                 &actor,
             );
-            let mut proxy = ta_proxy_store.command(add_repo_cmd).unwrap();
+            let mut proxy = ta_proxy_store.command_with_context(
+                add_repo_cmd, &tasks
+            ).unwrap();
 
             let signer_handle = CaHandle::new("signer".into());
             let tal_https =
@@ -1338,7 +1359,7 @@ mod tests {
                     private_key_pem: Some(import_key_pem.to_string()),
                     ta_mft_nr_override: Some(42),
                     timing,
-                    signer: signer.clone(),
+                    signer: &signer,
                 },
                 &actor,
             );
@@ -1351,7 +1372,9 @@ mod tests {
                 &actor,
             );
 
-            proxy = ta_proxy_store.command(add_signer_cmd).unwrap();
+            proxy = ta_proxy_store.command_with_context(
+                add_signer_cmd, &tasks,
+            ).unwrap();
 
             // The initial signer starts off with a TA certificate
             // and a CRL and manifest with revision number 42, as specified in
@@ -1370,7 +1393,9 @@ mod tests {
                     &proxy_handle,
                     &actor,
                 );
-            proxy = ta_proxy_store.command(make_publish_request_cmd).unwrap();
+            proxy = ta_proxy_store.command_with_context(
+                make_publish_request_cmd, &tasks,
+            ).unwrap();
 
             let signed_request =
                 proxy.get_signer_request(timing, &signer).unwrap();
@@ -1382,7 +1407,7 @@ mod tests {
                     signed_request.into(),
                     timing,
                     Some(55), // override the next manifest number again
-                    signer,
+                    &signer,
                     &actor,
                 );
             ta_signer = ta_signer_store
@@ -1397,9 +1422,9 @@ mod tests {
                     &actor,
                 );
 
-            proxy = ta_proxy_store
-                .command(ta_proxy_process_signer_response_command)
-                .unwrap();
+            proxy = ta_proxy_store.command_with_context(
+                ta_proxy_process_signer_response_command, &tasks,
+            ).unwrap();
 
             // The TA should have published again, the revision used for
             // manifest and crl will have been updated to the
