@@ -15,6 +15,12 @@ Breaking changes
 
 New
 
+* A local `krillc` can now talk to the server via a Unix socket. In this
+  case it will use the name of the local user for authentication purposes.
+  By default, only the `root` user is allowed with the `admin` role, but
+  both allowed users and what role they are mapped to can be configure.
+  ([#1322])
+
 Bug fixes
 
 * Fixed an issue  with the new BGP API code which false returns missing
@@ -30,6 +36,11 @@ Bug fixes
 
 Other changes
 
+* The default config files don’t serve as config documentation any more.
+  Rather, there is now a `krill.conf.5` manual page. This manual page is
+  also included in the Krill manual. ([#1322])
+
+[#1322]: https://github.com/NLnetLabs/krill/pull/1322
 [#1326]: https://github.com/NLnetLabs/krill/pull/1326
 [#1329]: https://github.com/NLnetLabs/krill/pull/1329
 [#1331]: https://github.com/NLnetLabs/krill/pull/1331
