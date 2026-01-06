@@ -47,6 +47,17 @@ impl Report {
     {
         src.map(OptContent).into()
     }
+
+    /// Create a report from an error
+    pub fn from_err<E>(content: E) -> Self
+    where
+        E: fmt::Display + 'static,
+    {
+        Self {
+            content: Box::new(ErrorReport(content)),
+            is_err: true,
+        }
+    }
 }
 
 impl<T, E> From<Result<T, E>> for Report

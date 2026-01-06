@@ -1,5 +1,7 @@
 #![allow(dead_code)] // Different tests use different parts.
 
+#[cfg(unix)]
+use std::collections::HashMap;
 use std::env;
 use std::str::FromStr;
 use std::time::Duration;
@@ -9,7 +11,7 @@ use log::{debug, error};
 use reqwest::StatusCode;
 use rpki::uri;
 use rpki::ca::idexchange::{
-    CaHandle, ChildHandle, ChildRequest, ParentResponse, ServiceUri
+    CaHandle, ChildHandle, ChildRequest, ParentResponse
 };
 use rpki::ca::provisioning::ResourceClassName;
 use rpki::repository::resources::{Asn, ResourceSet};
@@ -21,7 +23,7 @@ use krill::api;
 use krill::api::admin::Token;
 use krill::commons::httpclient;
 use krill::commons::crypto::OpenSslSignerConfig;
-use krill::cli::client::KrillClient;
+use krill::cli::client::{KrillClient, ServerUri};
 use krill::constants::REPOSITORY_DIR;
 use krill::config::{
     AuthType, Config, ConfigDefaults, HttpsMode, IssuanceTimingConfig,
@@ -83,6 +85,11 @@ impl TestConfig {
 
     pub fn alternative_port(mut self) -> Self {
         self.port += 1;
+        self
+    }
+
+    pub fn set_zero_port(mut self) -> Self {
+        self.port = 0;
         self
     }
 
@@ -249,6 +256,12 @@ impl TestConfig {
             ip,
             port,
             https_mode,
+            #[cfg(unix)]
+            unix_socket_enabled: false,
+            #[cfg(unix)]
+            unix_socket: None,
+            #[cfg(unix)]
+            unix_users: HashMap::new(),
             storage_uri: self.storage_uri,
             use_history_cache: false,
             tls_keys_dir: Some(self.data_dir.path().join(HTTPS_SUB_DIR)),
@@ -310,6 +323,7 @@ impl TestConfig {
 pub struct KrillServer {
     join: JoinHandle<()>,
     running: Option<oneshot::Receiver<()>>,
+    server_uri: ServerUri,
     client: KrillClient,
 }
 
@@ -387,13 +401,15 @@ impl KrillServer {
     ///
     /// This will start the server and wait for it to become ready.
     pub async fn start_with_config(config: Config) -> Self {
-        let uri = ServiceUri::from_str(
+        let server_uri = ServerUri::from_str(
             &format!(
                 "https://{}:{}/",
                 config.ip.first().unwrap(), config.port
             )
         ).unwrap();
-        let client = KrillClient::new(uri, config.admin_token.clone());
+        let client = KrillClient::new(
+            server_uri.clone(), Some(config.admin_token.clone())
+        );
         let (tx, running) = oneshot::channel();
         let mut res = Self {
             join: tokio::spawn(async {
@@ -404,10 +420,46 @@ impl KrillServer {
                 }
             }),
             running: Some(running),
-            client,
+            server_uri,
+            client: client.unwrap(),
         };
         res.ready().await;
         res
+    }
+
+    /// Starts a test server with the given config over a UNIX socket
+    ///
+    /// This will start the server and wait for it to become ready.
+    #[cfg(unix)]
+    pub async fn start_with_config_unix(config: Config) -> Self {
+        let server_uri = ServerUri::from_str(
+            &format!(
+                "unix://{}",
+                config.unix_socket().unwrap().display()
+            )
+        ).unwrap();
+        let client = KrillClient::new(
+            server_uri.clone(), None
+        );
+        let (tx, running) = oneshot::channel();
+        let mut res = Self {
+            join: tokio::spawn(async {
+                if let Err(err) = start_krill_daemon(
+                    config.into(), Some(tx)
+                ).await {
+                    error!("Krill failed to start: {err}");
+                }
+            }),
+            running: Some(running),
+            server_uri,
+            client: client.unwrap(),
+        };
+        res.ready().await;
+        res
+    }
+
+    pub fn server_uri(&self) -> &ServerUri {
+        &self.server_uri
     }
 
     async fn ready(&mut self) {

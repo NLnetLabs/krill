@@ -1,7 +1,6 @@
 //! Options for creating Krill config.
 
 use std::fmt;
-use std::borrow::Cow;
 use serde::ser::{Serialize, Serializer, SerializeStruct};
 use crate::cli::client::KrillClient;
 use crate::cli::report::Report;
@@ -11,86 +10,19 @@ use crate::cli::report::Report;
 
 #[derive(clap::Subcommand)]
 pub enum Command {
-    /// Use a 3rd party repository for publishing
-    Simple(Simple),
-
     /// Generate a user authentication configuration file fragment
     #[cfg(feature = "multi-user")]
     User(User),
 }
 
 impl Command {
-    pub async fn run(self, client: &KrillClient) -> Report {
-        match self {
-            Self::Simple(cmd) => cmd.run(client).into(),
-            
+    pub async fn run(self, _client: &KrillClient) -> Report {
+        match self {            
             #[cfg(feature = "multi-user")]
             Self::User(cmd) => cmd.run().into()
         }
     }
 }
-
-//-------- Simple --------------------------------------------------------
-
-#[derive(clap::Parser)]
-pub struct Simple {
-    /// Override the default data directory of ./data
-    #[arg(short, long)]
-    pub data: Option<String>,
-
-    /// Override the default log file path of ./krill.log
-    #[arg(short, long)]
-    pub logfile: Option<String>,
-}
-
-impl Simple {
-    pub fn run(self, client: &KrillClient) -> ConfigFile {
-        let defaults = include_str!("../../../defaults/krill.conf");
-        let mut config = defaults.to_string();
-
-        config = config.replace(
-            "### admin_token =",
-            &format!("admin_token = \"{}\"", client.token()),
-        );
-
-        config = config.replace(
-            "### service_uri = \"https://localhost:3000/\"",
-            &format!("service_uri = \"{}\"", client.base_uri()),
-        );
-
-        if let Some(data_dir) = self.data.as_ref() {
-            // XXX data_dir was previously forced to end in a slash.
-            //     I don’t think this requirement is true any more?
-            let data_dir = if data_dir.ends_with("/") {
-                Cow::Borrowed(data_dir)
-            }
-            else {
-                Cow::Owned(format!("{data_dir}/"))
-            };
-            config = config.replace(
-                "### storage_uri = \"./data\"",
-                &format!("storage_uri = \"{data_dir}\"")
-            );
-        }
-
-        if let Some(log_file) = self.logfile {
-            config = config.replace(
-                "### log_file = \"./krill.log\"",
-                &format!("log_file = \"{log_file}\""),
-            )
-        }
-
-        #[cfg(feature = "multi-user")] {
-            config.push_str("\n\n\n");
-            config.push_str(
-                include_str!("../../../defaults/krill-multi-user.conf")
-            );
-        }
-
-        config.into()
-    }
-}
-
 
 //-------- User ----------------------------------------------------------
 
@@ -189,8 +121,7 @@ impl User {
         };
 
         format!(
-            r#"[auth_users]\n\
-               "{id}" = {{ {attrs}password_hash="{ph}", salt="{salt}" }}"#,
+            "[auth_users]\n\n\"{id}\" = {{ {attrs}password_hash=\"{ph}\", salt=\"{salt}\" }}",
             id = self.id,
             attrs = attrs_fragment,
             ph = hex::encode(password_hash),
