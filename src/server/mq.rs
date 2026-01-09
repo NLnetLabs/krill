@@ -294,7 +294,6 @@ impl TaskQueue {
 }
 impl TaskQueue {
     pub fn pop(&self) -> Option<(Box<Ident>, serde_json::Value)> {
-        trace!("Try to get a task off the queue");
         match self.q.claim_scheduled_pending_task() {
             Err(e) => {
                 // Log error and return nothing.
@@ -306,7 +305,6 @@ impl TaskQueue {
                 None
             }
             Ok(None) => {
-                trace!("No pending task found.");
                 None
             }
             Ok(Some((key, value))) => {
