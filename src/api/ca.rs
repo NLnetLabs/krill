@@ -1900,16 +1900,16 @@ impl fmt::Display for ResourceClassKeysInfo {
         write!(f, "State: ")?;
 
         match &self {
-            ResourceClassKeysInfo::Pending(_) => write!(f, "pending\n")?,
-            ResourceClassKeysInfo::Active(_) => write!(f, "active\n")?,
+            ResourceClassKeysInfo::Pending(_) => writeln!(f, "pending")?,
+            ResourceClassKeysInfo::Active(_) => writeln!(f, "active")?,
             ResourceClassKeysInfo::RollPending(_) => {
-                write!(f, "roll phase 1: pending and active key\n")?
+                writeln!(f, "roll phase 1: pending and active key")?
             }
             ResourceClassKeysInfo::RollNew(_) => {
-                write!(f, "roll phase 2: new and active key\n")?
+                writeln!(f, "roll phase 2: new and active key")?
             }
             ResourceClassKeysInfo::RollOld(_) => {
-                write!(f, "roll phase 3: active and old key\n")?
+                writeln!(f, "roll phase 3: active and old key")?
             }
         }
 
