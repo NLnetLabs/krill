@@ -1328,14 +1328,12 @@ impl KeyObjectSet {
         }
 
         for cert in &cert_updates.unsuspended {
-            self.revocations.remove(&cert.revocation());
-            let published_object = PublishedObject::for_cert_info(cert);
+            let published_object = PublishedObject::for_cert_info(&cert);
             if let Some(old) = self
                 .published_objects
                 .insert(cert.name.clone(), published_object)
             {
-                // this should not happen, but just to be safe.
-                self.revocations.add(old.revoke());
+                
             }
         }
 

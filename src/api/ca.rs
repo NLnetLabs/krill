@@ -279,7 +279,7 @@ pub struct CertInfo<T> {
 
     /// The serial number of this certificate.
     ///
-    /// This is needed for revocatio.
+    /// This is needed for revocation.
     pub serial: Serial,
 
     /// The certifcate signing request for the certificate.

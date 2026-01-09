@@ -224,8 +224,8 @@ impl Aggregate for CertAuth {
                 self.process_child_suspend_inactive(&child)
             }
 
-            CertAuthCommandDetails::ChildUnsuspend(child) => {
-                self.process_child_unsuspend(&child)
+            CertAuthCommandDetails::ChildUnsuspend(child, config, signer) => {
+                self.process_child_unsuspend(&child, &config, signer)
             }
 
 
@@ -1552,6 +1552,8 @@ impl CertAuth {
     fn process_child_unsuspend(
         &self,
         child_handle: &ChildHandle,
+        config: &Arc<Config>,
+        signer: Arc<KrillSigner>,
     ) -> KrillResult<Vec<CertAuthEvent>> {
         let child = self.get_child(child_handle)?;
 
@@ -1584,6 +1586,17 @@ impl CertAuth {
                         cert_updates.unsuspended.push(
                             suspended.to_converted()
                         );
+                        
+                        self.append_child_certify(
+                            child_handle.clone(),
+                            &suspended.resources,
+                            rcn.clone(),
+                            suspended.csr_info.clone(),
+                            suspended.limit.clone(),
+                            config,
+                            signer.clone(),
+                            &mut res,
+                        )?;
                     }
                     else {
                         // certificate should not be published as is. Remove
