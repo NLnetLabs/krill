@@ -181,7 +181,7 @@ pub struct ChildCertificates {
     #[serde(alias = "inner")]
     issued: HashMap<KeyIdentifier, IssuedCertificate>,
 
-    /// The certificates for suspeneded child CAs.
+    /// The certificates for suspended child CAs.
     #[serde(
         skip_serializing_if = "HashMap::is_empty",
         default = "HashMap::new"
@@ -395,7 +395,8 @@ pub struct ChildCertificateUpdates {
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub suspended: Vec<SuspendedCert>,
 
-    /// The certificats that have been unsuspended.
+    /// The certificates that have been unsuspended. This is no longer used
+    /// as of Krill 0.16.0, but kept because it is in stored state.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub unsuspended: Vec<UnsuspendedCert>,
 }
