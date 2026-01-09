@@ -181,7 +181,7 @@ pub struct ChildCertificates {
     #[serde(alias = "inner")]
     issued: HashMap<KeyIdentifier, IssuedCertificate>,
 
-    /// The certificates for suspeneded child CAs.
+    /// The certificates for suspended child CAs.
     #[serde(
         skip_serializing_if = "HashMap::is_empty",
         default = "HashMap::new"
