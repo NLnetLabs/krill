@@ -1900,22 +1900,22 @@ impl fmt::Display for ResourceClassKeysInfo {
         write!(f, "State: ")?;
 
         match &self {
-            ResourceClassKeysInfo::Pending(_) => write!(f, "pending")?,
-            ResourceClassKeysInfo::Active(_) => write!(f, "active")?,
+            ResourceClassKeysInfo::Pending(_) => write!(f, "pending\n")?,
+            ResourceClassKeysInfo::Active(_) => write!(f, "active\n")?,
             ResourceClassKeysInfo::RollPending(_) => {
-                write!(f, "roll phase 1: pending and active key")?
+                write!(f, "roll phase 1: pending and active key\n")?
             }
             ResourceClassKeysInfo::RollNew(_) => {
-                write!(f, "roll phase 2: new and active key")?
+                write!(f, "roll phase 2: new and active key\n")?
             }
             ResourceClassKeysInfo::RollOld(_) => {
-                write!(f, "roll phase 3: active and old key")?
+                write!(f, "roll phase 3: active and old key\n")?
             }
         }
 
         if let Some(key) = self.current_key() {
             let resources = &key.incoming_cert.resources;
-            writeln!(f, "    Resources:")?;
+            writeln!(f, "Resources:")?;
             writeln!(f, "    ASNs: {}", resources.asn())?;
             writeln!(f, "    IPv4: {}", resources.ipv4())?;
             writeln!(f, "    IPv6: {}", resources.ipv6())?;
