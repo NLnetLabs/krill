@@ -34,7 +34,7 @@ use crate::{
     },
     config::Config,
     server::{
-        manager::KrillManager,
+        oldmanager::OldManager,
         properties::PropertiesManager,
     },
     upgrades::pre_0_14_0::{
@@ -1152,7 +1152,7 @@ fn record_preexisting_openssl_keys_in_signer_mapper(
 /// server is started and operators can make changes.
 pub async fn post_start_upgrade(
     report: UpgradeReport,
-    server: &KrillManager,
+    server: &OldManager,
 ) -> KrillResult<()> {
     if report.versions().from() < &KrillVersion::candidate(0, 9, 3, 2) {
         info!("Reissue ROAs on upgrade to force short EE certificate subjects in the objects");

@@ -10,7 +10,7 @@ use crate::commons::KrillResult;
 use crate::commons::error::FatalError;
 use crate::config::Config;
 use crate::constants::KRILL_ENV_HTTP_LOG_INFO;
-use crate::server::manager::KrillManager;
+use crate::server::oldmanager::OldManager;
 use super::auth::Authorizer;
 use super::dispatch::{DispatchError, dispatch_request};
 use super::request::{BodyLimits, HyperRequest, Request};
@@ -23,7 +23,7 @@ use super::response::{HyperResponse, HttpResponse};
 /// The Krill HTTP server.
 pub struct HttpServer {
     /// The Krill “business logic.”
-    krill: KrillManager,
+    krill: OldManager,
 
     /// The component responsible for API authorization checks
     authorizer: Authorizer,
@@ -38,7 +38,7 @@ pub struct HttpServer {
 impl HttpServer {
     /// Creates a new server from a Krill manager and the configuration.
     pub fn new(
-        krill: KrillManager,
+        krill: OldManager,
         config: Arc<Config>,
         runtime: &runtime::Handle,
     ) -> KrillResult<Arc<Self>> {
@@ -95,7 +95,7 @@ impl HttpServer {
 
 impl HttpServer {
     /// Returns a reference to the Krill manager.
-    pub(super) fn krill(&self) -> &KrillManager {
+    pub(super) fn krill(&self) -> &OldManager {
         &self.krill
     }
 

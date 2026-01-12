@@ -15,7 +15,7 @@ use crate::commons::version::KrillVersion;
 use crate::config::Config;
 use crate::constants::KRILL_ENV_UPGRADE_ONLY;
 use crate::server::properties::PropertiesManager;
-use crate::server::manager::KrillManager;
+use crate::server::oldmanager::OldManager;
 use crate::upgrades::{
     finalise_data_migration, post_start_upgrade,
     prepare_upgrade_data_migrations, UpgradeError, UpgradeMode,
@@ -82,7 +82,7 @@ pub async fn start_krill_daemon(
 
     // Create the Krill manager, this will create the necessary data
     // sub-directories if needed
-    let krill = KrillManager::build(config.clone()).await?;
+    let krill = OldManager::build(config.clone()).await?;
 
     // Call post-start upgrades to trigger any upgrade related runtime
     // actions, such as re-issuing ROAs because subject name strategy has

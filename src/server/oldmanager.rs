@@ -74,11 +74,11 @@ use crate::constants::{TA_NAME, ta_handle};
 use crate::server::bgp::BgpAnalyser;
 
 
-//------------ KrillManager ---------------------------------------------------
+//------------ OldManager ---------------------------------------------------
 
 /// This is the Krill server that is doing all the orchestration for all
 /// components.
-pub struct KrillManager {
+pub struct OldManager {
     // The base URI for this service
     service_uri: uri::Https,
 
@@ -101,7 +101,7 @@ pub struct KrillManager {
 }
 
 /// # Set up and initialization
-impl KrillManager {
+impl OldManager {
     /// Creates a new publication server. Note that state is preserved
     /// in the data storage.
     pub async fn build(config: Arc<Config>) -> KrillResult<Self> {
@@ -160,7 +160,7 @@ impl KrillManager {
 
         mq.schedule(Task::QueueStartTasks, now())?;
 
-        let server = KrillManager {
+        let server = OldManager {
             service_uri,
             repo_manager,
             ca_manager,
@@ -283,7 +283,7 @@ impl KrillManager {
 }
 
 /// # Access to components
-impl KrillManager {
+impl OldManager {
     pub fn system_actor(&self) -> &Actor {
         &self.system_actor
     }
@@ -313,7 +313,7 @@ impl KrillManager {
 }
 
 /// # Configure publishers
-impl KrillManager {
+impl OldManager {
     /// Returns the repository server stats
     pub fn repo_stats(&self) -> KrillResult<RepoStats> {
         self.repo_manager.repo_stats()
@@ -368,7 +368,7 @@ impl KrillManager {
 }
 
 /// # Manage RFC8181 clients
-impl KrillManager {
+impl OldManager {
     pub fn repository_response(
         &self,
         publisher: &PublisherHandle,
@@ -386,7 +386,7 @@ impl KrillManager {
 }
 
 /// # TA Support
-impl KrillManager {
+impl OldManager {
     pub fn ta_proxy_enabled(&self) -> bool {
         self.config.ta_proxy_enabled()
     }
@@ -479,7 +479,7 @@ impl KrillManager {
 }
 
 /// # Being a parent
-impl KrillManager {
+impl OldManager {
     /// Adds a child to a CA and returns the ParentCaInfo that the child
     /// will need to contact this CA for resource requests.
     pub fn ca_add_child(
@@ -570,7 +570,7 @@ impl KrillManager {
 }
 
 /// # Being a child
-impl KrillManager {
+impl OldManager {
     /// Returns the child request for a CA, or NONE if the CA cannot be found.
     pub fn ca_child_req(
         &self,
@@ -617,7 +617,7 @@ impl KrillManager {
 }
 
 /// # Stats and status of CAS
-impl KrillManager {
+impl OldManager {
     pub fn cas_stats(
         &self,
     ) -> KrillResult<HashMap<CaHandle, CertAuthStats>> {
@@ -896,7 +896,7 @@ impl KrillManager {
 }
 
 /// # Synchronization operations for CAS
-impl KrillManager {
+impl OldManager {
     /// Republish all CAs that need it.
     pub fn republish_all(&self, force: bool) -> KrillEmptyResult {
         let cas = self.ca_manager.republish_all(force)?;
@@ -937,7 +937,7 @@ impl KrillManager {
 }
 
 /// # Admin CAS
-impl KrillManager {
+impl OldManager {
     pub fn ca_handles(&self) -> KrillResult<impl Iterator<Item = CaHandle>> {
         self.ca_manager.ca_handles().map(Vec::into_iter)
     }
@@ -1073,7 +1073,7 @@ impl KrillManager {
 }
 
 /// # Handle ASPA requests
-impl KrillManager {
+impl OldManager {
     pub fn ca_aspas_definitions_show(
         &self,
         ca: &CaHandle,
@@ -1104,7 +1104,7 @@ impl KrillManager {
 }
 
 /// # Handle BGPSec requests
-impl KrillManager {
+impl OldManager {
     pub fn ca_bgpsec_definitions_show(
         &self,
         ca: &CaHandle,
@@ -1123,7 +1123,7 @@ impl KrillManager {
 }
 
 /// # Handle route authorization requests
-impl KrillManager {
+impl OldManager {
     pub fn ca_routes_update(
         &self,
         ca: CaHandle,
@@ -1197,7 +1197,7 @@ impl KrillManager {
 }
 
 /// # Handle Repository Server requests
-impl KrillManager {
+impl OldManager {
     /// Create the publication server, will fail if it was already created.
     pub fn repository_init(
         &self,
@@ -1222,7 +1222,7 @@ impl KrillManager {
 }
 
 /// # Handle Resource Tagged Attestation requests
-impl KrillManager {
+impl OldManager {
     /// List all known RTAs
     pub fn rta_list(&self, ca: CaHandle) -> KrillResult<RtaList> {
         let ca = self.ca_manager.get_ca(&ca)?;

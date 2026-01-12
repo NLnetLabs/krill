@@ -1,9 +1,11 @@
 pub mod bgp;
 pub mod ca;
-pub mod manager;
 pub mod mq;
 pub mod properties;
 pub mod pubd;
 pub mod runtime;
 pub mod scheduler;
 pub mod taproxy;
+
+pub mod oldmanager;
+
