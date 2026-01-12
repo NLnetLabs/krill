@@ -223,6 +223,7 @@ pub enum Error {
     //-----------------------------------------------------------------
     // System Issues
     //-----------------------------------------------------------------
+    InternalError(String),
     IoError(KrillIoError),
     KeyValueError(KeyValueError),
     QueueError(queue::Error),
@@ -406,6 +407,7 @@ impl fmt::Display for Error {
             //-----------------------------------------------------------------
             // System Issues
             //-----------------------------------------------------------------
+            Error::InternalError(e) => write!(f, "Internal error: {e}"),
             Error::IoError(e) => write!(f, "I/O error: {e}"),
             Error::KeyValueError(e) => write!(f, "Key/Value error: {e}"),
             Error::QueueError(e) => write!(f, "Queue error: {e}"),
@@ -750,6 +752,10 @@ impl Error {
     pub fn io_error_with_context(context: String, cause: io::Error) -> Self {
         Error::IoError(KrillIoError::new(context, cause))
     }
+
+    pub fn internal(msg: impl fmt::Display) -> Self {
+        Error::InternalError(msg.to_string())
+    }
 }
 
 impl std::error::Error for Error {}
@@ -760,7 +766,8 @@ impl Error {
         match self {
             // Most is bad requests by users, so just mapping the things that
             // are not
-            Error::IoError(_)
+            Error::InternalError(_)
+            | Error::IoError(_)
             | Error::SignerError(_)
             | Error::AggregateStoreError(_)
             | Error::WalStoreError(_)
@@ -791,6 +798,11 @@ impl Error {
             //-----------------------------------------------------------------
             // System Issues (label: sys-*)
             //-----------------------------------------------------------------
+
+            // internal server error
+            Error::InternalError(e) => {
+                ErrorResponse::new("sys-internal", self).with_cause(e)
+            }
 
             // internal server error
             Error::IoError(e) => {
