@@ -74,7 +74,7 @@ async fn rfc8181(
     let (request, _) = request.proceed_unchecked();
     let (server, bytes) = request.read_rfc8181_bytes().await?;
     Ok(HttpResponse::rfc8181(
-        server.krill().rfc8181(publisher, bytes)?
+        server.old_krill().rfc8181(publisher, bytes)?
     ))
 }
 
@@ -97,7 +97,7 @@ async fn rfc6492(
     //     always be the anonymous actor. Maybe the CA manager should
     //     determine the actor when looking at the ID certificate?
     Ok(HttpResponse::rfc6492(
-        server.krill().rfc6492(ca , bytes, user_agent, auth.actor())?
+        server.old_krill().rfc6492(ca , bytes, user_agent, auth.actor())?
     ))
 }
 
@@ -122,7 +122,7 @@ fn tal(
     let (request, _) = request.proceed_unchecked();
     let server = request.empty()?;
     Ok(HttpResponse::text(
-        server.krill().ta_cert_details()?.tal.to_string()
+        server.old_krill().ta_cert_details()?.tal.to_string()
     ))
 }
 
@@ -134,7 +134,7 @@ fn ta_cer(
     let (request, _) = request.proceed_unchecked();
     let server = request.empty()?;
     Ok(HttpResponse::cert(
-        server.krill().ta_cert_details()?.cert.to_bytes()
+        server.old_krill().ta_cert_details()?.cert.to_bytes()
     ))
 }
 
@@ -150,7 +150,7 @@ fn rrdp(
     let Some(remaining) = path.remaining() else {
         return Ok(HttpResponse::not_found())
     };
-    let path = match server.krill().resolve_rrdp_request_path(remaining)? {
+    let path = match server.old_krill().resolve_rrdp_request_path(remaining)? {
         Some(path) => path,
         None => {
             return Ok(HttpResponse::not_found())

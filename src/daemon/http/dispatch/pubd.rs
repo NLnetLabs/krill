@@ -39,7 +39,7 @@ async fn delete(
         Permission::PubAdmin, None
     )?;
     let (server, criteria) = request.read_json().await?;
-    server.krill().delete_matching_files(criteria)?;
+    server.old_krill().delete_matching_files(criteria)?;
     Ok(HttpResponse::ok())
 }
 
@@ -57,7 +57,7 @@ async fn init(
                 Permission::PubAdmin, None
             )?;
             let (server, uris) = request.read_json().await?;
-            server.krill().repository_init(uris)?;
+            server.old_krill().repository_init(uris)?;
             Ok(HttpResponse::ok())
         }
         Method::DELETE => {
@@ -65,7 +65,7 @@ async fn init(
                 Permission::PubAdmin, None
             )?;
             let server = request.empty()?;
-            server.krill().repository_clear()?;
+            server.old_krill().repository_clear()?;
             Ok(HttpResponse::ok())
         }
         _ => Ok(HttpResponse::method_not_allowed())
@@ -99,7 +99,7 @@ async fn publishers_index(
             Ok(HttpResponse::json(
                 &PublisherList {
                     publishers: {
-                        server.krill().publishers()?.into_iter().map(
+                        server.old_krill().publishers()?.into_iter().map(
                             PublisherSummary::from_handle
                         ).collect()
                     }
@@ -112,7 +112,7 @@ async fn publishers_index(
             )?;
             let (server, pbl) = request.read_json().await?;
             Ok(HttpResponse::json(
-                &server.krill().add_publisher(pbl, auth.actor())?
+                &server.old_krill().add_publisher(pbl, auth.actor())?
             ))
         }
         _ => Ok(HttpResponse::method_not_allowed())
@@ -147,7 +147,7 @@ fn publishers_publisher_index(
             )?;
             let server = request.empty()?;
             Ok(HttpResponse::json(
-                &server.krill().get_publisher(publisher)?
+                &server.old_krill().get_publisher(publisher)?
             ))
         }
         Method::DELETE => {
@@ -155,7 +155,7 @@ fn publishers_publisher_index(
                 Permission::PubDelete, None
             )?;
             let server = request.empty()?;
-            server.krill().remove_publisher(publisher, auth.actor())?;
+            server.old_krill().remove_publisher(publisher, auth.actor())?;
             Ok(HttpResponse::ok())
         }
         _ => Ok(HttpResponse::method_not_allowed())
@@ -172,7 +172,7 @@ fn publishers_publisher_response(
     let (request, _) = request.proceed_permitted(Permission::PubRead, None)?;
     let server = request.empty()?;
     Ok(HttpResponse::json(
-        &server.krill().repository_response(&publisher)?
+        &server.old_krill().repository_response(&publisher)?
     ))
 }
 
@@ -186,7 +186,7 @@ fn publishers_publisher_response_xml(
     let (request, _) = request.proceed_permitted(Permission::PubRead, None)?;
     let server = request.empty()?;
     Ok(HttpResponse::xml(
-        server.krill().repository_response(&publisher)?.to_xml_vec()
+        server.old_krill().repository_response(&publisher)?.to_xml_vec()
     ))
 }
 
@@ -201,7 +201,7 @@ fn session_reset(
     request.check_post()?;
     let (request, _) = request.proceed_permitted(Permission::PubAdmin, None)?;
     let server = request.empty()?;
-    server.krill().repository_session_reset()?;
+    server.old_krill().repository_session_reset()?;
     Ok(HttpResponse::ok())
 }
 
@@ -217,7 +217,7 @@ async fn stale(
     request.check_get()?;
     let (request, _) = request.proceed_permitted( Permission::PubList, None)?;
     let server = request.empty()?;
-    let stats = server.krill().repo_stats()?;
+    let stats = server.old_krill().repo_stats()?;
     Ok(HttpResponse::json(
         &PublisherList {
             publishers: {

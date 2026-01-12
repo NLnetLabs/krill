@@ -44,7 +44,7 @@ fn repo(
     request.check_get()?;
     let (request, _) = request.proceed_unchecked();
     let server = request.empty()?;
-    Ok(HttpResponse::json(&server.krill().repo_stats()?))
+    Ok(HttpResponse::json(&server.old_krill().repo_stats()?))
 }
 
 
@@ -58,6 +58,6 @@ async fn cas(
     request.check_get()?;
     let (request, _) = request.proceed_unchecked();
     let server = request.empty()?;
-    Ok(HttpResponse::json(&server.krill().cas_stats()?))
+    Ok(HttpResponse::json(&server.old_krill().cas_stats()?))
 }
 

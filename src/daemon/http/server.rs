@@ -23,7 +23,7 @@ use super::response::{HyperResponse, HttpResponse};
 /// The Krill HTTP server.
 pub struct HttpServer {
     /// The Krill “business logic.”
-    krill: OldManager,
+    old_krill: OldManager,
 
     /// The component responsible for API authorization checks
     authorizer: Authorizer,
@@ -38,14 +38,14 @@ pub struct HttpServer {
 impl HttpServer {
     /// Creates a new server from a Krill manager and the configuration.
     pub fn new(
-        krill: OldManager,
+        old_krill: OldManager,
         config: Arc<Config>,
         runtime: &runtime::Handle,
     ) -> KrillResult<Arc<Self>> {
         let authorizer = Authorizer::new(config.clone())?;
         authorizer.spawn_sweep(runtime);
         Ok(Self {
-            krill,
+            old_krill,
             authorizer,
             config,
             started: Timestamp::now(),
@@ -95,8 +95,8 @@ impl HttpServer {
 
 impl HttpServer {
     /// Returns a reference to the Krill manager.
-    pub(super) fn krill(&self) -> &OldManager {
-        &self.krill
+    pub(super) fn old_krill(&self) -> &OldManager {
+        &self.old_krill
     }
 
     /// Returns a reference to the authorizer.

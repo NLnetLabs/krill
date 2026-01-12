@@ -52,7 +52,7 @@ fn index_get(
     Ok(HttpResponse::json(
         &CertAuthList {
             cas: {
-                server.krill().ca_handles()?.filter_map(|handle| {
+                server.old_krill().ca_handles()?.filter_map(|handle| {
                     auth.has_permission(
                         Permission::CaRead, Some(&handle)
                     ).then_some(CertAuthSummary { handle })
@@ -69,7 +69,7 @@ async fn index_post(
         Permission::CaCreate, None
     )?;
     let (server, init) = request.read_json().await?;
-    server.krill().ca_init(init)?;
+    server.old_krill().ca_init(init)?;
     Ok(HttpResponse::ok())
 }
 
@@ -112,7 +112,7 @@ async fn ca_index(
             )?;
             let server = request.empty()?;
             Ok(HttpResponse::json(
-                &server.krill().ca_info(&ca)?
+                &server.old_krill().ca_info(&ca)?
             ))
         }
         Method::DELETE => {
@@ -120,7 +120,7 @@ async fn ca_index(
                 Permission::CaDelete, Some(&ca)
             )?;
             let server = request.empty()?;
-            server.krill().ca_delete(&ca, auth.actor()).await?;
+            server.old_krill().ca_delete(&ca, auth.actor()).await?;
             Ok(HttpResponse::ok())
         }
         _ => Ok(HttpResponse::method_not_allowed())
@@ -153,7 +153,7 @@ async fn aspas_index(
             )?;
             let server = request.empty()?;
             Ok(HttpResponse::json(
-                &server.krill().ca_aspas_definitions_show(&ca)?
+                &server.old_krill().ca_aspas_definitions_show(&ca)?
             ))
         }
         Method::POST => {
@@ -161,7 +161,7 @@ async fn aspas_index(
                 Permission::AspasUpdate, Some(&ca)
             )?;
             let (server, updates) = request.read_json().await?;
-            server.krill().ca_aspas_definitions_update(
+            server.old_krill().ca_aspas_definitions_update(
                 ca, updates, auth.actor(),
             )?;
             Ok(HttpResponse::ok())
@@ -183,7 +183,7 @@ async fn aspas_as(
                 Permission::AspasUpdate, Some(&ca)
             )?;
             let (server, update) = request.read_json().await?;
-            server.krill().ca_aspas_update_aspa(
+            server.old_krill().ca_aspas_update_aspa(
                 ca, customer, update, auth.actor()
             )?;
             Ok(HttpResponse::ok())
@@ -193,7 +193,7 @@ async fn aspas_as(
                 Permission::AspasUpdate, Some(&ca)
             )?;
             let server = request.empty()?;
-            server.krill().ca_aspas_definitions_update(
+            server.old_krill().ca_aspas_definitions_update(
                 ca,
                 AspaDefinitionUpdates {
                     add_or_replace: Vec::new(),
@@ -223,7 +223,7 @@ async fn bgpsec(
             )?;
             let server = request.empty()?;
             Ok(HttpResponse::json(
-                &server.krill().ca_bgpsec_definitions_show(&ca)?
+                &server.old_krill().ca_bgpsec_definitions_show(&ca)?
             ))
         }
         Method::POST => {
@@ -231,7 +231,7 @@ async fn bgpsec(
                 Permission::BgpsecUpdate, Some(&ca)
             )?;
             let (server, updates) = request.read_json().await?;
-            server.krill().ca_bgpsec_definitions_update(
+            server.old_krill().ca_bgpsec_definitions_update(
                 ca, updates, auth.actor()
             )?;
             Ok(HttpResponse::ok())
@@ -264,7 +264,7 @@ async fn children_index(
     )?;
     let (server, child_req) = request.read_json().await?;
     Ok(HttpResponse::json(
-        &server.krill().ca_add_child(&ca, child_req, auth.actor())?
+        &server.old_krill().ca_add_child(&ca, child_req, auth.actor())?
     ))
 }
 
@@ -302,7 +302,7 @@ async fn children_child_index(
             )?;
             let server = request.empty()?;
             Ok(HttpResponse::json(
-                &server.krill().ca_child_show(&ca, &child)?
+                &server.old_krill().ca_child_show(&ca, &child)?
             ))
         }
         Method::POST => {
@@ -310,7 +310,7 @@ async fn children_child_index(
                 Permission::CaUpdate, Some(&ca)
             )?;
             let (server, child_req) = request.read_json().await?;
-            server.krill().ca_child_update(
+            server.old_krill().ca_child_update(
                 &ca, child, child_req, auth.actor()
             )?;
             Ok(HttpResponse::ok())
@@ -320,7 +320,7 @@ async fn children_child_index(
                 Permission::CaUpdate, Some(&ca)
             )?;
             let server = request.empty()?;
-            server.krill().ca_child_remove(&ca, child, auth.actor())?;
+            server.old_krill().ca_child_remove(&ca, child, auth.actor())?;
             Ok(HttpResponse::ok())
         }
         _ => Ok(HttpResponse::method_not_allowed())
@@ -340,7 +340,7 @@ fn children_child_contact(
     )?;
     let server = request.empty()?;
     Ok(HttpResponse::json(
-        &server.krill().ca_parent_response(&ca, child)?
+        &server.old_krill().ca_parent_response(&ca, child)?
     ))
 }
 
@@ -356,7 +356,7 @@ fn children_child_contact_xml(
         Permission::CaRead, Some(&ca)
     )?;
     let server = request.empty()?;
-    let res = server.krill().ca_parent_response(&ca, child)?;
+    let res = server.old_krill().ca_parent_response(&ca, child)?;
     Ok(HttpResponse::xml(res.to_xml_vec()))
 }
 
@@ -373,7 +373,7 @@ fn children_child_export(
     )?;
     let server = request.empty()?;
     Ok(HttpResponse::json(
-        &server.krill().ca_child_export(&ca, &child)?
+        &server.old_krill().ca_child_export(&ca, &child)?
     ))
 }
 
@@ -396,7 +396,7 @@ async fn children_child_import(
             }
         ))
     }
-    server.krill().ca_child_import(&ca, import, auth.actor())?;
+    server.old_krill().ca_child_import(&ca, import, auth.actor())?;
     Ok(HttpResponse::ok())
 }
 
@@ -433,7 +433,7 @@ fn history_commands(
     let server = request.empty()?;
 
     Ok(HttpResponse::json(
-        &server.krill().ca_history(
+        &server.old_krill().ca_history(
             &ca,
             CommandHistoryCriteria {
                 before, after, offset, rows_limit,
@@ -457,7 +457,7 @@ fn history_details(
     let server = request.empty()?;
 
     Ok(HttpResponse::json(
-        &server.krill().ca_command_details(&ca, version).map_err(|err| {
+        &server.old_krill().ca_command_details(&ca, version).map_err(|err| {
             match err {
                 Error::AggregateStoreError(
                     AggregateStoreError::UnknownCommand(..)
@@ -505,7 +505,7 @@ fn id_index(
         Permission::CaUpdate, Some(&ca)
     )?;
     let server = request.empty()?;
-    server.krill().ca_update_id(ca, auth.actor())?;
+    server.old_krill().ca_update_id(ca, auth.actor())?;
     Ok(HttpResponse::ok())
 }
 
@@ -521,7 +521,7 @@ fn id_child_request_json(
     )?;
     let server = request.empty()?;
     Ok(HttpResponse::json(
-        &server.krill().ca_child_req(&ca)?
+        &server.old_krill().ca_child_req(&ca)?
     ))
 }
 
@@ -537,7 +537,7 @@ fn id_child_request_xml(
     )?;
     let server = request.empty()?;
     Ok(HttpResponse::xml(
-        server.krill().ca_child_req(&ca)?.to_xml_vec()
+        server.old_krill().ca_child_req(&ca)?.to_xml_vec()
     ))
 }
 
@@ -553,7 +553,7 @@ fn id_publisher_request_json(
     )?;
     let server = request.empty()?;
     Ok(HttpResponse::json(
-        &server.krill().ca_publisher_req(&ca)?
+        &server.old_krill().ca_publisher_req(&ca)?
     ))
 }
 
@@ -569,7 +569,7 @@ fn id_publisher_request_xml(
     )?;
     let server = request.empty()?;
     Ok(HttpResponse::xml(
-        server.krill().ca_publisher_req(&ca)?.to_xml_vec()
+        server.old_krill().ca_publisher_req(&ca)?.to_xml_vec()
     ))
 }
 
@@ -588,7 +588,7 @@ fn issues(
     )?;
     let server = request.empty()?;
     Ok(HttpResponse::json(
-        &server.krill().ca_issues(&ca)?
+        &server.old_krill().ca_issues(&ca)?
     ))
 }
 
@@ -618,7 +618,7 @@ fn keys_roll_init(
         Permission::CaUpdate, Some(&ca)
     )?;
     let server = request.empty()?;
-    server.krill().ca_keyroll_init(ca, auth.actor())?;
+    server.old_krill().ca_keyroll_init(ca, auth.actor())?;
     Ok(HttpResponse::ok())
 }
 
@@ -633,7 +633,7 @@ fn keys_roll_activate(
         Permission::CaUpdate, Some(&ca)
     )?;
     let server = request.empty()?;
-    server.krill().ca_keyroll_activate(ca, auth.actor())?;
+    server.old_krill().ca_keyroll_activate(ca, auth.actor())?;
     Ok(HttpResponse::ok())
 }
 
@@ -662,7 +662,7 @@ async fn parents_index(
             )?;
             let server = request.empty()?;
             Ok(HttpResponse::json(
-                &server.krill().ca_status(&ca)?.into_parents()
+                &server.old_krill().ca_status(&ca)?.into_parents()
             ))
         }
         Method::POST => {
@@ -671,7 +671,7 @@ async fn parents_index(
             )?;
             let (server, bytes) = request.read_bytes().await?;
             let parent_req = extract_parent_ca_req(&ca, bytes, None)?;
-            server.krill().ca_parent_add_or_update(
+            server.old_krill().ca_parent_add_or_update(
                 ca, parent_req, auth.actor()
             ).await?;
             Ok(HttpResponse::ok())
@@ -694,7 +694,7 @@ async fn parents_parent(
             )?;
             let server = request.empty()?;
             Ok(HttpResponse::json(
-                &server.krill().ca_my_parent_contact(&ca, &parent)?
+                &server.old_krill().ca_my_parent_contact(&ca, &parent)?
             ))
         }
         Method::POST => {
@@ -705,7 +705,7 @@ async fn parents_parent(
             let parent_req = extract_parent_ca_req(
                 &ca, bytes, Some(parent)
             )?;
-            server.krill().ca_parent_add_or_update(
+            server.old_krill().ca_parent_add_or_update(
                 ca, parent_req, auth.actor()
             ).await?;
             Ok(HttpResponse::ok())
@@ -715,7 +715,7 @@ async fn parents_parent(
                 Permission::CaUpdate, Some(&ca)
             )?;
             let server = request.empty()?;
-            server.krill().ca_parent_remove(ca, parent, auth.actor()).await?;
+            server.old_krill().ca_parent_remove(ca, parent, auth.actor()).await?;
             Ok(HttpResponse::ok())
         }
         _ => Ok(HttpResponse::method_not_allowed())
@@ -788,7 +788,7 @@ async fn repo_index(
             )?;
             let server = request.empty()?;
             Ok(HttpResponse::json(
-                &server.krill().ca_repo_details(&ca)?
+                &server.old_krill().ca_repo_details(&ca)?
             ))
         }
         Method::POST => {
@@ -797,7 +797,7 @@ async fn repo_index(
             )?;
             let (server, update) = request.read_bytes().await?;
             let update = extract_repository_contact(&ca, update)?;
-            server.krill().ca_repo_update(ca, update, auth.actor()).await?;
+            server.old_krill().ca_repo_update(ca, update, auth.actor()).await?;
             Ok(HttpResponse::ok())
         }
         _ => Ok(HttpResponse::method_not_allowed())
@@ -842,7 +842,7 @@ fn repo_status(
     )?;
     let server = request.empty()?;
     Ok(HttpResponse::json(
-        &server.krill().ca_status(&ca)?.into_repo()
+        &server.old_krill().ca_status(&ca)?.into_repo()
     ))
 }
 
@@ -873,7 +873,7 @@ async fn routes_index(
             )?;
             let server = request.empty()?;
             Ok(HttpResponse::json(
-                &server.krill().ca_routes_show(&ca)?
+                &server.old_krill().ca_routes_show(&ca)?
             ))
         }
         Method::POST => {
@@ -881,7 +881,7 @@ async fn routes_index(
                 Permission::RoutesUpdate, Some(&ca)
             )?;
             let (server, updates) = request.read_json().await?;
-            server.krill().ca_routes_update(ca, updates, auth.actor())?;
+            server.old_krill().ca_routes_update(ca, updates, auth.actor())?;
             Ok(HttpResponse::ok())
         }
         _ => Ok(HttpResponse::method_not_allowed())
@@ -900,13 +900,13 @@ async fn routes_try(
     )?;
     let (server, mut updates)
         = request.read_json::<RoaConfigurationUpdates>().await?;
-    let effect = server.krill().ca_routes_bgp_dry_run(
+    let effect = server.old_krill().ca_routes_bgp_dry_run(
         &ca, updates.clone()
     )?;
     if effect.contains_invalids() {
         updates.set_explicit_max_length();
         let resources = updates.affected_prefixes();
-        let suggestion = server.krill().ca_routes_bgp_suggest(
+        let suggestion = server.old_krill().ca_routes_bgp_suggest(
             &ca, Some(resources)
         )?;
         Ok(HttpResponse::json(
@@ -916,7 +916,7 @@ async fn routes_try(
         ))
     }
     else {
-        server.krill().ca_routes_update(ca, updates, auth.actor())?;
+        server.old_krill().ca_routes_update(ca, updates, auth.actor())?;
         Ok(HttpResponse::ok())
     }
 }
@@ -946,7 +946,7 @@ fn routes_analysis_full(
     )?;
     let server = request.empty()?;
     Ok(HttpResponse::json(
-        &server.krill().ca_routes_bgp_analysis(&ca)?
+        &server.old_krill().ca_routes_bgp_analysis(&ca)?
     ))
 }
 
@@ -962,7 +962,7 @@ async fn routes_analysis_dryrun(
     )?;
     let (server, updates) = request.read_json().await?;
     Ok(HttpResponse::json(
-        &server.krill().ca_routes_bgp_dry_run(&ca, updates)?
+        &server.old_krill().ca_routes_bgp_dry_run(&ca, updates)?
     ))
 }
 
@@ -979,7 +979,7 @@ async fn routes_analysis_suggest(
             )?;
             let server = request.empty()?;
             Ok(HttpResponse::json(
-                &server.krill().ca_routes_bgp_suggest(&ca, None)?
+                &server.old_krill().ca_routes_bgp_suggest(&ca, None)?
             ))
         }
         Method::POST => {
@@ -988,7 +988,7 @@ async fn routes_analysis_suggest(
             )?;
             let (server, resources) = request.read_json().await?;
             Ok(HttpResponse::json(
-                &server.krill().ca_routes_bgp_suggest(
+                &server.old_krill().ca_routes_bgp_suggest(
                     &ca, Some(resources)
                 )?
             ))
@@ -1034,7 +1034,7 @@ fn stats_children_connections(
     )?;
     let server = request.empty()?;
     Ok(HttpResponse::json(
-        &server.krill().ca_stats_child_connections(&ca)?
+        &server.old_krill().ca_stats_child_connections(&ca)?
     ))
 }
 
@@ -1064,7 +1064,7 @@ fn sync_parents(
         Permission::CaUpdate, Some(&ca)
     )?;
     let server = request.empty()?;
-    server.krill().cas_refresh_single(ca)?;
+    server.old_krill().cas_refresh_single(ca)?;
     Ok(HttpResponse::ok())
 }
 
@@ -1079,7 +1079,7 @@ fn sync_repo(
         Permission::CaUpdate, Some(&ca)
     )?;
     let server = request.empty()?;
-    server.krill().cas_repo_sync_single(&ca)?;
+    server.old_krill().cas_repo_sync_single(&ca)?;
     Ok(HttpResponse::ok())
 }
 

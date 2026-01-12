@@ -40,7 +40,7 @@ async fn cas_import(
     request.check_post()?;
     let (request, _) = request.proceed_permitted(Permission::CaAdmin, None)?;
     let (server, structure) = request.read_json().await?;
-    server.krill().cas_import(structure).await?;
+    server.old_krill().cas_import(structure).await?;
     Ok(HttpResponse::ok())
 }
 
@@ -54,9 +54,9 @@ fn cas_issues(
     let server = request.empty()?;
 
     let mut all_issues = AllCertAuthIssues::default();
-    for ca in server.krill().ca_handles()? {
+    for ca in server.old_krill().ca_handles()? {
         if auth.has_permission(Permission::CaRead, Some(&ca)) {
-            let issues = server.krill().ca_issues(&ca)?;
+            let issues = server.old_krill().ca_issues(&ca)?;
             if !issues.is_empty() {
                 all_issues.cas.insert(ca, issues);
             }
@@ -85,7 +85,7 @@ fn cas_sync_parent(
     request.check_post()?;
     let (request, _) = request.proceed_permitted(Permission::CaAdmin, None)?;
     let server = request.empty()?;
-    server.krill().cas_refresh_all()?;
+    server.old_krill().cas_refresh_all()?;
     Ok(HttpResponse::ok())
 }
 
@@ -97,7 +97,7 @@ fn cas_sync_repo(
     request.check_post()?;
     let (request, _) = request.proceed_permitted(Permission::CaAdmin, None)?;
     let server = request.empty()?;
-    server.krill().cas_repo_sync_all()?;
+    server.old_krill().cas_repo_sync_all()?;
     Ok(HttpResponse::ok())
 }
 
@@ -109,7 +109,7 @@ fn cas_publish(
     request.check_post()?;
     let (request, _) = request.proceed_permitted(Permission::CaAdmin, None)?;
     let server = request.empty()?;
-    server.krill().republish_all(false)?;
+    server.old_krill().republish_all(false)?;
     Ok(HttpResponse::ok())
 }
 
@@ -121,7 +121,7 @@ fn cas_force_publish(
     request.check_post()?;
     let (request, _) = request.proceed_permitted(Permission::CaAdmin, None)?;
     let server = request.empty()?;
-    server.krill().republish_all(true)?;
+    server.old_krill().republish_all(true)?;
     Ok(HttpResponse::ok())
 }
 
@@ -133,7 +133,7 @@ fn cas_suspend(
     request.check_post()?;
     let (request, _) = request.proceed_permitted(Permission::CaAdmin, None)?;
     let server = request.empty()?;
-    server.krill().cas_schedule_suspend_all()?;
+    server.old_krill().cas_schedule_suspend_all()?;
     Ok(HttpResponse::ok())
 }
 

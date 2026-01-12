@@ -59,7 +59,7 @@ impl<'a> Request<'a> {
 
     /// Returns whether testbed mode is enabled.
     pub fn testbed_enabled(&self) -> bool {
-        self.server.krill().testbed_enabled()
+        self.server.old_krill().testbed_enabled()
     }
 
     /// Returns the method of this request.

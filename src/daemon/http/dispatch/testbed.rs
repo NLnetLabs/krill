@@ -83,7 +83,7 @@ async fn children_index(
     let (request, _) = request.proceed_unchecked();
     let (server, child) = request.read_json().await?;
     Ok(HttpResponse::json(
-        &server.krill().ca_add_child(
+        &server.old_krill().ca_add_child(
             &testbed_ca_handle(), child, &Actor::anonymous()
         )?
     ))
@@ -110,7 +110,7 @@ fn children_child_index(
     request.check_delete()?;
     let (request, _) = request.proceed_unchecked();
     let server = request.empty()?;
-    server.krill().ca_child_remove(
+    server.old_krill().ca_child_remove(
         &testbed_ca_handle(), child, &Actor::anonymous()
     )?;
     Ok(HttpResponse::ok())
@@ -126,7 +126,7 @@ fn children_child_response(
     let (request, _) = request.proceed_unchecked();
     let server = request.empty()?;
     Ok(HttpResponse::xml(
-        server.krill().ca_parent_response(
+        server.old_krill().ca_parent_response(
             &testbed_ca_handle(), child
         )?.to_xml_vec()
     ))
@@ -152,7 +152,7 @@ async fn publishers_index(
     let (request, _) = request.proceed_unchecked();
     let (server, pbl) = request.read_json().await?;
     Ok(HttpResponse::json(
-        &server.krill().add_publisher(pbl, &Actor::anonymous())?
+        &server.old_krill().add_publisher(pbl, &Actor::anonymous())?
     ))
 }
 
@@ -177,7 +177,7 @@ fn publishers_publisher_index(
     request.check_delete()?;
     let (request, _) = request.proceed_unchecked();
     let server = request.empty()?;
-    server.krill().remove_publisher(
+    server.old_krill().remove_publisher(
         publisher, &Actor::anonymous()
     )?;
     Ok(HttpResponse::ok())
@@ -193,7 +193,7 @@ fn publishers_publisher_response(
     let (request, _) = request.proceed_unchecked();
     let server = request.empty()?;
     Ok(HttpResponse::xml(
-        server.krill().repository_response(&publisher)?.to_xml_vec()
+        server.old_krill().repository_response(&publisher)?.to_xml_vec()
     ))
 }
 
