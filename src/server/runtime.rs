@@ -19,65 +19,115 @@
 //!
 
 
-use std::{error, fmt};
 use std::sync::Arc;
-use hyper::StatusCode;
-use rpki::ca::publication;
+//use std::time::Duration;
+//use log::info;
+use rpki::uri;
 use tokio::runtime;
 use tokio::sync::oneshot;
-use crate::commons::error::KrillError;
-use crate::api::status::ErrorResponse;
+use crate::commons::actor::Actor;
+use crate::commons::crypto::{KrillSigner/*, KrillSignerBuilder*/};
+//use crate::commons::error::KrillError;
+use crate::config::Config;
+//use crate::constants::{ACTOR_DEF_KRILL, KRILL_SERVER_APP};
+use super::bgp::BgpAnalyser;
+use super::ca::CaManager;
+use super::mq::TaskQueue;
+use super::pubd::RepositoryManager;
 
 
 //------------ KrillRuntime --------------------------------------------------
 
+#[derive(Clone)]
 pub struct KrillRuntime(Arc<Components>);
 
 impl KrillRuntime {
-    pub async fn run<F, T, E>(
-        &self, op: F
-    ) -> Result<T, RunError>
-    where
-        F: FnOnce() -> Result<T, E> + Send + 'static,
-        T: Send + 'static,
-        E: Into<RunError> + Send + 'static
-    {
-        let (tx, rx) = oneshot::channel();
-        self.0.tokio.spawn_blocking(|| {
-            let _ = tx.send(op());
-        });
-        rx.await?.map_err(Into::into)
+    /*
+    pub fn new(
+        config: Config,
+        tokio: runtime::Handle,
+    ) -> Result<Self, KrillError> {
+        let service_uri = config.service_uri();
+
+        info!("{KRILL_SERVER_APP} uses service uri: {service_uri}");
+
+        // Assumes that Config::verify() has already ensured that the signer
+        // configuration is valid and that Config::resolve() has been
+        // used to update signer name references to resolve to the
+        // corresponding signer configurations.
+        let signer = KrillSignerBuilder::new(
+            &config.storage_uri,
+            Duration::from_secs(config.signer_probe_retry_seconds),
+            &config.signers,
+        ).with_default_signer(
+            config.default_signer()
+        ).with_one_off_signer(
+            config.one_off_signer()
+        ).build()?;
+
+        let tasks = TaskQueue::new(&config.storage_uri)?;
+        let repo_manager = RepositoryManager::build(&config)?;
+        let ca_manager = CaManager::build(&config)?;
+        let bgp_analyser = BgpAnalyser::new(&config);
+
+        Ok(Self(Arc::new(Components {
+            config,
+            service_uri,
+            repo_manager,
+            ca_manager,
+            tasks,
+            signer,
+            bgp_analyser,
+            system_actor: ACTOR_DEF_KRILL,
+            tokio,
+        })))
+    }
+    */
+
+    pub fn config(&self) -> &Config {
+        &self.0.config
     }
 
-    pub async fn run_errand<F, P, T, E>(
-        &self, op: F
-    ) -> Result<T, RunError>
-    where
-        F: FnOnce() -> P + Send + 'static,
-        P: Phase<Output = Result<T, E>>,
-        T: Send + 'static,
-        E: Into<RunError> + Send + 'static
-    {
-        let (tx, rx) = oneshot::channel();
-        self.0.tokio.spawn_blocking(|| {
-            op().finish(tx);
-        });
-        rx.await?.map_err(Into::into)
+    pub fn service_uri(&self) -> &uri::Https {
+        &self.0.service_uri
     }
-}
 
+    pub fn repo_manager(&self) -> &RepositoryManager {
+        &self.0.repo_manager
+    }
 
-//------------ ErrandRuntime -------------------------------------------------
+    pub fn ca_manager(&self) -> &CaManager {
+        &self.0.ca_manager
+    }
 
-#[derive(Clone)]
-pub struct ErrandRuntime(Arc<Components>);
+    pub fn tasks(&self) -> &TaskQueue {
+        &self.0.tasks
+    }
 
-impl ErrandRuntime {
-    fn spawn_async(&self, future: impl Future<Output = ()> + Send + 'static) {
+    pub fn signer(&self) -> &KrillSigner {
+        &self.0.signer
+    }
+
+    pub fn system_actor(&self) -> &Actor {
+        &self.0.system_actor
+    }
+
+    /// Returns whether testbed mode is enabled.
+    pub fn is_testbed_enabled(&self) -> bool {
+        self.config().testbed().is_some()
+    }
+
+    /// Spawns a future onto the async runtime.
+    pub fn spawn_async(
+        &self, future: impl Future<Output = ()> + Send + 'static
+    ) {
         let _ = self.0.tokio.spawn(future);
     }
 
-    fn spawn_blocking(&self, op: impl FnOnce() + Send + 'static) {
+    /// Spawns a closure onto the sync runtime.
+    pub fn spawn_blocking(
+        &self, op: impl FnOnce() + Send + 'static
+    ) {
         let _ = self.0.tokio.spawn_blocking(op);
     }
 }
@@ -86,7 +136,6 @@ impl ErrandRuntime {
 //------------ Components ----------------------------------------------------
 
 struct Components {
-    /*
     /// The server configuration.
     ///
     /// This has to be an arc for now since some components keep a copy.
@@ -98,27 +147,23 @@ struct Components {
     /// value which may be missing.
     service_uri: uri::Https,
 
-    /// Publication server, with configured publishers
+    /// Publication server with configured publishers
     repo_manager: RepositoryManager,
 
     /// The manager for all our CAs.
     ca_manager: CaManager,
 
     /// The task queue.
-    ///
-    /// This needs to remanin an arc for now since it needs to be given to
-    /// aggregate listeners.
     tasks: TaskQueue,
 
     /// The signer.
-    ///
-    /// This needs to remain an arc for now because it is kept with some
-    /// commands.
     signer: KrillSigner,
+
+    /// The BGP analyser.
+    bgp_analyser: Arc<BgpAnalyser>,
 
     /// The actor used for actions initiated by the server itself.
     system_actor: Actor,
-    */
 
     /// The Tokio runtime to spawn tasks onto.
     ///
@@ -128,9 +173,9 @@ struct Components {
 }
 
 
-//------------ Errand --------------------------------------------------------
+//------------ Init ----------------------------------------------------------
 
-pub struct Errand<Cap, Fut: Future> {
+pub struct Init<Cap, Fut: Future> {
     /// The capture value passed along during execution.
     capture: Cap,
 
@@ -138,10 +183,10 @@ pub struct Errand<Cap, Fut: Future> {
     value: MaybeFuture<Fut>,
 
     /// The Krill runtime to use and pass along.
-    krill: ErrandRuntime,
+    krill: KrillRuntime,
 }
 
-impl<Cap, Fut: Future> Errand<Cap, Fut> {
+impl<Cap, Fut: Future> Init<Cap, Fut> {
     pub fn then<Op>(self, op: Op) -> Then<Self, Op> {
         Then {
             before: self,
@@ -150,7 +195,7 @@ impl<Cap, Fut: Future> Errand<Cap, Fut> {
     }
 }
 
-impl<Cap, Fut> Phase for Errand<Cap, Fut>
+impl<Cap, Fut> Errand for Init<Cap, Fut>
 where
     Cap: Send + 'static,
     Fut: Future + Send + 'static,
@@ -162,7 +207,7 @@ where
     fn run<Then>(self, then: Then)
     where
         Then: 
-            FnOnce(Cap, Self::Output, ErrandRuntime)
+            FnOnce(Cap, Self::Output, KrillRuntime)
             + Send + 'static
     {
         match self.value {
@@ -215,9 +260,9 @@ impl<Before, Op> Then<Before, Op> {
     }
 }
 
-impl<Before, Op> Phase for Then<Before, Op>
+impl<Before, Op> Errand for Then<Before, Op>
 where
-    Before: Phase,
+    Before: Errand,
     Op: IntoMaybeFuture<Capture = Before::Capture, Input = Before::Output>,
 {
     type Capture = Op::Capture;
@@ -226,7 +271,7 @@ where
     fn run<Then>(self, then: Then)
     where
         Then: 
-            FnOnce(Op::Capture, Self::Output, ErrandRuntime)
+            FnOnce(Op::Capture, Self::Output, KrillRuntime)
             + Send + 'static
     {
         self.before.run(|mut capture, input, krill| {
@@ -286,68 +331,25 @@ pub trait IntoMaybeFuture: Send + 'static {
         self,
         capture: &mut Self::Capture,
         input: Self::Input,
-        krill: &ErrandRuntime,
+        krill: &KrillRuntime,
     ) -> MaybeFuture<Self::Future>;
 }
 
 
-//------------ Phase ---------------------------------------------------------
+//------------ Errand --------------------------------------------------------
 
 /// A single step in running an errand.
-pub trait Phase: Sized {
+pub trait Errand: Sized {
     type Capture: Send + 'static;
     type Output: Send + 'static;
 
     fn run<Then>(self, then: Then)
     where
         Then: 
-            FnOnce(Self::Capture, Self::Output, ErrandRuntime)
+            FnOnce(Self::Capture, Self::Output, KrillRuntime)
             + Send + 'static
     ;
 
     fn finish(self, tx: oneshot::Sender<Self::Output>);
 }
 
-
-//------------ RunError ------------------------------------------------------
-
-/// An error happened when running an operation.
-//
-//  This is a separate type in preparation for refactoring error handling. For
-//  now, it just wraps a `KrillError`.
-#[derive(Debug)]
-pub struct RunError(KrillError);
-
-impl RunError {
-    pub fn status(&self) -> StatusCode {
-        self.0.status()
-    }
-
-    pub fn to_error_response(&self) -> ErrorResponse {
-        self.0.to_error_response()
-    }
-
-    pub fn to_rfc8181_error_code(&self) -> publication::ReportErrorCode {
-        self.0.to_rfc8181_error_code()
-    }
-}
-
-impl From<KrillError> for RunError {
-    fn from(src: KrillError) -> Self {
-        Self(src)
-    }
-}
-
-impl From<oneshot::error::RecvError> for RunError {
-    fn from(_: oneshot::error::RecvError) -> Self {
-        Self(KrillError::internal("operation dropped"))
-    }
-}
-
-impl fmt::Display for RunError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl error::Error for RunError { }
