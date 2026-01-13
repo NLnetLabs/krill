@@ -108,6 +108,10 @@ impl KrillRuntime {
         &self.0.signer
     }
 
+    pub fn bpg_analyseer(&self) -> &BgpAnalyser {
+        &self.0.bgp_analyser
+    }
+
     pub fn system_actor(&self) -> &Actor {
         &self.0.system_actor
     }
