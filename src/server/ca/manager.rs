@@ -62,6 +62,7 @@ use crate::daemon::http::auth::{AuthInfo, Permission}; // XXX remove
 use crate::config::Config;
 use crate::server::mq::{now, Task, TaskQueue};
 use crate::server::pubd::RepositoryManager;
+use crate::server::runtime::KrillRuntime;
 use crate::server::taproxy::{
     TrustAnchorProxy, TrustAnchorProxyCommand, TrustAnchorProxyInitCommand,
 };
@@ -144,7 +145,7 @@ impl CaManager {
     ) -> KrillResult<Self> {
         // Create the AggregateStore for the event-sourced `CertAuth`
         // structures that handle most CA functions.
-        let mut ca_store = AggregateStore::<CertAuth>::create(
+        let ca_store = AggregateStore::<CertAuth>::create(
             &config.storage_uri,
             CASERVER_NS,
             config.use_history_cache,
@@ -181,56 +182,13 @@ impl CaManager {
             signer.clone(),
         )?);
 
-        // Register the `CaObjectsStore` as a pre-save listener to the
-        // 'ca_store' so that it can update its ROAs and issued
-        // certificates and/or generate manifests and CRLs when relevant
-        // changes occur in a `CertAuth`.
-        ca_store.add_pre_save_listener(ca_objects_store.clone());
-
-        // Register the `MessageQueue` as a pre-save listener to 'ca_store' so
-        // that relevant changes in a `CertAuth` can trigger follow-up
-        // actions. This is done as pre-save listener, because commands
-        // that would result in a follow-up should fail, if the task cannot be
-        // planned.
-        //
-        // Tasks will typically be picked up after the CA changes are
-        // committed, but they may also be picked up sooner by another
-        // thread. Because of that the tasks will remember which minimal
-        // version of the CA they are intended for, so that they can
-        // be rescheduled should they have been picked up too soon.
-        //
-        // An example of a triggered task: schedule a synchronisation with the
-        // repository (publication server) in case ROAs have been
-        // updated.
-        ca_store.add_pre_save_listener(tasks.clone());
-
-        // Now also register the `MessageQueue` as a post-save listener. We
-        // use this to send best-effort post-save signals to children
-        // in case a certificate was updated or a child key was revoked.
-        // This is a no-op for remote children (we cannot send a signal over
-        // RFC 6492).
-        ca_store.add_post_save_listener(tasks.clone());
-
         // Create TA proxy store if we need it.
         let ta_proxy_store = if config.ta_proxy_enabled() {
-            let mut store = AggregateStore::<TrustAnchorProxy>::create(
+            Some(AggregateStore::<TrustAnchorProxy>::create(
                 &config.storage_uri,
                 TA_PROXY_SERVER_NS,
                 config.use_history_cache,
-            )?;
-
-            // We need a pre-save listener so that we can schedule:
-            // - publication on updates
-            // - signing by the Trust Anchor Signer when there are requests
-            //   [in testbed mode]
-            store.add_pre_save_listener(tasks.clone());
-
-            // We need a post-save listener so that we can schedule:
-            // - re-sync for local children when the proxy has new responses
-            //   AND is saved
-            store.add_post_save_listener(tasks.clone());
-
-            Some(store)
+            )?)
         }
         else {
             None
@@ -282,8 +240,12 @@ impl CaManager {
         handle: CaHandle,
         actor: &Actor,
         command: CertAuthCommandDetails,
+        krill: &KrillRuntime,
     ) -> Result<Arc<CertAuth>, KrillError> {
-        self.ca_store.command(SentCommand::new(handle, None, command, actor))
+        self.ca_store.command_with_context(
+            SentCommand::new(handle, None, command, actor),
+            krill
+        )
     }
 
     /// Republish the embedded TA and CAs if needed.
@@ -320,6 +282,15 @@ impl CaManager {
     }
 }
 
+/// # Private access to components
+///
+impl CaManager {
+    pub(super) fn ca_objects_store(&self) -> &CaObjectsStore {
+        &self.ca_objects_store
+    }
+}
+
+
 /// # Trust Anchor Support
 ///
 impl CaManager {
@@ -329,10 +300,11 @@ impl CaManager {
     fn send_ta_proxy_command(
         &self,
         cmd: TrustAnchorProxyCommand,
+        krill: &KrillRuntime,
     ) -> KrillResult<Arc<TrustAnchorProxy>> {
         self.ta_proxy_store.as_ref().ok_or_else(|| {
             Error::custom("ta_support_enabled is false")
-        })?.command(cmd)
+        })?.command_with_context(cmd, krill.into())
     }
 
     /// Sends a command to the TA signer.
@@ -341,10 +313,11 @@ impl CaManager {
     fn send_ta_signer_command(
         &self,
         cmd: TrustAnchorSignerCommand,
+        krill: &KrillRuntime,
     ) -> KrillResult<Arc<TrustAnchorSigner>> {
         self.ta_signer_store.as_ref().ok_or_else(|| {
             Error::custom("ta_signer_enabled is false")
-        })?.command(cmd)
+        })?.command_with_context(cmd, krill.into())
     }
 
     /// Returns the TA proxy.
@@ -375,7 +348,9 @@ impl CaManager {
     ///
     /// Returns an error if TA proxy support is not enabled or the proxy is
     /// alreay initialized.
-    pub fn ta_proxy_init(&self) -> KrillResult<()> {
+    pub fn ta_proxy_init(
+        &self, krill: &KrillRuntime
+    ) -> KrillResult<()> {
         let ta_handle = ta_handle();
 
         let ta_proxy_store = self.ta_proxy_store.as_ref().ok_or_else(|| {
@@ -386,12 +361,12 @@ impl CaManager {
             return Err(Error::TaAlreadyInitialized)
         }
 
-        ta_proxy_store.add(
+        ta_proxy_store.add_with_context(
             TrustAnchorProxyInitCommand::make(
                 ta_handle,
-                self.signer.clone(),
                 &self.system_actor,
-            )
+            ),
+            krill.into(),
         )?;
         Ok(())
     }
@@ -405,6 +380,7 @@ impl CaManager {
         tal_https: Vec<uri::Https>,
         tal_rsync: uri::Rsync,
         private_key_pem: Option<String>,
+        krill: &KrillRuntime,
     ) -> KrillResult<()> {
         let handle = ta_handle();
 
@@ -427,8 +403,6 @@ impl CaManager {
             tal_rsync,
             private_key_pem,
             ta_mft_nr_override: None,
-            timing: self.config.ta_timing,
-            signer: self.signer.clone(),
         };
         let cmd = TrustAnchorSignerInitCommand::new(
             handle,
@@ -436,7 +410,7 @@ impl CaManager {
             &self.system_actor,
         );
 
-        ta_signer_store.add(cmd)?;
+        ta_signer_store.add_with_context(cmd, krill.into())?;
 
         Ok(())
     }
@@ -463,13 +437,15 @@ impl CaManager {
         &self,
         contact: RepositoryContact,
         actor: &Actor,
+        krill: &KrillRuntime,
     ) -> KrillResult<()> {
         self.send_ta_proxy_command(
             TrustAnchorProxyCommand::add_repo(
                 &ta_handle(),
                 contact,
                 actor,
-            )
+            ),
+            krill,
         )?;
         Ok(())
     }
@@ -493,9 +469,11 @@ impl CaManager {
         &self,
         info: TrustAnchorSignerInfo,
         actor: &Actor,
+        krill: &KrillRuntime,
     ) -> KrillResult<()> {
         self.send_ta_proxy_command(
-            TrustAnchorProxyCommand::add_signer(&ta_handle(), info, actor)
+            TrustAnchorProxyCommand::add_signer(&ta_handle(), info, actor),
+            krill
         )?;
         Ok(())
     }
@@ -507,9 +485,11 @@ impl CaManager {
         &self,
         info: TrustAnchorSignerInfo,
         actor: &Actor,
+        krill: &KrillRuntime,
     ) -> KrillResult<()> {            
         self.send_ta_proxy_command(
-            TrustAnchorProxyCommand::update_signer(&ta_handle(), info, actor)
+            TrustAnchorProxyCommand::update_signer(&ta_handle(), info, actor),
+            krill
         )?;
         Ok(())
     }
@@ -520,9 +500,11 @@ impl CaManager {
     pub fn ta_proxy_signer_make_request(
         &self,
         actor: &Actor,
+        krill: &KrillRuntime,
     ) -> KrillResult<ApiTrustAnchorSignedRequest> {
         self.send_ta_proxy_command(
-            TrustAnchorProxyCommand::make_signer_request(&ta_handle(), actor)
+            TrustAnchorProxyCommand::make_signer_request(&ta_handle(), actor),
+            krill
         )?.get_signer_request(self.config.ta_timing, &self.signer)
     }
 
@@ -540,13 +522,15 @@ impl CaManager {
         &self,
         response: TrustAnchorSignedResponse,
         actor: &Actor,
+        krill: &KrillRuntime,
     ) -> KrillResult<()> {
         self.send_ta_proxy_command(
             TrustAnchorProxyCommand::process_signer_response(
                 &ta_handle(),
                 response,
                 actor,
-            )
+            ),
+            krill
         )?;
         Ok(())
     }
@@ -559,11 +543,12 @@ impl CaManager {
         ta_key_pem: Option<String>,
         repo_manager: &Arc<RepositoryManager>,
         actor: &Actor,
+        krill: &KrillRuntime,
     ) -> KrillResult<()> {
         let ta_handle = ta_handle();
 
         // Initialise proxy
-        self.ta_proxy_init()?;
+        self.ta_proxy_init(krill)?;
 
         // Add repository
         let pub_req = self.ta_proxy_publisher_request()?;
@@ -577,28 +562,30 @@ impl CaManager {
         let contact = RepositoryContact::try_from_response(
             repository_response
         ).map_err(Error::rfc8183)?;
-        self.ta_proxy_repository_update(contact, &self.system_actor)?;
+        self.ta_proxy_repository_update(contact, &self.system_actor, krill)?;
 
         // Initialise signer
-        self.ta_signer_init(ta_uris, ta_aia, ta_key_pem)?;
+        self.ta_signer_init(ta_uris, ta_aia, ta_key_pem, krill)?;
 
         // Add signer to proxy
         let signer_info = self.get_trust_anchor_signer()?.get_signer_info();
-        self.ta_proxy_signer_add(signer_info, &self.system_actor)?;
+        self.ta_proxy_signer_add(signer_info, &self.system_actor, krill)?;
 
-        self.sync_ta_proxy_signer_if_possible()?;
+        self.sync_ta_proxy_signer_if_possible(krill)?;
         self.cas_repo_sync_single(repo_manager, &ta_handle, 0).await?;
 
         Ok(())
     }
 
     /// Renews the embedded testbed TA;
-    pub fn ta_renew_testbed_ta(&self) -> KrillResult<()> {
+    pub fn ta_renew_testbed_ta(
+        &self, krill: &KrillRuntime,
+    ) -> KrillResult<()> {
         if self.testbed_enabled() {
             let proxy = self.get_trust_anchor_proxy()?;
             if !proxy.has_open_request() {
                 info!("Renew the testbed TA");
-                self.sync_ta_proxy_signer_if_possible()?;
+                self.sync_ta_proxy_signer_if_possible(krill)?;
             }
         }
         Ok(())
@@ -609,7 +596,9 @@ impl CaManager {
 ///
 impl CaManager {
     /// Initializes a CA without a repo, no parents, no children, no nothing
-    pub fn init_ca(&self, handle: CaHandle) -> KrillResult<()> {
+    pub fn init_ca(
+        &self, handle: CaHandle, krill: &KrillRuntime,
+    ) -> KrillResult<()> {
         if handle == ta_handle() || handle.as_str() == "version" {
             return Err(Error::TaNameReserved)
         }
@@ -621,12 +610,12 @@ impl CaManager {
         // need to create a new CA entry in
         // self.ca_objects_store or self.status_store, because they will
         // generate empty default entries if needed.
-        self.ca_store.add(
+        self.ca_store.add_with_context(
             CertAuthInitCommand::new(
                 handle,
-                CertAuthInitCommandDetails { signer: self.signer.clone() },
+                CertAuthInitCommandDetails,
                 &self.system_actor,
-            )
+            ), krill
         )?;
         Ok(())
     }
@@ -643,12 +632,12 @@ impl CaManager {
         &self,
         handle: CaHandle,
         actor: &Actor,
+        krill: &KrillRuntime,
     ) -> KrillResult<()> {
         self.process_ca_command(
             handle, actor,
-            CertAuthCommandDetails::GenerateNewIdKey(
-                self.signer.clone(),
-            )
+            CertAuthCommandDetails::GenerateNewIdKey,
+            krill
         )?;
         Ok(())
     }
@@ -750,6 +739,7 @@ impl CaManager {
         repo_manager: &RepositoryManager,
         ca_handle: &CaHandle,
         actor: &Actor,
+        krill: &KrillRuntime,
     ) -> KrillResult<()> {
         warn!("Deleting CA '{ca_handle}' as requested by: {actor}");
 
@@ -761,7 +751,7 @@ impl CaManager {
              before removing it."
         );
         for parent in ca.parents() {
-            if let Err(e) = self.ca_parent_revoke(ca_handle, parent).await {
+            if let Err(e) = self.ca_parent_revoke(ca_handle, parent, krill).await {
                 warn!(
                     "Removing CA '{ca_handle}', but could not send revoke request \
                      to parent '{parent}': {e}"
@@ -845,6 +835,7 @@ impl CaManager {
         req: AddChildRequest,
         service_uri: &uri::Https,
         actor: &Actor,
+        krill: &KrillRuntime,
     ) -> KrillResult<ParentResponse> {
         info!("CA '{}' process add child request: {}", &ca, &req);
         if ca.as_str() != TA_NAME {
@@ -853,7 +844,8 @@ impl CaManager {
                     req.handle.clone(),
                     req.id_cert.into(),
                     req.resources
-                )
+                ),
+                krill
             )?;
             self.ca_parent_response(ca, req.handle, service_uri)
         }
@@ -861,7 +853,7 @@ impl CaManager {
             let child_handle = req.handle.clone();
             let add_child_cmd =
                 TrustAnchorProxyCommand::add_child(ca, req, actor);
-            self.send_ta_proxy_command(add_child_cmd)?;
+            self.send_ta_proxy_command(add_child_cmd, krill)?;
             self.ca_parent_response(ca, child_handle, service_uri)
         }
     }
@@ -908,14 +900,14 @@ impl CaManager {
         ca: &CaHandle,
         import_child: ImportChild,
         actor: &Actor,
+        krill: &KrillRuntime,
     ) -> KrillResult<()> {
         trace!("Importing CA: {} under parent: {}", import_child.name, ca);
         self.process_ca_command(ca.clone(), actor,
             CertAuthCommandDetails::ChildImport(
-                import_child,
-                self.config.clone(),
-                self.signer.clone(),
-            )
+                import_child
+            ),
+            krill,
         )?;
         Ok(())
     }
@@ -990,13 +982,15 @@ impl CaManager {
         child: ChildHandle,
         req: UpdateChildRequest,
         actor: &Actor,
+        krill: &KrillRuntime,
     ) -> KrillResult<()> {
         if let Some(id) = req.id_cert {
             self.process_ca_command(ca.clone(), actor,
                 CertAuthCommandDetails::ChildUpdateId(
                     child.clone(),
                     id.into(),
-                )
+                ),
+                krill,
             )?;
         }
         if let Some(resources) = req.resources {
@@ -1005,6 +999,7 @@ impl CaManager {
                     child.clone(),
                     resources,
                 ),
+                krill,
             )?;
         }
         if let Some(suspend) = req.suspend {
@@ -1013,14 +1008,16 @@ impl CaManager {
                     ca.clone(), actor,
                     CertAuthCommandDetails::ChildSuspendInactive(
                         child.clone()
-                    )
+                    ),
+                    krill,
                 )?;
             } else {
                 self.process_ca_command(
                     ca.clone(), actor,
                     CertAuthCommandDetails::ChildUnsuspend(
                         child.clone(),
-                    )
+                    ),
+                    krill,
                 )?;
             }
         }
@@ -1028,7 +1025,8 @@ impl CaManager {
             self.process_ca_command(ca.clone(), actor,
                 CertAuthCommandDetails::ChildUpdateResourceClassNameMapping(
                     child, mapping,
-                )
+                ),
+                krill,
             )?;
         }
         Ok(())
@@ -1043,10 +1041,13 @@ impl CaManager {
         ca: &CaHandle,
         child: ChildHandle,
         actor: &Actor,
+        krill: &KrillRuntime,
     ) -> KrillResult<()> {
         self.status_store.remove_child(ca, &child)?;
-        self.process_ca_command(ca.clone(), actor,
-            CertAuthCommandDetails::ChildRemove(child)
+        self.process_ca_command(
+            ca.clone(), actor,
+            CertAuthCommandDetails::ChildRemove(child),
+            krill,
         )?;
         Ok(())
     }
@@ -1061,6 +1062,7 @@ impl CaManager {
         msg_bytes: Bytes,
         user_agent: Option<String>,
         actor: &Actor,
+        krill: &KrillRuntime,
     ) -> KrillResult<Bytes> {
         if ca_handle.as_str() == TA_NAME {
             return Err(Error::custom(
@@ -1080,7 +1082,7 @@ impl CaManager {
         );
 
         match self.rfc6492_process_request(
-            ca_handle, req_msg, user_agent, actor
+            ca_handle, req_msg, user_agent, actor, krill
         ) {
             Ok(msg) => {
                 let should_log_cms = !msg.is_list_response();
@@ -1111,6 +1113,7 @@ impl CaManager {
         req_msg: provisioning::Message,
         user_agent: Option<String>,
         actor: &Actor,
+        krill: &KrillRuntime,
     ) -> KrillResult<provisioning::Message> {
         let (sender, _recipient, payload) = req_msg.unpack();
 
@@ -1137,6 +1140,7 @@ impl CaManager {
                     child_handle.clone(),
                     UpdateChildRequest::unsuspend(),
                     actor,
+                    krill,
                 )?;
             }
         }
@@ -1144,7 +1148,7 @@ impl CaManager {
         let res_msg = match payload {
             provisioning::Payload::Revoke(req) => {
                 self.rfc6492_revoke(
-                    ca_handle, child_handle.clone(), req, actor
+                    ca_handle, child_handle.clone(), req, actor, krill,
                 )
             }
             provisioning::Payload::List => {
@@ -1152,7 +1156,7 @@ impl CaManager {
             }
             provisioning::Payload::Issue(req) => {
                 self.rfc6492_issue(
-                    ca_handle, child_handle.clone(), req, actor
+                    ca_handle, child_handle.clone(), req, actor, krill,
                 )
             }
             _ => Err(Error::custom("Unsupported RFC6492 message")),
@@ -1231,6 +1235,7 @@ impl CaManager {
         child_handle: ChildHandle,
         issue_req: IssuanceRequest,
         actor: &Actor,
+        krill: &KrillRuntime,
     ) -> KrillResult<provisioning::Message> {
         if ca_handle.as_str() == TA_NAME {
             let request = ProvisioningRequest::Issuance(issue_req);
@@ -1239,6 +1244,7 @@ impl CaManager {
                 child_handle,
                 request,
                 actor,
+                krill,
             )
         }
         else {
@@ -1250,9 +1256,8 @@ impl CaManager {
                 CertAuthCommandDetails::ChildCertify(
                     child_handle.clone(),
                     issue_req.clone(),
-                    self.config.clone(),
-                    self.signer.clone(),
-                )
+                ),
+                krill
             )?;
 
             // The updated CA will now include the newly issued certificate.
@@ -1281,10 +1286,13 @@ impl CaManager {
         child: ChildHandle,
         revoke_request: RevocationRequest,
         actor: &Actor,
+        krill: &KrillRuntime,
     ) -> KrillResult<provisioning::Message> {
         if ca_handle.as_str() == TA_NAME {
             let request = ProvisioningRequest::Revocation(revoke_request);
-            self.ta_slow_rfc6492_request(ca_handle, child, request, actor)
+            self.ta_slow_rfc6492_request(
+                ca_handle, child, request, actor, krill
+            )
         }
         else {
             let res = RevocationResponse::from(&revoke_request);
@@ -1294,7 +1302,8 @@ impl CaManager {
                 res,
             );
             self.process_ca_command(ca_handle.clone(), actor,
-                CertAuthCommandDetails::ChildRevokeKey(child, revoke_request)
+                CertAuthCommandDetails::ChildRevokeKey(child, revoke_request),
+                krill,
             )?;
             Ok(msg)
         }
@@ -1310,6 +1319,7 @@ impl CaManager {
         child: ChildHandle,
         request: ProvisioningRequest,
         actor: &Actor,
+        krill: &KrillRuntime,
     ) -> KrillResult<provisioning::Message> {
         let proxy = self.get_trust_anchor_proxy()?;
         if let Some(response) = proxy.response_for_child(&child, &request)? {
@@ -1326,7 +1336,8 @@ impl CaManager {
                     child,
                     request.key_identifier(),
                     actor,
-                )
+                ),
+                krill,
             )?;
 
             Ok(response)
@@ -1354,7 +1365,8 @@ impl CaManager {
                     child.clone(),
                     request,
                     actor,
-                )
+                ),
+                krill,
             )?;
 
             provisioning::Message::not_performed_response(
@@ -1384,6 +1396,7 @@ impl CaManager {
         handle: CaHandle,
         parent_req: ParentCaReq,
         actor: &Actor,
+        krill: &KrillRuntime,
     ) -> KrillResult<()> {
         let ca = self.get_ca(&handle)?;
 
@@ -1402,7 +1415,7 @@ impl CaManager {
                 parent_req.handle, contact,
             )
         };
-        self.process_ca_command(handle.clone(), actor, cmd)?;
+        self.process_ca_command(handle.clone(), actor, cmd, krill)?;
         Ok(())
     }
 
@@ -1417,10 +1430,11 @@ impl CaManager {
         handle: CaHandle,
         parent: ParentHandle,
         actor: &Actor,
+        krill: &KrillRuntime,
     ) -> KrillResult<()> {
         // Best effort, request revocations for any remaining keys under this
         // parent.
-        if let Err(e) = self.ca_parent_revoke(&handle, &parent).await {
+        if let Err(e) = self.ca_parent_revoke(&handle, &parent, krill).await {
             warn!(
                 "Removing parent '{parent}' from CA '{handle}', but could not send \
                  revoke requests: {e}"
@@ -1431,6 +1445,7 @@ impl CaManager {
         self.process_ca_command(
             handle.clone(), actor,
             CertAuthCommandDetails::RemoveParent(parent),
+            krill
         )?;
         Ok(())
     }
@@ -1440,10 +1455,11 @@ impl CaManager {
         &self,
         handle: &CaHandle,
         parent: &ParentHandle,
+        krill: &KrillRuntime,
     ) -> KrillResult<()> {
         let ca = self.get_ca(handle)?;
         let revoke_requests = ca.revoke_under_parent(parent, &self.signer)?;
-        self.send_revoke_requests(handle, parent, revoke_requests)
+        self.send_revoke_requests(handle, parent, revoke_requests, krill)
             .await?;
         Ok(())
     }
@@ -1501,7 +1517,8 @@ impl CaManager {
     //
     //  XXX PANICS
     pub fn ca_suspend_inactive_children(
-        &self, ca_handle: &CaHandle, started: Timestamp, actor: &Actor
+        &self, ca_handle: &CaHandle, started: Timestamp, actor: &Actor,
+        krill: &KrillRuntime,
     ) {
         // Set threshold hours if it was configured AND this server has been
         // started longer ago than the hours specified. Otherwise we
@@ -1545,7 +1562,7 @@ impl CaManager {
 
                     let req = UpdateChildRequest::suspend();
                     if let Err(e) = self.ca_child_update(
-                        ca_handle, child, req, actor
+                        ca_handle, child, req, actor, krill,
                     ) {
                         error!(
                             "Could not suspend inactive child, error: {e}"
@@ -1628,6 +1645,7 @@ impl CaManager {
         min_ca_version: u64, // set this 0 if it does not matter
         parent: &ParentHandle,
         actor: &Actor,
+        krill: &KrillRuntime,
     ) -> KrillResult<bool> {
         let ca = self.get_ca(handle)?;
 
@@ -1641,10 +1659,12 @@ impl CaManager {
         }
         else {
             if ca.has_pending_requests(parent) {
-                self.send_requests(handle, parent, actor).await?;
+                self.send_requests(handle, parent, actor, krill).await?;
             }
             else {
-                self.get_updates_from_parent(handle, parent, actor).await?;
+                self.get_updates_from_parent(
+                    handle, parent, actor, krill,
+                ).await?;
             }
             Ok(true)
         }
@@ -1655,7 +1675,9 @@ impl CaManager {
     /// If the TA signer is remote, logs a warning suggesting doing a
     /// manual synchronization, assuming that this method is only ever called
     /// if the TA proxy requires synchronization.
-    pub fn sync_ta_proxy_signer_if_possible(&self) -> KrillResult<()> {
+    pub fn sync_ta_proxy_signer_if_possible(
+        &self, krill: &KrillRuntime,
+    ) -> KrillResult<()> {
         let ta_handle = ta_handle();
 
         if self.get_trust_anchor_proxy().is_err() {
@@ -1679,7 +1701,8 @@ impl CaManager {
             TrustAnchorProxyCommand::make_signer_request(
                 &ta_handle,
                 &self.system_actor,
-            )
+            ),
+            krill,
         )?;
 
         // Get sign request for signer.
@@ -1696,11 +1719,10 @@ impl CaManager {
             TrustAnchorSignerCommand::make_process_request_command(
                 &ta_handle,
                 signed_request.into(),
-                self.config.ta_timing,
                 None, // do not override next manifest number
-                self.signer.clone(),
                 &self.system_actor,
-            )
+            ),
+            krill,
         )?;
 
         // Get the response from the signer and give it to the proxy.
@@ -1710,7 +1732,8 @@ impl CaManager {
                 &ta_handle,
                 exchange.clone().response,
                 &self.system_actor,
-            )
+            ),
+            krill,
         )?;
         Ok(())
     }
@@ -1723,6 +1746,7 @@ impl CaManager {
         handle: &CaHandle,
         parent: &ParentHandle,
         actor: &Actor,
+        krill: &KrillRuntime,
     ) -> KrillResult<()> {
         if handle == &ta_handle() {
             return Ok(())
@@ -1737,11 +1761,11 @@ impl CaManager {
         let ca = self.get_ca(handle)?;
         let parent_contact = ca.parent(parent)?;
         let entitlements = self.get_entitlements_from_contact(
-            handle, parent, parent_contact, true,
+            handle, parent, parent_contact, true, krill,
         ).await?;
 
         self.update_entitlements(
-            handle, parent.clone(), entitlements, actor,
+            handle, parent.clone(), entitlements, actor, krill,
         )?;
 
         Ok(())
@@ -1753,24 +1777,26 @@ impl CaManager {
     /// certificate requests.
     async fn send_requests(
         &self, handle: &CaHandle, parent: &ParentHandle, actor: &Actor,
+        krill: &KrillRuntime,
     ) -> KrillResult<()> {
         self.send_revoke_requests_handle_responses(
-            handle, parent, actor
+            handle, parent, actor, krill,
         ).await?;
         self.send_cert_requests_handle_responses(
-            handle, parent, actor
+            handle, parent, actor, krill,
         ).await
     }
 
     /// Sends all open revocation requests and handles the responses.
     async fn send_revoke_requests_handle_responses(
         &self, handle: &CaHandle, parent: &ParentHandle, actor: &Actor,
+        krill: &KrillRuntime,
     ) -> KrillResult<()> {
         let child = self.get_ca(handle)?;
         let requests = child.revoke_requests(parent);
 
         let revoke_responses = self.send_revoke_requests(
-            handle, parent, requests
+            handle, parent, requests, krill,
         ).await?;
 
         for (rcn, revoke_responses) in revoke_responses {
@@ -1780,7 +1806,8 @@ impl CaManager {
                     CertAuthCommandDetails::KeyRollFinish(
                         rcn.clone(),
                         response,
-                    )
+                    ),
+                    krill,
                 )?;
             }
         }
@@ -1796,6 +1823,7 @@ impl CaManager {
         handle: &CaHandle,
         parent: &ParentHandle,
         revoke_requests: HashMap<ResourceClassName, Vec<RevocationRequest>>,
+        krill: &KrillRuntime,
     ) -> KrillResult<HashMap<ResourceClassName, Vec<RevocationResponse>>> {
         let child = self.get_ca(handle)?;
         let server_info = child.parent(parent)?.parent_server_info();
@@ -1804,6 +1832,7 @@ impl CaManager {
             revoke_requests,
             &child.id_cert().public_key.key_identifier(),
             server_info,
+            krill,
         ) .await {
             Err(e) => {
                 self.status_store.set_parent_failure(
@@ -1826,6 +1855,7 @@ impl CaManager {
         handle: &CaHandle,
         rcn: ResourceClassName,
         revocation: RevocationRequest,
+        krill: &KrillRuntime,
     ) -> KrillResult<HashMap<ResourceClassName, Vec<RevocationResponse>>>
     {
         let child = self.ca_store.get_latest(handle)?;
@@ -1833,7 +1863,7 @@ impl CaManager {
         let mut requests = HashMap::new();
         requests.insert(rcn, vec![revocation]);
 
-        self.send_revoke_requests(handle, parent, requests).await
+        self.send_revoke_requests(handle, parent, requests, krill).await
     }
 
     /// Sends revoke requests using the provisioning protocol.
@@ -1842,6 +1872,7 @@ impl CaManager {
         revoke_requests: HashMap<ResourceClassName, Vec<RevocationRequest>>,
         signing_key: &KeyIdentifier,
         server_info: &ParentServerInfo,
+        krill: &KrillRuntime,
     ) -> KrillResult<HashMap<ResourceClassName, Vec<RevocationResponse>>> {
         let mut revoke_map = HashMap::new();
 
@@ -1856,7 +1887,7 @@ impl CaManager {
                 );
 
                 let response = self.send_rfc6492_and_validate_response(
-                    revoke, server_info, signing_key
+                    revoke, server_info, signing_key, krill
                 ) .await?;
 
                 let payload = response.into_payload();
@@ -1937,6 +1968,7 @@ impl CaManager {
     /// Sends certification requests to a parent CA and proceses the response.
     async fn send_cert_requests_handle_responses(
         &self, ca_handle: &CaHandle, parent: &ParentHandle, actor: &Actor,
+        krill: &KrillRuntime,
     ) -> KrillResult<()> {
         let ca = self.get_ca(ca_handle)?;
         let requests = ca.cert_requests(parent);
@@ -1967,6 +1999,7 @@ impl CaManager {
                     ),
                     server_info,
                     &signing_key,
+                    krill
                 ).await {
                     Err(e) => {
                         // If any of the requests for an RC results in an
@@ -1982,7 +2015,7 @@ impl CaManager {
                     }
                     Ok(response) => {
                         if let Err(err) = self.handle_cert_response(
-                            ca_handle, parent, &rcn, actor, response
+                            ca_handle, parent, &rcn, actor, response, krill,
                         ) {
                             errors.push(err);
                             break;
@@ -2020,6 +2053,7 @@ impl CaManager {
         rcn: &ResourceClassName,
         actor: &Actor,
         response: provisioning::Message,
+        krill: &KrillRuntime,
     ) -> KrillResult<()> {
         let payload = response.into_payload();
         let payload_type = payload.payload_type();
@@ -2090,11 +2124,9 @@ impl CaManager {
                 if let Err(e) = self.process_ca_command(
                     ca_handle.clone(), actor,
                     CertAuthCommandDetails::UpdateRcvdCert(
-                        rcn.clone(),
-                        rcvd_cert,
-                        self.config.clone(),
-                        self.signer.clone(),
-                    )
+                        rcn.clone(), rcvd_cert,
+                    ),
+                    krill,
                 ) {
                     // Note that sending the command to update a received
                     // certificate cannot fail unless there are bigger issues
@@ -2117,8 +2149,8 @@ impl CaManager {
                         CertAuthCommandDetails::DropResourceClass(
                             rcn.clone(),
                             reason.clone(),
-                            self.signer.clone(),
-                        )
+                        ),
+                        krill,
                     )?;
 
                     return Err(Error::CaParentSyncError(
@@ -2173,8 +2205,8 @@ impl CaManager {
                             CertAuthCommandDetails::DropResourceClass(
                                 rcn.clone(),
                                 reason.to_string(),
-                                self.signer.clone(),
-                            )
+                            ),
+                            krill,
                         )?;
 
                         // Push the error for reporting, this will also
@@ -2212,8 +2244,8 @@ impl CaManager {
                             CertAuthCommandDetails::DropResourceClass(
                                 rcn.clone(),
                                 reason.to_string(),
-                                self.signer.clone(),
-                            )
+                            ),
+                            krill,
                         )?;
 
                         // Push the error for reporting, this will also
@@ -2277,6 +2309,7 @@ impl CaManager {
         parent: ParentHandle,
         entitlements: ResourceClassListResponse,
         actor: &Actor,
+        krill: &KrillRuntime,
     ) -> KrillResult<bool> {
         let current_version = self.get_ca(ca)?.version();
         let new_version = self.process_ca_command(
@@ -2284,8 +2317,8 @@ impl CaManager {
             CertAuthCommandDetails::UpdateEntitlements(
                 parent,
                 entitlements,
-                self.signer.clone(),
             ),
+            krill,
         )?.version();
         Ok(new_version > current_version)
     }
@@ -2297,11 +2330,14 @@ impl CaManager {
         parent: &ParentHandle,
         contact: &ParentCaContact,
         existing_parent: bool,
+        krill: &KrillRuntime,
     ) -> KrillResult<ResourceClassListResponse> {
         let server_info = contact.parent_server_info();
         let uri = &server_info.service_uri;
 
-        let result = self.get_entitlements_rfc6492(ca, server_info).await;
+        let result = self.get_entitlements_rfc6492(
+            ca, server_info, krill
+        ).await;
 
         match &result {
             Err(error) => {
@@ -2332,6 +2368,7 @@ impl CaManager {
         &self,
         handle: &CaHandle,
         server_info: &ParentServerInfo,
+        krill: &KrillRuntime,
     ) -> KrillResult<ResourceClassListResponse> {
         debug!(
             "Getting entitlements for CA '{}' from parent '{}'",
@@ -2351,6 +2388,7 @@ impl CaManager {
             list,
             server_info,
             &child.id_cert().public_key.key_identifier(),
+            krill,
         ).await?;
 
         let payload = response.into_payload();
@@ -2375,6 +2413,7 @@ impl CaManager {
         message: provisioning::Message,
         server_info: &ParentServerInfo,
         signing_key: &KeyIdentifier,
+        krill: &KrillRuntime,
     ) -> KrillResult<provisioning::Message> {
         let service_uri = &server_info.service_uri;
         if let Some(parent) = Self::local_parent(
@@ -2388,6 +2427,7 @@ impl CaManager {
                 message,
                 user_agent,
                 &self.system_actor,
+                krill,
             )
         }
         else {
@@ -2768,6 +2808,7 @@ impl CaManager {
         new_contact: RepositoryContact,
         check_repo: bool,
         actor: &Actor,
+        krill: &KrillRuntime,
     ) -> KrillResult<()> {
         let ca = self.get_ca(&ca_handle)?;
         if check_repo {
@@ -2784,10 +2825,8 @@ impl CaManager {
         }
         self.process_ca_command(
             ca_handle, actor,
-            CertAuthCommandDetails::RepoUpdate(
-                new_contact,
-                self.signer.clone(),
-            )
+            CertAuthCommandDetails::RepoUpdate(new_contact),
+            krill
         )?;
         Ok(())
     }
@@ -2995,14 +3034,12 @@ impl CaManager {
         ca: CaHandle,
         updates: AspaDefinitionUpdates,
         actor: &Actor,
+        krill: &KrillRuntime,
     ) -> KrillResult<()> {
         self.process_ca_command(
             ca, actor,
-            CertAuthCommandDetails::AspasUpdate(
-                updates,
-                self.config.clone(),
-                self.signer.clone(),
-            ),
+            CertAuthCommandDetails::AspasUpdate(updates),
+            krill,
         )?;
         Ok(())
     }
@@ -3014,15 +3051,14 @@ impl CaManager {
         customer: CustomerAsn,
         update: AspaProvidersUpdate,
         actor: &Actor,
+        krill: &KrillRuntime,
     ) -> KrillResult<()> {
         self.process_ca_command(
             ca.clone(), actor,
             CertAuthCommandDetails::AspasUpdateExisting(
-                customer,
-                update,
-                self.config.clone(),
-                self.signer.clone(),
-            )
+                customer, update,
+            ),
+            krill,
         )?;
         Ok(())
     }
@@ -3044,14 +3080,12 @@ impl CaManager {
         ca: CaHandle,
         updates: BgpSecDefinitionUpdates,
         actor: &Actor,
+        krill: &KrillRuntime,
     ) -> KrillResult<()> {
         self.process_ca_command(
             ca.clone(), actor,
-            CertAuthCommandDetails::BgpSecUpdateDefinitions(
-                updates,
-                self.config.clone(),
-                self.signer.clone(),
-            ),
+            CertAuthCommandDetails::BgpSecUpdateDefinitions(updates),
+            krill,
         )?;
         Ok(())
     }
@@ -3075,14 +3109,12 @@ impl CaManager {
         ca: CaHandle,
         updates: RoaConfigurationUpdates,
         actor: &Actor,
+        krill: &KrillRuntime,
     ) -> KrillResult<()> {
         self.process_ca_command(
             ca.clone(), actor,
-            CertAuthCommandDetails::RouteAuthorizationsUpdate(
-                updates,
-                self.config.clone(),
-                self.signer.clone(),
-            ),
+            CertAuthCommandDetails::RouteAuthorizationsUpdate(updates),
+            krill,
         )?;
         Ok(())
     }
@@ -3098,15 +3130,13 @@ impl CaManager {
     /// CAs are expected to note extended validity eligibility and request
     /// updated certificates themselves.
     pub fn renew_objects_all(
-        &self, actor: &Actor
+        &self, actor: &Actor, krill: &KrillRuntime,
     ) -> KrillResult<()> {
         for ca in self.ca_store.list()? {
             if let Err(e) = self.process_ca_command(
                 ca.clone(), actor,
-                CertAuthCommandDetails::RouteAuthorizationsRenew(
-                    self.config.clone(),
-                    self.signer.clone(),
-                )
+                CertAuthCommandDetails::RouteAuthorizationsRenew,
+                krill,
             ) {
                 error!(
                     "Renewing ROAs for CA '{ca}' failed with error: {e}"
@@ -3115,10 +3145,8 @@ impl CaManager {
 
             if let Err(e) = self.process_ca_command(
                 ca.clone(), actor,
-                CertAuthCommandDetails::AspasRenew(
-                    self.config.clone(),
-                    self.signer.clone(),
-                ),
+                CertAuthCommandDetails::AspasRenew,
+                krill,
             ) {
                 error!(
                     "Renewing ASPAs for CA '{ca}' failed with error: {e}"
@@ -3127,10 +3155,8 @@ impl CaManager {
 
             if let Err(e) = self.process_ca_command(
                 ca.clone(), actor,
-                CertAuthCommandDetails::BgpSecRenew(
-                    self.config.clone(),
-                    self.signer.clone(),
-                ),
+                CertAuthCommandDetails::BgpSecRenew,
+                krill,
             ) {
                 error!(
                     "Renewing BGPsec certificates for CA '{ca}' \
@@ -3151,14 +3177,13 @@ impl CaManager {
     pub fn force_renew_roas_all(
         &self,
         actor: &Actor,
+        krill: &KrillRuntime,
     ) -> KrillResult<()> {
         for ca in self.ca_store.list()? {
             if let Err(e) = self.process_ca_command(
                 ca.clone(), actor,
-                CertAuthCommandDetails::RouteAuthorizationsForceRenew(
-                    self.config.clone(),
-                    self.signer.clone(),
-                ),
+                CertAuthCommandDetails::RouteAuthorizationsForceRenew,
+                krill,
             ) {
                 error!(
                     "Renewing ROAs for CA '{ca}' failed with error: {e}"
@@ -3179,14 +3204,12 @@ impl CaManager {
         name: RtaName,
         request: RtaContentRequest,
         actor: &Actor,
+        krill: &KrillRuntime,
     ) -> KrillResult<()> {
         self.process_ca_command(
             ca.clone(), actor,
-            CertAuthCommandDetails::RtaSign(
-                name,
-                request,
-                self.signer.clone(),
-            )
+            CertAuthCommandDetails::RtaSign(name, request),
+            krill,
         )?;
         Ok(())
     }
@@ -3198,14 +3221,12 @@ impl CaManager {
         name: RtaName,
         request: RtaPrepareRequest,
         actor: &Actor,
+        krill: &KrillRuntime,
     ) -> KrillResult<()> {
         self.process_ca_command(
             ca.clone(), actor,
-            CertAuthCommandDetails::RtaMultiPrepare(
-                name,
-                request,
-                self.signer.clone(),
-            )
+            CertAuthCommandDetails::RtaMultiPrepare(name, request),
+            krill,
         )?;
         Ok(())
     }
@@ -3217,14 +3238,12 @@ impl CaManager {
         name: RtaName,
         rta: ResourceTaggedAttestation,
         actor: &Actor,
+        krill: &KrillRuntime,
     ) -> KrillResult<()> {
         self.process_ca_command(
             ca.clone(), actor,
-            CertAuthCommandDetails::RtaCoSign(
-                name,
-                rta,
-                self.signer.clone(),
-            )
+            CertAuthCommandDetails::RtaCoSign(name, rta),
+            krill,
         )?;
         Ok(())
     }
@@ -3241,13 +3260,12 @@ impl CaManager {
         handle: CaHandle,
         max_age: Duration,
         actor: &Actor,
+        krill: &KrillRuntime,
     ) -> KrillResult<()> {
         self.process_ca_command(
             handle.clone(), actor,
-            CertAuthCommandDetails::KeyRollInitiate(
-                max_age,
-                self.signer.clone(),
-            )
+            CertAuthCommandDetails::KeyRollInitiate(max_age),
+            krill,
         )?;
         Ok(())
     }
@@ -3263,14 +3281,12 @@ impl CaManager {
         handle: CaHandle,
         staging: Duration,
         actor: &Actor,
+        krill: &KrillRuntime,
     ) -> KrillResult<()> {
         self.process_ca_command(
             handle.clone(), actor,
-            CertAuthCommandDetails::KeyRollActivate(
-                staging,
-                self.config.clone(),
-                self.signer.clone(),
-            )
+            CertAuthCommandDetails::KeyRollActivate(staging),
+            krill,
         )?;
         Ok(())
     }

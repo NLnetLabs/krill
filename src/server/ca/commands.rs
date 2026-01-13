@@ -1,7 +1,6 @@
 //! The commands issued to an RPKI CA.
 
 use std::fmt;
-use std::sync::Arc;
 use chrono::Duration;
 use rpki::ca::idexchange::{ChildHandle, ParentHandle, ServiceUri};
 use rpki::ca::provisioning::{
@@ -29,12 +28,10 @@ use crate::api::roa::RoaConfigurationUpdates;
 use crate::api::rta::{
     ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest,
 };
-use crate::commons::crypto::KrillSigner;
 use crate::commons::eventsourcing::{
     self, InitCommandDetails, SentCommand, SentInitCommand,
     WithStorableDetails,
 };
-use crate::config::Config;
 use super::events::CertAuthEvent;
 use super::rc::DropReason;
 
@@ -48,10 +45,7 @@ pub type CertAuthInitCommand = SentInitCommand<CertAuthInitCommandDetails>;
 
 /// The details for the init command for a `CertAuth` instance.
 #[derive(Clone, Debug)]
-pub struct CertAuthInitCommandDetails {
-    /// The signer to use for initializing the CA.
-    pub signer: Arc<KrillSigner>,
-}
+pub struct CertAuthInitCommandDetails;
 
 impl InitCommandDetails for CertAuthInitCommandDetails {
     type StorableDetails = CertAuthStorableCommand;
@@ -85,7 +79,7 @@ pub enum CertAuthCommandDetails {
     ChildAdd(ChildHandle, IdCertInfo, ResourceSet),
 
     /// Import a child under this parent CA
-    ChildImport(ImportChild, Arc<Config>, Arc<KrillSigner>),
+    ChildImport(ImportChild),
 
     /// Update the resource entitlements for an existing child.
     ChildUpdateResources(ChildHandle, ResourceSet),
@@ -100,7 +94,7 @@ pub enum CertAuthCommandDetails {
     ),
 
     /// Process an issuance request sent by an existing child.
-    ChildCertify(ChildHandle, IssuanceRequest, Arc<Config>, Arc<KrillSigner>),
+    ChildCertify(ChildHandle, IssuanceRequest),
 
     /// Process a revoke request by an existing child.
     ChildRevokeKey(ChildHandle, RevocationRequest),
@@ -139,7 +133,7 @@ pub enum CertAuthCommandDetails {
     /// this ID for parents, and children. In practice however, one may not
     /// want to use this until RFC8183 is extended with some words/ on how
     /// to re-do the ID exchange.
-    GenerateNewIdKey(Arc<KrillSigner>),
+    GenerateNewIdKey,
 
     /// Add a parent to this CA.
     ///
@@ -158,20 +152,18 @@ pub enum CertAuthCommandDetails {
     ///
     /// Remove/create/update resource classes and certificate requests or key
     /// revocation requests as needed.
-    UpdateEntitlements(ParentHandle, Entitlements, Arc<KrillSigner>),
+    UpdateEntitlements(ParentHandle, Entitlements),
 
     /// Process a new certificate received from a parent.
     UpdateRcvdCert(
         ResourceClassName,
         ReceivedCert,
-        Arc<Config>,
-        Arc<KrillSigner>,
     ),
 
     /// Drop a resource class under a parent.
     ///
     /// This is usually done because of issues obtaining a certificate for it.
-    DropResourceClass(ResourceClassName, DropReason, Arc<KrillSigner>),
+    DropResourceClass(ResourceClassName, DropReason),
 
     //--- Key rolls
 
@@ -180,7 +172,7 @@ pub enum CertAuthCommandDetails {
     /// A key roll is only initiated for resource classes where there is a
     /// current active key only, i.e. there is no roll in progress, and this
     /// key's age exceeds the given duration.
-    KeyRollInitiate(Duration, Arc<KrillSigner>),
+    KeyRollInitiate(Duration),
 
     /// Activate a rolled key.
     ///
@@ -196,7 +188,7 @@ pub enum CertAuthCommandDetails {
     /// RFC6489 dictates that 24 hours must be observed. However, shorter
     /// time frames can be used for testing, and in case of emergency
     /// rolls.
-    KeyRollActivate(Duration, Arc<Config>, Arc<KrillSigner>),
+    KeyRollActivate(Duration),
 
     /// Finish the keyroll.
     ///
@@ -212,11 +204,7 @@ pub enum CertAuthCommandDetails {
     /// Note: ROA *objects* will be created by the CA itself. The command
     /// just contains the intent for which announcements should be
     /// authorized.
-    RouteAuthorizationsUpdate(
-        RoaConfigurationUpdates,
-        Arc<Config>,
-        Arc<KrillSigner>,
-    ),
+    RouteAuthorizationsUpdate(RoaConfigurationUpdates),
 
     /// Re-issue all ROA objects which would otherwise expire soon.
     ///
@@ -224,23 +212,18 @@ pub enum CertAuthCommandDetails {
     /// Note that this command is intended to be sent by the scheduler -
     /// once a day is fine - and will only be stored if there are any
     /// updates to be done.
-    RouteAuthorizationsRenew(Arc<Config>, Arc<KrillSigner>),
+    RouteAuthorizationsRenew,
 
     /// Re-issue all ROA objects regardless of their expiration time.
-    RouteAuthorizationsForceRenew(Arc<Config>, Arc<KrillSigner>),
+    RouteAuthorizationsForceRenew,
 
     //--- ASPA
 
     /// Update ASPA definitions
-    AspasUpdate(AspaDefinitionUpdates, Arc<Config>, Arc<KrillSigner>),
+    AspasUpdate(AspaDefinitionUpdates),
 
     /// Update an existing AspaProviders for the given AspaCustomer
-    AspasUpdateExisting(
-        CustomerAsn,
-        AspaProvidersUpdate,
-        Arc<Config>,
-        Arc<KrillSigner>,
-    ),
+    AspasUpdateExisting(CustomerAsn, AspaProvidersUpdate),
 
     /// Re-issue any and all ASPA objects which would otherwise expire soon.
     ///
@@ -248,38 +231,34 @@ pub enum CertAuthCommandDetails {
     /// 
     /// This command is intended to be sent by the scheduler – once a day is
     /// fine – and will only be stored if there are any updates to be done.
-    AspasRenew(Arc<Config>, Arc<KrillSigner>),
+    AspasRenew,
 
 
     //--- BGPsec router keys
 
     /// Update BgpSecDefinitions
-    BgpSecUpdateDefinitions(
-        BgpSecDefinitionUpdates,
-        Arc<Config>,
-        Arc<KrillSigner>,
-    ),
+    BgpSecUpdateDefinitions(BgpSecDefinitionUpdates),
 
     /// Re-issue any and all BGPsec certificates which are soon to expire.
-    BgpSecRenew(Arc<Config>, Arc<KrillSigner>),
+    BgpSecRenew,
 
 
     //--- Publishing
 
     // Update the repository where this CA publishes.
-    RepoUpdate(RepositoryContact, Arc<KrillSigner>),
+    RepoUpdate(RepositoryContact),
 
 
     //--- RTA
 
     /// Sign a new RTA
-    RtaSign(RtaName, RtaContentRequest, Arc<KrillSigner>),
+    RtaSign(RtaName, RtaContentRequest),
 
     /// Prepare a multi-signed RTA
-    RtaMultiPrepare(RtaName, RtaPrepareRequest, Arc<KrillSigner>),
+    RtaMultiPrepare(RtaName, RtaPrepareRequest),
 
     /// Co-sign an existing multi-signed RTA
-    RtaCoSign(RtaName, ResourceTaggedAttestation, Arc<KrillSigner>),
+    RtaCoSign(RtaName, ResourceTaggedAttestation),
 }
 
 impl eventsourcing::CommandDetails for CertAuthCommandDetails {
@@ -422,7 +401,7 @@ impl From<CertAuthCommandDetails> for CertAuthStorableCommand {
                     resources,
                 }
             }
-            CertAuthCommandDetails::ChildImport(import_child, _, _) => {
+            CertAuthCommandDetails::ChildImport(import_child) => {
                 CertAuthStorableCommand::ChildImport {
                     child: import_child.name,
                     ski: import_child
@@ -455,7 +434,7 @@ impl From<CertAuthCommandDetails> for CertAuthStorableCommand {
                     mapping,
                 }
             }
-            CertAuthCommandDetails::ChildCertify(child, req, _, _) => {
+            CertAuthCommandDetails::ChildCertify(child, req) => {
                 let (resource_class_name, limit, csr) = req.unpack();
                 let ki = csr.public_key().key_identifier();
                 CertAuthStorableCommand::ChildCertify {
@@ -477,7 +456,7 @@ impl From<CertAuthCommandDetails> for CertAuthStorableCommand {
             CertAuthCommandDetails::ChildUnsuspend(child) => {
                 CertAuthStorableCommand::ChildUnsuspend { child }
             }
-            CertAuthCommandDetails::GenerateNewIdKey(_) => {
+            CertAuthCommandDetails::GenerateNewIdKey => {
                 CertAuthStorableCommand::GenerateNewIdKey
             }
             CertAuthCommandDetails::AddParent(parent, contact) => {
@@ -496,9 +475,7 @@ impl From<CertAuthCommandDetails> for CertAuthStorableCommand {
                 CertAuthStorableCommand::RemoveParent { parent }
             }
             CertAuthCommandDetails::UpdateEntitlements(
-                parent,
-                cmd_entitlements,
-                _,
+                parent, cmd_entitlements,
             ) => {
                 let mut entitlements = vec![];
                 for entitlement in cmd_entitlements.classes() {
@@ -514,28 +491,23 @@ impl From<CertAuthCommandDetails> for CertAuthStorableCommand {
                 }
             }
             CertAuthCommandDetails::UpdateRcvdCert(
-                resource_class_name,
-                rcvd_cert,
-                _,
-                _,
+                resource_class_name, rcvd_cert,
             ) => CertAuthStorableCommand::UpdateRcvdCert {
                 resource_class_name,
                 resources: rcvd_cert.resources.clone(),
             },
             CertAuthCommandDetails::DropResourceClass(
-                resource_class_name,
-                reason,
-                _,
+                resource_class_name, reason,
             ) => CertAuthStorableCommand::DropResourceClass {
                 resource_class_name,
                 reason,
             },
-            CertAuthCommandDetails::KeyRollInitiate(older_than, _) => {
+            CertAuthCommandDetails::KeyRollInitiate(older_than) => {
                 CertAuthStorableCommand::KeyRollInitiate {
                     older_than_seconds: older_than.num_seconds(),
                 }
             }
-            CertAuthCommandDetails::KeyRollActivate(staged_for, _, _) => {
+            CertAuthCommandDetails::KeyRollActivate(staged_for) => {
                 CertAuthStorableCommand::KeyRollActivate {
                     staged_for_seconds: staged_for.num_seconds(),
                 }
@@ -544,51 +516,46 @@ impl From<CertAuthCommandDetails> for CertAuthStorableCommand {
                 CertAuthStorableCommand::KeyRollFinish {
                     resource_class_name,
                 }
+            } CertAuthCommandDetails::RouteAuthorizationsUpdate(updates) => {
+                CertAuthStorableCommand::RoaDefinitionUpdates { updates }
             }
-            CertAuthCommandDetails::RouteAuthorizationsUpdate(
-                updates,
-                _,
-                _,
-            ) => CertAuthStorableCommand::RoaDefinitionUpdates { updates },
-            CertAuthCommandDetails::RouteAuthorizationsRenew(_, _) => {
+            CertAuthCommandDetails::RouteAuthorizationsRenew => {
                 CertAuthStorableCommand::ReissueBeforeExpiring
             }
-            CertAuthCommandDetails::RouteAuthorizationsForceRenew(_, _) => {
+            CertAuthCommandDetails::RouteAuthorizationsForceRenew => {
                 CertAuthStorableCommand::ForceReissue
             }
-            CertAuthCommandDetails::AspasUpdate(updates, _, _) => {
+            CertAuthCommandDetails::AspasUpdate(updates) => {
                 CertAuthStorableCommand::AspasUpdate { updates }
             }
             CertAuthCommandDetails::AspasUpdateExisting(
-                customer,
-                update,
-                _,
-                _,
-            ) => CertAuthStorableCommand::AspasUpdateExisting {
-                customer,
-                update,
-            },
-            CertAuthCommandDetails::AspasRenew(_, _) => {
+                customer, update,
+            ) => {
+                CertAuthStorableCommand::AspasUpdateExisting {
+                    customer, update
+                }
+            }
+            CertAuthCommandDetails::AspasRenew => {
                 CertAuthStorableCommand::ReissueBeforeExpiring
             }
-            CertAuthCommandDetails::BgpSecUpdateDefinitions(_, _, _) => {
+            CertAuthCommandDetails::BgpSecUpdateDefinitions(_) => {
                 CertAuthStorableCommand::BgpSecDefinitionUpdates
             }
-            CertAuthCommandDetails::BgpSecRenew(_, _) => {
+            CertAuthCommandDetails::BgpSecRenew => {
                 CertAuthStorableCommand::ReissueBeforeExpiring
             }
-            CertAuthCommandDetails::RepoUpdate(contact, _) => {
+            CertAuthCommandDetails::RepoUpdate(contact) => {
                 CertAuthStorableCommand::RepoUpdate {
                     service_uri: contact.server_info.service_uri.clone(),
                 }
             }
-            CertAuthCommandDetails::RtaMultiPrepare(name, _, _) => {
+            CertAuthCommandDetails::RtaMultiPrepare(name, _) => {
                 CertAuthStorableCommand::RtaPrepare { name }
             }
-            CertAuthCommandDetails::RtaSign(name, _, _) => {
+            CertAuthCommandDetails::RtaSign(name, _) => {
                 CertAuthStorableCommand::RtaSign { name }
             }
-            CertAuthCommandDetails::RtaCoSign(name, _, _) => {
+            CertAuthCommandDetails::RtaCoSign(name, _) => {
                 CertAuthStorableCommand::RtaCoSign { name }
             }
         }

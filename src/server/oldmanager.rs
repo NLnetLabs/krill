@@ -1,4 +1,5 @@
 //! An RPKI publication protocol server.
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -72,6 +73,7 @@ use crate::api::ta::{
 };
 use crate::constants::{TA_NAME, ta_handle};
 use crate::server::bgp::BgpAnalyser;
+use crate::server::runtime::KrillRuntime;
 
 
 //------------ OldManager ---------------------------------------------------
@@ -79,6 +81,9 @@ use crate::server::bgp::BgpAnalyser;
 /// This is the Krill server that is doing all the orchestration for all
 /// components.
 pub struct OldManager {
+    krill: KrillRuntime,
+
+
     // The base URI for this service
     service_uri: uri::Https,
 
@@ -104,6 +109,7 @@ pub struct OldManager {
 impl OldManager {
     /// Creates a new publication server. Note that state is preserved
     /// in the data storage.
+    #[allow(unreachable_code, unused_variables)]
     pub async fn build(config: Arc<Config>) -> KrillResult<Self> {
         let service_uri = config.service_uri();
 
@@ -161,6 +167,7 @@ impl OldManager {
         mq.schedule(Task::QueueStartTasks, now())?;
 
         let server = OldManager {
+            krill: todo!(),
             service_uri,
             repo_manager,
             ca_manager,
@@ -392,7 +399,7 @@ impl OldManager {
     }
 
     pub fn ta_proxy_init(&self) -> KrillResult<()> {
-        self.ca_manager.ta_proxy_init()
+        self.ca_manager.ta_proxy_init(&self.krill)
     }
 
     pub fn ta_proxy_id(&self) -> KrillResult<IdCertInfo> {
@@ -411,7 +418,7 @@ impl OldManager {
         actor: &Actor,
     ) -> KrillResult<()> {
         self.ca_manager
-            .ta_proxy_repository_update(contact, actor)
+            .ta_proxy_repository_update(contact, actor, &self.krill)
     }
 
     pub fn ta_proxy_repository_contact(
@@ -425,7 +432,7 @@ impl OldManager {
         info: TrustAnchorSignerInfo,
         actor: &Actor,
     ) -> KrillResult<()> {
-        self.ca_manager.ta_proxy_signer_add(info, actor)
+        self.ca_manager.ta_proxy_signer_add(info, actor, &self.krill)
     }
 
     pub fn ta_proxy_signer_update(
@@ -433,14 +440,14 @@ impl OldManager {
         info: TrustAnchorSignerInfo,
         actor: &Actor,
     ) -> KrillResult<()> {
-        self.ca_manager.ta_proxy_signer_update(info, actor)
+        self.ca_manager.ta_proxy_signer_update(info, actor, &self.krill)
     }
 
     pub fn ta_proxy_signer_make_request(
         &self,
         actor: &Actor,
     ) -> KrillResult<ApiTrustAnchorSignedRequest> {
-        self.ca_manager.ta_proxy_signer_make_request(actor)
+        self.ca_manager.ta_proxy_signer_make_request(actor, &self.krill)
     }
 
     pub fn ta_proxy_signer_get_request(
@@ -455,7 +462,7 @@ impl OldManager {
         actor: &Actor,
     ) -> KrillResult<()> {
         self.ca_manager
-            .ta_proxy_signer_process_response(response, actor)
+            .ta_proxy_signer_process_response(response, actor, &self.krill)
     }
 
     pub fn ta_proxy_children_add(
@@ -469,6 +476,7 @@ impl OldManager {
             child_request,
             &self.config.service_uri(),
             actor,
+            &self.krill,
         )
     }
 
@@ -488,7 +496,9 @@ impl OldManager {
         req: AddChildRequest,
         actor: &Actor,
     ) -> KrillResult<idexchange::ParentResponse> {
-        self.ca_manager.ca_add_child(ca, req, &self.service_uri, actor)
+        self.ca_manager.ca_add_child(
+            ca, req, &self.service_uri, actor, &self.krill,
+        )
     }
 
     /// Shows the parent contact for a child.
@@ -517,7 +527,7 @@ impl OldManager {
         req: UpdateChildRequest,
         actor: &Actor,
     ) -> KrillEmptyResult {
-        self.ca_manager.ca_child_update(ca, child, req, actor)
+        self.ca_manager.ca_child_update(ca, child, req, actor, &self.krill)
     }
 
     /// Update IdCert or resources of a child.
@@ -527,7 +537,7 @@ impl OldManager {
         child: ChildHandle,
         actor: &Actor,
     ) -> KrillEmptyResult {
-        self.ca_manager.ca_child_remove(ca, child, actor)
+        self.ca_manager.ca_child_remove(ca, child, actor, &self.krill)
     }
 
     /// Show details for a child under the CA.
@@ -555,7 +565,7 @@ impl OldManager {
         child: ImportChild,
         actor: &Actor,
     ) -> KrillResult<()> {
-        self.ca_manager.ca_child_import(ca, child, actor)
+        self.ca_manager.ca_child_import(ca, child, actor, &self.krill)
     }
 
     /// Show children stats under the CA.
@@ -597,11 +607,13 @@ impl OldManager {
             Error::CaParentResponseInvalid(ca.clone(), e.to_string())
         })?;
         self.ca_manager.get_entitlements_from_contact(
-            &ca, &parent_req.handle, &contact, false
+            &ca, &parent_req.handle, &contact, false, &self.krill,
         ).await?;
 
         // Seems good. Add/update the parent.
-        self.ca_manager.ca_parent_add_or_update(ca, parent_req, actor)
+        self.ca_manager.ca_parent_add_or_update(
+            ca, parent_req, actor, &self.krill,
+        )
     }
 
     pub async fn ca_parent_remove(
@@ -611,7 +623,7 @@ impl OldManager {
         actor: &Actor,
     ) -> KrillEmptyResult {
         self.ca_manager
-            .ca_parent_remove(handle, parent, actor)
+            .ca_parent_remove(handle, parent, actor, &self.krill)
             .await
     }
 }
@@ -691,6 +703,7 @@ impl OldManager {
                         import_ta.ta_key_pem,
                         &self.repo_manager,
                         &actor,
+                        &self.krill,
                     )
                     .await?;
             } else {
@@ -711,6 +724,7 @@ impl OldManager {
                 self.repo_manager.clone(),
                 service_uri.clone(),
                 actor.clone(),
+                self.krill.clone(),
             )));
         }
         try_join_all(import_fns).await.map_err(|e| {
@@ -726,6 +740,7 @@ impl OldManager {
         repo_manager: Arc<RepositoryManager>,
         service_uri: Arc<uri::Https>,
         actor: Arc<Actor>,
+        krill: KrillRuntime,
     ) -> KrillEmptyResult {
         // outline:
         // - init ca
@@ -736,7 +751,7 @@ impl OldManager {
         info!("Importing CA: '{}'", import.handle);
 
         // init CA
-        ca_manager.init_ca(import.handle.clone())?;
+        ca_manager.init_ca(import.handle.clone(), &krill)?;
 
         // Get Publisher Request
         let pub_req = {
@@ -767,6 +782,7 @@ impl OldManager {
                 repo_contact,
                 false,
                 &actor,
+                &krill,
             )
             .await?;
 
@@ -838,6 +854,7 @@ impl OldManager {
                         child_req,
                         &service_uri,
                         &actor,
+                        &krill,
                     )?
             };
 
@@ -851,17 +868,18 @@ impl OldManager {
                     import.handle.clone(),
                     parent_req,
                     &actor,
+                    &krill,
                 )?;
 
                 // First sync will inform child of its entitlements and
                 // trigger that CSR is created.
                 ca_manager.ca_sync_parent(
-                    &import.handle, 0, &import_parent.handle, &actor
+                    &import.handle, 0, &import_parent.handle, &actor, &krill,
                 ).await?;
 
                 // Second sync will send that CSR to the parent
                 ca_manager.ca_sync_parent(
-                    &import.handle, 0, &import_parent.handle, &actor
+                    &import.handle, 0, &import_parent.handle, &actor, &krill,
                 ).await?;
 
                 // If the parent is a TA, then we will need to push a bit
@@ -869,9 +887,10 @@ impl OldManager {
                 // triggered tasks, but the task scheduler is
                 // not running when we do this at startup.
                 if import_parent.handle.as_str() == TA_NAME {
-                    ca_manager.sync_ta_proxy_signer_if_possible()?;
+                    ca_manager.sync_ta_proxy_signer_if_possible(&krill)?;
                     ca_manager.ca_sync_parent(
-                        &import.handle, 0, &import_parent.handle, &actor
+                        &import.handle, 0, &import_parent.handle, &actor,
+                        &krill,
                     ).await?;
                 }
             }
@@ -882,7 +901,9 @@ impl OldManager {
             added: import.roas,
             removed: vec![]
         };
-        ca_manager.ca_routes_update(import.handle, roa_updates, &actor)?;
+        ca_manager.ca_routes_update(
+            import.handle, roa_updates, &actor, &krill
+        )?;
 
         Ok(())
     }
@@ -966,7 +987,7 @@ impl OldManager {
         actor: &Actor,
     ) -> KrillResult<()> {
         self.ca_manager
-            .delete_ca(self.repo_manager.as_ref(), ca, actor)
+            .delete_ca(self.repo_manager.as_ref(), ca, actor, &self.krill)
             .await
     }
 
@@ -1010,7 +1031,7 @@ impl OldManager {
     }
 
     pub fn ca_init(&self, init: CertAuthInit) -> KrillEmptyResult {
-        self.ca_manager.init_ca(init.handle)
+        self.ca_manager.init_ca(init.handle, &self.krill)
     }
 
     /// Return the info about the CONFIGured repository server for a given Ca.
@@ -1032,9 +1053,9 @@ impl OldManager {
         contact: RepositoryContact,
         actor: &Actor,
     ) -> KrillEmptyResult {
-        self.ca_manager
-            .update_repo(self.repo_manager.as_ref(), ca, contact, true, actor)
-            .await
+        self.ca_manager.update_repo(
+            self.repo_manager.as_ref(), ca, contact, true, actor, &self.krill
+        ).await
     }
 
     pub fn ca_update_id(
@@ -1042,7 +1063,7 @@ impl OldManager {
         ca: CaHandle,
         actor: &Actor,
     ) -> KrillEmptyResult {
-        self.ca_manager.ca_update_id(ca, actor)
+        self.ca_manager.ca_update_id(ca, actor, &self.krill)
     }
 
     pub fn ca_keyroll_init(
@@ -1050,7 +1071,9 @@ impl OldManager {
         ca: CaHandle,
         actor: &Actor,
     ) -> KrillEmptyResult {
-        self.ca_manager.ca_keyroll_init(ca, Duration::seconds(0), actor)
+        self.ca_manager.ca_keyroll_init(
+            ca, Duration::seconds(0), actor, &self.krill,
+        )
     }
 
     pub fn ca_keyroll_activate(
@@ -1058,7 +1081,9 @@ impl OldManager {
         ca: CaHandle,
         actor: &Actor,
     ) -> KrillEmptyResult {
-        self.ca_manager.ca_keyroll_activate(ca, Duration::seconds(0), actor)
+        self.ca_manager.ca_keyroll_activate(
+            ca, Duration::seconds(0), actor, &self.krill,
+        )
     }
 
     pub fn rfc6492(
@@ -1068,7 +1093,9 @@ impl OldManager {
         user_agent: Option<String>,
         actor: &Actor,
     ) -> KrillResult<Bytes> {
-        self.ca_manager.rfc6492(&ca, msg_bytes, user_agent, actor)
+        self.ca_manager.rfc6492(
+            &ca, msg_bytes, user_agent, actor, &self.krill
+        )
     }
 }
 
@@ -1087,7 +1114,9 @@ impl OldManager {
         updates: AspaDefinitionUpdates,
         actor: &Actor,
     ) -> KrillEmptyResult {
-        self.ca_manager.ca_aspas_definitions_update(ca, updates, actor)
+        self.ca_manager.ca_aspas_definitions_update(
+            ca, updates, actor, &self.krill
+        )
     }
 
     pub fn ca_aspas_update_aspa(
@@ -1098,7 +1127,7 @@ impl OldManager {
         actor: &Actor,
     ) -> KrillEmptyResult {
         self.ca_manager.ca_aspas_update_aspa_providers(
-            ca, customer, update, actor
+            ca, customer, update, actor, &self.krill,
         )
     }
 }
@@ -1118,7 +1147,9 @@ impl OldManager {
         updates: BgpSecDefinitionUpdates,
         actor: &Actor,
     ) -> KrillResult<()> {
-        self.ca_manager.ca_bgpsec_definitions_update(ca, updates, actor)
+        self.ca_manager.ca_bgpsec_definitions_update(
+            ca, updates, actor, &self.krill,
+        )
     }
 }
 
@@ -1130,7 +1161,7 @@ impl OldManager {
         updates: RoaConfigurationUpdates,
         actor: &Actor,
     ) -> KrillEmptyResult {
-        self.ca_manager.ca_routes_update(ca, updates, actor)
+        self.ca_manager.ca_routes_update(ca, updates, actor, &self.krill)
     }
 
     pub fn ca_routes_show(
@@ -1192,7 +1223,7 @@ impl OldManager {
     /// Re-issue ROA objects so that they will use short subjects (see issue
     /// #700)
     pub async fn force_renew_roas(&self) -> KrillResult<()> {
-        self.ca_manager.force_renew_roas_all(self.system_actor())
+        self.ca_manager.force_renew_roas_all(self.system_actor(), &self.krill)
     }
 }
 
@@ -1247,7 +1278,7 @@ impl OldManager {
         request: RtaContentRequest,
         actor: &Actor,
     ) -> KrillResult<()> {
-        self.ca_manager.rta_sign(ca, name, request, actor)
+        self.ca_manager.rta_sign(ca, name, request, actor, &self.krill)
     }
 
     /// Prepare a multi
@@ -1258,7 +1289,9 @@ impl OldManager {
         request: RtaPrepareRequest,
         actor: &Actor,
     ) -> KrillResult<RtaPrepResponse> {
-        self.ca_manager.rta_multi_prep(&ca, name.clone(), request, actor)?;
+        self.ca_manager.rta_multi_prep(
+            &ca, name.clone(), request, actor, &self.krill,
+        )?;
         let ca = self.ca_manager.get_ca(&ca)?;
         ca.rta_prep_response(&name)
     }
@@ -1271,7 +1304,7 @@ impl OldManager {
         rta: ResourceTaggedAttestation,
         actor: &Actor,
     ) -> KrillResult<()> {
-        self.ca_manager.rta_multi_cosign(ca, name, rta, actor)
+        self.ca_manager.rta_multi_cosign(ca, name, rta, actor, &self.krill)
     }
 }
 

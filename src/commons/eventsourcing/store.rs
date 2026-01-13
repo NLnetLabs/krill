@@ -18,10 +18,7 @@ use crate::api::history::{
 };
 use crate::commons::error::KrillIoError;
 use crate::commons::storage::{Ident, KeyValueError, KeyValueStore};
-use super::agg::{
-    Aggregate, Command, InitCommand, PostSaveEventListener,
-    PreSaveEventListener, StoredCommand
-};
+use super::agg::{Aggregate, Command, InitCommand, StoredCommand};
 
 
 //------------ Storable ------------------------------------------------------
@@ -61,12 +58,6 @@ pub struct AggregateStore<A: Aggregate> {
 
     /// A cache for the command history of an instance.
     history_cache: Option<Mutex<HashMap<MyHandle, Vec<CommandHistoryRecord>>>>,
-
-    /// The pre-save listeners.
-    pre_save_listeners: Vec<Arc<dyn PreSaveEventListener<A>>>,
-
-    /// The post-save listeners.
-    post_save_listeners: Vec<Arc<dyn PostSaveEventListener<A>>>,
 }
 
 /// # Starting up
@@ -114,8 +105,6 @@ impl<A: Aggregate> AggregateStore<A> {
             else {
                 None
             },
-            pre_save_listeners: Vec::new(),
-            post_save_listeners: Vec::new(),
         }
     }
 
@@ -134,23 +123,6 @@ impl<A: Aggregate> AggregateStore<A> {
             })?;
         }
         Ok(())
-    }
-
-    /// Adds a listener that will receive all events before they are stored.
-    pub fn add_pre_save_listener<L: PreSaveEventListener<A>>(
-        &mut self,
-        sync_listener: Arc<L>,
-    ) {
-        self.pre_save_listeners.push(sync_listener);
-    }
-
-    /// Adds a listener that will receive a reference to all events after they
-    /// are stored.
-    pub fn add_post_save_listener<L: PostSaveEventListener<A>>(
-        &mut self,
-        listener: Arc<L>,
-    ) {
-        self.post_save_listeners.push(listener);
     }
 }
 
@@ -217,7 +189,9 @@ impl<A: Aggregate> AggregateStore<A> {
     }
 
     /// Adds a new aggregate instance based on the init command.
-    pub fn add(&self, cmd: A::InitCommand) -> Result<Arc<A>, A::Error> {
+    pub fn add_with_context(
+        &self, cmd: A::InitCommand, context: A::Context<'_>,
+    ) -> Result<Arc<A>, A::Error> {
         let scope = Self::scope_for_agg(cmd.handle());
 
         self.kv.execute(Some(&scope), |kv| {
@@ -242,7 +216,7 @@ impl<A: Aggregate> AggregateStore<A> {
 
                 // XXX cmd needs to be cloned here because of the Fn
                 //     closure of execute.
-                match A::process_init_command(cmd.clone()) {
+                match A::process_init_command(cmd.clone(), context) {
                     Ok(init_event) => {
                         let aggregate = A::init(
                             cmd.handle(), init_event.clone(),
@@ -285,8 +259,10 @@ impl<A: Aggregate> AggregateStore<A> {
     ///
     /// On error, it will save the command and the error, then return the
     /// error.
-    pub fn command(&self, cmd: A::Command) -> Result<Arc<A>, A::Error> {
-        self.execute_opt_command(cmd.handle(), Some(&cmd), false)
+    pub fn command_with_context(
+        &self, cmd: A::Command, context: A::Context<'_>
+    ) -> Result<Arc<A>, A::Error> {
+        self.execute_opt_command(cmd.handle(), Some((&cmd, context)), false)
     }
 
     /// Get the latest aggregate and optionally apply a command to it.
@@ -295,7 +271,7 @@ impl<A: Aggregate> AggregateStore<A> {
     fn execute_opt_command(
         &self,
         handle: &MyHandle,
-        cmd_opt: Option<&A::Command>,
+        cmd_opt: Option<(&A::Command, A::Context<'_>)>,
         save_snapshot: bool,
     ) -> Result<Arc<A>, A::Error> {
         let scope = Self::scope_for_agg(handle);
@@ -401,7 +377,7 @@ impl<A: Aggregate> AggregateStore<A> {
 
             // If a command was passed in, try to apply it, and make sure that
             // it is preserved.
-            let res = if let Some(cmd) = cmd_opt {
+            let res = if let Some((cmd, context)) = cmd_opt {
                 let aggregate = Arc::make_mut(&mut agg);
 
                 let version = aggregate.version();
@@ -438,7 +414,7 @@ impl<A: Aggregate> AggregateStore<A> {
                     std::process::exit(1);
                 }
 
-                match aggregate.process_command(cmd.clone()) {
+                match aggregate.process_command(cmd.clone(), context) {
                     Err(e) => {
                         // Store the processed command with the error.
                         let processed = processed.finish_with_error(&e);
@@ -471,17 +447,12 @@ impl<A: Aggregate> AggregateStore<A> {
                             // should inform the pre-save listeners. They may
                             // still generate errors, and if they do, then we
                             // return with an error, without saving.
-                            let mut opt_err: Option<A::Error> = None;
+                            let mut opt_err = None;
                             if let Some(events) = processed.events() {
-                                for pre_save_listener
-                                in &self.pre_save_listeners {
-                                    if let Err(e)
-                                        = pre_save_listener.as_ref()
-                                            .listen(aggregate, events)
-                                    {
-                                        opt_err = Some(e);
-                                        break;
-                                    }
+                                if let Err(err) = aggregate.pre_save_events(
+                                    events, context
+                                ) {
+                                    opt_err = Some(err);
                                 }
                             }
 
@@ -500,11 +471,9 @@ impl<A: Aggregate> AggregateStore<A> {
                                 // Now send the events to the 'post-save'
                                 // listeners.
                                 if let Some(events) = processed.events() {
-                                    for listener in &self.post_save_listeners {
-                                        listener.as_ref().listen(
-                                            aggregate, events
-                                        );
-                                    }
+                                    aggregate.post_save_events(
+                                        events, context
+                                    );
                                 }
 
                                 Ok(())
@@ -552,6 +521,16 @@ impl<A: Aggregate> AggregateStore<A> {
         self.kv.execute(Some(&scope), |kv| kv.delete_scope(&scope))?;
         self.cache_remove(id);
         Ok(())
+    }
+}
+
+impl<'a, A: Aggregate<Context<'a> = ()>> AggregateStore<A> {
+    pub fn add(&self, cmd: A::InitCommand) -> Result<Arc<A>, A::Error> {
+        self.add_with_context(cmd, ())
+    }
+
+    pub fn command(&self, cmd: A::Command) -> Result<Arc<A>, A::Error> {
+        self.command_with_context(cmd, ())
     }
 }
 

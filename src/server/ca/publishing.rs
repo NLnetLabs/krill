@@ -25,7 +25,6 @@ use crate::api::roa::RoaInfo;
 use crate::commons::KrillResult;
 use crate::commons::crypto::KrillSigner;
 use crate::commons::error::Error;
-use crate::commons::eventsourcing::PreSaveEventListener;
 use crate::commons::storage::{Ident, KeyValueStore};
 use crate::constants::CA_OBJECTS_NS;
 use crate::config::IssuanceTimingConfig;
@@ -85,11 +84,9 @@ impl CaObjectsStore {
             issuance_timing,
         })
     }
-}
 
-/// React to any events on a CA that cause the set of object to change.
-impl PreSaveEventListener<CertAuth> for CaObjectsStore {
-    fn listen(
+    /// React to any events on a CA that cause the set of object to change.
+    pub(super) fn cert_auth_pre_save_events(
         &self,
         ca: &CertAuth,
         events: &[CertAuthEvent],

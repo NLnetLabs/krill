@@ -108,7 +108,7 @@ impl KrillRuntime {
         &self.0.signer
     }
 
-    pub fn bpg_analyseer(&self) -> &BgpAnalyser {
+    pub fn bpg_analyser(&self) -> &BgpAnalyser {
         &self.0.bgp_analyser
     }
 
@@ -164,7 +164,7 @@ struct Components {
     signer: KrillSigner,
 
     /// The BGP analyser.
-    bgp_analyser: Arc<BgpAnalyser>,
+    bgp_analyser: BgpAnalyser,
 
     /// The actor used for actions initiated by the server itself.
     system_actor: Actor,

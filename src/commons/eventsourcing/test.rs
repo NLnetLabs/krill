@@ -5,7 +5,7 @@
 
 use std::fmt;
 use std::str::FromStr;
-use std::sync::{Arc, RwLock};
+use std::sync::{RwLock};
 use serde::{Deserialize, Serialize};
 use rpki::ca::idexchange::MyHandle;
 use crate::api::history::{CommandHistoryCriteria, CommandSummary};
@@ -302,6 +302,8 @@ impl Aggregate for Person {
 
     type Error = PersonError;
 
+    type Context<'a> = &'a EventCounter;
+
     fn init(id: &MyHandle, event: PersonInitEvent) -> Self {
         Person {
             id: id.clone(),
@@ -313,6 +315,7 @@ impl Aggregate for Person {
 
     fn process_init_command(
         command: Self::InitCommand,
+        _context: Self::Context<'_>,
     ) -> Result<Self::InitEvent, Self::Error> {
         Ok(PersonInitEvent {
             name: command.into_details().name,
@@ -337,6 +340,7 @@ impl Aggregate for Person {
     fn process_command(
         &self,
         command: Self::Command,
+        _context: Self::Context<'_>,
     ) -> Result<Vec<Self::Event>, Self::Error> {
         match command.into_details() {
             PersonCommandDetails::ChangeName(name) => {
@@ -352,6 +356,12 @@ impl Aggregate for Person {
                 }
             }
         }
+    }
+
+    fn post_save_events(
+        &self, events: &[Self::Event], context: Self::Context<'_>
+    ) {
+        context.counter.write().unwrap().total += events.len();
     }
 }
 
@@ -381,12 +391,6 @@ impl EventCounter {
     }
 }
 
-impl<A: Aggregate> PostSaveEventListener<A> for EventCounter {
-    fn listen(&self, _agg: &A, events: &[A::Event]) {
-        self.counter.write().unwrap().total += events.len();
-    }
-}
-
 
 //------------ Test Function -------------------------------------------------
 
@@ -394,22 +398,21 @@ impl<A: Aggregate> PostSaveEventListener<A> for EventCounter {
 fn event_sourcing_framework() {
     let storage_uri = mem_storage();
 
-    let counter = Arc::new(EventCounter::default());
+    let counter = EventCounter::default();
 
-    let mut manager = AggregateStore::<Person>::create(
+    let manager = AggregateStore::<Person>::create(
         &storage_uri,
         const { Ident::make("person") },
         false,
     )
     .unwrap();
-    manager.add_post_save_listener(counter.clone());
 
     let alice_name = "alice smith".to_string();
     let alice_handle = MyHandle::from_str("alice").unwrap();
     let alice_init_cmd =
         PersonInitCommand::make(alice_handle.clone(), alice_name);
 
-    manager.add(alice_init_cmd).unwrap();
+    manager.add_with_context(alice_init_cmd, &counter).unwrap();
 
     let mut alice = manager.get_latest(&alice_handle).unwrap();
     assert_eq!("alice smith", alice.name());
@@ -420,7 +423,7 @@ fn event_sourcing_framework() {
         let get_older = PersonCommand::go_around_sun(
             alice_handle.clone(), None
         );
-        alice = manager.command(get_older).unwrap();
+        alice = manager.command_with_context(get_older, &counter).unwrap();
 
         age += 1;
         if age == 21 {
@@ -436,7 +439,7 @@ fn event_sourcing_framework() {
         Some(22),
         "alice smith-doe",
     );
-    let alice = manager.command(change_name).unwrap();
+    let alice = manager.command_with_context(change_name, &counter).unwrap();
     assert_eq!("alice smith-doe", alice.name());
     assert_eq!(21, alice.age());
 

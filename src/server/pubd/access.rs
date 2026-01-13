@@ -296,6 +296,8 @@ impl Aggregate for RepositoryAccess {
     type InitEvent = RepositoryAccessInitEvent;
     type Error = Error;
 
+    type Context<'a> = ();
+
     fn init(handle: &MyHandle, event: Self::InitEvent) -> Self {
         RepositoryAccess {
             handle: handle.clone(),
@@ -309,6 +311,7 @@ impl Aggregate for RepositoryAccess {
 
     fn process_init_command(
         command: Self::InitCommand,
+        _context: Self::Context<'_>,
     ) -> Result<Self::InitEvent, Self::Error> {
         let details = command.into_details();
 
@@ -343,6 +346,7 @@ impl Aggregate for RepositoryAccess {
     fn process_command(
         &self,
         command: Self::Command,
+        _context: Self::Context<'_>,
     ) -> Result<Vec<Self::Event>, Self::Error> {
         info!(
             "Processing command for publisher '{}', version: {}: {}",

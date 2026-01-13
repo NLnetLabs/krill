@@ -37,12 +37,14 @@ use crate::{
         },
         properties::Properties,
         pubd::{RepositoryAccess, RepositoryContent, RepositoryManager},
+        runtime::KrillRuntime,
     },
 };
 
 use super::mq::TaskResult;
 
 pub struct Scheduler {
+    krill: KrillRuntime,
     tasks: Arc<TaskQueue>,
     ca_manager: Arc<CaManager>,
     repo_manager: Arc<RepositoryManager>,
@@ -53,6 +55,7 @@ pub struct Scheduler {
 }
 
 impl Scheduler {
+    #[allow(unreachable_code, unused_variables)]
     pub fn build(
         tasks: Arc<TaskQueue>,
         ca_manager: Arc<CaManager>,
@@ -62,6 +65,7 @@ impl Scheduler {
         system_actor: Actor,
     ) -> Self {
         Scheduler {
+            krill: todo!(),
             tasks,
             ca_manager,
             repo_manager,
@@ -371,10 +375,9 @@ impl Scheduler {
     ) -> Result<TaskResult, FatalError> {
         if self.ca_manager.has_ca(&ca).map_err(FatalError)? {
             info!("Synchronize CA '{ca}' with its parent '{parent}'");
-            match self
-                .ca_manager
-                .ca_sync_parent(&ca, ca_version, &parent, &self.system_actor)
-                .await
+            match self.ca_manager.ca_sync_parent(
+                &ca, ca_version, &parent, &self.system_actor, &self.krill,
+            ).await
             {
                 Err(e) => {
                     let next = self.config.requeue_remote_failed();
@@ -414,7 +417,7 @@ impl Scheduler {
 
     /// Resync the testbed TA signer and proxy
     async fn renew_testbed_ta(&self) -> Result<TaskResult, FatalError> {
-        if let Err(e) = self.ca_manager.ta_renew_testbed_ta() {
+        if let Err(e) = self.ca_manager.ta_renew_testbed_ta(&self.krill) {
             error!("There was an issue renewing the testbed TA: {e}");
         }
         let weeks_to_resync = self.config.ta_timing.mft_next_update_weeks / 2;
@@ -431,7 +434,7 @@ impl Scheduler {
     ) -> Result<TaskResult, FatalError> {
         debug!("Synchronise Trust Anchor Proxy with Signer - if Signer is local.");
         if let Err(e) =
-            self.ca_manager.sync_ta_proxy_signer_if_possible()
+            self.ca_manager.sync_ta_proxy_signer_if_possible(&self.krill)
         {
             error!("There was an issue synchronising the TA Proxy and Signer: {e}");
         }
@@ -448,7 +451,7 @@ impl Scheduler {
                 "Verify if CA '{ca_handle}' has children that need to be suspended"
             );
             self.ca_manager.ca_suspend_inactive_children(
-                &ca_handle, self.started, &self.system_actor,
+                &ca_handle, self.started, &self.system_actor, &self.krill,
             );
 
             Ok(TaskResult::FollowUp(
@@ -520,7 +523,9 @@ impl Scheduler {
     async fn renew_objects_if_needed(
         &self,
     ) -> Result<TaskResult, FatalError> {
-        self.ca_manager.renew_objects_all(&self.system_actor).map_err(
+        self.ca_manager.renew_objects_all(
+            &self.system_actor, &self.krill
+        ).map_err(
             FatalError
         )?;
 
@@ -659,7 +664,9 @@ impl Scheduler {
                 Ok(TaskResult::Reschedule(in_seconds(1)))
             } else if self
                 .ca_manager
-                .send_revoke_requests(&ca_handle, &parent, requests)
+                .send_revoke_requests(
+                    &ca_handle, &parent, requests, &self.krill,
+                )
                 .await
                 .is_err()
             {
@@ -706,6 +713,7 @@ impl Scheduler {
                         &ca_handle,
                         rcn,
                         revocation_request,
+                        &self.krill,
                     )
                     .await
                 {
