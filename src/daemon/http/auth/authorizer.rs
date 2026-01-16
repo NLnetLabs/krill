@@ -202,25 +202,23 @@ impl Authorizer {
     ///
     /// The authorizer will be created according to information provided via
     /// `config`.
-    pub fn new(
-        config: Arc<Config>,
-    ) -> KrillResult<Self> {
+    pub fn new(config: &Config) -> KrillResult<Self> {
         let (primary_provider, legacy_provider) = match config.auth_type {
             AuthType::AdminToken => {
-                (admin_token::AuthProvider::new(config.clone()).into(), None)
+                (admin_token::AuthProvider::new(&config).into(), None)
             }
             #[cfg(feature = "multi-user")]
             AuthType::ConfigFile => {
                 (
                     config_file::AuthProvider::new(&config)?.into(),
-                    Some(admin_token::AuthProvider::new(config.clone()))
+                    Some(admin_token::AuthProvider::new(&config))
                 )
             }
             #[cfg(feature = "multi-user")]
             AuthType::OpenIDConnect => {
                 (
-                    openid_connect::AuthProvider::new(config.clone())?.into(),
-                    Some(admin_token::AuthProvider::new(config.clone()))
+                    openid_connect::AuthProvider::new(&config)?.into(),
+                    Some(admin_token::AuthProvider::new(&config))
                 )
             }
         };
@@ -229,7 +227,7 @@ impl Authorizer {
             primary_provider,
             legacy_provider,
             #[cfg(unix)]
-            unix_socket_provider: unix_user::AuthProvider::new(config.clone())?
+            unix_socket_provider: unix_user::AuthProvider::new(&config)?
         })
     }
 

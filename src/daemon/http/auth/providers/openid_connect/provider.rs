@@ -49,6 +49,7 @@ use openidconnect::{
         CoreRevocableToken,
     }
 };
+use rpki::uri;
 use serde::{Deserialize, Serialize};
 use tokio::runtime;
 use urlparse::{urlparse, GetQuery};
@@ -77,7 +78,7 @@ use crate::{
                 },
             },
             session::*,
-            AuthInfo, LoggedInUser, Permission,
+            AuthInfo, LoggedInUser, Permission, RoleMap,
         },
         http::util::url_encode,
     },
@@ -168,20 +169,33 @@ type Session = ClientSession<SessionSecrets>;
 //------------ AuthProvider --------------------------------------------------
 
 pub struct AuthProvider {
-    config: Arc<Config>,
+    oidc_conf: ConfigAuthOpenIDConnect,
+
+    /// The role directory.
+    roles: Arc<RoleMap>,
+
+    /// The URI we provide our service under.
+    service_uri: uri::Https,
+
     session_cache: SessionCache,
     session_key: CryptState,
     conn: Arc<RwLock<Option<ProviderConnectionProperties>>>,
 }
 
 impl AuthProvider {
-    pub fn new(
-        config: Arc<Config>,
-    ) -> KrillResult<Self> {
+    pub fn new(config: &Config) -> KrillResult<Self> {
         let session_key = Self::init_session_key(&config)?;
 
+        let Some(oidc_conf) = config.auth_openidconnect.as_ref() else {
+            return Err(Error::ConfigError(
+                "Missing [auth_openidconnect] config section!".into(),
+            ));
+        };
+
         Ok(Self {
-            config,
+            oidc_conf: oidc_conf.clone(),
+            roles: config.auth_roles.clone(),
+            service_uri: config.service_uri(),
             session_cache: SessionCache::new(),
             session_key,
             conn: Arc::new(RwLock::new(None)),
@@ -238,9 +252,9 @@ impl AuthProvider {
         // URL. Strip off /.well-known/openid-configuration because
         // the openid-connect crate wants to add this itself and will
         // fail if it is already present in the URL.
-        let issuer = self.oidc_conf()?.issuer_url.clone();
-        let issuer =
-            issuer.trim_end_matches("/.well-known/openid-configuration");
+        let issuer = self.oidc_conf.issuer_url.trim_end_matches(
+            "/.well-known/openid-configuration"
+        );
         let issuer = IssuerUrl::new(issuer.to_string())?;
 
         info!(
@@ -387,12 +401,12 @@ impl AuthProvider {
         // |                   |                  | supported
         //   -------------------|-------------------|------------------|---------------------------------------------
 
-        let config_file_url = self.oidc_conf()?.logout_url.as_ref();
+        let config_file_url = self.oidc_conf.logout_url.as_ref();
         let mut rp_initiated_logout_url =
             meta.additional_metadata().end_session_endpoint.as_ref();
         let mut revocation_url =
             meta.additional_metadata().revocation_endpoint.as_ref();
-        let service_uri = self.config.service_uri().as_str().to_string();
+        let service_uri = self.service_uri.as_str().to_string();
 
         if let Some(rev_url) = revocation_url {
             // From: https://tools.ietf.org/html/rfc7009#section-2
@@ -472,10 +486,9 @@ impl AuthProvider {
         // been obtained by the Krill operator when they created a
         // registration for their Krill instance with their identity
         // provider.
-        let oidc_conf = self.oidc_conf()?;
-        let client_id = ClientId::new(oidc_conf.client_id.clone());
+        let client_id = ClientId::new(self.oidc_conf.client_id.clone());
         let client_secret =
-            ClientSecret::new(oidc_conf.client_secret.clone());
+            ClientSecret::new(self.oidc_conf.client_secret.clone());
 
         // Create a client we can use to communicate with the provider based
         // on what we just learned and using the credentials we read
@@ -497,8 +510,7 @@ impl AuthProvider {
         // that we can exchange the temporary code for access and id
         // tokens.
         let redirect_uri = RedirectUrl::new(
-            self.config
-                .service_uri()
+            self.service_uri
                 .join(AUTH_CALLBACK_ENDPOINT.as_bytes())
                 .unwrap()
                 .to_string(),
@@ -745,15 +757,6 @@ impl AuthProvider {
     fn init_session_key(config: &Config) -> KrillResult<CryptState> {
         debug!("Initializing session encryption key");
         crypt::crypt_init(config)
-    }
-
-    fn oidc_conf(&self) -> KrillResult<&ConfigAuthOpenIDConnect> {
-        match &self.config.auth_openidconnect {
-            Some(oidc_conf) => Ok(oidc_conf),
-            None => Err(Error::ConfigError(
-                "Missing [auth_openidconnect] config section!".into(),
-            )),
-        }
     }
 
     fn extract_cookie(
@@ -1008,7 +1011,7 @@ impl AuthProvider {
         let mut id_token_verifier: CoreIdTokenVerifier =
             conn.client.id_token_verifier();
 
-        if self.oidc_conf()?.insecure {
+        if self.oidc_conf.insecure {
             // This is NOT a good idea. It was needed when testing with
             // one provider and so may be of use to others in future
             // too.
@@ -1112,7 +1115,7 @@ impl AuthProvider {
     ) -> KrillResult<AuthInfo> {
         Ok(AuthInfo::user(
             session.user_id.clone(),
-            self.config.auth_roles.get(&session.secrets.role).ok_or_else(|| {
+            self.roles.get(&session.secrets.role).ok_or_else(|| {
                 ApiAuthError::ApiAuthPermanentError(
                     format!(
                         "user '{}' with undefined role '{}' \
@@ -1414,10 +1417,6 @@ impl AuthProvider {
             || Nonce::new(URL_BASE64_ENGINE.encode(nonce_hash)),
         );
 
-        // This unwrap is safe as we check in new() that the OpenID Connect
-        // config exists.
-        let oidc_conf = self.oidc_conf()?;
-
         // From https://openid.net/specs/openid-connect-core-1_0.html#AuthRequest:
         //   "prompt: login - The Authorization Server SHOULD prompt the
         //    End-User for re-authentication. If it cannot re-authenticate the
@@ -1429,7 +1428,7 @@ impl AuthProvider {
         // it has some notion of an existing login session.
 
         // https://github.com/NLnetLabs/krill/issues/614
-        if oidc_conf.prompt_for_login {
+        if self.oidc_conf.prompt_for_login {
             request = request.add_prompt(CoreAuthPrompt::Login);
         }
 
@@ -1451,11 +1450,11 @@ impl AuthProvider {
 
         // TODO: use request.set_pkce_challenge() ?
 
-        for scope in &oidc_conf.extra_login_scopes {
+        for scope in &self.oidc_conf.extra_login_scopes {
             request = request.add_scope(Scope::new(scope.clone()));
         }
 
-        for (k, v) in oidc_conf.extra_login_params.iter() {
+        for (k, v) in self.oidc_conf.extra_login_params.iter() {
             request = request.add_extra_param(k, v);
         }
 
@@ -1668,7 +1667,7 @@ impl AuthProvider {
                     id_token_claims, user_info_claims
                 );
                 let id = claims.extract_claims(
-                    &self.oidc_conf()?.id_claims
+                    &self.oidc_conf.id_claims
                 )?.ok_or_else(|| {
                     Self::internal_error(
                         "OpenID Connect: cannot determine user ID.",
@@ -1676,14 +1675,14 @@ impl AuthProvider {
                     )
                 })?;
                 let role_name = claims.extract_claims(
-                    &self.oidc_conf()?.role_claims
+                    &self.oidc_conf.role_claims
                 )?.ok_or_else(|| {
                     Self::internal_error(
                         "OpenID Connect: cannot determine user's role.",
                         None
                     )
                 })?;
-                let role = self.config.auth_roles.get(
+                let role = self.roles.get(
                     &role_name
                 ).ok_or_else(|| {
                     let reason = format!(

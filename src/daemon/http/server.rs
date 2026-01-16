@@ -42,7 +42,7 @@ impl HttpServer {
         config: Arc<Config>,
         runtime: &runtime::Handle,
     ) -> KrillResult<Arc<Self>> {
-        let authorizer = Authorizer::new(config.clone())?;
+        let authorizer = Authorizer::new(&config)?;
         authorizer.spawn_sweep(runtime);
         Ok(Self {
             old_krill,
