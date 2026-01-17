@@ -2,6 +2,7 @@
 
 use std::{fs, path};
 use chrono::Datelike;
+use krill::api;
 use krill::cli::ta::signer::TrustAnchorSignerManager;
 
 mod common;
@@ -59,7 +60,10 @@ async fn functional_old_data() {
 
     eprintln!(">>>> Sign TA proxy signer request.");
     let response = signer.process(request.into(), None).unwrap();
-    assert_eq!(response.content().child_responses.len(), 1);
+    
+    // XXX Uncommented since after PR 1435 there are no child requests any
+    //     more until 2026-03.
+    // assert_eq!(response.content().child_responses.len(), 1);
 
     eprintln!(">>>> Process TA proxy signer response.");
     server.client().ta_proxy_signer_response(response).await.unwrap();
