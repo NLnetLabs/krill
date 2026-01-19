@@ -36,20 +36,21 @@ async fn functional_old_data() {
     );
     config.ta_support_enabled = true;
 
-    eprintln!(">>>> Check whether Krill still starts.");
-    let server = common::KrillServer::start_with_config(config).await;
-
     let signer_config = 
         include_str!("../test-resources/migrations/v0_14_5_signer/ta.conf");
     let signer_config = signer_config.replace("%TEMPDIR%", 
         tempdir.path().join("ta").to_str().unwrap());
+    let signer_config = krill::tasigner::Config::parse_str(
+        &signer_config
+    ).unwrap();
+
+    config.ta_timing = signer_config.ta_timing.clone();
+
+    eprintln!(">>>> Check whether Krill still starts.");
+    let server = common::KrillServer::start_with_config(config).await;
 
     eprintln!(">>>> Configure the TA signer.");
-    let signer = TrustAnchorSignerManager::create(
-        krill::tasigner::Config::parse_str(
-            &signer_config
-        ).unwrap()
-    ).unwrap();
+    let signer = TrustAnchorSignerManager::create(signer_config).unwrap();
 
     eprintln!(">>>> Make TA proxy signer request.");
     let request = 
