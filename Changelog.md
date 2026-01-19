@@ -33,6 +33,9 @@ Bug fixes
 * Start sweeping the authenticator cache upon daemon startup. This merely
   reduces memory consumption of the cache. Expired authentication tokens
   were not used either way. ([#1337])
+* Fixed a bug introduced in 0.15.0 where CAs do to not clear fulfilled
+  certification requests causing them to re-request a certificate every
+  time they contact their parent. ([#1345])
 
 Other changes
 
@@ -45,6 +48,25 @@ Other changes
 [#1329]: https://github.com/NLnetLabs/krill/pull/1329
 [#1331]: https://github.com/NLnetLabs/krill/pull/1331
 [#1337]: https://github.com/NLnetLabs/krill/pull/1337
+[#1344]: https://github.com/NLnetLabs/krill/pull/1344
+
+
+## 0.15.1 ‘Contains Adult Language’
+
+Released 2026-01-19.
+
+Bug fixes
+
+* Fixed a bug introduced in 0.15.0 where CAs do to not clear fulfilled
+  certification requests causing them to re-request a certificate every
+  time they contact their parent. ([#1345])
+
+Other changes
+
+* Updated dependencies.
+
+[#1345]: https://github.com/NLnetLabs/krill/pull/1345
+[#1346]: https://github.com/NLnetLabs/krill/pull/1346
 
 
 ## 0.15.0 ‘But I Digress’
