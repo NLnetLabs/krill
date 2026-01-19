@@ -1,5 +1,21 @@
 # Change Log
 
+## Unreleased next version
+
+Bug fixes
+
+* Fixed a bug introduced in 0.15.0 where CAs do to not clear fulfilled
+  certification requests causing them to re-request a certificate every
+  time they contact their parent. ([#1345])
+
+Other changes
+
+* Updated dependencies.
+
+[#1345]: https://github.com/NLnetLabs/krill/pull/1345
+[#1346]: https://github.com/NLnetLabs/krill/pull/1346
+
+
 ## 0.15.0 ‘But I Digress’
 
 Released 2025-08-12.
