@@ -1,5 +1,12 @@
 # Change Log
 
+## Unreleased next version
+
+Bug fixes
+
+Other changes
+
+
 ## 0.15.1 ‘Contains Adult Language’
 
 Released 2026-01-19.
