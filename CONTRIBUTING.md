@@ -36,12 +36,12 @@ the relevant RFCs, and how they are related.
 
 ### Join the Community
 
-We invite you to join the [RPKI mailing
-list](https://lists.nlnetlabs.nl/mailman/listinfo/rpki) and/or [Discord
-server](https://discord.gg/8dvKB5Ykhy). Please don't open a GitHub issue for a
-question. Instead, follow the discussion on the mailing list and Discord and ask
-questions there before you start sending patches. We prefer public discussions
-over private ones, so everyone in the community can participate and learn.
+We invite you to join the [RPKI community](https://community.nlnetlabs.nl) 
+and/or [Discord server](https://discord.gg/8dvKB5Ykhy). Please don't open a 
+GitHub issue for a question. Instead, follow the discussion on the mailing list 
+and Discord and ask questions there before you start sending patches. We prefer 
+public discussions over private ones, so everyone in the community can 
+participate and learn.
 
 ### License and copyright
 
@@ -71,16 +71,16 @@ for Krill. This documentation is edited via text files in the
 [reStructuredText](http://www.sphinx-doc.org/en/stable/rest.html) markup
 language and then compiled into a static website/offline document using the open
 source [Sphinx](http://www.sphinx-doc.org) and
-[ReadTheDocs](https://readthedocs.org/) tools. You can contribute to the
-Krill user manual by sending patches via pull requests on the
-[krill-manual](https://github.com/NLnetLabs/krill-manual) GitHub
-source repository. 
+[ReadTheDocs](https://readthedocs.org/) tools. 
 
 You can contribute to the [man
 page](https://github.com/NLnetLabs/krill/blob/main/doc/krill.1) by
 sending nroff formatted patches.
 
 ## Sharing Your Changes
+
+Please contact us before you start coding. One-line fixes are generally fine,
+but for new features and rewrites we want to be in the loop from the start.
 
 We would like you to submit a [pull request on
 GitHub](https://github.com/NLnetLabs/krill/pulls). Please note that you can
