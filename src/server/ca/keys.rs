@@ -78,11 +78,8 @@ impl CertifiedKey {
 
     /// Updates the certificate received for the key.
     pub fn set_incoming_cert(&mut self, cert: ReceivedCert) {
-        self.incoming_cert = cert;
-
-        // A possible issuance request is considered completed when a new
-        // certificate arrives.
         self.request = None;
+        self.incoming_cert = cert;
     }
 
     /// Returns the certified key info for this certified key.
