@@ -2,7 +2,6 @@
 
 use std::{fs, path};
 use chrono::Datelike;
-use krill::api;
 use krill::cli::ta::signer::TrustAnchorSignerManager;
 
 mod common;
@@ -37,20 +36,21 @@ async fn functional_old_data() {
     );
     config.ta_support_enabled = true;
 
-    eprintln!(">>>> Check whether Krill still starts.");
-    let server = common::KrillServer::start_with_config(config).await;
-
     let signer_config = 
         include_str!("../test-resources/migrations/v0_14_5_signer/ta.conf");
     let signer_config = signer_config.replace("%TEMPDIR%", 
         tempdir.path().join("ta").to_str().unwrap());
+    let signer_config = krill::tasigner::Config::parse_str(
+        &signer_config
+    ).unwrap();
+
+    config.ta_timing = signer_config.ta_timing.clone();
+
+    eprintln!(">>>> Check whether Krill still starts.");
+    let server = common::KrillServer::start_with_config(config).await;
 
     eprintln!(">>>> Configure the TA signer.");
-    let signer = TrustAnchorSignerManager::create(
-        krill::tasigner::Config::parse_str(
-            &signer_config
-        ).unwrap()
-    ).unwrap();
+    let signer = TrustAnchorSignerManager::create(signer_config).unwrap();
 
     eprintln!(">>>> Make TA proxy signer request.");
     let request = 
@@ -60,10 +60,7 @@ async fn functional_old_data() {
 
     eprintln!(">>>> Sign TA proxy signer request.");
     let response = signer.process(request.into(), None).unwrap();
-    
-    // XXX Uncommented since after PR 1435 there are no child requests any
-    //     more until 2026-03.
-    // assert_eq!(response.content().child_responses.len(), 1);
+    assert_eq!(response.content().child_responses.len(), 1);
 
     eprintln!(">>>> Process TA proxy signer response.");
     server.client().ta_proxy_signer_response(response).await.unwrap();
