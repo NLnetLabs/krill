@@ -1327,15 +1327,16 @@ impl KeyObjectSet {
             }
         }
 
+        // Since Krill 0.16 suspended certificates will reissued rather than 
+        // unsuspended, so this does nothing anymore except for migrations.
         for cert in &cert_updates.unsuspended {
-            self.revocations.remove(&cert.revocation());
             let published_object = PublishedObject::for_cert_info(cert);
-            if let Some(old) = self
+            if let Some(_old) = self
                 .published_objects
                 .insert(cert.name.clone(), published_object)
             {
-                // this should not happen, but just to be safe.
-                self.revocations.add(old.revoke());
+                // If this happens then the child will probably contact the CA
+                // though this should not happen.
             }
         }
 

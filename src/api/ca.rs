@@ -279,7 +279,7 @@ pub struct CertInfo<T> {
 
     /// The serial number of this certificate.
     ///
-    /// This is needed for revocatio.
+    /// This is needed for revocation.
     pub serial: Serial,
 
     /// The certifcate signing request for the certificate.
@@ -1900,22 +1900,22 @@ impl fmt::Display for ResourceClassKeysInfo {
         write!(f, "State: ")?;
 
         match &self {
-            ResourceClassKeysInfo::Pending(_) => write!(f, "pending")?,
-            ResourceClassKeysInfo::Active(_) => write!(f, "active")?,
+            ResourceClassKeysInfo::Pending(_) => writeln!(f, "pending")?,
+            ResourceClassKeysInfo::Active(_) => writeln!(f, "active")?,
             ResourceClassKeysInfo::RollPending(_) => {
-                write!(f, "roll phase 1: pending and active key")?
+                writeln!(f, "roll phase 1: pending and active key")?
             }
             ResourceClassKeysInfo::RollNew(_) => {
-                write!(f, "roll phase 2: new and active key")?
+                writeln!(f, "roll phase 2: new and active key")?
             }
             ResourceClassKeysInfo::RollOld(_) => {
-                write!(f, "roll phase 3: active and old key")?
+                writeln!(f, "roll phase 3: active and old key")?
             }
         }
 
         if let Some(key) = self.current_key() {
             let resources = &key.incoming_cert.resources;
-            writeln!(f, "    Resources:")?;
+            writeln!(f, "Resources:")?;
             writeln!(f, "    ASNs: {}", resources.asn())?;
             writeln!(f, "    IPv4: {}", resources.ipv4())?;
             writeln!(f, "    IPv6: {}", resources.ipv6())?;
