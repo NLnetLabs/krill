@@ -1130,6 +1130,10 @@ impl Config {
         self.testbed.as_ref()
     }
 
+    pub fn testbed_enabled(&self) -> bool {
+        self.testbed.is_some()
+    }
+
     /// Returns a reference to the default signer configuration.
     ///
     /// Assumes that the configuration is valid. Will panic otherwise.

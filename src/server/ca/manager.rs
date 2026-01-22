@@ -32,7 +32,7 @@ use crate::api::aspa::{
 };
 use crate::api::bgpsec::{BgpSecCsrInfoList, BgpSecDefinitionUpdates};
 use crate::api::ca::{
-    CertAuthIssues, CertAuthList, CertAuthSummary, ChildCaInfo, IdCertInfo,
+    CertAuthIssues, ChildCaInfo, IdCertInfo,
     ParentStatuses, ReceivedCert, RepoStatus, RtaName, Timestamp,
 };
 use crate::api::history::{
@@ -58,7 +58,6 @@ use crate::constants::{
     CASERVER_NS, STATUS_NS, TA_PROXY_SERVER_NS, TA_SIGNER_SERVER_NS, TA_NAME,
     ta_handle,
 };
-use crate::daemon::http::auth::{AuthInfo, Permission}; // XXX remove
 use crate::config::Config;
 use crate::server::mq::{now, Task, TaskQueue};
 use crate::server::pubd::RepositoryManager;
@@ -647,24 +646,6 @@ impl CaManager {
         Ok(self.ca_store.list()?)
     }
 
-    /// Returns the CAs that the given policy allows read access to.
-    pub fn ca_list(
-        &self, auth: &AuthInfo,
-    ) -> KrillResult<CertAuthList> {
-        Ok(CertAuthList {
-            cas: self.ca_store
-                .list()?
-                .into_iter()
-                .filter(|handle| {
-                    auth.check_permission(
-                        Permission::CaRead, Some(handle)
-                    ).is_ok()
-                })
-                .map(|handle| CertAuthSummary { handle })
-                .collect(),
-        })
-    }
-
     /// Returns the CA by the given handle.
     ///
     /// Returns an error if the CA does not exist.
@@ -833,7 +814,6 @@ impl CaManager {
         &self,
         ca: &CaHandle,
         req: AddChildRequest,
-        service_uri: &uri::Https,
         actor: &Actor,
         krill: &KrillRuntime,
     ) -> KrillResult<ParentResponse> {
@@ -847,14 +827,14 @@ impl CaManager {
                 ),
                 krill
             )?;
-            self.ca_parent_response(ca, req.handle, service_uri)
+            self.ca_parent_response(ca, req.handle, krill.service_uri())
         }
         else {
             let child_handle = req.handle.clone();
             let add_child_cmd =
                 TrustAnchorProxyCommand::add_child(ca, req, actor);
             self.send_ta_proxy_command(add_child_cmd, krill)?;
-            self.ca_parent_response(ca, child_handle, service_uri)
+            self.ca_parent_response(ca, child_handle, krill.service_uri())
         }
     }
 

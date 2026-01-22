@@ -10,6 +10,7 @@ use crate::commons::KrillResult;
 use crate::commons::error::FatalError;
 use crate::config::Config;
 use crate::constants::KRILL_ENV_HTTP_LOG_INFO;
+use crate::server::manager::KrillManager;
 use crate::server::oldmanager::OldManager;
 use super::auth::Authorizer;
 use super::dispatch::{DispatchError, dispatch_request};
@@ -22,6 +23,9 @@ use super::response::{HyperResponse, HttpResponse};
 
 /// The Krill HTTP server.
 pub struct HttpServer {
+    /// The Krill server.
+    krill: KrillManager,
+
     /// The Krill “business logic.”
     old_krill: OldManager,
 
@@ -38,6 +42,7 @@ pub struct HttpServer {
 impl HttpServer {
     /// Creates a new server from a Krill manager and the configuration.
     pub fn new(
+        krill: KrillManager,
         old_krill: OldManager,
         config: Arc<Config>,
         runtime: &runtime::Handle,
@@ -45,6 +50,7 @@ impl HttpServer {
         let authorizer = Authorizer::new(&config)?;
         authorizer.spawn_sweep(runtime);
         Ok(Self {
+            krill,
             old_krill,
             authorizer,
             config,
@@ -94,6 +100,11 @@ impl HttpServer {
 }
 
 impl HttpServer {
+    /// Returns a reference to the Krill server.
+    pub(super) fn krill(&self) -> &KrillManager {
+        &self.krill
+    }
+
     /// Returns a reference to the Krill manager.
     pub(super) fn old_krill(&self) -> &OldManager {
         &self.old_krill
@@ -105,7 +116,7 @@ impl HttpServer {
     }
 
     /// Returns a reference to the configuration.
-    pub(super) fn config(&self) -> &Config {
+    pub fn config(&self) -> &Config {
         &self.config
     }
 

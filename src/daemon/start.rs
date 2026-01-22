@@ -15,6 +15,7 @@ use crate::commons::version::KrillVersion;
 use crate::config::Config;
 use crate::constants::KRILL_ENV_UPGRADE_ONLY;
 use crate::server::properties::PropertiesManager;
+use crate::server::manager::KrillManager;
 use crate::server::oldmanager::OldManager;
 use crate::upgrades::{
     finalise_data_migration, post_start_upgrade,
@@ -25,9 +26,11 @@ use super::http::server::HttpServer;
 
 
 pub async fn start_krill_daemon(
-    config: Arc<Config>,
+    config: Config,
     mut signal_running: Option<oneshot::Sender<()>>,
 ) -> Result<(), Error> {
+    let arc_config = Arc::new(config.clone());
+
     write_pid_file_or_die(&config);
     test_data_dirs_or_die(&config);
 
@@ -82,13 +85,15 @@ pub async fn start_krill_daemon(
 
     // Create the Krill manager, this will create the necessary data
     // sub-directories if needed
-    let krill = OldManager::build(config.clone()).await?;
+    let old_krill = OldManager::build(arc_config.clone()).await?;
+
+    let krill = KrillManager::new(config)?;
 
     // Call post-start upgrades to trigger any upgrade related runtime
     // actions, such as re-issuing ROAs because subject name strategy has
     // changed.
     if let Some(report) = upgrade_report {
-        post_start_upgrade(report, &krill).await?;
+        post_start_upgrade(report, &old_krill).await?;
     }
 
     // If the operator wanted to do the upgrade only, now is a good time to
@@ -100,27 +105,27 @@ pub async fn start_krill_daemon(
 
     // Build the scheduler which will be responsible for executing
     // planned/triggered tasks
-    let scheduler = krill.build_scheduler();
+    let scheduler = old_krill.build_scheduler();
     let scheduler_future = scheduler.run();
 
     // Create the HTTP server.
     let server = HttpServer::new(
-        krill, config.clone(), &runtime::Handle::current()
+        krill, old_krill, arc_config.clone(), &runtime::Handle::current()
     )?;
 
     // Create self-signed HTTPS cert if configured and not generated earlier.
-    if config.https_mode().is_generate_https_cert() {
-        tls_keys::create_key_cert_if_needed(config.tls_keys_dir())
+    if server.config().https_mode().is_generate_https_cert() {
+        tls_keys::create_key_cert_if_needed(server.config().tls_keys_dir())
             .map_err(|e| Error::HttpsSetup(format!("{e}")))?;
     }
 
     // Start a hyper server for the configured http sockets.
     let http_server_futures = futures_util::future::select_all(
-        config.socket_addresses().into_iter().map(|socket_addr| {
+        server.config().socket_addresses().into_iter().map(|socket_addr| {
             tokio::spawn(single_http_listener(
                 server.clone(),
                 socket_addr,
-                config.clone(),
+                arc_config.clone(),
                 signal_running.take(),
             ))
         }),
@@ -129,12 +134,12 @@ pub async fn start_krill_daemon(
     // Start a hyper server for the configured unix sockets.
     // We do not await these, as they are not required
     #[cfg(unix)]
-    if config.unix_socket_enabled() {
-        config.unix_socket().map(|path| {
+    if server.config().unix_socket_enabled() {
+        server.config().unix_socket().map(|path| {
             tokio::spawn(single_unix_listener(
                 server.clone(),
                 path.clone(),
-                config.clone(),
+                arc_config.clone(),
                 signal_running.take(),
             ))
         });
