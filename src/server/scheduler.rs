@@ -19,7 +19,7 @@ use crate::{
         crypto::dispatch::signerinfo::SignerInfo,
         error::FatalError,
         eventsourcing::{Aggregate, AggregateStore, WalStore, WalSupport},
-        storage::{Key, Namespace},
+        storage::Ident,
         version::KrillVersion,
     },
     constants::{
@@ -31,6 +31,7 @@ use crate::{
     config::Config,
     server::{
         ca::{CaManager, CertAuth},
+        bgp::BgpAnalyser,
         mq::{
             in_hours, in_minutes, in_seconds, in_weeks, now, Task, TaskQueue,
         },
@@ -45,6 +46,7 @@ pub struct Scheduler {
     tasks: Arc<TaskQueue>,
     ca_manager: Arc<CaManager>,
     repo_manager: Arc<RepositoryManager>,
+    bgp_analyser: Arc<BgpAnalyser>,
     config: Arc<Config>,
     system_actor: Actor,
     started: Timestamp,
@@ -55,6 +57,7 @@ impl Scheduler {
         tasks: Arc<TaskQueue>,
         ca_manager: Arc<CaManager>,
         repo_manager: Arc<RepositoryManager>,
+        bgp_analyser: Arc<BgpAnalyser>,
         config: Arc<Config>,
         system_actor: Actor,
     ) -> Self {
@@ -62,6 +65,7 @@ impl Scheduler {
             tasks,
             ca_manager,
             repo_manager,
+            bgp_analyser,
             config,
             system_actor,
             started: Timestamp::now(),
@@ -72,11 +76,8 @@ impl Scheduler {
     /// for tasks and re-schedule new tasks as needed.
     pub async fn run(&self) {
         loop {
-            while let Some(running_task) = self.tasks.pop() {
-                // remember the key so we can finish or re-schedule the task.
-                let task_key = Key::from(&running_task);
-
-                match serde_json::from_value(running_task.value) {
+            while let Some((task_key, value)) = self.tasks.pop() {
+                match serde_json::from_value(value) {
                     Err(e) => {
                         // If we cannot parse the value of this task, then we
                         // have a major
@@ -193,7 +194,11 @@ impl Scheduler {
                     .await
             }
 
-            Task::SweepLoginCache | Task::RefreshAnnouncementsInfo => {
+            Task::RefreshAnnouncementsInfo => {
+                self.announcements_refresh().await
+            }
+
+            Task::SweepLoginCache => {
                 // Don’t do anything. These are deprecated.
                 Ok(TaskResult::Done)
             }
@@ -300,6 +305,15 @@ impl Scheduler {
         self.tasks
             .schedule_missing(Task::RenewObjectsIfNeeded, now())
             .map_err(FatalError)?;
+
+        // BGP announcement info is only kept in-memory, so it
+        // is lost after a restart, so schedule refreshing this
+        // immediately.
+        if self.config.bgp_riswhois_enabled {
+            self.tasks
+                .schedule(Task::RefreshAnnouncementsInfo, now())
+                .map_err(FatalError)?;
+        }
 
         // Plan updating snapshots soon after a restart.
         // This also ensures that this task gets triggered in long
@@ -488,6 +502,20 @@ impl Scheduler {
         ))
     }
 
+    /// Update announcement info
+    async fn announcements_refresh(&self) -> Result<TaskResult, FatalError> {
+        if let Err(e) = self.bgp_analyser.update().await {
+            error!("Failed to update BGP announcements: {}", e)
+        }
+
+        // check again in 10 minutes, note.. this is a no-op in case the
+        // actual update was less then 1 hour ago.
+        // See BGP_RIS_REFRESH_MINUTES constant.
+        Ok(TaskResult::FollowUp(
+            Task::RefreshAnnouncementsInfo, in_minutes(10)
+        ))
+    }
+
     /// Let CAs that need it re-issue signed objects
     async fn renew_objects_if_needed(
         &self,
@@ -508,7 +536,7 @@ impl Scheduler {
     fn update_snapshots(&self) -> Result<TaskResult, FatalError> {
         fn update_aggregate_store_snapshots<A: Aggregate>(
             storage_uri: &Url,
-            namespace: &Namespace,
+            namespace: &Ident,
         ) {
             match AggregateStore::<A>::create(storage_uri, namespace, false) {
                 Err(e) => {
@@ -536,7 +564,7 @@ impl Scheduler {
 
         fn update_wal_store_snapshots<W: WalSupport>(
             storage_uri: &Url,
-            namespace: &Namespace,
+            namespace: &Ident,
         ) {
             match WalStore::<W>::create(storage_uri, namespace) {
                 Err(e) => {

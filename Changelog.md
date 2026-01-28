@@ -4,11 +4,69 @@
 
 Breaking changes
 
+* Reverted the use of Roto API for the ROA analysis to downloading
+  RISwhois route origin data and optimized the way this data is stored in
+  memory.
+
+  Removed the `bgp_api_enabled`, `bgp_api_uri`, and `bgp_api_cache_duration`
+  fields and added `bgp_riswhois_enabled`, `bgp_riswhois_v4_uri`,
+  `bgp_riswhois_v6_uri`, and `bgp_riswhois_refresh_duration` fields, all of
+  which are optional. ([#1329]
+
 New
+
+* A local `krillc` can now talk to the server via a Unix socket. In this
+  case it will use the name of the local user for authentication purposes.
+  By default, only the `root` user is allowed with the `admin` role, but
+  both allowed users and what role they are mapped to can be configure.
+  ([#1322])
 
 Bug fixes
 
+* Fixed an issue  with the new BGP API code which false returns missing
+  announcement info. ([#1326])
+* Fixed an issue where deleting children or parents of a CA fails before a
+  successful communication with the remote CA. ([#1331])
+* Fixed an error message when trying to delete a CA which does not
+  have any parents, children, or repositories despite actually removing
+  the CA. ([#1331])
+* Start sweeping the authenticator cache upon daemon startup. This merely
+  reduces memory consumption of the cache. Expired authentication tokens
+  were not used either way. ([#1337])
+* Fixed a bug introduced in 0.15.0 where CAs do to not clear fulfilled
+  certification requests causing them to re-request a certificate every
+  time they contact their parent. ([#1345])
+
 Other changes
+
+* The default config files don’t serve as config documentation any more.
+  Rather, there is now a `krill.conf.5` manual page. This manual page is
+  also included in the Krill manual. ([#1322])
+
+[#1322]: https://github.com/NLnetLabs/krill/pull/1322
+[#1326]: https://github.com/NLnetLabs/krill/pull/1326
+[#1329]: https://github.com/NLnetLabs/krill/pull/1329
+[#1331]: https://github.com/NLnetLabs/krill/pull/1331
+[#1337]: https://github.com/NLnetLabs/krill/pull/1337
+[#1344]: https://github.com/NLnetLabs/krill/pull/1344
+
+
+## 0.15.1 ‘Contains Adult Language’
+
+Released 2026-01-19.
+
+Bug fixes
+
+* Fixed a bug introduced in 0.15.0 where CAs do to not clear fulfilled
+  certification requests causing them to re-request a certificate every
+  time they contact their parent. ([#1345])
+
+Other changes
+
+* Updated dependencies.
+
+[#1345]: https://github.com/NLnetLabs/krill/pull/1345
+[#1346]: https://github.com/NLnetLabs/krill/pull/1346
 
 
 ## 0.15.0 ‘But I Digress’

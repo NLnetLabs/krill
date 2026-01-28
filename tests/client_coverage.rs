@@ -6,6 +6,8 @@ use rpki::repository::resources::ResourceSet;
 use rpki::repository::x509::Time;
 use krill::api;
 
+use crate::common::KrillServer;
+
 mod common;
 
 
@@ -19,10 +21,7 @@ mod common;
 ///
 /// The test is _not_ intended to check that the server processes these
 /// commands correctly. This happens in other tests.
-#[tokio::test]
-async fn client_coverage() {
-    let (server, _tempdir) = common::KrillServer::start_with_testbed().await;
-
+async fn client_coverage(server: KrillServer) {
     let ta = common::ca_handle("ta");
     let testbed = common::ca_handle("testbed");
     let parent = common::ca_handle("parent");
@@ -161,5 +160,30 @@ async fn client_coverage() {
 
     // testbed commands tested in testbed
     // ta_proxy commands tests in functional_ta
+    server.abort().await;
 }
 
+#[tokio::test]
+async fn http() {
+    let (server, _tempdir) = common::KrillServer::start_with_testbed().await;
+    client_coverage(server).await;
+}
+
+#[tokio::test]
+#[cfg(unix)]
+async fn unix() {
+    use std::collections::HashMap;
+
+    let (mut config, _tempdir) = common::TestConfig::mem_storage()
+        .enable_testbed().set_zero_port().enable_ca_refresh().finalize();
+
+    // The user that is executing the test gets access to everything
+    let uid = nix::unistd::Uid::current();
+    let user = nix::unistd::User::from_uid(uid).unwrap().unwrap();
+    let file_sock = tempfile::NamedTempFile::new().unwrap();
+    config.unix_socket_enabled = true;
+    config.unix_socket = Some(file_sock.path().into());
+    config.unix_users = HashMap::from([(user.name, "admin".to_string())]);
+    let server = common::KrillServer::start_with_config_unix(config).await;
+    client_coverage(server).await;
+}

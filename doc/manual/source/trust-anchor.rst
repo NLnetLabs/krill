@@ -133,7 +133,8 @@ and the UI.
 Optionally, timings can be adjusted by including the following snippet at
 the end of your ``krill.conf``:
 
-.. code-block:: text
+.. code-block:: toml
+
   [ta_timing]
   certificate_validity_years = 100
   issued_certificate_validity_weeks = 52
@@ -482,6 +483,7 @@ It might be worth to force all CAs to ask their parents for updated
 certificates first. This can be done using:
 
 .. code-block:: bash
+
   krillc bulk refresh
 
 Download the TA Proxy Request

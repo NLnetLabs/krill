@@ -4,12 +4,11 @@
 //! requires a wee bit of macro magic.
 #![cfg(test)]
 
-use std::slice;
 use std::sync::{Mutex, MutexGuard};
 use lazy_static::lazy_static;
 use tempfile::{TempDir, tempdir};
 use url::Url;
-use super::{Key, KeyValueStore, Namespace, Scope, Segment};
+use super::{Ident, KeyValueStore};
 
 
 //------------ Macro to Construct Tests --------------------------------------
@@ -59,11 +58,11 @@ macro_rules! testfns {
 
 //------------ Test Data -----------------------------------------------------
 
-const NAMESPACE: &Namespace = Namespace::make("namespace");
-const SCOPE_SEGMENT: &Segment = Segment::make("scope");
-const SCOPE_SEGMENT_2: &Segment = Segment::make("other_scope");
-const KEY_SEGMENT: &Segment = Segment::make("key");
-const KEY_SEGMENT_2: &Segment = Segment::make("other_key");
+const NAMESPACE: &Ident = Ident::make("namespace");
+const SCOPE: &Ident = Ident::make("scope");
+const SCOPE_2: &Ident= Ident::make("other_scope");
+const KEY: &Ident = Ident::make("key");
+const KEY_2: &Ident = Ident::make("other_key");
 const CONTENT: u32 = 42;
 const CONTENT_2: u32 = 43;
 const CONTENT_3: u32 = 44;
@@ -84,184 +83,212 @@ const CONTENT_4: u32 = 45;
 testfns! {
     fn store_get(harness: impl Harness) {
         let store = harness.store(NAMESPACE);
-        let key = Key::new_global(KEY_SEGMENT);
 
-        store.store(&key, &CONTENT).unwrap();
-        assert!(store.has(&key).unwrap());
-        assert_eq!(store.get(&key).unwrap(), Some(CONTENT));
+        store.store(None, KEY, &CONTENT).unwrap();
+        assert!(store.has(None, KEY).unwrap());
+        assert_eq!(store.get(None, KEY).unwrap(), Some(CONTENT));
     }
 
     fn store_new(harness: impl Harness) {
         let store = harness.store(NAMESPACE);
-        let key = Key::new_global(KEY_SEGMENT);
 
-        assert!(store.store_new(&key, &CONTENT).is_ok());
-        assert!(store.store_new(&key, &CONTENT).is_err());
+        assert!(store.store_new(None, KEY, &CONTENT).is_ok());
+        assert!(store.store_new(None, KEY, &CONTENT).is_err());
     }
 
     fn store_scoped(harness: impl Harness) {
         let store = harness.store(NAMESPACE);
-        let scope = Scope::from_segment(SCOPE_SEGMENT);
-        let key = Key::new_scoped(scope.clone(), KEY_SEGMENT);
 
-        store.store(&key, &CONTENT).unwrap();
-        assert!(store.has(&key).unwrap());
-        assert_eq!(store.get(&key).unwrap(), Some(CONTENT));
-        assert!(store.has_scope(&scope).unwrap());
+        store.store(Some(SCOPE), KEY, &CONTENT).unwrap();
+        assert!(store.has(Some(SCOPE), KEY).unwrap());
+        assert_eq!(store.get(Some(SCOPE), KEY).unwrap(), Some(CONTENT));
+        assert!(store.has_scope(SCOPE).unwrap());
 
-        let simple = Key::new_global(KEY_SEGMENT);
-        store.store(&simple, &CONTENT_2).unwrap();
-        assert!(store.has(&simple).unwrap());
-        assert_eq!(store.get(&simple).unwrap(), Some(CONTENT_2));
+        store.store(None, KEY, &CONTENT_2).unwrap();
+        assert!(store.has(None, KEY).unwrap());
+        assert_eq!(store.get(None, KEY).unwrap(), Some(CONTENT_2));
 
-        assert!(store.has(&key).unwrap());
-        assert_eq!(store.get(&key).unwrap(), Some(CONTENT));
+        assert!(store.has(Some(SCOPE), KEY).unwrap());
+        assert_eq!(store.get(Some(SCOPE), KEY).unwrap(), Some(CONTENT));
     }
 
     fn get(harness: impl Harness) {
         let store = harness.store(NAMESPACE);
-        let key = Key::new_global(KEY_SEGMENT);
-        assert!(store.get::<String>(&key).unwrap().is_none());
+        assert!(store.get::<String>(None, KEY).unwrap().is_none());
 
-        store.store(&key, &CONTENT).unwrap();
-        assert_eq!(store.get(&key).unwrap(), Some(CONTENT));
+        store.store(None, KEY, &CONTENT).unwrap();
+        assert_eq!(store.get(None, KEY).unwrap(), Some(CONTENT));
     }
 
     fn has(harness: impl Harness) {
         let store = harness.store(NAMESPACE);
-        let key = Key::new_global(KEY_SEGMENT);
-        assert!(!store.has(&key).unwrap());
+        assert!(!store.has(None, KEY).unwrap());
 
-        store.store(&key, &CONTENT).unwrap();
-        assert!(store.has(&key).unwrap());
+        store.store(None, KEY, &CONTENT).unwrap();
+        assert!(store.has(None, KEY).unwrap());
     }
 
-    fn drop_key(harness: impl Harness) {
+    fn drop_global_key(harness: impl Harness) {
         let store = harness.store(NAMESPACE);
-        let key = Key::new_global(KEY_SEGMENT);
 
-        assert!(store.drop_key(&key).is_err());
+        assert!(store.drop_key(None, KEY).is_err());
 
-        store.store(&key, &CONTENT).unwrap();
-        assert!(store.has(&key).unwrap());
+        store.store(None, KEY, &CONTENT).unwrap();
+        assert!(store.has(None, KEY).unwrap());
 
-        store.drop_key(&key).unwrap();
-        assert!(!store.has(&key).unwrap());
+        store.drop_key(None, KEY).unwrap();
+        assert!(!store.has(None, KEY).unwrap());
+    }
+
+    fn drop_scoped_key(harness: impl Harness) {
+        let store = harness.store(NAMESPACE);
+
+        assert!(store.drop_key(Some(SCOPE), KEY).is_err());
+
+        store.store(Some(SCOPE), KEY, &CONTENT).unwrap();
+        assert!(store.has(Some(SCOPE), KEY).unwrap());
+
+        store.drop_key(Some(SCOPE), KEY).unwrap();
+        assert!(!store.has(Some(SCOPE), KEY).unwrap());
+        assert!(!store.has_scope(SCOPE).unwrap());
     }
 
     fn drop_scope(harness: impl Harness) {
         let store = harness.store(NAMESPACE);
-        let scope = Scope::from_segment(SCOPE_SEGMENT);
-        let scope2 = Scope::from_segment(SCOPE_SEGMENT_2);
-        let key = Key::new_scoped(scope.clone(), KEY_SEGMENT);
-        let key2 = Key::new_scoped(scope2.clone(), KEY_SEGMENT_2);
 
-        store.store(&key, &CONTENT).unwrap();
-        store.store(&key2, &CONTENT_2).unwrap();
-        assert!(store.has_scope(&scope).unwrap());
-        assert!(store.has_scope(&scope2).unwrap());
-        assert!(store.has(&key).unwrap());
-        assert!(store.has(&key2).unwrap());
+        store.store(Some(SCOPE), KEY, &CONTENT).unwrap();
+        store.store(Some(SCOPE_2), KEY_2, &CONTENT_2).unwrap();
+        assert!(store.has_scope(SCOPE).unwrap());
+        assert!(store.has_scope(SCOPE_2).unwrap());
+        assert!(store.has(Some(SCOPE), KEY).unwrap());
+        assert!(store.has(Some(SCOPE_2), KEY_2).unwrap());
 
-        store.drop_scope(&scope).unwrap();
-        assert!(!store.has_scope(&scope).unwrap());
-        assert!(store.has_scope(&scope2).unwrap());
-        assert!(!store.has(&key).unwrap());
-        assert!(store.has(&key2).unwrap());
+        store.drop_scope(SCOPE).unwrap();
+        assert!(!store.has_scope(SCOPE).unwrap());
+        assert!(store.has_scope(SCOPE_2).unwrap());
+        assert!(!store.has(Some(SCOPE), KEY).unwrap());
+        assert!(store.has(Some(SCOPE_2), KEY_2).unwrap());
     }
 
     fn wipe(harness: impl Harness) {
         let store = harness.store(NAMESPACE);
-        let scope = Scope::from_segment(SCOPE_SEGMENT);
-        let key = Key::new_scoped(scope.clone(), KEY_SEGMENT);
 
-        store.store(&key, &CONTENT).unwrap();
-        assert!(store.has_scope(&scope).unwrap());
-        assert!(store.has(&key).unwrap());
+        store.store(Some(SCOPE), KEY, &CONTENT).unwrap();
+        assert!(store.has_scope(SCOPE).unwrap());
+        assert!(store.has(Some(SCOPE), KEY).unwrap());
         
         store.wipe().unwrap();
-        assert!(!store.has_scope(&scope).unwrap());
-        assert!(!store.has(&key).unwrap());
-        assert!(store.keys(&Scope::global(), "").unwrap().is_empty());
+        assert!(!store.has_scope(SCOPE).unwrap());
+        assert!(!store.has(Some(SCOPE), KEY).unwrap());
+        assert!(store.keys(None, "").unwrap().is_empty());
+        assert!(store.keys(Some(SCOPE), "").unwrap().is_empty());
     }
 
     fn scopes(harness: impl Harness) {
         let store = harness.store(NAMESPACE);
-        let scope = Scope::from_segment(SCOPE_SEGMENT);
-        let scope2 = Scope::from_segment(SCOPE_SEGMENT_2);
-        let key = Key::new_scoped(scope.clone(), KEY_SEGMENT);
-        let key2 = Key::new_scoped(scope2.clone(), KEY_SEGMENT_2);
 
         assert!(store.scopes().unwrap().is_empty());
 
-        store.store(&key, &CONTENT).unwrap();
-        assert_eq!(store.scopes().unwrap(), slice::from_ref(&scope));
+        store.store(Some(SCOPE), KEY, &CONTENT).unwrap();
+        assert_eq!(store.scopes().unwrap(), [SCOPE.into()]);
 
-        store.store(&key2, &CONTENT_2).unwrap();
+        store.store(Some(SCOPE_2), KEY_2, &CONTENT_2).unwrap();
 
         let mut scopes = store.scopes().unwrap();
         scopes.sort();
-        let mut expected = vec![scope.clone(), scope2.clone()];
+        let mut expected = vec![SCOPE.into(), SCOPE_2.into()];
         expected.sort();
         assert_eq!(scopes, expected);
 
-        store.drop_scope(&scope2).unwrap();
-        assert_eq!(store.scopes().unwrap(), slice::from_ref(&scope));
+        store.drop_scope(SCOPE_2).unwrap();
+        assert_eq!(store.scopes().unwrap(), [SCOPE.into()]);
 
-        store.drop_scope(&scope).unwrap();
+        store.drop_scope(SCOPE).unwrap();
         assert!(store.scopes().unwrap().is_empty());
     }
 
     fn has_scope(harness: impl Harness) {
         let store = harness.store(NAMESPACE);
-        let scope = Scope::from_segment(SCOPE_SEGMENT);
-        let key = Key::new_scoped(scope.clone(), KEY_SEGMENT);
 
-        assert!(!store.has_scope(&scope).unwrap());
+        assert!(!store.has_scope(SCOPE).unwrap());
 
-        store.store(&key, &CONTENT).unwrap();
-        assert!(store.has_scope(&scope).unwrap());
+        store.store(Some(SCOPE), KEY, &CONTENT).unwrap();
+        assert!(store.has_scope(SCOPE).unwrap());
 
-        store.drop_key(&key).unwrap();
-        assert!(!store.has_scope(&scope).unwrap());
+        store.drop_key(Some(SCOPE), KEY).unwrap();
+        assert!(!store.has_scope(SCOPE).unwrap());
     }
 
     fn keys(harness: impl Harness) {
         let store = harness.store(NAMESPACE);
-        let scope = Scope::from_segment(Segment::make("command"));
-        let id = Segment::make("command--id");
-        let id2 = Segment::make("command--ls");
-        let id3 = Segment::make("other");
-        let key = Key::new_scoped(scope.clone(), id);
-        let key2 = Key::new_scoped(scope.clone(), id2);
-        let key3 = Key::new_global(id3);
-        let key4 = Key::new_global(id);
+        const KEY_ID: &Ident = Ident::make("command--id");
+        const KEY_LS: &Ident = Ident::make("command--ls");
+        const KEY_OTHER: &Ident = Ident::make("other");
 
-        store.store(&key, &CONTENT).unwrap();
-        store.store(&key2, &CONTENT_2).unwrap();
-        store.store(&key3, &CONTENT_3).unwrap();
-        store.store(&key4, &CONTENT_4).unwrap();
+        // key: Some(SCOPE), KEY_ID
+        // key2: Some(SCOPE), KEY_LS
+        // key3: None, KEY_OTHER
+        // key4: None, KEY_ID
 
-        let mut keys = store.keys(&scope, "command--").unwrap();
+        store.store(Some(SCOPE), KEY_ID, &CONTENT).unwrap();
+        store.store(Some(SCOPE), KEY_LS, &CONTENT_2).unwrap();
+        store.store(None, KEY_OTHER, &CONTENT_3).unwrap();
+        store.store(None, KEY_ID, &CONTENT_4).unwrap();
+
+        let mut keys = store.keys(Some(SCOPE), "command--").unwrap();
         keys.sort();
-        let mut expected = vec![key.clone(), key2.clone()];
+        let mut expected = vec![KEY_ID.into(), KEY_LS.into()];
         expected.sort();
         assert_eq!(keys, expected);
 
         assert_eq!(
-            store.keys(&scope, id2.as_str()).unwrap(), slice::from_ref(&key2)
+            store.keys(Some(SCOPE), KEY_LS.as_str()).unwrap(),
+            [KEY_LS.into()]
         );
-        assert_eq!(store.keys(&scope, id3.as_str()).unwrap(), []);
+        assert_eq!(store.keys(Some(SCOPE), KEY_OTHER.as_str()).unwrap(), []);
         assert_eq!(
-            store.keys(&Scope::global(), id3.as_str()).unwrap(),
-            [key3]
+            store.keys(None, KEY_OTHER.as_str()).unwrap(),
+            [KEY_OTHER.into()]
         );
 
-        let mut keys = store.keys(&scope, "").unwrap();
+        let mut keys = store.keys(Some(SCOPE), "").unwrap();
         keys.sort();
-        let mut expected = vec![key, key2];
+        let mut expected = vec![KEY_ID.into(), KEY_LS.into()];
         expected.sort();
         assert_eq!(keys, expected);
+    }
+
+    fn move_value(harness: impl Harness) {
+        let store = harness.store(NAMESPACE);
+
+        store.store(Some(SCOPE), KEY, &CONTENT).unwrap();
+        store.store(Some(SCOPE), KEY_2, &CONTENT_2).unwrap();
+        assert!(store.has_scope(SCOPE).unwrap());
+        assert!(!store.has_scope(SCOPE_2).unwrap());
+        assert_eq!(store.get(Some(SCOPE), KEY).unwrap(), Some(CONTENT));
+        assert!(!store.has(Some(SCOPE_2), KEY).unwrap());
+        assert_eq!(store.get(Some(SCOPE), KEY_2).unwrap(), Some(CONTENT_2));
+        assert!(!store.has(Some(SCOPE_2), KEY_2).unwrap());
+
+        store.execute(None, |store| {
+            store.move_value(Some(SCOPE), KEY, Some(SCOPE_2), KEY)
+        }).unwrap();
+        assert!(store.has_scope(SCOPE).unwrap());
+        assert!(store.has_scope(SCOPE_2).unwrap());
+        assert!(!store.has(Some(SCOPE), KEY).unwrap());
+        assert_eq!(store.get(Some(SCOPE_2), KEY).unwrap(), Some(CONTENT));
+        assert_eq!(store.get(Some(SCOPE), KEY_2).unwrap(), Some(CONTENT_2));
+        assert!(!store.has(Some(SCOPE_2), KEY_2).unwrap());
+
+        store.execute(None, |store| {
+            store.move_value(Some(SCOPE), KEY_2, Some(SCOPE_2), KEY_2)
+        }).unwrap();
+        assert!(!store.has_scope(SCOPE).unwrap());
+        assert!(store.has_scope(SCOPE_2).unwrap());
+        assert!(!store.has(Some(SCOPE), KEY).unwrap());
+        assert_eq!(store.get(Some(SCOPE_2), KEY).unwrap(), Some(CONTENT));
+        assert!(!store.has(Some(SCOPE), KEY_2).unwrap());
+        assert_eq!(store.get(Some(SCOPE_2), KEY_2).unwrap(), Some(CONTENT_2));
     }
 }
 
@@ -277,7 +304,7 @@ trait Harness {
     fn url(&self) -> Url;
 
     /// Creates a new store for the given namespace.
-    fn store(&self, namespace: &Namespace) -> KeyValueStore;
+    fn store(&self, namespace: &Ident) -> KeyValueStore;
 }
 
 
@@ -298,9 +325,21 @@ lazy_static! {
 
 impl<'a> MemoryHarness<'a> {
     fn new() -> Self {
-        let _guard = MEMORY_LOCK.lock().unwrap();
-        super::backends::memory::Store::wipe_all();
-        Self { _guard }
+        loop {
+            let _guard = match MEMORY_LOCK.lock() {
+                Ok(guard) => guard,
+                Err(_) => {
+                    // If a thread panicked, the lock gets poisoned. But we
+                    // know that a panicked thread (and its test) has ended,
+                    // so we can clear the poison and try to acquire the
+                    // lock again.
+                    MEMORY_LOCK.clear_poison();
+                    continue;
+                }
+            };
+            super::backends::memory::Store::wipe_all();
+            return Self { _guard }
+        }
     }
 }
 
@@ -309,7 +348,7 @@ impl<'a> Harness for MemoryHarness<'a> {
         Url::parse("memory:").unwrap()
     }
 
-    fn store(&self, namespace: &Namespace) -> KeyValueStore {
+    fn store(&self, namespace: &Ident) -> KeyValueStore {
         KeyValueStore::create(
             &Url::parse("memory:").unwrap(),
             namespace,
@@ -343,7 +382,7 @@ impl Harness for DiskHarness {
         self.url.clone()
     }
 
-    fn store(&self, namespace: &Namespace) -> KeyValueStore {
+    fn store(&self, namespace: &Ident) -> KeyValueStore {
         KeyValueStore::create(&self.url, namespace).unwrap()
     }
 }

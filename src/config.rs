@@ -20,6 +20,9 @@ use serde::{Deserialize, Deserializer, Serialize};
 use url::Url;
 
 #[cfg(unix)]
+use std::collections::HashMap;
+
+#[cfg(unix)]
 use syslog::Facility;
 
 use crate::{
@@ -27,7 +30,7 @@ use crate::{
         ext_serde,
         crypto::{OpenSslSignerConfig, SignSupport},
         error::{Error, KrillIoError},
-        storage::{KeyValueStore, Namespace},
+        storage::{Ident, KeyValueStore},
         KrillResult,
     },
     constants::*,
@@ -68,6 +71,23 @@ impl ConfigDefaults {
 
     pub fn https_mode() -> HttpsMode {
         HttpsMode::Generate
+    }
+
+    #[cfg(unix)]
+    pub fn unix_socket_enabled() -> bool {
+        true
+    }
+
+    #[cfg(unix)]
+    pub fn unix_socket() -> Option<PathBuf> {
+        Some(PathBuf::from("/run/krill/krill.sock"))
+    }
+
+    #[cfg(unix)]
+    pub fn unix_users() -> HashMap<String, String> {
+        let mut users = HashMap::new();
+        users.insert("root".to_string(), "admin".to_string());
+        users
     }
 
     pub fn storage_uri() -> Url {
@@ -177,16 +197,20 @@ impl ConfigDefaults {
         240 // 4 minutes by default should be plenty in most cases
     }
 
-    pub fn bgp_api_enabled() -> bool {
+    pub fn bgp_riswhois_enabled() -> bool {
         true
     }
 
-    pub fn bgp_api_uri() -> String {
-        "https://rest.bgp-api.net".to_string()
+    pub fn bgp_riswhois_v4_uri() -> String {
+        "https://www.ris.ripe.net/dumps/riswhoisdump.IPv4.gz".into()
     }
 
-    pub fn bgp_api_cache_duration() -> Duration {
-        Duration::seconds(30 * 60)
+    pub fn bgp_riswhois_v6_uri() -> String {
+        "https://www.ris.ripe.net/dumps/riswhoisdump.IPv6.gz".into()
+    }
+
+    pub fn bgp_riswhois_refresh_interval() -> Duration {
+        Duration::seconds(60 * 60)
     }
 
     pub fn roa_aggregate_threshold() -> usize {
@@ -461,10 +485,12 @@ where
     }
 }
 
-fn deserialize_seconds_duration<'de, D: Deserializer<'de>>(
+fn deserialize_minutes_duration<'de, D: Deserializer<'de>>(
     deserializer: D
 ) -> Result<Duration, D::Error> {
-    u32::deserialize(deserializer).map(|secs| Duration::seconds(secs.into()))
+    u32::deserialize(deserializer).map(|secs| {
+        Duration::seconds(i64::from(secs) * 60)
+    })
 }
 
 
@@ -472,6 +498,7 @@ fn deserialize_seconds_duration<'de, D: Deserializer<'de>>(
 
 /// Global configuration for the Krill Server.
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Config {
     #[serde(
         default = "ConfigDefaults::ip",
@@ -484,6 +511,18 @@ pub struct Config {
 
     #[serde(default = "ConfigDefaults::https_mode")]
     pub https_mode: HttpsMode,
+
+    #[cfg(unix)]
+    #[serde(default = "ConfigDefaults::unix_socket_enabled")]
+    pub unix_socket_enabled: bool,
+
+    #[cfg(unix)]
+    #[serde(default = "ConfigDefaults::unix_socket")]
+    pub unix_socket: Option<PathBuf>,
+
+    #[cfg(unix)]
+    #[serde(default = "ConfigDefaults::unix_users")]
+    pub unix_users: HashMap<String, String>,
 
     // Deserialize this field from data_dir or storage_uri
     #[serde(
@@ -596,19 +635,22 @@ pub struct Config {
     #[serde(default = "ConfigDefaults::rfc6492_log_dir")]
     pub rfc6492_log_dir: Option<PathBuf>,
 
-    // RIS BGP
-    #[serde(default = "ConfigDefaults::bgp_api_enabled")]
-    pub bgp_api_enabled: bool,
+    // RISwhois data for the BGP analyser
+    #[serde(default = "ConfigDefaults::bgp_riswhois_enabled")]
+    pub bgp_riswhois_enabled: bool,
 
-    #[serde(default = "ConfigDefaults::bgp_api_uri")]
-    pub bgp_api_uri: String,
+    #[serde(default = "ConfigDefaults::bgp_riswhois_v4_uri")]
+    pub bgp_riswhois_v4_uri: String,
+
+    #[serde(default = "ConfigDefaults::bgp_riswhois_v6_uri")]
+    pub bgp_riswhois_v6_uri: String,
 
     #[serde(
-        rename = "bgp_api_cache_seconds",
-        default = "ConfigDefaults::bgp_api_cache_duration",
-        deserialize_with = "deserialize_seconds_duration",
+        rename = "bgp_riswhois_refresh_minutes",
+        default = "ConfigDefaults::bgp_riswhois_refresh_interval",
+        deserialize_with = "deserialize_minutes_duration",
     )]
-    pub bgp_api_cache_duration: Duration,
+    pub bgp_riswhois_refresh_interval: Duration,
 
     // ROA Aggregation per ASN
     #[serde(default = "ConfigDefaults::roa_aggregate_threshold")]
@@ -638,6 +680,7 @@ pub struct Config {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct IssuanceTimingConfig {
     #[serde(default = "ConfigDefaults::timing_publish_next_hours")]
     pub timing_publish_next_hours: u32,
@@ -773,6 +816,7 @@ impl IssuanceTimingConfig {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct RrdpUpdatesConfig {
     #[serde(default = "RrdpUpdatesConfig::dflt_rrdp_delta_files_min_nr")]
     pub rrdp_delta_files_min_nr: usize,
@@ -839,6 +883,7 @@ impl RrdpUpdatesConfig {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MetricsConfig {
     #[serde(default)] // false
     pub metrics_hide_ca_details: bool,
@@ -851,6 +896,7 @@ pub struct MetricsConfig {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TestBed {
     ta_aia: uri::Rsync,
     ta_uri: uri::Https,
@@ -890,6 +936,7 @@ impl TestBed {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct Benchmark {
     pub cas: usize,
     pub ca_roas: usize,
@@ -906,9 +953,9 @@ impl Config {
 
     pub fn key_value_store(
         &self,
-        name_space: &Namespace,
+        namespace: &Ident,
     ) -> KrillResult<KeyValueStore> {
-        KeyValueStore::create(&self.storage_uri, name_space)
+        KeyValueStore::create(&self.storage_uri, namespace)
             .map_err(Error::KeyValueError)
     }
 
@@ -964,6 +1011,21 @@ impl Config {
         let mut path = self.tls_keys_dir().to_path_buf();
         path.push(tls_keys::KEY_FILE);
         path
+    }
+
+    #[cfg(unix)]
+    pub fn unix_socket_enabled(&self) -> bool {
+        self.unix_socket_enabled
+    }
+
+    #[cfg(unix)]
+    pub fn unix_socket(&self) -> Option<&PathBuf> {
+        self.unix_socket.as_ref()
+    }
+
+    #[cfg(unix)]
+    pub fn unix_users(&self) -> &HashMap<String, String> {
+        &self.unix_users
     }
 
     pub fn service_uri(&self) -> uri::Https {
@@ -1140,9 +1202,11 @@ impl Config {
         let post_protocol_msg_timeout_seconds =
             ConfigDefaults::post_protocol_msg_timeout_seconds();
 
-        let bgp_api_enabled = false;
-        let bgp_api_uri = ConfigDefaults::bgp_api_uri();
-        let bgp_api_cache_duration = ConfigDefaults::bgp_api_cache_duration();
+        let bgp_riswhois_enabled = false;
+        let bgp_riswhois_v4_uri = ConfigDefaults::bgp_riswhois_v4_uri();
+        let bgp_riswhois_v6_uri = ConfigDefaults::bgp_riswhois_v6_uri();
+        let bgp_riswhois_refresh_interval
+            = ConfigDefaults::bgp_riswhois_refresh_interval();
 
         let roa_aggregate_threshold = 3;
         let roa_deaggregate_threshold = 2;
@@ -1220,6 +1284,12 @@ impl Config {
             storage_uri: storage_uri.clone(),
             use_history_cache: false,
             tls_keys_dir: data_dir.map(|d| d.join(HTTPS_SUB_DIR)),
+            #[cfg(unix)]
+            unix_socket_enabled: false,
+            #[cfg(unix)]
+            unix_socket: None,
+            #[cfg(unix)]
+            unix_users: HashMap::new(),
             repo_dir: data_dir.map(|d| d.join(REPOSITORY_DIR)),
             ta_support_enabled: false, /* but, enabled by testbed where
                                         * applicable */
@@ -1252,9 +1322,10 @@ impl Config {
             post_limit_rfc6492,
             rfc6492_log_dir: None,
             post_protocol_msg_timeout_seconds,
-            bgp_api_enabled,
-            bgp_api_uri,
-            bgp_api_cache_duration,
+            bgp_riswhois_enabled,
+            bgp_riswhois_v4_uri,
+            bgp_riswhois_v6_uri,
+            bgp_riswhois_refresh_interval,
             roa_aggregate_threshold,
             roa_deaggregate_threshold,
             issuance_timing,
@@ -1457,7 +1528,7 @@ impl Config {
             warn!("The environment variable for setting the admin token has been updated from '{KRILL_ENV_ADMIN_TOKEN_DEPRECATED}' to '{KRILL_ENV_ADMIN_TOKEN}', please update as the old value may not be supported in future releases")
         }
 
-        if self.port < 1024 {
+        if self.port < 1024 && self.port != 0 {
             return Err(ConfigError::other("Port number must be >1024"));
         }
 
@@ -1660,7 +1731,7 @@ impl Config {
         toml::from_str(&v).map_err(|e| {
             ConfigError::Other(format!(
                 "Error parsing config file: {}, error: {}",
-                file.display(), e
+                file.display(), e.message()
             ))
         })
     }

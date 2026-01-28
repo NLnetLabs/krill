@@ -232,8 +232,18 @@ latex_documents = [
 # One entry per manual page. List of tuples
 # (source start file, name, description, authors, manual section).
 man_pages = [
-    (master_doc, 'krillusermanual', 'Krill User Manual',
-     [author], 1)
+    (master_doc, 'krill', 'Krill User Manual',
+     [author], 1),
+    ('man/krill', 'krill', 'Resource Public Key Infrastructure (RPKI) daemon',
+     [author], 1),
+    ('man/krillc', 'krillc', 'Krill CLI',
+     [author], 1),
+    ('man/krillup', 'krillup', 'Krill Upgrade',
+     [author], 1),
+    ('man/krillta', 'krillta', 'Krill Trust Anchor',
+     [author], 1),
+    ('config', 'krill.conf', 'Krill Configuration',
+     [author], 5)
 ]
 
 

@@ -26,7 +26,7 @@ use serde::{Deserialize, Serialize};
 use crate::commons::ext_serde;
 use crate::commons::KrillResult;
 use crate::commons::error::{ApiAuthError, Error};
-use crate::commons::storage::{Key, Namespace, Segment};
+use crate::commons::storage::Ident;
 use crate::config::Config;
 
 const CHACHA20_KEY_BIT_LEN: usize = 256;
@@ -39,8 +39,8 @@ const CLEARTEXT_PREFIX_LEN: usize =
     CHACHA20_NONCE_BYTE_LEN + POLY1305_TAG_BYTE_LEN;
 const UNUSED_AAD: [u8; 0] = [0; 0];
 
-const CRYPT_STATE_NS: &Namespace = Namespace::make("login_sessions");
-const CRYPT_STATE_KEY: &Segment = Segment::make("main_key");
+const CRYPT_STATE_NS: &Ident = Ident::make("login_sessions");
+const CRYPT_STATE_KEY: &Ident = Ident::make("main_key");
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct NonceState {
@@ -166,9 +166,8 @@ pub(crate) fn decrypt(
 
 pub(crate) fn crypt_init(config: &Config) -> KrillResult<CryptState> {
     let store = config.key_value_store(CRYPT_STATE_NS)?;
-    let key = Key::new_global(CRYPT_STATE_KEY);
 
-    if let Some(state) = store.get(&key)? {
+    if let Some(state) = store.get(None, CRYPT_STATE_KEY)? {
         Ok(state)
     } else {
         let mut key_bytes = [0; CHACHA20_KEY_BYTE_LEN];
@@ -179,7 +178,7 @@ pub(crate) fn crypt_init(config: &Config) -> KrillResult<CryptState> {
         })?;
 
         let state = CryptState::from_key_bytes(key_bytes)?;
-        store.store_new(&key, &state)?;
+        store.store_new(None, CRYPT_STATE_KEY, &state)?;
 
         Ok(state)
     }
