@@ -1331,13 +1331,9 @@ impl KeyObjectSet {
         // unsuspended, so this does nothing anymore except for migrations.
         for cert in &cert_updates.unsuspended {
             let published_object = PublishedObject::for_cert_info(cert);
-            if let Some(_old) = self
+            self
                 .published_objects
-                .insert(cert.name.clone(), published_object)
-            {
-                // If this happens then the child will probably contact the CA
-                // though this should not happen.
-            }
+                .insert(cert.name.clone(), published_object);
         }
 
         for suspended in &cert_updates.suspended {
