@@ -317,6 +317,9 @@ fn derive_uri(
         None => format!("rsync://{rel_string}"),
     };
 
+    #[cfg(not(unix))]
+    let uri_string = uri_string.replace("\\", "/");
+
     let uri = uri::Rsync::from_str(&uri_string)
         .map_err(|_| Error::UnsupportedFileName(uri_string))?;
     Ok(uri)
@@ -568,19 +571,19 @@ mod tests {
     fn should_scan_disk() {
         test::test_under_tmp(|base_dir| {
             let file_1 = CurrentFile::new(
-                test::rsync("rsync://host:10873/module/alice/file1.txt"),
+                test::rsync("rsync://host/module/alice/file1.txt"),
                 &Bytes::from("content 1"),
             );
             let file_2 = CurrentFile::new(
-                test::rsync("rsync://host:10873/module/alice/file2.txt"),
+                test::rsync("rsync://host/module/alice/file2.txt"),
                 &Bytes::from("content 2"),
             );
             let file_3 = CurrentFile::new(
-                test::rsync("rsync://host:10873/module/alice/sub/file1.txt"),
+                test::rsync("rsync://host/module/alice/sub/file1.txt"),
                 &Bytes::from("content sub file"),
             );
             let file_4 = CurrentFile::new(
-                test::rsync("rsync://host:10873/module/bob/file.txt"),
+                test::rsync("rsync://host/module/bob/file.txt"),
                 &Bytes::from("content"),
             );
 

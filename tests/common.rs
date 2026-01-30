@@ -63,9 +63,14 @@ impl TestConfig {
 
     pub fn file_storage() -> Self {
         let data_dir = TempDir::new().unwrap();
+        let uri = data_dir.path().to_string_lossy();
+
+        #[cfg(windows)]
+        let uri = format!("/{}", uri.replace("\\", "/"));
+
         Self::new(
             Url::parse(
-                &format!("local://{}/data/", data_dir.path().display())
+                &format!("local://{}/data/", uri)
             ).unwrap() ,
             data_dir,
         )
