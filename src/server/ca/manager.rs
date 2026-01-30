@@ -1020,6 +1020,8 @@ impl CaManager {
                     ca.clone(), actor,
                     CertAuthCommandDetails::ChildUnsuspend(
                         child.clone(),
+                        self.config.clone(),
+                        self.signer.clone(),
                     )
                 )?;
             }

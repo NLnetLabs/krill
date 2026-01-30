@@ -126,7 +126,7 @@ pub enum CertAuthCommandDetails {
     /// once again and republish existing certificates provided that they
     /// are not expired, or about to expire, and do not claim resources no
     /// longer associated with this child.
-    ChildUnsuspend(ChildHandle),
+    ChildUnsuspend(ChildHandle, Arc<Config>, Arc<KrillSigner>),
 
     //--- Parent commands
     //
@@ -474,7 +474,7 @@ impl From<CertAuthCommandDetails> for CertAuthStorableCommand {
             CertAuthCommandDetails::ChildSuspendInactive(child) => {
                 CertAuthStorableCommand::ChildSuspendInactive { child }
             }
-            CertAuthCommandDetails::ChildUnsuspend(child) => {
+            CertAuthCommandDetails::ChildUnsuspend(child, _, _) => {
                 CertAuthStorableCommand::ChildUnsuspend { child }
             }
             CertAuthCommandDetails::GenerateNewIdKey(_) => {
