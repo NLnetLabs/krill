@@ -42,7 +42,12 @@ async fn test_suspension() {
     server.expect_not_suspended(&testbed, &ca).await;
 
     eprintln!(">>>> Wait a bit.");
-    common::sleep_seconds(15).await;
+    common::sleep_seconds(5).await;
+
+    let publisher_details = server.client()
+        .publisher_details(&testbed.convert()).await.unwrap();
+    let old_cert = publisher_details.current_files.iter()
+        .find(|x| x.uri.ends_with(".cer")).unwrap();
 
     eprintln!(">>>> Refresh testbed only, check that CA is suspended.");
     // This happens because CA isn’t updating.
@@ -52,7 +57,6 @@ async fn test_suspension() {
 
     eprintln!(">>>> Let CA refresh with testbed, this should un-suspend it.");
     server.client().ca_sync_parents(&ca).await.unwrap();
-    server.client().bulk_suspend().await.unwrap();
     server.expect_not_suspended(&testbed, &ca).await;
 
     eprintln!(">>>> Explicitly suspend CA.");
@@ -68,6 +72,19 @@ async fn test_suspension() {
         UpdateChildRequest::unsuspend()
     ).await.unwrap();
     server.expect_not_suspended(&testbed, &ca).await;
+
+    server.client().bulk_sync_parents().await.unwrap();
+
+    eprintln!(">>>> Wait a bit.");
+    common::sleep_seconds(5).await;
+
+    let publisher_details = server.client()
+        .publisher_details(&testbed.convert()).await.unwrap();
+    let new_cert = publisher_details.current_files.iter()
+        .find(|x| x.uri == old_cert.uri).unwrap();
+
+    eprintln!(">>>> Check that new CA serial differs from old CA serial.");
+    assert_ne!(old_cert.base64, new_cert.base64);
 }
 
 

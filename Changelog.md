@@ -36,6 +36,10 @@ Bug fixes
 * Fixed a bug introduced in 0.15.0 where CAs do to not clear fulfilled
   certification requests causing them to re-request a certificate every
   time they contact their parent. ([#1345])
+* Do not re-try syncing with a parent of a CA when that parent isn’t
+  known. ([#1349])
+* Fixed un-suspending child CAs: rather then re-publishing the previously
+  revoked certificate, a new certificate is now issued. ([#1341])
 
 Other changes
 
@@ -48,7 +52,9 @@ Other changes
 [#1329]: https://github.com/NLnetLabs/krill/pull/1329
 [#1331]: https://github.com/NLnetLabs/krill/pull/1331
 [#1337]: https://github.com/NLnetLabs/krill/pull/1337
+[#1341]: https://github.com/NLnetLabs/krill/pull/1341
 [#1344]: https://github.com/NLnetLabs/krill/pull/1344
+[#1349]: https://github.com/NLnetLabs/krill/pull/1349
 
 
 ## 0.15.1 ‘Contains Adult Language’
