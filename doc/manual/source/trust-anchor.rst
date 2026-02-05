@@ -377,6 +377,13 @@ endpoints for the TA certificate.
                       --tal-rsync <RSYNC URI for TA cert on TAL>
 
 
+.. code-block:: bash
+
+  krillta signer init --proxy-id ./proxy-id.json \
+                      --proxy-repository-contact ./proxy-repo.json \
+                      --tal-https https://krillrepo.example.com/ta/ta.cer \
+                      --tal-rsync rsync://krillrepo.example.com/ta/ta.cer
+
 Associate the TA Signer with the Proxy
 --------------------------------------
 
@@ -384,7 +391,7 @@ Get the TA Signer 'info' JSON file and save it:
 
 .. code-block:: bash
 
-  krillta signer show > ./signer-info.json
+  krillta signer --format json show > ./signer-info.json
 
 
 Then 'initialise' the signer associated with the TA Proxy. (we should
@@ -423,8 +430,14 @@ Step 2: Add "online" as a child of "ta"
 
 .. code-block:: bash
 
-  krillc show --ca online --format json >./online.json
+  krillc --format json show --ca online >./online.json
   krillta proxy children add --info ./online.json >./res.xml
+
+.. Note:: You can specify the address space (ASNs, IPv4, IPv6) covered by
+          your child CA using the followings parameters:
+          - ``--asn`` The ASN resources for the child [default: AS0-AS4294967295]
+          - ``--ipv4`` The IPv4 resources for the child [default: 0.0.0.0/0]
+          - ``--ipv6`` The IPv6 resources for the child [default: ::/0]
 
 Step 3: Add "ta" as a parent of "online"
 
@@ -512,7 +525,7 @@ Save the TA Signer Response
 
 .. code-block:: bash
 
-  krillta signer last > ./response.json
+  krillta signer --format json last > ./response.json
 
 
 Upload the Signer Response
