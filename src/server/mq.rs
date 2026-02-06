@@ -470,23 +470,6 @@ impl TaskQueue {
                 now(),
             ),
 
-            // CertAuthEvent::ChildUpdatedResources { .. } => {
-            //     self.schedule(
-            //         Task::SyncChildren { 
-            //             ca_handle: ca_handle.clone(),
-            //             ca_version: 0,
-            //         },
-            //         now()
-            //     )?;
-            //     self.schedule(
-            //         Task::SyncRepo {
-            //             ca_handle,
-            //             ca_version,
-            //         },
-            //         now(),
-            //     )
-            // }
-
             CertAuthEvent::KeyRollActivated {
                 resource_class_name,
                 ..
@@ -675,7 +658,7 @@ impl eventsourcing::PostSaveEventListener<CertAuth> for TaskQueue {
                         now()
                     ) {
                         error!(
-                                "Could not schedule sync from {}. Restart Krill or run 'krillc bulk parents'. Error was: {}",
+                                "Could not schedule sync from {}. Restart Krill or run 'krillc bulk refresh'. Error was: {}",
                                 child,
                                 e
                             );
