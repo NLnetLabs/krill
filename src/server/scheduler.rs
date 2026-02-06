@@ -439,7 +439,7 @@ impl Scheduler {
                     );
                     self.tasks.schedule(Task::SyncParent { 
                         ca_handle: child.handle().convert(), 
-                        ca_version: ca_version, 
+                        ca_version, 
                         parent: parent.handle().convert() 
                     }, now()).map_err(FatalError)?;
                 }
