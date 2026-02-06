@@ -22,6 +22,8 @@ mod common;
 ///      child
 ///        |
 ///    grandchild
+///        |
+/// grandgrandchild
 /// ```
 ///
 /// The test verifies that:
@@ -46,6 +48,9 @@ async fn functional_resource_updates() {
     let ca_grandchild = common::ca_handle("grandchild");
     let ca_grandchild_res = common::resources("AS65000", "10.0.0.0/23", "");
 
+    let ca_grandgrandchild = common::ca_handle("grandgrandchild");
+    let ca_grandgrandchild_res = common::resources("AS65000", "10.0.0.0/23", "");
+
     let rcn0 = common::rcn(0);
 
     // Wait for the *testbed* CA to get its certificate, this means
@@ -67,6 +72,10 @@ async fn functional_resource_updates() {
     server.create_ca_with_repo(&ca_grandchild).await;
     server.register_ca_with_parent(&ca_grandchild, &ca_child, &ca_grandchild_res).await;
 
+    eprintln!(">>>> Set up CA grandgrandchild under grandchild.");
+    server.create_ca_with_repo(&ca_grandgrandchild).await;
+    server.register_ca_with_parent(&ca_grandgrandchild, &ca_grandchild, &ca_grandgrandchild_res).await;
+
     eprintln!(">>>> Expect that CA child publishes the certificate for CA grandchild.");
     let mut files = server.expected_objects(&ca_child);
     files.push_mft_and_crl(&rcn0).await;
@@ -79,6 +88,8 @@ async fn functional_resource_updates() {
     let ca_child_new_res = common::resources("65000", "10.0.0.0/24", "");
     let ca_grandchild_new_res = 
         ca_grandchild_res.clone().intersection(&ca_child_new_res);
+    let ca_grandgrandchild_new_res = 
+        ca_grandgrandchild_res.clone().intersection(&ca_grandchild_new_res);
     eprintln!("New resources: {}", &ca_grandchild_new_res);
     server.client().child_update(
         &ca_parent, 
@@ -127,6 +138,17 @@ async fn functional_resource_updates() {
         server.client().ca_details(&ca_grandchild).await.unwrap().resources,
         ca_grandchild_new_res.clone()
     );
+    // We also want the grandgrandchild to learn of the new effective resources
+    assert_eq!(
+        server.client().child_details(
+            &ca_grandchild, &ca_grandgrandchild.convert()
+        ).await.unwrap().entitled_resources,
+        ca_grandgrandchild_res.clone()
+    );
+    assert_eq!(
+        server.client().ca_details(&ca_grandgrandchild).await.unwrap().resources,
+        ca_grandgrandchild_new_res.clone()
+    );
 
     eprintln!(">>>> Revert the resources given to the child.");
     server.client().child_update(
@@ -152,5 +174,9 @@ async fn functional_resource_updates() {
     assert_eq!(
         server.client().ca_details(&ca_grandchild).await.unwrap().resources,
         ca_grandchild_res.clone()
+    );
+    assert_eq!(
+        server.client().ca_details(&ca_grandgrandchild).await.unwrap().resources,
+        ca_grandgrandchild_res.clone()
     );
 }
