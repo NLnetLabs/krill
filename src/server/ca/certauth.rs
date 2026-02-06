@@ -1363,7 +1363,7 @@ impl CertAuth {
         );
 
         events.push(CertAuthEvent::ChildCertificateIssued {
-            child: child_handle.clone(),
+            child: child_handle,
             resource_class_name: my_rcn.clone(),
             ki: issued.key_identifier(),
         });
@@ -1374,15 +1374,6 @@ impl CertAuth {
             resource_class_name: my_rcn,
             updates: cert_updates
         });
-
-        if let Ok(child) = self.get_child(&child_handle) {
-            if &child.resources != resources {
-                events.push(CertAuthEvent::ChildUpdatedResources { 
-                    child: child_handle.clone(),
-                    resources: resources.clone()
-                });
-            }
-        }
 
         Ok(())
     }
