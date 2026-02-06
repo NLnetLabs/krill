@@ -56,6 +56,11 @@ pub enum Task {
         parent: ParentHandle,
     },
 
+    SyncChildren {
+        ca_handle: CaHandle,
+        ca_version: u64
+    },
+
     ResourceClassRemoved {
         ca_handle: CaHandle,
         ca_version: u64,
@@ -120,6 +125,20 @@ impl Task {
                     ).finish()
                 )
             }
+            Task::SyncChildren { 
+                ca_handle: ca, 
+                .. 
+            } => {
+                Cow::Owned(
+                    Ident::builder(
+                        const { Ident::make("sync_") }
+                    ).push_handle(
+                        ca
+                    ).push_ident(
+                        const { Ident::make("_children") }
+                    ).finish()
+                )
+            },
             Task::SuspendChildrenIfNeeded { ca_handle: ca } => {
                 Cow::Owned(
                     Ident::builder(
@@ -233,6 +252,12 @@ impl fmt::Display for Task {
                 ..
             } => {
                 write!(f, "synchronize CA '{ca}' with parent '{parent}'")
+            }
+            Task::SyncChildren {
+                ca_handle: ca,
+                ..
+            } => {
+                write!(f, "synchronize CA '{ca}' with children")
             }
             Task::RenewTestbedTa => write!(f, "renew testbed TA"),
             Task::SyncTrustAnchorProxySignerIfPossible => {
@@ -445,6 +470,23 @@ impl TaskQueue {
                 now(),
             ),
 
+            // CertAuthEvent::ChildUpdatedResources { .. } => {
+            //     self.schedule(
+            //         Task::SyncChildren { 
+            //             ca_handle: ca_handle.clone(),
+            //             ca_version: 0,
+            //         },
+            //         now()
+            //     )?;
+            //     self.schedule(
+            //         Task::SyncRepo {
+            //             ca_handle,
+            //             ca_version,
+            //         },
+            //         now(),
+            //     )
+            // }
+
             CertAuthEvent::KeyRollActivated {
                 resource_class_name,
                 ..
@@ -624,7 +666,21 @@ impl eventsourcing::PostSaveEventListener<CertAuth> for TaskQueue {
                             );
                     }
                 }
-
+                CertAuthEvent::ChildCertificateIssued { child, .. } => {
+                    if let Err(e) = self.schedule(
+                        Task::SyncChildren { 
+                            ca_handle: child.convert(), 
+                            ca_version: 0
+                        }, 
+                        now()
+                    ) {
+                        error!(
+                                "Could not schedule sync from {}. Restart Krill or run 'krillc bulk parents'. Error was: {}",
+                                child,
+                                e
+                            );
+                    }
+                }
                 _ => {
                     // nothing to do
                 }
