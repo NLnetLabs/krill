@@ -1,39 +1,206 @@
 //! The public part of the Krill RPKI server.
 //!
 
-use std::{error, fmt};
+use std::{error, fmt, thread};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::str::FromStr;
 use bytes::Bytes;
 use chrono::Duration;
 use hyper::StatusCode;
+use log::info;
 use rpki::ca::{idexchange, publication};
 use rpki::repository::resources::ResourceSet;
-use tokio::sync::oneshot;
+use tokio::runtime::{Handle as TokioHandle};
 use crate::api;
 use crate::api::status::ErrorResponse;
 use crate::commons::actor::Actor;
 use crate::commons::error::KrillError;
 use crate::commons::eventsourcing::AggregateStoreError;
 use crate::config::Config;
-use crate::constants::ta_handle;
+use crate::constants::{TA_NAME, ta_handle, testbed_ca_handle};
 use crate::server::ca::CaStatus;
-use super::runtime::{KrillRuntime, Errand};
+use super::scheduler;
+use super::mq::{Task, now};
+use super::runtime::KrillRuntime;
+
+
+//------------ StartupManager ------------------------------------------------
+
+/// The Krill manager during the start-up phase.
+///
+/// This manager provides functionality that is only available before the
+/// HTTP server is started and we are still running sync in a single thread.
+pub struct StartupManager {
+    runtime: KrillRuntime,
+}
+
+impl StartupManager {
+    /// Creates a new manager from the provided config.
+    ///
+    /// While the Tokio runtime provided isn’t used, we need the handle
+    /// already to pass it to the Krill runtime.
+    pub fn new(
+        config: Config, tokio: TokioHandle
+    ) -> Result<Self, KrillError> {
+        Ok(Self { runtime: KrillRuntime::new(config, tokio)? })
+    }
+
+    /// Promotes the startup manager into a full Krill manager.
+    pub fn promote(self) -> KrillManager {
+        KrillManager { krill_runtime: self.runtime }
+    }
+
+    /// Starts the scheduler in a separate thread.
+    pub fn run_scheduler(&self) -> Result<(), KrillError> {
+        // When multi-node set ups with a shared queue are
+        // supported then we can no longer safely reschedule
+        // ALL running tests. See issue: #1112
+        self.runtime.tasks().reschedule_tasks_at_startup()?;
+        self.runtime.tasks().schedule(Task::QueueStartTasks, now())?;
+
+        let krill = self.runtime.clone();
+        thread::spawn(|| scheduler::run(krill));
+        Ok(())
+    }
+
+    /// Re-issue ROA objects so that they will use short subjects.
+    ///
+    /// See issue #700.
+    pub fn force_renew_roas(&self) -> Result<(), KrillError> {
+        self.runtime.ca_manager().force_renew_roas_all(
+            self.runtime.system_actor(), &self.runtime
+        )
+    }
+
+    /// Updates the APSA definitions of a CA.
+    pub fn ca_aspas_definitions_update(
+        &self,
+        ca: idexchange::CaHandle,
+        updates: api::aspa::AspaDefinitionUpdates,
+    ) -> Result<(), KrillError> {
+        self.runtime.ca_manager().ca_aspas_definitions_update(
+            ca, updates, self.runtime.system_actor(), &self.runtime
+        )
+    }
+
+    pub fn prepare_testbed(&self) -> Result<(), KrillError> {
+        let Some(testbed) = self.runtime.config().testbed() else {
+            return Ok(());
+        };
+
+        let testbed_handle = testbed_ca_handle();
+
+        if self.runtime.ca_manager().has_ca(&testbed_handle)? {
+            if self.runtime.config().benchmark.is_some() {
+                info!(
+                    "Resuming BENCHMARK mode - will NOT recreate CAs. If \
+                     you want to recreate CAs, please wipe the data dir \
+                     and restart."
+                );
+            } else {
+                info!(
+                    "Resuming TESTBED mode - ONLY USE THIS FOR TESTING \n
+                     AND TRAINING!"
+                );
+            }
+            return Ok(());
+        }
+
+        // Will do some set up. Both TESTBED and BENCHMARK (which
+        // implies TESTBED and adds to it) will need a
+        // testbed ca to be set up first. We will re-use the import
+        // functionality to do all this.
+        let testbed_ca = api::import::ImportCa {
+            handle: testbed_handle,
+            parents: vec![api::import::ImportParent {
+                handle: ta_handle().into_converted(),
+                resources: ResourceSet::all(),
+            }],
+            roas: vec![],
+        };
+
+        let mut import_cas = vec![testbed_ca];
+
+        match self.runtime.config().benchmark.as_ref() {
+            None => {
+                info!(
+                    "Enabling TESTBED mode - ONLY USE THIS FOR TESTING \
+                     AND TRAINING!"
+                );
+            }
+            Some(benchmark) => {
+                info!(
+                    "Enabling BENCHMARK mode with {} CAs with {} ROas \
+                     each - ONLY USE THIS FOR TESTING!",
+                    benchmark.cas, benchmark.ca_roas
+                );
+
+                let testbed_parent: idexchange::ParentHandle =
+                    testbed_ca_handle().into_converted();
+                for nr in 0..benchmark.cas {
+                    let handle = idexchange::CaHandle::new(
+                        format!("benchmark-{nr}").into(),
+                    );
+
+                    // derive resources for benchmark ca
+                    let byte_2_ipv4 = nr / 256;
+                    let byte_3_ipv4 = nr % 256;
+
+                    let prefix_str = format!(
+                        "10.{byte_2_ipv4}.{byte_3_ipv4}.0/24"
+                    );
+                    let resources =
+                        ResourceSet::from_strs("", &prefix_str, "")
+                            .map_err(|e| {
+                            KrillError::ResourceSetError(format!(
+                                "cannot parse resources: {e}"
+                            ))
+                        })?;
+
+                    // Create ROA configs
+                    let mut roas: Vec<api::roa::RoaConfiguration> = vec![];
+                    let asn_range_start = 64512;
+                    for asn in
+                        asn_range_start..asn_range_start + benchmark.ca_roas
+                    {
+                        let payload = api::roa::RoaPayload::from_str(
+                            &format!("{prefix_str} => {asn}")
+                        ).unwrap();
+                        roas.push(payload.into());
+                    }
+
+                    import_cas.push(api::import::ImportCa {
+                        handle,
+                        parents: vec![api::import::ImportParent {
+                            handle: testbed_parent.clone(),
+                            resources,
+                        }],
+                        roas,
+                    })
+                }
+            }
+        }
+
+        let startup_structure = api::import::Structure::for_testbed(
+            testbed.ta_aia().clone(),
+            testbed.ta_uri().clone(),
+            testbed.publication_server_uris(),
+            import_cas,
+        );
+
+        cas_import(startup_structure, &self.runtime)
+    }
+}
 
 
 //------------ KrillManager --------------------------------------------------
 
-#[derive(Clone)]
 pub struct KrillManager {
     krill_runtime: KrillRuntime,
 }
 
 impl KrillManager {
-    /// Create a new Krill server from the provided config.
-    pub fn new(_config: Config) -> Result<Self, KrillError> {
-        todo!()
-    }
-
     /// Returns a reference to the config.
     pub fn config(&self) -> &Config {
         self.krill_runtime.config()
@@ -66,42 +233,10 @@ impl KrillManager {
         F: FnOnce(&KrillRuntime) -> Result<T, RunError> + Send + 'static,
         T: Send + 'static,
     {
-        let (tx, rx) = oneshot::channel();
         let runtime = self.krill_runtime.clone();
-        self.krill_runtime.spawn_blocking(move || {
-            let _ = tx.send(op(&runtime));
-        });
-        rx.await?
-    }
-
-    /// Runs an errand using the `KrillManager`.
-    ///
-    /// An errand is a multi-phase process involving a sequence of sync and
-    /// async portions chained together. If a method of the [`KrillManager`]
-    /// returns such an errand by returning a value that implements the
-    /// [`Errand`] trait, the `run_errand` method can be used to evaluate
-    /// the errand and receive its result.
-    ///
-    /// The closure `op` is run on the sync runtime. It has access to the
-    /// [`KrillManager`] via its sole argument. The returned errand is then
-    /// run on either the sync or async runtimes as needed.
-    ///
-    /// If, for whatever reason, the closure or returned errand do not run to
-    /// completion, an error is returned.
-    async fn _run_errand<F, P, T>(
-        &self, op: F
-    ) -> Result<T, RunError>
-    where
-        F: FnOnce(&KrillRuntime) -> P + Send + 'static,
-        P: Errand<Output = Result<T, RunError>>,
-        T: Send + 'static,
-    {
-        let (tx, rx) = oneshot::channel();
-        let runtime = self.krill_runtime.clone();
-        self.krill_runtime.spawn_blocking(move || {
-            op(&runtime).finish(tx);
-        });
-        rx.await?
+        tokio::task::spawn_blocking(move || {
+            op(&runtime)
+        }).await?
     }
 }
 
@@ -119,9 +254,9 @@ impl KrillManager {
     /// Triggers republising of all CAs that need it.
     pub async fn republish_all(&self, force: bool) -> Result<(), RunError> {
         self.run(move |runtime| -> Result<_, RunError> {
-            let cas = runtime.ca_manager().republish_all(force)?;
+            let cas = runtime.ca_manager().republish_all(force, runtime)?;
             for ca in cas {
-                runtime.ca_manager().cas_schedule_repo_sync(ca)?;
+                runtime.ca_manager().cas_schedule_repo_sync(ca, runtime)?;
             }
             Ok(())
         }).await
@@ -130,21 +265,21 @@ impl KrillManager {
     /// Triggers all CAs to re-sync with their repositories
     pub async fn cas_repo_sync_all(&self) -> Result<(), RunError> {
         self.run(|runtime| {
-            Ok(runtime.ca_manager().cas_schedule_repo_sync_all()?)
+            Ok(runtime.ca_manager().cas_schedule_repo_sync_all(runtime)?)
         }).await
     }
 
     /// Triggers all CAs to re-sync with their parent CAs.
     pub async fn cas_refresh_all(&self) -> Result<(), RunError> {
         self.run(|runtime| {
-            Ok(runtime.ca_manager().cas_schedule_refresh_all()?)
+            Ok(runtime.ca_manager().cas_schedule_refresh_all(runtime)?)
         }).await
     }
 
     /// Schedules a check to suspend children for all CAs
     pub async fn cas_schedule_suspend_all(&self) -> Result<(), RunError> {
         self.run(|runtime| {
-            Ok(runtime.ca_manager().cas_schedule_suspend_all()?)
+            Ok(runtime.ca_manager().cas_schedule_suspend_all(runtime)?)
         }).await
     }
 
@@ -207,6 +342,15 @@ impl KrillManager {
             }
 
             Ok(res)
+        }).await
+    }
+
+    pub async fn cas_import(
+        &self,
+        structure: api::import::Structure,
+    ) -> Result<(), RunError> {
+        self.run(move |runtime| {
+            Ok(cas_import(structure, runtime)?)
         }).await
     }
 }
@@ -285,14 +429,26 @@ impl KrillManager {
         }).await
     }
 
-    // ca_repo_update
+    /// Updates the repository for a CA.
+    pub async fn ca_repo_update(
+        &self,
+        ca: idexchange::CaHandle,
+        contact: api::admin::RepositoryContact,
+        actor: Actor,
+    ) -> Result<(), RunError> {
+        self.run(move |runtime| {
+            Ok(runtime.ca_manager().update_repo(
+                ca, contact, true, &actor, runtime
+            )?)
+        }).await
+    }
 
     /// Trigger re-syncing with the repository.
     pub async fn ca_sync_repo(
         &self, ca: idexchange::CaHandle
     ) -> Result<(), RunError> {
         self.run(move |runtime| {
-            Ok(runtime.ca_manager().cas_schedule_repo_sync(ca)?)
+            Ok(runtime.ca_manager().cas_schedule_repo_sync(ca, runtime)?)
         }).await
     }
 
@@ -319,7 +475,9 @@ impl KrillManager {
         &self, ca_handle: idexchange::CaHandle
     ) -> Result<(), RunError> {
         self.run(move |runtime| {
-            Ok(runtime.ca_manager().cas_schedule_refresh_single(ca_handle)?)
+            Ok(runtime.ca_manager().cas_schedule_refresh_single(
+                ca_handle, runtime
+            )?)
         }).await
     }
 
@@ -352,18 +510,29 @@ impl KrillManager {
         self.run(move |runtime| {
             match runtime.ca_manager().ca_command_details(&ca, version) {
                 Ok(res) => Ok(Some(res)),
-                Err(err) if matches!(
-                    err,
-                    KrillError::AggregateStoreError(
-                        AggregateStoreError::UnknownCommand(..)
-                    )
-                ) => Ok(None),
+                Err(KrillError::AggregateStoreError(
+                    AggregateStoreError::UnknownCommand(..)
+                )) => Ok(None),
                 Err(err) => Err(err.into()),
             }
         }).await
     }
 
-    // ca_delete
+    /// Deletes a CA.
+    ///
+    /// A best effort to send revocation requests and withdraw all objects
+    /// is done first. Note that any children of this CA will be left
+    /// orphaned, and they will only learn of this sad fact when they choose
+    /// to call home.
+    pub async fn ca_delete(
+        &self,
+        ca: idexchange::CaHandle,
+        actor: Actor,
+    ) -> Result<(), RunError> {
+        self.run(move |runtime| {
+            Ok(runtime.ca_manager().delete_ca(&ca, &actor, runtime)?)
+        }).await
+    }
 }
 
 
@@ -381,9 +550,46 @@ impl KrillManager {
         }).await
     }
 
-    // TODO: ca_parent_add_or_update
+    /// Updates a parent contact for a CA
+    pub async fn ca_parent_add_or_update(
+        &self,
+        ca: idexchange::CaHandle,
+        parent_req: api::admin::ParentCaReq,
+        actor: Actor,
+    ) -> Result<(), RunError> {
+        self.run(move |runtime| {
+            // Verify that we can get entitlements from the new parent before
+            // adding/updating it.
+            let contact =
+                api::admin::ParentCaContact::try_from_rfc8183_parent_response(
+                    parent_req.response.clone(),
+            )
+            .map_err(|e| {
+                KrillError::CaParentResponseInvalid(ca.clone(), e.to_string())
+            })?;
+            runtime.ca_manager().get_entitlements_from_contact(
+                &ca, &parent_req.handle, &contact, false, runtime,
+            )?;
 
-    // TODO: ca_parent_remove
+            // Seems good. Add/update the parent.
+            Ok(runtime.ca_manager().ca_parent_add_or_update(
+                ca, parent_req, &actor, runtime
+            )?)
+        }).await
+    }
+
+    pub async fn ca_parent_remove(
+        &self,
+        handle: idexchange::CaHandle,
+        parent: idexchange::ParentHandle,
+        actor: Actor,
+    ) -> Result<(), RunError> {
+        self.run(move |runtime| {
+            Ok(runtime.ca_manager().ca_parent_remove(
+                handle, parent, &actor, runtime
+            )?)
+        }).await
+    }
 
     /// Returns the parent contact for a CA’s parent.
     pub async fn ca_parent_contact(
@@ -691,7 +897,7 @@ impl KrillManager {
         uris: api::admin::PublicationServerUris,
     ) -> Result<(), RunError> {
         self.run(move |runtime| {
-            Ok(runtime.repo_manager().init(uris)?)
+            Ok(runtime.repo_manager().init(uris, runtime)?)
         }).await
     }
 
@@ -744,7 +950,7 @@ impl KrillManager {
         msg_bytes: Bytes,
     ) -> Result<Bytes, RunError> {
         self.run(move |runtime| {
-            Ok(runtime.repo_manager().rfc8181(publisher, msg_bytes)?)
+            Ok(runtime.repo_manager().rfc8181(publisher, msg_bytes, runtime)?)
         }).await
     }
 }
@@ -783,7 +989,9 @@ impl KrillManager {
         &self, publisher: idexchange::PublisherHandle,
     ) -> Result<idexchange::RepositoryResponse, RunError> {
         self.run(move |runtime| {
-            Ok(runtime.repo_manager().repository_response(&publisher)?)
+            Ok(runtime.repo_manager().repository_response(
+                &publisher, runtime
+            )?)
         }).await
     }
 
@@ -796,7 +1004,9 @@ impl KrillManager {
         self.run(move |runtime| {
             let publisher_handle = req.publisher_handle().clone();
             runtime.repo_manager().create_publisher(req, &actor)?;
-            Ok(runtime.repo_manager().repository_response(&publisher_handle)?)
+            Ok(runtime.repo_manager().repository_response(
+                &publisher_handle, runtime
+            )?)
         }).await
     }
 
@@ -807,7 +1017,9 @@ impl KrillManager {
         &self, publisher: idexchange::PublisherHandle, actor: Actor,
     ) -> Result<(), RunError> {
         self.run(move |runtime| {
-            Ok(runtime.repo_manager().remove_publisher(publisher, &actor)?)
+            Ok(runtime.repo_manager().remove_publisher(
+                publisher, &actor, runtime
+            )?)
         }).await
     }
 
@@ -927,7 +1139,7 @@ impl KrillManager {
         &self,
     ) -> Result<api::ta::ApiTrustAnchorSignedRequest, RunError> {
         self.run(|runtime| {
-            Ok(runtime.ca_manager().ta_proxy_signer_get_request()?)
+            Ok(runtime.ca_manager().ta_proxy_signer_get_request(runtime)?)
         }).await
     }
 
@@ -958,6 +1170,220 @@ impl KrillManager {
             )?)
         }).await
     }
+}
+
+
+//------------ cas_import ----------------------------------------------------
+
+fn cas_import(
+    structure: api::import::Structure,
+    krill: &KrillRuntime,
+) -> Result<(), KrillError> {
+    let actor = krill.system_actor().clone();
+
+    // We need to know which CAs already exist. They should not be
+    // imported again, but can serve as parents.
+    let mut existing_cas = HashMap::new();
+    for handle in krill.ca_manager().ca_handles()? {
+        let parent_handle = handle.convert();
+        let resources = krill.ca_manager().get_ca(
+            &handle
+        )?.all_resources();
+        existing_cas.insert(parent_handle, resources);
+    }
+    structure.validate_ca_hierarchy(existing_cas)?;
+
+    if let Some(publication_server_uris) =
+        structure.publication_server.clone()
+    {
+        info!("Initialising publication server");
+        krill.repo_manager().init(publication_server_uris, krill)?;
+    }
+
+    if let Some(import_ta) = structure.ta.clone() {
+        if krill.config().ta_proxy_enabled()
+            && krill.config().ta_signer_enabled()
+        {
+            info!("Creating embedded Trust Anchor");
+            krill.ca_manager().ta_init_fully_embedded(
+                import_ta.ta_aia,
+                vec![import_ta.ta_uri],
+                import_ta.ta_key_pem,
+                &actor,
+                krill
+            )?;
+        } else {
+            return Err(KrillError::custom(
+                "Import TA requires ta_support_enabled = true \
+                 and ta_signer_enabled = true",
+            ));
+        }
+    }
+
+    info!("Bulk import {} CAs", structure.cas.len());
+
+    // XXX This used to be done in parallel. However, doing it in
+    //     serial means we can be sure that a CA’s parents and the
+    //     necessary resources already exist. We could potentially
+    //     speed this up by creating sets of CAs that can be added
+    //     in parallel, but import is rare enough that it probably
+    //     doesn’t matter.
+
+    for ca in structure.cas {
+        import_ca(ca, krill)?;
+    }
+    Ok(())
+}
+
+fn import_ca(
+    import: api::import::ImportCa,
+    krill: &KrillRuntime,
+) -> Result<(), KrillError> {
+    // outline:
+    // - init ca
+    // - set up under repo
+    // - set up under parent
+    // - wait for resources
+    // - recurse for children
+    info!("Importing CA: '{}'", import.handle);
+
+    let actor = krill.system_actor();
+
+    // init CA
+    krill.ca_manager().init_ca(import.handle.clone(), krill)?;
+
+    // Get Publisher Request
+    let pub_req = {
+        let ca = krill.ca_manager().get_ca(&import.handle)?;
+        idexchange::PublisherRequest::new(
+            ca.id_cert().base64.clone(),
+            import.handle.convert(),
+            None,
+        )
+    };
+
+    // Add Publisher
+    krill.repo_manager().create_publisher(pub_req, actor)?;
+
+    // Get Repository Contact for CA
+    let repo_contact = {
+        let repo_response = krill.repo_manager().repository_response(
+            &import.handle.convert(), krill
+        )?;
+        api::admin::RepositoryContact::try_from_response(
+            repo_response
+        ).map_err(KrillError::rfc8183)?
+    };
+
+    // Add Repository to CA
+    krill.ca_manager().update_repo(
+        import.handle.clone(),
+        repo_contact,
+        false,
+        actor,
+        krill,
+    )?;
+
+    for import_parent in import.parents {
+        // The parent should have been created. We can be sure of that
+        // because we verified that all parents are either "ta" (which
+        // is always created) or another CA that appeared on the list
+        // before this CA.
+        let parent_as_ca: idexchange::CaHandle =
+            import_parent.handle.convert();
+
+        // If the parent is the TA, then there is no need to wait.
+        if import_parent.handle.as_str() != TA_NAME {
+            let Ok(parent) = krill.ca_manager().get_ca(
+                &parent_as_ca
+            ) else {
+                return Err(KrillError::Custom(format!(
+                    "Could not import CA {}. Parent: {} is not created",
+                    import.handle, parent_as_ca
+                )))
+            };
+
+            if !parent.all_resources().contains(
+                &import_parent.resources
+            ) {
+                return Err(KrillError::Custom(format!(
+                    "Could not import CA {}. \
+                     Parent: {} does not contain all resources.",
+                    import.handle, parent_as_ca
+                )))
+            }
+        }
+
+        // Add the CA as the child of parent and get the parent response
+        let response = {
+            let ca = krill.ca_manager().get_ca(&import.handle)?;
+            let id_cert = ca.child_request().validate().map_err(
+                KrillError::rfc8183
+            )?;
+            let child_req = api::admin::AddChildRequest {
+                handle: import.handle.convert(),
+                resources: import_parent.resources,
+                id_cert,
+            };
+
+            krill.ca_manager().ca_add_child(
+                &import_parent.handle.convert(),
+                child_req,
+                actor,
+                krill,
+            )?
+        };
+
+        // Add the parent to the child and force sync
+        {
+            let parent_req = api::admin::ParentCaReq {
+                handle: import_parent.handle.clone(),
+                response
+            };
+            krill.ca_manager().ca_parent_add_or_update(
+                import.handle.clone(),
+                parent_req,
+                actor,
+                krill,
+            )?;
+
+            // First sync will inform child of its entitlements and
+            // trigger that CSR is created.
+            krill.ca_manager().ca_sync_parent(
+                &import.handle, 0, &import_parent.handle, actor, krill,
+            )?;
+
+            // Second sync will send that CSR to the parent
+            krill.ca_manager().ca_sync_parent(
+                &import.handle, 0, &import_parent.handle, actor, krill,
+            )?;
+
+            // If the parent is a TA, then we will need to push a bit
+            // more.. Normally this should be handled by
+            // triggered tasks, but the task scheduler is
+            // not running when we do this at startup.
+            if import_parent.handle.as_str() == TA_NAME {
+                krill.ca_manager().sync_ta_proxy_signer_if_possible(
+                    krill
+                )?;
+                krill.ca_manager().ca_sync_parent(
+                    &import.handle, 0, &import_parent.handle, actor,
+                    krill,
+                )?;
+            }
+        }
+    }
+
+    // Add ROA definitions
+    let roa_updates = api::roa::RoaConfigurationUpdates {
+        added: import.roas,
+        removed: vec![]
+    };
+    krill.ca_manager().ca_routes_update(
+        import.handle, roa_updates, actor, krill
+    )?;
+
+    Ok(())
 }
 
 
@@ -996,9 +1422,9 @@ impl From<RunError> for KrillError {
     }
 }
 
-impl From<oneshot::error::RecvError> for RunError {
-    fn from(_: oneshot::error::RecvError) -> Self {
-        Self(KrillError::internal("operation dropped"))
+impl From<tokio::task::JoinError> for RunError {
+    fn from(_: tokio::task::JoinError) -> Self {
+        Self(KrillError::internal("task panicked"))
     }
 }
 

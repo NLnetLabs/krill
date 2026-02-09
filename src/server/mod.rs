@@ -8,5 +8,3 @@ pub mod runtime;
 pub mod scheduler;
 pub mod taproxy;
 
-pub mod oldmanager;
-

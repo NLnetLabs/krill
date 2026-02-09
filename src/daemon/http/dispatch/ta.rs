@@ -70,7 +70,7 @@ async fn proxy_children_index(
             let (server, child) = request.read_json().await?;
             Ok(HttpResponse::json(
                 &server.krill().ta_proxy_children_add(
-                    child, auth.actor().clone()
+                    child, auth.into_actor()
                 ).await?
             ))
         }
@@ -222,7 +222,7 @@ async fn proxy_repo_index(
                 &ta_handle(), update
             )?;
             server.krill().ta_proxy_repository_update(
-                update, auth.actor().clone()
+                update, auth.into_actor()
             ).await?;
             Ok(HttpResponse::ok())
         }
@@ -282,7 +282,7 @@ async fn proxy_signer_add(
         Permission::CaAdmin, None
     )?;
     let (server, info) = request.read_json().await?;
-    server.krill().ta_proxy_signer_add(info, auth.actor().clone()).await?;
+    server.krill().ta_proxy_signer_add(info, auth.into_actor()).await?;
     Ok(HttpResponse::ok())
 }
 
@@ -308,7 +308,7 @@ async fn proxy_signer_request(
             let server = request.empty()?;
             Ok(HttpResponse::json(
                 &server.krill().ta_proxy_signer_make_request(
-                    auth.actor().clone()
+                    auth.into_actor()
                 ).await?
             ))
         }
@@ -327,7 +327,7 @@ async fn proxy_signer_response(
     )?;
     let (server, response) = request.read_json().await?;
     server.krill().ta_proxy_signer_process_response(
-        response, auth.actor().clone()
+        response, auth.into_actor()
     ).await?;
     Ok(HttpResponse::ok())
 }
@@ -342,7 +342,7 @@ async fn proxy_signer_update(
         Permission::CaAdmin, None
     )?;
     let (server, info) = request.read_json().await?;
-    server.krill().ta_proxy_signer_update(info, auth.actor().clone()).await?;
+    server.krill().ta_proxy_signer_update(info, auth.into_actor()).await?;
     Ok(HttpResponse::ok())
 }
 

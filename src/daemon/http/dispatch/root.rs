@@ -98,7 +98,7 @@ async fn rfc6492(
     //     determine the actor when looking at the ID certificate?
     Ok(HttpResponse::rfc6492(
         server.krill().rfc6492(
-            ca , bytes, user_agent, auth.actor().clone()
+            ca , bytes, user_agent, auth.into_actor()
         ).await?
     ))
 }

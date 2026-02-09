@@ -39,6 +39,7 @@ use super::providers::{config_file, openid_connect};
 ///
 /// This type is a wrapper around the available backend specific auth
 /// providers that can be found in the [super::providers] module.
+#[allow(clippy::large_enum_variant)]
 enum AuthProvider {
     Token(admin_token::AuthProvider),
 
@@ -205,20 +206,20 @@ impl Authorizer {
     pub fn new(config: &Config) -> KrillResult<Self> {
         let (primary_provider, legacy_provider) = match config.auth_type {
             AuthType::AdminToken => {
-                (admin_token::AuthProvider::new(&config).into(), None)
+                (admin_token::AuthProvider::new(config).into(), None)
             }
             #[cfg(feature = "multi-user")]
             AuthType::ConfigFile => {
                 (
-                    config_file::AuthProvider::new(&config)?.into(),
-                    Some(admin_token::AuthProvider::new(&config))
+                    config_file::AuthProvider::new(config)?.into(),
+                    Some(admin_token::AuthProvider::new(config))
                 )
             }
             #[cfg(feature = "multi-user")]
             AuthType::OpenIDConnect => {
                 (
-                    openid_connect::AuthProvider::new(&config)?.into(),
-                    Some(admin_token::AuthProvider::new(&config))
+                    openid_connect::AuthProvider::new(config)?.into(),
+                    Some(admin_token::AuthProvider::new(config))
                 )
             }
         };
@@ -227,7 +228,7 @@ impl Authorizer {
             primary_provider,
             legacy_provider,
             #[cfg(unix)]
-            unix_socket_provider: unix_user::AuthProvider::new(&config)?
+            unix_socket_provider: unix_user::AuthProvider::new(config)?
         })
     }
 

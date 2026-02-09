@@ -113,7 +113,7 @@ async fn publishers_index(
             let (server, pbl) = request.read_json().await?;
             Ok(HttpResponse::json(
                 &server.krill().add_publisher(
-                    pbl, auth.actor().clone()
+                    pbl, auth.into_actor()
                 ).await?
             ))
         }
@@ -158,7 +158,7 @@ async fn publishers_publisher_index(
             )?;
             let server = request.empty()?;
             server.krill().remove_publisher(
-                publisher, auth.actor().clone()
+                publisher, auth.into_actor()
             ).await?;
             Ok(HttpResponse::ok())
         }

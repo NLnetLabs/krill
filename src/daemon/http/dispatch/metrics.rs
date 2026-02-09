@@ -67,10 +67,8 @@ pub async fn dispatch(
 
 
         if !server.config().metrics.metrics_hide_ca_details {
-            let ca_status_map = match server.krill().cas_status_map().await {
-                Ok(map) => map,
-                Err(_) => HashMap::new(),
-            };
+            let ca_status_map =
+                server.krill().cas_status_map().await.unwrap_or_default();
 
             let metric = Metric::gauge(
                 "ca_parent_success",

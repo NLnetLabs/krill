@@ -19,17 +19,17 @@
 //!
 
 
+use std::mem::drop;
 use std::sync::Arc;
-//use std::time::Duration;
-//use log::info;
+use std::time::Duration;
+use log::info;
 use rpki::uri;
 use tokio::runtime;
-use tokio::sync::oneshot;
 use crate::commons::actor::Actor;
-use crate::commons::crypto::{KrillSigner/*, KrillSignerBuilder*/};
-//use crate::commons::error::KrillError;
+use crate::commons::crypto::{KrillSigner, KrillSignerBuilder};
+use crate::commons::error::KrillError;
 use crate::config::Config;
-//use crate::constants::{ACTOR_DEF_KRILL, KRILL_SERVER_APP};
+use crate::constants::{ACTOR_DEF_KRILL, KRILL_SERVER_APP};
 use super::bgp::BgpAnalyser;
 use super::ca::CaManager;
 use super::mq::TaskQueue;
@@ -42,7 +42,6 @@ use super::pubd::RepositoryManager;
 pub struct KrillRuntime(Arc<Components>);
 
 impl KrillRuntime {
-    /*
     pub fn new(
         config: Config,
         tokio: runtime::Handle,
@@ -66,8 +65,8 @@ impl KrillRuntime {
         ).build()?;
 
         let tasks = TaskQueue::new(&config.storage_uri)?;
-        let repo_manager = RepositoryManager::build(&config)?;
-        let ca_manager = CaManager::build(&config)?;
+        let repo_manager = RepositoryManager::new(&config)?;
+        let ca_manager = CaManager::new(&config)?;
         let bgp_analyser = BgpAnalyser::new(&config);
 
         Ok(Self(Arc::new(Components {
@@ -82,7 +81,6 @@ impl KrillRuntime {
             tokio,
         })))
     }
-    */
 
     pub fn config(&self) -> &Config {
         &self.0.config
@@ -125,14 +123,9 @@ impl KrillRuntime {
     pub fn spawn_async(
         &self, future: impl Future<Output = ()> + Send + 'static
     ) {
-        let _ = self.0.tokio.spawn(future);
-    }
-
-    /// Spawns a closure onto the sync runtime.
-    pub fn spawn_blocking(
-        &self, op: impl FnOnce() + Send + 'static
-    ) {
-        let _ = self.0.tokio.spawn_blocking(op);
+        // Explicitely drop the join handle so Clippy doesn’t complain. The
+        // task will continue running.
+        drop(self.0.tokio.spawn(future));
     }
 }
 
@@ -174,186 +167,5 @@ struct Components {
     /// We currently use it for both async and sync tasks (via
     /// `spawn_blocking`).
     tokio: runtime::Handle,
-}
-
-
-//------------ Init ----------------------------------------------------------
-
-pub struct Init<Cap, Fut: Future> {
-    /// The capture value passed along during execution.
-    capture: Cap,
-
-    /// The initial calculation of the errand.
-    value: MaybeFuture<Fut>,
-
-    /// The Krill runtime to use and pass along.
-    krill: KrillRuntime,
-}
-
-impl<Cap, Fut: Future> Init<Cap, Fut> {
-    pub fn then<Op>(self, op: Op) -> Then<Self, Op> {
-        Then {
-            before: self,
-            op: op
-        }
-    }
-}
-
-impl<Cap, Fut> Errand for Init<Cap, Fut>
-where
-    Cap: Send + 'static,
-    Fut: Future + Send + 'static,
-    Fut::Output: Send + 'static,
-{
-    type Capture = Cap;
-    type Output = Fut::Output;
-
-    fn run<Then>(self, then: Then)
-    where
-        Then: 
-            FnOnce(Cap, Self::Output, KrillRuntime)
-            + Send + 'static
-    {
-        match self.value {
-            MaybeFuture::Ready(res) => (then)(self.capture, res, self.krill),
-            MaybeFuture::Future(fut) => {
-                self.krill.clone().spawn_async(async move {
-                    let res = fut.await;
-                    self.krill.clone().spawn_blocking(move || {
-                        (then)(self.capture, res, self.krill);
-                    })
-                })
-            }
-        }
-    }
-
-    fn finish(self, tx: oneshot::Sender<Fut::Output>) {
-        match self.value {
-            MaybeFuture::Ready(res) => {
-                let _ = tx.send(res);
-            }
-            MaybeFuture::Future(fut) => {
-                self.krill.spawn_async(async {
-                    let _ = tx.send(fut.await);
-                })
-            }
-        }
-    }
-}
-
-
-//------------ Then ----------------------------------------------------------
-
-/// An errand with an additional stage chained to it.
-pub struct Then<Before, Op> {
-    // the errand that produces the output we are processing
-    before: Before,
-
-    // a function that is run sync and returns a future.
-    //
-    // this needs to be spawned blocking when outer resolves.
-    op: Op,
-}
-
-impl<Before, Op> Then<Before, Op> {
-    pub fn then<OOp>(self, op: OOp) -> Then<Self, OOp>{
-        Then {
-            before: self,
-            op,
-        }
-    }
-}
-
-impl<Before, Op> Errand for Then<Before, Op>
-where
-    Before: Errand,
-    Op: IntoMaybeFuture<Capture = Before::Capture, Input = Before::Output>,
-{
-    type Capture = Op::Capture;
-    type Output = Op::Output;
-
-    fn run<Then>(self, then: Then)
-    where
-        Then: 
-            FnOnce(Op::Capture, Self::Output, KrillRuntime)
-            + Send + 'static
-    {
-        self.before.run(|mut capture, input, krill| {
-            match self.op.eval(&mut capture, input, &krill) {
-                MaybeFuture::Ready(res) => (then)(capture, res, krill),
-                MaybeFuture::Future(fut) => {
-                    krill.clone().spawn_async(async {
-                        let res = fut.await;
-                        krill.clone().spawn_blocking(|| {
-                            (then)(capture, res, krill);
-                        })
-                    })
-                }
-            }
-        })
-    }
-
-    fn finish(self, tx: oneshot::Sender<Op::Output>) {
-        self.before.run(|mut capture, input, krill| {
-            match self.op.eval(&mut capture, input, &krill) {
-                MaybeFuture::Ready(res) => {
-                    let _ = tx.send(res);
-                }
-                MaybeFuture::Future(fut) => {
-                    krill.spawn_async(async {
-                        let _ = tx.send(fut.await);
-                    })
-                }
-            }
-        });
-    }
-}
-
-
-//------------ MaybeFuture ---------------------------------------------------
-
-/// A value that is either already present or the result of a future.
-pub enum MaybeFuture<Fut: Future> {
-    /// The value is already present.
-    Ready(Fut::Output),
-
-    /// The value needs to be calculated by resolving the future.
-    Future(Fut),
-}
-
-
-//------------ IntoMaybeFuture -----------------------------------------------
-
-/// An operation that will result in a `MaybeFuture`.
-pub trait IntoMaybeFuture: Send + 'static {
-    type Capture: Send + 'static;
-    type Input: Send + 'static;
-    type Output: Send + 'static;
-    type Future: Future<Output = Self::Output> + Send + 'static;
-
-    fn eval(
-        self,
-        capture: &mut Self::Capture,
-        input: Self::Input,
-        krill: &KrillRuntime,
-    ) -> MaybeFuture<Self::Future>;
-}
-
-
-//------------ Errand --------------------------------------------------------
-
-/// A single step in running an errand.
-pub trait Errand: Sized {
-    type Capture: Send + 'static;
-    type Output: Send + 'static;
-
-    fn run<Then>(self, then: Then)
-    where
-        Then: 
-            FnOnce(Self::Capture, Self::Output, KrillRuntime)
-            + Send + 'static
-    ;
-
-    fn finish(self, tx: oneshot::Sender<Self::Output>);
 }
 

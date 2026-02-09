@@ -412,10 +412,8 @@ impl KrillServer {
         );
         let (tx, running) = oneshot::channel();
         let mut res = Self {
-            join: tokio::spawn(async {
-                if let Err(err) = start_krill_daemon(
-                    config.into(), Some(tx)
-                ).await {
+            join: tokio::task::spawn_blocking(|| {
+                if let Err(err) = start_krill_daemon(config, Some(tx)) {
                     error!("Krill failed to start: {err}");
                 }
             }),
@@ -443,10 +441,8 @@ impl KrillServer {
         );
         let (tx, running) = oneshot::channel();
         let mut res = Self {
-            join: tokio::spawn(async {
-                if let Err(err) = start_krill_daemon(
-                    config.into(), Some(tx)
-                ).await {
+            join: tokio::task::spawn_blocking(|| {
+                if let Err(err) = start_krill_daemon(config, Some(tx)) {
                     error!("Krill failed to start: {err}");
                 }
             }),

@@ -677,7 +677,7 @@ impl Aggregate for CertAuth {
         // certificates and/or generate manifests and CRLs when relevant
         // changes occur in a `CertAuth`.
         krill.ca_manager().ca_objects_store().cert_auth_pre_save_events(
-            self, events
+            self, events, krill
         )?;
 
         // Let the [`TaskQueue`] handle events pre-save so
@@ -1387,7 +1387,7 @@ impl CertAuth {
             resources,
             limit,
             &config.issuance_timing,
-            &signer,
+            signer,
         )?;
         let cert_name = ObjectName::from_key(&issued.key_identifier(), "cer");
 
@@ -1752,7 +1752,7 @@ impl CertAuth {
         &self,
         signer: &KrillSigner,
     ) -> KrillResult<Vec<CertAuthEvent>> {
-        let id = Rfc8183Id::generate(&signer)?;
+        let id = Rfc8183Id::generate(signer)?;
 
         info!(
             "CA '{}' generated new ID certificate with key id: {}",
@@ -1919,7 +1919,7 @@ impl CertAuth {
                         self.handle(),
                         ent,
                         &self.repository_contact()?.repo_info,
-                        &signer,
+                        signer,
                         &mut res,
                     )?;
                 }
@@ -1957,7 +1957,7 @@ impl CertAuth {
                         self.handle(),
                         ent,
                         &self.repository_contact()?.repo_info,
-                        &signer,
+                        signer,
                         &mut res
                     )?;
                 }

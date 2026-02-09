@@ -36,29 +36,32 @@ async fn functional_old_data() {
     );
     config.ta_support_enabled = true;
 
-    eprintln!(">>>> Check whether Krill still starts.");
-    let server = common::KrillServer::start_with_config(config).await;
-
     let signer_config = 
         include_str!("../test-resources/migrations/v0_14_5_signer/ta.conf");
     let signer_config = signer_config.replace("%TEMPDIR%", 
         tempdir.path().join("ta").to_str().unwrap());
+    let signer_config = krill::tasigner::Config::parse_str(
+        &signer_config
+    ).unwrap();
+
+    config.ta_timing = signer_config.ta_timing;
+
+    eprintln!(">>>> Check whether Krill still starts.");
+    let server = common::KrillServer::start_with_config(config).await;
 
     eprintln!(">>>> Configure the TA signer.");
-    let signer = TrustAnchorSignerManager::create(
-        krill::tasigner::Config::parse_str(
-            &signer_config
-        ).unwrap()
-    ).unwrap();
+    let signer = TrustAnchorSignerManager::create(signer_config).unwrap();
 
     eprintln!(">>>> Make TA proxy signer request.");
     let request = 
         server.client().ta_proxy_signer_make_request().await.unwrap();
     assert_eq!(request.ta_renew_time.unwrap().year(), 2026);
     assert_eq!(request.renew_times[0].1.year(), 2039);
+    eprintln!("{request}");
 
     eprintln!(">>>> Sign TA proxy signer request.");
     let response = signer.process(request.into(), None).unwrap();
+    eprintln!("{response}");
     assert_eq!(response.content().child_responses.len(), 1);
 
     eprintln!(">>>> Process TA proxy signer response.");

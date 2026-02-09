@@ -2,7 +2,6 @@
 
 use std::collections::HashMap;
 use std::str::FromStr;
-use std::sync::Arc;
 use chrono::Duration;
 use log::debug;
 use rpki::{rrdp, uri};
@@ -28,6 +27,7 @@ use crate::commons::error::Error;
 use crate::commons::storage::{Ident, KeyValueStore};
 use crate::constants::CA_OBJECTS_NS;
 use crate::config::IssuanceTimingConfig;
+use crate::server::runtime::KrillRuntime;
 use super::aspa::{AspaInfo, AspaObjectsUpdates};
 use super::bgpsec::{BgpSecCertInfo, BgpSecCertificateUpdates};
 use super::certauth::CertAuth;
@@ -63,9 +63,6 @@ pub struct CaObjectsStore {
     /// The key-value store where objects are stored.
     store: KeyValueStore,
 
-    /// The signer used when generate objects.
-    signer: Arc<KrillSigner>,
-
     /// Configuration for timing of object creation.
     issuance_timing: IssuanceTimingConfig,
 }
@@ -75,12 +72,10 @@ impl CaObjectsStore {
     pub fn create(
         storage_uri: &Url,
         issuance_timing: IssuanceTimingConfig,
-        signer: Arc<KrillSigner>,
     ) -> KrillResult<Self> {
         let store = KeyValueStore::create(storage_uri, CA_OBJECTS_NS)?;
         Ok(CaObjectsStore {
             store,
-            signer,
             issuance_timing,
         })
     }
@@ -90,6 +85,7 @@ impl CaObjectsStore {
         &self,
         ca: &CertAuth,
         events: &[CertAuthEvent],
+        krill: &KrillRuntime,
     ) -> KrillResult<()> {
         // Note that the `CertAuth` which is passed in has already been
         // updated with the state changes contained in the event.
@@ -138,7 +134,7 @@ impl CaObjectsStore {
                             resource_class_name,
                             current_key,
                             &self.issuance_timing,
-                            &self.signer,
+                            krill.signer(),
                         )?;
                     }
                     CertAuthEvent::KeyPendingToNew {
@@ -149,7 +145,7 @@ impl CaObjectsStore {
                             resource_class_name,
                             new_key,
                             &self.issuance_timing,
-                            &self.signer,
+                            krill.signer(),
                         )?;
                     }
                     CertAuthEvent::KeyRollActivated {
@@ -196,7 +192,7 @@ impl CaObjectsStore {
                 }
             }
             objects.re_issue(
-                force_reissue, &self.issuance_timing, &self.signer
+                force_reissue, &self.issuance_timing, krill.signer()
             )?;
             Ok(())
         })
@@ -295,13 +291,14 @@ impl CaObjectsStore {
         &self,
         force: bool,
         ca_handle: &CaHandle,
+        krill: &KrillRuntime,
     ) -> KrillResult<bool> {
         debug!("Re-issue for CA {ca_handle} using force: {force}");
         self.with_ca_objects(ca_handle, |objects| {
             objects.re_issue(
                 force,
                 &self.issuance_timing,
-                &self.signer,
+                krill.signer(),
             )
         })
     }

@@ -121,7 +121,7 @@ async fn ca_index(
                 Permission::CaDelete, Some(&ca)
             )?;
             let server = request.empty()?;
-            server.old_krill().ca_delete(&ca, auth.actor()).await?;
+            server.krill().ca_delete(ca, auth.into_actor()).await?;
             Ok(HttpResponse::ok())
         }
         _ => Ok(HttpResponse::method_not_allowed())
@@ -163,7 +163,7 @@ async fn aspas_index(
             )?;
             let (server, updates) = request.read_json().await?;
             server.krill().ca_aspas_definitions_update(
-                ca, updates, auth.actor().clone(),
+                ca, updates, auth.into_actor(),
             ).await?;
             Ok(HttpResponse::ok())
         }
@@ -185,7 +185,7 @@ async fn aspas_as(
             )?;
             let (server, update) = request.read_json().await?;
             server.krill().ca_aspas_update_aspa(
-                ca, customer, update, auth.actor().clone()
+                ca, customer, update, auth.into_actor()
             ).await?;
             Ok(HttpResponse::ok())
         }
@@ -200,7 +200,7 @@ async fn aspas_as(
                     add_or_replace: Vec::new(),
                     remove: vec![customer]
                 },
-                auth.actor().clone(),
+                auth.into_actor(),
             ).await?;
             Ok(HttpResponse::ok())
         }
@@ -233,7 +233,7 @@ async fn bgpsec(
             )?;
             let (server, updates) = request.read_json().await?;
             server.krill().ca_bgpsec_definitions_update(
-                ca, updates, auth.actor().clone()
+                ca, updates, auth.into_actor()
             ).await?;
             Ok(HttpResponse::ok())
         }
@@ -266,7 +266,7 @@ async fn children_index(
     let (server, child_req) = request.read_json().await?;
     Ok(HttpResponse::json(
         &server.krill().ca_add_child(
-            ca, child_req, auth.actor().clone()
+            ca, child_req, auth.into_actor()
         ).await?
     ))
 }
@@ -316,7 +316,7 @@ async fn children_child_index(
             )?;
             let (server, child_req) = request.read_json().await?;
             server.krill().ca_child_update(
-                ca, child, child_req, auth.actor().clone()
+                ca, child, child_req, auth.into_actor()
             ).await?;
             Ok(HttpResponse::ok())
         }
@@ -326,7 +326,7 @@ async fn children_child_index(
             )?;
             let server = request.empty()?;
             server.krill().ca_child_remove(
-                ca, child, auth.actor().clone()
+                ca, child, auth.into_actor()
             ).await?;
             Ok(HttpResponse::ok())
         }
@@ -403,7 +403,7 @@ async fn children_child_import(
             }
         ))
     }
-    server.krill().ca_child_import(ca, import, auth.actor().clone()).await?;
+    server.krill().ca_child_import(ca, import, auth.into_actor()).await?;
     Ok(HttpResponse::ok())
 }
 
@@ -507,7 +507,7 @@ async fn id_index(
         Permission::CaUpdate, Some(&ca)
     )?;
     let server = request.empty()?;
-    server.krill().ca_update_id(ca, auth.actor().clone()).await?;
+    server.krill().ca_update_id(ca, auth.into_actor()).await?;
     Ok(HttpResponse::ok())
 }
 
@@ -620,7 +620,7 @@ async fn keys_roll_init(
         Permission::CaUpdate, Some(&ca)
     )?;
     let server = request.empty()?;
-    server.krill().ca_keyroll_init(ca, auth.actor().clone()).await?;
+    server.krill().ca_keyroll_init(ca, auth.into_actor()).await?;
     Ok(HttpResponse::ok())
 }
 
@@ -635,7 +635,7 @@ async fn keys_roll_activate(
         Permission::CaUpdate, Some(&ca)
     )?;
     let server = request.empty()?;
-    server.krill().ca_keyroll_activate(ca, auth.actor().clone()).await?;
+    server.krill().ca_keyroll_activate(ca, auth.into_actor()).await?;
     Ok(HttpResponse::ok())
 }
 
@@ -673,8 +673,8 @@ async fn parents_index(
             )?;
             let (server, bytes) = request.read_bytes().await?;
             let parent_req = extract_parent_ca_req(&ca, bytes, None)?;
-            server.old_krill().ca_parent_add_or_update(
-                ca, parent_req, auth.actor()
+            server.krill().ca_parent_add_or_update(
+                ca, parent_req, auth.into_actor()
             ).await?;
             Ok(HttpResponse::ok())
         }
@@ -707,8 +707,8 @@ async fn parents_parent(
             let parent_req = extract_parent_ca_req(
                 &ca, bytes, Some(parent)
             )?;
-            server.old_krill().ca_parent_add_or_update(
-                ca, parent_req, auth.actor()
+            server.krill().ca_parent_add_or_update(
+                ca, parent_req, auth.into_actor()
             ).await?;
             Ok(HttpResponse::ok())
         }
@@ -717,7 +717,9 @@ async fn parents_parent(
                 Permission::CaUpdate, Some(&ca)
             )?;
             let server = request.empty()?;
-            server.old_krill().ca_parent_remove(ca, parent, auth.actor()).await?;
+            server.krill().ca_parent_remove(
+                ca, parent, auth.into_actor()
+            ).await?;
             Ok(HttpResponse::ok())
         }
         _ => Ok(HttpResponse::method_not_allowed())
@@ -799,7 +801,9 @@ async fn repo_index(
             )?;
             let (server, update) = request.read_bytes().await?;
             let update = extract_repository_contact(&ca, update)?;
-            server.old_krill().ca_repo_update(ca, update, auth.actor()).await?;
+            server.krill().ca_repo_update(
+                ca, update, auth.into_actor(),
+            ).await?;
             Ok(HttpResponse::ok())
         }
         _ => Ok(HttpResponse::method_not_allowed())
@@ -884,7 +888,7 @@ async fn routes_index(
             )?;
             let (server, updates) = request.read_json().await?;
             server.krill().ca_routes_update(
-                ca, updates, auth.actor().clone()
+                ca, updates, auth.into_actor()
             ).await?;
             Ok(HttpResponse::ok())
         }
@@ -921,7 +925,7 @@ async fn routes_try(
     }
     else {
         server.krill().ca_routes_update(
-            ca, updates, auth.actor().clone()
+            ca, updates, auth.into_actor()
         ).await?;
         Ok(HttpResponse::ok())
     }

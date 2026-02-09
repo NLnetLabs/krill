@@ -11,7 +11,6 @@ use crate::commons::error::FatalError;
 use crate::config::Config;
 use crate::constants::KRILL_ENV_HTTP_LOG_INFO;
 use crate::server::manager::KrillManager;
-use crate::server::oldmanager::OldManager;
 use super::auth::Authorizer;
 use super::dispatch::{DispatchError, dispatch_request};
 use super::request::{BodyLimits, HyperRequest, Request};
@@ -26,14 +25,8 @@ pub struct HttpServer {
     /// The Krill server.
     krill: KrillManager,
 
-    /// The Krill “business logic.”
-    old_krill: OldManager,
-
     /// The component responsible for API authorization checks
     authorizer: Authorizer,
-
-    /// A copy of the configuration.
-    config: Arc<Config>,
 
     /// Time this server was started
     started: Timestamp,
@@ -43,17 +36,13 @@ impl HttpServer {
     /// Creates a new server from a Krill manager and the configuration.
     pub fn new(
         krill: KrillManager,
-        old_krill: OldManager,
-        config: Arc<Config>,
         runtime: &runtime::Handle,
     ) -> KrillResult<Arc<Self>> {
-        let authorizer = Authorizer::new(&config)?;
+        let authorizer = Authorizer::new(krill.config())?;
         authorizer.spawn_sweep(runtime);
         Ok(Self {
             krill,
-            old_krill,
             authorizer,
-            config,
             started: Timestamp::now(),
         }.into())
     }
@@ -67,7 +56,8 @@ impl HttpServer {
             &request
         ).await;
         let request = Request::new(
-            request, self, auth, BodyLimits::from_config(&self.config)
+            request, self, auth,
+            BodyLimits::from_config(self.krill.config())
         );
         let path = match request.path() {
             Ok(path) => path,
@@ -105,11 +95,6 @@ impl HttpServer {
         &self.krill
     }
 
-    /// Returns a reference to the Krill manager.
-    pub(super) fn old_krill(&self) -> &OldManager {
-        &self.old_krill
-    }
-
     /// Returns a reference to the authorizer.
     pub(super) fn authorizer(&self) -> &Authorizer {
         &self.authorizer
@@ -117,7 +102,7 @@ impl HttpServer {
 
     /// Returns a reference to the configuration.
     pub fn config(&self) -> &Config {
-        &self.config
+        self.krill.config()
     }
 
     pub(super) fn server_info(&self) -> ServerInfo {

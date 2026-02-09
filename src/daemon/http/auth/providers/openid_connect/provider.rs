@@ -184,7 +184,7 @@ pub struct AuthProvider {
 
 impl AuthProvider {
     pub fn new(config: &Config) -> KrillResult<Self> {
-        let session_key = Self::init_session_key(&config)?;
+        let session_key = Self::init_session_key(config)?;
 
         let Some(oidc_conf) = config.auth_openidconnect.as_ref() else {
             return Err(Error::ConfigError(

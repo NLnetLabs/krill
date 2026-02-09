@@ -2,21 +2,20 @@ use std::{env, process};
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
-use log::error;
+use clap::crate_version;
+use log::{error, info};
 use hyper::service::service_fn;
 use hyper_util::rt::{TokioExecutor, TokioIo};
-use tokio::{runtime, select};
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 use tokio_rustls::TlsAcceptor;
 use crate::commons::file;
-use crate::commons::error::Error;
+use crate::commons::error::{Error, Error as KrillError};
 use crate::commons::version::KrillVersion;
 use crate::config::Config;
-use crate::constants::KRILL_ENV_UPGRADE_ONLY;
+use crate::constants::{KRILL_ENV_UPGRADE_ONLY, KRILL_SERVER_APP};
 use crate::server::properties::PropertiesManager;
-use crate::server::manager::KrillManager;
-use crate::server::oldmanager::OldManager;
+use crate::server::manager::StartupManager;
 use crate::upgrades::{
     finalise_data_migration, post_start_upgrade,
     prepare_upgrade_data_migrations, UpgradeError, UpgradeMode,
@@ -25,11 +24,11 @@ use super::http::{tls, tls_keys};
 use super::http::server::HttpServer;
 
 
-pub async fn start_krill_daemon(
+pub fn start_krill_daemon(
     config: Config,
     mut signal_running: Option<oneshot::Sender<()>>,
 ) -> Result<(), Error> {
-    let arc_config = Arc::new(config.clone());
+    info!("Starting {} v{}", KRILL_SERVER_APP, crate_version!());
 
     write_pid_file_or_die(&config);
     test_data_dirs_or_die(&config);
@@ -83,17 +82,23 @@ pub async fn start_krill_daemon(
         properties_manager.init(KrillVersion::code_version())?;
     }
 
-    // Create the Krill manager, this will create the necessary data
-    // sub-directories if needed
-    let old_krill = OldManager::build(arc_config.clone()).await?;
+    // XXX TODO This may need some configuration.
+    let tokio = tokio::runtime::Runtime::new().map_err(|err| {
+        KrillError::custom(
+            format!("Failed to create Tokio runtime: {err}")
+        )
+    })?;
 
-    let krill = KrillManager::new(config)?;
+    let krill = StartupManager::new(config, tokio.handle().clone())?;
+
+    // Setup testbed if necessary.
+    krill.prepare_testbed()?;
 
     // Call post-start upgrades to trigger any upgrade related runtime
     // actions, such as re-issuing ROAs because subject name strategy has
     // changed.
     if let Some(report) = upgrade_report {
-        post_start_upgrade(report, &old_krill).await?;
+        post_start_upgrade(report, &krill)?;
     }
 
     // If the operator wanted to do the upgrade only, now is a good time to
@@ -103,15 +108,11 @@ pub async fn start_krill_daemon(
         std::process::exit(0);
     }
 
-    // Build the scheduler which will be responsible for executing
-    // planned/triggered tasks
-    let scheduler = old_krill.build_scheduler();
-    let scheduler_future = scheduler.run();
+    krill.run_scheduler()?;
+    let krill = krill.promote();
 
     // Create the HTTP server.
-    let server = HttpServer::new(
-        krill, old_krill, arc_config.clone(), &runtime::Handle::current()
-    )?;
+    let server = HttpServer::new(krill, &tokio.handle())?;
 
     // Create self-signed HTTPS cert if configured and not generated earlier.
     if server.config().https_mode().is_generate_https_cert() {
@@ -120,35 +121,29 @@ pub async fn start_krill_daemon(
     }
 
     // Start a hyper server for the configured http sockets.
-    let http_server_futures = futures_util::future::select_all(
-        server.config().socket_addresses().into_iter().map(|socket_addr| {
-            tokio::spawn(single_http_listener(
-                server.clone(),
-                socket_addr,
-                arc_config.clone(),
-                signal_running.take(),
-            ))
-        }),
-    );
+
+    for socket_addr in server.config().socket_addresses().into_iter() {
+        tokio.spawn(single_http_listener(
+            server.clone(),
+            socket_addr,
+            signal_running.take(),
+        ));
+    }
 
     // Start a hyper server for the configured unix sockets.
     // We do not await these, as they are not required
     #[cfg(unix)]
     if server.config().unix_socket_enabled() {
-        server.config().unix_socket().map(|path| {
-            tokio::spawn(single_unix_listener(
+        if let Some(path) = server.config().unix_socket() {
+            tokio.spawn(single_unix_listener(
                 server.clone(),
                 path.clone(),
-                arc_config.clone(),
                 signal_running.take(),
-            ))
-        });
+            ));
+        }
     }
 
-    select!(
-        _ = http_server_futures => error!("http server stopped unexpectedly"),
-        _ = scheduler_future => error!("scheduler stopped unexpectedly"),
-    );
+    tokio.block_on(futures_util::future::pending::<()>());
 
     Err(Error::custom("stopping krill process"))
 }
@@ -157,7 +152,6 @@ pub async fn start_krill_daemon(
 async fn single_http_listener(
     server: Arc<HttpServer>,
     addr: SocketAddr,
-    config: Arc<Config>,
     signal_running: Option<oneshot::Sender<()>>,
 ) {
     let listener = match TcpListener::bind(addr).await {
@@ -168,12 +162,12 @@ async fn single_http_listener(
         }
     };
 
-    let tls = if config.https_mode().is_disable_https() {
+    let tls = if server.config().https_mode().is_disable_https() {
         None
     } else {
         match tls::create_server_config(
-            &tls_keys::key_file_path(config.tls_keys_dir()),
-            &tls_keys::cert_file_path(config.tls_keys_dir()),
+            &tls_keys::key_file_path(server.config().tls_keys_dir()),
+            &tls_keys::cert_file_path(server.config().tls_keys_dir()),
         ) {
             Ok(config) => Some(TlsAcceptor::from(Arc::new(config))),
             Err(err) => {
@@ -219,7 +213,6 @@ async fn single_http_listener(
 async fn single_unix_listener(
     server: Arc<HttpServer>,
     path: std::path::PathBuf,
-    _config: Arc<Config>,
     signal_running: Option<oneshot::Sender<()>>,
 ) {
     use tokio::net::UnixListener;

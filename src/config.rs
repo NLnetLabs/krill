@@ -679,7 +679,7 @@ pub struct Config {
     pub ta_timing: TaTimingConfig,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct IssuanceTimingConfig {
     #[serde(default = "ConfigDefaults::timing_publish_next_hours")]
