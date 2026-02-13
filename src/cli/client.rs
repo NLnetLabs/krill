@@ -538,6 +538,14 @@ impl KrillClient {
         ).await
     }
 
+    pub async fn parent_refresh(
+        &self, ca: &CaHandle,
+    ) -> Result<Success, Error> {
+        self.post_empty(
+            ca_path(ca).into_iter().chain(once("sync/parents")),
+        ).await
+    }
+
     pub async fn parent_details(
         &self, ca: &CaHandle, parent: &ParentHandle
     ) -> Result<api::admin::ParentCaContact, Error> {
