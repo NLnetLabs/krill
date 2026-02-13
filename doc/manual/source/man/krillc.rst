@@ -342,6 +342,17 @@ Manage parents for a CA
         .. option:: -r <RESPONSE>, --response=<RESPONSE>
 
         Path to the RFC 8183 Child Request XML file
+
+    .. subcmd:: refresh
+    
+    Refresh the parents of this CA
+    
+    
+    *OPTIONS*
+    
+        .. option:: -c <CA>, --ca=<CA> [env: KRILL_CLI_MY_CA]
+
+        Name of the CA to control
     
     .. subcmd:: contact
     

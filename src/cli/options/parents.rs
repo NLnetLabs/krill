@@ -23,7 +23,7 @@ pub enum Command {
     /// Add a parent to, or update a parent of a CA
     Add(Add),
 
-    /// Refresh the parent of this CA
+    /// Refresh the parents of this CA
     Refresh(Refresh),
 
     /// Show contact information for a parent of a CA
