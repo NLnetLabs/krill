@@ -20,6 +20,9 @@ New
   By default, only the `root` user is allowed with the `admin` role, but
   both allowed users and what role they are mapped to can be configure.
   ([#1322])
+* Added a `krillc parents refresh` command to allow refreshing the parents
+  of a single CA rather than having to do a bulk refresh which can take a
+  very long time if there are many CAs. ([#1353])
 
 Bug fixes
 
@@ -55,6 +58,7 @@ Other changes
 [#1341]: https://github.com/NLnetLabs/krill/pull/1341
 [#1344]: https://github.com/NLnetLabs/krill/pull/1344
 [#1349]: https://github.com/NLnetLabs/krill/pull/1349
+[#1353]: https://github.com/NLnetLabs/krill/pull/1353
 
 
 ## 0.15.1 ‘Contains Adult Language’
