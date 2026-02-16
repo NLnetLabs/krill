@@ -12,6 +12,8 @@ Breaking changes
   fields and added `bgp_riswhois_enabled`, `bgp_riswhois_v4_uri`,
   `bgp_riswhois_v6_uri`, and `bgp_riswhois_refresh_duration` fields, all of
   which are optional. ([#1329]
+* Krill will now refuse to start if the config file contains unknown
+  options. ([#1322])
 
 New
 
