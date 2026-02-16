@@ -1389,9 +1389,9 @@ fn is_transient_error(err: &Pkcs11Error) -> bool {
         | Pkcs11Error::ParseInt(_)
         | Pkcs11Error::Utf8(_)
         | Pkcs11Error::NulError(_)
+        | Pkcs11Error::MissingSymbol(_)
         | Pkcs11Error::InvalidValue
-        | Pkcs11Error::PinNotSet
-        | Pkcs11Error::AlreadyInitialized => {
+        | Pkcs11Error::PinNotSet => {
             // The Rust `pkcs11` crate had a serious problem such as the
             // loaded library not exporting a required function or
             // that it was asked to initialize an already initialized library.
@@ -1512,6 +1512,7 @@ fn is_transient_error(err: &Pkcs11Error) -> bool {
                 cryptoki::error::RvError::TokenNotPresent => true, /* not present at the time the function was executed but might be later */
                 cryptoki::error::RvError::TokenNotRecognized => false,
                 cryptoki::error::RvError::TokenWriteProtected => true, /* maybe the write protection is a transient condition? */
+                cryptoki::error::RvError::UnknownErrorCode(_) => false, /* we don’t know ... */
                 cryptoki::error::RvError::UnwrappingKeyHandleInvalid => false,
                 cryptoki::error::RvError::UnwrappingKeySizeRange => false,
                 cryptoki::error::RvError::UnwrappingKeyTypeInconsistent => {
@@ -1523,7 +1524,7 @@ fn is_transient_error(err: &Pkcs11Error) -> bool {
                 cryptoki::error::RvError::UserPinNotInitialized => true, /* maybe the operator will initialize the PIN */
                 cryptoki::error::RvError::UserTooManyTypes => true, /* maybe some sessions are terminated while retrying permitting us to succeed? */
                 cryptoki::error::RvError::UserTypeInvalid => true, /* maybe the operator will fix the users type */
-                cryptoki::error::RvError::VendorDefined => true, /* we have no way of knowing what this kind of failure is, maybe it is transient */
+                cryptoki::error::RvError::VendorDefined(_) => true, /* we have no way of knowing what this kind of failure is, maybe it is transient */
                 cryptoki::error::RvError::WrappedKeyInvalid => false,
                 cryptoki::error::RvError::WrappedKeyLenRange => false,
                 cryptoki::error::RvError::WrappingKeyHandleInvalid => false,

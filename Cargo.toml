@@ -56,10 +56,10 @@ uuid            = { version = "1.16", features = ["serde", "v4"] }
 
 # Dependencies used by the "hsm" feature
 backoff         = { version = "0.4.0", optional = true }
-cryptoki        = { version = "0.10", optional = true }
+cryptoki        = { version = "0.12", optional = true, features = [ "serde" ] }
 kmip            = { version = "0.4.3", package = "kmip-protocol", features = [ "tls-with-openssl" ], optional = true }
 r2d2            = { version = "0.8.10", optional = true }
-secrecy         = { version = "0.8", features = ["serde"], optional = true }
+secrecy         = { version = "0.10.3", features = ["serde"], optional = true }
 
 # Dependencies used by the "multi-user" feature
 basic-cookies   = { version = "0.1", optional = true }
