@@ -1128,10 +1128,11 @@ impl TryFrom<String> for ServerUri {
         }
 
         // Check for a five-character scheme.
-        if let Some(scheme) = value.as_bytes().get(0..8) {
-            if scheme.eq_ignore_ascii_case(b"https://") {
-                return Ok(Self::Http(value))
-            }
+        if
+            let Some(scheme) = value.as_bytes().get(0..8)
+            && scheme.eq_ignore_ascii_case(b"https://")
+        {
+            return Ok(Self::Http(value))
         }
 
         Err("unsupported URI scheme")

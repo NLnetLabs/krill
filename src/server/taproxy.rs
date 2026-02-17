@@ -326,16 +326,16 @@ impl TrustAnchorProxy {
         &self,
         signer: TrustAnchorSignerInfo,
     ) -> KrillResult<Vec<TrustAnchorProxyEvent>> {
-        if let Some(s) = &self.signer {
-            if  s.ta_cert_details.cert.key_identifier() == 
+        if
+            let Some(s) = &self.signer
+            && s.ta_cert_details.cert.key_identifier() == 
                 signer.ta_cert_details.cert.key_identifier() 
-            {
-                // It is not possible to add a signer that has a different
-                // public key
-                return Ok(vec![
-                    TrustAnchorProxyEvent::SignerUpdated(signer)
-                ]);
-            }
+        {
+            // It is not possible to add a signer that has a different
+            // public key
+            return Ok(vec![
+                TrustAnchorProxyEvent::SignerUpdated(signer)
+            ]);
         }
         Err(Error::TaProxyHasDifferentSigner)
     }
