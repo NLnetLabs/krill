@@ -643,14 +643,15 @@ pub trait UpgradeAggregateStorePre0_14 {
         let code_version = KrillVersion::code_version();
         const VERSION: &Ident = Ident::make("version");
 
-        if let Ok(Some(existing_migration_version)) = self
-            .preparation_key_value_store()
-            .get::<KrillVersion>(None, VERSION)
+        if 
+            let Ok(Some(existing_migration_version))
+                = self.preparation_key_value_store().get::<KrillVersion>(
+                    None, VERSION
+                )
+            && existing_migration_version != code_version
         {
-            if existing_migration_version != code_version {
-                warn!("Found prepared data for Krill version {existing_migration_version}, will remove it and start from scratch for {code_version}");
-                self.preparation_key_value_store().wipe()?;
-            }
+            warn!("Found prepared data for Krill version {existing_migration_version}, will remove it and start from scratch for {code_version}");
+            self.preparation_key_value_store().wipe()?;
         }
 
         self.preparation_key_value_store()

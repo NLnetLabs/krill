@@ -396,10 +396,11 @@ impl Pkcs11Signer {
     }
 
     pub fn get_info(&self) -> Option<String> {
-        if let Ok(status) = self.server.status(Self::probe_server) {
-            if let Ok(state) = status.state() {
-                return Some(state.conn_info.clone());
-            }
+        if
+            let Ok(status) = self.server.status(Self::probe_server)
+            && let Ok(state) = status.state()
+        {
+            return Some(state.conn_info.clone());
         }
         None
     }

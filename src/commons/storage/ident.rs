@@ -243,10 +243,8 @@ impl Ident {
         if src.is_empty() {
             return Cow::Borrowed(const { Ident::make("_") })
         }
-        if !src.starts_with('_') {
-            if let Ok(ident) = Self::from_str(src) {
-                return Cow::Borrowed(ident)
-            }
+        if !src.starts_with('_') && let Ok(ident) = Self::from_str(src) {
+            return Cow::Borrowed(ident)
         }
         let mut res = Vec::with_capacity(src.len() + 1);
         res.push(b'_');

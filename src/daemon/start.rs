@@ -219,11 +219,9 @@ async fn single_unix_listener(
 ) {
     use tokio::net::UnixListener;
 
-    if path.exists() {
-        if let Err(err) = std::fs::remove_file(&path) {
-            error!("Fatal error in UNIX socket: {err}");
-            return;
-        };
+    if path.exists() && let Err(err) = std::fs::remove_file(&path) {
+        error!("Fatal error in UNIX socket: {err}");
+        return;
     }
 
     let listener = match UnixListener::bind(&path) {

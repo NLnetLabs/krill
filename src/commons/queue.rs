@@ -230,10 +230,8 @@ impl Queue {
                 if ts > now {
                     return acc
                 }
-                if let Some((acc_ts, _)) = acc {
-                    if acc_ts < ts {
-                        return acc
-                    }
+                if let Some((acc_ts, _)) = acc && acc_ts < ts {
+                    return acc
                 }
 
                 Some((ts, key))

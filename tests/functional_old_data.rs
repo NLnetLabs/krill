@@ -44,7 +44,7 @@ async fn functional_old_data() {
         &signer_config
     ).unwrap();
 
-    config.ta_timing = signer_config.ta_timing.clone();
+    config.ta_timing = signer_config.ta_timing;
 
     eprintln!(">>>> Check whether Krill still starts.");
     let server = common::KrillServer::start_with_config(config).await;

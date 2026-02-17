@@ -263,14 +263,14 @@ impl Store {
                     ));
                 }
             };
-            if file_type.is_file() {
-                if let Some(name) =
-                    item.file_name().into_string().ok().and_then(|name| {
+            if
+                file_type.is_file()
+                && let Some(name)
+                    = item.file_name().into_string().ok().and_then(|name| {
                         Ident::boxed_from_string(name).ok()
                     })
-                {
-                    res.push(name)
-                }
+            {
+                res.push(name)
             }
         }
 
@@ -320,14 +320,14 @@ impl Store {
                     ));
                 }
             };
-            if file_type.is_dir() {
-                if let Some(name) =
+            if
+                file_type.is_dir()
+                && let Some(name) =
                     item.file_name().into_string().ok().and_then(|name| {
                         Ident::boxed_from_string(name).ok()
                     })
-                {
-                    res.push(name)
-                }
+            {
+                res.push(name)
             }
         }
 

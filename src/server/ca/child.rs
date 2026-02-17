@@ -132,10 +132,11 @@ impl ChildDetails {
         let mut res = vec![];
 
         for (ki, used_key_state) in self.used_keys.iter() {
-            if let UsedKeyState::InUse(found_rcn) = used_key_state {
-                if found_rcn == parent_rcn {
-                    res.push(*ki)
-                }
+            if
+                let UsedKeyState::InUse(found_rcn) = used_key_state
+                && found_rcn == parent_rcn
+            {
+                res.push(*ki)
             }
         }
 
