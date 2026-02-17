@@ -3,7 +3,7 @@
 name = "krill"
 version = "0.15.1-dev"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.88"
 authors = ["NLnet Labs <rpki-team@nlnetlabs.nl>"]
 description = "Resource Public Key Infrastructure (RPKI) daemon"
 homepage = "https://www.nlnetlabs.nl/projects/routing/krill/"
@@ -42,7 +42,7 @@ percent-encoding = "2.3.1"
 pin-project-lite = "0.2.16"
 rand            = "0.10"
 regex           = { version = "1.11.1", default-features = false, features = [ "std" ] }
-reqwest         = { version = "0.12.23", features = ["json"] }
+reqwest         = { version = "0.13.2", features = ["json"] }
 rpki            = { version = "0.19.2", features = ["ca", "compat", "rrdp"] }
 rustls-pemfile  = "2.2.0"
 serde           = { version = "1.0", features = ["derive", "rc"] }
@@ -78,7 +78,7 @@ urlparse        = { version = "0.7", optional = true }
 
 [target.'cfg(unix)'.dependencies]
 syslog = "7.0.0"
-nix = { version = "0.30.1", features = ["user"] }
+nix = { version = "0.31.1", features = ["user"] }
 
 [features]
 default = ["multi-user", "hsm"]
@@ -102,7 +102,6 @@ hsm-tests-pkcs11 = ["hsm"]
 [dev-dependencies]
 tar       = "0.4"
 stderrlog = "0.6"
-tempfile  = "3.19.1"
 urlparse  = "0.7"
 
 # Make sure that Krill crashes on panics, rather than losing threads and
