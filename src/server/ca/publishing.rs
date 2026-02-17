@@ -1746,7 +1746,7 @@ impl ManifestBuilder {
                 mft_uri,
             );
             object_builder.set_issuer(Some(signing_cert.subject.clone()));
-            object_builder.set_signing_time(Some(Time::now()));
+            object_builder.set_signing_time(Time::now());
 
             signer.sign_manifest(mft_content, object_builder, &aki)?
         };

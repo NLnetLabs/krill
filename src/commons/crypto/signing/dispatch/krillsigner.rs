@@ -368,12 +368,13 @@ impl KrillSigner {
     pub fn sign_rta(
         &self,
         rta_builder: &mut rta::RtaBuilder,
+        signing_time: Time,
         ee: Cert,
     ) -> CryptoResult<()> {
         let key = ee.subject_key_identifier();
         rta_builder.push_cert(ee);
         rta_builder
-            .sign(&self.router, &key, None, None)
+            .sign(&self.router, &key, signing_time)
             .map_err(crypto::Error::signing)
     }
 

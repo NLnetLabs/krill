@@ -2603,7 +2603,7 @@ impl CertAuth {
         // submitted keys) and add the cert
         for (_rcn, ee) in rc_ee.into_iter() {
             let ee_key = ee.subject_key_identifier();
-            signer.sign_rta(&mut rta_builder, ee)?;
+            signer.sign_rta(&mut rta_builder, Time::now(), ee)?;
             signer.destroy_key(&ee_key)?;
         }
 
