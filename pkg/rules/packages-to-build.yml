@@ -5,7 +5,6 @@ pkg:
   - "krillup"
   - "krillta"
 image:
-  - "ubuntu:focal" # ubuntu/20.04
   - "ubuntu:jammy" # ubuntu/22.04
   - "ubuntu:noble" # ubuntu/24.04
   - "debian:bullseye" # debian/11
@@ -43,9 +42,6 @@ include:
     rpm_rpmlint_check_filters: 
 
   - image: "debian:bullseye"
-    deb_extra_lintian_args: "--suppress-tags systemd-service-file-outside-lib"
-
-  - image: "ubuntu:focal"
     deb_extra_lintian_args: "--suppress-tags systemd-service-file-outside-lib"
 
   # package for the Raspberry Pi 4b as an ARMv7 cross compiled variant of the Debian Bullseye upon which
