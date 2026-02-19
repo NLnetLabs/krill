@@ -52,7 +52,8 @@ Other changes
   Rather, there is now a `krill.conf.5` manual page. This manual page is
   also included in the Krill manual. ([#1322])
 * The cryptography library used by the rustls TLS implementation has been
-  switched to aws-lc-rs. This has some consequences for packaging.
+  switched to aws-lc-rs. This has some consequences for packaging:
+* Dropped packaging for Ubuntu 20.04 (Focal Fossa). ([#1359])
 
 [#1322]: https://github.com/NLnetLabs/krill/pull/1322
 [#1326]: https://github.com/NLnetLabs/krill/pull/1326
@@ -63,6 +64,7 @@ Other changes
 [#1344]: https://github.com/NLnetLabs/krill/pull/1344
 [#1349]: https://github.com/NLnetLabs/krill/pull/1349
 [#1353]: https://github.com/NLnetLabs/krill/pull/1353
+[#1359]: https://github.com/NLnetLabs/krill/pull/1359
 
 
 ## 0.15.1 ‘Contains Adult Language’
