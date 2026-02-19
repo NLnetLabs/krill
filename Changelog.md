@@ -51,6 +51,8 @@ Other changes
 * The default config files don’t serve as config documentation any more.
   Rather, there is now a `krill.conf.5` manual page. This manual page is
   also included in the Krill manual. ([#1322])
+* The cryptography library used by the rustls TLS implementation has been
+  switched to aws-lc-rs. This has some consequences for packaging.
 
 [#1322]: https://github.com/NLnetLabs/krill/pull/1322
 [#1326]: https://github.com/NLnetLabs/krill/pull/1326
