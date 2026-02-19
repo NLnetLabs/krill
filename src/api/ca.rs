@@ -1532,10 +1532,11 @@ impl ChildExchange {
             if agent == "local-child" {
                 return true;
             }
-            else if let Some(version) = agent.strip_prefix("krill/") {
-                if let Ok(krill_version) = KrillVersion::from_str(version) {
-                    return krill_version > KrillVersion::release(0, 9, 1);
-                }
+            else if
+                let Some(version) = agent.strip_prefix("krill/")
+                && let Ok(krill_version) = KrillVersion::from_str(version)
+            {
+                return krill_version > KrillVersion::release(0, 9, 1);
             }
         }
         false
