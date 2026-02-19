@@ -1,6 +1,15 @@
 # Change Log
 
-## Unreleased Next Version
+## Unreleased next version
+
+Bug fixes
+
+Other changes
+
+
+## 0.16.1-rc1
+
+Released 2026-02-19.
 
 Breaking changes
 
