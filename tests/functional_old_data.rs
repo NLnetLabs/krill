@@ -54,16 +54,18 @@ async fn functional_old_data() {
     eprintln!(">>>> Configure the TA signer.");
     let signer = TrustAnchorSignerManager::create(signer_config).unwrap();
 
+    // XXX Wait for Krill to process pending tasks.
+    eprintln!(">>>> Wait a bit for Krill to catch up.");
+    common::sleep_millis(1000).await;
+
     eprintln!(">>>> Make TA proxy signer request.");
     let request = 
         server.client().ta_proxy_signer_make_request().await.unwrap();
     assert_eq!(request.ta_renew_time.unwrap().year(), 2026);
     assert_eq!(request.renew_times[0].1.year(), 2039);
-    eprintln!("{request}");
 
     eprintln!(">>>> Sign TA proxy signer request.");
     let response = signer.process(request.into(), None).unwrap();
-    eprintln!("{response}");
     assert_eq!(response.content().child_responses.len(), 1);
 
     eprintln!(">>>> Process TA proxy signer response.");

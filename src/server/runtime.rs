@@ -293,7 +293,6 @@ impl ThreadPool {
         for join in self.join {
             // `join` returns an error if the thread panicked. We can
             // consider it done in this case.
-            eprintln!("Joining thread {:?}.", join.thread().id());
             let _ = join.join();
         }
     }
