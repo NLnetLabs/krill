@@ -33,7 +33,7 @@ mod common;
 ///    gracefully
 #[tokio::test]
 async fn functional_parent_child() {
-    let (server, tmpdir)
+    let server
         = common::KrillServer::start_with_file_storage_and_testbed().await;
 
     let testbed = common::ca_handle("testbed");
@@ -157,7 +157,7 @@ async fn functional_parent_child() {
     assert!(server.client().ca_details(&ca3).await.is_ok());
     assert!(
         fs::metadata(
-            tmpdir.path().join("data/ca_objects/CA3.json")
+            server.data_dir().unwrap().path().join("data/ca_objects/CA3.json")
         ).unwrap().is_file()
     );
 
@@ -167,7 +167,7 @@ async fn functional_parent_child() {
     assert!(server.client().ca_details(&ca3).await.is_err());
     assert_eq!(
         fs::metadata(
-            tmpdir.path().join("data/ca_objects/CA3.json")
+            server.data_dir().unwrap().path().join("data/ca_objects/CA3.json")
         ).unwrap_err().kind(),
         io::ErrorKind::NotFound
     );

@@ -25,14 +25,14 @@ async fn migrate_repository() {
     // Use a 5 second RRDP update interval for the Krill server, so that we
     // can also test here that the re-scheduling of delayed RRDP deltas
     // works.
-    let (server, _krilltmp) = common::KrillServer::start_with_config_testbed(
+    let server = common::KrillServer::start_with_config_testbed(
         |config| {
             config.rrdp_updates_config.rrdp_delta_interval_min_seconds = 5
         }
     ).await;
 
     eprintln!(">>>> Start a secondary publication server.");
-    let (pubd, _pubtmp) = common::KrillServer::start_pubd(5).await;
+    let pubd = common::KrillServer::start_pubd(5).await;
 
     // Wait for the *testbed* CA to get its certificate, this means
     // that all CAs which are set up as part of krill_start under the

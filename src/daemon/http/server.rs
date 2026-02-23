@@ -1,5 +1,5 @@
 use std::env;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use clap::crate_version;
 use hyper::StatusCode;
 use log::{error, info, warn, trace};
@@ -49,15 +49,23 @@ impl HttpServer {
 
     /// Processes an HTTP request.
     pub async fn process_request(
-        &self, request: HyperRequest
+        this: Weak<Self>, request: HyperRequest
     ) -> Result<HyperResponse, FatalError> {
+        // If we can’t upgrade the weak this, return a 503.
+        let Some(this) = this.upgrade() else {
+            return Ok(HttpResponse::error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                ("sys-unavailable", "Service Unavailable"),
+            ).into_hyper())
+        };
+
         let logger = RequestLogger::begin(&request);
-        let (auth, new_token) = self.authorizer.authenticate_request(
+        let (auth, new_token) = this.authorizer.authenticate_request(
             &request
         ).await;
         let request = Request::new(
-            request, self, auth,
-            BodyLimits::from_config(self.krill.config())
+            request, &this, auth,
+            BodyLimits::from_config(this.krill.config())
         );
         let path = match request.path() {
             Ok(path) => path,

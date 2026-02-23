@@ -11,9 +11,11 @@ compile_error!("cannot build on 16 bit systems");
 use std::{cmp, error, fmt, io};
 use std::io::BufReader;
 use std::str::FromStr;
+use std::sync::Arc;
 use libflate::gzip;
 use crate::api::roa::{AsNumber, Ipv4Prefix, Ipv6Prefix, TypedPrefix};
 use crate::api::bgp::Announcement;
+use crate::server::runtime::KrillRuntime;
 
 
 //------------ Configuration -------------------------------------------------
@@ -35,38 +37,49 @@ const MINIMUM_SEEN_BY: u32 = 13;
 /// A type that knows where RISwhois data lives and download it.
 pub struct RisWhoisLoader {
     /// The HTTP(S) URL of the location of IPv4 data set.
-    v4_url: String,
+    v4_url: Arc<str>,
 
     /// The HTTP(S) URL of the location of IPv6 data set.
-    v6_url: String,
+    v6_url: Arc<str>,
 }
 
 impl RisWhoisLoader {
     /// Creates a new loader from the URLS of the IPv4 and IPv6 data sets.
     pub fn new(v4_url: String, v6_url: String) -> Self {
-        Self { v4_url, v6_url }
+        Self {
+            v4_url: v4_url.into(),
+            v6_url: v6_url.into(),
+        }
     }
 
     /// Downloads and processes a new data set.
-    pub async fn load(&self) -> Result<RisWhois, RisWhoisError> {
+    pub fn load(
+        &self, krill: &KrillRuntime
+    ) -> Result<RisWhois, RisWhoisError> {
         Ok(RisWhois::new(
-            Self::load_tree(&self.v4_url).await?,
-            Self::load_tree(&self.v6_url).await?,
+            Self::load_tree(self.v4_url.clone(), krill)?,
+            Self::load_tree(self.v6_url.clone(), krill)?,
         ))
     }
 
     /// Downloads and process the tree for one address family.
-    async fn load_tree<P: FromStr + RoutePrefix>(
-        uri: &str
+    fn load_tree<P: FromStr + RoutePrefix>(
+        uri: Arc<str>, krill: &KrillRuntime
     ) -> Result<RouteOriginCollection<P>, RisWhoisError>
     where <P as FromStr>::Err: error::Error + Send + Sync + 'static {
-        Self::parse_gz_data(
-            &reqwest::get(uri).await.map_err(|err| {
-                RisWhoisError::new(uri, io::Error::other(err))
-            })?.bytes().await.map_err(|err| {
-                RisWhoisError::new(uri, io::Error::other(err))
-            })?
-        ).map_err(|err| RisWhoisError::new(uri, err))
+        let uri_clone = uri.clone();
+        let data = krill.exec_async(async move {
+            Ok(
+                reqwest::get(uri_clone.as_ref()).await.map_err(|err| {
+                    RisWhoisError::new(&uri_clone, io::Error::other(err))
+                })?.bytes().await.map_err(|err| {
+                    RisWhoisError::new(&uri_clone, io::Error::other(err))
+                })?
+            )
+        }).map_err(|err| RisWhoisError::new(&uri, io::Error::other(err)))??;
+        Self::parse_gz_data(&data).map_err(|err| {
+            RisWhoisError::new(&uri, err)
+        })
     }
 
     /// Parses the gzipped data.

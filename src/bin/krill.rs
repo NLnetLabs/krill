@@ -16,7 +16,7 @@ fn main() {
 
     match Config::create(&args.config, false) {
         Ok(config) => {
-            if let Err(e) = start_krill_daemon( config, None) {
+            if let Err(e) = start_krill_daemon( config, None, None) {
                 error!("Krill failed to start: {e}");
                 ::std::process::exit(1);
             }

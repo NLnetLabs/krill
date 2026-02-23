@@ -32,7 +32,7 @@ futures-util    = "0.3"
 hex             = "0.4"
 http-body-util  = "0.1"
 hyper           = { version = "1.6.0", features = ["server"] }
-hyper-util      = { version = "0.1", features = [ "server" ] }
+hyper-util      = { version = "0.1", features = [ "server", "server-auto", "server-graceful" ] }
 intervaltree    = "0.2.7"
 lazy_static     = "1.5"
 libflate        = "2.1.0"

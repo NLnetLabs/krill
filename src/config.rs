@@ -574,6 +574,8 @@ pub struct Config {
     #[serde(default = "ConfigDefaults::syslog_facility")]
     pub syslog_facility: String,
 
+    pub num_threads: Option<usize>,
+
     #[serde(default = "ConfigDefaults::admin_token", alias = "auth_token")]
     pub admin_token: Token,
 
@@ -1304,6 +1306,7 @@ impl Config {
             log_type,
             log_file: None,
             syslog_facility,
+            num_threads: None,
             admin_token,
             auth_type,
             #[cfg(feature = "multi-user")]

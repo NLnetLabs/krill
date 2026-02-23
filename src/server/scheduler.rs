@@ -2,7 +2,7 @@
 //! event that occurred, or planned (e.g. re-publishing).
 
 use std::collections::HashMap;
-use std::thread::sleep;
+use std::sync::mpsc;
 use std::time::Duration;
 use log::{debug, error, info, warn};
 use rpki::ca::idexchange::{CaHandle, ParentHandle};
@@ -40,11 +40,19 @@ use super::mq::TaskResult;
 
 //------------ run -----------------------------------------------------------
 
-pub(super) fn run(krill: KrillRuntime) {
+pub(super) fn run(
+    krill: KrillRuntime,
+    shutdown: mpsc::Receiver<()>,
+) {
     let started = Timestamp::now();
 
+    // Outer loop: Waits half a second if the task queue is empty.
     loop {
-        while let Some((task_key, value)) = krill.tasks().pop() {
+        // Inner loop: Breaks when the the task queue becomes empty.
+        while
+            shutdown.try_recv() == Err(mpsc::TryRecvError::Empty)
+            && let Some((task_key, value)) = krill.tasks().pop()
+        {
             match serde_json::from_value(value) {
                 Err(e) => {
                     // If we cannot parse the value of this task, then we
@@ -105,7 +113,15 @@ pub(super) fn run(krill: KrillRuntime) {
             }
         }
 
-        sleep(Duration::from_millis(500));
+        match shutdown.recv_timeout(Duration::from_millis(500)) {
+            Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => {
+                // Shutdown requested or the sender went away: Quit.
+                break;
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                // Timeout: continue.
+            }
+        }
     }
 }
 
@@ -466,12 +482,9 @@ fn republish_if_needed(
 fn announcements_refresh(
     krill: &KrillRuntime
 ) -> Result<TaskResult, FatalError> {
-    let runtime = krill.clone();
-    krill.spawn_async(async move {
-        if let Err(e) = runtime.bgp_analyser().update().await {
-            error!("Failed to update BGP announcements: {}", e)
-        }
-    });
+    if let Err(e) = krill.bgp_analyser().update(krill) {
+        error!("Failed to update BGP announcements: {}", e)
+    }
 
     // check again in 10 minutes, note.. this is a no-op in case the
     // actual update was less then 1 hour ago.

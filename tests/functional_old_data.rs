@@ -47,7 +47,9 @@ async fn functional_old_data() {
     config.ta_timing = signer_config.ta_timing;
 
     eprintln!(">>>> Check whether Krill still starts.");
-    let server = common::KrillServer::start_with_config(config).await;
+    let server = common::KrillServer::start_with_config(
+        config, Some(tempdir)
+    ).await;
 
     eprintln!(">>>> Configure the TA signer.");
     let signer = TrustAnchorSignerManager::create(signer_config).unwrap();
@@ -69,5 +71,7 @@ async fn functional_old_data() {
 
     eprintln!(">>>> Fetch TAL and check it isn't empty.");
     assert!(!server.client().testbed_tal().await.unwrap().is_empty());
+
+    server.abort().await;
 }
 

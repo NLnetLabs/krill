@@ -25,7 +25,7 @@ mod common;
 ///      * revoke and retire old key, mft and crl
 #[tokio::test]
 async fn functional_keyroll() {
-    let (server, _tempdir) = common::KrillServer::start_with_testbed().await;
+    let server = common::KrillServer::start_with_testbed().await;
 
     let testbed = common::ca_handle("testbed");
     let ca = common::ca_handle("CA");

@@ -1,7 +1,7 @@
 //! The public part of the Krill RPKI server.
 //!
 
-use std::{error, fmt, thread};
+use std::{error, fmt};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -12,6 +12,7 @@ use log::info;
 use rpki::ca::{idexchange, publication};
 use rpki::repository::resources::ResourceSet;
 use tokio::runtime::{Handle as TokioHandle};
+use tokio::sync::oneshot;
 use crate::api;
 use crate::api::status::ErrorResponse;
 use crate::commons::actor::Actor;
@@ -22,7 +23,7 @@ use crate::constants::{TA_NAME, ta_handle, testbed_ca_handle};
 use crate::server::ca::CaStatus;
 use super::scheduler;
 use super::mq::{Task, now};
-use super::runtime::KrillRuntime;
+use super::runtime::{KrillRuntime, SpawnError, ThreadPool, ThreadPoolHandle};
 
 
 //------------ StartupManager ------------------------------------------------
@@ -33,6 +34,7 @@ use super::runtime::KrillRuntime;
 /// HTTP server is started and we are still running sync in a single thread.
 pub struct StartupManager {
     runtime: KrillRuntime,
+    thread_pool: ThreadPool,
 }
 
 impl StartupManager {
@@ -43,16 +45,27 @@ impl StartupManager {
     pub fn new(
         config: Config, tokio: TokioHandle
     ) -> Result<Self, KrillError> {
-        Ok(Self { runtime: KrillRuntime::new(config, tokio)? })
+        Ok(Self {
+            thread_pool: ThreadPool::new(&config)?,
+            runtime: KrillRuntime::new(config, tokio)?,
+        })
     }
 
     /// Promotes the startup manager into a full Krill manager.
-    pub fn promote(self) -> KrillManager {
-        KrillManager { krill_runtime: self.runtime }
+    pub fn promote(
+        self
+    ) -> Result<(KrillManager, ThreadPool), KrillError> {
+        Ok((
+            KrillManager {
+                krill_runtime: self.runtime,
+                thread_pool: self.thread_pool.handle(),
+            },
+            self.thread_pool,
+        ))
     }
 
     /// Starts the scheduler in a separate thread.
-    pub fn run_scheduler(&self) -> Result<(), KrillError> {
+    pub fn run_scheduler(&mut self) -> Result<(), KrillError> {
         // When multi-node set ups with a shared queue are
         // supported then we can no longer safely reschedule
         // ALL running tests. See issue: #1112
@@ -60,7 +73,7 @@ impl StartupManager {
         self.runtime.tasks().schedule(Task::QueueStartTasks, now())?;
 
         let krill = self.runtime.clone();
-        thread::spawn(|| scheduler::run(krill));
+        self.thread_pool.spawn(|rx| scheduler::run(krill, rx));
         Ok(())
     }
 
@@ -198,6 +211,7 @@ impl StartupManager {
 
 pub struct KrillManager {
     krill_runtime: KrillRuntime,
+    thread_pool: ThreadPoolHandle,
 }
 
 impl KrillManager {
@@ -233,10 +247,12 @@ impl KrillManager {
         F: FnOnce(&KrillRuntime) -> Result<T, RunError> + Send + 'static,
         T: Send + 'static,
     {
+        let (tx, rx) = oneshot::channel();
         let runtime = self.krill_runtime.clone();
-        tokio::task::spawn_blocking(move || {
-            op(&runtime)
-        }).await?
+        self.thread_pool.spawn(move || {
+            let _ = tx.send(op(&runtime));
+        }).await?;
+        rx.await?
     }
 }
 
@@ -1422,8 +1438,13 @@ impl From<RunError> for KrillError {
     }
 }
 
-impl From<tokio::task::JoinError> for RunError {
-    fn from(_: tokio::task::JoinError) -> Self {
+impl From<SpawnError> for RunError {
+    fn from(err: SpawnError) -> Self {
+        Self(KrillError::internal(err))
+    }
+}
+impl From<tokio::sync::oneshot::error::RecvError> for RunError {
+    fn from(_: tokio::sync::oneshot::error::RecvError) -> Self {
         Self(KrillError::internal("task panicked"))
     }
 }

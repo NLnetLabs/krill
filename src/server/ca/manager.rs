@@ -21,7 +21,6 @@ use rpki::ca::publication::{
 };
 use rpki::crypto::KeyIdentifier;
 use rpki::repository::resources::ResourceSet;
-use tokio::sync::oneshot;
 use crate::api::admin::{
     AddChildRequest, ParentCaContact, ParentCaReq, ParentServerInfo,
     PublicationServerInfo, PublishedFile, RepositoryContact,
@@ -2454,20 +2453,16 @@ impl CaManager {
         cms_logger.sent(&msg)?;
 
         let timeout = krill.config().post_protocol_msg_timeout_seconds;
-
-        let (tx, rx) = oneshot::channel();
         let http_uri = service_uri.clone();
-        krill.spawn_async(async move {
-            let _ = tx.send(
-                httpclient::post_binary_with_full_ua(
-                    http_uri.as_str(),
-                    &msg,
-                    content_type,
-                    timeout,
-                ).await
-            );
-        });
-        match rx.blocking_recv() {
+        let res = krill.exec_async(
+            httpclient::post_binary_with_full_ua(
+                http_uri,
+                msg,
+                content_type,
+                timeout,
+            )
+        );
+        match res {
             Err(_) => {
                 cms_logger.err(format!(
                     "Error posting CMS to {service_uri}: \
