@@ -523,6 +523,12 @@ impl Drop for KrillServer {
         }
         if let Some(join) = self.join.take() {
             join.abort();
+
+            // We can’t await the join handle here, so we will have to
+            // poll it.
+            while !join.is_finished() {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
         }
     }
 }
