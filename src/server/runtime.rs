@@ -3,6 +3,9 @@
 //! The runtime contains all the components of a Krill server in one central
 //! place and allows access to them. A reference to it is being passed around
 //! when performing actions that may require access to other compontents.
+//!
+//! In addition, this module also provides the [`ThreadPool`] that is used
+//! by the daemon to run its jobs on.
 
 use std::{cmp, error, fmt, thread};
 use std::mem::drop;
@@ -32,7 +35,7 @@ use super::pubd::RepositoryManager;
 /// access to them. It is keeps them behind an arc, so it can be cloned and
 /// passed around cheaply.
 ///
-/// Many methods of the various components expect a refernce to the runtime
+/// Many methods of the various components expect a reference to the runtime
 /// so they can initiate follow-up operations on other Krill components.
 #[derive(Clone)]
 pub struct KrillRuntime(Arc<Components>);
@@ -42,7 +45,7 @@ impl KrillRuntime {
     ///
     /// The runtime and all the components will be configured using `config`.
     /// The `tokio` runtime handle will be used by the
-    /// [`spawn_async`][Self::spawn_async] method as the runtime to spawn
+    /// [`exec_async`][Self::exec_async] method as the runtime to spawn
     /// async tasks onto.
     pub fn new(
         config: Config,
@@ -151,6 +154,9 @@ impl KrillRuntime {
 
 //------------ Components ----------------------------------------------------
 
+/// All the components of a Krill server.
+///
+/// A value of this type is kept by [`KrillRuntime`] behind an arc.
 struct Components {
     /// The server configuration.
     ///
@@ -188,18 +194,56 @@ struct Components {
 
 //------------ ThreadPool ----------------------------------------------------
 
+/// A thread pool to run jobs on.
+///
+/// This type represents the thread pool itself and should be kept around
+/// during the entire lifetime of the pool.
+///
+/// Jobs are spawned onto the pool through a
+/// [`ThreadPoolHandle`] which can be obtained via the
+/// [`handle`][Self::handle] method.
+///
+/// Additional, non-worker threads can be created using the
+/// [`spawn`][Self::spawn] method. This feature is used for the
+/// scheduler thread. Spawning a thread via the thread pool differs regular
+/// threads in that it provides a means to signal that the thread should
+/// exit.
+///
+/// This becomes relevant when it is time to shut down the application. In
+/// this case, the [`terminate`][Self::terminate] method is called. The
+/// imminent shutdown is signalled to all the worker threads and the
+/// additional threads and then the method blocks and waits for all threads
+/// to exit.
+///
+/// During shutdown, the thread pool will not accept new jobs but the
+/// worker threads will process all already queued jobs. This is slightly
+/// theoretical as the queue capacity is 1, so there should be at most one
+/// queued job.
 pub struct ThreadPool {
     /// The sending end of the job queue.
+    ///
+    /// The receiving end of this queue is shared between all worker threads.
     worker_tx: tokio_mpsc::Sender<ThreadPoolMessage>,
 
     /// The sending ends of all shutdown queues for regular threads.
+    ///
+    /// Each thread spawned via the `spawn` method gets the receiving end
+    /// of one of these. During shutdown, a `()` is sent to each of them.
     thread_tx: Vec<std_mpsc::SyncSender<()>>,
 
     /// The join handles of all child threads.
+    ///
+    /// We will wait for all of them during shutdown.
     join: Vec<thread::JoinHandle<()>>,
 }
 
 impl ThreadPool {
+    /// Creates a new thread pool based on the config.
+    ///
+    /// Currently, we only use [`config.num_threads`][Config::num_threads]
+    /// to allow users to configure the number of worker threads. By default,
+    /// the number is the available parallelism as reported by the standard
+    /// library.
     pub fn new(
         config: &Config
     ) -> Result<Self, KrillError> {
@@ -233,6 +277,8 @@ impl ThreadPool {
             }));
         }
 
+        info!("Created thread pool with {thread_count} threads");
+
         Ok(Self {
             worker_tx,
             thread_tx: Vec::new(),
@@ -240,6 +286,24 @@ impl ThreadPool {
         })
     }
 
+    /// The thread function of each worker thread.
+    ///
+    /// The function receives a copy of the receiving end of the job queue
+    /// behind a mutex which allows the thread to acquire new work.
+    ///
+    /// The work distribution mechanism is extremely simple: When it is out
+    /// of work, a thread will try to acquire the lock on the receiver. When
+    /// it acquires the lock, it will the perform a blocking read on the 
+    /// queue.
+    ///
+    /// If the received message is a new job, it will drop the lock and
+    /// perform the job. If the message signals a shutdown, it will call
+    /// `close` on the queue – which will switch the queue into shutdown
+    /// mode, drop the lock and start again at the top.
+    ///
+    /// When the queue is in shutdown mode, trying to receive a message will
+    /// return `None` once the queue has been exhausted. This is the signal
+    /// for the thread to exit.
     fn worker_thread(
         rx: Arc<Mutex<tokio_mpsc::Receiver<ThreadPoolMessage>>>,
     ) {
@@ -273,10 +337,20 @@ impl ThreadPool {
         }
     }
 
+    /// Creates a new handle to the thread pool
     pub fn handle(&self) -> ThreadPoolHandle {
         ThreadPoolHandle { tx: self.worker_tx.clone() }
     }
 
+    /// Spawns a new additional thread on the thread pool.
+    ///
+    /// The method expects a closure which will receive the receiver for a 
+    /// standard library MPSC queue. When the thread pool is being shut down,
+    /// a single `()` is sent to this queue.
+    ///
+    /// Additional threads are waited upon when the thread pool is terminated
+    /// and there currently is no timeout for that, so make sure your thread
+    /// actually listens to the shutdown signal and terminates eventually.
     pub fn spawn(
         &mut self, f: impl FnOnce(std_mpsc::Receiver<()>) + Send + 'static
     ) {
@@ -285,6 +359,10 @@ impl ThreadPool {
         self.join.push(thread::spawn(|| f(rx)));
     }
 
+    /// Terminates the thread pool.
+    ///
+    /// The method sends signals to all threads to initiate their own shutdown
+    /// and then blocks until all threads have terminated.
     pub fn terminate(self) {
         let _ = self.worker_tx.blocking_send(ThreadPoolMessage::Shutdown);
         for tx in self.thread_tx {
@@ -301,6 +379,12 @@ impl ThreadPool {
 
 //------------ ThreadPoolHandle ----------------------------------------------
 
+/// A handle to a thread pool, allowing to spawn jobs onto it.
+///
+/// The sole purpose of this type is to allow spawning jobs onto the thread
+/// pool it is connected to via the [`spawn`][Self::spawn] method.
+///
+/// Handles can be cloned relatively cheaply.
 #[derive(Clone)]
 pub struct ThreadPoolHandle {
     /// The sending end of the job queue.
@@ -308,6 +392,15 @@ pub struct ThreadPoolHandle {
 }
 
 impl ThreadPoolHandle {
+    /// Spawns a job onto the thread pool.
+    ///
+    /// The job is represented by the closure. As this closure will be run
+    /// on a different thread, it needs to be `Send + 'static`.
+    ///
+    /// Returns an error if the thread pool does not accept new jobs any more.
+    ///
+    /// This is an async function that will only return once the job has been
+    /// dipatched of.
     pub async fn spawn(
         &self, job: impl FnOnce() + Send + 'static
     ) -> Result<(), SpawnError> {
@@ -336,7 +429,7 @@ enum ThreadPoolMessage {
 
 /// An error happened while trying to spawn a job.
 ///
-/// This error means that all worker threads have disappeared.
+/// This error means that the thread pool does not accept new jobs any more.
 #[derive(Clone, Debug)]
 pub struct SpawnError(());
 

@@ -110,8 +110,8 @@
 //! should be called “aggregate root,” but because this a bit wordy Krill
 //! just calls it 'Aggregate' instead. The trait [`Aggregate`] is defined for
 //! this that is implemented by, for instance,
-//! [`CertAuth`][crate::ca::CertAuth] and
-//! [`RepositoryAccess`][crate::pubd::RepositoryAccess]. 
+//! [`CertAuth`][crate::server::ca::CertAuth] and
+//! [`RepositoryAccess`][crate::server::pubd::RepositoryAccess]. 
 //! 
 //! As we will see further down, when we get to describe the
 //! [`AggregateStore<A>`] which ties all of this together. This allows us to
@@ -164,7 +164,7 @@
 //! implemented in aggregates and used event sourcing. However, CAs in the
 //! RPKI have to re-publish CRLs and Manifests very often. Even when
 //! there are no changes to ROAs these objects must be refreshed before they
-//! go stale. By default Krill re-publishes every! 16 hours.
+//! go stale. By default Krill re-publishes every 16 hours.
 //! 
 //! This resulted in an enormous amount of commands and events to be
 //! generated for CAs, for a change that is done automatically – and which
@@ -174,16 +174,17 @@
 //! events from scratch, i.e., without using snapshots.
 //! 
 //! Therefore we decided to implement a hybrid model in Krill. The Krill
-//! [`CertAuth`][crate::ca::CertAuth] is still in charge of *almost*
+//! [`CertAuth`][crate::server::ca::CertAuth] is still in charge of *almost*
 //! all changes, and in particular all *semantic* changes that users made.
 //! But, the generation of Manifests and CRLs is offloaded to an associated
-//! component [`CaObjects`][crate::ca::publishing::CaObjects] that just keeps
+//! component
+//! [`CaObjects`][crate::server::ca::publishing::CaObjects] that just keeps
 //! the latest Manifest and CRL. It can re-sign these because it has access
 //! to a [`KrillSigner`][crate::commons::crypto::KrillSigner] and it can get
 //! the public key identifier needed for signing from the `CertAuth`.
 //! 
 //! This is relevant here, because under the hood we use a
-//! [`PreSaveEventListener`] to ensure that a new Manifest and CRL are
+//! event listeners to ensure that a new Manifest and CRL are
 //! written when there is a change in ROAs or issued certificates, observed
 //! in events.
 //! 
@@ -191,19 +192,26 @@
 //! ## Event Listeners
 //! 
 //! The Krill event sourcing stack defines two different event listener
-//! traits which are called by the [`AggregateStore`] when an aggregate is
-//! successfully updated. The first, [`PreSaveEventListener`] is called
-//! before updates are saved, and it can fail, the second,
-//! [`PostSaveEventListener`] is called after all changes have been applied,
-//! and thus cannot fail.
+//! which are called by the [`AggregateStore`] when an aggregate is
+//! successfully updated. Both of them are methods on the [`Aggregate`]
+//! trait. The first, [`pre_save_events`][Aggregate::pre_save_events] is
+//! called before updates are saved, and it can fail, the second,
+//! [`post_save_events`][Aggregate::post_save_events] is called after all
+//! changes have been applied, and thus cannot fail.
 //! 
 //! In a nutshell, we use the event listeners for two things:
 //!
 //! * a pre-save trigger that the
-//!   [`CaObjects`][crate::ca::publishing::CaObjects]
+//!   [`CaObjects`][crate::server::ca::publishing::CaObjects]
 //!   for a CA gets an updated Manifest and CRL, and
 //! * triggers that follow-up tasks are put on the scheduler, based on events.
 //! 
+//! In order to allow these listeners to trigger functionality in other Krill
+//! components, the methods receive a reference to a
+//! [`KrillRuntime`][crate::server::runtime::KrillRuntime]. This means that
+//! the event sourcing module isn’t completely generic and tied to the use in
+//! Krill specifically.
+//!
 //! As discussed in issue
 //! [1182](https://github.com/NLnetLabs/krill/issues/1182), it would be best
 //! to remove the `PreSaveEventListener` trait and do everything through
