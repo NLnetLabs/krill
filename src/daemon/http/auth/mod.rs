@@ -1,4 +1,4 @@
-
+//! User authentication and authorization for the HTTP server.
 
 pub use self::authorizer::{AuthInfo, Authorizer, LoggedInUser};
 pub use self::permission::{Permission, PermissionSet};

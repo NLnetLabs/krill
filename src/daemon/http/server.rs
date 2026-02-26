@@ -1,3 +1,5 @@
+//! The core of the HTTP server.
+
 use std::env;
 use std::sync::{Arc, Weak};
 use clap::crate_version;
@@ -21,6 +23,7 @@ use super::response::{HyperResponse, HttpResponse};
 //------------ HttpServer ----------------------------------------------------
 
 /// The Krill HTTP server.
+///
 pub struct HttpServer {
     /// The Krill server.
     krill: KrillManager,

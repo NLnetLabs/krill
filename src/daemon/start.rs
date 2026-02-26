@@ -1,3 +1,10 @@
+//! Starts and then runs the Krill daemon.
+//!
+//! Despite its name, this module contains the core game loop of Krill. It
+//! provides both the socket listeners and connection handlers for the HTTP
+//! server and sets everything up. All of this is provided via the
+//! [`start_krill_daemon`] function.
+
 use std::{env, process};
 use std::net::SocketAddr;
 use std::path::Path;
@@ -27,6 +34,22 @@ use super::http::{tls, tls_keys};
 use super::http::server::HttpServer;
 
 
+//------------ start_krill_daemon --------------------------------------------
+
+/// Starts the Krill daemon and blocks until it exits.
+///
+/// The configuration of the Krill daemon and server is taken from `config`.
+///
+/// If `signal_running` is given, a `()` will be sent to it once the first
+/// listener socket is ready to process requests.
+///
+/// If `signal_exit` is given, the daemon will exit when a `()` is sent to
+/// the channel. Otherwise it waits for a SIGINT or SIGTERM or a fatal
+/// error happening.
+///
+/// The function will return an error if something goes wrong during startup.
+/// Once it blocks waiting for an exit, it will return `Ok(())` even if
+/// something went wrong. In this case, an error message will be logged,
 pub fn start_krill_daemon(
     config: Config,
     mut signal_running: Option<oneshot::Sender<()>>,
@@ -161,8 +184,7 @@ pub fn start_krill_daemon(
             let _ = exit.await;
         }
         else {
-            // TODO also catch SIGTERM here.
-            let _ = tokio::signal::ctrl_c().await;
+            exit_signalled().await;
         }
         let _ = exit_tx.send(true);
         let _ = join.join_all().await;
@@ -174,7 +196,24 @@ pub fn start_krill_daemon(
     Ok(())
 }
 
-/// Runs an HTTP listener on a single socket.
+
+//------------ single_http_listener ------------------------------------------
+
+/// Creates and listens on a TCP socket for the Krill API.
+///
+/// The socket will listening on the given `addr`. Unless TLS is disabled in
+/// the config associated with `server`, then listener will start a TLS
+/// handshake on connections.
+///
+/// Requests will be dispatched to `server`.
+///
+/// If `signal_running` is given, a signal is sent when the listener is ready
+/// to receive connections.
+///
+/// The listener will shut down after `true` is sent to `signal_exit`. This
+/// will also initate closing of all currently open connections. The function
+/// will return when both the listener and all connections are closed or after
+/// then seconds.
 async fn single_http_listener(
     server: Arc<HttpServer>,
     addr: SocketAddr,
@@ -270,8 +309,22 @@ async fn single_http_listener(
     }
 }
 
+
+//------------ single_unix_listener ------------------------------------------
+
+/// Creates and listens on a Unix socket for the Krill API.
+///
+/// The socket will listening on the given `addr`. It will dispatch requests
+/// to `server`.
+///
+/// If `signal_running` is given, a signal is sent when the listener is ready
+/// to receive connections.
+///
+/// The listener will shut down after `true` is sent to `signal_exit`. This
+/// will also initate closing of all currently open connections. The function
+/// will return when both the listener and all connections are closed or after
+/// then seconds.
 #[cfg(unix)]
-/// Runs an UNIX listener on a single socket.
 async fn single_unix_listener(
     server: Arc<HttpServer>,
     path: std::path::PathBuf,
@@ -395,6 +448,55 @@ async fn single_unix_listener(
     }
 }
 
+
+//------------ exit_signalled ------------------------------------------------
+
+/// Returns when an exit signal was received.
+///
+/// This non-Unix implementation returns when the equivalent of a Ctrl+C is
+/// received.
+#[cfg(not(unix))]
+async fn exit_signalled() {
+    tokio::signal::ctrl_c().await
+}
+
+/// Returns when an exit signal was received.
+///
+/// Returns when either a SIGINT or SIGTERM was received.
+/// 
+#[cfg(unix)]
+async fn exit_signalled() {
+    use tokio::signal::unix::{SignalKind, signal};
+
+    let mut sigterm = match signal(SignalKind::terminate()) {
+        Ok(sig) => sig,
+        Err(err) => {
+            error!("Failed to install SIGTERM handler: {err}.");
+            return;
+        }
+    };
+    let mut sigint = match signal(SignalKind::interrupt()) {
+        Ok(sig) => sig,
+        Err(err) => {
+            error!("Failed to install SIGINT handler: {err}.");
+            return;
+        }
+    };
+
+    tokio::select! {
+        _ = sigterm.recv() => {
+            info!("Received SIGTERM. Shutting down.");
+        }
+        _ = sigint.recv() => {
+            info!("Received SIGINT. Shutting down.");
+        }
+    }
+}
+
+
+//------------ Helper functions ----------------------------------------------
+
+/// Writes the process ID to the configured PID file or dies trying.
 fn write_pid_file_or_die(config: &Config) {
     if let Err(e) = file::save(
         process::id().to_string().as_bytes(), config.pid_file()
@@ -405,6 +507,7 @@ fn write_pid_file_or_die(config: &Config) {
     }
 }
 
+/// Checks that all the configured test directories are present or dies.
 fn test_data_dirs_or_die(config: &Config) {
     test_data_dir_or_die("tls_keys_dir", config.tls_keys_dir());
     test_data_dir_or_die("repo_dir", config.repo_dir());
@@ -416,6 +519,9 @@ fn test_data_dirs_or_die(config: &Config) {
     }
 }
 
+/// Checks that the given directory can be written to.
+///
+/// Does so by writing to a file “test” and deleting it thereafter.
 fn test_data_dir_or_die(config_item: &str, dir: &Path) {
     let test_file = dir.join("test");
 
@@ -439,7 +545,10 @@ fn test_data_dir_or_die(config_item: &str, dir: &Path) {
     }
 }
 
-
+/// Writes an error message and a hint how to proceeed.
+//
+// XXX Doesn’t actually die?
+//
 fn print_write_error_hint_and_die(error_msg: String) {
     eprintln!("{error_msg}");
     eprintln!();
