@@ -28,7 +28,7 @@ use std::sync::OnceLock;
 
 use cryptoki::error::Error as Pkcs11Error;
 use cryptoki::{
-    context::{CInitializeArgs, Info, Pkcs11},
+    context::{CInitializeArgs, CInitializeFlags, Info, Pkcs11},
     mechanism::Mechanism,
     object::{Attribute, AttributeType, ObjectHandle},
     session::{Session, UserType},
@@ -166,7 +166,9 @@ impl Pkcs11Context {
             // this way of configuring the PKCS#11 token.
 
             // TODO: add a timeout around the call to initialize?
-            if let Err(err) = self.initialize(CInitializeArgs::OsThreads) {
+            if let Err(err) = self.initialize(
+                CInitializeArgs::new(CInitializeFlags::OS_LOCKING_OK)
+            ) {
                 error!(
                     "Failed to initialize PKCS#11 library '{}': {}",
                     self.lib_file_name, err
@@ -188,7 +190,12 @@ impl Pkcs11Context {
             self.initialized = false;
 
             // will continue even if the call fails.
-            self.finalize();
+            if let Err(err) = self.finalize() {
+                error!(
+                    "Error uninitializing PKCS#11 library '{}': {}",
+                    self.lib_file_name, err
+                );
+            }
 
             // remove the library we represent from the initialized set (as it
             // is no longer initialized), subsequent attempts to use the
@@ -231,12 +238,13 @@ impl Pkcs11Context {
         res
     }
 
-    fn logged_cryptoki_call_with_take<F>(
+    fn logged_cryptoki_call_with_take<F, T>(
         &mut self,
         cryptoki_call_name: &'static str,
         call: F,
-    ) where
-        F: FnOnce(Pkcs11),
+    ) -> Result<T, Pkcs11Error>
+    where
+        F: FnOnce(Pkcs11) -> Result<T, Pkcs11Error>,
     {
         trace!("{}::{}()", self.lib_file_name, cryptoki_call_name);
         let ctx = self.ctx.take().unwrap(); // leave a None in the ctx member field
@@ -254,7 +262,7 @@ impl Pkcs11Context {
         })
     }
 
-    fn finalize(&mut self) {
+    fn finalize(&mut self) -> Result<(), Pkcs11Error>{
         self.logged_cryptoki_call_with_take("Finalize", |cryptoki| {
             cryptoki.finalize()
         })

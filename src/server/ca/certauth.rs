@@ -230,7 +230,9 @@ impl Aggregate for CertAuth {
             }
 
             CertAuthCommandDetails::ChildUnsuspend(child) => {
-                self.process_child_unsuspend(&child)
+                self.process_child_unsuspend(
+                    &child, krill.config(), krill.signer()
+                )
             }
 
 
@@ -1586,6 +1588,8 @@ impl CertAuth {
     fn process_child_unsuspend(
         &self,
         child_handle: &ChildHandle,
+        config: &Config,
+        signer: &KrillSigner,
     ) -> KrillResult<Vec<CertAuthEvent>> {
         let child = self.get_child(child_handle)?;
 
@@ -1613,11 +1617,18 @@ impl CertAuth {
                         > Time::now() + Duration::days(1)
                         && child.resources.contains(&suspended.resources)
                     {
-                        // certificate is still fit for publication, so move
-                        // it back to issued
-                        cert_updates.unsuspended.push(
-                            suspended.to_converted()
-                        );
+                        // reissue a new certificate because the old one is on
+                        // the CRL.
+                        self.append_child_certify(
+                            child_handle.clone(),
+                            &suspended.resources,
+                            rcn.clone(),
+                            suspended.csr_info.clone(),
+                            suspended.limit.clone(),
+                            config,
+                            signer,
+                            &mut res,
+                        )?;
                     }
                     else {
                         // certificate should not be published as is. Remove
@@ -2628,7 +2639,7 @@ impl CertAuth {
         // submitted keys) and add the cert
         for (_rcn, ee) in rc_ee.into_iter() {
             let ee_key = ee.subject_key_identifier();
-            signer.sign_rta(&mut rta_builder, ee)?;
+            signer.sign_rta(&mut rta_builder, Time::now(), ee)?;
             signer.destroy_key(&ee_key)?;
         }
 

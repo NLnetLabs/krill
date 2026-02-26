@@ -23,6 +23,9 @@ pub enum Command {
     /// Add a parent to, or update a parent of a CA
     Add(Add),
 
+    /// Refresh the parents of this CA
+    Refresh(Refresh),
+
     /// Show contact information for a parent of a CA
     Contact(CaContact),
 
@@ -38,6 +41,7 @@ impl Command {
         match self {
             Self::Request(cmd) => cmd.run(client).await.into(),
             Self::Add(cmd) => cmd.run(client).await.into(),
+            Self::Refresh(cmd) => cmd.run(client).await.into(),
             Self::Contact(cmd) => cmd.run(client).await.into(),
             Self::Statuses(cmd) => cmd.run(client).await.into(),
             Self::Remove(cmd) => cmd.run(client).await.into(),
@@ -99,6 +103,25 @@ impl Add {
                 handle: self.handle.parent,
                 response: self.response.0,
             }
+        ).await
+    }
+}
+
+
+//------------ Refresh -------------------------------------------------------
+
+#[derive(clap::Parser)]
+pub struct Refresh {
+    #[command(flatten)]
+    ca: ca::Handle,
+}
+
+impl Refresh {
+    pub async fn run(
+        self, client: &KrillClient
+    ) -> Result<api::status::Success, httpclient::Error> {
+        client.parent_refresh(
+            &self.ca.ca, 
         ).await
     }
 }

@@ -538,6 +538,14 @@ impl KrillClient {
         ).await
     }
 
+    pub async fn parent_refresh(
+        &self, ca: &CaHandle,
+    ) -> Result<Success, Error> {
+        self.post_empty(
+            ca_path(ca).into_iter().chain(once("sync/parents")),
+        ).await
+    }
+
     pub async fn parent_details(
         &self, ca: &CaHandle, parent: &ParentHandle
     ) -> Result<api::admin::ParentCaContact, Error> {
@@ -1120,10 +1128,11 @@ impl TryFrom<String> for ServerUri {
         }
 
         // Check for a five-character scheme.
-        if let Some(scheme) = value.as_bytes().get(0..8) {
-            if scheme.eq_ignore_ascii_case(b"https://") {
-                return Ok(Self::Http(value))
-            }
+        if
+            let Some(scheme) = value.as_bytes().get(0..8)
+            && scheme.eq_ignore_ascii_case(b"https://")
+        {
+            return Ok(Self::Http(value))
         }
 
         Err("unsupported URI scheme")

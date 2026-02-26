@@ -1,6 +1,15 @@
 # Change Log
 
-## Unreleased Next Version
+## Unreleased next version
+
+Bug fixes
+
+Other changes
+
+
+## 0.16.1-rc1
+
+Released 2026-02-19.
 
 Breaking changes
 
@@ -12,6 +21,8 @@ Breaking changes
   fields and added `bgp_riswhois_enabled`, `bgp_riswhois_v4_uri`,
   `bgp_riswhois_v6_uri`, and `bgp_riswhois_refresh_duration` fields, all of
   which are optional. ([#1329]
+* Krill will now refuse to start if the config file contains unknown
+  options. ([#1322])
 
 New
 
@@ -20,6 +31,9 @@ New
   By default, only the `root` user is allowed with the `admin` role, but
   both allowed users and what role they are mapped to can be configure.
   ([#1322])
+* Added a `krillc parents refresh` command to allow refreshing the parents
+  of a single CA rather than having to do a bulk refresh which can take a
+  very long time if there are many CAs. ([#1353])
 
 Bug fixes
 
@@ -33,18 +47,51 @@ Bug fixes
 * Start sweeping the authenticator cache upon daemon startup. This merely
   reduces memory consumption of the cache. Expired authentication tokens
   were not used either way. ([#1337])
+* Fixed a bug introduced in 0.15.0 where CAs do to not clear fulfilled
+  certification requests causing them to re-request a certificate every
+  time they contact their parent. ([#1345])
+* Do not re-try syncing with a parent of a CA when that parent isn’t
+  known. ([#1349])
+* Fixed un-suspending child CAs: rather then re-publishing the previously
+  revoked certificate, a new certificate is now issued. ([#1341])
 
 Other changes
 
 * The default config files don’t serve as config documentation any more.
   Rather, there is now a `krill.conf.5` manual page. This manual page is
   also included in the Krill manual. ([#1322])
+* The cryptography library used by the rustls TLS implementation has been
+  switched to aws-lc-rs. This has some consequences for packaging:
+* Dropped packaging for Ubuntu 20.04 (Focal Fossa). ([#1359])
 
 [#1322]: https://github.com/NLnetLabs/krill/pull/1322
 [#1326]: https://github.com/NLnetLabs/krill/pull/1326
 [#1329]: https://github.com/NLnetLabs/krill/pull/1329
 [#1331]: https://github.com/NLnetLabs/krill/pull/1331
 [#1337]: https://github.com/NLnetLabs/krill/pull/1337
+[#1341]: https://github.com/NLnetLabs/krill/pull/1341
+[#1344]: https://github.com/NLnetLabs/krill/pull/1344
+[#1349]: https://github.com/NLnetLabs/krill/pull/1349
+[#1353]: https://github.com/NLnetLabs/krill/pull/1353
+[#1359]: https://github.com/NLnetLabs/krill/pull/1359
+
+
+## 0.15.1 ‘Contains Adult Language’
+
+Released 2026-01-19.
+
+Bug fixes
+
+* Fixed a bug introduced in 0.15.0 where CAs do to not clear fulfilled
+  certification requests causing them to re-request a certificate every
+  time they contact their parent. ([#1345])
+
+Other changes
+
+* Updated dependencies.
+
+[#1345]: https://github.com/NLnetLabs/krill/pull/1345
+[#1346]: https://github.com/NLnetLabs/krill/pull/1346
 
 
 ## 0.15.0 ‘But I Digress’

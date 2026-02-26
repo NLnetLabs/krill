@@ -868,7 +868,7 @@ impl Roas {
         object_builder.set_issuer(
             Some(certified_key.incoming_cert().subject.clone())
         );
-        object_builder.set_signing_time(Some(Time::now()));
+        object_builder.set_signing_time(Time::now());
 
         Ok(signer.sign_roa(
             roa_builder, object_builder, &certified_key.key_id()

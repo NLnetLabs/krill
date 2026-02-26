@@ -13,7 +13,7 @@ use crate::{
     api::ca::Timestamp,
     commons::{
         crypto::dispatch::signerinfo::SignerInfo,
-        error::FatalError,
+        error::{Error, FatalError},
         eventsourcing::{Aggregate, AggregateStore, WalStore, WalSupport},
         storage::Ident,
         version::KrillVersion,
@@ -355,11 +355,22 @@ fn sync_parent(
             Err(e) => {
                 let next = krill.config().requeue_remote_failed();
 
-                error!(
-                    "Failed to synchronize CA '{ca}' with its parent \
-                    '{parent}'. Will reschedule to: '{next}'. Error: {e}"
-                );
-                Ok(TaskResult::Reschedule(next))
+                if let Error::CaParentUnknown(..) = e {
+                    warn!(
+                        "CA '{ca}' tried to sync with parent '{parent}'. 
+                         Parent is unknown. Not rescheduling. Error: {e}
+                        "
+                    );
+
+                    Ok(TaskResult::Done)
+                }
+                else {
+                    error!(
+                        "Failed to synchronize CA '{ca}' with its parent \
+                        '{parent}'. Will reschedule to: '{next}'. Error: {e}"
+                    );
+                    Ok(TaskResult::Reschedule(next))
+                }
             }
             Ok(true) => {
                 let next = krill.config().ca_refresh_next();

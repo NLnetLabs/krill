@@ -10,6 +10,7 @@ use std::{
 
 use chrono::Duration;
 use log::{error, info, warn, LevelFilter};
+use rand::RngExt;
 use rpki::{
     ca::idexchange::PublisherHandle,
     repository::x509::{Time, Validity},
@@ -725,7 +726,6 @@ impl IssuanceTimingConfig {
         let random_mins = if self.timing_publish_next_jitter_hours == 0 {
             0
         } else {
-            use rand::Rng;
             let mut rng = rand::rng();
             rng.random_range(0..(60 * self.timing_publish_next_jitter_hours))
         } as i64;
@@ -1120,7 +1120,6 @@ impl Config {
         let random_seconds = if jitter_seconds == 0 {
             0
         } else {
-            use rand::Rng;
             let mut rng = rand::rng();
             rng.random_range(0..jitter_seconds)
         };

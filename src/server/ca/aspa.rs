@@ -333,7 +333,7 @@ impl AspaObjects {
             );
             object_builder.set_issuer(
                 Some(certified_key.incoming_cert().subject.clone()));
-            object_builder.set_signing_time(Some(Time::now()));
+            object_builder.set_signing_time(Time::now());
 
             object_builder
         };
