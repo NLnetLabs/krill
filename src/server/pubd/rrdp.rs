@@ -478,16 +478,16 @@ impl RrdpServer {
             rpki::rrdp::NotificationFile::parse(bytes.as_ref()).ok()
         });
 
-        if let Some(old_notification) = old_notification_opt.as_ref() {
-            if old_notification.serial() == self.serial
-                && old_notification.session_id() == self.session.uuid()
-            {
-                debug!(
-                    "Existing notification file matches current session \
-                     and serial. Nothing to write."
-                );
-                return Ok(());
-            }
+        if
+            let Some(old_notification) = old_notification_opt.as_ref()
+            && old_notification.serial() == self.serial
+            && old_notification.session_id() == self.session.uuid()
+        {
+            debug!(
+                "Existing notification file matches current session \
+                 and serial. Nothing to write."
+            );
+            return Ok(());
         }
 
         let deltas = self.write_delta_files(old_notification_opt)?;
@@ -575,18 +575,19 @@ impl RrdpServer {
         let last_written_serial = deltas_from_old_notification.last();
         let mut deltas = vec![];
         for delta in &self.deltas {
-            if let Some(last) = last_written_serial {
-                if delta.serial() <= last.serial() {
-                    // Already included. We can skip this and assume that it
-                    // was written to disk before.
-                    // And no one went in and messed with it..
-                    debug!(
-                        "Skip writing delta for serial {}. \
-                        File should exist.",
-                        delta.serial()
-                    );
-                    continue;
-                }
+            if
+                let Some(last) = last_written_serial
+                && delta.serial() <= last.serial()
+            {
+                // Already included. We can skip this and assume that it
+                // was written to disk before.
+                // And no one went in and messed with it..
+                debug!(
+                    "Skip writing delta for serial {}. \
+                    File should exist.",
+                    delta.serial()
+                );
+                continue;
             }
             // New delta, write it and add its distinctiveness to deltas
             // (DeltaInfo vec) to include in the notification file
@@ -783,19 +784,19 @@ impl RrdpServer {
                     // random dir as the delta that we still need to keep for
                     // this serial, so we just remove the
                     // file and leave its parent directory in place.
-                    if let Ok(Some(snapshot_file_to_remove)) =
-                        Self::session_dir_snapshot(&session_dir, serial)
+                    if
+                        let Ok(Some(snapshot_file_to_remove)) =
+                            Self::session_dir_snapshot(&session_dir, serial)
+                        && let Err(e) = fs::remove_file(
+                            &snapshot_file_to_remove
+                        )
                     {
-                        if let Err(e) =
-                            fs::remove_file(&snapshot_file_to_remove)
-                        {
-                            warn!(
-                                "Could not delete snapshot file '{}'. \
-                                 Error was: {}",
-                                snapshot_file_to_remove.to_string_lossy(),
-                                e
-                            );
-                        }
+                        warn!(
+                            "Could not delete snapshot file '{}'. \
+                             Error was: {}",
+                            snapshot_file_to_remove.to_string_lossy(),
+                            e
+                        );
                     }
                 } else {
                     // archiving was enabled, keep the old snapshot file until
@@ -1409,15 +1410,14 @@ impl CurrentObjects {
         for (uri_key, base64) in self.iter() {
             // Add all manifests - as long as they are syntactically correct -
             // do not crash on incorrect objects.
-            if uri_key.as_str().ends_with("mft") {
-                if let Ok(mft) =
-                    Manifest::decode(base64.to_bytes().as_ref(), false)
-                {
-                    if let Ok(stats) = PublisherManifestStats::try_from(&mft)
-                    {
-                        manifests.push(stats)
-                    }
-                }
+            if 
+                uri_key.as_str().ends_with("mft")
+                && let Ok(mft) = Manifest::decode(
+                    base64.to_bytes().as_ref(), false
+                )
+                && let Ok(stats) = PublisherManifestStats::try_from(&mft)
+            {
+                manifests.push(stats)
             }
         }
 

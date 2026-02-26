@@ -59,27 +59,25 @@ impl RepositoryAccessProxy {
         )?;
         let key = MyHandle::from_str(PUBSERVER_DFLT).unwrap();
 
-        if store.has(&key)? {
-            if let Err(e) = store.warm() {
-                // Start to 'warm' the cache. This serves two purposes:
-                // 1. this ensures that the `RepositoryAccess` struct is
-                //    available in memory
-                // 2. this ensures that there are no apparent data issues
-                //
-                // If there are issues, then we need to bail out. Krill
-                // 0.14.0+ uses single files for all change
-                // sets, and files are first completely written to disk,
-                // and only then renamed.
-                //
-                // In other words, if we fail to warm the cache then this
-                // points at:
-                // - data corruption
-                // - user started
-                error!(
-                    "Could not warm up cache, data seems corrupt. \
-                     You may need to restore a backup. Error was: {e}"
-                );
-            }
+        if store.has(&key)? && let Err(e) = store.warm() {
+            // Start to 'warm' the cache. This serves two purposes:
+            // 1. this ensures that the `RepositoryAccess` struct is
+            //    available in memory
+            // 2. this ensures that there are no apparent data issues
+            //
+            // If there are issues, then we need to bail out. Krill
+            // 0.14.0+ uses single files for all change
+            // sets, and files are first completely written to disk,
+            // and only then renamed.
+            //
+            // In other words, if we fail to warm the cache then this
+            // points at:
+            // - data corruption
+            // - user started
+            error!(
+                "Could not warm up cache, data seems corrupt. \
+                 You may need to restore a backup. Error was: {e}"
+            );
         }
 
         Ok(RepositoryAccessProxy { store, key })

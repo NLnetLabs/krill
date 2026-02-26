@@ -199,10 +199,11 @@ impl UpgradeAggregateStorePre0_14 for CasMigration {
                 // if the new command would be a no-op because no events are
                 // actually migrated, then return
                 // CommandMigrationEffect::Nothing
-                if let Some(events) = new_command.events() {
-                    if events.is_empty() {
-                        return Ok(CommandMigrationEffect::Nothing);
-                    }
+                if
+                    let Some(events) = new_command.events()
+                    && events.is_empty()
+                {
+                    return Ok(CommandMigrationEffect::Nothing);
                 }
 
                 Ok(CommandMigrationEffect::StoredCommand(new_command))

@@ -331,10 +331,8 @@ impl MemoryScopes {
                 key: key.into()
             })
         };
-        if let Some(scope) = scope {
-            if values.is_empty() {
-                self.remove(scope);
-            }
+        if let Some(scope) = scope && values.is_empty() {
+            self.remove(scope);
         }
         Ok(value)
     }

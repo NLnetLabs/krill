@@ -752,15 +752,16 @@ fn extract_parent_ca_req(
         let req: ParentCaReq = serde_json::from_slice(bytes).map_err(
             Error::JsonError
         )?;
-        if let Some(parent_override) = parent_override {
-            if req.handle != parent_override {
-                return Err(Error::Custom(format!(
-                    "Used different parent names on path ({}) and \
-                     submitted JSON ({}) for adding/updating a parent",
-                    parent_override,
-                    req.handle
-                )));
-            }
+        if 
+            let Some(parent_override) = parent_override
+            && req.handle != parent_override
+        {
+            return Err(Error::Custom(format!(
+                "Used different parent names on path ({}) and \
+                 submitted JSON ({}) for adding/updating a parent",
+                parent_override,
+                req.handle
+            )));
         }
         Ok(req)
     }

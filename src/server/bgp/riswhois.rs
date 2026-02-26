@@ -69,13 +69,11 @@ impl RisWhoisLoader {
     where <P as FromStr>::Err: error::Error + Send + Sync + 'static {
         let uri_clone = uri.clone();
         let data = krill.exec_async(async move {
-            Ok(
-                reqwest::get(uri_clone.as_ref()).await.map_err(|err| {
-                    RisWhoisError::new(&uri_clone, io::Error::other(err))
-                })?.bytes().await.map_err(|err| {
-                    RisWhoisError::new(&uri_clone, io::Error::other(err))
-                })?
-            )
+            reqwest::get(uri_clone.as_ref()).await.map_err(|err| {
+                RisWhoisError::new(&uri_clone, io::Error::other(err))
+            })?.bytes().await.map_err(|err| {
+                RisWhoisError::new(&uri_clone, io::Error::other(err))
+            })
         }).map_err(|err| RisWhoisError::new(&uri, io::Error::other(err)))??;
         Self::parse_gz_data(&data).map_err(|err| {
             RisWhoisError::new(&uri, err)

@@ -128,12 +128,13 @@ impl BgpAnalyser {
         // neither goes directly into the `entries` as ‘not held.’
         let mut roas_held = Vec::new();
         for roa in roas {
-            if let Some(limit) = limited_scope.as_ref() {
-                if !limit.contains_roa_address(
+            if 
+                let Some(limit) = limited_scope.as_ref()
+                && !limit.contains_roa_address(
                     &roa.roa_configuration.payload.as_roa_ip_address()
-                ) {
-                    continue
-                }
+                )
+            {
+                continue
             }
 
             if resources_held.contains_roa_address(

@@ -215,19 +215,21 @@ impl ConfigDefaults {
     }
 
     pub fn roa_aggregate_threshold() -> usize {
-        if let Ok(from_env) = env::var("KRILL_ROA_AGGREGATE_THRESHOLD") {
-            if let Ok(nr) = usize::from_str(&from_env) {
-                return nr;
-            }
+        if
+            let Ok(from_env) = env::var("KRILL_ROA_AGGREGATE_THRESHOLD")
+            && let Ok(nr) = usize::from_str(&from_env)
+        {
+            return nr;
         }
         100
     }
 
     pub fn roa_deaggregate_threshold() -> usize {
-        if let Ok(from_env) = env::var("KRILL_ROA_DEAGGREGATE_THRESHOLD") {
-            if let Ok(nr) = usize::from_str(&from_env) {
-                return nr;
-            }
+        if 
+            let Ok(from_env) = env::var("KRILL_ROA_DEAGGREGATE_THRESHOLD")
+            && let Ok(nr) = usize::from_str(&from_env)
+        {
+            return nr;
         }
         90
     }
@@ -1622,12 +1624,12 @@ impl Config {
             ));
         }
 
-        if let Some(threshold) = self.suspend_child_after_inactive_hours {
-            if threshold < CA_SUSPEND_MIN_HOURS {
-                return Err(ConfigError::Other(format!(
-                    "suspend_child_after_inactive_hours must be {CA_SUSPEND_MIN_HOURS} or higher (or not set at all)"
-                )));
-            }
+        if 
+            let Some(threshold) = self.suspend_child_after_inactive_hours
+            && threshold < CA_SUSPEND_MIN_HOURS {
+            return Err(ConfigError::Other(format!(
+                "suspend_child_after_inactive_hours must be {CA_SUSPEND_MIN_HOURS} or higher (or not set at all)"
+            )));
         }
 
         if let Some(benchmark) = &self.benchmark {

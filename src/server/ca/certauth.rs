@@ -1178,21 +1178,22 @@ impl CertAuth {
         )?;
 
         // Add a resource class name mapping if applicable
-        if let Some(name_for_child) = class_name_override {
-            if name_for_child != my_rcn {
-                let mapping = ResourceClassNameMapping {
-                    name_in_parent: my_rcn.clone(),
-                    name_for_child,
-                };
+        if 
+            let Some(name_for_child) = class_name_override
+            && name_for_child != my_rcn
+        {
+            let mapping = ResourceClassNameMapping {
+                name_in_parent: my_rcn.clone(),
+                name_for_child,
+            };
 
-                events.push(
-                    CertAuthEvent::ChildUpdatedResourceClassNameMapping {
-                        child: child_handle.clone(),
-                        name_in_parent: mapping.name_in_parent,
-                        name_for_child: mapping.name_for_child,
-                    },
-                );
-            }
+            events.push(
+                CertAuthEvent::ChildUpdatedResourceClassNameMapping {
+                    child: child_handle.clone(),
+                    name_in_parent: mapping.name_in_parent,
+                    name_for_child: mapping.name_for_child,
+                },
+            );
         }
 
         // Issue a certificate for the imported child
@@ -1733,10 +1734,11 @@ impl CertAuth {
         let mut res = HashMap::new();
         for (name, rc) in self.resources.iter() {
             let mut revokes = vec![];
-            if let Some(req) = rc.revoke_request() {
-                if rc.parent_handle() == parent {
-                    revokes.push(req.clone())
-                }
+            if
+                let Some(req) = rc.revoke_request() 
+                && rc.parent_handle() == parent
+            {
+                revokes.push(req.clone())
             }
             res.insert(name.clone(), revokes);
         }
@@ -2549,11 +2551,12 @@ impl CertAuth {
         let mut keys = HashMap::new();
 
         for (rcn, rc) in self.resources.iter() {
-            if let Some(rc_resources) = rc.current_resources() {
-                if !rc_resources.intersection(&request.resources).is_empty() {
-                    let key = signer.create_key()?;
-                    keys.insert(rcn.clone(), key);
-                }
+            if 
+                let Some(rc_resources) = rc.current_resources()
+                && !rc_resources.intersection(&request.resources).is_empty()
+            {
+                let key = signer.create_key()?;
+                keys.insert(rcn.clone(), key);
             }
         }
 

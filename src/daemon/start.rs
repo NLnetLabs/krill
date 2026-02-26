@@ -139,7 +139,7 @@ pub fn start_krill_daemon(
     let (krill, pool) = krill.promote()?;
 
     // Create the HTTP server.
-    let server = HttpServer::new(krill, &tokio.handle())?;
+    let server = HttpServer::new(krill, tokio.handle())?;
 
     // Create self-signed HTTPS cert if configured and not generated earlier.
     if server.config().https_mode().is_generate_https_cert() {
@@ -165,18 +165,19 @@ pub fn start_krill_daemon(
 
     // Start a hyper server for the configured unix sockets.
     #[cfg(unix)]
-    if server.config().unix_socket_enabled() {
-        if let Some(path) = server.config().unix_socket() {
-            join.spawn_on(
-                single_unix_listener(
-                    server.clone(),
-                    path.clone(),
-                    signal_running.take(),
-                    exit_rx.clone(),
-                ),
-                tokio.handle(),
-            );
-        }
+    if 
+        server.config().unix_socket_enabled()
+        && let Some(path) = server.config().unix_socket()
+    {
+        join.spawn_on(
+            single_unix_listener(
+                server.clone(),
+                path.clone(),
+                signal_running.take(),
+                exit_rx.clone(),
+            ),
+            tokio.handle(),
+        );
     }
 
     tokio.block_on(async {
@@ -334,11 +335,9 @@ async fn single_unix_listener(
     use nix::unistd::{Uid, User};
     use tokio::net::UnixListener;
 
-    if path.exists() {
-        if let Err(err) = std::fs::remove_file(&path) {
-            error!("Failed to remove existing Unix socket file: {err}");
-            return;
-        };
+    if path.exists() && let Err(err) = std::fs::remove_file(&path) {
+        error!("Failed to remove existing Unix socket file: {err}");
+        return;
     }
 
     let listener = match UnixListener::bind(&path) {

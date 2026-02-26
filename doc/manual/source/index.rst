@@ -3,18 +3,12 @@
 Krill |version|
 ===============
 
-|discord|
-
-.. |discord| image:: https://img.shields.io/discord/818584154278199396?label=rpki%20on%20discord&logo=discord
-            :target: https://discord.gg/8dvKB5Ykhy
-
 Krill is a free, open source Resource Public Key Infrastructure (RPKI)
 daemon, featuring a Certificate Authority (CA) and publication server,
 written by `NLnet Labs <https://nlnetlabs.nl>`_.
 
-You are welcome to ask questions or post comments and ideas on our `RPKI
-mailing list <https://nlnetlabs.nl/mailman/listinfo/rpki>`_. If you find a
-bug in Krill, feel free to create an issue on GitHub. Krill is distributed
+You are welcome to ask questions or post comments and ideas on our
+`community forum <https://community.nlnetlabs.nl>`_. Krill is distributed
 under the Mozilla Public License 2.0.
 
 .. Note:: For a quick summary of what's new and changed in the latest version

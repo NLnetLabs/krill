@@ -448,12 +448,13 @@ impl<A: Aggregate> AggregateStore<A> {
                             // still generate errors, and if they do, then we
                             // return with an error, without saving.
                             let mut opt_err = None;
-                            if let Some(events) = processed.events() {
-                                if let Err(err) = aggregate.pre_save_events(
+                            if 
+                                let Some(events) = processed.events()
+                                && let Err(err) = aggregate.pre_save_events(
                                     events, context
-                                ) {
-                                    opt_err = Some(err);
-                                }
+                                )
+                            {
+                                opt_err = Some(err);
                             }
 
                             if let Some(e) = opt_err {

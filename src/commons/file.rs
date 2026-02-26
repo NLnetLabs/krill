@@ -55,19 +55,20 @@ pub fn remove_dir_all(dir: &Path) -> Result<(), KrillIoError> {
 /// Creates a new File or opens an exiting one. If the file did not exist, the
 /// path will be created if it did not exist yet.
 pub fn create_file_with_path(path: &Path) -> Result<File, KrillIoError> {
-    if !path.exists() {
-        if let Some(parent) = path.parent() {
-            trace!("Creating path: {}", parent.to_string_lossy());
-            fs::create_dir_all(parent).map_err(|e| {
-                KrillIoError::new(
-                    format!(
-                        "Could not create dir path for: {}",
-                        parent.to_string_lossy()
-                    ),
-                    e,
-                )
-            })?;
-        }
+    if 
+        !path.exists()
+        && let Some(parent) = path.parent()
+    {
+        trace!("Creating path: {}", parent.to_string_lossy());
+        fs::create_dir_all(parent).map_err(|e| {
+            KrillIoError::new(
+                format!(
+                    "Could not create dir path for: {}",
+                    parent.to_string_lossy()
+                ),
+                e,
+            )
+        })?;
     }
     File::create(path).map_err(|e| {
         KrillIoError::new(

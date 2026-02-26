@@ -1451,14 +1451,15 @@ impl CaManager {
     pub fn cas_schedule_suspend_all(
         &self, krill: &KrillRuntime
     ) -> KrillResult<()> {
-        if krill.config().suspend_child_after_inactive_seconds().is_some() {
-            if let Ok(cas) = self.ca_store.list() {
-                for ca in cas {
-                    krill.tasks().schedule(
-                        Task::SuspendChildrenIfNeeded { ca_handle: ca },
-                        now(),
-                    )?;
-                }
+        if 
+            krill.config().suspend_child_after_inactive_seconds().is_some()
+            && let Ok(cas) = self.ca_store.list()
+        {
+            for ca in cas {
+                krill.tasks().schedule(
+                    Task::SuspendChildrenIfNeeded { ca_handle: ca },
+                    now(),
+                )?;
             }
         }
         Ok(())
@@ -1484,44 +1485,45 @@ impl CaManager {
             .filter(|secs| started < Timestamp::now_minus_seconds(*secs));
 
         // suspend inactive children, if so configured
-        if let Some(threshold_seconds) = threshold_seconds {
-            if let Ok(ca_status) = self.get_ca_status(ca_handle) {
-                let connections = ca_status.get_children_connection_stats();
+        if
+            let Some(threshold_seconds) = threshold_seconds
+            && let Ok(ca_status) = self.get_ca_status(ca_handle)
+        {
+            let connections = ca_status.get_children_connection_stats();
 
-                for child in connections.suspension_candidates(
-                    threshold_seconds
+            for child in connections.suspension_candidates(
+                threshold_seconds
+            ) {
+                if log::log_enabled!(log::Level::Info) {
+                    let threshold_string = if threshold_seconds >= 3600 {
+                        format!("{} hours", threshold_seconds / 3600)
+                    } else {
+                        format!("{threshold_seconds} seconds")
+                    };
+
+                    info!(
+                        "Child '{child}' under CA '{ca_handle}' was inactive for more \
+                         than {threshold_string}. Will suspend it."
+                    );
+                }
+                if let Err(e) =
+                    self.status_store.set_child_suspended(
+                        ca_handle, &child
+                    )
+                {
+                    panic!(
+                        "System level error encountered while updating \
+                         ca status: {e}"
+                    );
+                }
+
+                let req = UpdateChildRequest::suspend();
+                if let Err(e) = self.ca_child_update(
+                    ca_handle, child, req, actor, krill,
                 ) {
-                    if log::log_enabled!(log::Level::Info) {
-                        let threshold_string = if threshold_seconds >= 3600 {
-                            format!("{} hours", threshold_seconds / 3600)
-                        } else {
-                            format!("{threshold_seconds} seconds")
-                        };
-
-                        info!(
-                            "Child '{child}' under CA '{ca_handle}' was inactive for more \
-                             than {threshold_string}. Will suspend it."
-                        );
-                    }
-                    if let Err(e) =
-                        self.status_store.set_child_suspended(
-                            ca_handle, &child
-                        )
-                    {
-                        panic!(
-                            "System level error encountered while updating \
-                             ca status: {e}"
-                        );
-                    }
-
-                    let req = UpdateChildRequest::suspend();
-                    if let Err(e) = self.ca_child_update(
-                        ca_handle, child, req, actor, krill,
-                    ) {
-                        error!(
-                            "Could not suspend inactive child, error: {e}"
-                        );
-                    }
+                    error!(
+                        "Could not suspend inactive child, error: {e}"
+                    );
                 }
             }
         }
@@ -2499,10 +2501,11 @@ impl CaManager {
                 let service_uri = service_uri.as_str();
                 let base_uri = base_uri.as_str();
 
-                if let Some(path) = service_uri.strip_prefix(base_uri) {
-                    if let Some(ca_name) = path.strip_prefix("rfc6492/") {
-                        return ParentHandle::from_str(ca_name).ok();
-                    }
+                if
+                    let Some(path) = service_uri.strip_prefix(base_uri)
+                    && let Some(ca_name) = path.strip_prefix("rfc6492/")
+                {
+                    return ParentHandle::from_str(ca_name).ok();
                 }
 
                 None

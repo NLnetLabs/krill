@@ -274,15 +274,11 @@ pub struct CommandHistoryCriteria {
 impl CommandHistoryCriteria {
     /// Returns whether the given timestamp is included in the criteria.
     fn matches_timestamp(&self, stamp: i64) -> bool {
-        if let Some(before) = self.before {
-            if stamp > before {
-                return false;
-            }
+        if let Some(before) = self.before && stamp > before {
+            return false;
         }
-        if let Some(after) = self.after {
-            if stamp < after {
-                return false;
-            }
+        if let Some(after) = self.after && stamp < after {
+            return false;
         }
         true
     }
@@ -297,15 +293,17 @@ impl CommandHistoryCriteria {
 
     /// Returns whether the given label is included in the criteria.
     fn matches_label(&self, label: &String) -> bool {
-        if let Some(includes) = &self.label_includes {
-            if !includes.contains(label) {
-                return false;
-            }
+        if
+            let Some(includes) = &self.label_includes
+            && !includes.contains(label)
+        {
+            return false;
         }
-        if let Some(excludes) = &self.label_excludes {
-            if excludes.contains(label) {
-                return false;
-            }
+        if
+            let Some(excludes) = &self.label_excludes
+            && excludes.contains(label)
+        {
+            return false;
         }
 
         true

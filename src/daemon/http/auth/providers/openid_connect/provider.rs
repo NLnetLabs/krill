@@ -828,34 +828,35 @@ impl AuthProvider {
     }
 
     fn get_auth(&self, request: &HyperRequest) -> Option<Auth> {
-        if let Some(query) =
-            urlparse(request.uri().to_string()).get_parsed_query()
+        if
+            let Some(query) = urlparse(
+                request.uri().to_string()
+            ).get_parsed_query()
+            && let Some(code) = query.get_first_from_str("code")
         {
-            if let Some(code) = query.get_first_from_str("code") {
-                trace!("OpenID Connect: Processing potential RFC-6749 section 4.1.2 redirected Authorization Response");
-                if let Some(state) = query.get_first_from_str("state") {
-                    if let Some(nonce) =
-                        self.extract_cookie(request, NONCE_COOKIE_NAME)
+            trace!("OpenID Connect: Processing potential RFC-6749 section 4.1.2 redirected Authorization Response");
+            if let Some(state) = query.get_first_from_str("state") {
+                if let Some(nonce) =
+                    self.extract_cookie(request, NONCE_COOKIE_NAME)
+                {
+                    if let Some(csrf_token_hash) =
+                        self.extract_cookie(request, CSRF_COOKIE_NAME)
                     {
-                        if let Some(csrf_token_hash) =
-                            self.extract_cookie(request, CSRF_COOKIE_NAME)
-                        {
-                            trace!("OpenID Connect: Detected RFC-6749 section 4.1.2 redirected Authorization Response");
-                            return Some(Auth {
-                                code: Token::from(code),
-                                state,
-                                nonce,
-                                csrf_token_hash,
-                            });
-                        } else {
-                            debug!("OpenID Connect: Ignoring potential RFC-6749 section 4.1.2 redirected Authorization Response due to missing CSRF token hash cookie.");
-                        }
+                        trace!("OpenID Connect: Detected RFC-6749 section 4.1.2 redirected Authorization Response");
+                        return Some(Auth {
+                            code: Token::from(code),
+                            state,
+                            nonce,
+                            csrf_token_hash,
+                        });
                     } else {
-                        debug!("OpenID Connect: Ignoring potential RFC-6749 section 4.1.2 redirected Authorization Response due to missing nonce cookie.");
+                        debug!("OpenID Connect: Ignoring potential RFC-6749 section 4.1.2 redirected Authorization Response due to missing CSRF token hash cookie.");
                     }
                 } else {
-                    debug!("OpenID Connect: Ignoring potential RFC-6749 section 4.1.2 redirected Authorization Response due to missing 'state' query parameter.");
+                    debug!("OpenID Connect: Ignoring potential RFC-6749 section 4.1.2 redirected Authorization Response due to missing nonce cookie.");
                 }
+            } else {
+                debug!("OpenID Connect: Ignoring potential RFC-6749 section 4.1.2 redirected Authorization Response due to missing 'state' query parameter.");
             }
         }
 
