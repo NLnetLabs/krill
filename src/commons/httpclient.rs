@@ -7,6 +7,7 @@ use reqwest::{
     header::{HeaderMap, HeaderValue, CONTENT_TYPE, USER_AGENT},
     Response, StatusCode,
 };
+use rpki::ca::idexchange::ServiceUri;
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
 
@@ -261,11 +262,12 @@ async fn do_empty_post(
 /// Note: Bytes may be empty if the post was successful, but the response was
 /// empty.
 pub async fn post_binary_with_full_ua(
-    uri: &str,
-    data: &Bytes,
+    uri: ServiceUri,
+    data: Bytes,
     content_type: &str,
     timeout: u64,
 ) -> Result<Bytes, Error> {
+    let uri = uri.as_str();
     let body = data.to_vec();
 
     let mut headers = HeaderMap::new();

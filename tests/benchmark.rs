@@ -17,7 +17,7 @@ async fn benchmark() {
     let ca_roas = 10;
     config.benchmark = Some(Benchmark { cas, ca_roas });
     config.log_level = LevelFilter::Info;
-    let server = common::KrillServer::start_with_config(config).await;
+    let server = common::KrillServer::start_with_config(config, None).await;
 
     wait_for_nr_cas_under_testbed(server.client(), cas).await;
     // We expect all CAs, plus the testbed and the ta as publishers

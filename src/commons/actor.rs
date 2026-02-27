@@ -3,7 +3,7 @@
 //! All actors are represented by the type [`Actor`] defined in this module.
 //! An actor can be anonymous, a system actor representing Krill’s own
 //! subsytems, or a user identified by the server’s
-//! [`Authorizer`](crate::daemon::auth::Authorizer).
+//! [`Authorizer`](crate::daemon::http::auth::Authorizer).
 
 use std::fmt;
 use std::sync::Arc;

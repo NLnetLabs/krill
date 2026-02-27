@@ -56,7 +56,7 @@ pub const KRILL_ENV_LOG_LEVEL: &str = "KRILL_LOG_LEVEL";
 /// The environment variable with the log target.
 ///
 /// The variable should contain the name of a
-/// [`LogType`][crate::daemon::config::LogType]. It will be overwritten by
+/// [`LogType`][crate::config::LogType]. It will be overwritten by
 /// the config file. The default is “file.”
 pub const KRILL_ENV_LOG_TYPE: &str = "KRILL_LOG_TYPE";
 

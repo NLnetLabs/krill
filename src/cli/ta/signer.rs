@@ -19,8 +19,8 @@ use crate::commons::storage::Ident;
 use crate::commons::httpclient;
 use crate::tasigner::{
     Config, TrustAnchorProxySignerExchanges,
-    TrustAnchorSigner, TrustAnchorSignerCommand, TrustAnchorSignerInitCommand,
-    TrustAnchorSignerInitCommandDetails,
+    TrustAnchorSigner, TrustAnchorSignerCommand, TrustAnchorSignerContext, 
+    TrustAnchorSignerInitCommand, TrustAnchorSignerInitCommandDetails,
 };
 
 
@@ -116,7 +116,7 @@ pub struct TrustAnchorSignerManager {
     store: AggregateStore<TrustAnchorSigner>,
     ta_handle: CaHandle,
     config: Config,
-    signer: Arc<KrillSigner>,
+    signer: KrillSigner,
     actor: Actor,
 }
 
@@ -140,6 +140,10 @@ impl TrustAnchorSignerManager {
         })
     }
 
+    fn context(&self) -> TrustAnchorSignerContext<'_> {
+        TrustAnchorSignerContext::new(&self.signer, self.config.ta_timing)
+    }
+
     pub fn init(
         &self,
         info: SignerInitInfo,
@@ -158,13 +162,11 @@ impl TrustAnchorSignerManager {
                     tal_rsync: info.tal_rsync,
                     private_key_pem: info.private_key_pem,
                     ta_mft_nr_override: info.ta_mft_nr_override,
-                    timing: self.config.ta_timing,
-                    signer: self.signer.clone(),
                 },
                 &self.actor,
             );
 
-            self.store.add(cmd)?;
+            self.store.add_with_context(cmd, self.context())?;
 
             Ok(Success)
         }
@@ -181,12 +183,10 @@ impl TrustAnchorSignerManager {
             info.repo_info,
             info.tal_https,
             info.tal_rsync,
-            self.config.ta_timing,
-            self.signer.clone(),
             &self.actor,
         );
 
-        self.store.command(cmd)?;
+        self.store.command_with_context(cmd, self.context())?;
 
         Ok(Success)
     }
@@ -204,12 +204,10 @@ impl TrustAnchorSignerManager {
         let cmd = TrustAnchorSignerCommand::make_process_request_command(
             &self.ta_handle,
             signed_request,
-            self.config.ta_timing,
             ta_mft_number_override,
-            self.signer.clone(),
             &self.actor,
         );
-        self.store.command(cmd)?;
+        self.store.command_with_context(cmd, self.context())?;
 
         self.show_last_response()
     }

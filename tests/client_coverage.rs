@@ -165,7 +165,7 @@ async fn client_coverage(server: KrillServer) {
 
 #[tokio::test]
 async fn http() {
-    let (server, _tempdir) = common::KrillServer::start_with_testbed().await;
+    let server = common::KrillServer::start_with_testbed().await;
     client_coverage(server).await;
 }
 
@@ -174,7 +174,7 @@ async fn http() {
 async fn unix() {
     use std::collections::HashMap;
 
-    let (mut config, _tempdir) = common::TestConfig::mem_storage()
+    let (mut config, tempdir) = common::TestConfig::mem_storage()
         .enable_testbed().set_zero_port().enable_ca_refresh().finalize();
 
     // The user that is executing the test gets access to everything
@@ -184,6 +184,8 @@ async fn unix() {
     config.unix_socket_enabled = true;
     config.unix_socket = Some(file_sock.path().into());
     config.unix_users = HashMap::from([(user.name, "admin".to_string())]);
-    let server = common::KrillServer::start_with_config_unix(config).await;
+    let server = common::KrillServer::start_with_config_unix(
+        config, Some(tempdir)
+    ).await;
     client_coverage(server).await;
 }

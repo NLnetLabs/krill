@@ -31,7 +31,7 @@ mod common;
 /// ```
 #[tokio::test]
 async fn functional_aspa() {
-    let (server, _tempdir) = common::KrillServer::start_with_testbed().await;
+    let server = common::KrillServer::start_with_testbed().await;
 
     let testbed = common::ca_handle("testbed");
     let ca = common::ca_handle("CA");

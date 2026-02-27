@@ -13,9 +13,8 @@ mod common;
 #[tokio::test]
 async fn remote_parent_and_repo() {
     // Start two testbeds
-    let (server1, _tmp1) = common::KrillServer::start_with_testbed().await;
-    let (server2, _tmp2)
-        = common::KrillServer::start_second_with_testbed().await;
+    let server1 = common::KrillServer::start_with_testbed().await;
+    let server2 = common::KrillServer::start_second_with_testbed().await;
 
     let testbed = common::ca_handle("testbed");
     let ca1 = common::ca_handle("CA1");

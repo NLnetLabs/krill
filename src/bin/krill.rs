@@ -1,7 +1,6 @@
 //! The Krill daemon binary.
 
 use std::path::PathBuf;
-use std::sync::Arc;
 use clap::Parser;
 use clap::crate_version;
 use log::error;
@@ -12,15 +11,12 @@ use krill::daemon::start::start_krill_daemon;
 
 //------------ main ----------------------------------------------------------
 
-#[tokio::main]
-async fn main() {
+fn main() {
     let args = Args::parse();
 
     match Config::create(&args.config, false) {
         Ok(config) => {
-            if let Err(e) = start_krill_daemon(
-                Arc::new(config), None
-            ).await {
+            if let Err(e) = start_krill_daemon( config, None, None) {
                 error!("Krill failed to start: {e}");
                 ::std::process::exit(1);
             }

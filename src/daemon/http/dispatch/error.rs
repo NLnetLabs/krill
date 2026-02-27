@@ -1,6 +1,7 @@
 //! Dispatch error handling.
 
 use crate::commons::error::{Error, FatalError};
+use crate::server::manager::RunError;
 use super::super::response::HttpResponse;
 
 
@@ -27,6 +28,12 @@ pub enum DispatchError {
 impl From<HttpResponse> for DispatchError {
     fn from(src: HttpResponse) -> Self {
         Self::Response(src)
+    }
+}
+
+impl From<RunError> for DispatchError {
+    fn from(src: RunError) -> Self {
+        Self::Response(src.into())
     }
 }
 
