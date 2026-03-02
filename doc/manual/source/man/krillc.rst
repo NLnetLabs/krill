@@ -796,6 +796,40 @@ Manually trigger refresh/republish/resync for all CAs
     
     Force all CAs to sync with their repo server
 
+
+.. subcmd:: test
+
+More complex commands that are useful for testing.
+
+    .. subcmd:: add-ca
+
+    Adds a new CA and registers it as a child of a local parent with a set
+    of resources.
+
+    *OPTIONS*
+
+        .. option:: -c <CA>, --ca=<CA>
+
+        Name of the CA to add.
+
+        .. option:: -p <CA>, --parent=<CA>
+
+        Name of the CA that should become the parent of the new CA. This CA
+        must be a local CA on this Krill instance.
+    
+        .. option:: -a <ASN>, --asn=<ASN>
+
+        The AS resources to be given to the new CA.
+
+        .. option:: -4 <IPV4>, --ipv4=<IPV4>
+
+        The IPv4 resources to be given to the new CA.
+
+        .. option:: -6 <IPV6>, --ipv6=<IPV6>
+
+        The IPv6 resources to be given to the new CA.
+
+
 See also
 --------
 
