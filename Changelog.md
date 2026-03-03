@@ -1,13 +1,13 @@
 # Change Log
 
-## Unreleased next version
+## 0.16.0 ‘Früher war mehr Lametta’
 
-Bug fixes
+Released 2026-03-03.
 
-Other changes
+There have been no changes since 0.16.0-rc1.
 
 
-## 0.16.1-rc1
+## 0.16.0-rc1
 
 Released 2026-02-19.
 
