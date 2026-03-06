@@ -8,10 +8,12 @@ mod common;
 #[cfg(not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11")))]
 #[tokio::test]
 async fn functional_ca_import() {
-    let (mut config, _tempdir) = common::TestConfig::mem_storage().finalize();
+    let (mut config, tempdir) = common::TestConfig::mem_storage().finalize();
     config.ta_support_enabled = true;
     config.ta_signer_enabled = true;
-    let server = common::KrillServer::start_with_config(config).await;
+    let server = common::KrillServer::start_with_config(
+        config, Some(tempdir)
+    ).await;
 
     eprintln!(">>>> Import CA structure.");
     // We expect:
