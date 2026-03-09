@@ -158,8 +158,6 @@ async fn client_coverage(server: KrillServer) {
     server.client().publisher_delete(&child.convert()).await.unwrap();
     server.client().pubserver_clear().await.unwrap();
 
-    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-
     // testbed commands tested in testbed
     // ta_proxy commands tests in functional_ta
     server.abort().await;
