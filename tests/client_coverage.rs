@@ -158,6 +158,8 @@ async fn client_coverage(server: KrillServer) {
     server.client().publisher_delete(&child.convert()).await.unwrap();
     server.client().pubserver_clear().await.unwrap();
 
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
     // testbed commands tested in testbed
     // ta_proxy commands tests in functional_ta
     server.abort().await;
@@ -174,8 +176,10 @@ async fn http() {
 async fn unix() {
     use std::collections::HashMap;
 
-    let (mut config, tempdir) = common::TestConfig::mem_storage()
+    let (mut config, tempdir) = common::TestConfig::file_storage()
         .enable_testbed().set_zero_port().enable_ca_refresh().finalize();
+
+    //tempdir.disable_cleanup(true);
 
     // The user that is executing the test gets access to everything
     let uid = nix::unistd::Uid::current();

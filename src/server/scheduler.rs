@@ -604,6 +604,13 @@ fn update_snapshots(krill: &KrillRuntime) -> Result<TaskResult, FatalError> {
 fn update_rrdp_if_needed(
     krill: &KrillRuntime
 ) -> Result<TaskResult, FatalError> {
+    // Because we currently can’t delete tasks, this may be stray if the
+    // repository was cleared. So, just ignore the task if the repo manager
+    // isn’t initialized.
+    if !matches!(krill.repo_manager().is_initialized(), Ok(true)) {
+        return Ok(TaskResult::Done)
+    }
+
     match krill.repo_manager().update_rrdp_if_needed() {
         Err(e) => {
             error!("Could not update RRDP deltas! Error: {e}");

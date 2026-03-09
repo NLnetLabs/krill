@@ -36,7 +36,7 @@ async fn long_benchmark() {
     join_all((0..0x30u16).map(|i| async move {
         let i = i << 8;
         for j in 0..0xffu16 {
-            create_ca(&server, i | j).await;
+            create_ca(server, i | j).await;
         }
     })).await;
 

@@ -541,6 +541,12 @@ impl KrillServer {
         self.client.ca_add(ca.clone()).await.unwrap();
 
         // Add the CA as a publisher
+        self.register_ca_with_repo(ca).await;
+    }
+
+    /// Registers a CA with the repository.
+    pub async fn register_ca_with_repo(&self, ca: &CaHandle) {
+        // Add the CA as a publisher
         let request = self.client().repo_request(ca).await.unwrap();
         self.client().publishers_add(request).await.unwrap();
 
