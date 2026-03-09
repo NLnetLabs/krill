@@ -174,7 +174,7 @@ async fn http() {
 async fn unix() {
     use std::collections::HashMap;
 
-    let (mut config, tempdir) = common::TestConfig::file_storage()
+    let (mut config, tempdir) = common::TestConfig::memory_storage()
         .enable_testbed().set_zero_port().enable_ca_refresh().finalize();
 
     //tempdir.disable_cleanup(true);
