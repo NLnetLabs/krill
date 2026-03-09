@@ -174,7 +174,7 @@ async fn http() {
 async fn unix() {
     use std::collections::HashMap;
 
-    let (mut config, tempdir) = common::TestConfig::memory_storage()
+    let (mut config, tempdir) = common::TestConfig::mem_storage()
         .enable_testbed().set_zero_port().enable_ca_refresh().finalize();
 
     // The user that is executing the test gets access to everything
