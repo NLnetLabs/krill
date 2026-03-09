@@ -63,7 +63,6 @@ async fn clear_and_init() {
     server.client().publisher_delete(&ca.convert()).await.unwrap();
     server.client().pubserver_clear().await.unwrap();
 
-    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     
     server.client().pubserver_init(
         uri::Https::from_str("https://localhost/rrdp/").unwrap(),
@@ -71,6 +70,7 @@ async fn clear_and_init() {
     ).await.unwrap();
 
     server.register_ca_with_repo(&ca).await;
+    server.client().repo_refresh(&ca).await.unwrap();
 
     assert!(
         server.wait_for_objects(
