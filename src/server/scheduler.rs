@@ -147,6 +147,11 @@ impl Scheduler {
                 parent,
             } => self.sync_parent(ca, ca_version, parent).await,
 
+            Task::SyncChildren {
+                ca_handle: ca,
+                ca_version,
+            } => self.sync_children(ca, ca_version).await,
+
             Task::RenewTestbedTa => self.renew_testbed_ta().await,
 
             Task::SyncTrustAnchorProxySignerIfPossible => {
@@ -417,6 +422,30 @@ impl Scheduler {
             );
             Ok(TaskResult::Done)
         }
+    }
+
+    async fn sync_children(
+        &self,
+        ca: CaHandle,
+        ca_version: u64,
+    ) -> Result<TaskResult, FatalError> {
+        if let Ok(parent) = self.ca_manager.get_ca(&ca) {
+            for child in parent.children() {
+                if let Ok(child) = self.ca_manager.get_ca(&child.convert()) {
+                    debug!(
+                        "Syncing child '{}' for parent {}", 
+                        child.handle(), 
+                        parent.handle()
+                    );
+                    self.tasks.schedule(Task::SyncParent { 
+                        ca_handle: child.handle().convert(), 
+                        ca_version, 
+                        parent: parent.handle().convert() 
+                    }, now()).map_err(FatalError)?;
+                }
+            }
+        }
+        Ok(TaskResult::Done)
     }
 
     /// Resync the testbed TA signer and proxy
