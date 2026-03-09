@@ -1,4 +1,5 @@
 //! The _Krill_ library crate.
+//!
 
 // XXX Temporary allow for `commons::error::Error` until we refactor that.
 #![allow(clippy::result_large_err)]
