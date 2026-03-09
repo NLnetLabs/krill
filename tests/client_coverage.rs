@@ -177,8 +177,6 @@ async fn unix() {
     let (mut config, tempdir) = common::TestConfig::memory_storage()
         .enable_testbed().set_zero_port().enable_ca_refresh().finalize();
 
-    //tempdir.disable_cleanup(true);
-
     // The user that is executing the test gets access to everything
     let uid = nix::unistd::Uid::current();
     let user = nix::unistd::User::from_uid(uid).unwrap().unwrap();
