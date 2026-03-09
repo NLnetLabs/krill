@@ -557,6 +557,14 @@ impl KrillServer {
     pub async fn register_ca_with_parent(
         &self, ca: &CaHandle, parent: &CaHandle, resources: &ResourceSet
     ) {
+        self.register_ca_with_parent_nowait(ca, parent, resources).await;
+        assert!(self.wait_for_ca_resources(ca, resources).await);
+    }
+
+    /// Registers a CA with a parent managed by the same server.
+    async fn register_ca_with_parent_nowait(
+        &self, ca: &CaHandle, parent: &CaHandle, resources: &ResourceSet
+    ) {
         let request = self.client().child_request(ca).await.unwrap();
         let response = self.add_child(
             parent, ca.convert(), request, resources.clone()
@@ -564,7 +572,16 @@ impl KrillServer {
         self.client.parent_add(
             ca, api::admin::ParentCaReq { handle: parent.convert(), response }
         ).await.unwrap();
-        assert!(self.wait_for_ca_resources(ca, resources).await);
+    }
+
+    /// Creates a CA under testbed with the given resources.
+    pub async fn create_testbed_ca(
+        &self, ca: &CaHandle, resources: &ResourceSet
+    ) {
+        self.create_ca_with_repo(ca).await;
+        self.register_ca_with_parent_nowait(
+            ca, &ca_handle("testbed"), resources
+        ).await;
     }
 
     /// Add a child to the CA.
