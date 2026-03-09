@@ -267,14 +267,22 @@ impl ThreadPool {
                 }
             }
         };
-        let thread_count = cmp::min(thread_count, 1);
+        let thread_count = cmp::max(thread_count, 1);
 
         let mut join = Vec::new();
         for _ in 0..thread_count {
             let rx = rx.clone();
-            join.push(thread::spawn(move || {
-                Self::worker_thread(rx)
-            }));
+            join.push(
+                thread::Builder::new().name(
+                    "thread-pool".into()
+                ).spawn(move || {
+                    Self::worker_thread(rx)
+                }).map_err(|err| {
+                    KrillError::internal(
+                        format_args!("failed to spawn worker thread: {err}")
+                    )
+                })?
+            );
         }
 
         info!("Created thread pool with {thread_count} threads");
