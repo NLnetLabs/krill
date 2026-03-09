@@ -263,10 +263,10 @@ impl Store {
                     ));
                 }
             };
-            if
+            if 
                 file_type.is_file()
-                && let Some(name)
-                    = item.file_name().into_string().ok().and_then(|name| {
+                && let Some(name) =
+                    item.file_name().into_string().ok().and_then(|name| {
                         Ident::boxed_from_string(name).ok()
                     })
             {

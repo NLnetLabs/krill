@@ -1,5 +1,7 @@
+//! The core of the HTTP server.
+
 use std::env;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use clap::crate_version;
 use hyper::StatusCode;
 use log::{error, info, warn, trace};
@@ -21,15 +23,13 @@ use super::response::{HyperResponse, HttpResponse};
 //------------ HttpServer ----------------------------------------------------
 
 /// The Krill HTTP server.
+///
 pub struct HttpServer {
-    /// The Krill “business logic.”
+    /// The Krill server.
     krill: KrillManager,
 
     /// The component responsible for API authorization checks
     authorizer: Authorizer,
-
-    /// A copy of the configuration.
-    config: Arc<Config>,
 
     /// Time this server was started
     started: Timestamp,
@@ -39,29 +39,36 @@ impl HttpServer {
     /// Creates a new server from a Krill manager and the configuration.
     pub fn new(
         krill: KrillManager,
-        config: Arc<Config>,
         runtime: &runtime::Handle,
     ) -> KrillResult<Arc<Self>> {
-        let authorizer = Authorizer::new(config.clone())?;
+        let authorizer = Authorizer::new(krill.config())?;
         authorizer.spawn_sweep(runtime);
         Ok(Self {
             krill,
             authorizer,
-            config,
             started: Timestamp::now(),
         }.into())
     }
 
     /// Processes an HTTP request.
     pub async fn process_request(
-        &self, request: HyperRequest
+        this: Weak<Self>, request: HyperRequest
     ) -> Result<HyperResponse, FatalError> {
+        // If we can’t upgrade the weak this, return a 503.
+        let Some(this) = this.upgrade() else {
+            return Ok(HttpResponse::error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                ("sys-unavailable", "Service Unavailable"),
+            ).into_hyper())
+        };
+
         let logger = RequestLogger::begin(&request);
-        let (auth, new_token) = self.authorizer.authenticate_request(
+        let (auth, new_token) = this.authorizer.authenticate_request(
             &request
         ).await;
         let request = Request::new(
-            request, self, auth, BodyLimits::from_config(&self.config)
+            request, &this, auth,
+            BodyLimits::from_config(this.krill.config())
         );
         let path = match request.path() {
             Ok(path) => path,
@@ -94,7 +101,7 @@ impl HttpServer {
 }
 
 impl HttpServer {
-    /// Returns a reference to the Krill manager.
+    /// Returns a reference to the Krill server.
     pub(super) fn krill(&self) -> &KrillManager {
         &self.krill
     }
@@ -105,8 +112,8 @@ impl HttpServer {
     }
 
     /// Returns a reference to the configuration.
-    pub(super) fn config(&self) -> &Config {
-        &self.config
+    pub fn config(&self) -> &Config {
+        self.krill.config()
     }
 
     pub(super) fn server_info(&self) -> ServerInfo {

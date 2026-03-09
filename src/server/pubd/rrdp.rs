@@ -657,6 +657,9 @@ impl RrdpServer {
                 )
             })?;
 
+        // Drop the notification file to force a sync.
+        drop(notification);
+
         // Rename the new file so it becomes current.
         let notification_path = self.notification_path();
         fs::rename(&notification_path_new, &notification_path).map_err(
@@ -787,8 +790,9 @@ impl RrdpServer {
                     if
                         let Ok(Some(snapshot_file_to_remove)) =
                             Self::session_dir_snapshot(&session_dir, serial)
-                        && let Err(e) =
-                            fs::remove_file(&snapshot_file_to_remove)
+                        && let Err(e) = fs::remove_file(
+                            &snapshot_file_to_remove
+                        )
                     {
                         warn!(
                             "Could not delete snapshot file '{}'. \
@@ -1409,11 +1413,12 @@ impl CurrentObjects {
         for (uri_key, base64) in self.iter() {
             // Add all manifests - as long as they are syntactically correct -
             // do not crash on incorrect objects.
-            if
-                uri_key.as_str().ends_with("mft") 
+            if 
+                uri_key.as_str().ends_with("mft")
                 && let Ok(mft) = Manifest::decode(
                     base64.to_bytes().as_ref(), false
-                ) && let Ok(stats) = PublisherManifestStats::try_from(&mft)
+                )
+                && let Ok(stats) = PublisherManifestStats::try_from(&mft)
             {
                 manifests.push(stats)
             }

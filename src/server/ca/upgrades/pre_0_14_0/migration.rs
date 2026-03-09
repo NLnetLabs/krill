@@ -200,7 +200,7 @@ impl UpgradeAggregateStorePre0_14 for CasMigration {
                 // actually migrated, then return
                 // CommandMigrationEffect::Nothing
                 if
-                    let Some(events) = new_command.events() 
+                    let Some(events) = new_command.events()
                     && events.is_empty()
                 {
                     return Ok(CommandMigrationEffect::Nothing);

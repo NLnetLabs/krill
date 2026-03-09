@@ -6,7 +6,7 @@
 //! The proxy makes sign requests for the signer to sign.
 use super::*;
 
-use std::{collections::HashMap, fmt, sync::Arc};
+use std::{collections::HashMap, fmt};
 
 use chrono::SecondsFormat;
 use log::{log_enabled, trace};
@@ -46,6 +46,7 @@ use crate::api::ta::{
     TrustAnchorSignerResponse,
 };
 use crate::constants::ta_resource_class_name;
+use crate::server::runtime::KrillRuntime;
 
 
 //------------ TrustAnchorSigner ---------------------------------------------
@@ -85,6 +86,8 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
     type InitEvent = TrustAnchorSignerInitEvent;
     type Error = Error;
 
+    type Context<'a> = TrustAnchorSignerContext<'a>;
+
     fn init(handle: &CaHandle, event: Self::InitEvent) -> Self {
         TrustAnchorSigner {
             handle: handle.clone(),
@@ -99,27 +102,25 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
 
     fn process_init_command(
         command: TrustAnchorSignerInitCommand,
+        context: Self::Context<'_>,
     ) -> Result<TrustAnchorSignerInitEvent, Error> {
         let cmd = command.into_details();
-        let timing = cmd.timing;
 
-        let signer = cmd.signer;
-
-        let id = signer.create_self_signed_id_cert()?.into();
+        let id = context.signer.create_self_signed_id_cert()?.into();
         let proxy_id = cmd.proxy_id;
         let ta_cert_details = Self::create_ta_cert_details(
             cmd.repo_info,
             cmd.tal_https,
             cmd.tal_rsync,
             cmd.private_key_pem,
-            timing.certificate_validity_years,
-            &signer,
+            context.ta_timing_config.certificate_validity_years,
+            context.signer,
         )?;
         let objects = TrustAnchorObjects::create(
             &ta_cert_details.cert,
             cmd.ta_mft_nr_override.unwrap_or(1),
-            timing.mft_next_update_weeks,
-            &signer,
+            context.ta_timing_config.mft_next_update_weeks,
+            context.signer,
         )?;
 
         Ok(TrustAnchorSignerInitEvent {
@@ -162,6 +163,7 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
     fn process_command(
         &self,
         command: Self::Command,
+        context: Self::Context<'_>,
     ) -> Result<Vec<Self::Event>, Self::Error> {
         if log_enabled!(log::Level::Trace) {
             trace!(
@@ -175,29 +177,26 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
         match command.into_details() {
             TrustAnchorSignerCommandDetails::TrustAnchorSignerRequest {
                 signed_request,
-                ta_timing_config,
                 ta_mft_number_override,
-                signer,
             } => self.process_signer_request(
                 signed_request,
-                ta_timing_config,
+                context.ta_timing_config,
                 ta_mft_number_override,
-                &signer,
+                context.signer,
             ),
             TrustAnchorSignerCommandDetails::TrustAnchorSignerReissueRequest { 
                 repo_info, 
                 tal_https, 
                 tal_rsync, 
-                timing, 
-                signer 
             } => {
-                let years = timing.certificate_validity_years;
+                let years =
+                    context.ta_timing_config.certificate_validity_years;
                 let res = self.update_ta_cert_details(
                     repo_info, 
                     tal_https, 
                     tal_rsync, 
                     years, 
-                    &signer
+                    context.signer
                 );
                 match res {
                     Err(r) => Err(r),
@@ -538,6 +537,33 @@ impl TrustAnchorSigner {
 }
 
 
+//------------ TrustAnchorSignerContext --------------------------------------
+
+#[derive(Clone, Copy)]
+pub struct TrustAnchorSignerContext<'a> {
+    signer: &'a KrillSigner,
+    ta_timing_config: TaTimingConfig,
+}
+
+impl<'a> TrustAnchorSignerContext<'a> {
+    pub fn new(
+        signer: &'a KrillSigner,
+        ta_timing_config: TaTimingConfig,
+    ) -> Self {
+        Self { signer, ta_timing_config }
+    }
+}
+
+impl<'a> From<&'a KrillRuntime> for TrustAnchorSignerContext<'a> {
+    fn from(src: &'a KrillRuntime) -> Self {
+        Self {
+            signer: src.signer(),
+            ta_timing_config: src.config().ta_timing,
+        }
+    }
+}
+
+
 //------------ TrustAnchorSignerInitCommand ----------------------------------
 
 pub type TrustAnchorSignerInitCommand =
@@ -554,8 +580,6 @@ pub struct TrustAnchorSignerInitCommandDetails {
     pub tal_rsync: uri::Rsync,
     pub private_key_pem: Option<String>,
     pub ta_mft_nr_override: Option<u64>,
-    pub timing: TaTimingConfig,
-    pub signer: Arc<KrillSigner>,
 }
 
 impl fmt::Display for TrustAnchorSignerInitCommandDetails {
@@ -582,9 +606,7 @@ impl TrustAnchorSignerCommand {
     pub fn make_process_request_command(
         id: &CaHandle,
         signed_request: TrustAnchorSignedRequest,
-        ta_timing_config: TaTimingConfig,
         ta_mft_number_override: Option<u64>,
-        signer: Arc<KrillSigner>,
         actor: &Actor,
     ) -> TrustAnchorSignerCommand {
         TrustAnchorSignerCommand::new(
@@ -592,9 +614,7 @@ impl TrustAnchorSignerCommand {
             None,
             TrustAnchorSignerCommandDetails::TrustAnchorSignerRequest {
                 signed_request,
-                ta_timing_config,
                 ta_mft_number_override,
-                signer,
             },
             actor,
         )
@@ -605,8 +625,6 @@ impl TrustAnchorSignerCommand {
         repo_info: RepoInfo,
         tal_https: Vec<uri::Https>,
         tal_rsync: uri::Rsync,
-        ta_timing_config: TaTimingConfig,
-        signer: Arc<KrillSigner>,
         actor: &Actor,
     ) -> TrustAnchorSignerCommand {
         TrustAnchorSignerCommand::new(
@@ -616,8 +634,6 @@ impl TrustAnchorSignerCommand {
                 repo_info,
                 tal_https,
                 tal_rsync,
-                timing: ta_timing_config,
-                signer,
             }, 
             actor
         )
@@ -631,16 +647,12 @@ impl TrustAnchorSignerCommand {
 pub enum TrustAnchorSignerCommandDetails {
     TrustAnchorSignerRequest {
         signed_request: TrustAnchorSignedRequest,
-        ta_timing_config: TaTimingConfig,
         ta_mft_number_override: Option<u64>,
-        signer: Arc<KrillSigner>,
     },
     TrustAnchorSignerReissueRequest {
         repo_info: RepoInfo,
         tal_https: Vec<uri::Https>,
         tal_rsync: uri::Rsync,
-        timing: TaTimingConfig,
-        signer: Arc<KrillSigner>,
     },
 }
 

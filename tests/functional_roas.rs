@@ -24,7 +24,7 @@ mod common;
 /// ```
 #[tokio::test]
 async fn functional_roas() {
-    let (server, _tmpdir) = common::KrillServer::start_with_testbed().await;
+    let server = common::KrillServer::start_with_testbed().await;
 
     let testbed = common::ca_handle("testbed");
     let ca = common::ca_handle("CA");

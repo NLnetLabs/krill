@@ -262,7 +262,7 @@ impl Pkcs11Context {
         })
     }
 
-    fn finalize(&mut self) -> Result<(), Pkcs11Error> {
+    fn finalize(&mut self) -> Result<(), Pkcs11Error>{
         self.logged_cryptoki_call_with_take("Finalize", |cryptoki| {
             cryptoki.finalize()
         })

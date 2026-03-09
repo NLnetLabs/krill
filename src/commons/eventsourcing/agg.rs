@@ -40,7 +40,9 @@ pub trait Aggregate: Storable + 'static {
     >;
 
     /// The type representing consecutive commands.
-    type Command: Command<StorableDetails = Self::StorableCommandDetails>;
+    type Command: Command<
+        StorableDetails = Self::StorableCommandDetails
+    >;
 
     /// The type representing the details of a command to be stored.
     type StorableCommandDetails: WithStorableDetails;
@@ -53,6 +55,12 @@ pub trait Aggregate: Storable + 'static {
 
     /// The type returned when processing a command fails.
     type Error: std::error::Error + Send + Sync + From<AggregateStoreError>;
+
+    /// The type for passing context into processing.
+    ///
+    /// This should be a shared reference or a collection of
+    /// shared references, hence the requirement to be `Copy`.
+    type Context<'a>: Copy where Self: 'a;
 
     /// Creates a new instance.
     ///
@@ -77,6 +85,7 @@ pub trait Aggregate: Storable + 'static {
     /// history.
     fn process_init_command(
         command: Self::InitCommand,
+        context: Self::Context<'_>,
     ) -> Result<Self::InitEvent, Self::Error>;
 
     /// Processes a command.
@@ -91,6 +100,7 @@ pub trait Aggregate: Storable + 'static {
     fn process_command(
         &self,
         command: Self::Command,
+        context: Self::Context<'_>,
     ) -> Result<Vec<Self::Event>, Self::Error>;
 
     /// Returns the current version of the aggregate.
@@ -123,6 +133,36 @@ pub trait Aggregate: Storable + 'static {
                 self.apply(event);
             }
         }
+    }
+
+    /// Process events before they are saved.
+    ///
+    /// This method is called on the updated aggregate, i.e., the events
+    /// given by `events` have already been applied to it.
+    ///
+    /// The method is allowed to return an error, in which case all the
+    /// changes made by `events` are rolled back to the previous version of
+    /// the aggregate.
+    ///
+    /// The default implementation of this method does nothing and returns
+    /// `Ok(())`.
+    fn pre_save_events(
+        &self, events: &[Self::Event], context: Self::Context<'_>
+    ) -> Result<(), Self::Error> {
+        let _ = (events, context);
+        Ok(())
+    }
+
+    /// Process events after they have been saved.
+    ///
+    /// This method is called on the updated aggregate, i.e., the events
+    /// given by `events` have already been applied to it.
+    ///
+    /// The default implementation does nothing.
+    fn post_save_events(
+        &self, events: &[Self::Event], context: Self::Context<'_>
+    ) {
+        let _ = (events, context);
     }
 }
 
@@ -676,26 +716,6 @@ impl<E: Event, I: InitEvent> StoredEffect<E, I> {
             }
         }
     }
-}
-
-
-//------------ PreSaveEventListener ------------------------------------------
-
-/// A listener that receives events before the aggregate is saved.
-///
-/// The listener is allowed to return an error in case of issues, which will
-/// will result in rolling back the intended change to an aggregate.
-pub trait PreSaveEventListener<A: Aggregate>: Send + Sync + 'static {
-    fn listen(&self, agg: &A, events: &[A::Event]) -> Result<(), A::Error>;
-}
-
-//------------ PostSaveEventListener -----------------------------------------
-
-/// A listener that receives events after the aggregate is saved.
-///
-/// The listener is not allowed to fail.
-pub trait PostSaveEventListener<A: Aggregate>: Send + Sync + 'static {
-    fn listen(&self, agg: &A, events: &[A::Event]);
 }
 
 
