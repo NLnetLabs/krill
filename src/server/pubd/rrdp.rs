@@ -657,9 +657,6 @@ impl RrdpServer {
                 )
             })?;
 
-        // Drop the notification file to force a sync.
-        drop(notification);
-
         // Rename the new file so it becomes current.
         let notification_path = self.notification_path();
         fs::rename(&notification_path_new, &notification_path).map_err(
