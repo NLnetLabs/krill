@@ -159,8 +159,6 @@ impl KrillRuntime {
 /// A value of this type is kept by [`KrillRuntime`] behind an arc.
 struct Components {
     /// The server configuration.
-    ///
-    /// This has to be an arc for now since some components keep a copy.
     config: Config,
 
     /// The base URI for communicating with this server.
