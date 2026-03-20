@@ -651,12 +651,20 @@ impl RrdpServer {
                 KrillIoError::new(
                     format!(
                         "could not write new notification file to {}",
-                        notification_path_new.to_string_lossy()
+                        notification_path_new.display()
                     ),
                     e,
                 )
             })?;
-        drop(notification_file_new);
+        if let Err(err) = notification_file_new.sync_all() {
+            return Err(KrillIoError::new(
+                format!(
+                    "failed to write new notification file '{}'",
+                    notification_path_new.display()
+                ),
+                err
+            ).into());
+        }
 
         // Rename the new file so it becomes current.
         let notification_path = self.notification_path();
