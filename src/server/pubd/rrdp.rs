@@ -643,6 +643,7 @@ impl RrdpServer {
             self.session.uuid(), self.serial, snapshot, deltas,
         );
         let notification_path_new = self.notification_path_new();
+        eprintln!("Writing notification file.");
         let mut notification_file_new =
             file::create_file_with_path(&notification_path_new)?;
         notification
@@ -665,6 +666,7 @@ impl RrdpServer {
                 err
             ).into());
         }
+        eprintln!("Done writing notification file.");
 
         // Rename the new file so it becomes current.
         let notification_path = self.notification_path();
@@ -832,7 +834,6 @@ impl RrdpServer {
                 if path.is_dir() {
                     let _best_effort_rm = fs::remove_dir_all(path);
                 } else {
-                    eprintln!("Deleting stray RRDP file {}", path.display());
                     let _best_effort_rm = fs::remove_file(path);
                 }
             }
