@@ -6,7 +6,7 @@
 //! [`start_krill_daemon`] function.
 
 use std::{env, process};
-use std::net::SocketAddr;
+use std::net::{SocketAddr, TcpListener as StdTcpListener};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -15,7 +15,8 @@ use log::{error, info, warn};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn;
 use hyper_util::server::graceful::GracefulShutdown;
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener as TokioTcpListener};
+use tokio::runtime::{Handle as TokioHandle};
 use tokio::sync::{oneshot, watch};
 use tokio::task::JoinSet;
 use tokio_rustls::TlsAcceptor;
@@ -152,15 +153,14 @@ pub fn start_krill_daemon(
 
     // Start a hyper server for the configured http sockets.
     for socket_addr in server.config().socket_addresses().into_iter() {
-        join.spawn_on(
-            single_http_listener(
-                server.clone(),
-                socket_addr,
-                signal_running.take(),
-                exit_rx.clone(),
-            ),
+        single_http_listener(
+            server.clone(),
+            socket_addr,
+            signal_running.take(),
+            exit_rx.clone(),
+            &mut join,
             tokio.handle(),
-        );
+        )?;
     }
 
     // Start a hyper server for the configured unix sockets.
@@ -169,15 +169,14 @@ pub fn start_krill_daemon(
         server.config().unix_socket_enabled()
         && let Some(path) = server.config().unix_socket()
     {
-        join.spawn_on(
-            single_unix_listener(
-                server.clone(),
-                path.clone(),
-                signal_running.take(),
-                exit_rx.clone(),
-            ),
+        single_unix_listener(
+            server.clone(),
+            path.clone(),
+            signal_running.take(),
+            exit_rx.clone(),
+            &mut join,
             tokio.handle(),
-        );
+        )?;
     }
 
     tokio.block_on(async {
@@ -215,13 +214,35 @@ pub fn start_krill_daemon(
 /// will also initate closing of all currently open connections. The function
 /// will return when both the listener and all connections are closed or after
 /// then seconds.
-async fn single_http_listener(
+fn single_http_listener(
     server: Arc<HttpServer>,
     addr: SocketAddr,
     signal_running: Option<oneshot::Sender<()>>,
     mut signal_exit: watch::Receiver<bool>,
-) {
-    let listener = TcpListener::bind(addr).await.unwrap();
+    join: &mut JoinSet<()>,
+    handle: &TokioHandle,
+) -> Result<(), Error> {
+    let listener = match StdTcpListener::bind(addr) {
+        Ok(listener) => listener,
+        Err(err) => {
+            return Err(Error::Custom(format!(
+               "Failed to create TCP socket '{addr}': {err}"
+            )));
+        }
+    };
+    if let Err(err) = listener.set_nonblocking(true) {
+        return Err(Error::Custom(format!(
+            "Failed to configure TCP socket '{addr}': {err}"
+        )));
+    }
+    let listener = match TokioTcpListener::from_std(listener) {
+        Ok(listener) => listener,
+        Err(err) => {
+            return Err(Error::Custom(format!(
+                "Failed to prepare TCP socket '{addr}': {err}"
+            )));
+        }
+    };
 
     let tls = if server.config().https_mode().is_disable_https() {
         None
@@ -232,8 +253,9 @@ async fn single_http_listener(
         ) {
             Ok(config) => Some(TlsAcceptor::from(Arc::new(config))),
             Err(err) => {
-                error!("{err}");
-                return;
+                return Err(Error::Custom(format!(
+                    "Failed to create TLS server config: {err}"
+                )));
             }
         }
     };
@@ -248,66 +270,74 @@ async fn single_http_listener(
         let _ = tx.send(());
     }
 
-    loop {
-        // Break here already if `signal_exit` is true.
-        if *signal_exit.borrow_and_update() {
-            drop(listener);
-            break;
-        }
-
-        tokio::select! {
-            conn = listener.accept() => {
-                let (stream, _addr) = match conn {
-                    Ok(conn) => conn,
-                    Err(e) => {
-                        warn!("TCP socket accept error: {}", e);
-                        tokio::time::sleep(
-                            Duration::from_millis(100)
-                        ).await;
-                        continue;
-                    }
-                };
-
-                let stream = TokioIo::new(
-                    tls::MaybeTlsTcpStream::new(
-                        stream, tls.as_ref()
-                    )
-                );
-
-                let server = weak_server.clone();
-                let conn = conn_builder.serve_connection_with_upgrades(
-                    stream,
-                    hyper::service::service_fn(move |req| {
-                        HttpServer::process_request(server.clone(), req)
-                    })
-                );
-                let conn = graceful.watch(conn.into_owned());
-
-                tokio::spawn(async move {
-                    if let Err(err) = conn.await {
-                        warn!("TCP connection error: {}", err);
-                    }
-                });
-            },
-
-            res = signal_exit.changed() => {
-                // Break if the channel is closed or the new value is `true`.
-                if res.is_err() || *signal_exit.borrow() {
+    join.spawn_on(
+        async move {
+            loop {
+                // Break here already if `signal_exit` is true.
+                if *signal_exit.borrow_and_update() {
                     drop(listener);
                     break;
                 }
-            }
-        }
-    }
 
-    tokio::select! {
-        _ = graceful.shutdown() => { },
-        _ = tokio::time::sleep(Duration::from_secs(10)) => {
-            warn!(
-                "Waited 10 seconds for TCP listener to shutdown, aborting..."
-            );
-        }
-    }
+                tokio::select! {
+                    conn = listener.accept() => {
+                        let (stream, _addr) = match conn {
+                            Ok(conn) => conn,
+                            Err(e) => {
+                                warn!("TCP socket accept error: {}", e);
+                                tokio::time::sleep(
+                                    Duration::from_millis(100)
+                                ).await;
+                                continue;
+                            }
+                        };
+
+                        let stream = TokioIo::new(
+                            tls::MaybeTlsTcpStream::new(
+                                stream, tls.as_ref()
+                            )
+                        );
+
+                        let server = weak_server.clone();
+                        let conn = conn_builder.serve_connection_with_upgrades(
+                            stream,
+                            hyper::service::service_fn(move |req| {
+                                HttpServer::process_request(server.clone(), req)
+                            })
+                        );
+                        let conn = graceful.watch(conn.into_owned());
+
+                        tokio::spawn(async move {
+                            if let Err(err) = conn.await {
+                                warn!("TCP connection error: {}", err);
+                            }
+                        });
+                    },
+
+                    res = signal_exit.changed() => {
+                        // Break if the channel is closed or the new value is
+                        // `true`.
+                        if res.is_err() || *signal_exit.borrow() {
+                            drop(listener);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            tokio::select! {
+                _ = graceful.shutdown() => { },
+                _ = tokio::time::sleep(Duration::from_secs(10)) => {
+                    warn!(
+                        "Waited 10 seconds for TCP listener to shutdown, \
+                         aborting..."
+                    );
+                }
+            }
+        },
+        handle
+    );
+    Ok(())
 }
 
 
@@ -326,28 +356,46 @@ async fn single_http_listener(
 /// will return when both the listener and all connections are closed or after
 /// then seconds.
 #[cfg(unix)]
-async fn single_unix_listener(
+fn single_unix_listener(
     server: Arc<HttpServer>,
     path: std::path::PathBuf,
     signal_running: Option<oneshot::Sender<()>>,
     mut signal_exit: watch::Receiver<bool>,
-) {
+    join: &mut JoinSet<()>,
+    handle: &TokioHandle,
+) -> Result<(), Error> {
+    use std::os::unix::net::{UnixListener as StdUnixListener};
     use nix::unistd::{Uid, User};
-    use tokio::net::UnixListener;
+    use tokio::net::{UnixListener as TokioUnixListener};
 
     if path.exists() && let Err(err) = std::fs::remove_file(&path) {
-        error!("Failed to remove existing Unix socket file: {err}");
-        return;
+        return Err(Error::Custom(format!(
+            "Failed to remove existing Unix socket file: {err}"
+        )));
     }
 
-    let listener = match UnixListener::bind(&path) {
+    let listener = match StdUnixListener::bind(&path) {
         Ok(listener) => listener,
         Err(err) => {
-            error!(
+            return Err(Error::custom(format!(
                 "Could not bind to Unix socket '{}': {}",
-                &path.to_string_lossy(), err
-            );
-            return;
+                path.display(), err
+            )));
+        }
+    };
+    if let Err(err) = listener.set_nonblocking(true) {
+        return Err(Error::Custom(format!(
+            "Failed to configure Unix socket '{}': {}",
+            path.display(), err,
+        )));
+    }
+    let listener = match TokioUnixListener::from_std(listener) {
+        Ok(listener) => listener,
+        Err(err) => {
+            return Err(Error::Custom(format!(
+                "Failed to prepare Unix socket '{}': {}",
+                path.display(), err,
+            )));
         }
     };
 
@@ -361,90 +409,97 @@ async fn single_unix_listener(
         let _ = tx.send(());
     }
 
-    loop {
-        // Break here already if `signal_exit` is true.
-        if *signal_exit.borrow_and_update() {
-            drop(listener);
-            break;
-        }
-
-        tokio::select! {
-            conn = listener.accept() => {
-                let (stream, _addr) = match conn {
-                    Ok(stream) => stream,
-                    Err(err) => {
-                        warn!("Unix socket accept error: {}", err);
-                        tokio::time::sleep(
-                            Duration::from_millis(100)
-                        ).await;
-                        continue;
-                    }
-                };
-
-
-                let uid = match stream.peer_cred() {
-                    Ok(cred) => Uid::from_raw(cred.uid()),
-                    Err(err) => {
-                        warn!(
-                            "Unix socket could not obtain peer credentials: \
-                             {err}"
-                        );
-                        continue;
-                    }
-                };
-                let user = match User::from_uid(uid) {
-                    Ok(Some(user)) => user,
-                    Ok(None) => {
-                        error!(
-                            "Unix socket could not obtain user details: \
-                             unknown user ID."
-                        );
-                        continue;
-                    }
-                    Err(err) => {
-                        error!(
-                            "Unix socket could not obtain user details: {err}"
-                        );
-                        continue;
-                    },
-                };
-
-                let server = weak_server.clone();
-                let conn = conn_builder.serve_connection_with_upgrades(
-                    TokioIo::new(stream),
-                    hyper::service::service_fn(move |mut req| {
-                        let extensions = req.extensions_mut();
-                        extensions.insert(user.clone());
-                        HttpServer::process_request(server.clone(), req)
-                    })
-                );
-                let conn = graceful.watch(conn.into_owned());
-
-                tokio::spawn(async move {
-                    if let Err(err) = conn.await {
-                        warn!("Unix connection error: {}", err);
-                    }
-                });
-            },
-
-            res = signal_exit.changed() => {
-                // Break if the channel is closed or the new value is `true`.
-                if res.is_err() || *signal_exit.borrow() {
+    join.spawn_on(
+        async move {
+            loop {
+                // Break here already if `signal_exit` is true.
+                if *signal_exit.borrow_and_update() {
                     drop(listener);
                     break;
                 }
-            }
-        }
-    }
 
-    tokio::select! {
-        _ = graceful.shutdown() => { },
-        _ = tokio::time::sleep(Duration::from_secs(10)) => {
-            warn!(
-                "Waited 10 seconds for TCP listener to shutdown, aborting..."
-            );
-        }
-    }
+                tokio::select! {
+                    conn = listener.accept() => {
+                        let (stream, _addr) = match conn {
+                            Ok(stream) => stream,
+                            Err(err) => {
+                                warn!("Unix socket accept error: {}", err);
+                                tokio::time::sleep(
+                                    Duration::from_millis(100)
+                                ).await;
+                                continue;
+                            }
+                        };
+
+
+                        let uid = match stream.peer_cred() {
+                            Ok(cred) => Uid::from_raw(cred.uid()),
+                            Err(err) => {
+                                warn!(
+                                    "Unix socket could not obtain peer credentials: \
+                                     {err}"
+                                );
+                                continue;
+                            }
+                        };
+                        let user = match User::from_uid(uid) {
+                            Ok(Some(user)) => user,
+                            Ok(None) => {
+                                error!(
+                                    "Unix socket could not obtain user details: \
+                                     unknown user ID."
+                                );
+                                continue;
+                            }
+                            Err(err) => {
+                                error!(
+                                    "Unix socket could not obtain user details: {err}"
+                                );
+                                continue;
+                            },
+                        };
+
+                        let server = weak_server.clone();
+                        let conn = conn_builder.serve_connection_with_upgrades(
+                            TokioIo::new(stream),
+                            hyper::service::service_fn(move |mut req| {
+                                let extensions = req.extensions_mut();
+                                extensions.insert(user.clone());
+                                HttpServer::process_request(server.clone(), req)
+                            })
+                        );
+                        let conn = graceful.watch(conn.into_owned());
+
+                        tokio::spawn(async move {
+                            if let Err(err) = conn.await {
+                                warn!("Unix connection error: {}", err);
+                            }
+                        });
+                    },
+
+                    res = signal_exit.changed() => {
+                        // Break if the channel is closed or the new value is `true`.
+                        if res.is_err() || *signal_exit.borrow() {
+                            drop(listener);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            tokio::select! {
+                _ = graceful.shutdown() => { },
+                _ = tokio::time::sleep(Duration::from_secs(10)) => {
+                    warn!(
+                        "Waited 10 seconds for Unix listener to \
+                         shutdown, aborting..."
+                    );
+                }
+            }
+        },
+        handle
+    );
+    Ok(())
 }
 
 
