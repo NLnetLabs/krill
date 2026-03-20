@@ -668,6 +668,16 @@ impl RrdpServer {
 
         // Rename the new file so it becomes current.
         let notification_path = self.notification_path();
+        eprintln!(
+            "{}: {:?}",
+            notification_path_new.display(),
+            fs::exists(&notification_path_new)
+        );
+        eprintln!(
+            "{}: {:?}",
+            notification_path.display(),
+            fs::exists(&notification_path)
+        );
         fs::rename(&notification_path_new, &notification_path).map_err(
             |e| {
                 KrillIoError::new(
