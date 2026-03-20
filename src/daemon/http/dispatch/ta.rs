@@ -31,8 +31,8 @@ async fn proxy(
 ) -> Result<HttpResponse, DispatchError> {
     match path.next() {
         Some("children") => proxy_children(request, path).await,
-        Some("id") => proxy_id(request, path),
-        Some("init") => proxy_init(request, path),
+        Some("id") => proxy_id(request, path).await,
+        Some("init") => proxy_init(request, path).await,
         Some("repo") => proxy_repo(request, path).await,
         Some("signer") => proxy_signer(request, path).await,
         _ => Ok(HttpResponse::not_found())
@@ -48,7 +48,7 @@ async fn proxy_children(
 ) -> Result<HttpResponse, DispatchError> {
     match path.parse_opt_next()? {
         None => proxy_children_index(request).await,
-        Some(child) => proxy_children_child(request, path, child),
+        Some(child) => proxy_children_child(request, path, child).await,
     }
 }
 
@@ -69,14 +69,16 @@ async fn proxy_children_index(
             )?;
             let (server, child) = request.read_json().await?;
             Ok(HttpResponse::json(
-                &server.krill().ta_proxy_children_add(child, auth.actor())?
+                &server.krill().ta_proxy_children_add(
+                    child, auth.into_actor()
+                ).await?
             ))
         }
         _ => Ok(HttpResponse::method_not_allowed())
     }
 }
 
-fn proxy_children_child(
+async fn proxy_children_child(
     request: Request<'_>,
     mut path: PathIter<'_>,
     child: ChildHandle,
@@ -84,10 +86,10 @@ fn proxy_children_child(
     match path.next() {
         None => proxy_children_child_index(request, child),
         Some("parent_response.json") => {
-            proxy_children_child_response(request, path, child)
+            proxy_children_child_response(request, path, child).await
         }
         Some("parent_response.xml") => {
-            proxy_children_child_response_xml(request, path, child)
+            proxy_children_child_response_xml(request, path, child).await
         }
         _ => Ok(HttpResponse::not_found())
     }
@@ -114,7 +116,7 @@ fn proxy_children_child_index(
     }
 }
 
-fn proxy_children_child_response(
+async fn proxy_children_child_response(
     request: Request<'_>,
     path: PathIter<'_>,
     child: ChildHandle,
@@ -126,11 +128,11 @@ fn proxy_children_child_response(
     )?;
     let server = request.empty()?;
     Ok(HttpResponse::json(
-        &server.krill().ca_parent_response(&ta_handle(), child)?
+        &server.krill().ca_parent_response(ta_handle(), child).await?
     ))
 }
 
-fn proxy_children_child_response_xml(
+async fn proxy_children_child_response_xml(
     request: Request<'_>,
     path: PathIter<'_>,
     child: ChildHandle,
@@ -142,14 +144,16 @@ fn proxy_children_child_response_xml(
     )?;
     let server = request.empty()?;
     Ok(HttpResponse::xml(
-        server.krill().ca_parent_response(&ta_handle(), child)?.to_xml_vec()
+        server.krill().ca_parent_response(
+            ta_handle(), child
+        ).await?.to_xml_vec()
     ))
 }
 
 
 //------------ /api/v1/proxy/init --------------------------------------------
 
-fn proxy_init(
+async fn proxy_init(
     request: Request<'_>,
     path: PathIter<'_>,
 ) -> Result<HttpResponse, DispatchError> {
@@ -159,14 +163,14 @@ fn proxy_init(
         Permission::CaAdmin, None
     )?;
     let server = request.empty()?;
-    server.krill().ta_proxy_init()?;
+    server.krill().ta_proxy_init().await?;
     Ok(HttpResponse::ok())
 }
 
 
 //------------ /api/v1/proxy/id ----------------------------------------------
 
-fn proxy_id(
+async fn proxy_id(
     request: Request<'_>,
     path: PathIter<'_>,
 ) -> Result<HttpResponse, DispatchError> {
@@ -177,7 +181,7 @@ fn proxy_id(
     )?;
     let server = request.empty()?;
     Ok(HttpResponse::json(
-        &server.krill().ta_proxy_id()?
+        &server.krill().ta_proxy_id().await?
     ))
 }
 
@@ -190,8 +194,8 @@ async fn proxy_repo(
 ) -> Result<HttpResponse, DispatchError> {
     match path.next() {
         None => proxy_repo_index(request).await,
-        Some("request.json") => proxy_repo_request(request, path),
-        Some("request.xml") => proxy_repo_request_xml(request, path),
+        Some("request.json") => proxy_repo_request(request, path).await,
+        Some("request.xml") => proxy_repo_request_xml(request, path).await,
         _ => Ok(HttpResponse::not_found())
     }
 }
@@ -206,7 +210,7 @@ async fn proxy_repo_index(
             )?;
             let server = request.empty()?;
             Ok(HttpResponse::json(
-                &server.krill().ta_proxy_repository_contact()?
+                &server.krill().ta_proxy_repository_contact().await?
             ))
         }
         Method::POST => {
@@ -217,14 +221,16 @@ async fn proxy_repo_index(
             let update = super::cas::extract_repository_contact(
                 &ta_handle(), update
             )?;
-            server.krill().ta_proxy_repository_update(update, auth.actor())?;
+            server.krill().ta_proxy_repository_update(
+                update, auth.into_actor()
+            ).await?;
             Ok(HttpResponse::ok())
         }
         _ => Ok(HttpResponse::method_not_allowed())
     }
 }
 
-fn proxy_repo_request(
+async fn proxy_repo_request(
     request: Request<'_>,
     path: PathIter<'_>,
 ) -> Result<HttpResponse, DispatchError> {
@@ -233,11 +239,11 @@ fn proxy_repo_request(
     let (request, _) = request.proceed_permitted(Permission::CaAdmin, None)?;
     let server = request.empty()?;
     Ok(HttpResponse::json(
-        &server.krill().ta_proxy_publisher_request()?
+        &server.krill().ta_proxy_publisher_request().await?
     ))
 }
 
-fn proxy_repo_request_xml(
+async fn proxy_repo_request_xml(
     request: Request<'_>,
     path: PathIter<'_>,
 ) -> Result<HttpResponse, DispatchError> {
@@ -246,7 +252,7 @@ fn proxy_repo_request_xml(
     let (request, _) = request.proceed_permitted(Permission::CaAdmin, None)?;
     let server = request.empty()?;
     Ok(HttpResponse::xml(
-        server.krill().ta_proxy_publisher_request()?.to_xml_vec()
+        server.krill().ta_proxy_publisher_request().await?.to_xml_vec()
     ))
 }
 
@@ -259,7 +265,7 @@ async fn proxy_signer(
 ) -> Result<HttpResponse, DispatchError> {
     match path.next() {
         Some("add") => proxy_signer_add(request, path).await,
-        Some("request") => proxy_signer_request(request, path),
+        Some("request") => proxy_signer_request(request, path).await,
         Some("response") => proxy_signer_response(request, path).await,
         Some("update") => proxy_signer_update(request, path).await,
         _ => Ok(HttpResponse::not_found())
@@ -276,11 +282,11 @@ async fn proxy_signer_add(
         Permission::CaAdmin, None
     )?;
     let (server, info) = request.read_json().await?;
-    server.krill().ta_proxy_signer_add(info, auth.actor())?;
+    server.krill().ta_proxy_signer_add(info, auth.into_actor()).await?;
     Ok(HttpResponse::ok())
 }
 
-fn proxy_signer_request(
+async fn proxy_signer_request(
     request: Request<'_>,
     path: PathIter<'_>,
 ) -> Result<HttpResponse, DispatchError> {
@@ -292,7 +298,7 @@ fn proxy_signer_request(
             )?;
             let server = request.empty()?;
             Ok(HttpResponse::json(
-                &server.krill().ta_proxy_signer_get_request()?
+                &server.krill().ta_proxy_signer_get_request().await?
             ))
         }
         Method::POST => {
@@ -302,8 +308,8 @@ fn proxy_signer_request(
             let server = request.empty()?;
             Ok(HttpResponse::json(
                 &server.krill().ta_proxy_signer_make_request(
-                    auth.actor()
-                )?
+                    auth.into_actor()
+                ).await?
             ))
         }
         _ => Ok(HttpResponse::method_not_allowed())
@@ -320,7 +326,9 @@ async fn proxy_signer_response(
         Permission::CaAdmin, None
     )?;
     let (server, response) = request.read_json().await?;
-    server.krill().ta_proxy_signer_process_response(response, auth.actor())?;
+    server.krill().ta_proxy_signer_process_response(
+        response, auth.into_actor()
+    ).await?;
     Ok(HttpResponse::ok())
 }
 
@@ -334,7 +342,7 @@ async fn proxy_signer_update(
         Permission::CaAdmin, None
     )?;
     let (server, info) = request.read_json().await?;
-    server.krill().ta_proxy_signer_update(info, auth.actor())?;
+    server.krill().ta_proxy_signer_update(info, auth.into_actor()).await?;
     Ok(HttpResponse::ok())
 }
 

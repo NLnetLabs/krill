@@ -32,7 +32,7 @@ pub struct AuthProvider {
 
 impl AuthProvider {
     /// Creates a new unix user auth provider from the given config.
-    pub fn new(config: Arc<Config>) -> KrillResult<Self> {
+    pub fn new(config: &Config) -> KrillResult<Self> {
         let mut unix_users  = HashMap::new();
         for (k, v) in config.unix_users().iter() {
             if let Some(role) = config.auth_roles.get(v) {

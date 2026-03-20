@@ -2,8 +2,6 @@
 
 use std::vec;
 use std::collections::HashMap;
-use std::ops::Deref;
-use std::sync::Arc;
 use bytes::Bytes;
 use chrono::Duration;
 use log::{debug, info, trace, warn};
@@ -48,6 +46,7 @@ use crate::commons::error::Error;
 use crate::commons::eventsourcing::Aggregate;
 use crate::constants::test_mode_enabled;
 use crate::config::{Config, IssuanceTimingConfig};
+use crate::server::runtime::KrillRuntime;
 use super::aspa::AspaDefinitions;
 use super::bgpsec::BgpSecDefinitions;
 use super::child::{ChildDetails, ChildCertificateUpdates, UsedKeyState};
@@ -132,6 +131,8 @@ impl Aggregate for CertAuth {
 
     type Error = Error;
 
+    type Context<'a> = &'a KrillRuntime;
+
     fn init(handle: &MyHandle, event: CertAuthInitEvent) -> Self {
         CertAuth {
             handle: handle.clone(),
@@ -155,11 +156,10 @@ impl Aggregate for CertAuth {
     }
 
     fn process_init_command(
-        command: CertAuthInitCommand,
+        _command: CertAuthInitCommand,
+        krill: &KrillRuntime,
     ) -> Result<CertAuthInitEvent, Error> {
-        Rfc8183Id::generate(
-            &command.details().signer
-        ).map(|id| CertAuthInitEvent { id })
+        Rfc8183Id::generate(krill.signer()).map(|id| CertAuthInitEvent { id })
     }
 
     fn version(&self) -> u64 {
@@ -173,6 +173,7 @@ impl Aggregate for CertAuth {
     fn process_command(
         &self,
         command: CertAuthCommand,
+        krill: &KrillRuntime,
     ) -> Result<Vec<CertAuthEvent>, Error> {
         trace!(
             "Sending command to CA '{}', version: {}: {}",
@@ -187,9 +188,11 @@ impl Aggregate for CertAuth {
             }
 
             CertAuthCommandDetails::ChildImport(
-                import_child, config, signer,
+                import_child
             ) => {
-                self.process_child_import(import_child, &config, signer)
+                self.process_child_import(
+                    import_child, krill.config(), krill.signer(),
+                )
             }
 
             CertAuthCommandDetails::ChildUpdateResources(child, res) => {
@@ -207,9 +210,11 @@ impl Aggregate for CertAuth {
             }
 
             CertAuthCommandDetails::ChildCertify(
-                child, request, config, signer,
+                child, request,
             ) => {
-                self.process_child_certify( child, request, &config, signer)
+                self.process_child_certify(
+                    child, request, krill.config(), krill.signer()
+                )
             }
 
             CertAuthCommandDetails::ChildRevokeKey(child, request) => {
@@ -224,15 +229,17 @@ impl Aggregate for CertAuth {
                 self.process_child_suspend_inactive(&child)
             }
 
-            CertAuthCommandDetails::ChildUnsuspend(child, config, signer) => {
-                self.process_child_unsuspend(&child, &config, signer)
+            CertAuthCommandDetails::ChildUnsuspend(child) => {
+                self.process_child_unsuspend(
+                    &child, krill.config(), krill.signer()
+                )
             }
 
 
             // Parent commands
 
-            CertAuthCommandDetails::GenerateNewIdKey(signer) => {
-                self.process_generate_new_id_key(signer)
+            CertAuthCommandDetails::GenerateNewIdKey => {
+                self.process_generate_new_id_key(krill.signer())
             }
 
             CertAuthCommandDetails::AddParent(parent, info) => {
@@ -248,35 +255,33 @@ impl Aggregate for CertAuth {
             }
 
             CertAuthCommandDetails::UpdateEntitlements(
-                parent, entitlements, signer,
+                parent, entitlements
             ) => {
-                self.process_update_entitlements(parent, entitlements, signer)
-            }
-
-            CertAuthCommandDetails::UpdateRcvdCert(
-                class_name, rcvd_cert, config, signer,
-            ) => {
-                self.process_update_received_cert(
-                    class_name, rcvd_cert, &config, &signer
+                self.process_update_entitlements(
+                    parent, entitlements, krill.signer(),
                 )
             }
 
-            CertAuthCommandDetails::DropResourceClass(
-                rcn, reason, signer,
-            ) => {
-                self.process_drop_resource_class(rcn, reason, signer)
+            CertAuthCommandDetails::UpdateRcvdCert(class_name, rcvd_cert) => {
+                self.process_update_received_cert(
+                    class_name, rcvd_cert, krill.config(), krill.signer()
+                )
+            }
+
+            CertAuthCommandDetails::DropResourceClass(rcn, reason) => {
+                self.process_drop_resource_class(rcn, reason, krill.signer())
             }
 
             // Key rolls
 
-            CertAuthCommandDetails::KeyRollInitiate(duration, signer) => {
-                self.process_keyroll_initiate(duration, signer)
+            CertAuthCommandDetails::KeyRollInitiate(duration) => {
+                self.process_keyroll_initiate(duration, krill.signer())
             }
 
-            CertAuthCommandDetails::KeyRollActivate(
-                duration, config, signer,
-            ) => {
-                self.process_keyroll_activate(duration, config, signer)
+            CertAuthCommandDetails::KeyRollActivate(duration) => {
+                self.process_keyroll_activate(
+                    duration, krill.config(), krill.signer()
+                )
             }
 
             CertAuthCommandDetails::KeyRollFinish(rcn, response) => {
@@ -285,83 +290,73 @@ impl Aggregate for CertAuth {
 
             // Publishing
 
-            CertAuthCommandDetails::RepoUpdate(contact, signer) => {
-                self.process_update_repo(contact, &signer)
+            CertAuthCommandDetails::RepoUpdate(contact) => {
+                self.process_update_repo(contact, krill.signer())
             }
 
             // ROAs
 
-            CertAuthCommandDetails::RouteAuthorizationsUpdate(
-                updates, config, signer,
-            ) => {
+            CertAuthCommandDetails::RouteAuthorizationsUpdate(updates) => {
                 self.process_route_authorizations_update(
-                    updates, &config, &signer
+                    updates, krill.config(), krill.signer()
                 )
             }
 
-            CertAuthCommandDetails::RouteAuthorizationsRenew(
-                config, signer,
-            ) => {
+            CertAuthCommandDetails::RouteAuthorizationsRenew => {
                 self.process_route_authorizations_renew(
-                    false, &config, &signer
+                    false, krill.config(), krill.signer()
                 )
             }
 
-            CertAuthCommandDetails::RouteAuthorizationsForceRenew(
-                config, signer,
-            ) => {
+            CertAuthCommandDetails::RouteAuthorizationsForceRenew=> {
                 self.process_route_authorizations_renew(
-                    true, &config, &signer
+                    true, krill.config(), krill.signer()
                 )
             }
 
             // ASPA
 
-            CertAuthCommandDetails::AspasUpdate(updates, config, signer) => {
+            CertAuthCommandDetails::AspasUpdate(updates) => {
                 self.process_aspas_update(
-                    updates, &config, &signer
+                    updates, krill.config(), krill.signer()
                 )
             }
 
             CertAuthCommandDetails::AspasUpdateExisting(
-                customer, update, config, signer,
+                customer, update,
             ) => {
                 self.process_aspas_update_existing(
-                    customer, update, &config, &signer
+                    customer, update, krill.config(), krill.signer(),
                 )
             }
 
-            CertAuthCommandDetails::AspasRenew(config, signer) => {
-                self.process_aspas_renew(&config, &signer)
+            CertAuthCommandDetails::AspasRenew => {
+                self.process_aspas_renew(krill.config(), krill.signer())
             }
 
             // BGPsec router keys
 
-            CertAuthCommandDetails::BgpSecUpdateDefinitions(
-                updates, config, signer,
-            ) => {
+            CertAuthCommandDetails::BgpSecUpdateDefinitions(updates) => {
                 self.process_bgpsec_definitions_update(
-                    updates, &config, &signer
+                    updates, krill.config(), krill.signer(),
                 )
             }
 
-            CertAuthCommandDetails::BgpSecRenew(config, signer) => {
-                self.process_bgpsec_renew(&config, &signer)
+            CertAuthCommandDetails::BgpSecRenew => {
+                self.process_bgpsec_renew(krill.config(), krill.signer())
             }
 
             // RTA
-            CertAuthCommandDetails::RtaMultiPrepare(
-                name, request, signer,
-            ) => {
-                self.process_rta_multi_prep(name, request, &signer)
+            CertAuthCommandDetails::RtaMultiPrepare(name, request) => {
+                self.process_rta_multi_prep(name, request, krill.signer())
             }
 
-            CertAuthCommandDetails::RtaCoSign(name, rta, signer) => {
-                self.process_rta_cosign(name, rta, signer.deref())
+            CertAuthCommandDetails::RtaCoSign(name, rta) => {
+                self.process_rta_cosign(name, rta, krill.signer())
             }
 
-            CertAuthCommandDetails::RtaSign(name, request, signer) => {
-                self.process_rta_sign(name, request, signer.deref())
+            CertAuthCommandDetails::RtaSign(name, request) => {
+                self.process_rta_sign(name, request, krill.signer())
             }
         }
     }
@@ -675,6 +670,47 @@ impl Aggregate for CertAuth {
                 self.rtas.add_signed(name, rta);
             }
         }
+    }
+
+    fn pre_save_events(
+        &self, events: &[Self::Event], krill: &KrillRuntime,
+    ) -> Result<(), Self::Error> {
+        // Let the object store update its ROAs and issued
+        // certificates and/or generate manifests and CRLs when relevant
+        // changes occur in a `CertAuth`.
+        krill.ca_manager().ca_objects_store().cert_auth_pre_save_events(
+            self, events, krill
+        )?;
+
+        // Let the [`TaskQueue`] handle events pre-save so
+        // that relevant changes in a `CertAuth` can trigger follow-up
+        // actions. This is done as pre-save listener, because commands
+        // that would result in a follow-up should fail, if the task cannot be
+        // planned.
+        //
+        // Tasks will typically be picked up after the CA changes are
+        // committed, but they may also be picked up sooner by another
+        // thread. Because of that the tasks will remember which minimal
+        // version of the CA they are intended for, so that they can
+        // be rescheduled should they have been picked up too soon.
+        //
+        // An example of a triggered task: schedule a synchronisation with the
+        // repository (publication server) in case ROAs have been
+        // updated.
+        krill.tasks().cert_auth_pre_save_events(self, events)?;
+
+        Ok(())
+    }
+
+    fn post_save_events(
+        &self, events: &[Self::Event], krill: &KrillRuntime,
+    ) {
+        // Also let the [`TaskQueue`] handle events post-save. We
+        // use this to send best-effort post-save signals to children
+        // in case a certificate was updated or a child key was revoked.
+        // This is a no-op for remote children (we cannot send a signal over
+        // RFC 6492).
+        krill.tasks().cert_auth_post_save_events(self, events);
     }
 }
 
@@ -1101,7 +1137,7 @@ impl CertAuth {
         &self,
         import_child: ImportChild,
         config: &Config,
-        signer: Arc<KrillSigner>,
+        signer: &KrillSigner,
     ) -> KrillResult<Vec<CertAuthEvent>> {
         // overview:
         // - perform checks (e.g. not supported in case we have multiple RCs)
@@ -1142,7 +1178,7 @@ impl CertAuth {
         )?;
 
         // Add a resource class name mapping if applicable
-        if
+        if 
             let Some(name_for_child) = class_name_override
             && name_for_child != my_rcn
         {
@@ -1304,7 +1340,7 @@ impl CertAuth {
         child_handle: ChildHandle,
         request: IssuanceRequest,
         config: &Config,
-        signer: Arc<KrillSigner>,
+        signer: &KrillSigner,
     ) -> KrillResult<Vec<CertAuthEvent>> {
         let (child_rcn, limit, csr) = request.unpack();
 
@@ -1336,7 +1372,7 @@ impl CertAuth {
         csr_info: CsrInfo,
         limit: RequestResourceLimit,
         config: &Config,
-        signer: Arc<KrillSigner>,
+        signer: &KrillSigner,
         events: &mut Vec<CertAuthEvent>,
     ) -> KrillResult<()> {
         if !csr_info.global_uris() && !test_mode_enabled() {
@@ -1354,7 +1390,7 @@ impl CertAuth {
             resources,
             limit,
             &config.issuance_timing,
-            &signer,
+            signer,
         )?;
         let cert_name = ObjectName::from_key(&issued.key_identifier(), "cer");
 
@@ -1553,8 +1589,8 @@ impl CertAuth {
     fn process_child_unsuspend(
         &self,
         child_handle: &ChildHandle,
-        config: &Arc<Config>,
-        signer: Arc<KrillSigner>,
+        config: &Config,
+        signer: &KrillSigner,
     ) -> KrillResult<Vec<CertAuthEvent>> {
         let child = self.get_child(child_handle)?;
 
@@ -1591,7 +1627,7 @@ impl CertAuth {
                             suspended.csr_info.clone(),
                             suspended.limit.clone(),
                             config,
-                            signer.clone(),
+                            signer,
                             &mut res,
                         )?;
                     }
@@ -1727,9 +1763,9 @@ impl CertAuth {
     /// Processes the “generate new ID key” command.
     fn process_generate_new_id_key(
         &self,
-        signer: Arc<KrillSigner>,
+        signer: &KrillSigner,
     ) -> KrillResult<Vec<CertAuthEvent>> {
-        let id = Rfc8183Id::generate(&signer)?;
+        let id = Rfc8183Id::generate(signer)?;
 
         info!(
             "CA '{}' generated new ID certificate with key id: {}",
@@ -1842,7 +1878,7 @@ impl CertAuth {
         &self,
         parent_handle: ParentHandle,
         entitlements: ResourceClassListResponse,
-        signer: Arc<KrillSigner>,
+        signer: &KrillSigner,
     ) -> KrillResult<Vec<CertAuthEvent>> {
         let mut res = Vec::new();
 
@@ -1867,7 +1903,7 @@ impl CertAuth {
                     && !entitled_classes.contains(&class.parent_rc_name())
             })
         {
-            let revoke_requests = rc.revoke(signer.deref())?;
+            let revoke_requests = rc.revoke(signer)?;
 
             info!(
                 "Updating Entitlements for CA: {}, Removing RC: {}",
@@ -1896,7 +1932,7 @@ impl CertAuth {
                         self.handle(),
                         ent,
                         &self.repository_contact()?.repo_info,
-                        &signer,
+                        signer,
                         &mut res,
                     )?;
                 }
@@ -1934,7 +1970,7 @@ impl CertAuth {
                         self.handle(),
                         ent,
                         &self.repository_contact()?.repo_info,
-                        &signer,
+                        signer,
                         &mut res
                     )?;
                 }
@@ -2007,7 +2043,7 @@ impl CertAuth {
         &self,
         rcn: ResourceClassName,
         reason: DropReason,
-        signer: Arc<KrillSigner>,
+        signer: &KrillSigner,
     ) -> KrillResult<Vec<CertAuthEvent>> {
         warn!(
             "Dropping resource class '{rcn}' because of reason: {reason}"
@@ -2016,7 +2052,7 @@ impl CertAuth {
             Error::ResourceClassUnknown(rcn.clone())
         })?;
 
-        rc.revoke(signer.deref()).map(|revoke_requests| {
+        rc.revoke(signer).map(|revoke_requests| {
             vec![CertAuthEvent::ResourceClassRemoved {
                 resource_class_name: rcn,
                 parent: rc.parent_handle().clone(),
@@ -2032,14 +2068,14 @@ impl CertAuth {
     fn process_keyroll_initiate(
         &self,
         duration: Duration,
-        signer: Arc<KrillSigner>,
+        signer: &KrillSigner,
     ) -> KrillResult<Vec<CertAuthEvent>> {
         let mut res = Vec::new();
 
         for (rcn, rc) in self.resources.iter() {
             let repo = self.repository_contact()?;
             if rc.append_keyroll_initiate(
-                &repo.repo_info, duration, &signer, &mut res
+                &repo.repo_info, duration, signer, &mut res
             )? {
                 info!(
                     "Started key roll for ca: {}, rc: {}, under parent: {}",
@@ -2057,14 +2093,14 @@ impl CertAuth {
     fn process_keyroll_activate(
         &self,
         staging_time: Duration,
-        config: Arc<Config>,
-        signer: Arc<KrillSigner>,
+        config: &Config,
+        signer: &KrillSigner,
     ) -> KrillResult<Vec<CertAuthEvent>> {
         let mut res = vec![];
 
         for (rcn, rc) in self.resources.iter() {
             if rc.append_keyroll_activate(
-                staging_time, &config.issuance_timing, &signer, &mut res
+                staging_time, &config.issuance_timing, signer, &mut res
             )? {
                 info!(
                     "Activated key for ca: {}, rc: {}, under parent: {}",
@@ -2515,8 +2551,8 @@ impl CertAuth {
         let mut keys = HashMap::new();
 
         for (rcn, rc) in self.resources.iter() {
-            if
-                let Some(rc_resources) = rc.current_resources() 
+            if 
+                let Some(rc_resources) = rc.current_resources()
                 && !rc_resources.intersection(&request.resources).is_empty()
             {
                 let key = signer.create_key()?;

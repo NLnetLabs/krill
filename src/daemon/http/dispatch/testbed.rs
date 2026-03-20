@@ -72,7 +72,7 @@ async fn children(
 ) -> Result<HttpResponse, DispatchError> {
     match path.parse_opt_next()? {
         None => children_index(request).await,
-        Some(child) => children_child(request, path, child),
+        Some(child) => children_child(request, path, child).await,
     }
 }
 
@@ -84,26 +84,26 @@ async fn children_index(
     let (server, child) = request.read_json().await?;
     Ok(HttpResponse::json(
         &server.krill().ca_add_child(
-            &testbed_ca_handle(), child, &Actor::anonymous()
-        )?
+            testbed_ca_handle(), child, Actor::anonymous()
+        ).await?
     ))
 }
 
-fn children_child(
+async fn children_child(
     request: Request<'_>,
     mut path: PathIter<'_>,
     child: ChildHandle,
 ) -> Result<HttpResponse, DispatchError> {
     match path.next() {
-        None => children_child_index(request, child),
+        None => children_child_index(request, child).await,
         Some("parent_response.xml") => {
-            children_child_response(request, path, child)
+            children_child_response(request, path, child).await
         }
         _ => Ok(HttpResponse::not_found())
     }
 }
 
-fn children_child_index(
+async fn children_child_index(
     request: Request<'_>,
     child: ChildHandle,
 ) -> Result<HttpResponse, DispatchError> {
@@ -111,12 +111,12 @@ fn children_child_index(
     let (request, _) = request.proceed_unchecked();
     let server = request.empty()?;
     server.krill().ca_child_remove(
-        &testbed_ca_handle(), child, &Actor::anonymous()
-    )?;
+        testbed_ca_handle(), child, Actor::anonymous()
+    ).await?;
     Ok(HttpResponse::ok())
 }
 
-fn children_child_response(
+async fn children_child_response(
     request: Request<'_>,
     path: PathIter<'_>,
     child: ChildHandle,
@@ -127,8 +127,8 @@ fn children_child_response(
     let server = request.empty()?;
     Ok(HttpResponse::xml(
         server.krill().ca_parent_response(
-            &testbed_ca_handle(), child
-        )?.to_xml_vec()
+            testbed_ca_handle(), child
+        ).await?.to_xml_vec()
     ))
 }
 
@@ -141,7 +141,9 @@ async fn publishers(
 ) -> Result<HttpResponse, DispatchError> {
     match path.parse_opt_next()? {
         None => publishers_index(request).await,
-        Some(publisher) => publishers_publisher(request, path, publisher),
+        Some(publisher) => {
+            publishers_publisher(request, path, publisher).await
+        }
     }
 }
 
@@ -152,38 +154,36 @@ async fn publishers_index(
     let (request, _) = request.proceed_unchecked();
     let (server, pbl) = request.read_json().await?;
     Ok(HttpResponse::json(
-        &server.krill().add_publisher(pbl, &Actor::anonymous())?
+        &server.krill().add_publisher(pbl, Actor::anonymous()).await?
     ))
 }
 
-fn publishers_publisher(
+async fn publishers_publisher(
     request: Request<'_>,
     mut path: PathIter<'_>,
     publisher: PublisherHandle,
 ) -> Result<HttpResponse, DispatchError> {
     match path.next() {
-        None => publishers_publisher_index(request, publisher),
+        None => publishers_publisher_index(request, publisher).await,
         Some("response.xml") => {
-            publishers_publisher_response(request, path, publisher)
+            publishers_publisher_response(request, path, publisher).await
         }
         _ => Ok(HttpResponse::not_found())
     }
 }
 
-fn publishers_publisher_index(
+async fn publishers_publisher_index(
     request: Request<'_>,
     publisher: PublisherHandle,
 ) -> Result<HttpResponse, DispatchError> {
     request.check_delete()?;
     let (request, _) = request.proceed_unchecked();
     let server = request.empty()?;
-    server.krill().remove_publisher(
-        publisher, &Actor::anonymous()
-    )?;
+    server.krill().remove_publisher(publisher, Actor::anonymous()).await?;
     Ok(HttpResponse::ok())
 }
 
-fn publishers_publisher_response(
+async fn publishers_publisher_response(
     request: Request<'_>,
     path: PathIter<'_>,
     publisher: PublisherHandle,
@@ -193,7 +193,7 @@ fn publishers_publisher_response(
     let (request, _) = request.proceed_unchecked();
     let server = request.empty()?;
     Ok(HttpResponse::xml(
-        server.krill().repository_response(&publisher)?.to_xml_vec()
+        server.krill().repository_response(publisher).await?.to_xml_vec()
     ))
 }
 

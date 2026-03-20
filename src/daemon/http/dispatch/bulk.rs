@@ -23,11 +23,11 @@ async fn cas(
 ) -> Result<HttpResponse, DispatchError> {
     match path.next() {
         Some("import") => cas_import(request, path).await,
-        Some("issues") => cas_issues(request, path),
-        Some("sync") => cas_sync(request, path),
-        Some("publish") => cas_publish(request, path),
-        Some("force_publish") => cas_force_publish(request, path),
-        Some("suspend") => cas_suspend(request, path),
+        Some("issues") => cas_issues(request, path).await,
+        Some("sync") => cas_sync(request, path).await,
+        Some("publish") => cas_publish(request, path).await,
+        Some("force_publish") => cas_force_publish(request, path).await,
+        Some("suspend") => cas_suspend(request, path).await,
         _ => Ok(HttpResponse::not_found())
     }
 }
@@ -44,7 +44,7 @@ async fn cas_import(
     Ok(HttpResponse::ok())
 }
 
-fn cas_issues(
+async fn cas_issues(
     request: Request<'_>,
     path: PathIter<'_>,
 ) -> Result<HttpResponse, DispatchError> {
@@ -54,9 +54,9 @@ fn cas_issues(
     let server = request.empty()?;
 
     let mut all_issues = AllCertAuthIssues::default();
-    for ca in server.krill().ca_handles()? {
+    for ca in server.krill().ca_handles().await? {
         if auth.has_permission(Permission::CaRead, Some(&ca)) {
-            let issues = server.krill().ca_issues(&ca)?;
+            let issues = server.krill().ca_issues(ca.clone()).await?;
             if !issues.is_empty() {
                 all_issues.cas.insert(ca, issues);
             }
@@ -66,18 +66,18 @@ fn cas_issues(
     Ok(HttpResponse::json(&all_issues))
 }
 
-fn cas_sync(
+async fn cas_sync(
     request: Request<'_>,
     mut path: PathIter<'_>,
 ) -> Result<HttpResponse, DispatchError> {
     match path.next() {
-        Some("parent") => cas_sync_parent(request, path),
-        Some("repo") => cas_sync_repo(request, path),
+        Some("parent") => cas_sync_parent(request, path).await,
+        Some("repo") => cas_sync_repo(request, path).await,
         _ => Ok(HttpResponse::not_found())
     }
 }
 
-fn cas_sync_parent(
+async fn cas_sync_parent(
     request: Request<'_>,
     path: PathIter<'_>,
 ) -> Result<HttpResponse, DispatchError> {
@@ -85,11 +85,11 @@ fn cas_sync_parent(
     request.check_post()?;
     let (request, _) = request.proceed_permitted(Permission::CaAdmin, None)?;
     let server = request.empty()?;
-    server.krill().cas_refresh_all()?;
+    server.krill().cas_refresh_all().await?;
     Ok(HttpResponse::ok())
 }
 
-fn cas_sync_repo(
+async fn cas_sync_repo(
     request: Request<'_>,
     path: PathIter<'_>,
 ) -> Result<HttpResponse, DispatchError> {
@@ -97,11 +97,11 @@ fn cas_sync_repo(
     request.check_post()?;
     let (request, _) = request.proceed_permitted(Permission::CaAdmin, None)?;
     let server = request.empty()?;
-    server.krill().cas_repo_sync_all()?;
+    server.krill().cas_repo_sync_all().await?;
     Ok(HttpResponse::ok())
 }
 
-fn cas_publish(
+async fn cas_publish(
     request: Request<'_>,
     path: PathIter<'_>,
 ) -> Result<HttpResponse, DispatchError> {
@@ -109,11 +109,11 @@ fn cas_publish(
     request.check_post()?;
     let (request, _) = request.proceed_permitted(Permission::CaAdmin, None)?;
     let server = request.empty()?;
-    server.krill().republish_all(false)?;
+    server.krill().republish_all(false).await?;
     Ok(HttpResponse::ok())
 }
 
-fn cas_force_publish(
+async fn cas_force_publish(
     request: Request<'_>,
     path: PathIter<'_>,
 ) -> Result<HttpResponse, DispatchError> {
@@ -121,11 +121,11 @@ fn cas_force_publish(
     request.check_post()?;
     let (request, _) = request.proceed_permitted(Permission::CaAdmin, None)?;
     let server = request.empty()?;
-    server.krill().republish_all(true)?;
+    server.krill().republish_all(true).await?;
     Ok(HttpResponse::ok())
 }
 
-fn cas_suspend(
+async fn cas_suspend(
     request: Request<'_>,
     path: PathIter<'_>,
 ) -> Result<HttpResponse, DispatchError> {
@@ -133,7 +133,7 @@ fn cas_suspend(
     request.check_post()?;
     let (request, _) = request.proceed_permitted(Permission::CaAdmin, None)?;
     let server = request.empty()?;
-    server.krill().cas_schedule_suspend_all()?;
+    server.krill().cas_schedule_suspend_all().await?;
     Ok(HttpResponse::ok())
 }
 

@@ -294,7 +294,7 @@ impl CommandHistoryCriteria {
     /// Returns whether the given label is included in the criteria.
     fn matches_label(&self, label: &String) -> bool {
         if
-            let Some(includes) = &self.label_includes 
+            let Some(includes) = &self.label_includes
             && !includes.contains(label)
         {
             return false;

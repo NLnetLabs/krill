@@ -643,6 +643,7 @@ impl RrdpServer {
             self.session.uuid(), self.serial, snapshot, deltas,
         );
         let notification_path_new = self.notification_path_new();
+        eprintln!("Writing notification file.");
         let mut notification_file_new =
             file::create_file_with_path(&notification_path_new)?;
         notification
@@ -651,14 +652,34 @@ impl RrdpServer {
                 KrillIoError::new(
                     format!(
                         "could not write new notification file to {}",
-                        notification_path_new.to_string_lossy()
+                        notification_path_new.display()
                     ),
                     e,
                 )
             })?;
+        if let Err(err) = notification_file_new.sync_all() {
+            return Err(KrillIoError::new(
+                format!(
+                    "failed to write new notification file '{}'",
+                    notification_path_new.display()
+                ),
+                err
+            ).into());
+        }
+        eprintln!("Done writing notification file.");
 
         // Rename the new file so it becomes current.
         let notification_path = self.notification_path();
+        eprintln!(
+            "{}: {:?}",
+            notification_path_new.display(),
+            fs::exists(&notification_path_new)
+        );
+        eprintln!(
+            "{}: {:?}",
+            notification_path.display(),
+            fs::exists(&notification_path)
+        );
         fs::rename(&notification_path_new, &notification_path).map_err(
             |e| {
                 KrillIoError::new(
@@ -787,8 +808,9 @@ impl RrdpServer {
                     if
                         let Ok(Some(snapshot_file_to_remove)) =
                             Self::session_dir_snapshot(&session_dir, serial)
-                        && let Err(e) =
-                            fs::remove_file(&snapshot_file_to_remove)
+                        && let Err(e) = fs::remove_file(
+                            &snapshot_file_to_remove
+                        )
                     {
                         warn!(
                             "Could not delete snapshot file '{}'. \
@@ -1409,11 +1431,12 @@ impl CurrentObjects {
         for (uri_key, base64) in self.iter() {
             // Add all manifests - as long as they are syntactically correct -
             // do not crash on incorrect objects.
-            if
-                uri_key.as_str().ends_with("mft") 
+            if 
+                uri_key.as_str().ends_with("mft")
                 && let Ok(mft) = Manifest::decode(
                     base64.to_bytes().as_ref(), false
-                ) && let Ok(stats) = PublisherManifestStats::try_from(&mft)
+                )
+                && let Ok(stats) = PublisherManifestStats::try_from(&mft)
             {
                 manifests.push(stats)
             }

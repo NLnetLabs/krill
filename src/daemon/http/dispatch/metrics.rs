@@ -59,7 +59,7 @@ pub async fn dispatch(
         server.authorizer().login_session_cache_size().await,
     );
 
-    if let Ok(cas_stats) = server.krill().cas_stats() {
+    if let Ok(cas_stats) = server.krill().cas_stats().await {
         target.single(
             Metric::gauge("cas", "number of CAs in Krill"),
             cas_stats.len()
@@ -67,13 +67,8 @@ pub async fn dispatch(
 
 
         if !server.config().metrics.metrics_hide_ca_details {
-            let mut ca_status_map = HashMap::new();
-
-            for ca in cas_stats.keys() {
-                if let Ok(ca_status) = server.krill().ca_status(ca) {
-                    ca_status_map.insert(ca.clone(), ca_status);
-                }
-            }
+            let ca_status_map =
+                server.krill().cas_status_map().await.unwrap_or_default();
 
             let metric = Metric::gauge(
                 "ca_parent_success",
@@ -386,7 +381,7 @@ pub async fn dispatch(
         }
     }
 
-    if let Ok(stats) = server.krill().repo_stats() {
+    if let Ok(stats) = server.krill().repo_stats().await {
         target.single(
             Metric::gauge(
                 "repo_publisher",

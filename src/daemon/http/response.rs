@@ -8,6 +8,7 @@ use serde::Serialize;
 use crate::api::admin::Token;
 use crate::api::status::ErrorResponse;
 use crate::commons::error::Error;
+use crate::server::manager::RunError;
 
 
 //----------- ContentType ----------------------------------------------------
@@ -372,6 +373,21 @@ impl HttpResponse {
         };
 
         self.response.headers_mut().insert(header_name, header_value);
+    }
+}
+
+impl From<RunError> for HttpResponse {
+    fn from(src: RunError) -> Self {
+        let body = serde_json::to_string(
+            &src.to_error_response()
+        ).unwrap().into();
+        Response {
+            status: src.status(),
+            content_type: ContentType::Json.as_str(),
+            max_age: None,
+            body,
+            cause: Some(src.into()),
+        }.finalize()
     }
 }
 

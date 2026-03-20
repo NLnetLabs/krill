@@ -275,6 +275,7 @@ impl TestConfig {
             log_type,
             log_file: None,
             syslog_facility,
+            num_threads: None,
             admin_token,
             auth_type,
             #[cfg(feature = "multi-user")]
@@ -321,10 +322,12 @@ impl TestConfig {
 
 /// A test Krill server.
 pub struct KrillServer {
-    join: JoinHandle<()>,
+    join: Option<JoinHandle<()>>,
     running: Option<oneshot::Receiver<()>>,
+    exit: Option<oneshot::Sender<()>>,
     server_uri: ServerUri,
     client: KrillClient,
+    data_dir: Option<TempDir>,
 }
 
 impl KrillServer {
@@ -332,50 +335,50 @@ impl KrillServer {
     ///
     /// The server will use memory storage. The function will start the
     /// server and wait for it to become ready.
-    pub async fn start() -> (Self, TempDir) {
+    pub async fn start() -> Self {
         let (config, data_dir) = TestConfig::mem_storage().finalize();
-        (Self::start_with_config(config).await, data_dir)
+        Self::start_with_config(config, Some(data_dir)).await
     }
 
     /// Starts a test server with testbed enabled.
     ///
     /// The server will use memory storage. The function will start the
     /// server and wait for it to become ready.
-    pub async fn start_with_testbed() -> (Self, TempDir) {
+    pub async fn start_with_testbed() -> Self {
         let (config, data_dir)
             = TestConfig::mem_storage().enable_testbed().finalize();
-        (Self::start_with_config(config).await, data_dir)
+        Self::start_with_config(config, Some(data_dir)).await
     }
 
     /// Starts a test server with testbed enabled and a modified config.
     pub async fn start_with_config_testbed(
         op: impl FnOnce(&mut Config)
-    ) -> (Self, TempDir) {
+    ) -> Self {
         let (mut config, data_dir)
             = TestConfig::mem_storage().enable_testbed().finalize();
         op(&mut config);
-        (Self::start_with_config(config).await, data_dir)
+        Self::start_with_config(config, Some(data_dir)).await
     }
 
     /// Starts a test server with file storage with testbed enabled.
     ///
     /// The server will use memory storage. The function will start the
     /// server and wait for it to become ready.
-    pub async fn start_with_file_storage_and_testbed() -> (Self, TempDir) {
+    pub async fn start_with_file_storage_and_testbed() -> Self {
         let (config, data_dir)
             = TestConfig::file_storage().enable_testbed().finalize();
-        (Self::start_with_config(config).await, data_dir)
+        Self::start_with_config(config, Some(data_dir)).await
     }
 
     /// Starts a second test server with testbed enabled.
     ///
     /// The server will use memory storage. The function will start the
     /// server and wait for it to become ready.
-    pub async fn start_second_with_testbed() -> (Self, TempDir) {
+    pub async fn start_second_with_testbed() -> Self {
         let (config, data_dir) = TestConfig::mem_storage()
             .alternative_port().enable_testbed().enable_second_signer()
             .finalize();
-        (Self::start_with_config(config).await, data_dir)
+        Self::start_with_config(config, Some(data_dir)).await
     }
 
     /// Starts a publication daemon.
@@ -384,7 +387,7 @@ impl KrillServer {
     /// udpates.
     pub async fn start_pubd(
         rrdp_delta_min_interval_seconds: u32
-    ) -> (Self, TempDir) {
+    ) -> Self {
         let (mut config, data_dir) = TestConfig::mem_storage()
             .alternative_port()
             .enable_second_signer() // XXX Not sure why?
@@ -392,67 +395,64 @@ impl KrillServer {
         config.rrdp_updates_config.rrdp_delta_interval_min_seconds =
             rrdp_delta_min_interval_seconds;
         let port = config.port;
-        let server = Self::start_with_config(config).await;
+        let server = Self::start_with_config(config, Some(data_dir)).await;
         server.pubserver_init(port).await;
-        (server, data_dir)
+        server
     }
 
     /// Starts a test server with the given config.
     ///
     /// This will start the server and wait for it to become ready.
-    pub async fn start_with_config(config: Config) -> Self {
+    pub async fn start_with_config(
+        config: Config, data_dir: Option<TempDir>,
+    ) -> Self {
         let server_uri = ServerUri::from_str(
             &format!(
                 "https://{}:{}/",
                 config.ip.first().unwrap(), config.port
             )
         ).unwrap();
-        let client = KrillClient::new(
-            server_uri.clone(), Some(config.admin_token.clone())
-        );
-        let (tx, running) = oneshot::channel();
-        let mut res = Self {
-            join: tokio::spawn(async {
-                if let Err(err) = start_krill_daemon(
-                    config.into(), Some(tx)
-                ).await {
-                    error!("Krill failed to start: {err}");
-                }
-            }),
-            running: Some(running),
-            server_uri,
-            client: client.unwrap(),
-        };
-        res.ready().await;
-        res
+        Self::start_with_server_uri(config, server_uri, data_dir).await
     }
 
     /// Starts a test server with the given config over a UNIX socket
     ///
     /// This will start the server and wait for it to become ready.
     #[cfg(unix)]
-    pub async fn start_with_config_unix(config: Config) -> Self {
+    pub async fn start_with_config_unix(
+        config: Config, data_dir: Option<TempDir>
+    ) -> Self {
         let server_uri = ServerUri::from_str(
             &format!(
                 "unix://{}",
                 config.unix_socket().unwrap().display()
             )
         ).unwrap();
+        Self::start_with_server_uri(config, server_uri, data_dir).await
+    }
+
+    /// Starts a test server with the given server URI.
+    async fn start_with_server_uri(
+        config: Config, server_uri: ServerUri, data_dir: Option<TempDir>
+    ) -> Self {
         let client = KrillClient::new(
-            server_uri.clone(), None
+            server_uri.clone(), Some(config.admin_token.clone())
         );
-        let (tx, running) = oneshot::channel();
+        let (running_tx, running_rx) = oneshot::channel();
+        let (exit_tx, exit_rx) = oneshot::channel();
         let mut res = Self {
-            join: tokio::spawn(async {
+            join: Some(tokio::task::spawn_blocking(|| {
                 if let Err(err) = start_krill_daemon(
-                    config.into(), Some(tx)
-                ).await {
+                    config, Some(running_tx), Some(exit_rx),
+                ) {
                     error!("Krill failed to start: {err}");
                 }
-            }),
-            running: Some(running),
+            })),
+            running: Some(running_rx),
+            exit: Some(exit_tx),
             server_uri,
             client: client.unwrap(),
+            data_dir,
         };
         res.ready().await;
         res
@@ -460,6 +460,10 @@ impl KrillServer {
 
     pub fn server_uri(&self) -> &ServerUri {
         &self.server_uri
+    }
+
+    pub fn data_dir(&self) -> Option<&TempDir> {
+        self.data_dir.as_ref()
     }
 
     async fn ready(&mut self) {
@@ -489,9 +493,14 @@ impl KrillServer {
     }
 
     /// Aborts the server and waits for it to conclude cleanup.
-    pub async fn abort(self) {
-        self.join.abort();
-        let _ = self.join.await;
+    pub async fn abort(mut self) {
+        if let Some(exit) = self.exit.take() {
+            exit.send(()).unwrap();
+        }
+        if let Some(join) = self.join.take() {
+            join.abort();
+            let _ = join.await;
+        }
     }
 
     /// Returns a Krill client for this server.
@@ -507,6 +516,23 @@ impl KrillServer {
     }
 }
 
+impl Drop for KrillServer {
+    fn drop(&mut self) {
+        if let Some(exit) = self.exit.take() {
+            exit.send(()).unwrap();
+        }
+        if let Some(join) = self.join.take() {
+            join.abort();
+
+            // We can’t await the join handle here, so we will have to
+            // poll it.
+            while !join.is_finished() {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+        }
+    }
+}
+
 
 impl KrillServer {
     /// Creates a CA publishing in the built-in publisher.
@@ -514,6 +540,12 @@ impl KrillServer {
         // Create the CA
         self.client.ca_add(ca.clone()).await.unwrap();
 
+        // Add the CA as a publisher
+        self.register_ca_with_repo(ca).await;
+    }
+
+    /// Registers a CA with the repository.
+    pub async fn register_ca_with_repo(&self, ca: &CaHandle) {
         // Add the CA as a publisher
         let request = self.client().repo_request(ca).await.unwrap();
         self.client().publishers_add(request).await.unwrap();
@@ -531,6 +563,14 @@ impl KrillServer {
     pub async fn register_ca_with_parent(
         &self, ca: &CaHandle, parent: &CaHandle, resources: &ResourceSet
     ) {
+        self.register_ca_with_parent_nowait(ca, parent, resources).await;
+        assert!(self.wait_for_ca_resources(ca, resources).await);
+    }
+
+    /// Registers a CA with a parent managed by the same server.
+    async fn register_ca_with_parent_nowait(
+        &self, ca: &CaHandle, parent: &CaHandle, resources: &ResourceSet
+    ) {
         let request = self.client().child_request(ca).await.unwrap();
         let response = self.add_child(
             parent, ca.convert(), request, resources.clone()
@@ -538,7 +578,16 @@ impl KrillServer {
         self.client.parent_add(
             ca, api::admin::ParentCaReq { handle: parent.convert(), response }
         ).await.unwrap();
-        assert!(self.wait_for_ca_resources(ca, resources).await);
+    }
+
+    /// Creates a CA under testbed with the given resources.
+    pub async fn create_testbed_ca(
+        &self, ca: &CaHandle, resources: &ResourceSet
+    ) {
+        self.create_ca_with_repo(ca).await;
+        self.register_ca_with_parent_nowait(
+            ca, &ca_handle("testbed"), resources
+        ).await;
     }
 
     /// Add a child to the CA.

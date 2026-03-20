@@ -19,9 +19,11 @@ mod common;
 /// ```
 #[tokio::test]
 async fn test_suspension() {
-    let (config, _tmpdir) = common::TestConfig::mem_storage()
+    let (config, tmpdir) = common::TestConfig::mem_storage()
         .enable_testbed().enable_suspend().finalize();
-    let server = common::KrillServer::start_with_config(config).await;
+    let server = common::KrillServer::start_with_config(
+        config, Some(tmpdir)
+    ).await;
 
     let testbed = common::ca_handle("testbed");
     let ca = common::ca_handle("CA");

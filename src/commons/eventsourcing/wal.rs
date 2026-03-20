@@ -43,8 +43,8 @@ use super::store::Storable;
 /// # Use within Krill
 ///
 /// Within Krill, write-ahead logging is currently used by the
-/// [`Scheduler`][crate::daemon::scheduler::Scheduler] and
-/// [`RepositoryContent`][crate::pubd::RepositoryContent].
+/// [`TaskQueue`][crate::server::mq::TaskQueue] and
+/// [`RepositoryContent`][crate::server::pubd::RepositoryContent].
 pub trait WalSupport: Storable {
     /// The type representing a command.
     type Command: WalCommand;
