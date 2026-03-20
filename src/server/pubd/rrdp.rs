@@ -656,6 +656,7 @@ impl RrdpServer {
                     e,
                 )
             })?;
+        drop(notification_file_new);
 
         // Rename the new file so it becomes current.
         let notification_path = self.notification_path();
