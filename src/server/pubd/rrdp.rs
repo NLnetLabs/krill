@@ -832,6 +832,7 @@ impl RrdpServer {
                 if path.is_dir() {
                     let _best_effort_rm = fs::remove_dir_all(path);
                 } else {
+                    eprintln!("Deleting stray RRDP file {}", path.display());
                     let _best_effort_rm = fs::remove_file(path);
                 }
             }
