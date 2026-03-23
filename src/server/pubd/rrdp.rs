@@ -643,7 +643,6 @@ impl RrdpServer {
             self.session.uuid(), self.serial, snapshot, deltas,
         );
         let notification_path_new = self.notification_path_new();
-        eprintln!("Writing notification file.");
         let mut notification_file_new =
             file::create_file_with_path(&notification_path_new)?;
         notification
@@ -666,20 +665,9 @@ impl RrdpServer {
                 err
             ).into());
         }
-        eprintln!("Done writing notification file.");
 
         // Rename the new file so it becomes current.
         let notification_path = self.notification_path();
-        eprintln!(
-            "{}: {:?}",
-            notification_path_new.display(),
-            fs::exists(&notification_path_new)
-        );
-        eprintln!(
-            "{}: {:?}",
-            notification_path.display(),
-            fs::exists(&notification_path)
-        );
         fs::rename(&notification_path_new, &notification_path).map_err(
             |e| {
                 KrillIoError::new(
