@@ -246,14 +246,7 @@ impl RepositoryContentProxy {
                 }
             }
         };
-        eprintln!(
-            "{:?}: Start writing repository content.", self as *const _
-        );
-        content.write_repository(rrdp_updates_config)?;
-        eprintln!(
-            "{:?}: Done writing repository content.", self as *const _
-        );
-        Ok(())
+        content.write_repository(rrdp_updates_config)
     }
 
     /// Resets the RRDP session if it is initialized.
@@ -269,7 +262,7 @@ impl RepositoryContentProxy {
                     self.default_handle.clone(),
                 )
             )?;
-            content.write_repository(rrdp_updates_config)
+            self.write_repository_content(content, rrdp_updates_config)
         }
         else {
             // repository server was not initialized on this Krill instance.
@@ -462,8 +455,7 @@ impl RepositoryContent {
 
     /// Writes the repository content to disk.
     fn write_repository(
-        &self,
-        config: RrdpUpdatesConfig,
+        &self, config: RrdpUpdatesConfig,
     ) -> KrillResult<()> {
         self.rrdp.update_rrdp_files(config)?;
         self.rsync.write(self.rrdp.serial(), self.rrdp.snapshot())
