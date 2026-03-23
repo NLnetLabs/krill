@@ -224,7 +224,9 @@ impl RepositoryManager {
         let content = self.content.update_rrdp(
             self.rrdp_updates_config
         )?;
-        content.write_repository(self.rrdp_updates_config)?;
+        self.content.write_repository_content(
+            content, self.rrdp_updates_config
+        )?;
 
         Ok(None)
     }
@@ -245,8 +247,10 @@ impl RepositoryManager {
         let content =
             self.content.update_rrdp(self.rrdp_updates_config)?;
 
-        // Write the updated repository - NOTE: we no longer lock it.
-        content.write_repository(self.rrdp_updates_config)?;
+        // Write the updated repository.
+        self.content.write_repository_content(
+            content, self.rrdp_updates_config
+        )?;
 
         Ok(())
     }
