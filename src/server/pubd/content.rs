@@ -246,8 +246,14 @@ impl RepositoryContentProxy {
                 }
             }
         };
-
-        content.write_repository(rrdp_updates_config)
+        eprintln!(
+            "{:?}: Start writing repository content.", self as *const _
+        );
+        content.write_repository(rrdp_updates_config)?;
+        eprintln!(
+            "{:?}: Done writing repository content.", self as *const _
+        );
+        Ok(())
     }
 
     /// Resets the RRDP session if it is initialized.
