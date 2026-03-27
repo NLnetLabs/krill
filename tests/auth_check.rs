@@ -12,8 +12,6 @@ mod common;
 async fn auth_check() {
     let server = common::KrillServer::start().await;
 
-    eprintln!("server is up.");
-
     // Get a client with a changed auth token.
     let client = KrillClient::new(
         server.server_uri().clone(), 
@@ -33,7 +31,6 @@ async fn auth_check() {
             )
         )
     );
-    eprintln!("back.");
 }
 
 #[tokio::test]

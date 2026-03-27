@@ -784,7 +784,6 @@ impl TrustAnchorProxy {
 /// a simple call to `into`.
 #[derive(Clone, Copy)]
 pub struct TrustAnchorProxyContext<'a> {
-    #[allow(dead_code)] // XXX remove!!
     tasks: &'a TaskQueue,
     signer: &'a KrillSigner,
 }
