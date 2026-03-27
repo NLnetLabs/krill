@@ -83,7 +83,7 @@ jobs:
     runs-on: ubuntu-22.04
     strategy:
       matrix:
-        rust: [1.85.0, stable, beta]
+        rust: [1.88.0, stable, beta]
         features: ["hsm", "hsm,hsm-tests-kmip"]
     steps:
     - name: Checkout repository
@@ -129,7 +129,7 @@ jobs:
     runs-on: ubuntu-22.04
     strategy:
       matrix:
-        rust: [1.85.0, stable, beta]
+        rust: [1.88.0, stable, beta]
         features: ["hsm,hsm-tests-pkcs11"]
     steps:
     - name: Checkout repository
