@@ -110,7 +110,6 @@ pub fn start_krill_daemon(
         properties_manager.init(KrillVersion::code_version())?;
     }
 
-    // XXX TODO This may need some configuration.
     let tokio = tokio::runtime::Runtime::new().map_err(|err| {
         KrillError::custom(
             format!("Failed to create Tokio runtime: {err}")
