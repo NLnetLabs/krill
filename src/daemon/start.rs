@@ -150,18 +150,6 @@ pub fn start_krill_daemon(
     let (exit_tx, exit_rx) = watch::channel(false);
     let mut join = JoinSet::new();
 
-    // Start a hyper server for the configured http sockets.
-    for socket_addr in server.config().socket_addresses().into_iter() {
-        single_http_listener(
-            server.clone(),
-            socket_addr,
-            signal_running.take(),
-            exit_rx.clone(),
-            &mut join,
-            tokio.handle(),
-        )?;
-    }
-
     // Start a hyper server for the configured unix sockets.
     #[cfg(unix)]
     if 
@@ -171,6 +159,18 @@ pub fn start_krill_daemon(
         single_unix_listener(
             server.clone(),
             path.clone(),
+            signal_running.take(),
+            exit_rx.clone(),
+            &mut join,
+            tokio.handle(),
+        )?;
+    }
+
+    // Start a hyper server for the configured http sockets.
+    for socket_addr in server.config().socket_addresses().into_iter() {
+        single_http_listener(
+            server.clone(),
+            socket_addr,
             signal_running.take(),
             exit_rx.clone(),
             &mut join,
