@@ -474,59 +474,13 @@ pub enum Error {
     RequestBuild(ErrorUri, ErrorMessage),
     RequestBuildHttpsCert(RootCertPath, ErrorMessage),
 
-    RequestExecute(ErrorUri, ErrorMessage),
+    RequestExecute(ErrorUri, reqwest::Error),
 
     Response(ErrorUri, ErrorMessage),
     Forbidden(ErrorUri),
     ErrorResponse(ErrorUri, StatusCode),
     ErrorResponseWithBody(ErrorUri, StatusCode, String),
     ErrorResponseWithJson(ErrorUri, StatusCode, Box<ErrorResponse>),
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Error::RequestBuild(uri, msg) => write!(
-                f,
-                "Issue creating request for URI: {uri}, error: {msg}"
-            ),
-            Error::RequestBuildHttpsCert(path, msg) => {
-                write!(
-                    f,
-                    "Cannot use configured HTTPS root cert '{path}'. Error: {msg}"
-                )
-            }
-
-            Error::RequestExecute(uri, msg) => {
-                write!(f, "Issue accessing URI: {uri}, error: {msg}")
-            }
-
-            Error::Response(uri, msg) => write!(
-                f,
-                "Issue processing response from URI: {uri}, error: {msg}"
-            ),
-            Error::Forbidden(uri) => {
-                write!(f, "Got 'Forbidden' response for URI: {uri}")
-            }
-            Error::ErrorResponse(uri, code) => {
-                write!(
-                    f,
-                    "Issue processing response from URI: {uri}, \
-                     error: unexpected status code {code}"
-                )
-            }
-            Error::ErrorResponseWithBody(uri, code, e) => {
-                write!(
-                    f,
-                    "Error response from URI: {uri}, Status: {code}, Error: {e}"
-                )
-            }
-            Error::ErrorResponseWithJson(uri, code, res) => write!(
-                f,
-                "Error response from URI: {uri}, Status: {code}, ErrorResponse: {res}"
-            ),
-        }
-    }
 }
 
 impl Error {
@@ -548,8 +502,8 @@ impl Error {
         Error::RequestBuildHttpsCert(path.to_string(), msg.to_string())
     }
 
-    pub fn execute(uri: &str, msg: impl fmt::Display) -> Self {
-        Error::RequestExecute(uri.to_string(), msg.to_string())
+    pub fn execute(uri: &str, msg: reqwest::Error) -> Self {
+        Error::RequestExecute(uri.to_string(), msg)
     }
 
     pub fn response(uri: &str, msg: impl fmt::Display) -> Self {
@@ -604,3 +558,58 @@ impl Error {
         }
     }
 }
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Error::RequestBuild(uri, msg) => write!(
+                f,
+                "Issue creating request for URI: {uri}, error: {msg}"
+            ),
+            Error::RequestBuildHttpsCert(path, msg) => {
+                write!(
+                    f,
+                    "Cannot use configured HTTPS root cert '{path}'. Error: {msg}"
+                )
+            }
+
+            Error::RequestExecute(uri, msg) => {
+                use std::error::Error as _;
+
+                write!(f, "Issue accessing URI: {uri}, error: {msg}")?;
+                let mut cause = msg.source();
+                while let Some(err) = cause {
+                    write!(f, " - {err}")?;
+                    cause = err.source();
+                }
+                Ok(())
+            }
+
+            Error::Response(uri, msg) => write!(
+                f,
+                "Issue processing response from URI: {uri}, error: {msg}"
+            ),
+            Error::Forbidden(uri) => {
+                write!(f, "Got 'Forbidden' response for URI: {uri}")
+            }
+            Error::ErrorResponse(uri, code) => {
+                write!(
+                    f,
+                    "Issue processing response from URI: {uri}, \
+                     error: unexpected status code {code}"
+                )
+            }
+            Error::ErrorResponseWithBody(uri, code, e) => {
+                write!(
+                    f,
+                    "Error response from URI: {uri}, Status: {code}, Error: {e}"
+                )
+            }
+            Error::ErrorResponseWithJson(uri, code, res) => write!(
+                f,
+                "Error response from URI: {uri}, Status: {code}, ErrorResponse: {res}"
+            ),
+        }
+    }
+}
+
