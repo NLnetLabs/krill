@@ -73,6 +73,9 @@ jobs:
     - if: runner.os == 'Windows' && steps.cache-vckpg.outputs.cache-hit != 'true'
       name: Install OpenSSL for Windows
       run: vcpkg install openssl:x64-windows-static-md
+    - if: runner.os == 'Windows'
+      name: Set VCPKG root
+      run: echo "OPENSSL_DIR=C:/vcpkg/packages/openssl_x64-windows-static-md" | Out-File -FilePath $env:GITHUB_ENV -Append
     - if: matrix.rust == 'stable' && matrix.args == '--all-features' && matrix.os == 'ubuntu-latest'
       run: cargo clippy ${{ matrix.args }} -- -D warnings
     - run: cargo build ${{ matrix.args }} --locked
