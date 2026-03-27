@@ -73,7 +73,7 @@ jobs:
     - if: runner.os == 'Windows'
       name: Make vcpkg.json
       run: |
-        echo '{"dependencies": [ "openssl" ], "overrides": [{ "name": "openssl", "version": "3.4.0" }]}' > vcpkg.json
+        '{"dependencies": ["openssl"], "overrides": [{"name": "openssl", "version": "3.4.0"}], "buitlin-baseline": "4bee3f5aae7aefbc129ca81c33d6a062b02fcf3b"}' | Out-File -FilePath vcpkg.json -Encoding utf8
     - if: runner.os == 'Windows' && steps.cache-vckpg.outputs.cache-hit != 'true'
       name: Install OpenSSL for Windows
       run: vcpkg install --triplet x64-windows-static-md
