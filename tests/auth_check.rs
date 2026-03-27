@@ -58,6 +58,8 @@ async fn auth_check_unix() {
         config, Some(tempdir)
     ).await;
 
+    crate::common::sleep_seconds(3).await;
+
     let client = KrillClient::new(
         ServerUri::try_from(
             format!("unix://{}", file_sock.path().display())
