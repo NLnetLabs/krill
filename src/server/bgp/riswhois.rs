@@ -15,7 +15,7 @@ use std::sync::Arc;
 use libflate::gzip;
 use crate::api::roa::{AsNumber, Ipv4Prefix, Ipv6Prefix, TypedPrefix};
 use crate::api::bgp::Announcement;
-use crate::server::runtime::KrillRuntime;
+use crate::server::runtime::SlowKrillRuntime;
 
 
 //------------ Configuration -------------------------------------------------
@@ -54,7 +54,7 @@ impl RisWhoisLoader {
 
     /// Downloads and processes a new data set.
     pub fn load(
-        &self, krill: &KrillRuntime
+        &self, krill: &SlowKrillRuntime
     ) -> Result<RisWhois, RisWhoisError> {
         Ok(RisWhois::new(
             Self::load_tree(self.v4_url.clone(), krill)?,
@@ -64,7 +64,7 @@ impl RisWhoisLoader {
 
     /// Downloads and process the tree for one address family.
     fn load_tree<P: FromStr + RoutePrefix>(
-        uri: Arc<str>, krill: &KrillRuntime
+        uri: Arc<str>, krill: &SlowKrillRuntime
     ) -> Result<RouteOriginCollection<P>, RisWhoisError>
     where <P as FromStr>::Err: error::Error + Send + Sync + 'static {
         let uri_clone = uri.clone();

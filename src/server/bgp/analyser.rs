@@ -15,7 +15,7 @@ use crate::api::roa::{
     AsNumber, ConfiguredRoa, Ipv4Prefix, Ipv6Prefix, RoaPayload, TypedPrefix,
 };
 use crate::config::Config;
-use crate::server::runtime::KrillRuntime;
+use crate::server::runtime::SlowKrillRuntime;
 use super::riswhois::{
     RisWhois, RisWhoisError, RisWhoisLoader, RouteOrigin, RouteOriginSet,
     RoutePrefix,
@@ -81,7 +81,7 @@ impl BgpAnalyser {
     /// Returns `Ok(true)` if it did do a download, `Ok(false)` if no download
     /// was necessary, or an error if downloading was attempted but failed.
     pub fn update(
-        &self, krill: &KrillRuntime
+        &self, krill: &SlowKrillRuntime
     ) -> Result<bool, RisWhoisError> {
         let Some(loader) = self.loader.as_ref() else {
             return Ok(false)

@@ -23,7 +23,9 @@ use crate::constants::{TA_NAME, ta_handle, testbed_ca_handle};
 use crate::server::ca::CaStatus;
 use super::scheduler;
 use super::mq::{Task, now};
-use super::runtime::{KrillRuntime, SpawnError, ThreadPool, ThreadPoolHandle};
+use super::runtime::{
+    KrillRuntime, SlowKrillRuntime, SpawnError, ThreadPool, ThreadPoolHandle
+};
 
 
 //------------ StartupManager ------------------------------------------------
@@ -72,7 +74,7 @@ impl StartupManager {
         self.runtime.tasks().reschedule_tasks_at_startup()?;
         self.runtime.tasks().schedule(Task::QueueStartTasks, now())?;
 
-        let krill = self.runtime.clone();
+        let krill = SlowKrillRuntime::new(self.runtime.clone());
         self.thread_pool.spawn(|rx| scheduler::run(krill, rx));
         Ok(())
     }
@@ -202,7 +204,10 @@ impl StartupManager {
             import_cas,
         );
 
-        cas_import(startup_structure, &self.runtime)
+        cas_import(
+            startup_structure,
+            &SlowKrillRuntime::new(self.runtime.clone())
+        )
     }
 }
 
@@ -250,6 +255,25 @@ impl KrillManager {
         let (tx, rx) = oneshot::channel();
         let runtime = self.krill_runtime.clone();
         self.thread_pool.spawn(move || {
+            let _ = tx.send(op(&runtime));
+        }).await?;
+        rx.await?
+    }
+
+    /// Runs a sync closure which may be block for a long time.
+    ///
+    /// This is identical to [`run`][Self::run] but runs the closure on the
+    /// slow thread pool.
+    async fn run_slow<F, T>(
+        &self, op: F
+    ) -> Result<T, RunError>
+    where
+        F: FnOnce(&SlowKrillRuntime) -> Result<T, RunError> + Send + 'static,
+        T: Send + 'static,
+    {
+        let (tx, rx) = oneshot::channel();
+        let runtime = SlowKrillRuntime::new(self.krill_runtime.clone());
+        self.thread_pool.spawn_slow(move || {
             let _ = tx.send(op(&runtime));
         }).await?;
         rx.await?
@@ -365,7 +389,7 @@ impl KrillManager {
         &self,
         structure: api::import::Structure,
     ) -> Result<(), RunError> {
-        self.run(move |runtime| {
+        self.run_slow(move |runtime| {
             Ok(cas_import(structure, runtime)?)
         }).await
     }
@@ -452,7 +476,7 @@ impl KrillManager {
         contact: api::admin::RepositoryContact,
         actor: Actor,
     ) -> Result<(), RunError> {
-        self.run(move |runtime| {
+        self.run_slow(move |runtime| {
             Ok(runtime.ca_manager().update_repo(
                 ca, contact, true, &actor, runtime
             )?)
@@ -545,7 +569,7 @@ impl KrillManager {
         ca: idexchange::CaHandle,
         actor: Actor,
     ) -> Result<(), RunError> {
-        self.run(move |runtime| {
+        self.run_slow(move |runtime| {
             Ok(runtime.ca_manager().delete_ca(&ca, &actor, runtime)?)
         }).await
     }
@@ -573,7 +597,7 @@ impl KrillManager {
         parent_req: api::admin::ParentCaReq,
         actor: Actor,
     ) -> Result<(), RunError> {
-        self.run(move |runtime| {
+        self.run_slow(move |runtime| {
             // Verify that we can get entitlements from the new parent before
             // adding/updating it.
             let contact =
@@ -589,7 +613,7 @@ impl KrillManager {
 
             // Seems good. Add/update the parent.
             Ok(runtime.ca_manager().ca_parent_add_or_update(
-                ca, parent_req, &actor, runtime
+                ca, parent_req, &actor, runtime.runtime()
             )?)
         }).await
     }
@@ -600,7 +624,7 @@ impl KrillManager {
         parent: idexchange::ParentHandle,
         actor: Actor,
     ) -> Result<(), RunError> {
-        self.run(move |runtime| {
+        self.run_slow(move |runtime| {
             Ok(runtime.ca_manager().ca_parent_remove(
                 handle, parent, &actor, runtime
             )?)
@@ -1193,7 +1217,7 @@ impl KrillManager {
 
 fn cas_import(
     structure: api::import::Structure,
-    krill: &KrillRuntime,
+    krill: &SlowKrillRuntime,
 ) -> Result<(), KrillError> {
     let actor = krill.system_actor().clone();
 
@@ -1213,7 +1237,7 @@ fn cas_import(
         structure.publication_server.clone()
     {
         info!("Initialising publication server");
-        krill.repo_manager().init(publication_server_uris, krill)?;
+        krill.repo_manager().init(publication_server_uris, krill.runtime())?;
     }
 
     if let Some(import_ta) = structure.ta.clone() {
@@ -1253,7 +1277,7 @@ fn cas_import(
 
 fn import_ca(
     import: api::import::ImportCa,
-    krill: &KrillRuntime,
+    krill: &SlowKrillRuntime,
 ) -> Result<(), KrillError> {
     // outline:
     // - init ca
@@ -1266,7 +1290,7 @@ fn import_ca(
     let actor = krill.system_actor();
 
     // init CA
-    krill.ca_manager().init_ca(import.handle.clone(), krill)?;
+    krill.ca_manager().init_ca(import.handle.clone(), krill.runtime())?;
 
     // Get Publisher Request
     let pub_req = {
@@ -1284,7 +1308,7 @@ fn import_ca(
     // Get Repository Contact for CA
     let repo_contact = {
         let repo_response = krill.repo_manager().repository_response(
-            &import.handle.convert(), krill
+            &import.handle.convert(), krill.runtime()
         )?;
         api::admin::RepositoryContact::try_from_response(
             repo_response
@@ -1346,7 +1370,7 @@ fn import_ca(
                 &import_parent.handle.convert(),
                 child_req,
                 actor,
-                krill,
+                krill.runtime(),
             )?
         };
 
@@ -1360,7 +1384,7 @@ fn import_ca(
                 import.handle.clone(),
                 parent_req,
                 actor,
-                krill,
+                krill.runtime(),
             )?;
 
             // First sync will inform child of its entitlements and
@@ -1380,7 +1404,7 @@ fn import_ca(
             // not running when we do this at startup.
             if import_parent.handle.as_str() == TA_NAME {
                 krill.ca_manager().sync_ta_proxy_signer_if_possible(
-                    krill
+                    krill.runtime()
                 )?;
                 krill.ca_manager().ca_sync_parent(
                     &import.handle, 0, &import_parent.handle, actor,
@@ -1396,7 +1420,7 @@ fn import_ca(
         removed: vec![]
     };
     krill.ca_manager().ca_routes_update(
-        import.handle, roa_updates, actor, krill
+        import.handle, roa_updates, actor, krill.runtime()
     )?;
 
     Ok(())

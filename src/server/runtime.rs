@@ -131,6 +131,74 @@ impl KrillRuntime {
     pub fn is_testbed_enabled(&self) -> bool {
         self.config().testbed().is_some()
     }
+}
+
+
+//------------ SlowKrillRuntime ----------------------------------------------
+
+/// The Krill runtime for slow jobs.
+///
+/// This is exactly the same as [`KrillRuntime`] except it also allows
+/// running async tasks on a Tokio runtime while blocking the current thread
+/// until the task finishes.
+#[derive(Clone)]
+pub struct SlowKrillRuntime(KrillRuntime);
+
+impl SlowKrillRuntime {
+    /// Creates a new slow Krill runtime from a regular runtime.
+    pub fn new(krill: KrillRuntime) -> Self {
+        Self(krill)
+    }
+
+    /// Returns a regular Krill runtime.
+    pub fn runtime(&self) -> &KrillRuntime {
+        &self.0
+    }
+
+    /// Returns the config used to create the runtime.
+    pub fn config(&self) -> &Config {
+        self.runtime().config()
+    }
+
+    /// Returns the service URI of this Krill server instance.
+    pub fn service_uri(&self) -> &uri::Https {
+        self.runtime().service_uri()
+    }
+
+    /// Returns the repository manager.
+    pub fn repo_manager(&self) -> &RepositoryManager {
+        self.runtime().repo_manager()
+    }
+
+    /// Returns the CA manager.
+    pub fn ca_manager(&self) -> &CaManager {
+        self.runtime().ca_manager()
+    }
+
+    /// Returns the task queue.
+    pub fn tasks(&self) -> &TaskQueue {
+        self.runtime().tasks()
+    }
+
+    /// Returns the signer.
+    pub fn signer(&self) -> &KrillSigner {
+        self.runtime().signer()
+    }
+
+    /// Returns the BGP analyser.
+    pub fn bgp_analyser(&self) -> &BgpAnalyser {
+        self.runtime().bgp_analyser()
+    }
+
+    /// Returns the actor to be used for sytem tasks.
+    pub fn system_actor(&self) -> &Actor {
+        self.runtime().system_actor()
+    }
+
+    /// Returns whether testbed mode is enabled.
+    pub fn is_testbed_enabled(&self) -> bool {
+        self.runtime().is_testbed_enabled()
+    }
 
     /// Runs a future on a Tokio runtime and blocks until it resolves.
     ///
@@ -143,7 +211,7 @@ impl KrillRuntime {
         F::Output: Send + 'static,
     {
         let (tx, rx) = oneshot::channel();
-        let join = self.0.tokio.spawn(async move {
+        let join = self.runtime().0.tokio.spawn(async move {
             let _ = tx.send(future.await);
         });
         drop(join); // explicitly drop to avoid warning
@@ -218,10 +286,17 @@ struct Components {
 /// theoretical as the queue capacity is 1, so there should be at most one
 /// queued job.
 pub struct ThreadPool {
-    /// The sending end of the job queue.
+    /// The sending end of the regular job queue.
     ///
-    /// The receiving end of this queue is shared between all worker threads.
+    /// The receiving end of this queue is shared between all the worker
+    /// threads for regular jobs.
     worker_tx: tokio_mpsc::Sender<ThreadPoolMessage>,
+
+    /// The sending end of the slow job queue.
+    ///
+    /// The receiving end of this queue is shared between all the worker
+    /// threads for slow jobs.
+    slow_worker_tx: tokio_mpsc::Sender<ThreadPoolMessage>,
 
     /// The sending ends of all shutdown queues for regular threads.
     ///
@@ -245,8 +320,10 @@ impl ThreadPool {
     pub fn new(
         config: &Config
     ) -> Result<Self, KrillError> {
-        let (worker_tx, rx) = tokio_mpsc::channel(1);
-        let rx = Arc::new(Mutex::new(rx));
+        let (worker_tx, worker_rx) = tokio_mpsc::channel(1);
+        let worker_rx = Arc::new(Mutex::new(worker_rx));
+        let (slow_worker_tx, slow_worker_rx) = tokio_mpsc::channel(1);
+        let slow_worker_rx = Arc::new(Mutex::new(slow_worker_rx));
 
         let thread_count = match config.num_threads {
             Some(num) => num,
@@ -269,12 +346,25 @@ impl ThreadPool {
 
         let mut join = Vec::new();
         for _ in 0..thread_count {
-            let rx = rx.clone();
+            let worker_rx = worker_rx.clone();
             join.push(
                 thread::Builder::new().name(
                     "thread-pool".into()
                 ).spawn(move || {
-                    Self::worker_thread(rx)
+                    Self::worker_thread(worker_rx)
+                }).map_err(|err| {
+                    KrillError::internal(
+                        format_args!("failed to spawn worker thread: {err}")
+                    )
+                })?
+            );
+
+            let slow_worker_rx = slow_worker_rx.clone();
+            join.push(
+                thread::Builder::new().name(
+                    "thread-pool".into()
+                ).spawn(move || {
+                    Self::worker_thread(slow_worker_rx)
                 }).map_err(|err| {
                     KrillError::internal(
                         format_args!("failed to spawn worker thread: {err}")
@@ -287,6 +377,7 @@ impl ThreadPool {
 
         Ok(Self {
             worker_tx,
+            slow_worker_tx,
             thread_tx: Vec::new(),
             join
         })
@@ -345,7 +436,10 @@ impl ThreadPool {
 
     /// Creates a new handle to the thread pool
     pub fn handle(&self) -> ThreadPoolHandle {
-        ThreadPoolHandle { tx: self.worker_tx.clone() }
+        ThreadPoolHandle {
+            worker_tx: self.worker_tx.clone(),
+            slow_worker_tx: self.slow_worker_tx.clone(),
+        }
     }
 
     /// Spawns a new additional thread on the thread pool.
@@ -393,12 +487,15 @@ impl ThreadPool {
 /// Handles can be cloned relatively cheaply.
 #[derive(Clone)]
 pub struct ThreadPoolHandle {
-    /// The sending end of the job queue.
-    tx: tokio_mpsc::Sender<ThreadPoolMessage>,
+    /// The sending end of the regular job queue.
+    worker_tx: tokio_mpsc::Sender<ThreadPoolMessage>,
+
+    /// The sending end of the regular job queue.
+    slow_worker_tx: tokio_mpsc::Sender<ThreadPoolMessage>,
 }
 
 impl ThreadPoolHandle {
-    /// Spawns a job onto the thread pool.
+    /// Spawns a job onto the regular job thread pool.
     ///
     /// The job is represented by the closure. As this closure will be run
     /// on a different thread, it needs to be `Send + 'static`.
@@ -410,7 +507,24 @@ impl ThreadPoolHandle {
     pub async fn spawn(
         &self, job: impl FnOnce() + Send + 'static
     ) -> Result<(), SpawnError> {
-        self.tx.send(
+        self.worker_tx.send(
+            ThreadPoolMessage::Job(Box::new(job))
+        ).await.map_err(|_| SpawnError(()))
+    }
+
+    /// Spawns a job onto the slow job thread pool.
+    ///
+    /// The job is represented by the closure. As this closure will be run
+    /// on a different thread, it needs to be `Send + 'static`.
+    ///
+    /// Returns an error if the thread pool does not accept new jobs any more.
+    ///
+    /// This is an async function that will only return once the job has been
+    /// dipatched of.
+    pub async fn spawn_slow(
+        &self, job: impl FnOnce() + Send + 'static
+    ) -> Result<(), SpawnError> {
+        self.slow_worker_tx.send(
             ThreadPoolMessage::Job(Box::new(job))
         ).await.map_err(|_| SpawnError(()))
     }

@@ -31,7 +31,7 @@ use crate::{
         },
         properties::Properties,
         pubd::{RepositoryAccess, RepositoryContent},
-        runtime::KrillRuntime,
+        runtime::{KrillRuntime, SlowKrillRuntime},
     },
 };
 
@@ -41,7 +41,7 @@ use super::mq::TaskResult;
 //------------ run -----------------------------------------------------------
 
 pub(super) fn run(
-    krill: KrillRuntime,
+    krill: SlowKrillRuntime,
     shutdown: mpsc::Receiver<()>,
 ) {
     let started = Timestamp::now();
@@ -132,11 +132,11 @@ pub(super) fn run(
 /// issues such as not being able to contact a parent CA should result
 /// in an Ok(TaskResult::Reschedule) instead.
 fn process_task(
-    krill: &KrillRuntime, task: Task, started: Timestamp,
+    krill: &SlowKrillRuntime, task: Task, started: Timestamp,
 ) -> Result<TaskResult, FatalError> {
     match task {
         Task::QueueStartTasks => {
-            queue_start_tasks(krill)
+            queue_start_tasks(krill.runtime())
         }
 
         Task::SyncRepo { ca_handle, ca_version } => {
@@ -147,31 +147,31 @@ fn process_task(
             sync_parent(krill, ca_handle, ca_version, parent)
         }
 
-        Task::RenewTestbedTa => renew_testbed_ta(krill),
+        Task::RenewTestbedTa => renew_testbed_ta(krill.runtime()),
 
         Task::SyncTrustAnchorProxySignerIfPossible => {
-            sync_ta_proxy_signer_if_possible(krill)
+            sync_ta_proxy_signer_if_possible(krill.runtime())
         }
 
         Task::SuspendChildrenIfNeeded { ca_handle: ca } => {
-            suspend_children_if_needed(krill, ca, started)
+            suspend_children_if_needed(krill.runtime(), ca, started)
         }
 
-        Task::RepublishIfNeeded => republish_if_needed(krill),
+        Task::RepublishIfNeeded => republish_if_needed(krill.runtime()),
 
         Task::RenewObjectsIfNeeded => {
-            renew_objects_if_needed(krill)
+            renew_objects_if_needed(krill.runtime())
         }
 
-        Task::UpdateSnapshots => update_snapshots(krill),
+        Task::UpdateSnapshots => update_snapshots(krill.runtime()),
 
-        Task::RrdpUpdateIfNeeded => update_rrdp_if_needed(krill),
+        Task::RrdpUpdateIfNeeded => update_rrdp_if_needed(krill.runtime()),
 
         Task::ResourceClassRemoved {
             ca_handle, ca_version, parent, rcn, revocation_requests,
         } => {
             resource_class_removed(
-                krill, ca_handle, ca_version, parent, rcn, revocation_requests,
+                krill, ca_handle, ca_version, parent, rcn, revocation_requests
             )
         }
 
@@ -313,7 +313,7 @@ fn queue_start_tasks(krill: &KrillRuntime) -> Result<TaskResult, FatalError> {
 }
 
 fn sync_repo(
-    krill: &KrillRuntime,
+    krill: &SlowKrillRuntime,
     ca: CaHandle,
     version: u64,
 ) -> Result<TaskResult, FatalError> {
@@ -342,7 +342,7 @@ fn sync_repo(
 /// Try to synchronize a CA with a specific parent, reschedule if this
 /// fails
 fn sync_parent(
-    krill: &KrillRuntime,
+    krill: &SlowKrillRuntime,
     ca: CaHandle,
     ca_version: u64,
     parent: ParentHandle,
@@ -491,7 +491,7 @@ fn republish_if_needed(
 
 /// Update announcement info
 fn announcements_refresh(
-    krill: &KrillRuntime
+    krill: &SlowKrillRuntime
 ) -> Result<TaskResult, FatalError> {
     if let Err(e) = krill.bgp_analyser().update(krill) {
         error!("Failed to update BGP announcements: {}", e)
@@ -626,7 +626,7 @@ fn update_rrdp_if_needed(
 }
 
 fn resource_class_removed(
-    krill: &KrillRuntime,
+    krill: &SlowKrillRuntime,
     ca_handle: CaHandle,
     ca_version: u64,
     parent: ParentHandle,
@@ -672,7 +672,7 @@ fn resource_class_removed(
 }
 
 fn unexpected_key(
-    krill: &KrillRuntime,
+    krill: &SlowKrillRuntime,
     ca_handle: CaHandle,
     ca_version: u64,
     rcn: ResourceClassName,
