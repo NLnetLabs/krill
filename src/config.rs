@@ -225,7 +225,7 @@ impl ConfigDefaults {
     }
 
     pub fn roa_deaggregate_threshold() -> usize {
-        if
+        if 
             let Ok(from_env) = env::var("KRILL_ROA_DEAGGREGATE_THRESHOLD")
             && let Ok(nr) = usize::from_str(&from_env)
         {
@@ -577,6 +577,8 @@ pub struct Config {
     #[serde(default = "ConfigDefaults::syslog_facility")]
     pub syslog_facility: String,
 
+    pub num_threads: Option<usize>,
+
     #[serde(default = "ConfigDefaults::admin_token", alias = "auth_token")]
     pub admin_token: Token,
 
@@ -682,7 +684,7 @@ pub struct Config {
     pub ta_timing: TaTimingConfig,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct IssuanceTimingConfig {
     #[serde(default = "ConfigDefaults::timing_publish_next_hours")]
@@ -1131,6 +1133,10 @@ impl Config {
         self.testbed.as_ref()
     }
 
+    pub fn testbed_enabled(&self) -> bool {
+        self.testbed.is_some()
+    }
+
     /// Returns a reference to the default signer configuration.
     ///
     /// Assumes that the configuration is valid. Will panic otherwise.
@@ -1301,6 +1307,7 @@ impl Config {
             log_type,
             log_file: None,
             syslog_facility,
+            num_threads: None,
             admin_token,
             auth_type,
             #[cfg(feature = "multi-user")]
@@ -1617,10 +1624,9 @@ impl Config {
             ));
         }
 
-        if
+        if 
             let Some(threshold) = self.suspend_child_after_inactive_hours
-            && threshold < CA_SUSPEND_MIN_HOURS
-        {
+            && threshold < CA_SUSPEND_MIN_HOURS {
             return Err(ConfigError::Other(format!(
                 "suspend_child_after_inactive_hours must be {CA_SUSPEND_MIN_HOURS} or higher (or not set at all)"
             )));

@@ -18,7 +18,6 @@ on:
       - 'docker/**'
       - 'LICENSE'
       - 'README.md'
-      - 'tests/e2e/**'
 
   # run the tests on creation or update of any pull request
   pull_request:
@@ -33,7 +32,6 @@ on:
       - 'docker/**'
       - 'LICENSE'
       - 'README.md'
-      - 'tests/e2e/**'
 
 jobs:
   build:

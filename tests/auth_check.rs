@@ -10,7 +10,7 @@ mod common;
 
 #[tokio::test]
 async fn auth_check() {
-    let (server, _tempdir) = common::KrillServer::start().await;
+    let server = common::KrillServer::start().await;
 
     // Get a client with a changed auth token.
     let client = KrillClient::new(
@@ -40,7 +40,7 @@ async fn auth_check_unix() {
 
     use krill::cli::client::ServerUri;
 
-    let (mut config, _tempdir) = common::TestConfig::mem_storage()
+    let (mut config, tempdir) = common::TestConfig::mem_storage()
         .enable_testbed().enable_ca_refresh().finalize();
 
     // The user that is executing the test gets read access to everything
@@ -51,7 +51,9 @@ async fn auth_check_unix() {
     config.unix_socket = Some(file_sock.path().into());
     config.unix_users = HashMap::from([(user.name, "readonly".to_string())]);
 
-    let _server = common::KrillServer::start_with_config_unix(config).await;
+    let _server = common::KrillServer::start_with_config_unix(
+        config, Some(tempdir)
+    ).await;
 
     let client = KrillClient::new(
         ServerUri::try_from(

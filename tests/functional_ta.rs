@@ -23,11 +23,13 @@ mod common;
 /// [Krill as a Trust Anchor]: https://krill.docs.nlnetlabs.nl/en/stable/trust-anchor.html
 #[tokio::test]
 async fn functional_ta() {
-    let (mut config, _tempdir) = common::TestConfig::mem_storage()
+    let (mut config, tempdir) = common::TestConfig::mem_storage()
         .enable_second_signer().finalize();
     let port = config.port;
     config.ta_support_enabled = true;
-    let server = common::KrillServer::start_with_config(config).await;
+    let server = common::KrillServer::start_with_config(
+        config, Some(tempdir)
+    ).await;
 
     eprintln!(">>>> Initialise TA proxy.");
     server.client().ta_proxy_init().await.unwrap();

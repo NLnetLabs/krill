@@ -21,10 +21,10 @@ pub async fn dispatch_request(
         Some("metrics") => super::metrics::dispatch(request, path).await,
         Some("rfc8181") => rfc8181(request, path).await,
         Some("rfc6492") => rfc6492(request, path).await,
-        Some("rrdp") => rrdp(request, path),
+        Some("rrdp") => rrdp(request, path).await,
         Some("stats") => super::stats::dispatch(request, path).await,
-        Some("ta") => ta(request, path),
-        Some("testbed.tal") => tal(request, path),
+        Some("ta") => ta(request, path).await,
+        Some("testbed.tal") => tal(request, path).await,
         Some("testbed") => super::testbed::dispatch(request, path).await,
         Some("ui") => ui(request, path),
 
@@ -74,7 +74,7 @@ async fn rfc8181(
     let (request, _) = request.proceed_unchecked();
     let (server, bytes) = request.read_rfc8181_bytes().await?;
     Ok(HttpResponse::rfc8181(
-        server.krill().rfc8181(publisher, bytes)?
+        server.krill().rfc8181(publisher, bytes).await?
     ))
 }
 
@@ -97,24 +97,26 @@ async fn rfc6492(
     //     always be the anonymous actor. Maybe the CA manager should
     //     determine the actor when looking at the ID certificate?
     Ok(HttpResponse::rfc6492(
-        server.krill().rfc6492(ca , bytes, user_agent, auth.actor())?
+        server.krill().rfc6492(
+            ca , bytes, user_agent, auth.into_actor()
+        ).await?
     ))
 }
 
 
 //------------ /ta -----------------------------------------------------------
 
-fn ta(
+async fn ta(
     request: Request<'_>, mut path: PathIter<'_>
 ) -> Result<HttpResponse, DispatchError> {
     match path.next() {
-        Some("ta.tal") => tal(request, path),
-        Some("ta.cer") => ta_cer(request, path),
+        Some("ta.tal") => tal(request, path).await,
+        Some("ta.cer") => ta_cer(request, path).await,
         _ => Ok(HttpResponse::not_found())
     }
 }
 
-fn tal(
+async fn tal(
     request: Request<'_>, path: PathIter<'_>
 ) -> Result<HttpResponse, DispatchError> {
     path.check_exhausted()?;
@@ -122,26 +124,24 @@ fn tal(
     let (request, _) = request.proceed_unchecked();
     let server = request.empty()?;
     Ok(HttpResponse::text(
-        server.krill().ta_cert_details()?.tal.to_string()
+        server.krill().ta_tal().await?
     ))
 }
 
-fn ta_cer(
+async fn ta_cer(
     request: Request<'_>, path: PathIter<'_>
 ) -> Result<HttpResponse, DispatchError> {
     path.check_exhausted()?;
     request.check_get()?;
     let (request, _) = request.proceed_unchecked();
     let server = request.empty()?;
-    Ok(HttpResponse::cert(
-        server.krill().ta_cert_details()?.cert.to_bytes()
-    ))
+    Ok(HttpResponse::cert(server.krill().ta_cer().await?))
 }
 
 
 //------------ /rrdp ---------------------------------------------------------
 
-fn rrdp(
+async fn rrdp(
     request: Request<'_>, path: PathIter<'_>
 ) -> Result<HttpResponse, DispatchError> {
     request.check_get()?;
@@ -150,7 +150,9 @@ fn rrdp(
     let Some(remaining) = path.remaining() else {
         return Ok(HttpResponse::not_found())
     };
-    let path = match server.krill().resolve_rrdp_request_path(remaining)? {
+    let path = match server.krill().resolve_rrdp_request_path(
+        remaining.into()
+    ).await? {
         Some(path) => path,
         None => {
             return Ok(HttpResponse::not_found())

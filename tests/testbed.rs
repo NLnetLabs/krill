@@ -12,9 +12,11 @@ mod common;
 
 #[tokio::test]
 async fn add_and_remove_certificate_authority() {
-    let (config, _tmpdir) = common::TestConfig::mem_storage()
+    let (config, tmpdir) = common::TestConfig::mem_storage()
         .enable_testbed().enable_ca_refresh().finalize();
-    let server = common::KrillServer::start_with_config(config).await;
+    let server = common::KrillServer::start_with_config(
+        config, Some(tmpdir)
+    ).await;
 
     let ca = common::ca_handle("CA");
     let ca_res = common::resources("AS1", "", "");

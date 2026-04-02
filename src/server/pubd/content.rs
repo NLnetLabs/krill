@@ -3,7 +3,7 @@
 use std::fmt;
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use log::{debug, info};
 use rpki::uri;
 use rpki::ca::idexchange::{MyHandle, PublisherHandle};
@@ -39,6 +39,9 @@ pub struct RepositoryContentProxy {
 
     /// The handle for the repository content aggregate.
     default_handle: MyHandle,
+
+    /// A lock for updating the repository.
+    update_lock: Mutex<()>,
 }
 
 impl RepositoryContentProxy {
@@ -52,7 +55,9 @@ impl RepositoryContentProxy {
         let default_handle = MyHandle::new("0".into());
 
         Ok(RepositoryContentProxy {
-            store, default_handle,
+            store,
+            default_handle,
+            update_lock: Mutex::new(()),
         })
     }
 
@@ -217,7 +222,31 @@ impl RepositoryContentProxy {
         &self,
         rrdp_updates_config: RrdpUpdatesConfig,
     ) -> KrillResult<()> {
-        self.read()?.write_repository(rrdp_updates_config)
+        let content = self.read()?;
+        self.write_repository_content(content, rrdp_updates_config)
+    }
+
+    /// Writes the repository using the given content instance.
+    ///
+    /// This is similar to [`write_repository`](Self::write_repository) but
+    /// avoids loading the [`RepositoryContent`] instance when you already
+    /// have it available.
+    pub fn write_repository_content(
+        &self,
+        content: Arc<RepositoryContent>,
+        rrdp_updates_config: RrdpUpdatesConfig,
+    ) -> KrillResult<()> {
+        // Acquire the guard. Since we don’t actually look at the data, we
+        // can simply clear a poisoned lock and try locking again.
+        let _guard = loop {
+            match self.update_lock.lock() {
+                Ok(guard) => break guard,
+                Err(_) => {
+                    self.update_lock.clear_poison();
+                }
+            }
+        };
+        content.write_repository(rrdp_updates_config)
     }
 
     /// Resets the RRDP session if it is initialized.
@@ -233,7 +262,7 @@ impl RepositoryContentProxy {
                     self.default_handle.clone(),
                 )
             )?;
-            content.write_repository(rrdp_updates_config)
+            self.write_repository_content(content, rrdp_updates_config)
         }
         else {
             // repository server was not initialized on this Krill instance.
@@ -425,9 +454,8 @@ impl RepositoryContent {
     }
 
     /// Writes the repository content to disk.
-    pub fn write_repository(
-        &self,
-        config: RrdpUpdatesConfig,
+    fn write_repository(
+        &self, config: RrdpUpdatesConfig,
     ) -> KrillResult<()> {
         self.rrdp.update_rrdp_files(config)?;
         self.rsync.write(self.rrdp.serial(), self.rrdp.snapshot())

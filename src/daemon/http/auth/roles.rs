@@ -19,7 +19,7 @@ use super::{Permission, PermissionSet};
 /// do not operate on resources.
 ///
 /// Currently, roles are given names and are defined in
-/// [Config::auth_roles][crate::daemon::config::Config::auth_roles] and
+/// [Config::auth_roles][crate::config::Config::auth_roles] and
 /// referenced by authorization providers through those names.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(from = "RoleConf")]

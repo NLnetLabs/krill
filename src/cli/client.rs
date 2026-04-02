@@ -592,6 +592,14 @@ impl KrillClient {
         ).await
     }
 
+    pub async fn repo_refresh(
+        &self, ca: &CaHandle,
+    ) -> Result<Success, Error> {
+        self.post_empty(
+            ca_path(ca).into_iter().chain(once("sync/repo")),
+        ).await
+    }
+
     pub async fn roas_list(
         &self, ca: &CaHandle
     ) -> Result<api::roa::ConfiguredRoas, Error> {

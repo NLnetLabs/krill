@@ -13,7 +13,7 @@ pub async fn dispatch(
 ) -> Result<HttpResponse, DispatchError> {
     match path.next() {
         Some("info") => info(request, path),
-        Some("repo") => repo(request, path),
+        Some("repo") => repo(request, path).await,
         Some("cas") => cas(request, path).await,
         _ => Ok(HttpResponse::not_found())
     }
@@ -36,7 +36,7 @@ fn info(
 
 //------------ /stats/repo ---------------------------------------------------
 
-fn repo(
+async fn repo(
     request: Request<'_>,
     path: PathIter<'_>,
 ) -> Result<HttpResponse, DispatchError> {
@@ -44,7 +44,7 @@ fn repo(
     request.check_get()?;
     let (request, _) = request.proceed_unchecked();
     let server = request.empty()?;
-    Ok(HttpResponse::json(&server.krill().repo_stats()?))
+    Ok(HttpResponse::json(&server.krill().repo_stats().await?))
 }
 
 
@@ -58,6 +58,6 @@ async fn cas(
     request.check_get()?;
     let (request, _) = request.proceed_unchecked();
     let server = request.empty()?;
-    Ok(HttpResponse::json(&server.krill().cas_stats()?))
+    Ok(HttpResponse::json(&server.krill().cas_stats().await?))
 }
 

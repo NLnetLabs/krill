@@ -132,7 +132,7 @@ impl ChildDetails {
         let mut res = vec![];
 
         for (ki, used_key_state) in self.used_keys.iter() {
-            if
+            if 
                 let UsedKeyState::InUse(found_rcn) = used_key_state
                 && found_rcn == parent_rcn
             {
@@ -396,8 +396,10 @@ pub struct ChildCertificateUpdates {
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub suspended: Vec<SuspendedCert>,
 
-    /// The certificates that have been unsuspended. This is no longer used
-    /// as of Krill 0.16.0, but kept because it is in stored state.
+    /// The certificates that have been unsuspended.
+    ///
+    /// This is no longer used as of Krill 0.16.0, but kept because it is in
+    /// stored state.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub unsuspended: Vec<UnsuspendedCert>,
 }
