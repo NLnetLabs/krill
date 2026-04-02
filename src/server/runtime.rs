@@ -290,7 +290,7 @@ pub struct ThreadPool {
     ///
     /// The receiving end of this queue is shared between all the worker
     /// threads for regular jobs.
-    worker_tx: tokio_mpsc::Sender<ThreadPoolMessage>,
+    regular_worker_tx: tokio_mpsc::Sender<ThreadPoolMessage>,
 
     /// The sending end of the slow job queue.
     ///
@@ -320,8 +320,8 @@ impl ThreadPool {
     pub fn new(
         config: &Config
     ) -> Result<Self, KrillError> {
-        let (worker_tx, worker_rx) = tokio_mpsc::channel(1);
-        let worker_rx = Arc::new(Mutex::new(worker_rx));
+        let (regular_worker_tx, regular_worker_rx) = tokio_mpsc::channel(1);
+        let regular_worker_rx = Arc::new(Mutex::new(regular_worker_rx));
         let (slow_worker_tx, slow_worker_rx) = tokio_mpsc::channel(1);
         let slow_worker_rx = Arc::new(Mutex::new(slow_worker_rx));
 
@@ -346,12 +346,12 @@ impl ThreadPool {
 
         let mut join = Vec::new();
         for _ in 0..thread_count {
-            let worker_rx = worker_rx.clone();
+            let regular_worker_rx = regular_worker_rx.clone();
             join.push(
                 thread::Builder::new().name(
                     "thread-pool".into()
                 ).spawn(move || {
-                    Self::worker_thread(worker_rx)
+                    Self::worker_thread(regular_worker_rx)
                 }).map_err(|err| {
                     KrillError::internal(
                         format_args!("failed to spawn worker thread: {err}")
@@ -376,7 +376,7 @@ impl ThreadPool {
         info!("Created thread pool with {thread_count} threads");
 
         Ok(Self {
-            worker_tx,
+            regular_worker_tx,
             slow_worker_tx,
             thread_tx: Vec::new(),
             join
@@ -437,7 +437,7 @@ impl ThreadPool {
     /// Creates a new handle to the thread pool
     pub fn handle(&self) -> ThreadPoolHandle {
         ThreadPoolHandle {
-            worker_tx: self.worker_tx.clone(),
+            regular_worker_tx: self.regular_worker_tx.clone(),
             slow_worker_tx: self.slow_worker_tx.clone(),
         }
     }
@@ -464,7 +464,12 @@ impl ThreadPool {
     /// The method sends signals to all threads to initiate their own shutdown
     /// and then blocks until all threads have terminated.
     pub fn terminate(self) {
-        let _ = self.worker_tx.blocking_send(ThreadPoolMessage::Shutdown);
+        let _ = self.regular_worker_tx.blocking_send(
+            ThreadPoolMessage::Shutdown
+        );
+        let _ = self.slow_worker_tx.blocking_send(
+            ThreadPoolMessage::Shutdown
+        );
         for tx in self.thread_tx {
             let _ = tx.send(());
         }
@@ -488,7 +493,7 @@ impl ThreadPool {
 #[derive(Clone)]
 pub struct ThreadPoolHandle {
     /// The sending end of the regular job queue.
-    worker_tx: tokio_mpsc::Sender<ThreadPoolMessage>,
+    regular_worker_tx: tokio_mpsc::Sender<ThreadPoolMessage>,
 
     /// The sending end of the regular job queue.
     slow_worker_tx: tokio_mpsc::Sender<ThreadPoolMessage>,
@@ -507,7 +512,7 @@ impl ThreadPoolHandle {
     pub async fn spawn(
         &self, job: impl FnOnce() + Send + 'static
     ) -> Result<(), SpawnError> {
-        self.worker_tx.send(
+        self.regular_worker_tx.send(
             ThreadPoolMessage::Job(Box::new(job))
         ).await.map_err(|_| SpawnError(()))
     }
