@@ -234,14 +234,6 @@ fn single_http_listener(
             "Failed to configure TCP socket '{addr}': {err}"
         )));
     }
-    let listener = match TokioTcpListener::from_std(listener) {
-        Ok(listener) => listener,
-        Err(err) => {
-            return Err(Error::Custom(format!(
-                "Failed to prepare TCP socket '{addr}': {err}"
-            )));
-        }
-    };
 
     let tls = if server.config().https_mode().is_disable_https() {
         None
@@ -271,6 +263,15 @@ fn single_http_listener(
 
     join.spawn_on(
         async move {
+            let listener = match TokioTcpListener::from_std(listener) {
+                Ok(listener) => listener,
+                Err(err) => {
+                    error!(
+                        "Failed to prepare TCP socket '{addr}': {err}"
+                    );
+                    return;
+                }
+            };
             loop {
                 // Break here already if `signal_exit` is true.
                 if *signal_exit.borrow_and_update() {
@@ -388,15 +389,6 @@ fn single_unix_listener(
             path.display(), err,
         )));
     }
-    let listener = match TokioUnixListener::from_std(listener) {
-        Ok(listener) => listener,
-        Err(err) => {
-            return Err(Error::Custom(format!(
-                "Failed to prepare Unix socket '{}': {}",
-                path.display(), err,
-            )));
-        }
-    };
 
     let conn_builder = conn::auto::Builder::new(TokioExecutor::new());
     let graceful = GracefulShutdown::new();
@@ -410,6 +402,16 @@ fn single_unix_listener(
 
     join.spawn_on(
         async move {
+            let listener = match TokioUnixListener::from_std(listener) {
+                Ok(listener) => listener,
+                Err(err) => {
+                    error!(
+                        "Failed to prepare Unix socket '{}': {}",
+                        path.display(), err,
+                    );
+                    return;
+                }
+            };
             loop {
                 // Break here already if `signal_exit` is true.
                 if *signal_exit.borrow_and_update() {
