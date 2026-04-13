@@ -4,8 +4,10 @@
 
 use std::{fmt, fs, io};
 use std::borrow::Cow;
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use bytes::Bytes;
@@ -52,9 +54,7 @@ pub fn remove_dir_all(dir: &Path) -> Result<(), KrillIoError> {
     Ok(())
 }
 
-/// Creates a new File or opens an exiting one. If the file did not exist, the
-/// path will be created if it did not exist yet.
-pub fn create_file_with_path(path: &Path) -> Result<File, KrillIoError> {
+fn create_file(path: &Path, set_mode: bool) -> Result<File, KrillIoError> {
     if 
         !path.exists()
         && let Some(parent) = path.parent()
@@ -70,12 +70,32 @@ pub fn create_file_with_path(path: &Path) -> Result<File, KrillIoError> {
             )
         })?;
     }
-    File::create(path).map_err(|e| {
+    let mut options = OpenOptions::new();
+    options.create(true);
+    options.read(true);
+    options.write(true);
+    #[cfg(unix)]
+    if set_mode {
+        options.mode(0o600);
+    }
+    options.open(path).map_err(|e| {
         KrillIoError::new(
             format!("Could not create file: {}", path.to_string_lossy()),
             e,
         )
     })
+}
+
+/// Creates a new File or opens an exiting one. If the file did not exist, the
+/// path will be created if it did not exist yet.
+pub fn create_file_with_path(path: &Path) -> Result<File, KrillIoError> {
+    create_file(path, false)
+}
+
+/// Creates a new File or opens an exiting one. If the file did not exist, the
+/// path will be created if it did not exist yet.
+pub fn create_private_file_with_path(path: &Path) -> Result<File, KrillIoError> {
+    create_file(path, true)
 }
 
 /// Derive the path for this file.
@@ -95,6 +115,21 @@ pub fn save(content: &[u8], full_path: &Path) -> Result<(), KrillIoError> {
         )
     })?;
 
+    trace!("Saved file: {}", full_path.to_string_lossy());
+    Ok(())
+}
+
+/// Saves a file, creating parent dirs as needed
+pub fn save_private(content: &[u8], full_path: &Path) -> Result<(), KrillIoError> {
+    let mut f = create_private_file_with_path(full_path)?;
+
+    f.write_all(content).map_err(|e| {
+        KrillIoError::new(
+            format!("Could not write to: {}", full_path.to_string_lossy()),
+            e,
+        )
+    })?;
+    
     trace!("Saved file: {}", full_path.to_string_lossy());
     Ok(())
 }
