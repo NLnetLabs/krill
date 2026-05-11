@@ -1554,8 +1554,9 @@ mod tests {
             "test-resources/status_store/migration-0.9.5/";
         let temp_dir = tempdir().unwrap();
         copy_folder(source_dir_path_str, &temp_dir);
+        let temp_dir_str = &temp_dir.path().display();
         let source_dir_url = Url::parse(
-            &format!("local://{}", &temp_dir.path().to_str().unwrap()))
+            &format!("local://{}", temp_dir_str))
                 .unwrap();
 
         let source_store =
