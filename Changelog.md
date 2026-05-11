@@ -6,11 +6,15 @@ Breaking changes
 
 New
 
+* Support for Ubuntu Resolute Raccoon (26.04). ([#1378])
+
 Improvements
 
 Bug fixes
 
 Other changes
+
+[#1378]: https://github.com/NLnetLabs/krill/pull/1378
 
 
 ## 0.16.0 ‘Früher war mehr Lametta’
