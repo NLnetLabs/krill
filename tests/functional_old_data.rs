@@ -38,8 +38,9 @@ async fn functional_old_data() {
 
     let signer_config = 
         include_str!("../test-resources/migrations/v0_14_5_signer/ta.conf");
+    let path = tempdir.path().join("ta").to_str().unwrap().replace("\\", "/");
     let signer_config = signer_config.replace("%TEMPDIR%", 
-        tempdir.path().join("ta").to_str().unwrap());
+        &format!("local:///{}", path.strip_prefix('/').unwrap_or(&path)));
     let signer_config = krill::tasigner::Config::parse_str(
         &signer_config
     ).unwrap();
