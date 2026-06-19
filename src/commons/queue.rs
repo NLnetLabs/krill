@@ -2,9 +2,9 @@
 
 use std::{cmp, error, fmt};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use url::Url;
 use crate::commons::storage::{
-    Ident, KeyValueError, KeyValueStore, Transaction
+    Ident, KeyValueError, KeyValueStore, OpenStoreError, StorageSystem,
+    Transaction,
 };
 
 //------------ Configuration -------------------------------------------------
@@ -51,11 +51,11 @@ impl Queue {
 impl Queue {
     /// Creates a new queue.
     pub fn create(
-        storage_uri: &Url,
+        storage: &StorageSystem,
         namespace: &Ident,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, OpenStoreError> {
         Ok(Queue {
-            store: KeyValueStore::create(storage_uri, namespace)?,
+            store: storage.open(namespace)?,
         })
     }
 
@@ -452,14 +452,14 @@ mod tests {
     use std::thread;
     use std::time::Duration;
     use serde_json::Value;
-    use url::Url;
     use super::*;
 
-    fn queue_store(ns: &str) -> Queue {
-        Queue::create(
-            &Url::parse("memory://").unwrap(),
-            Ident::from_str(ns).unwrap()
-        ).unwrap()
+    fn storage_system() -> StorageSystem {
+        StorageSystem::new_memory(None)
+    }
+
+    fn queue_store(storage: &StorageSystem, ns: &str) -> Queue {
+        Queue::create(storage, Ident::from_str(ns).unwrap()).unwrap()
     }
 
     #[test]
@@ -479,12 +479,13 @@ mod tests {
 
     #[test]
     fn queue_thread_workers() {
-        let queue = queue_store("queue_thread_workers");
+        let storage = storage_system();
+        let queue = queue_store(&storage, "queue_thread_workers");
         queue.store.wipe().unwrap();
 
         thread::scope(|s| {
-            let create = s.spawn(|| {
-                let queue = queue_store("queue_thread_workers");
+            s.spawn(|| {
+                let queue = queue_store(&storage, "queue_thread_workers");
 
                 for i in 1..=10 {
                     let name = Ident::builder(
@@ -501,16 +502,17 @@ mod tests {
                     println!("> Scheduled job {}", &name);
                 }
             });
-            create.join().unwrap();
+        });
 
-            let keys = queue.store.execute(None, |tran| {
-                tran.list_keys(Queue::pending_scope())
-            }).unwrap();
-            assert_eq!(keys.len(), 10);
+        let keys = queue.store.execute(None, |tran| {
+            tran.list_keys(Queue::pending_scope())
+        }).unwrap();
+        assert_eq!(keys.len(), 10);
 
+        thread::scope(|s| {
             for _ in 1..=10 {
-                s.spawn(move || {
-                    let queue = queue_store("queue_thread_workers");
+                s.spawn(|| {
+                    let queue = queue_store(&storage, "queue_thread_workers");
 
                     while queue.pending_tasks_remaining().unwrap() > 0 {
                         if let Some((task_name, _))
@@ -535,7 +537,8 @@ mod tests {
 
     #[test]
     fn test_reschedule_long_running() {
-        let queue = queue_store("test_reschedule_long_running");
+        let storage = storage_system();
+        let queue = queue_store(&storage, "test_reschedule_long_running");
         queue.store.wipe().unwrap();
 
         let name = const { Ident::make("job") };
@@ -570,7 +573,8 @@ mod tests {
 
     #[test]
     fn test_reschedule_finished_task() {
-        let queue = queue_store("test_reschedule_finished_task");
+        let storage = storage_system();
+        let queue = queue_store(&storage, "test_reschedule_finished_task");
         queue.store.wipe().unwrap();
 
         let name = const { Ident::make("task") };
@@ -611,7 +615,8 @@ mod tests {
 
     #[test]
     fn test_schedule_with_existing_task() {
-        let queue = queue_store("test_schedule_with_existing_task");
+        let storage = storage_system();
+        let queue = queue_store(&storage, "test_reschedule_finished_task");
         queue.store.wipe().unwrap();
 
         let name = const { Ident::make("task") };

@@ -19,6 +19,7 @@ use tokio::sync::{mpsc as tokio_mpsc, oneshot};
 use crate::commons::actor::Actor;
 use crate::commons::crypto::{KrillSigner, KrillSignerBuilder};
 use crate::commons::error::KrillError;
+use crate::commons::storage::StorageSystem;
 use crate::config::Config;
 use crate::constants::{ACTOR_DEF_KRILL, KRILL_SERVER_APP};
 use super::bgp::BgpAnalyser;
@@ -49,6 +50,7 @@ impl KrillRuntime {
     /// async tasks onto.
     pub fn new(
         config: Config,
+        storage: StorageSystem,
         tokio: runtime::Handle,
     ) -> Result<Self, KrillError> {
         let service_uri = config.service_uri();
@@ -60,7 +62,7 @@ impl KrillRuntime {
         // used to update signer name references to resolve to the
         // corresponding signer configurations.
         let signer = KrillSignerBuilder::new(
-            &config.storage_uri,
+            &storage,
             Duration::from_secs(config.signer_probe_retry_seconds),
             &config.signers,
         ).with_default_signer(
@@ -69,14 +71,15 @@ impl KrillRuntime {
             config.one_off_signer()
         ).build()?;
 
-        let tasks = TaskQueue::new(&config.storage_uri)?;
-        let repo_manager = RepositoryManager::new(&config)?;
-        let ca_manager = CaManager::new(&config)?;
+        let tasks = TaskQueue::new(&storage)?;
+        let repo_manager = RepositoryManager::new(&config, &storage)?;
+        let ca_manager = CaManager::new(&config, &storage)?;
         let bgp_analyser = BgpAnalyser::new(&config);
 
         Ok(Self(Arc::new(Components {
             config,
             service_uri,
+            storage,
             repo_manager,
             ca_manager,
             tasks,
@@ -95,6 +98,11 @@ impl KrillRuntime {
     /// Returns the service URI of this Krill server instance.
     pub fn service_uri(&self) -> &uri::Https {
         &self.0.service_uri
+    }
+
+    /// Returns a reference to the storage system.
+    pub fn storage(&self) -> &StorageSystem {
+        &self.0.storage
     }
 
     /// Returns the repository manager.
@@ -163,6 +171,11 @@ impl SlowKrillRuntime {
     /// Returns the service URI of this Krill server instance.
     pub fn service_uri(&self) -> &uri::Https {
         self.runtime().service_uri()
+    }
+
+    /// Returns a reference to the storage system.
+    pub fn storage(&self) -> &StorageSystem {
+        self.runtime().storage()
     }
 
     /// Returns the repository manager.
@@ -234,6 +247,9 @@ struct Components {
     /// We keep it separately because the config only keeps the configured
     /// value which may be missing.
     service_uri: uri::Https,
+
+    /// The storage system used by all components.
+    storage: StorageSystem,
 
     /// Publication server with configured publishers
     repo_manager: RepositoryManager,

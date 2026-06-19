@@ -1,11 +1,10 @@
 //! In-memory storage.
 
-use std::{error, fmt, mem, thread};
-use std::collections::{HashMap, HashSet};
+use std::{error, fmt, mem};
+use std::collections::HashMap;
 use std::ops::DerefMut;
-use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::Duration;
-use lazy_static::lazy_static;
+use std::str::FromStr;
+use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
 use serde_json::Value;
@@ -17,6 +16,77 @@ use super::{
 };
 
 
+//------------ System --------------------------------------------------------
+
+#[derive(Debug, Default)]
+pub struct System {
+    locations: Mutex<HashMap<Option<u64>, Location>>,
+}
+
+impl System {
+    pub fn location(&self, uri: &Uri) -> Result<Location, Error> {
+        let mut locations = self.locations.lock().expect("poisoned lock");
+        Ok(locations.entry(uri.path).or_default().clone())
+    }
+}
+
+
+//------------ Location ------------------------------------------------------
+
+#[derive(Clone, Debug, Default)]
+pub struct Location {
+    namespaces: Arc<Mutex<HashMap<Box<Ident>, Arc<MemoryNamespace>>>>,
+}
+
+impl Location {
+    pub fn open(
+        &self, namespace: &Ident,
+    ) -> Result<Store, Error> {
+        let mut namespaces = self.namespaces.lock().expect("poisoned lock");
+        Ok(Store::new(
+            namespaces.entry(namespace.into()).or_default().clone()
+        ))
+    }
+
+    pub fn is_empty(
+        &self, namespace: &Ident,
+    ) -> Result<bool, Error> {
+        let namespaces = self.namespaces.lock().expect("poisoned lock");
+        let Some(namespace) = namespaces.get(namespace) else {
+            return Ok(true)
+        };
+        Ok(namespace.scopes().is_empty())
+    }
+
+    pub fn migrate(
+        &self, src_ns: &Ident, dst_ns: &Ident
+    ) -> Result<(), Error> {
+        let mut namespaces = self.namespaces.lock().expect("poisoned lock");
+        {
+            let Some(src) = namespaces.get(src_ns).cloned() else {
+                return Err(Error::MissingSourceNamespace(src_ns.into()))
+            };
+
+            src.try_clear_locks()?;
+
+            let dst = namespaces.entry(dst_ns.into()).or_default().clone();
+            dst.try_clear_locks()?;
+
+            let mut dst_scopes = dst.scopes();
+            if !dst_scopes.is_empty() {
+                return Err(Error::NonemptyTargetNamespace(dst_ns.into()))
+            }
+
+            mem::swap(dst_scopes.deref_mut(), src.scopes().deref_mut());
+        }
+
+        namespaces.remove(src_ns);
+
+        Ok(())
+    }
+}
+
+
 //------------ Store ---------------------------------------------------------
 
 #[derive(Debug)]
@@ -25,23 +95,8 @@ pub struct Store {
 }
 
 impl Store {
-    pub fn wipe_all() {
-        MEMORY.wipe_all()
-    }
-
-    pub fn from_uri(
-        uri: &Url, namespace: &Ident, 
-    ) -> Result<Option<Self>, Error> {
-        if uri.scheme() != "memory" {
-            return Ok(None)
-        }
-    
-        Ok(Some(Store {
-            namespace: MEMORY.get_namespace(
-                uri.host_str().unwrap_or_default().into(),
-                namespace.into()
-            )
-        }))
+    fn new(namespace: Arc<MemoryNamespace>) -> Self {
+        Store { namespace }
     }
 
     pub fn execute<F, T>(
@@ -50,25 +105,34 @@ impl Store {
     where
         F: for<'a> Fn(&mut SuperTransaction<'a>) -> Result<T, SuperError>
     {
-        let wait = Duration::from_millis(10);
-        let tries = 1000;
-
-        for i in 0..tries {
-            if self.namespace.locks().insert(scope.map(Into::into)) {
-                // The scope was not yet present. We’ve won and can go on.
-                break
-            }
-            else if i >= tries {
-                return Err(Error::ScopeLocked(scope.map(Into::into)).into())
-            }
-            thread::sleep(wait);
+        match scope {
+            Some(scope) => self.execute_scoped(scope.into(), op),
+            None => self.execute_global(op),
         }
+    }
 
-        let res = op(&mut SuperTransaction::from(self));
+    fn execute_global<F, T>(
+        &self, op: F
+    ) -> Result<T, SuperError>
+    where
+        F: for<'a> Fn(&mut SuperTransaction<'a>) -> Result<T, SuperError>
+    {
+        let _lock = self.namespace.get_lock(None);
+        let _lock = _lock.write().expect("poisoned lock");
+        op(&mut SuperTransaction::from(self))
+    }
 
-        self.namespace.locks().remove(&scope.map(Into::into));
-
-        res
+    fn execute_scoped<F, T>(
+        &self, scope: Box<Ident>, op: F
+    ) -> Result<T, SuperError>
+    where
+        F: for<'a> Fn(&mut SuperTransaction<'a>) -> Result<T, SuperError>
+    {
+        let _root_lock = self.namespace.get_lock(None);
+        let _root_lock = _root_lock.read().expect("poisoned lock");
+        let _lock = self.namespace.get_lock(Some(scope));
+        let _lock = _lock.write().expect("poisoned lock");
+        op(&mut SuperTransaction::from(self))
     }
 }
 
@@ -212,6 +276,7 @@ impl Store {
         Ok(())
     }
 
+        /*
     pub fn migrate_namespace(
         &mut self, target: &Ident
     ) -> Result<(), Error> {
@@ -239,6 +304,7 @@ impl Store {
         self.namespace = new.clone();
         Ok(())
     }
+        */
 }
 
 
@@ -341,71 +407,77 @@ impl MemoryScopes {
 
 //------------ MemoryNamespace -----------------------------------------------
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct MemoryNamespace {
-    ns_key: NsKey,
     scopes: Mutex<MemoryScopes>,
-    locks: Mutex<HashSet<Option<Box<Ident>>>>,
+    #[allow(clippy::type_complexity)]
+    locks: Mutex<HashMap<Option<Box<Ident>>, Arc<RwLock<()>>>>,
 }
 
 impl MemoryNamespace {
-    fn new(ns_key: NsKey) -> Self {
-        Self {
-            ns_key,
-            scopes: Default::default(),
-            locks: Default::default(),
-        }
-    }
-
     fn scopes(&self) -> MutexGuard<'_, MemoryScopes> {
         self.scopes.lock().expect("poisoned lock")
     }
 
-    fn locks(&self) -> MutexGuard<'_, HashSet<Option<Box<Ident>>>> {
+    fn get_lock(&self, scope: Option<Box<Ident>>) -> Arc<RwLock<()>> {
+        self.locks().entry(scope).or_default().clone()
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn locks(
+        &self
+    ) -> MutexGuard<'_, HashMap<Option<Box<Ident>>, Arc<RwLock<()>>>> {
         self.locks.lock().expect("poisoned lock")
     }
-}
 
+    fn try_clear_locks(&self) -> Result<(), Error> {
+        // Try to get a write lock on every present lock. If that succeeds,
+        // clear the hash map.
 
-//------------ NsKey ---------------------------------------------------------
-
-/// The key for a store.
-///
-/// The first component is the URI, the second the namespace within that URI.
-type NsKey = (String, Box<Ident>);
-
-
-//------------ Memory --------------------------------------------------------
-
-/// The place where data is actually stored.
-#[derive(Debug, Default)]
-struct Memory {
-    namespaces: Mutex<HashMap<NsKey, Arc<MemoryNamespace>>>,
-}
-
-impl Memory {
-    fn wipe_all(&self) {
-        self.namespaces.lock().expect("poisoned lock").clear();
-    }
-
-    fn get_namespace(
-        &self,
-        prefix: String,
-        namespace: Box<Ident>,
-    ) -> Arc<MemoryNamespace> {
-        let ns_key = (prefix, namespace);
-        let mut namespaces = self.namespaces.lock().expect("poisoned lock");
-        namespaces.entry(ns_key.clone()).or_insert_with(|| {
-            MemoryNamespace::new(ns_key).into()
-        }).clone()
+        let mut locks = self.locks();
+        for lock in locks.values() {
+            drop(lock.try_write().map_err(|_| Error::PendingLocks)?);
+        }
+        locks.clear();
+        Ok(())
     }
 }
 
 
-//------------ MEMORY --------------------------------------------------------
+//------------ Uri -----------------------------------------------------------
 
-lazy_static! {
-    static ref MEMORY: Memory = Memory::default();
+#[derive(Clone, Debug, PartialEq)]
+pub struct Uri {
+    path: Option<u64>,
+}
+
+impl Uri {
+    pub fn new(seed: Option<u64>) -> Self {
+        Uri { path: seed }
+    }
+
+    pub fn parse_uri(uri: &Url) -> Result<Option<Uri>, UriError> {
+        if uri.scheme() != "memory" {
+            return Ok(None)
+        }
+        if uri.path().is_empty() {
+            return Ok(Some(Uri { path: None }))
+        }
+        if let Ok(path) = u64::from_str(uri.path()) {
+            return Ok(Some(Uri { path: Some(path) }))
+        }
+        Err(UriError::BadPath(uri.path().into()))
+    }
+}
+
+impl fmt::Display for Uri {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("memory:")?;
+        if let Some(path) = self.path {
+            write!(f, "{path}")?
+        }
+        Ok(())
+    }
 }
 
 
@@ -430,6 +502,7 @@ pub enum Error {
     },
     NoScope(Box<Ident>),
     TargetScopeExists(Box<Ident>),
+    MissingSourceNamespace(Box<Ident>),
     NonemptyTargetNamespace(Box<Ident>),
     PendingLocks,
 }
@@ -511,6 +584,9 @@ impl fmt::Display for Error {
             Error::TargetScopeExists(scope) => {
                 write!(f, "target scope '{scope}' exists")
             }
+            Error::MissingSourceNamespace(ns) => {
+                write!(f, "missing source namespace '{ns}'")
+            }
             Error::NonemptyTargetNamespace(ns) => {
                 write!(f, "non-empty target namespace '{ns}'")
             }
@@ -522,4 +598,22 @@ impl fmt::Display for Error {
 }
 
 impl error::Error for Error { }
+
+
+//------------ UriError ------------------------------------------------------
+
+#[derive(Debug)]
+pub enum UriError {
+    BadPath(String),
+}
+
+impl fmt::Display for UriError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::BadPath(path) => write!(f, "invalid memory path '{path}'"),
+        }
+    }
+}
+
+impl error::Error for UriError { }
 

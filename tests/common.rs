@@ -5,7 +5,6 @@ use std::collections::HashMap;
 use std::env;
 use std::str::FromStr;
 use std::time::Duration;
-use url::Url;
 use log::LevelFilter;
 use log::{debug, error};
 use reqwest::StatusCode;
@@ -23,6 +22,7 @@ use krill::api;
 use krill::api::admin::Token;
 use krill::commons::httpclient;
 use krill::commons::crypto::OpenSslSignerConfig;
+use krill::commons::storage::StorageUri;
 use krill::cli::client::{KrillClient, ServerUri};
 use krill::constants::REPOSITORY_DIR;
 use krill::config::{
@@ -39,7 +39,7 @@ use krill::tasigner::TaTimingConfig;
 
 /// A test config builder.
 pub struct TestConfig {
-    storage_uri: Url,
+    storage_uri: StorageUri,
     data_dir: TempDir,
     port: u16,
     enable_testbed: bool,
@@ -52,7 +52,7 @@ impl TestConfig {
     pub fn mem_storage() -> Self {
         let data_dir = TempDir::new().unwrap();
         Self::new(
-            Url::parse(
+            StorageUri::from_str(
                 &format!(
                     "memory://{}", hex::encode(rand::random::<[u8; 8]>())
                 )
@@ -64,14 +64,14 @@ impl TestConfig {
     pub fn file_storage() -> Self {
         let data_dir = TempDir::new().unwrap();
         Self::new(
-            Url::parse(
+            StorageUri::from_str(
                 &format!("local://{}/data/", data_dir.path().display())
             ).unwrap() ,
             data_dir,
         )
     }
 
-    fn new(storage_uri: Url, data_dir: TempDir) -> Self {
+    fn new(storage_uri: StorageUri, data_dir: TempDir) -> Self {
         Self {
             storage_uri,
             data_dir,
