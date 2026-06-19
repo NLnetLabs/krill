@@ -204,6 +204,7 @@ impl Authorizer {
     ///
     /// The authorizer will be created according to information provided via
     /// `config`.
+    #[allow(unused_variables)]
     pub fn new(
         storage: &StorageSystem,
         config: &Config,

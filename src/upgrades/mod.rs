@@ -1458,25 +1458,19 @@ mod tests {
         ).unwrap();
 
         // Copy test data into test storage
-        let mem_storage_base_uri = test::mem_storage();
+        let mem_storage = test::mem_storage();
 
-        let source_url = Url::parse(&format!(
-            "local://{}", temp_dir.path().to_str().unwrap()
-        )).unwrap();
-        let source_store = KeyValueStore::create(
-            &source_url, KEYS_NS
-        ).unwrap();
+        let source_storage = StorageSystem::new_disk(temp_dir.path().into());
+        let source_store = source_storage.open(KEYS_NS).unwrap();
 
-        let target_store = KeyValueStore::create(
-            &mem_storage_base_uri, KEYS_NS
-        ).unwrap();
+        let target_store = mem_storage.open(KEYS_NS).unwrap();
         target_store.import(&source_store).unwrap();
 
         // This is needed for tls_dir etc, but will be ignored here.
         let bogus_path = PathBuf::from("/dev/null");
 
         let mut config = Config::test(
-            &mem_storage_base_uri,
+            mem_storage.default_uri(),
             Some(&bogus_path),
             false, false, false, false,
         );
@@ -1485,7 +1479,7 @@ mod tests {
 
         if do_upgrade {
             record_preexisting_openssl_keys_in_signer_mapper(
-                &config
+                &mem_storage, &config,
             ).unwrap();
         }
 
@@ -1497,7 +1491,7 @@ mod tests {
             config.signer_probe_retry_seconds
         );
         let krill_signer = crate::commons::crypto::KrillSignerBuilder::new(
-            &mem_storage_base_uri,
+            &mem_storage,
             probe_interval,
             &config.signers,
         ).with_default_signer(
