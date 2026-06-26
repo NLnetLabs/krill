@@ -225,6 +225,7 @@ fn copy_data_for_migration(
 
 #[cfg(test)]
 pub mod tests {
+    use std::env;
     use std::path::PathBuf;
     use log::LevelFilter;
     use crate::commons::test;
@@ -232,11 +233,11 @@ pub mod tests {
 
     #[test]
     fn test_data_migration() {
-        // Create a config file that uses test data for its storage_uri
-        let test_sources_base = "test-resources/migrations/v0_9_5/";
-        let test_sources_url = StorageUri::from_str(
-            &format!("local://{test_sources_base}")
-        ).unwrap();
+        let test_sources_url = StorageUri::disk(
+            env::current_dir().unwrap().join(
+                "test-resources/migrations/v0_9_5/"
+            )
+        );
 
         let bogus_path = PathBuf::from("/dev/null"); // needed for tls_dir etc, but will be ignored here
         let mut config = Config::test(

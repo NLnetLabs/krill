@@ -1392,7 +1392,7 @@ impl Config {
             if let Some(data_dir) = self.data_dir() {
                 self.tls_keys_dir = Some(data_dir.join(HTTPS_SUB_DIR));
             } else {
-                return Err(ConfigError::other("'tls_keys_dir' is not configured, but 'storage_uri' is not a local directory, please configure an 'tls_keys_dir'"));
+                return Err(ConfigError::other("'tls_keys_dir' is not configured, but 'storage_uri' is not a local directory, please configure a 'tls_keys_dir'"));
             }
         }
 
@@ -1400,7 +1400,7 @@ impl Config {
             if let Some(data_dir) = self.data_dir() {
                 self.repo_dir = Some(data_dir.join(REPOSITORY_DIR));
             } else {
-                return Err(ConfigError::other("'repo_dir' is not configured, but 'storage_uri' is not a local directory, please configure an 'repo_dir'"));
+                return Err(ConfigError::other("'repo_dir' is not configured, but 'storage_uri' is not a local directory, please configure a 'repo_dir'"));
             }
         }
 
@@ -1408,7 +1408,7 @@ impl Config {
             if let Some(data_dir) = self.data_dir() {
                 self.pid_file = Some(data_dir.join("krill.pid"));
             } else {
-                return Err(ConfigError::other("'pid_file' is not configured, but 'storage_uri' is not a local directory, please configure an 'pid_file'"));
+                return Err(ConfigError::other("'pid_file' is not configured, but 'storage_uri' is not a local directory, please configure a 'pid_file'"));
             }
         }
 
@@ -2130,7 +2130,10 @@ mod tests {
         use log::Level as LL;
 
         fn void_logger_from_krill_config(config: &str) -> Box<dyn log::Log> {
-            let c: Config = toml::from_str(config).unwrap();
+            let config = format!(
+                "storage_uri = \"file:///tmp\"\n{}", config
+            );
+            let c: Config = toml::from_str(&config).unwrap();
             let void_output = fern::Output::writer(Box::new(io::sink()), "");
             let (_, void_logger) =
                 c.fern_logger().chain(void_output).into_log();
@@ -2264,7 +2267,10 @@ mod tests {
     fn parse_and_process_config_str(
         config_str: &str,
     ) -> Result<Config, ConfigError> {
-        let mut c: Config = toml::from_str(config_str).unwrap();
+        let config_str = format!(
+            "storage_uri = \"local:///tmp/\"\n{config_str}"
+        );
+        let mut c: Config = toml::from_str(&config_str).unwrap();
         c.process()?;
         Ok(c)
     }
@@ -2473,6 +2479,7 @@ mod tests {
     #[test]
     fn data_dir_for_storage() {
         fn test_uri(uri: &str, expected_path: &str) {
+            eprintln!("{uri}");
             let storage_uri = StorageUri::from_str(uri).unwrap();
             let config = Config::test_config(
                 &storage_uri,
@@ -2488,9 +2495,9 @@ mod tests {
         }
 
         test_uri("local:///tmp/test", "/tmp/test");
-        test_uri("local://./data", "./data");
-        test_uri("local://data", "data");
-        test_uri("local://data/test", "data/test");
-        test_uri("local:///tmp/test", "/tmp/test");
+        assert!(StorageUri::from_str("local://tmp/data").is_err());
+        assert!(StorageUri::from_str("local://./data").is_err());
+        test_uri("local:/data", "/data");
+        test_uri("local:/data/test", "/data/test");
     }
 }
