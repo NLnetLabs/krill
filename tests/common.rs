@@ -889,8 +889,8 @@ pub async fn sleep_seconds(secs: u64) {
     sleep(Duration::from_secs(secs)).await
 }
 
-pub async fn sleep_millis(secs: u64) {
-    sleep(Duration::from_millis(secs)).await
+pub async fn sleep_millis(millisecs: u64) {
+    sleep(Duration::from_millis(millisecs)).await
 }
 
 /// Checks if a result has certain non-200 HTTP status code.
