@@ -275,36 +275,6 @@ impl Store {
         self.namespace.scopes().clear();
         Ok(())
     }
-
-        /*
-    pub fn migrate_namespace(
-        &mut self, target: &Ident
-    ) -> Result<(), Error> {
-        if !self.namespace.locks().is_empty() {
-            return Err(Error::PendingLocks);
-        }
-        let mut namespaces = MEMORY.namespaces.lock().expect("poisoned lock");
-        let new_key = (self.namespace.ns_key.0.clone(), target.into());
-        let new = namespaces.entry(new_key.clone()).or_insert_with(|| {
-            MemoryNamespace::new(new_key).into()
-        }).clone();
-
-        // Check that new is empty.
-        let mut new_values = new.scopes();
-        if !new_values.is_empty() {
-            return Err(Error::NonemptyTargetNamespace(target.into()))
-        }
-
-        // Swap out the values.
-        mem::swap(new_values.deref_mut(), self.namespace.scopes().deref_mut());
-
-        // Delete our namespace
-        namespaces.remove(&self.namespace.ns_key);
-
-        self.namespace = new.clone();
-        Ok(())
-    }
-        */
 }
 
 
