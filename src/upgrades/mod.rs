@@ -819,6 +819,7 @@ pub trait UpgradeAggregateStorePre0_14 {
 /// started, it will call this again - to do the final preparation for a
 /// migration - knowing that no changes are added to the event history at this
 /// time. After this, the migration will be finalised.
+#[allow(unused_variables)]
 pub fn prepare_upgrade_data_migrations(
     mode: UpgradeMode,
     storage: &StorageSystem,

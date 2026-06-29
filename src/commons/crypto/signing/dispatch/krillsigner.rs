@@ -549,7 +549,8 @@ pub mod tests {
     fn config_fragment_to_config_object(
         fragment: &str,
     ) -> Result<Config, toml::de::Error> {
-        let mut config_str = r#"admin_token = "***""#.to_string();
+        let mut config_str = 
+            "admin_token = \"***\"\nstorage_uri = \"/tmp/krill\"".to_string();
         config_str.push_str(fragment);
         toml::from_str(&config_str)
     }
