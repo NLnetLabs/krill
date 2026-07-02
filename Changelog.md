@@ -4,6 +4,10 @@
 
 Breaking changes
 
+* The `storage_uri` (aliased as `data_dir`) configuration file option is
+  now mandatory and will not default to `./data` or the content of an
+  environment variable any more. ([#1383])
+
 New
 
 * Support for Ubuntu Resolute Raccoon (26.04). ([#1378])
