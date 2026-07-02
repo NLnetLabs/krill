@@ -6,10 +6,10 @@ use std::{
 
 use log::LevelFilter;
 use serde::Deserialize;
-use url::Url;
 
 use crate::{
     commons::crypto::{KrillSigner, KrillSignerBuilder, OpenSslSignerConfig},
+    commons::storage::{StorageSystem, StorageUri},
     constants::OPENSSL_ONE_OFF_SIGNER_NAME,
     config::{LogType, SignerConfig, SignerReference, SignerType},
 };
@@ -93,9 +93,8 @@ impl TaTimingConfig {
 pub struct Config {
     #[serde(
         alias = "data_dir",
-        deserialize_with = "crate::config::deserialize_storage_uri"
     )]
-    pub storage_uri: Url,
+    pub storage_uri: StorageUri,
 
     #[serde(default)]
     pub use_history_cache: bool,
@@ -228,7 +227,9 @@ impl Config {
     }
 
     // Signer support
-    pub fn signer(&self) -> Result<KrillSigner, ConfigError> {
+    pub fn signer(
+        &self, storage: &StorageSystem
+    ) -> Result<KrillSigner, ConfigError> {
         // Assumes that Config::verify() has already ensured that the signer
         // configuration is valid and that Config::resolve() has been
         // used to update signer name references to resolve to the
@@ -236,7 +237,7 @@ impl Config {
         let probe_interval =
             std::time::Duration::from_secs(self.signer_probe_retry_seconds);
         let signer = KrillSignerBuilder::new(
-            &self.storage_uri,
+            storage,
             probe_interval,
             &self.signers,
         )
@@ -381,7 +382,8 @@ mod tests {
             let config_string =
                 include_str!("../../test-resources/ta/ta.conf");
             let config = Config::parse_str(config_string).unwrap();
-            config.signer().unwrap();
+            let storage = StorageSystem::new(config.storage_uri.clone());
+            config.signer(&storage).unwrap();
         })
     }
 }

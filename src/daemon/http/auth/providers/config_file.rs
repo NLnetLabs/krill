@@ -12,6 +12,7 @@ use crate::api::admin::Token;
 use crate::commons::httpclient;
 use crate::commons::KrillResult;
 use crate::commons::error::{ApiAuthError, Error};
+use crate::commons::storage::StorageSystem;
 use crate::constants::{PW_HASH_LOG_N, PW_HASH_P, PW_HASH_R};
 use crate::config::Config;
 use crate::daemon::http::auth::crypt;
@@ -56,13 +57,14 @@ pub struct AuthProvider {
 impl AuthProvider {
     /// Creates an auth provider from the given config.
     pub fn new(
+        storage: &StorageSystem,
         config: &Config,
     ) -> KrillResult<Self> {
         let users = config.auth_users.as_ref().ok_or_else(|| {
             Error::ConfigError("Missing [auth_users] config section!".into())
         })?.clone();
         let roles = config.auth_roles.clone();
-        let session_key = Self::init_session_key(config)?;
+        let session_key = Self::init_session_key(storage)?;
 
         Ok(Self {
             users,
@@ -78,9 +80,11 @@ impl AuthProvider {
     }
 
 
-    fn init_session_key(config: &Config) -> KrillResult<crypt::CryptState> {
+    fn init_session_key(
+        storage: &StorageSystem
+    ) -> KrillResult<crypt::CryptState> {
         debug!("Initializing login session encryption key");
-        crypt::crypt_init(config)
+        crypt::crypt_init(storage)
     }
 
     /// Parse HTTP Basic Authorization header

@@ -26,7 +26,6 @@ use rpki::{
         Cert, Crl, Manifest, Roa,
     },
 };
-use url::Url;
 
 use crate::{
     commons::{
@@ -40,6 +39,7 @@ use crate::{
             CryptoResult, OpenSslSigner, SignSupport,
         },
         error::Error,
+        storage::StorageSystem,
         KrillResult,
     },
     constants::ID_CERTIFICATE_VALIDITY_YEARS,
@@ -83,7 +83,7 @@ use crate::commons::crypto::{
 type SignerBuilderFn = fn(
     &SignerType,
     SignerFlags,
-    &Url,
+    &StorageSystem,
     &str,
     std::time::Duration,
     &Option<Arc<SignerMapper>>,
@@ -91,7 +91,7 @@ type SignerBuilderFn = fn(
 
 #[derive(Debug)]
 pub struct KrillSignerBuilder<'a> {
-    storage_uri: Url,
+    storage: &'a StorageSystem,
     probe_interval: Duration,
     signer_configs: &'a [SignerConfig],
     default_signer: Option<&'a SignerConfig>,
@@ -100,12 +100,12 @@ pub struct KrillSignerBuilder<'a> {
 
 impl<'a> KrillSignerBuilder<'a> {
     pub fn new(
-        storage_uri: &Url,
+        storage: &'a StorageSystem,
         probe_interval: Duration,
         signer_configs: &'a [SignerConfig],
     ) -> Self {
         Self {
-            storage_uri: storage_uri.clone(),
+            storage,
             probe_interval,
             signer_configs,
             default_signer: None,
@@ -174,7 +174,7 @@ impl<'a> KrillSignerBuilder<'a> {
         }
 
         KrillSigner::build(
-            &self.storage_uri,
+            self.storage,
             self.probe_interval,
             self.signer_configs,
             default_signer,
@@ -190,7 +190,7 @@ pub struct KrillSigner {
 
 impl KrillSigner {
     fn build(
-        storage_uri: &Url,
+        storage: &StorageSystem,
         probe_interval: Duration,
         signer_configs: &[SignerConfig],
         default_signer: &SignerConfig,
@@ -199,10 +199,10 @@ impl KrillSigner {
         #[cfg(not(feature = "hsm"))]
         let signer_mapper = None;
         #[cfg(feature = "hsm")]
-        let signer_mapper = Some(Arc::new(SignerMapper::build(storage_uri)?));
+        let signer_mapper = Some(Arc::new(SignerMapper::build(storage)?));
         let signers = Self::build_signers(
             signer_builder,
-            storage_uri,
+            storage,
             probe_interval,
             &signer_mapper,
             signer_configs,
@@ -420,7 +420,7 @@ impl KrillSigner {
 impl KrillSigner {
     fn build_signers(
         signer_builder: SignerBuilderFn,
-        storage_uri: &Url,
+        storage: &StorageSystem,
         probe_interval: std::time::Duration,
         mapper: &Option<Arc<SignerMapper>>,
         configs: &[SignerConfig],
@@ -450,7 +450,7 @@ impl KrillSigner {
             let signer = (signer_builder)(
                 &config.signer_type,
                 flags,
-                storage_uri,
+                storage,
                 &config.name,
                 probe_interval,
                 mapper,
@@ -466,7 +466,7 @@ impl KrillSigner {
 fn signer_builder(
     r#type: &SignerType,
     flags: SignerFlags,
-    storage_uri: &Url,
+    storage: &StorageSystem,
     name: &str,
     #[cfg(feature = "hsm")] probe_interval: Duration,
     #[cfg(not(feature = "hsm"))] _probe_interval: Duration,
@@ -474,10 +474,9 @@ fn signer_builder(
 ) -> KrillResult<SignerProvider> {
     match r#type {
         SignerType::OpenSsl(conf) => {
-            let storage_uri =
-                conf.keys_storage_uri.as_ref().unwrap_or(storage_uri);
-            let signer =
-                OpenSslSigner::build(storage_uri, name, mapper.clone())?;
+            let signer = OpenSslSigner::build(
+                storage, conf, name, mapper.clone()
+            )?;
             Ok(SignerProvider::OpenSsl(flags, signer))
         }
         #[cfg(feature = "hsm")]
@@ -517,6 +516,7 @@ pub mod tests {
         commons::crypto::signers::mocksigner::{
             MockSigner, MockSignerCallCounts,
         },
+        commons::storage::StorageSystem,
         commons::test,
         config::Config,
     };
@@ -528,7 +528,7 @@ pub mod tests {
     fn mock_signer_builder(
         r#type: &SignerType,
         flags: SignerFlags,
-        _storage_uri: &Url,
+        _storage: &StorageSystem,
         name: &str,
         _probe_interval: Duration,
         mapper: &Option<Arc<SignerMapper>>,
@@ -549,14 +549,15 @@ pub mod tests {
     fn config_fragment_to_config_object(
         fragment: &str,
     ) -> Result<Config, toml::de::Error> {
-        let mut config_str = r#"admin_token = "***""#.to_string();
+        let mut config_str = 
+            "admin_token = \"***\"\nstorage_uri = \"/tmp/krill\"".to_string();
         config_str.push_str(fragment);
         toml::from_str(&config_str)
     }
 
     fn build_krill_signer_from_config(
         signers_config_fragment: &str,
-        storage_uri: &Url,
+        storage: &StorageSystem,
         mapper: Arc<SignerMapper>,
     ) -> KrillResult<Vec<SignerProvider>> {
         let mut config =
@@ -569,7 +570,7 @@ pub mod tests {
         let probe_interval = std::time::Duration::from_secs(1);
         KrillSigner::build_signers(
             mock_signer_builder,
-            storage_uri,
+            storage,
             probe_interval,
             &mapper,
             &config.signers,
@@ -612,10 +613,10 @@ pub mod tests {
     /// it was before HSM support was added.
     #[test]
     pub fn no_signers_equals_one_openssl_signer_for_backward_compatibility() {
-        test::test_in_memory(|storage_uri| {
-            let mapper = Arc::new(SignerMapper::build(storage_uri).unwrap());
+        test::test_in_memory(|storage| {
+            let mapper = Arc::new(SignerMapper::build(storage).unwrap());
             let signers =
-                build_krill_signer_from_config("", storage_uri, mapper)
+                build_krill_signer_from_config("", storage, mapper)
                     .unwrap();
             assert_eq!(signers.len(), 1);
             let signer = &signers[0];
@@ -627,8 +628,8 @@ pub mod tests {
 
     #[test]
     pub fn signer_name_is_respected() {
-        test::test_in_memory(|storage_uri| {
-            let mapper = Arc::new(SignerMapper::build(storage_uri).unwrap());
+        test::test_in_memory(|storage| {
+            let mapper = Arc::new(SignerMapper::build(storage).unwrap());
             let signers_config_fragment = r#"
                 [[signers]]
                 type = "OpenSSL"
@@ -636,7 +637,7 @@ pub mod tests {
             "#;
             let signers = build_krill_signer_from_config(
                 signers_config_fragment,
-                storage_uri,
+                storage,
                 mapper,
             )
             .unwrap();
@@ -657,8 +658,8 @@ pub mod tests {
     /// signer.
     #[test]
     pub fn single_openssl_signer_is_made_the_default_all_signer() {
-        test::test_in_memory(|storage_uri| {
-            let mapper = Arc::new(SignerMapper::build(storage_uri).unwrap());
+        test::test_in_memory(|storage| {
+            let mapper = Arc::new(SignerMapper::build(storage).unwrap());
             let signers_config_fragment = r#"
                 [[signers]]
                 type = "OpenSSL"
@@ -666,7 +667,7 @@ pub mod tests {
             "#;
             let signers = build_krill_signer_from_config(
                 signers_config_fragment,
-                storage_uri,
+                storage,
                 mapper,
             )
             .unwrap();
@@ -679,8 +680,8 @@ pub mod tests {
 
     #[test]
     pub fn create_openssl_signer_for_one_off_signing() {
-        test::test_in_memory(|storage_uri| {
-            let mapper = Arc::new(SignerMapper::build(storage_uri).unwrap());
+        test::test_in_memory(|storage| {
+            let mapper = Arc::new(SignerMapper::build(storage).unwrap());
 
             let signer_config_fragment = r#"
                 [[signers]]
@@ -690,7 +691,7 @@ pub mod tests {
             "#;
             let signers = build_krill_signer_from_config(
                 signer_config_fragment,
-                storage_uri,
+                storage,
                 mapper.clone(),
             )
             .unwrap();
@@ -715,7 +716,7 @@ pub mod tests {
             "#;
             let signers = build_krill_signer_from_config(
                 signer_config_fragment,
-                storage_uri,
+                storage,
                 mapper,
             )
             .unwrap();
@@ -733,8 +734,8 @@ pub mod tests {
 
     #[test]
     pub fn one_off_signer_is_respected() {
-        test::test_in_memory(|storage_uri| {
-            let mapper = Arc::new(SignerMapper::build(storage_uri).unwrap());
+        test::test_in_memory(|storage| {
+            let mapper = Arc::new(SignerMapper::build(storage).unwrap());
 
             let signer_config_fragment = r#"
                 one_off_signer = "KMIP"
@@ -746,7 +747,7 @@ pub mod tests {
             "#;
             let signers = build_krill_signer_from_config(
                 signer_config_fragment,
-                storage_uri,
+                storage,
                 mapper.clone(),
             )
             .unwrap();
@@ -768,7 +769,7 @@ pub mod tests {
             "#;
             let signers = build_krill_signer_from_config(
                 signer_config_fragment,
-                storage_uri,
+                storage,
                 mapper,
             )
             .unwrap();
@@ -781,8 +782,8 @@ pub mod tests {
 
     #[test]
     pub fn default_signer_is_respected() {
-        test::test_in_memory(|storage_uri| {
-            let mapper = Arc::new(SignerMapper::build(storage_uri).unwrap());
+        test::test_in_memory(|storage| {
+            let mapper = Arc::new(SignerMapper::build(storage).unwrap());
 
             let signer_config_fragment = r#"
                 default_signer = "Signer 2"
@@ -798,7 +799,7 @@ pub mod tests {
             "#;
             let signers = build_krill_signer_from_config(
                 signer_config_fragment,
-                storage_uri,
+                storage,
                 mapper,
             )
             .unwrap();
@@ -818,8 +819,8 @@ pub mod tests {
 
     #[test]
     pub fn default_signer_and_one_off_signer_are_respected() {
-        test::test_in_memory(|storage_uri| {
-            let mapper = Arc::new(SignerMapper::build(storage_uri).unwrap());
+        test::test_in_memory(|storage| {
+            let mapper = Arc::new(SignerMapper::build(storage).unwrap());
 
             let signer_config_fragment = r#"
                 default_signer = "Signer 2"
@@ -836,7 +837,7 @@ pub mod tests {
             "#;
             let signers = build_krill_signer_from_config(
                 signer_config_fragment,
-                storage_uri,
+                storage,
                 mapper,
             )
             .unwrap();
@@ -856,8 +857,8 @@ pub mod tests {
 
     #[test]
     pub fn historic_signers_are_permitted() {
-        test::test_in_memory(|storage_uri| {
-            let mapper = Arc::new(SignerMapper::build(storage_uri).unwrap());
+        test::test_in_memory(|storage| {
+            let mapper = Arc::new(SignerMapper::build(storage).unwrap());
 
             let signer_config_fragment = r#"
                 default_signer = "Signer 2"
@@ -880,7 +881,7 @@ pub mod tests {
             "#;
             let signers = build_krill_signer_from_config(
                 signer_config_fragment,
-                storage_uri,
+                storage,
                 mapper,
             )
             .unwrap();

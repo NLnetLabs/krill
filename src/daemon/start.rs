@@ -22,6 +22,7 @@ use tokio::task::JoinSet;
 use tokio_rustls::TlsAcceptor;
 use crate::commons::file;
 use crate::commons::error::{Error, Error as KrillError};
+use crate::commons::storage::StorageSystem;
 use crate::commons::version::KrillVersion;
 use crate::config::Config;
 use crate::constants::{KRILL_ENV_UPGRADE_ONLY, KRILL_SERVER_APP};
@@ -61,16 +62,17 @@ pub fn start_krill_daemon(
     write_pid_file_or_die(&config);
     test_data_dirs_or_die(&config);
 
+    let storage = StorageSystem::new(config.storage_uri.clone());
+
     // Set up the runtime properties manager, so that we can check
     // the version used for the current data in storage
     let properties_manager = PropertiesManager::create(
-        &config.storage_uri,
-        config.use_history_cache,
+        &storage, config.use_history_cache,
     )?;
 
     // Call upgrade, this will only do actual work if needed.
     let upgrade_report = prepare_upgrade_data_migrations(
-        UpgradeMode::PrepareToFinalise, &config, &properties_manager
+        UpgradeMode::PrepareToFinalise, &storage, &config, &properties_manager
     ).map_err(|e| {
         match e {
             UpgradeError::CodeOlderThanData(_,_) => {
@@ -88,7 +90,7 @@ pub fn start_krill_daemon(
 
     if let Some(report) = &upgrade_report {
         finalise_data_migration(
-            report.versions(), &config, &properties_manager
+            report.versions(), &storage, &properties_manager
         ).map_err(|e| {
             Error::Custom(format!(
                 "Finishing prepared migration failed unexpectedly. Please \
@@ -116,7 +118,9 @@ pub fn start_krill_daemon(
         )
     })?;
 
-    let mut krill = StartupManager::new(config, tokio.handle().clone())?;
+    let mut krill = StartupManager::new(
+        config, storage, tokio.handle().clone()
+    )?;
 
     // Setup testbed if necessary.
     krill.prepare_testbed()?;
