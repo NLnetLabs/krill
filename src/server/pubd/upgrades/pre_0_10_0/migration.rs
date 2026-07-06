@@ -1,10 +1,9 @@
 use rpki::ca::idexchange::MyHandle;
 use rpki::repository::x509::Time;
 use crate::commons::eventsourcing::{AggregateStore, StoredCommandBuilder};
-use crate::commons::storage::{Ident, KeyValueStore};
+use crate::commons::storage::{Ident, KeyValueStore, StorageSystem};
 use crate::commons::version::KrillVersion;
 use crate::constants::PUBSERVER_NS;
-use crate::config::Config;
 use crate::server::pubd::access::{
     RepositoryAccess, RepositoryAccessEvent, RepositoryAccessInitEvent,
     StorableRepositoryCommand,
@@ -32,19 +31,15 @@ pub struct PublicationServerRepositoryAccessMigration {
 impl PublicationServerRepositoryAccessMigration {
     pub fn upgrade(
         mode: UpgradeMode,
-        config: &Config,
+        storage: &StorageSystem,
         versions: &UpgradeVersions,
     ) -> UpgradeResult<()> {
-        let current_kv_store =
-            KeyValueStore::create(&config.storage_uri, PUBSERVER_NS)?;
-        let new_kv_store = KeyValueStore::create_upgrade_store(
-            &config.storage_uri,
-            PUBSERVER_NS,
-        )?;
+        let current_kv_store = storage.open(PUBSERVER_NS)?;
+        let new_kv_store = storage.open_upgrade(PUBSERVER_NS)?;
         let new_agg_store = AggregateStore::create_upgrade_store(
-            &config.storage_uri,
+            storage,
             PUBSERVER_NS,
-            config.use_history_cache,
+            false,
         )?;
 
         let store_migration = PublicationServerRepositoryAccessMigration {

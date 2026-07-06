@@ -370,8 +370,10 @@ steps must be taken:
    configuration settings that Krill offers. For example to use the Amazon
    Cognito logout endpoint you have to configure that manually.
 
-   .. tip:: The ``krill.conf`` file contains example configurations for
-            providers that Krill has been tested with.
+   .. tip:: The ``krill-multi-user.conf`` file contains example configurations for
+            providers that Krill has been tested with. If you installed krill using
+            a binary package, it can be found on github under the `defaults 
+            directory <https://github.com/NLnetLabs/krill/tree/main/defaults>`_.
 
 Using Keycloak
 """"""""""""""

@@ -19,7 +19,6 @@ use rpki::crypto::{
     RpkiSignatureAlgorithm, Signature, SignatureAlgorithm, SigningError,
 };
 use serde::{de, ser, Deserialize, Deserializer, Serialize, Serializer};
-use url::Url;
 
 use crate::{
     commons::{
@@ -27,21 +26,23 @@ use crate::{
             dispatch::signerinfo::SignerMapper, signers::error::SignerError,
             SignerHandle,
         },
-        storage::{Ident, KeyValueStore},
+        storage::{
+            Ident, KeyValueStore, StorageSystem, StorageUri, OpenStoreError,
+        },
     },
     constants::KEYS_NS,
 };
 
 //------------ OpenSslSigner -------------------------------------------------
 
-#[derive(Clone, Debug, Default, Deserialize, Hash, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 pub struct OpenSslSignerConfig {
     #[serde(default)]
-    pub keys_storage_uri: Option<Url>,
+    pub keys_storage_uri: Option<StorageUri>,
 }
 
 impl OpenSslSignerConfig {
-    pub fn new(storage_uri: Url) -> Self {
+    pub fn new(storage_uri: StorageUri) -> Self {
         Self {
             keys_storage_uri: Some(storage_uri),
         }
@@ -69,18 +70,19 @@ impl OpenSslSigner {
     /// SignerMapper only knows about keys created by the OpenSslSigner if
     /// the OpenSslSigner registers the new keys in the mapper.
     pub fn build(
-        storage_uri: &Url,
+        storage: &StorageSystem,
+        conf: &OpenSslSignerConfig,
         name: &str,
         mapper: Option<Arc<SignerMapper>>,
-    ) -> Result<Self, SignerError> {
-        let keys_store = Self::init_keys_store(storage_uri)?;
+    ) -> Result<Self, OpenStoreError> {
+        let keys_store = Self::init_keys_store(storage, conf)?;
 
         let s = OpenSslSigner {
             name: name.to_string(),
             info: Some(format!(
                 "OpenSSL Soft Signer [version: {}, keys store: {}]",
                 openssl::version::version(),
-                storage_uri,
+                storage.default_uri(),
             )),
             handle: RwLock::new(None), // will be set later
             mapper,
@@ -137,11 +139,13 @@ impl OpenSslSigner {
 
 impl OpenSslSigner {
     fn init_keys_store(
-        storage_uri: &Url,
-    ) -> Result<KeyValueStore, SignerError> {
-        let store = KeyValueStore::create(storage_uri, KEYS_NS)
-            .map_err(|_| SignerError::InvalidStorage(storage_uri.clone()))?;
-        Ok(store)
+        storage: &StorageSystem,
+        conf: &OpenSslSignerConfig,
+    ) -> Result<KeyValueStore, OpenStoreError> {
+        match &conf.keys_storage_uri {
+            Some(uri) => storage.open_uri(uri, KEYS_NS),
+            None => storage.open(KEYS_NS)
+        }
     }
 
     fn build_key(&self) -> Result<KeyIdentifier, SignerError> {
@@ -385,10 +389,19 @@ pub mod tests {
 
     use super::*;
 
+    fn build_signer(storage: &StorageSystem) -> OpenSslSigner {
+        OpenSslSigner::build(
+            storage,
+            &OpenSslSignerConfig::default(),
+            "dummy",
+            None
+        ).unwrap()
+    }
+
     #[test]
     fn should_return_subject_public_key_info() {
-        test::test_in_memory(|storage_uri| {
-            let s = OpenSslSigner::build(storage_uri, "dummy", None).unwrap();
+        test::test_in_memory(|storage| {
+            let s = build_signer(storage);
             let ki = s.create_key(PublicKeyFormat::Rsa).unwrap();
             s.get_key_info(&ki).unwrap();
             s.destroy_key(&ki).unwrap();
@@ -410,14 +423,13 @@ pub mod tests {
 
     #[test]
     fn import_existing_pkcs1_openssl_key() {
-        test::test_in_memory(|storage_uri| {
+        test::test_in_memory(|storage| {
             // The following key was generated using OpenSSL on the command
             // line
             let pem = include_str!(
                 "../../../../../test-resources/ta/example-pkcs1.pem"
             );
-            let signer =
-                OpenSslSigner::build(storage_uri, "dummy", None).unwrap();
+            let signer = build_signer(storage);
 
             let ki = signer.import_key(pem).unwrap();
             signer.get_key_info(&ki).unwrap();
@@ -427,14 +439,13 @@ pub mod tests {
 
     #[test]
     fn import_existing_pkcs8_openssl_key() {
-        test::test_in_memory(|storage_uri| {
+        test::test_in_memory(|storage| {
             // The following key was generated using OpenSSL on the command
             // line
             let pem = include_str!(
                 "../../../../../test-resources/ta/example-pkcs8.pem"
             );
-            let signer =
-                OpenSslSigner::build(storage_uri, "dummy", None).unwrap();
+            let signer = build_signer(storage);
 
             let ki = signer.import_key(pem).unwrap();
             signer.get_key_info(&ki).unwrap();

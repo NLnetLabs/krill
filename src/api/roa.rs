@@ -558,8 +558,8 @@ impl From<BgpAnalysisSuggestion> for RoaConfigurationUpdates {
 
         for announcement in suggestion.not_found
             .into_iter()
-            .chain(suggestion.invalid_asn.into_iter())
-            .chain(suggestion.invalid_length.into_iter())
+            .chain(suggestion.invalid_asn)
+            .chain(suggestion.invalid_length)
         {
             added.push(RoaConfiguration {
                 payload: announcement.into(),

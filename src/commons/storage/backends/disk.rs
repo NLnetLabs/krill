@@ -1,6 +1,6 @@
 //! Filesystem-based storage.
 
-use std::{fmt, fs, io};
+use std::{error, fmt, fs, io};
 use std::borrow::Cow;
 use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
@@ -27,6 +27,98 @@ const LOCK_FILE_DIR: &str = ".locks";
 /// The name of the lock file for a scope.
 pub const LOCK_FILE_NAME: &str = "lockfile.lock";
 
+
+//------------ System --------------------------------------------------------
+
+#[derive(Debug, Default)]
+pub struct System(());
+
+impl System {
+    pub fn location(&self, uri: &Uri) -> Result<Location, Error> {
+        Ok(Location { base: uri.path.clone() })
+    }
+}
+
+
+//------------ Location ------------------------------------------------------
+
+#[derive(Debug)]
+pub struct Location {
+    /// The base directory.
+    ///
+    /// All the namespaces plus a few extra repositories are under this
+    /// directory.
+    base: PathBuf,
+}
+
+impl Location {
+    pub fn open(
+        &self, namespace: &Ident,
+    ) -> Result<Store, Error> {
+        Store::new(&self.base, namespace)
+    }
+
+    pub fn is_empty(
+        &self, namespace: &Ident,
+    ) -> Result<bool, Error> {
+        self.open(namespace)?.is_empty()
+    }
+
+    pub fn migrate(
+        &self, src_ns: &Ident, dst_ns: &Ident
+    ) -> Result<(), Error> {
+        let src_store = self.open(src_ns)?;
+        let dst_root = self.base.join(dst_ns.as_str());
+
+        // Try removing the destination directory. If it isn’t there, that’s
+        // fine. Otherwise we error out.
+        if let Err(err) = fs::remove_dir(&dst_root)
+            && err.kind() != io::ErrorKind::NotFound
+        {
+            return Err(Error::other(format!(
+                "target dir {} exists and cannot be removed ({})",
+                dst_root.display(), err
+            )));
+        }
+
+        // The source store must not have any lock files.
+        #[allow(clippy::collapsible_if)]
+        if src_store.locks.exists() {
+            if src_store.locks
+                .read_dir()
+                .map_err(|err| {
+                    Error::io(
+                        format!(
+                            "cannot read directory '{}'",
+                            src_store.locks.display(),
+                        ),
+                        err
+                    )
+                })?
+                .next()
+                .is_some()
+            {
+                return Err(Error::other(format!(
+                    "store at '{}' has pending locks",
+                    src_store.root.display(),
+                )));
+            }
+        }
+
+        fs::rename(&src_store.root, &dst_root).map_err(|err| {
+            Error::io(
+                format!(
+                    "cannot rename dir from {} to {}",
+                    src_store.root.display(),
+                    dst_root.display(),
+                ),
+                err
+            )
+        })?;
+
+        Ok(())
+    }
+}
 
 
 //------------ Store ---------------------------------------------------------
@@ -75,16 +167,9 @@ pub struct Store {
 }
 
 impl Store {
-    pub fn from_uri(
-        uri: &Url, namespace: &Ident,
-    ) -> Result<Option<Self>, Error> {
-        if uri.scheme() != "local" {
-            return Ok(None)
-        }
-
-        let path = PathBuf::from(format!(
-            "{}{}", uri.host_str().unwrap_or_default(), uri.path()
-        ));
+    fn new(
+        path: &Path, namespace: &Ident,
+    ) -> Result<Self, Error> {
         let root = path.join(namespace.as_str());
         let tmp = path.join(TMP_FILE_DIR);
         let mut locks = path.join(LOCK_FILE_DIR);
@@ -100,7 +185,7 @@ impl Store {
             )
         })?;
 
-        Ok(Some(Self { root, tmp, locks }))
+        Ok(Self { root, tmp, locks })
     }
 
     pub fn execute<F, T>(
@@ -109,9 +194,18 @@ impl Store {
     where
         F: for<'a> Fn(&mut SuperTransaction<'a>) -> Result<T, SuperError>
     {
-        let mut file_lock = FileLock::create(self.scope_lock_path(scope))?;
-        let _write_lock = file_lock.write()?;
-        op(&mut SuperTransaction::from(self))
+        if scope.is_none() {
+            let mut file_lock = FileLock::create(self.scope_lock_path(scope))?;
+            let _write_lock = file_lock.write()?;
+            op(&mut SuperTransaction::from(self))
+        }
+        else {
+            let mut root_lock = FileLock::create(self.scope_lock_path(None))?;
+            let _root_lock = root_lock.read()?;
+            let mut file_lock = FileLock::create(self.scope_lock_path(scope))?;
+            let _write_lock = file_lock.write()?;
+            op(&mut SuperTransaction::from(self))
+        }
     }
 
     /// Returns the path for the given key.
@@ -263,8 +357,7 @@ impl Store {
                     ));
                 }
             };
-            if 
-                file_type.is_file()
+            if file_type.is_file() 
                 && let Some(name) =
                     item.file_name().into_string().ok().and_then(|name| {
                         Ident::boxed_from_string(name).ok()
@@ -320,8 +413,7 @@ impl Store {
                     ));
                 }
             };
-            if
-                file_type.is_dir()
+            if file_type.is_dir()
                 && let Some(name) =
                     item.file_name().into_string().ok().and_then(|name| {
                         Ident::boxed_from_string(name).ok()
@@ -500,54 +592,6 @@ impl Store {
         Ok(())
     }
 
-    pub fn migrate_namespace(
-        &mut self, namespace: &Ident,
-    ) -> Result<(), Error> {
-        let root_parent = self.root.parent().ok_or_else(|| {
-            Error::other(
-                format!("cannot get parent dir for: {}", self.root.display())
-            )
-        })?;
-
-        let new_root = root_parent.join(namespace.as_str());
-
-        if new_root.exists() {
-            // If the target directory already exists, then it must be empty.
-            if new_root
-                .read_dir()
-                .map_err(|err| {
-                    Error::io(
-                        format!(
-                            "cannot read directory '{}'",
-                            new_root.display(),
-                        ),
-                        err
-                    )
-                })?
-                .next()
-                .is_some()
-            {
-                return Err(Error::other(format!(
-                    "target dir {} already exists and is not empty",
-                    new_root.display(),
-                )));
-            }
-        }
-
-        fs::rename(&self.root, &new_root).map_err(|err| {
-            Error::io(
-                format!(
-                    "cannot rename dir from {} to {}",
-                    self.root.display(),
-                    new_root.display(),
-                ),
-                err
-            )
-        })?;
-        self.root = new_root;
-        Ok(())
-    }
-
     /// Creates the given directory if necessary.
     fn create_dirs(path: Option<&Path>) -> Result<(), Error> {
         if let Some(path) = path {
@@ -609,10 +653,60 @@ impl FileLock {
         Ok(FileLock { lock: fd_lock::RwLock::new(lock_file) })
     }
 
+    fn read(&mut self) -> Result<fd_lock::RwLockReadGuard<'_, File>, Error> {
+        self.lock
+            .read()
+            .map_err(|e| Error::other(format!("Cannot get file lock: {e}")))
+    }
+
     fn write(&mut self) -> Result<fd_lock::RwLockWriteGuard<'_, File>, Error> {
         self.lock
             .write()
             .map_err(|e| Error::other(format!("Cannot get file lock: {e}")))
+    }
+}
+
+
+//------------ Uri -----------------------------------------------------------
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Uri {
+    path: PathBuf,
+}
+
+impl Uri {
+    pub fn new(path: PathBuf) -> Self {
+        Self { path }
+    }
+
+    pub fn parse_uri(uri: &Url) -> Result<Option<Uri>, UriError> {
+        if uri.scheme() != "file" && uri.scheme() != "local" {
+            return Ok(None)
+        }
+
+        if !uri.authority().is_empty() {
+            return Err(UriError::HasAuthority(uri.authority().into()))
+        }
+
+        Self::parse_str(uri.path()).map(Some)
+    }
+
+    pub fn parse_str(s: &str) -> Result<Uri, UriError> {
+        let path = PathBuf::from(s);
+        if !path.is_absolute() {
+            return Err(UriError::RelativePath(path))
+        }
+        Ok(Self { path })
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl fmt::Display for Uri {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "file://{}", self.path.display())
     }
 }
 
@@ -710,4 +804,34 @@ impl fmt::Display for Error {
         }
     }
 }
+
+impl error::Error for Error { }
+
+
+//------------ UriError ------------------------------------------------------
+
+#[derive(Debug)]
+pub enum UriError {
+    HasAuthority(String),
+    MissingPath,
+    RelativePath(PathBuf),
+}
+
+impl fmt::Display for UriError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::HasAuthority(host) => {
+                write!(f, "non-local path with host '{host}'")
+            }
+            Self::MissingPath => {
+                write!(f, "missing path")
+            }
+            Self::RelativePath(path) => {
+                write!(f, "{} is not absolute.", path.display())
+            }
+        }
+    }
+}
+
+impl error::Error for UriError { }
 
