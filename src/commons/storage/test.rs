@@ -4,11 +4,8 @@
 //! requires a wee bit of macro magic.
 #![cfg(test)]
 
-use std::sync::{Mutex, MutexGuard};
-use lazy_static::lazy_static;
 use tempfile::{TempDir, tempdir};
-use url::Url;
-use super::{Ident, KeyValueStore};
+use super::{Ident, KeyValueStore, StorageSystem, StorageUri};
 
 
 //------------ Macro to Construct Tests --------------------------------------
@@ -73,7 +70,7 @@ const CONTENT_4: u32 = 45;
 
 // All the test functions.
 //
-// The all need to have the same signature taking one argument as an
+// They all need to have the same signature taking one argument as an
 // `impl Harness` and return unit. Each function will be transformed into a
 // test function for each of the backends (currently memory and disk). The
 // harness will give it access to a temporary test store atop that given
@@ -130,12 +127,9 @@ testfns! {
 
     fn drop_global_key(harness: impl Harness) {
         let store = harness.store(NAMESPACE);
-
         assert!(store.drop_key(None, KEY).is_err());
-
         store.store(None, KEY, &CONTENT).unwrap();
         assert!(store.has(None, KEY).unwrap());
-
         store.drop_key(None, KEY).unwrap();
         assert!(!store.has(None, KEY).unwrap());
     }
@@ -301,7 +295,7 @@ testfns! {
 trait Harness {
     /// Returns the URL of the backend.
     #[allow(dead_code)]
-    fn url(&self) -> Url;
+    fn uri(&self) -> &StorageUri;
 
     /// Creates a new store for the given namespace.
     fn store(&self, namespace: &Ident) -> KeyValueStore;
@@ -311,48 +305,25 @@ trait Harness {
 //------------ MemoryHarness -------------------------------------------------
 
 /// The test harness for the memory backend.
-///
-/// Because there is only a single shared memory store for the whole process,
-/// we can only run a single test using it at the same time and need to wipe
-/// it clean before the test. This is why there are a lock and a guard here.
-struct MemoryHarness<'a> {
-    _guard: MutexGuard<'a, ()>,
+struct MemoryHarness {
+    storage: StorageSystem,
 }
 
-lazy_static! {
-    static ref MEMORY_LOCK: Mutex<()> = Mutex::new(());
-}
-
-impl<'a> MemoryHarness<'a> {
+impl MemoryHarness {
     fn new() -> Self {
-        loop {
-            let _guard = match MEMORY_LOCK.lock() {
-                Ok(guard) => guard,
-                Err(_) => {
-                    // If a thread panicked, the lock gets poisoned. But we
-                    // know that a panicked thread (and its test) has ended,
-                    // so we can clear the poison and try to acquire the
-                    // lock again.
-                    MEMORY_LOCK.clear_poison();
-                    continue;
-                }
-            };
-            super::backends::memory::Store::wipe_all();
-            return Self { _guard }
+        Self {
+            storage: StorageSystem::new_memory(None)
         }
     }
 }
 
-impl<'a> Harness for MemoryHarness<'a> {
-    fn url(&self) -> Url {
-        Url::parse("memory:").unwrap()
+impl Harness for MemoryHarness {
+    fn uri(&self) -> &StorageUri {
+        self.storage.default_uri()
     }
 
     fn store(&self, namespace: &Ident) -> KeyValueStore {
-        KeyValueStore::create(
-            &Url::parse("memory:").unwrap(),
-            namespace,
-        ).unwrap()
+        self.storage.open(namespace).unwrap()
     }
 }
 
@@ -365,25 +336,25 @@ impl<'a> Harness for MemoryHarness<'a> {
 /// removed automatically when the harness is dropped.
 struct DiskHarness {
     _dir: TempDir,
-    url: Url,
+    storage: StorageSystem,
 }
 
 impl DiskHarness {
     fn new() -> Self {
         let _dir = tempdir().unwrap();
-        let url = format!("local://{}", _dir.path().display());
-        let url = Url::parse(&url).unwrap();
-        Self { _dir, url }
+        let storage = StorageSystem::new_disk(_dir.path().into());
+
+        Self { _dir, storage }
     }
 }
 
 impl Harness for DiskHarness {
-    fn url(&self) -> Url {
-        self.url.clone()
+    fn uri(&self) -> &StorageUri {
+        self.storage.default_uri()
     }
 
     fn store(&self, namespace: &Ident) -> KeyValueStore {
-        KeyValueStore::create(&self.url, namespace).unwrap()
+        self.storage.open(namespace).unwrap()
     }
 }
 

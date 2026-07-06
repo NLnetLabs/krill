@@ -18,6 +18,7 @@ use crate::api::status::ErrorResponse;
 use crate::commons::actor::Actor;
 use crate::commons::error::KrillError;
 use crate::commons::eventsourcing::AggregateStoreError;
+use crate::commons::storage::StorageSystem;
 use crate::config::Config;
 use crate::constants::{TA_NAME, ta_handle, testbed_ca_handle};
 use crate::server::ca::CaStatus;
@@ -45,11 +46,11 @@ impl StartupManager {
     /// While the Tokio runtime provided isn’t used, we need the handle
     /// already to pass it to the Krill runtime.
     pub fn new(
-        config: Config, tokio: TokioHandle
+        config: Config, storage: StorageSystem, tokio: TokioHandle
     ) -> Result<Self, KrillError> {
         Ok(Self {
             thread_pool: ThreadPool::new(&config)?,
-            runtime: KrillRuntime::new(config, tokio)?,
+            runtime: KrillRuntime::new(config, storage, tokio)?,
         })
     }
 
@@ -223,6 +224,11 @@ impl KrillManager {
     /// Returns a reference to the config.
     pub fn config(&self) -> &Config {
         self.krill_runtime.config()
+    }
+
+    /// Returns a reference to the storage system.
+    pub fn storage(&self) -> &StorageSystem {
+        self.krill_runtime.storage()
     }
 
     /// Returns the system actor.

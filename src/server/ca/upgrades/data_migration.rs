@@ -1,4 +1,5 @@
 use log::{debug, warn};
+use crate::commons::storage::StorageSystem;
 use crate::constants::CASERVER_NS;
 use crate::server::ca::certauth::CertAuth;
 use crate::server::ca::publishing::CaObjectsStore;
@@ -7,12 +8,13 @@ use crate::upgrades::UpgradeResult;
 use crate::upgrades::data_migration::check_agg_store;
 
 
-pub fn check_ca_objects(config: &Config) -> UpgradeResult<()> {
-    let ca_store = check_agg_store::<CertAuth>(config, CASERVER_NS, "CAs")?;
+pub fn check_ca_objects(
+    storage: &StorageSystem, config: &Config
+) -> UpgradeResult<()> {
+    let ca_store = check_agg_store::<CertAuth>(storage, CASERVER_NS, "CAs")?;
 
     let ca_objects_store = CaObjectsStore::create(
-        &config.storage_uri,
-        config.issuance_timing,
+        storage, config.issuance_timing,
     )?;
 
     let cas_with_objects = ca_objects_store.cas()?;

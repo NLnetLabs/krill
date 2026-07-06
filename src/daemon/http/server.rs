@@ -41,7 +41,7 @@ impl HttpServer {
         krill: KrillManager,
         runtime: &runtime::Handle,
     ) -> KrillResult<Arc<Self>> {
-        let authorizer = Authorizer::new(krill.config())?;
+        let authorizer = Authorizer::new(krill.storage(), krill.config())?;
         authorizer.spawn_sweep(runtime);
         Ok(Self {
             krill,
