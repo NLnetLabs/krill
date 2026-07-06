@@ -54,7 +54,22 @@ pub fn remove_dir_all(dir: &Path) -> Result<(), KrillIoError> {
     Ok(())
 }
 
-fn create_file(path: &Path, set_mode: bool) -> Result<File, KrillIoError> {
+/// Creates a new File or opens an exiting one. If the file did not exist, the
+/// path will be created if it did not exist yet.
+pub fn create_file_with_path(path: &Path) -> Result<File, KrillIoError> {
+    create_file(path, false)
+}
+
+/// Creates a new File or opens an exiting one. If the file did not exist, the
+/// path will be created if it did not exist yet.
+pub fn create_private_file_with_path(path: &Path) -> Result<File, KrillIoError> {
+    create_file(path, true)
+}
+
+/// Creates a file.
+///
+/// If `private` is `true`, will set the file mode to `0o600` on Unix.
+fn create_file(path: &Path, private: bool) -> Result<File, KrillIoError> {
     if 
         !path.exists()
         && let Some(parent) = path.parent()
@@ -75,7 +90,7 @@ fn create_file(path: &Path, set_mode: bool) -> Result<File, KrillIoError> {
     options.read(true);
     options.write(true);
     #[cfg(unix)]
-    if set_mode {
+    if private {
         options.mode(0o600);
     }
     options.open(path).map_err(|e| {
@@ -84,18 +99,6 @@ fn create_file(path: &Path, set_mode: bool) -> Result<File, KrillIoError> {
             e,
         )
     })
-}
-
-/// Creates a new File or opens an exiting one. If the file did not exist, the
-/// path will be created if it did not exist yet.
-pub fn create_file_with_path(path: &Path) -> Result<File, KrillIoError> {
-    create_file(path, false)
-}
-
-/// Creates a new File or opens an exiting one. If the file did not exist, the
-/// path will be created if it did not exist yet.
-pub fn create_private_file_with_path(path: &Path) -> Result<File, KrillIoError> {
-    create_file(path, true)
 }
 
 /// Derive the path for this file.
