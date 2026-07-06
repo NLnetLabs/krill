@@ -18,7 +18,13 @@ Bug fixes
 
 Other changes
 
+* Upgraded the bundled Krill UI to [version 0.10.0][krill-ui 0.1.0].
+  This primarily adds a new ASPA UI. ([#1373])
+
+[#1373]: https://github.com/NLnetLabs/krill/pull/1373
 [#1378]: https://github.com/NLnetLabs/krill/pull/1378
+[#1383]: https://github.com/NLnetLabs/krill/pull/1383
+[krill-ui 0.10.0]: https://github.com/NLnetLabs/krill-ui/releases/tag/v0.10.0
 
 
 ## 0.16.0 ‘Früher war mehr Lametta’
