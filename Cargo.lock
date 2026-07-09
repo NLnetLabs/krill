@@ -1362,15 +1362,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "intervaltree"
-version = "0.2.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "270bc34e57047cab801a8c871c124d9dc7132f6473c6401f645524f4e6edd111"
-dependencies = [
- "smallvec",
-]
-
-[[package]]
 name = "ipnet"
 version = "2.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1522,9 +1513,7 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
- "intervaltree",
  "kmip-protocol",
- "lazy_static",
  "libflate",
  "log",
  "nix",

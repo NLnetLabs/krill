@@ -21,53 +21,131 @@ exclude = [
 ]
 
 [dependencies]
-arc-swap        = "1.7.1"
-base64          = "0.22.1"
-bytes           = "1"
-chrono          = { version = "0.4.39", features = ["serde"] }
-clap            = { version = "4.5.37", features = ["cargo", "derive", "env",  "wrap_help"]}
-fd-lock         = "4.0.4"
-fern            = { version = "0.7.1", features = ["syslog-7"] }
-futures-util    = "0.3"
-hex             = "0.4"
-http-body-util  = "0.1"
-hyper           = { version = "1.6.0", features = ["server"] }
-hyper-util      = { version = "0.1", features = [ "server", "server-auto", "server-graceful" ] }
-intervaltree    = "0.2.7"
-lazy_static     = "1.5"
-libflate        = "2.1.0"
-log             = "0.4"
-openssl         = { version = "0.10", features = ["v110"] }
+arc-swap = "1.7.1"
+base64 = "0.22.1"
+bytes = "1"
+chrono = {
+    version = "0.4.39",
+    features = ["serde"]
+}
+clap = {
+    version = "4.5.37",
+    features = ["cargo", "derive", "env",  "wrap_help"]
+}
+fd-lock = "4.0.4"
+fern  = {
+    version = "0.7.1",
+    features = ["syslog-7"]
+}
+futures-util = "0.3"
+hex = "0.4"
+http-body-util = "0.1"
+hyper = {
+    version = "1.6.0",
+    features = ["server"]
+}
+hyper-util = {
+    version = "0.1",
+    features = [ "server", "server-auto", "server-graceful" ]
+}
+libflate = "2.1.0"
+log = "0.4"
+openssl = {
+    version = "0.10",
+    features = ["v110"]
+}
 percent-encoding = "2.3.1"
 pin-project-lite = "0.2.16"
-rand            = "0.10"
-regex           = { version = "1.11.1", default-features = false, features = [ "std" ] }
-reqwest         = { version = "0.13.2", features = ["json"] }
-rpki            = { version = "0.19.2", features = ["ca", "compat", "rrdp"] }
-rustls-pemfile  = "2.2.0"
-serde           = { version = "1.0", features = ["derive", "rc"] }
-serde_json      = "1.0"
-tempfile        = "3.19.1"
-tokio           = { version = "1", features = [ "macros", "rt", "rt-multi-thread", "signal", "time" ] }
-tokio-rustls    = { version = "0.26" }
-toml            = "0.9.5"
-url             = { version = "2.5.4", features = ["serde"] }
-uuid            = { version = "1.16", features = ["serde", "v4"] }
+rand = "0.10"
+reqwest = {
+    version = "0.13.2",
+    features = ["json"]
+}
+rpki = {
+    version = "0.19.2",
+    features = ["ca", "compat", "rrdp"]
+}
+rustls-pemfile = "2.2.0"
+serde = {
+    version = "1.0",
+    features = ["derive", "rc"]
+}
+serde_json = "1.0"
+tempfile = "3.19.1"
+tokio = {
+    version = "1",
+    features = [ "macros", "rt", "rt-multi-thread", "signal", "time" ]
+}
+tokio-rustls = "0.26"
+toml = "0.9.5"
+url = {
+    version = "2.5.4",
+    features = ["serde"]
+}
+uuid = {
+    version = "1.16",
+    features = ["serde", "v4"]
+}
 
 # Dependencies used by the "hsm" feature
-backoff         = { version = "0.4.0", optional = true }
-cryptoki        = { version = "0.12", optional = true, features = [ "serde" ] }
-kmip            = { version = "0.4.3", package = "kmip-protocol", features = [ "tls-with-openssl" ], optional = true }
-r2d2            = { version = "0.8.10", optional = true }
-secrecy         = { version = "0.10.3", features = ["serde"], optional = true }
+backoff = {
+    version = "0.4.0",
+    optional = true
+}
+cryptoki = {
+    version = "0.12",
+    optional = true,
+    features = [ "serde" ]
+}
+kmip = {
+    package = "kmip-protocol",
+    version = "0.4.3",
+    optional = true,
+    features = [ "tls-with-openssl" ],
+}
+r2d2 = {
+    version = "0.8.10",
+    optional = true
+}
+secrecy = {
+    version = "0.10.3",
+    optional = true,
+    features = ["serde"],
+}
 
 # Dependencies used by the "multi-user" feature
-basic-cookies   = { version = "0.1", optional = true }
-openidconnect   = { version = "4.0.0", optional = true, default-features = false }
-rpassword       = { version = "7.4.0", optional = true }
-scrypt          = { version = "0.11", optional = true, default-features = false }
-unicode-normalization = { version = "0.1", optional = true }
-urlparse        = { version = "0.7", optional = true }
+basic-cookies = {
+    version = "0.1",
+    optional = true
+}
+openidconnect = {
+    version = "4.0.0",
+    optional = true,
+    default-features = false
+}
+rpassword = {
+    version = "7.4.0",
+    optional = true
+}
+regex = {
+    version = "1.11.1",
+    optional = true,
+    default-features = false,
+    features = [ "std" ]
+}
+scrypt = {
+    version = "0.11",
+    optional = true,
+    default-features = false
+}
+unicode-normalization = {
+    version = "0.1",
+    optional = true
+}
+urlparse = {
+    version = "0.7",
+    optional = true
+}
 
 # Disable compiler optimizations for the pkcs11 crate because otherwise with a release build the
 # `pReserved = ptr::null_mut()` assignment done by `CK_C_INITIALIZE_ARGS::default()` appears to be optimized out. This
@@ -78,7 +156,10 @@ urlparse        = { version = "0.7", optional = true }
 
 [target.'cfg(unix)'.dependencies]
 syslog = "7.0.0"
-nix = { version = "0.31.1", features = ["user"] }
+nix = {
+    version = "0.31.1",
+    features = ["user"]
+}
 
 [features]
 default = ["multi-user", "hsm"]
@@ -87,6 +168,7 @@ multi-user = [
     "basic-cookies",
     "openidconnect",
     "rpassword",
+    "regex",
     "scrypt",
     "unicode-normalization",
     "urlparse",
