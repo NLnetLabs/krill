@@ -128,7 +128,7 @@ impl HttpsSigner {
     fn save_private_key(&self, tls_keys_dir: &Path) -> Result<(), Error> {
         let key_file_path = key_file_path(tls_keys_dir);
         let bytes = Bytes::from(self.private.private_key_to_pem_pkcs8()?);
-        file::save(&bytes, &key_file_path)?;
+        file::save_private(&bytes, &key_file_path)?;
         Ok(())
     }
 
