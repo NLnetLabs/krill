@@ -163,7 +163,7 @@ impl Display for ApiAuthError {
             | ApiAuthError::ApiAuthTransientError(err)
             | ApiAuthError::ApiAuthSessionExpired(err)
             | ApiAuthError::ApiInsufficientRights(err) => {
-                write!(f, "{}", &err)
+                write!(f, "{err}")
             }
         }
     }

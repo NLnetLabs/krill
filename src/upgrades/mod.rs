@@ -579,7 +579,7 @@ pub trait UpgradeAggregateStorePre0_14 {
             // Verify migration
             info!(
                 "Will verify the migration by rebuilding '{}' from migrated commands",
-                &scope
+                scope
             );
             let _latest = self.preparation_aggregate_store().save_snapshot(&handle).map_err(|e| {
                 UpgradeError::Custom(format!(
