@@ -572,7 +572,7 @@ impl CaObjects {
         let hours = timing.publish_hours_before_next();
         let mut required = false;
 
-        for (_, resource_class_objects) in self.classes.iter_mut() {
+        for resource_class_objects in self.classes.values_mut() {
             if force || resource_class_objects.requires_re_issuance(hours) {
                 required = true;
                 resource_class_objects.reissue(timing, signer)?;

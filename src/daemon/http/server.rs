@@ -136,9 +136,7 @@ impl RequestLogger {
 
         trace!(
             "Request: method={} path={} headers={:?}",
-            &req_method,
-            &req_path,
-            &req.headers()
+            req_method, req_path, req.headers()
         );
 
         RequestLogger {
