@@ -1,0 +1,17 @@
+[package]
+name = "krilltest"
+version = "0.1.0"
+description = "End-to-end testing for Krill"
+authors.workspace = true
+edition.workspace = true 
+rust-version.workspace = true 
+license.workspace = true 
+
+[dependencies]
+krill    = { path = ".." }
+clap     = { version = "*", features = ["cargo", "derive"]}
+nix = { version = "*", features = ["signal"] }
+rcgen    = "0.14"
+reqwest  = { version = "*", features = ["blocking"] }
+tempfile = "*"
+
