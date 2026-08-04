@@ -1,11 +1,10 @@
 //! Controlling Krill server instances.
 #![allow(unused)]
 
-use std::fs;
+use crate::utils::fmt::WriteOrPanic;
+use std::fs::{self, File};
 use std::net::IpAddr;
 use std::path::PathBuf;
-use crate::utils::fmt::WriteOrPanic;
-
 
 //------------ KrillServer ---------------------------------------------------
 
@@ -39,7 +38,10 @@ impl KrillServer {
     ) -> Self {
         let res = Self {
             krill: krill_bin,
-            server_dir, listen, rrdp_uri, rsync_uri
+            server_dir,
+            listen,
+            rrdp_uri,
+            rsync_uri,
         };
         res
     }
@@ -64,7 +66,6 @@ impl KrillServer {
     fn make_conf(&self) {
         let mut conf = File::create(self.config_path()).unwrap();
 
-        writeln!(conf, "storage_uri = \"{}\"", self.storage_path.display());
+        writeln!(conf, "storage_uri = \"{}\"", self.storage_path().display());
     }
 }
-
