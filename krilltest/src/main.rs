@@ -25,11 +25,16 @@ fn main() {
         }
     };
 
-    let _environment = Environment::new(
+    let mut environment = Environment::new(
         base_path,
-        args.nginx, (args.listen_addr, args.rrdp_port),
-        args.routinator
+        args.nginx,
+        (args.listen_addr, args.rrdp_port),
+        args.routinator,
     );
+
+    let some_free_port = args.rrdp_port + 1;
+    let krill_listen = (args.listen_addr, some_free_port);
+    let _krill = environment.add_krill("first", args.krill, krill_listen);
 
     eprintln!("Hit enter to quit.");
 
@@ -49,7 +54,7 @@ fn main() {
 struct Args {
     /// The path of the krill binary.
     #[arg(long, default_value = "target/release/krill")]
-    krill: PathBuf,
+    krill: String,
 
     /// The path of the routinator binary.
     #[arg(long, default_value = "routinator")]

@@ -61,6 +61,24 @@ impl Environment {
     }
 
     /// Adds a Krill server.
+    pub fn add_krill<T: ToString>(
+        &mut self,
+        name: T,
+        krill_bin: String,
+        listen: (IpAddr, u16),
+    ) -> &KrillServer {
+        let krill = KrillServer::new(
+            krill_bin,
+            self.base_dir.join("krill"),
+            listen,
+            "".to_string(),
+            "".to_string(),
+            false,
+        );
+        let name = name.to_string();
+        self.krill.insert(name.clone(), krill);
+        self.krill.get(&name).unwrap()
+    }
 
     /// Returns a reference to the Nginx server.
     pub fn nginx(&self) -> &NginxServer {
