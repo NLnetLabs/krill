@@ -17,6 +17,7 @@ use crate::commons::KrillResult;
 use crate::commons::actor::Actor;
 use crate::commons::cmslogger::CmsLogger;
 use crate::commons::error::Error;
+use crate::commons::storage::StorageSystem;
 use crate::config::{Config, RrdpUpdatesConfig};
 use crate::server::mq::{now, Task};
 use crate::server::runtime::KrillRuntime;
@@ -43,10 +44,15 @@ pub struct RepositoryManager {
 
 impl RepositoryManager {
     /// Builds the repository manager.
-    pub fn new(config: &Config) -> Result<Self, Error> {
+    pub fn new(
+        config: &Config,
+        storage: &StorageSystem,
+    ) -> Result<Self, Error> {
         Ok(RepositoryManager {
-            access: RepositoryAccessProxy::create(config)?,
-            content: RepositoryContentProxy::create(config)?,
+            access: RepositoryAccessProxy::create(
+                storage, config.use_history_cache
+            )?,
+            content: RepositoryContentProxy::create(storage)?,
             rrdp_updates_config: config.rrdp_updates_config,
         })
     }
@@ -356,6 +362,7 @@ mod tests {
     use crate::commons::file;
     use crate::commons::crypto::{KrillSignerBuilder, OpenSslSignerConfig};
     use crate::commons::file::CurrentFile;
+    use crate::commons::storage::StorageUri;
     use crate::commons::test::{self, https, rsync};
     use crate::constants::{
         ACTOR_DEF_TEST, RRDP_FIRST_SERIAL, enable_test_mode
@@ -365,36 +372,6 @@ mod tests {
     use crate::server::pubd::rrdp::{PublicationDeltaError, RrdpServer};
     use super::*;
 
-    fn publisher_alice(storage_uri: &Url) -> Publisher {
-        // When the "hsm" feature is enabled we could be running the tests
-        // with PKCS#11 as the default signer type. In that case, if
-        // the backend signer is SoftHSMv2, attempting to create a second
-        // instance of KrillSigner in the same process will fail
-        // because it will attempt to login to SoftHSMv2 a second time which
-        // SoftHSMv2 does not support. To work around this issue we
-        // therefore explicitly request that the second KrillSigner instance
-        // that we create here uses OpenSSL as its backend signer.
-        let signer = {
-            let signer_type =
-                SignerType::OpenSsl(OpenSslSignerConfig::default());
-            let signer_config =
-                SignerConfig::new("Alice".to_string(), signer_type);
-            let signer_configs = &[signer_config];
-            KrillSignerBuilder::new(
-                storage_uri,
-                Duration::from_secs(1),
-                signer_configs,
-            )
-            .build()
-            .unwrap()
-        };
-
-        let id_cert = signer.create_self_signed_id_cert().unwrap();
-        let base_uri =
-            uri::Rsync::from_str("rsync://localhost/repo/alice/").unwrap();
-
-        Publisher::new(id_cert.into(), base_uri)
-    }
 
     fn make_publisher_req(
         handle: &str,
@@ -410,20 +387,19 @@ mod tests {
 
     struct TestServer {
         krill: KrillRuntime,
-        storage_uri: Url,
         data_dir: tempfile::TempDir,
         tokio: tokio::runtime::Runtime,
     }
 
     impl TestServer {
         fn new() -> Self {
-            let storage_uri = test::mem_storage();
+            let storage = test::mem_storage();
             let data_dir = tempfile::tempdir().unwrap();
             let tokio = tokio::runtime::Runtime::new().unwrap();
 
             enable_test_mode();
             let mut config = Config::test(
-                &storage_uri,
+                storage.default_uri(),
                 Some(data_dir.path()),
                 true,
                 false,
@@ -434,7 +410,7 @@ mod tests {
             config.process().unwrap();
 
             let krill = KrillRuntime::new(
-                config, tokio.handle().clone()
+                config, storage, tokio.handle().clone()
             ).unwrap();
             let uris = PublicationServerUris {
                 rrdp_base_uri: https("https://localhost/repo/rrdp/"),
@@ -443,11 +419,42 @@ mod tests {
 
             krill.repo_manager().init(uris, &krill).unwrap();
 
-            Self { krill, storage_uri, data_dir, tokio }
+            Self { krill, data_dir, tokio }
         }
 
         fn repo(&self) -> &RepositoryManager {
             self.krill.repo_manager()
+        }
+
+        fn publisher_alice(&self) -> Publisher {
+            // When the "hsm" feature is enabled we could be running the tests
+            // with PKCS#11 as the default signer type. In that case, if
+            // the backend signer is SoftHSMv2, attempting to create a second
+            // instance of KrillSigner in the same process will fail
+            // because it will attempt to login to SoftHSMv2 a second time which
+            // SoftHSMv2 does not support. To work around this issue we
+            // therefore explicitly request that the second KrillSigner instance
+            // that we create here uses OpenSSL as its backend signer.
+            let signer = {
+                let signer_type =
+                    SignerType::OpenSsl(OpenSslSignerConfig::default());
+                let signer_config =
+                    SignerConfig::new("Alice".to_string(), signer_type);
+                let signer_configs = &[signer_config];
+                KrillSignerBuilder::new(
+                    self.krill.storage(),
+                    Duration::from_secs(1),
+                    signer_configs,
+                )
+                .build()
+                .unwrap()
+            };
+
+            let id_cert = signer.create_self_signed_id_cert().unwrap();
+            let base_uri =
+                uri::Rsync::from_str("rsync://localhost/repo/alice/").unwrap();
+
+            Publisher::new(id_cert.into(), base_uri)
         }
     }
 
@@ -455,7 +462,7 @@ mod tests {
     fn should_add_publisher() {
         let server = TestServer::new();
 
-        let alice = publisher_alice(&server.storage_uri);
+        let alice = server.publisher_alice();
 
         let alice_handle = Handle::from_str("alice").unwrap();
         let publisher_req =
@@ -477,7 +484,7 @@ mod tests {
     fn should_not_add_publisher_twice() {
         let server = TestServer::new();
 
-        let alice = publisher_alice(&server.storage_uri);
+        let alice = server.publisher_alice();
 
         let alice_handle = Handle::from_str("alice").unwrap();
         let publisher_req =
@@ -500,7 +507,7 @@ mod tests {
     fn should_list_files() {
         let server = TestServer::new();
 
-        let alice = publisher_alice(&server.storage_uri);
+        let alice = server.publisher_alice();
 
         let alice_handle = Handle::from_str("alice").unwrap();
         let publisher_req =
@@ -525,7 +532,7 @@ mod tests {
         assert!(session_dir_contains_serial(&session, RRDP_FIRST_SERIAL));
 
         // set up server with default repository, and publisher alice
-        let alice = publisher_alice(&server.storage_uri);
+        let alice = server.publisher_alice();
 
         let alice_handle = Handle::from_str("alice").unwrap();
         let publisher_req =
@@ -762,7 +769,7 @@ mod tests {
         let server = TestServer::new();
 
         // set up server with default repository, and publisher alice
-        let alice = publisher_alice(&server.storage_uri);
+        let alice = server.publisher_alice();
 
         let alice_handle = Handle::from_str("alice").unwrap();
         let publisher_req =

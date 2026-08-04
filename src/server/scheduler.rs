@@ -7,7 +7,6 @@ use std::time::Duration;
 use log::{debug, error, info, warn};
 use rpki::ca::idexchange::{CaHandle, ParentHandle};
 use rpki::ca::provisioning::{ResourceClassName, RevocationRequest};
-use url::Url;
 
 use crate::{
     api::ca::Timestamp,
@@ -15,7 +14,7 @@ use crate::{
         crypto::dispatch::signerinfo::SignerInfo,
         error::{Error, FatalError},
         eventsourcing::{Aggregate, AggregateStore, WalStore, WalSupport},
-        storage::Ident,
+        storage::{Ident, StorageSystem},
         version::KrillVersion,
     },
     constants::{
@@ -524,10 +523,10 @@ fn renew_objects_if_needed(
 // Call update_snapshots on all AggregateStores and WalStores
 fn update_snapshots(krill: &KrillRuntime) -> Result<TaskResult, FatalError> {
     fn update_aggregate_store_snapshots<A: Aggregate>(
-        storage_uri: &Url,
+        storage: &StorageSystem,
         namespace: &Ident,
     ) {
-        match AggregateStore::<A>::create(storage_uri, namespace, false) {
+        match AggregateStore::<A>::create(storage, namespace, false) {
             Err(e) => {
                 // Note: this is highly unlikely.. probably something else
                 // is broken and Krill       would
@@ -555,10 +554,10 @@ fn update_snapshots(krill: &KrillRuntime) -> Result<TaskResult, FatalError> {
     }
 
     fn update_wal_store_snapshots<W: WalSupport>(
-        storage_uri: &Url,
+        storage: &StorageSystem,
         namespace: &Ident,
     ) {
-        match WalStore::<W>::create(storage_uri, namespace) {
+        match WalStore::<W>::create(storage, namespace) {
             Err(e) => {
                 // Note: this is highly unlikely.. probably something else
                 // is broken and Krill       would
@@ -583,19 +582,19 @@ fn update_snapshots(krill: &KrillRuntime) -> Result<TaskResult, FatalError> {
     }
 
     update_aggregate_store_snapshots::<CertAuth>(
-        &krill.config().storage_uri, CASERVER_NS,
+        krill.storage(), CASERVER_NS,
     );
     update_aggregate_store_snapshots::<SignerInfo>(
-        &krill.config().storage_uri, SIGNERS_NS,
+        krill.storage(), SIGNERS_NS,
     );
     update_aggregate_store_snapshots::<Properties>(
-        &krill.config().storage_uri, PROPERTIES_NS,
+        krill.storage(), PROPERTIES_NS,
     );
     update_aggregate_store_snapshots::<RepositoryAccess>(
-        &krill.config().storage_uri, PUBSERVER_NS,
+        krill.storage(), PUBSERVER_NS,
     );
     update_wal_store_snapshots::<RepositoryContent>(
-        &krill.config().storage_uri, PUBSERVER_CONTENT_NS,
+        krill.storage(), PUBSERVER_CONTENT_NS,
     );
 
     Ok(TaskResult::FollowUp(Task::UpdateSnapshots, in_hours(24)))

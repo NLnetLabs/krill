@@ -41,7 +41,7 @@ impl HttpServer {
         krill: KrillManager,
         runtime: &runtime::Handle,
     ) -> KrillResult<Arc<Self>> {
-        let authorizer = Authorizer::new(krill.config())?;
+        let authorizer = Authorizer::new(krill.storage(), krill.config())?;
         authorizer.spawn_sweep(runtime);
         Ok(Self {
             krill,
@@ -136,9 +136,7 @@ impl RequestLogger {
 
         trace!(
             "Request: method={} path={} headers={:?}",
-            &req_method,
-            &req_path,
-            &req.headers()
+            req_method, req_path, req.headers()
         );
 
         RequestLogger {

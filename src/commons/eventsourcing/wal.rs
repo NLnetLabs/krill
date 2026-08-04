@@ -10,8 +10,9 @@ use std::sync::{Arc, RwLock};
 use log::{error, warn, trace};
 use rpki::ca::idexchange::MyHandle;
 use serde::{Deserialize, Serialize};
-use url::Url;
-use crate::commons::storage::{Ident, KeyValueError, KeyValueStore};
+use crate::commons::storage::{
+    Ident, KeyValueError, KeyValueStore, OpenStoreError, StorageSystem,
+};
 use super::store::Storable;
 
 
@@ -135,11 +136,11 @@ pub struct WalStore<T: WalSupport> {
 impl<T: WalSupport> WalStore<T> {
     /// Creates a new store using the given storage URL and namespace.
     pub fn create(
-        storage_uri: &Url,
+        storage: &StorageSystem,
         namespace: &Ident,
-    ) -> Result<Self, WalStoreError> {
+    ) -> Result<Self, OpenStoreError> {
         Ok(WalStore {
-            kv: KeyValueStore::create(storage_uri, namespace)?,
+            kv: storage.open(namespace)?,
             cache: RwLock::new(HashMap::new()),
         })
     }

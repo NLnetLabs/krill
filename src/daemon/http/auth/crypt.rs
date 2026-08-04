@@ -26,8 +26,7 @@ use serde::{Deserialize, Serialize};
 use crate::commons::ext_serde;
 use crate::commons::KrillResult;
 use crate::commons::error::{ApiAuthError, Error};
-use crate::commons::storage::Ident;
-use crate::config::Config;
+use crate::commons::storage::{Ident, StorageSystem};
 
 const CHACHA20_KEY_BIT_LEN: usize = 256;
 const CHACHA20_KEY_BYTE_LEN: usize = CHACHA20_KEY_BIT_LEN / 8;
@@ -58,8 +57,7 @@ impl NonceState {
         let mut sender_unique: [u8; 4] = [0; 4];
         openssl::rand::rand_bytes(&mut sender_unique).map_err(|err| {
             Error::Custom(format!(
-                "Unable to generate a random sender id: {}",
-                &err
+                "Unable to generate a random sender id: {}", err
             ))
         })?;
 
@@ -121,7 +119,7 @@ pub(crate) fn encrypt(
         plaintext,
         &mut tag,
     )
-    .map_err(|err| Error::Custom(format!("Encryption error: {}", &err)))?;
+    .map_err(|err| Error::Custom(format!("Encryption error: {}", err)))?;
 
     let mut payload =
         Vec::with_capacity(nonce.len() + tag.len() + cipher_text.len());
@@ -159,13 +157,13 @@ pub(crate) fn decrypt(
     )
     .map_err(|err| {
         ApiAuthError::ApiInvalidCredentials(
-            format!("Decryption error: {}", &err)
+            format!("Decryption error: {}", err)
         )
     })
 }
 
-pub(crate) fn crypt_init(config: &Config) -> KrillResult<CryptState> {
-    let store = config.key_value_store(CRYPT_STATE_NS)?;
+pub(crate) fn crypt_init(storage: &StorageSystem) -> KrillResult<CryptState> {
+    let store = storage.open(CRYPT_STATE_NS)?;
 
     if let Some(state) = store.get(None, CRYPT_STATE_KEY)? {
         Ok(state)

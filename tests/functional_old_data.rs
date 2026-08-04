@@ -56,17 +56,19 @@ async fn functional_old_data() {
 
     // XXX Wait for Krill to process pending tasks.
     eprintln!(">>>> Wait a bit for Krill to catch up.");
-    common::sleep_millis(1000).await;
+    common::sleep_millis(3000).await;
 
     eprintln!(">>>> Make TA proxy signer request.");
     let request = 
         server.client().ta_proxy_signer_make_request().await.unwrap();
     assert_eq!(request.ta_renew_time.unwrap().year(), 2026);
     assert_eq!(request.renew_times[0].1.year(), 2039);
+    common::sleep_millis(1000).await;
 
     eprintln!(">>>> Sign TA proxy signer request.");
     let response = signer.process(request.into(), None).unwrap();
     assert_eq!(response.content().child_responses.len(), 1);
+    common::sleep_millis(1000).await;
 
     eprintln!(">>>> Process TA proxy signer response.");
     server.client().ta_proxy_signer_response(response).await.unwrap();

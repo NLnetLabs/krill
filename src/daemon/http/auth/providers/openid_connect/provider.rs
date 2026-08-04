@@ -62,6 +62,7 @@ use crate::{
     commons::{
         httpclient,
         error::{ApiAuthError, Error},
+        storage::StorageSystem,
         util::sha256,
         KrillResult,
     },
@@ -183,8 +184,11 @@ pub struct AuthProvider {
 }
 
 impl AuthProvider {
-    pub fn new(config: &Config) -> KrillResult<Self> {
-        let session_key = Self::init_session_key(config)?;
+    pub fn new(
+        storage: &StorageSystem,
+        config: &Config,
+    ) -> KrillResult<Self> {
+        let session_key = Self::init_session_key(storage)?;
 
         let Some(oidc_conf) = config.auth_openidconnect.as_ref() else {
             return Err(Error::ConfigError(
@@ -259,7 +263,7 @@ impl AuthProvider {
 
         info!(
             "OpenID Connect: Discovering provider details using issuer {}",
-            &issuer.as_str()
+            issuer.as_str()
         );
 
         // Contact the OpenID Connect: identity provider discovery endpoint to
@@ -579,7 +583,7 @@ impl AuthProvider {
 
         trace!(
             "OpenID Connect: Revoking token for user: \"{}\"",
-            &session.user_id
+            session.user_id
         );
         trace!("OpenID Connect: Submitting RFC-7009 section 2 Token Revocation request");
         let lock_guard = self.get_connection().await.map_err(|err| {
@@ -664,7 +668,7 @@ impl AuthProvider {
 
         debug!(
             "OpenID Connect: Refreshing token for user: \"{}\"",
-            &session.user_id
+            session.user_id
         );
         trace!("OpenID Connect: Submitting RFC-6749 section 6 Access Token Refresh request");
 
@@ -754,9 +758,9 @@ impl AuthProvider {
         }
     }
 
-    fn init_session_key(config: &Config) -> KrillResult<CryptState> {
+    fn init_session_key(storage: &StorageSystem) -> KrillResult<CryptState> {
         debug!("Initializing session encryption key");
-        crypt::crypt_init(config)
+        crypt::crypt_init(storage)
     }
 
     fn extract_cookie(
@@ -785,7 +789,7 @@ impl AuthProvider {
                     Ok(parsed_cookies) => {
                         trace!(
                             "OpenID Connect: parsed cookies={:?}",
-                            &parsed_cookies
+                            parsed_cookies
                         );
                         // Even with the helper crate we have to do some
                         // work... Why doesn't it
@@ -921,7 +925,7 @@ impl AuthProvider {
                 "OpenID Connect: CSRF token mismatch",
                 Some(&format!(
                     "cookie CSRF hash={:?}, request CSRF hash={:?}",
-                    &cookie_csrf_hash,
+                    cookie_csrf_hash,
                     request_csrf_hash.to_vec()
                 )),
             )),
@@ -1461,7 +1465,7 @@ impl AuthProvider {
 
         let (authorize_url, _csrf_state, _nonce) = request.url();
 
-        debug!("OpenID Connect: Login URL will be {:?}", &authorize_url);
+        debug!("OpenID Connect: Login URL will be {:?}", authorize_url);
 
         let res_body = authorize_url.as_str().as_bytes().to_vec();
         let mut res = HttpResponse::text_no_cache(res_body).into_response();
@@ -1868,7 +1872,7 @@ impl AuthProvider {
 
         trace!(
             "Telling Lagosta to direct the user to logout at: {}",
-            &go_to_url
+            go_to_url
         );
         Ok(HttpResponse::text_no_cache(go_to_url.into()))
     }

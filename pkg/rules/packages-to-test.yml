@@ -5,9 +5,9 @@ pkg:
   - "krillup"
   - "krillta"
 image:
-  - "ubuntu:focal" # ubuntu/20.04
   - "ubuntu:jammy" # ubuntu/22.04
   - "ubuntu:noble" # ubuntu/24.04
+  - "ubuntu:resolute" # ubuntu/26.04
   - "debian:bullseye" # debian/11
   - "debian:bookworm" # debian/12
   - "debian:trixie" # debian/13
@@ -48,11 +48,7 @@ include:
     image: "debian:bullseye"
     target: "armv7-unknown-linux-gnueabihf"
 
-# Exclude upgrade testing on Ubuntu Noble as no prior released versions exist to upgrade from.
+# Exclude upgrade testing on Ubuntu Resolute as no prior released versions exist to upgrade from.
 exclude:
-  - image: "almalinux:9"
-    mode: "upgrade-from-published"
-  - image: "ubuntu:noble"
-    mode: "upgrade-from-published"
-  - image: "debian:trixie"
+  - image: "ubuntu:resolute"
     mode: "upgrade-from-published"

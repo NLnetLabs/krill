@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use clap::Parser;
 use log::info;
 use log::LevelFilter;
-use url::Url;
 use krill::constants;
+use krill::commons::storage::{StorageSystem, StorageUri};
 use krill::config::{Config, LogType};
 use krill::server::properties::PropertiesManager;
 use krill::upgrades::{prepare_upgrade_data_migrations, UpgradeMode};
@@ -33,9 +33,9 @@ fn main() {
 
     match options.command {
         Command::Prepare(_prepare) => {
+            let storage = StorageSystem::new(config.storage_uri.clone());
             let properties_manager = match PropertiesManager::create(
-                &config.storage_uri,
-                config.use_history_cache,
+                &storage, config.use_history_cache,
             ) {
                 Ok(mgr) => mgr,
                 Err(e) => {
@@ -57,6 +57,7 @@ fn main() {
 
             match prepare_upgrade_data_migrations(
                 UpgradeMode::PrepareOnly,
+                &storage,
                 &config,
                 &properties_manager,
             ) {
@@ -93,7 +94,9 @@ fn main() {
             }
         }
         Command::Migrate(cmd) => {
-            if let Err(e) = migrate(config, cmd.target) {
+            let storage = StorageSystem::new(cmd.target);
+
+            if let Err(e) = migrate(config, &storage) {
                 eprintln!("*** Error Migrating DATA ***");
                 eprintln!("{e}");
                 eprintln!();
@@ -153,6 +156,6 @@ pub struct Prepare;
 pub struct Migrate {
     /// The storage target as a URI string.
     #[arg(short, long, value_name = "URI")]
-    pub target: Url,
+    pub target: StorageUri,
 }
 

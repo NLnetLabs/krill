@@ -1,12 +1,152 @@
 //! The publicly exposed key-value store.
 
-use std::fmt;
+use std::{error, fmt};
+use std::path::PathBuf;
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
-use url::Url;
-
 use crate::commons::storage;
-use crate::commons::storage::{Backend, Ident, Transaction};
+use crate::commons::error::Error;
+use crate::commons::storage::{
+    Backend, BackendSystem, Ident, StorageUri, Transaction
+};
+
+
+//------------ StorageSystem -------------------------------------------------
+
+/// The system that provides the key-value stores.
+#[derive(Debug)]
+pub struct StorageSystem {
+    /// The storage URI to use by default.
+    default_uri: StorageUri,
+
+    /// The storage systems of the various supported backends.
+    backend: BackendSystem,
+}
+
+impl StorageSystem {
+    /// Creates a new storage system.
+    ///
+    /// The provided URI will be used as the default storage URI.
+    pub fn new(
+        default_uri: StorageUri 
+    ) -> Self {
+        Self {
+            default_uri,
+            backend: Default::default(),
+        }
+    }
+
+    /// Creates a new memory storage system using the given seed.
+    ///
+    /// This is primarily used for testing.
+    pub fn new_memory(seed: Option<u64>) -> Self {
+        Self::new(StorageUri::memory(seed))
+    }
+
+    /// Creates a new disk storage system using the given path.
+    pub fn new_disk(path: PathBuf) -> Self {
+        Self::new(StorageUri::disk(path))
+    }
+
+    /// Opens the default store with the given namespace.
+    pub fn open(
+        &self, namespace: &Ident
+    ) -> Result<KeyValueStore, OpenStoreError> {
+        self.open_uri(&self.default_uri, namespace)
+    }
+
+    /// Opens a store for upgrades for the given namespace.
+    ///
+    /// Prefixes the namespace with `"upgrade_"`.
+    pub fn open_upgrade(
+        &self, namespace: &Ident
+    ) -> Result<KeyValueStore, OpenStoreError> {
+        self.open_uri(
+            &self.default_uri, 
+            &KeyValueStore::prefixed_namespace(
+                namespace, const { Ident::make("upgrade") }
+            )
+        )
+    }
+
+    /// Opens a store with the given storage URI and namespace.
+    pub fn open_uri(
+        &self, storage_uri: &StorageUri, namespace: &Ident
+    ) -> Result<KeyValueStore, OpenStoreError> {
+        Ok(KeyValueStore {
+            inner: self.backend.open(
+                storage_uri, namespace
+            ).map_err(|err| {
+                OpenStoreError(err)
+            })?
+        })
+    }
+
+    /// Returns the default URI of the storage system.
+    pub fn default_uri(&self) -> &StorageUri {
+        &self.default_uri
+    }
+
+    /// Checks whether the given namespace is empty.
+    pub fn is_empty(&self, namespace: &Ident) -> Result<bool, KeyValueError> {
+        self.backend.is_empty(&self.default_uri, namespace)
+    }
+
+    /// Checks whether the upgrade store for the given namespace is empty.
+    pub fn is_upgrade_empty(
+        &self, namespace: &Ident
+    ) -> Result<bool, KeyValueError> {
+        self.is_empty(
+            &KeyValueStore::prefixed_namespace(
+                namespace, const { Ident::make("upgrade") }
+            )
+        )
+    }
+
+    /// Archives the given namespace.
+    ///
+    /// The namespace is moved to a namespace prefixed with `"archive"`. If
+    /// such a namespace already exists, it is removed.
+    pub fn migrate_to_archive(
+        &self, namespace: &Ident
+    ) -> Result<(), KeyValueError> {
+        let archive_ns = KeyValueStore::prefixed_namespace(
+            namespace, const { Ident::make("archive") }
+        );
+
+        // Wipe any existing archive, before archiving this store.
+        // We don't want to keep too much old data. See issue: #1088.
+        self.open(&archive_ns)?.wipe()?;
+
+        self.backend.migrate(
+            &self.default_uri, namespace, &archive_ns
+        )?;
+        Ok(())
+    }
+
+    /// Migrates an upgrade namespace to the normal namespace.
+    ///
+    /// This moves the namespace prefixed by `"upgrade"` to the namespace.
+    /// Fails if the given namespace is not empty.
+    pub fn migrate_to_current(
+        &self, namespace: &Ident
+    ) -> Result<(), KeyValueError> {
+        if !self.is_empty(namespace)? {
+            return Err(KeyValueError::Other(format!(
+                "Abort migrate upgraded store for {namespace} to current. \
+                The current store was not archived."
+            )))
+        }
+
+        let upgrade_ns = KeyValueStore::prefixed_namespace(
+            namespace, const { Ident::make("upgrade") }
+        );
+        self.backend.migrate(
+            &self.default_uri, &upgrade_ns, namespace
+        )?;
+        Ok(())
+    }
+}
 
 
 //------------ KeyValueStore -------------------------------------------------
@@ -27,18 +167,6 @@ pub struct KeyValueStore {
 }
 
 impl KeyValueStore {
-    /// Creates a new store.
-    pub fn create(
-        storage_uri: &Url,
-        namespace: &Ident,
-    ) -> Result<Self, KeyValueError> {
-        Ok(Self {
-            inner: Backend::new(storage_uri, namespace)?.ok_or_else(|| {
-                KeyValueError::UnknownScheme(storage_uri.scheme().into())
-            })?
-        })
-    }
-
     /// Returns whether the store has no entries.
     pub fn is_empty(&self) -> Result<bool, KeyValueError> {
         // NOTE: this is not done using `self.execute` as this would result
@@ -171,21 +299,6 @@ impl KeyValueStore {
 
 // # Migration Support
 impl KeyValueStore {
-    /// Creates a new KeyValueStore for upgrades.
-    ///
-    /// Adds the implicit prefix "upgrade_" to the given namespace.
-    pub fn create_upgrade_store(
-        storage_uri: &Url,
-        namespace: &Ident,
-    ) -> Result<Self, KeyValueError> {
-        Self::create(
-            storage_uri,
-            &Self::prefixed_namespace(
-                namespace, const { Ident::make("upgrade") }
-            )
-        )
-    }
-
     fn prefixed_namespace(
         namespace: &Ident,
         prefix: &Ident,
@@ -195,44 +308,6 @@ impl KeyValueStore {
         ).push_ident(
             namespace
         ).finish()
-    }
-
-    /// Archive this store (i.e. for this namespace). Deletes
-    /// any existing archive for this namespace if present.
-    pub fn migrate_to_archive(
-        &mut self,
-        storage_uri: &Url,
-        namespace: &Ident,
-    ) -> Result<(), KeyValueError> {
-        let archive_ns = Self::prefixed_namespace(
-            namespace, const { Ident::make("archive") }
-        );
-
-        // Wipe any existing archive, before archiving this store.
-        // We don't want to keep too much old data. See issue: #1088.
-        KeyValueStore::create(storage_uri, &archive_ns)?.wipe()?;
-        self.inner.migrate_namespace(&archive_ns)?;
-        Ok(())
-    }
-
-    /// Make this (upgrade) store the current store.
-    ///
-    /// Fails if there is a non-empty current store.
-    pub fn migrate_to_current(
-        &mut self,
-        storage_uri: &Url,
-        namespace: &Ident,
-    ) -> Result<(), KeyValueError> {
-        let current_store = KeyValueStore::create(storage_uri, namespace)?;
-        if !current_store.is_empty()? {
-            Err(KeyValueError::Other(format!(
-                "Abort migrate upgraded store for {namespace} to current. The current store was not archived."
-            )))
-        } else {
-            self.inner
-                .migrate_namespace(namespace)
-                .map_err(KeyValueError::Inner)
-        }
     }
 
     /// Import all data from the given KV store into this
@@ -269,6 +344,32 @@ impl KeyValueStore {
 }
 
 
+//============ Error Types ===================================================
+//
+// These need cleaning up.
+
+
+//------------ OpenStoreError ------------------------------------------------
+
+/// An error occured while opening a store.
+#[derive(Debug)]
+pub struct OpenStoreError(KeyValueError);
+
+impl fmt::Display for OpenStoreError{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl error::Error for OpenStoreError { }
+
+impl From<OpenStoreError> for Error {
+    fn from(src: OpenStoreError) -> Error {
+        Error::custom(format_args!("{}", src))
+    }
+}
+
+
 //------------ KeyValueError -------------------------------------------------
 
 /// This type defines possible Errors for KeyStore
@@ -289,6 +390,12 @@ impl KeyValueError {
 impl From<storage::Error> for KeyValueError {
     fn from(e: storage::Error) -> Self {
         KeyValueError::Inner(e)
+    }
+}
+
+impl From<OpenStoreError> for KeyValueError {
+    fn from(src: OpenStoreError) -> Self {
+        src.0
     }
 }
 

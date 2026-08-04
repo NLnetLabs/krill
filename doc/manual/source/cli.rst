@@ -136,13 +136,12 @@ krillc config
 -------------
 
 This subcommand is implemented on the CLI only and is intended to help
-generate a configuration file which can be used for your Krill server.
+manage the configuration file used for your Krill server.
 
-We currently support two subcommands for this: ``krillc config simple`` and
-``krillc config user``. The first can be used to generate general server
-configuration. The second can be used to generate user (``id``) entries to
-use if you want to have multiple local users access the Krill UI by their own
-name and password.
+The command ``krillc config user --id <userid>``, will prompt you for a 
+password, and generates a string that can be added to your krill.conf 
+file to enable local multi-user login as described in the 
+:ref:`multi-user config file provider documentation<_doc_krill_multi_user_config_file_provider>`.
 
 .. _cmd_krillc_health:
 
