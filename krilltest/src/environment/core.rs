@@ -71,9 +71,9 @@ impl Environment {
             krill_bin,
             self.base_dir.join("krill"),
             listen,
-            "".to_string(),
-            "".to_string(),
-            false,
+            "https://testbed.example.com/rrdp/".into(),
+            "rsync://testbed.example.com/repo/".into(),
+            true,
         );
         let name = name.to_string();
         self.krill.insert(name.clone(), krill);

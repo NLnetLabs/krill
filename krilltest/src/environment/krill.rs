@@ -9,7 +9,9 @@ use std::path::PathBuf;
 use std::process;
 
 use indoc::writedoc;
+use krill::cli::client::ServerUri;
 use nix::libc::FAN_RESPONSE_INFO_AUDIT_RULE;
+use rpki::uri::{Https, Rsync};
 
 //------------ KrillServer ---------------------------------------------------
 
@@ -25,10 +27,10 @@ pub struct KrillServer {
     listen: (IpAddr, u16),
 
     /// The URI for the RRDP server.
-    rrdp_uri: String,
+    rrdp_uri: Https,
 
     /// The URI for the rsync server.
-    rsync_uri: String,
+    rsync_uri: Rsync,
 
     /// The Krill process if it is running.
     process: Option<process::Child>,
@@ -44,6 +46,8 @@ impl KrillServer {
         rsync_uri: String,
         enable_ta: bool,
     ) -> Self {
+        let rrdp_uri = Https::from_string(rrdp_uri).unwrap();
+        let rsync_uri = Rsync::from_string(rsync_uri).unwrap();
         let mut res = Self {
             krill: krill_bin,
             server_dir,
@@ -53,7 +57,7 @@ impl KrillServer {
             process: None,
         };
         fs::create_dir_all(&res.server_dir).unwrap();
-        res.make_conf();
+        res.make_conf(enable_ta);
         res.start();
         res
     }
@@ -85,7 +89,7 @@ impl KrillServer {
 /// # Setup
 impl KrillServer {
     /// Creates the Krill config.
-    fn make_conf(&self) {
+    fn make_conf(&self, enable_ta: bool) {
         let mut conf = File::create(self.config_path()).unwrap();
 
         // Create string representations of configuration values.
@@ -120,6 +124,26 @@ impl KrillServer {
                 unix_socket = "{unix_socket}"
             "#
         );
+
+        if enable_ta {
+            let rrdp_base_uri = &self.rrdp_uri;
+            let rsync_jail = &self.rsync_uri;
+            let ta_aia =
+                format!("rsync://{}/ta/ta.cer", rsync_jail.authority());
+            let ta_uri =
+                format!("https://{}/ta/ta.cer", rrdp_base_uri.authority());
+
+            writedoc!(
+                conf,
+                r#"
+                    [testbed]
+                    rrdp_base_uri = "{rrdp_base_uri}"
+                    rsync_jail = "{rsync_jail}"
+                    ta_aia = "{ta_aia}"
+                    ta_uri = "{ta_uri}"
+                "#
+            );
+        }
     }
 
     /// Starts or restarts Krill.
