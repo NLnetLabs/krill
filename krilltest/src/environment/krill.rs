@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use std::process;
 
 use indoc::writedoc;
+use nix::libc::FAN_RESPONSE_INFO_AUDIT_RULE;
 
 //------------ KrillServer ---------------------------------------------------
 
@@ -65,9 +66,19 @@ impl KrillServer {
         self.server_dir.join("krill.conf")
     }
 
-    /// Returns the storage_path for the server.
-    pub fn storage_path(&self) -> PathBuf {
-        self.server_dir.join("data")
+    // Returns the Krill TLS keys directory.
+    fn tls_keys_dir(&self) -> PathBuf {
+        self.server_dir.join("data/tls")
+    }
+
+    // Returns the Krill repo directory.
+    fn repo_dir(&self) -> PathBuf {
+        self.server_dir.join("data/repo")
+    }
+
+    // Returns the PID file path.
+    fn pid_file(&self) -> PathBuf {
+        self.server_dir.join("krill.pid")
     }
 }
 
@@ -78,7 +89,15 @@ impl KrillServer {
         let mut conf = File::create(self.config_path()).unwrap();
 
         // Create string representations of configuration values.
-        let storage_uri = self.storage_path().display().to_string();
+        let storage_uri =
+            format!("memory://{}", hex::encode(rand::random::<[u8; 8]>()));
+        // tls_keys_dir, repo_dir and pid_file must be set because we are
+        // using an in-memory storage URI. defaults/krill.conf notes that
+        // repo_dir will no longer be required "when issues #1092 and #1093
+        // are implemented".
+        let tls_keys_dir = self.tls_keys_dir().display().to_string();
+        let repo_dir = self.repo_dir().display().to_string();
+        let pid_file = self.pid_file().display().to_string();
         let addr = self.listen.0;
         let port = self.listen.1;
         let unix_socket = format!("{}/krill.sock", self.server_dir.display());
@@ -88,6 +107,9 @@ impl KrillServer {
             conf,
             r#"
                 storage_uri = "{storage_uri}"
+                tls_keys_dir = "{tls_keys_dir}"
+                repo_dir = "{repo_dir}"
+                pid_file = "{pid_file}"
                 admin_token = "xxx"
                 log_type = "stderr"
                 log_level = "info"

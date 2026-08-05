@@ -15,4 +15,6 @@ rcgen    = "0.14"
 reqwest  = { version = "*", features = ["blocking"] }
 tempfile = "*"
 indoc    = "2.0.7"
+hex = "0.4.3"
+rand = "0.10.2"
 
