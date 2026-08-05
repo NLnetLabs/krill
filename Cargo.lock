@@ -1646,6 +1646,7 @@ dependencies = [
  "rand 0.10.2",
  "rcgen",
  "reqwest",
+ "rpki",
  "tempfile",
 ]
 
@@ -2254,9 +2255,9 @@ dependencies = [
 
 [[package]]
 name = "quick-xml"
-version = "0.39.2"
+version = "0.39.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "958f21e8e7ceb5a1aa7fa87fab28e7c75976e0bfe7e23ff069e0a260f894067d"
+checksum = "cdcc8dd4e2f670d309a5f0e83fe36dfdc05af317008fea29144da1a2ac858e5e"
 dependencies = [
  "memchr",
 ]
@@ -2596,9 +2597,9 @@ dependencies = [
 
 [[package]]
 name = "rpki"
-version = "0.19.2"
+version = "0.19.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "99010980abb0aee7a5c4b1c04d0f42f74f57ac168adb5d38a99b3517a4d72df9"
+checksum = "9157a0b503ef5d3821bae79d2d4f44e1f5655eacdcc1b67623dd4403cd9ee302"
 dependencies = [
  "base64 0.22.1",
  "bcder",
