@@ -5,13 +5,12 @@
 //! to them, and then verifying the results by checking the data set output
 //! by a Routinator validation run.
 
-use std::net::IpAddr;
-use std::path::PathBuf;
 use clap::Parser;
 use clap::crate_version;
-use tempfile::TempDir;
 use krilltest::environment::Environment;
-
+use std::net::IpAddr;
+use std::path::PathBuf;
+use tempfile::TempDir;
 
 //------------ main ----------------------------------------------------------
 
@@ -42,7 +41,6 @@ fn main() {
     let stdin = std::io::stdin();
     stdin.read_line(&mut buffer).unwrap();
 }
-
 
 //------------ Args ----------------------------------------------------------
 
@@ -78,4 +76,3 @@ struct Args {
     #[arg(long, default_value = "3000")]
     rrdp_port: u16,
 }
-
