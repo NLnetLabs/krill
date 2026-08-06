@@ -8,7 +8,7 @@ Running a Krill Test Bed
    You do not need to run your own Krill Test Bed if you just want to
    try out Krill. You can simply install Krill on a test machine and
    set it up under the public Krill based RPKI testbed that NLnet Labs
-   runs here: https://testbed.krill.cloud/index.html#/testbed
+   runs here: https://testbed.krill.cloud/
 
 According to the Oxford English dictionary a test bed is _`"a piece of equipment used for testing new machines" <https://www.oxfordlearnersdictionaries.com/definition/english/test-bed>`_.
 
