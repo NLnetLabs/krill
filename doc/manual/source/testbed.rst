@@ -1,22 +1,40 @@
 .. _doc_krill_testbed:
 
-Running a Krill Test Environment
-================================
+Running a Krill Test Bed
+========================
 
-You do not need to run your own Krill Test Environment if you just want to
-try out Krill. You can simply install Krill on a test machine and set it
-up under the public Krill based RPKI testbed that NLnet Labs runs here:
-https://testbed.krill.cloud/index.html#/testbed
+.. tip::
+
+   You do not need to run your own Krill Test Bed if you just want to
+   try out Krill. You can simply install Krill on a test machine and
+   set it up under the public Krill based RPKI testbed that NLnet Labs
+   runs here: https://testbed.krill.cloud/index.html#/testbed
+
+According to the Oxford English dictionary a test bed is _`"a piece of equipment used for testing new machines" <https://www.oxfordlearnersdictionaries.com/definition/english/test-bed>`_.
+
+Most importantly an RPKI test bed acts as a fake root of an RPKI hierarchy,
+an alternative to the real RPKI hierarchy that allows you to test your use
+of RPKI software, whether relying party or child certificate authority,
+without actually interacting with the real global RPKI hierarchy, i.e. it's
+a safe space to play.
+
+Test Bed mode allows Krill to operate as such a fake root. In order to be
+actually useful it also offers additional services similar to those provided
+by the RIRs in their RPKI service offerings, including:
+
+  - A Trust Anchor including serving a corresponding Trust Anchor Locator.
+  - A root level RPKI Certificate Authority (CA) in the RPKI hierarchy (immediately under the TA).
+  - A publication server for storing objects published under the CA.
+  - A public web interface for 3rd parties to register their CA as a child of this root CA.
 
 Read more about this in our `blog <https://blog.nlnetlabs.nl/testing-the-waters-with-krill/>`_.
 
-But of course, you are perfectly welcome to run your own Test environment
-as well. That way you have total control over your test environment. This
-may be particularly useful for training purposes, and for testing code integration
-using the API or the RFC 8181 Publication Protocol or RFC 6492 Provisioning
-Protocol.
+By running a Krill Test Bed you have total control over your test environment as
+your test objects . This may be particularly useful for training purposes, and for
+testing code integration using the API or the :RFC:8181 Publication Protocol or
+:RFC:6492 Provisioning Protocol.
 
-Here we will document how we set up a simple testbed. This is not a strict guide.
+This page documents how to set up such a testbed. This is not a strict guide.
 You may want to do things differently and that would be fine, but we hope that
 this provides a useful walkthrough.
 
