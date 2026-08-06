@@ -10,7 +10,7 @@ Running a Krill Test Bed
    set it up under the public Krill based RPKI testbed that NLnet Labs
    runs here: https://testbed.krill.cloud/
 
-According to the Oxford English dictionary a test bed is _`"a piece of equipment used for testing new machines" <https://www.oxfordlearnersdictionaries.com/definition/english/test-bed>`_.
+According to the Oxford English dictionary a test bed is *`"a piece of equipment used for testing new machines" <https://www.oxfordlearnersdictionaries.com/definition/english/test-bed>`_*.
 
 Most importantly an RPKI test bed acts as a fake root of an RPKI hierarchy,
 an alternative to the real RPKI hierarchy that allows you to test your use
