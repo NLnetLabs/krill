@@ -81,5 +81,9 @@ impl Environment {
     pub fn nginx(&self) -> &NginxServer {
         &self.nginx
     }
-}
 
+    /// Returns a reference to the Routinator controller.
+    pub fn routinator(&self) -> &Routinator {
+        &self.routinator
+    }
+}
