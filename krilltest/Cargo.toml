@@ -8,14 +8,15 @@ rust-version.workspace = true
 license.workspace = true 
 
 [dependencies]
-krill    = { path = ".." }
+bytes    = "1"
 clap     = { version = "*", features = ["cargo", "derive"]}
+hex      = "0.4.3"
+indoc    = "2.0.7"
+krill    = { path = ".." }
 nix      = { version = "*", features = ["signal"] }
+rand     = "0.10.2"
 rcgen    = "0.14"
 reqwest  = { version = "*", features = ["blocking"] }
-tempfile = "*"
-indoc    = "2.0.7"
-hex      = "0.4.3"
-rand     = "0.10.2"
 rpki     = "0.19.3"
+tempfile = "*"
 

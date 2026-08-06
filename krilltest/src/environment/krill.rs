@@ -26,11 +26,16 @@ pub struct KrillServer {
     /// The listen address for the server.
     listen: (IpAddr, u16),
 
-    /// The URI for the RRDP server.
-    rrdp_uri: Https,
+    /// The listen address for the nginx proxy in front of Krill.
+    ///
+    /// When Krill advertizes itself to the outside world, for example in a
+    /// TAL file, it needs to mention this address, not its own address.
+    public_base_url: String,
 
-    /// The URI for the rsync server.
-    rsync_uri: Rsync,
+    /// Whether or not this Krill instance should act as a testbed.
+    ///
+    /// A testbed is a combined RPKI trust anchor and publication server.
+    is_testbed: bool,
 
     /// The Krill process if it is running.
     process: Option<process::Child>,
@@ -42,22 +47,19 @@ impl KrillServer {
         krill_bin: String,
         server_dir: PathBuf,
         listen: (IpAddr, u16),
-        rrdp_uri: String,
-        rsync_uri: String,
-        enable_ta: bool,
+        public_base_url: String,
+        is_testbed: bool,
     ) -> Self {
-        let rrdp_uri = Https::from_string(rrdp_uri).unwrap();
-        let rsync_uri = Rsync::from_string(rsync_uri).unwrap();
         let mut res = Self {
             krill: krill_bin,
             server_dir,
             listen,
-            rrdp_uri,
-            rsync_uri,
+            public_base_url,
+            is_testbed,
             process: None,
         };
         fs::create_dir_all(&res.server_dir).unwrap();
-        res.make_conf(enable_ta);
+        res.make_conf();
         res.start();
         res
     }
@@ -84,15 +86,29 @@ impl KrillServer {
     fn pid_file(&self) -> PathBuf {
         self.server_dir.join("krill.pid")
     }
+
+    /// Returns the base URL at which Krill can be contacted by clients.
+    ///
+    /// If Krill is fronted by a proxy like nginx this will point to the
+    /// proxy rather than to Krill itself.
+    fn public_base_url(&self) -> &str {
+        &self.public_base_url
+    }
+
+    /// Returns the public URL at which the Trust Anchor Locator can be found.
+    pub fn tal_url(&self) -> String {
+        format!("{}ta/ta.tal", self.public_base_url())
+    }
 }
 
 /// # Setup
 impl KrillServer {
     /// Creates the Krill config.
-    fn make_conf(&self, enable_ta: bool) {
+    fn make_conf(&self) {
         let mut conf = File::create(self.config_path()).unwrap();
 
         // Create string representations of configuration values.
+        let service_uri = &self.public_base_url;
         let storage_uri =
             format!("memory://{}", hex::encode(rand::random::<[u8; 8]>()));
         // tls_keys_dir, repo_dir and pid_file must be set because we are
@@ -122,16 +138,23 @@ impl KrillServer {
                 bgp_riswhois_enabled = false
                 post_protocol_msg_timeout_seconds = 10
                 unix_socket = "{unix_socket}"
+                service_uri = "{service_uri}"
             "#
         );
 
-        if enable_ta {
-            let rrdp_base_uri = &self.rrdp_uri;
-            let rsync_jail = &self.rsync_uri;
-            let ta_aia =
-                format!("rsync://{}/ta/ta.cer", rsync_jail.authority());
-            let ta_uri =
-                format!("https://{}/ta/ta.cer", rrdp_base_uri.authority());
+        if self.is_testbed {
+            // A note about rsync: we have to configure Krill with an rsync
+            // URI, but Krill itself is not capable of acting as an rsync
+            // server. In the rsync URIs below no port number is specified,
+            // thus multiple Krill instances created with is_testbed = true
+            // would refer to the same rsync server. However at the time of
+            // writing there is no rsync server in our test setup and RPs are
+            // expected to use RRDP rather than rsync, i.e. these URIs have to
+            // be specified but will not be used.
+            let rsync_jail = format!("rsync://{}/repo/", self.listen.0);
+            let rrdp_base_uri = format!("{}rrdp/", self.public_base_url());
+            let ta_aia = format!("rsync://{}/ta/ta.cer", self.listen.0);
+            let ta_uri = format!("{}ta/ta.cer", self.public_base_url());
 
             writedoc!(
                 conf,

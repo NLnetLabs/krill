@@ -1,13 +1,11 @@
 //! The test environment.
-#![allow(unused)]
-
-use std::collections::HashMap;
-use std::net::IpAddr;
-use std::path::PathBuf;
 use super::krill::KrillServer;
 use super::nginx::NginxServer;
 use super::routinator::Routinator;
 
+use std::collections::HashMap;
+use std::net::IpAddr;
+use std::path::PathBuf;
 
 //------------ Environment ---------------------------------------------------
 
@@ -71,8 +69,7 @@ impl Environment {
             krill_bin,
             self.base_dir.join("krill"),
             listen,
-            "https://testbed.example.com/rrdp/".into(),
-            "rsync://testbed.example.com/repo/".into(),
+            self.nginx.base_url(),
             true,
         );
         let name = name.to_string();

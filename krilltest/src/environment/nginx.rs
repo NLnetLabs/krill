@@ -1,10 +1,10 @@
-//! Controlling an Nginx server. 
+//! Controlling an Nginx server.
+use crate::utils::fmt::WriteOrPanic;
 
-use std::{fs, process};
 use std::fs::File;
 use std::net::IpAddr;
 use std::path::PathBuf;
-use crate::utils::fmt::WriteOrPanic;
+use std::{fs, process};
 
 use indoc::writedoc;
 
@@ -21,9 +21,6 @@ pub struct NginxServer {
     /// The listen address for the server.
     listen: (IpAddr, u16),
 
-    /// A map between path prefixes and directories.
-    routes: Vec<(String, PathBuf)>,
-
     /// The Nginx process if it is running.
     process: Option<process::Child>,
 }
@@ -39,22 +36,14 @@ impl NginxServer {
             nginx: nginx_bin,
             server_dir,
             listen,
-            routes: Default::default(),
             process: None,
         };
 
         fs::create_dir_all(res.tls_path()).unwrap();
         res.make_tls();
-
-        fs::create_dir_all(res.root_path()).unwrap();
-        fs::write(
-            res.root_path().join("test.txt"),
-            "test"
-        ).unwrap();
-
         res.make_conf();
         res.start();
-        
+
         res
     }
 }
@@ -74,7 +63,6 @@ impl Drop for NginxServer {
         }
     }
 }
-
 
 /// # Paths to things
 impl NginxServer {
@@ -105,11 +93,14 @@ impl NginxServer {
 
     /// Returns the server root path.
     fn root_path(&self) -> PathBuf {
-        self.server_dir.join("http")
+        // TODO: Don't hard-code the location of a specific Krill instance
+        // RRDP data directory here, as we may want to serve data published by
+        // multiple Krill instances.
+        self.server_dir.join("../krill/data/repo/")
     }
 
     /// Returns the base URL of the server.
-    pub fn url(&self) -> String {
+    pub fn base_url(&self) -> String {
         match self.listen.0 {
             IpAddr::V4(addr) => {
                 format!("https://{}:{}/", addr, self.listen.1)
@@ -118,11 +109,6 @@ impl NginxServer {
                 format!("https://[{}]:{}/", addr, self.listen.1)
             }
         }
-    }
-
-    /// Returns the URL of the test file.
-    pub fn test_url(&self) -> String {
-        format!("{}test.txt", self.url())
     }
 }
 
@@ -154,19 +140,6 @@ impl NginxServer {
         let ssl_certificate_key = self.tls_key_path().display().to_string();
         let tmp = self.tmp_path().display().to_string();
 
-        let mut locations = String::new();
-        for (location, alias) in &self.routes {
-            let alias = alias.display().to_string();
-            writedoc!(
-                locations,
-                r#"
-                    location {location} {{
-                        alias {alias};
-                    }}
-                "#
-            );
-        }
-
         // Write the NGINX config file using the strings we just created.
         writedoc!(
             conf,
@@ -174,6 +147,12 @@ impl NginxServer {
                 events {{}}
                 daemon off;
                 pid {tmp}/pid;
+                # error_log set here occurs too late to prevent a warning
+                # during nginx startup about not being able to write to
+                # /var/log/nginx/error.log, to solve that we pass -e when
+                # launching nginx. We do however need to specify error_log
+                # here if we want to control the level at which nginx logs.
+                # error_log /dev/stdout debug;
                 http {{
                     proxy_temp_path {tmp};
                     fastcgi_temp_path {tmp};
@@ -187,7 +166,56 @@ impl NginxServer {
                         ssl_certificate {ssl_certificate};
                         ssl_certificate_key {ssl_certificate_key};
                         client_body_temp_path {tmp};
-                        {locations}
+
+                        # From Krill docs:
+                        client_max_body_size 128m;
+
+                        # TODO: Make the location blocks below dynamically
+                        # generated rather than hard-coded, so that we can
+                        # support multiple Krill instances behind the nginx.
+
+                        # Proxy RFC 8181 publication server requests to Krill.
+                        location /rfc8181 {{
+                            proxy_pass https://127.0.0.1:3001/rfc8181;
+                            proxy_set_header Host $host;
+                            proxy_set_header X-Real-IP $remote_addr;
+                            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                            proxy_set_header X-Forwarded-Proto $scheme;
+
+                            # krill does not use a valid certificate/tls is handled by nginx
+                            proxy_ssl_verify off;
+                        }}
+
+                        # Proxy Krill API requests to Krill.
+                        location /api {{
+                            proxy_pass https://127.0.0.1:3001/api;
+                            proxy_set_header Host $host;
+                            proxy_set_header X-Real-IP $remote_addr;
+                            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                            proxy_set_header X-Forwarded-Proto $scheme;
+
+                            # allow IPv4 and IPv6 documentation ranges
+                            # allow 192.0.2.0/24;
+                            # allow 2001:0db8::/32;
+                            # deny  all;
+
+                            # krill does not use a valid certificate/tls is handled by nginx
+                            proxy_ssl_verify off;
+                        }}
+
+                        # Serve RRDP files generated by Krill
+                        # This is handled by the 'root' directive above.
+
+                        location /ta {{
+                            proxy_pass https://127.0.0.1:3001/ta;
+                            proxy_set_header Host $host;
+                            proxy_set_header X-Real-IP $remote_addr;
+                            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                            proxy_set_header X-Forwarded-Proto $scheme;
+
+                            # krill does not use a valid certificate/tls is handled by nginx
+                            proxy_ssl_verify off;
+                         }}
                     }}
                 }}
             "#

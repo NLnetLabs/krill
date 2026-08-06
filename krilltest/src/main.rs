@@ -4,12 +4,18 @@
 //! scenarios involve setting up one or more Krill instances, issue commands
 //! to them, and then verifying the results by checking the data set output
 //! by a Routinator validation run.
+use krilltest::environment::Environment;
+
+use std::io::Read;
+use std::io::Write;
+use std::net::IpAddr;
+use std::path::Path;
+use std::path::PathBuf;
+use std::thread::sleep;
+use std::time::Duration;
 
 use clap::Parser;
 use clap::crate_version;
-use krilltest::environment::Environment;
-use std::net::IpAddr;
-use std::path::PathBuf;
 use tempfile::TempDir;
 
 //------------ main ----------------------------------------------------------
@@ -31,15 +37,73 @@ fn main() {
         args.routinator,
     );
 
-    let some_free_port = args.rrdp_port + 1;
-    let krill_listen = (args.listen_addr, some_free_port);
-    let _krill = environment.add_krill("first", args.krill, krill_listen);
+    // Add a Krill test bed to the test environment and get the location of
+    // Trust Anchor Locator so that we can install it for Routinator to use.
+    let tal_url = {
+        // TODO: Allocate a port that isn't already in use, don't just do +1.
+        let some_free_port1 = args.rrdp_port + 1;
+        let krill_listen = (args.listen_addr, some_free_port1);
+        let krill = environment.add_krill("first", args.krill, krill_listen);
+        krill.tal_url()
+    };
 
-    eprintln!("Hit enter to quit.");
+    // Load the TLS certificate that can be used to verify that a TLS
+    // connection to Krill can be trusted. The alternative would be to use the
+    // reqwest `danger_accept_invalid_certs(true)` functionality but this is
+    // more correct, but also more verbose.
+    let tls_cert = load_tls_cert(&environment.nginx().tls_cert_path());
 
-    let mut buffer = String::new();
-    let stdin = std::io::stdin();
-    stdin.read_line(&mut buffer).unwrap();
+    // Fetch the Krill TAL and install it in the Routinator extra tals
+    // directory.
+    let tal_bytes = fetch_url(tal_url, tls_cert, 5);
+
+    // Configure Routinator to use the Krill TAL.
+    environment.routinator().install_tal("Krill", &tal_bytes);
+
+    // Do a Routinator validation run and fetch the available VRPs.
+    std::io::stdout()
+        .write_all(&environment.routinator().vrps())
+        .unwrap();
+
+    // TODO: Actually add ROAs to Krill and verify that the fetched VRPs are
+    // correct.
+}
+
+fn load_tls_cert(tls_cert_path: &Path) -> reqwest::Certificate {
+    let mut f = std::fs::File::open(tls_cert_path).unwrap();
+    let mut tls_ca_cert_pem_bytes = vec![];
+    f.read_to_end(&mut tls_ca_cert_pem_bytes).unwrap();
+    drop(f);
+    let tls_ca_cert =
+        reqwest::Certificate::from_pem(&tls_ca_cert_pem_bytes).unwrap();
+    tls_ca_cert
+}
+
+fn fetch_url(
+    url: String,
+    tls_cert: reqwest::Certificate,
+    max_tries: u8,
+) -> bytes::Bytes {
+    let trusting_client = reqwest::blocking::Client::builder()
+        .tls_certs_only([tls_cert])
+        .build()
+        .unwrap();
+    let mut tries_left = max_tries;
+    while tries_left > 0 {
+        match trusting_client.get(&url).send() {
+            Ok(bytes) => {
+                return bytes.bytes().unwrap();
+            }
+            Err(err) => {
+                eprintln!(
+                    "{url} not yet available, will retry in 1 second: {err}"
+                );
+                sleep(Duration::from_secs(1));
+            }
+        }
+        tries_left -= 1;
+    }
+    unreachable!();
 }
 
 //------------ Args ----------------------------------------------------------
