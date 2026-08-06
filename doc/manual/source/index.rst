@@ -3,7 +3,7 @@
 Krill |version|
 ===============
 
-Krill is a free, open source Resource Public Key Infrastructure (RPKI)
+Krill is a free, open source Resource Public Key Infrastructure (`RPKI <https://rpki.readthedocs.io/>`_)
 daemon, featuring a Certificate Authority (CA) and publication server,
 written by `NLnet Labs <https://nlnetlabs.nl>`_.
 
