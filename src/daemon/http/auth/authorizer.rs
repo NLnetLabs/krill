@@ -255,7 +255,7 @@ impl Authorizer {
     pub async fn authenticate_request(
         &self, request: &HyperRequest
     ) -> (AuthInfo, Option<Token>) {
-        trace!("Determining actor for request {:?}", &request);
+        trace!("Determining actor for request {:?}", request);
 
         // Try the legacy provider first, if any.
         let authenticate_res = match &self.legacy_provider {
@@ -307,7 +307,7 @@ impl Authorizer {
         let user = self.primary_provider.login(request).await?;
 
         if log_enabled!(log::Level::Trace) {
-            trace!("User logged in: {:?}", &user);
+            trace!("User logged in: {:?}", user);
         } else {
             info!("User logged in: {}, role: {}", user.id(), user.role());
         }

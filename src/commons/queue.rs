@@ -499,7 +499,7 @@ mod tests {
                         None,
                         ScheduleMode::FinishOrReplaceExisting,
                     ).unwrap();
-                    println!("> Scheduled job {}", &name);
+                    println!("> Scheduled job {}", name);
                 }
             });
         });

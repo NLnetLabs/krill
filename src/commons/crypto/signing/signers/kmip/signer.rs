@@ -713,7 +713,7 @@ impl KmipSigner {
         if !matches!(algorithm, PublicKeyFormat::Rsa) {
             return Err(SignerError::KmipError(format!(
                 "Algorithm {:?} not supported while creating key",
-                &algorithm
+                algorithm
             )));
         }
 
@@ -924,7 +924,7 @@ impl KmipSigner {
         if let Err(err) = &res {
             warn!(
                 "[{}] Failed to destroy KMIP public key '{}': {}",
-                self.name, &kmip_key_pair_ids.public_key_id, err
+                self.name, kmip_key_pair_ids.public_key_id, err
             );
         }
 
@@ -942,7 +942,7 @@ impl KmipSigner {
                 deactivated = false;
                 warn!(
                     "[{}] Failed to revoke KMIP private key '{}': {}",
-                    self.name, &kmip_key_pair_ids.private_key_id, err
+                    self.name, kmip_key_pair_ids.private_key_id, err
                 );
             }
 
@@ -966,7 +966,7 @@ impl KmipSigner {
             if let Err(err) = &res3 {
                 warn!(
                     "[{}] Failed to destroy KMIP private key '{}': {}",
-                    self.name, &kmip_key_pair_ids.private_key_id, err
+                    self.name, kmip_key_pair_ids.private_key_id, err
                 );
             }
 

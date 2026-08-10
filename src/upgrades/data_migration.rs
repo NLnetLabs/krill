@@ -47,8 +47,8 @@ pub fn migrate(
     info!("-----------------------------------------------------------");
     info!("STEP 1: Copy data");
     info!("");
-    info!("From: {}", &config.storage_uri);
-    info!("  To: {}", &target_storage.default_uri());
+    info!("From: {}", config.storage_uri);
+    info!("  To: {}", target_storage.default_uri());
     info!("-----------------------------------------------------------");
     info!("");
 

@@ -360,7 +360,7 @@ impl HttpResponse {
     ) {
         let header_name = const { HeaderName::from_static("authorization") };
         let header_value = match HeaderValue::from_maybe_shared(
-            Bytes::from(format!("Bearer {}", &token))
+            Bytes::from(format!("Bearer {}", token))
         ) {
             Ok(value) => value,
             Err(_) => {
