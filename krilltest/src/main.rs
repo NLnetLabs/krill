@@ -30,22 +30,39 @@ fn main() {
         }
     };
 
+    // About TCP port allocation:
+    //
+    // We can't use systemd socket activation to acquire sockets here and
+    // pass them to the applications that we spawn because (a) Krill doesn't
+    // support socket activation, and (b) nginx doesn't officially support it
+    // though there is a "hack" to set the NGINX environment variable to
+    // <fd number>[:<fd number>].. which could be used but cannot be relied
+    // upon to continue working in the future.
+    //
+    // Instead we require the operator to tell us a port range to use and hope
+    // that the operator is correct that none of those ports are currently
+    // being listened on.
+    let tcp_port_max = args.tcp_port_max.unwrap_or(u16::MAX);
+
     let mut environment = Environment::new(
         base_path,
+        args.krill,
         args.nginx,
-        (args.listen_addr, args.rrdp_port),
         args.routinator,
+        (args.listen_addr, (args.tcp_port_min..=tcp_port_max)),
     );
 
     // Add a Krill test bed to the test environment and get the location of
     // Trust Anchor Locator so that we can install it for Routinator to use.
     let tal_url = {
         // TODO: Allocate a port that isn't already in use, don't just do +1.
-        let some_free_port1 = args.rrdp_port + 1;
-        let krill_listen = (args.listen_addr, some_free_port1);
-        let krill = environment.add_krill("first", args.krill, krill_listen);
+        let krill = environment.add_krill("first");
         krill.tal_url()
     };
+
+    {
+        let _krill2 = environment.add_krill("second");
+    }
 
     // Load the TLS certificate that can be used to verify that a TLS
     // connection to Krill can be trusted. The alternative would be to use the
@@ -116,7 +133,7 @@ fn fetch_url(
 struct Args {
     /// The path of the krill binary.
     #[arg(long, default_value = "target/release/krill")]
-    krill: String,
+    krill: PathBuf,
 
     /// The path of the routinator binary.
     #[arg(long, default_value = "routinator")]
@@ -124,7 +141,7 @@ struct Args {
 
     /// The path of the nginx binary.
     #[arg(long, default_value = "/usr/sbin/nginx")]
-    nginx: String,
+    nginx: PathBuf,
 
     /// The working directory for all test data.
     ///
@@ -136,7 +153,15 @@ struct Args {
     #[arg(long, default_value = "127.0.0.1")]
     listen_addr: IpAddr,
 
-    /// The port the RRDP server should listen on.
+    /// The lowest TCP port number to use for services that we spawn.
+    ///
+    /// Default: 3000
     #[arg(long, default_value = "3000")]
-    rrdp_port: u16,
+    tcp_port_min: u16,
+
+    /// The highest TCP port number to use for services that we spawn.
+    ///
+    /// Default: No upper limit.
+    #[arg(long)]
+    tcp_port_max: Option<u16>,
 }

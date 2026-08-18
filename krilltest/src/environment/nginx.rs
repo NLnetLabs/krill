@@ -1,6 +1,7 @@
 //! Controlling an Nginx server.
 use crate::utils::fmt::WriteOrPanic;
 
+use std::collections::HashMap;
 use std::fs::File;
 use std::net::IpAddr;
 use std::path::PathBuf;
@@ -13,38 +14,64 @@ use indoc::writedoc;
 /// An Nginx server instance to serve files.
 pub struct NginxServer {
     /// Location of the nginx binary.
-    nginx: String,
+    nginx_bin: PathBuf,
 
     /// The directory where the server keeps all its stuff.
     server_dir: PathBuf,
 
     /// The listen address for the server.
-    listen: (IpAddr, u16),
+    listen: IpAddr,
 
     /// The Nginx process if it is running.
     process: Option<process::Child>,
+
+    /// Downstreams to proxy to.
+    ///
+    /// Maps root data dir and front end port numbers to backend URLs.
+    backends: HashMap<(String, u16), String>,
 }
 
 impl NginxServer {
     /// Creates a new Nginx server and starts it.
     pub fn new(
-        nginx_bin: String,
+        nginx_bin: PathBuf,
         server_dir: PathBuf,
-        listen: (IpAddr, u16),
+        listen: IpAddr,
     ) -> Self {
-        let mut res = Self {
-            nginx: nginx_bin,
+        let res = Self {
+            nginx_bin,
             server_dir,
             listen,
             process: None,
+            backends: HashMap::new(),
         };
 
         fs::create_dir_all(res.tls_path()).unwrap();
         res.make_tls();
-        res.make_conf();
-        res.start();
-
         res
+    }
+
+    pub fn re_start(&mut self) {
+        self.make_conf();
+        self.start();
+    }
+
+    pub fn add_backend(
+        &mut self,
+        root_path: String,
+        front_end_port: u16,
+        backend_url: String,
+    ) {
+        self.backends
+            .insert((root_path, front_end_port), backend_url);
+    }
+
+    pub fn remove_backend(
+        &mut self,
+        root_path: String,
+        front_end_port: u16,
+    ) -> bool {
+        self.backends.remove(&(root_path, front_end_port)).is_none()
     }
 }
 
@@ -53,7 +80,7 @@ impl Drop for NginxServer {
         if let Some(mut child) = self.process.take() {
             if let Err(err) = nix::sys::signal::kill(
                 nix::unistd::Pid::from_raw(child.id() as i32),
-                nix::sys::signal::SIGTERM
+                nix::sys::signal::SIGTERM,
             ) {
                 eprintln!("Failed to kill nginx: {err}");
             }
@@ -90,36 +117,15 @@ impl NginxServer {
     fn tmp_path(&self) -> PathBuf {
         self.server_dir.join("tmp")
     }
-
-    /// Returns the server root path.
-    fn root_path(&self) -> PathBuf {
-        // TODO: Don't hard-code the location of a specific Krill instance
-        // RRDP data directory here, as we may want to serve data published by
-        // multiple Krill instances.
-        self.server_dir.join("../krill/data/repo/")
-    }
-
-    /// Returns the base URL of the server.
-    pub fn base_url(&self) -> String {
-        match self.listen.0 {
-            IpAddr::V4(addr) => {
-                format!("https://{}:{}/", addr, self.listen.1)
-            }
-            IpAddr::V6(addr) => {
-                format!("https://[{}]:{}/", addr, self.listen.1)
-            }
-        }
-    }
 }
 
 /// # Setup
 impl NginxServer {
     /// Create the TLS key and certificate.
     fn make_tls(&self) {
-        let tls = rcgen::generate_simple_self_signed(vec![
-            self.listen.0.to_string(),
-        ])
-        .unwrap();
+        let tls =
+            rcgen::generate_simple_self_signed(vec![self.listen.to_string()])
+                .unwrap();
 
         fs::write(self.tls_cert_path(), &tls.cert.pem()).unwrap();
         fs::write(self.tls_key_path(), tls.signing_key.serialize_pem())
@@ -131,14 +137,41 @@ impl NginxServer {
         let mut conf = File::create(self.config_path()).unwrap();
 
         // Create string representations of configuration values.
-        let listen = match self.listen {
-            (IpAddr::V4(addr), port) => format!("{addr}:{port}"),
-            (IpAddr::V6(addr), port) => format!("{addr}:{port}"),
-        };
-        let root = self.root_path().display().to_string();
         let ssl_certificate = self.tls_cert_path().display().to_string();
         let ssl_certificate_key = self.tls_key_path().display().to_string();
         let tmp = self.tmp_path().display().to_string();
+
+        let mut server_blocks = String::new();
+        for ((root, front_end_port), backend_url) in &self.backends {
+            // let root = self.root_path().display().to_string();
+            let listen = match self.listen {
+                IpAddr::V4(addr) => format!("{addr}:{front_end_port}"),
+                IpAddr::V6(addr) => format!("{addr}:{front_end_port}"),
+            };
+            server_blocks.push_str(&format!(r#"
+                    server {{
+                        listen {listen} ssl default_server;
+                        root {root};
+                        server_name _;
+                        access_log /dev/stdout;
+                        ssl_certificate {ssl_certificate};
+                        ssl_certificate_key {ssl_certificate_key};
+                        client_body_temp_path {tmp};
+
+                        # From Krill docs:
+                        client_max_body_size 128m;
+
+                        location / {{
+                            proxy_pass {backend_url};
+                            proxy_set_header Host $host;
+                            proxy_set_header X-Real-IP $remote_addr;
+                            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                            proxy_set_header X-Forwarded-Proto $scheme;
+                            proxy_ssl_verify off;
+                        }}
+                    }}
+                "#));
+        }
 
         // Write the NGINX config file using the strings we just created.
         writedoc!(
@@ -158,65 +191,7 @@ impl NginxServer {
                     fastcgi_temp_path {tmp};
                     uwsgi_temp_path {tmp};
                     scgi_temp_path {tmp};
-                    server {{
-                        listen {listen} ssl default_server;
-                        root {root};
-                        server_name _;
-                        access_log /dev/stdout;
-                        ssl_certificate {ssl_certificate};
-                        ssl_certificate_key {ssl_certificate_key};
-                        client_body_temp_path {tmp};
-
-                        # From Krill docs:
-                        client_max_body_size 128m;
-
-                        # TODO: Make the location blocks below dynamically
-                        # generated rather than hard-coded, so that we can
-                        # support multiple Krill instances behind the nginx.
-
-                        # Proxy RFC 8181 publication server requests to Krill.
-                        location /rfc8181 {{
-                            proxy_pass https://127.0.0.1:3001/rfc8181;
-                            proxy_set_header Host $host;
-                            proxy_set_header X-Real-IP $remote_addr;
-                            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                            proxy_set_header X-Forwarded-Proto $scheme;
-
-                            # krill does not use a valid certificate/tls is handled by nginx
-                            proxy_ssl_verify off;
-                        }}
-
-                        # Proxy Krill API requests to Krill.
-                        location /api {{
-                            proxy_pass https://127.0.0.1:3001/api;
-                            proxy_set_header Host $host;
-                            proxy_set_header X-Real-IP $remote_addr;
-                            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                            proxy_set_header X-Forwarded-Proto $scheme;
-
-                            # allow IPv4 and IPv6 documentation ranges
-                            # allow 192.0.2.0/24;
-                            # allow 2001:0db8::/32;
-                            # deny  all;
-
-                            # krill does not use a valid certificate/tls is handled by nginx
-                            proxy_ssl_verify off;
-                        }}
-
-                        # Serve RRDP files generated by Krill
-                        # This is handled by the 'root' directive above.
-
-                        location /ta {{
-                            proxy_pass https://127.0.0.1:3001/ta;
-                            proxy_set_header Host $host;
-                            proxy_set_header X-Real-IP $remote_addr;
-                            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                            proxy_set_header X-Forwarded-Proto $scheme;
-
-                            # krill does not use a valid certificate/tls is handled by nginx
-                            proxy_ssl_verify off;
-                         }}
-                    }}
+                    {server_blocks}
                 }}
             "#
         );
@@ -228,7 +203,7 @@ impl NginxServer {
             child.kill().unwrap();
         }
         self.process = Some(
-            process::Command::new(&self.nginx)
+            process::Command::new(&self.nginx_bin)
                 .args([
                     // Tell nginx where to find its config file.
                     "-c",
@@ -243,4 +218,3 @@ impl NginxServer {
         );
     }
 }
-

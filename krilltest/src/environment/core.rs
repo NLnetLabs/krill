@@ -3,8 +3,10 @@ use super::krill::KrillServer;
 use super::nginx::NginxServer;
 use super::routinator::Routinator;
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
+use std::fmt::Display;
 use std::net::IpAddr;
+use std::ops::RangeInclusive;
 use std::path::PathBuf;
 
 //------------ Environment ---------------------------------------------------
@@ -25,6 +27,15 @@ pub struct Environment {
 
     /// A Routinator installation for validating results.
     routinator: Routinator,
+
+    /// The path to the Krill binary for spawning Krill instances.
+    krill_bin: PathBuf,
+
+    /// The IP address and port range that spawned services should listen on.
+    listen: (IpAddr, RangeInclusive<u16>),
+
+    /// Assigned TCP ports.
+    used_tcp_ports: BTreeSet<u16>,
 }
 
 impl Environment {
@@ -40,40 +51,56 @@ impl Environment {
     /// works.
     pub fn new(
         base_dir: PathBuf,
-        nginx_bin: String,
-        nginx_listen: (IpAddr, u16),
+        krill_bin: PathBuf,
+        nginx_bin: PathBuf,
         routinator_bin: PathBuf,
+        listen: (IpAddr, RangeInclusive<u16>),
     ) -> Self {
-        let nginx = NginxServer::new(
-            nginx_bin, base_dir.join("nginx"), nginx_listen,
-        );
+        let nginx =
+            NginxServer::new(nginx_bin, base_dir.join("nginx"), listen.0);
+
         let routinator = Routinator::new(
-            routinator_bin, base_dir.join("routinator"), nginx.tls_cert_path()
+            routinator_bin,
+            base_dir.join("routinator"),
+            nginx.tls_cert_path(),
         );
+
         Self {
             base_dir,
             krill: Default::default(),
             nginx,
-            routinator
+            routinator,
+            krill_bin,
+            listen,
+            used_tcp_ports: Default::default(),
         }
     }
 
     /// Adds a Krill server.
-    pub fn add_krill<T: ToString>(
-        &mut self,
-        name: T,
-        krill_bin: String,
-        listen: (IpAddr, u16),
-    ) -> &KrillServer {
+    pub fn add_krill<T: Display>(&mut self, name: T) -> &KrillServer {
+        let name = format!("krill-{name}");
+        let listen_addr = self.listen.0;
+        let public_port =
+            self.acquire_port(format!("nginx public port for {name}"));
+        let private_port =
+            self.acquire_port(format!("Krilll private port for {name}"));
         let krill = KrillServer::new(
-            krill_bin,
-            self.base_dir.join("krill"),
-            listen,
-            self.nginx.base_url(),
+            self.krill_bin.clone(),
+            self.base_dir.join(name.clone()),
+            (listen_addr, private_port),
+            format!("https://{listen_addr}:{public_port}/"),
             true,
         );
-        let name = name.to_string();
         self.krill.insert(name.clone(), krill);
+        self.nginx.add_backend(
+            format!(
+                "{}/data/repo/",
+                self.base_dir.join(name.clone()).display()
+            ),
+            public_port,
+            format!("https://{listen_addr}:{private_port}/"),
+        );
+        self.nginx.re_start();
         self.krill.get(&name).unwrap()
     }
 
@@ -85,5 +112,28 @@ impl Environment {
     /// Returns a reference to the Routinator controller.
     pub fn routinator(&self) -> &Routinator {
         &self.routinator
+    }
+
+    fn acquire_port<T: Display>(&mut self, service_description: T) -> u16 {
+        let port = match self.used_tcp_ports.first().map(|p| *p) {
+            None => *self.listen.1.start(),
+            Some(mut last_used_port) => {
+                let mut port_iter = self.used_tcp_ports.iter();
+                let mut port_to_use = None;
+                while let Some(used_port) = port_iter.next().map(|p| *p) {
+                    if used_port > (last_used_port + 1) {
+                        // Gap in used range, use the port in the gap.
+                        port_to_use = Some(last_used_port + 1);
+                        break;
+                    } else {
+                        last_used_port = used_port;
+                    }
+                }
+                port_to_use.unwrap_or_else(|| last_used_port + 1)
+            }
+        };
+        eprintln!("Using TCP port {port} as {service_description}");
+        self.used_tcp_ports.insert(port);
+        port
     }
 }

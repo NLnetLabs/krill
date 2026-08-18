@@ -18,7 +18,7 @@ use rpki::uri::{Https, Rsync};
 /// A single Krill server instance.
 pub struct KrillServer {
     /// Location of the Krill binary.
-    krill: String,
+    krill_bin: PathBuf,
 
     /// The directory where the server keeps all its stuff.
     server_dir: PathBuf,
@@ -44,14 +44,14 @@ pub struct KrillServer {
 impl KrillServer {
     /// Creates and configures a new Krill server.
     pub fn new(
-        krill_bin: String,
+        krill_bin: PathBuf,
         server_dir: PathBuf,
         listen: (IpAddr, u16),
         public_base_url: String,
         is_testbed: bool,
     ) -> Self {
         let mut res = Self {
-            krill: krill_bin,
+            krill_bin,
             server_dir,
             listen,
             public_base_url,
@@ -175,7 +175,7 @@ impl KrillServer {
             child.kill().unwrap();
         }
         self.process = Some(
-            process::Command::new(&self.krill)
+            process::Command::new(&self.krill_bin)
                 .args([
                     // Tell Krill where to find its config file.
                     "-c",
