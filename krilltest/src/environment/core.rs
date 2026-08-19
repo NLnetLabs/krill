@@ -1,4 +1,6 @@
 //! The test environment.
+use tokio::time::sleep;
+
 use super::krill::KrillServer;
 use super::nginx::NginxServer;
 use super::routinator::Routinator;
@@ -8,6 +10,7 @@ use std::fmt::Display;
 use std::net::IpAddr;
 use std::ops::RangeInclusive;
 use std::path::PathBuf;
+use std::time::Duration;
 
 //------------ Environment ---------------------------------------------------
 
@@ -77,8 +80,8 @@ impl Environment {
     }
 
     /// Adds a Krill server.
-    pub fn add_krill<T: Display>(&mut self, name: T) -> &KrillServer {
-        let name = format!("krill-{name}");
+    pub async fn add_krill<T: Display>(&mut self, name: T) {
+        let name = format!("{name}");
         let listen_addr = self.listen.0;
         let public_port =
             self.acquire_port(format!("nginx public port for {name}"));
@@ -91,6 +94,8 @@ impl Environment {
             format!("https://{listen_addr}:{public_port}/"),
             true,
         );
+        let krillc = krill.make_client();
+
         self.krill.insert(name.clone(), krill);
         self.nginx.add_backend(
             format!(
@@ -100,13 +105,35 @@ impl Environment {
             public_port,
             format!("https://{listen_addr}:{private_port}/"),
         );
-        self.nginx.re_start();
-        self.krill.get(&name).unwrap()
+        self.nginx.reconfigure();
+
+        while !krillc.health().await.is_ok() {
+            println!(
+                "Waiting for Krill instance '{name}' to finish starting up..."
+            );
+            sleep(Duration::from_millis(100)).await;
+        }
+        println!("Krill instance '{name}' is ready");
+    }
+
+    /// Returns a reference to the specified Krill server.
+    pub fn krill(&self, name: &str) -> &KrillServer {
+        self.krill.get(name).unwrap()
+    }
+
+    /// Returns a reference to the specified Krill server.
+    pub fn krill_mut(&mut self, name: &str) -> &mut KrillServer {
+        self.krill.get_mut(name).unwrap()
     }
 
     /// Returns a reference to the Nginx server.
     pub fn nginx(&self) -> &NginxServer {
         &self.nginx
+    }
+
+    /// Returns a reference to the Nginx server.
+    pub fn nginx_mut(&mut self) -> &mut NginxServer {
+        &mut self.nginx
     }
 
     /// Returns a reference to the Routinator controller.
@@ -132,7 +159,7 @@ impl Environment {
                 port_to_use.unwrap_or_else(|| last_used_port + 1)
             }
         };
-        eprintln!("Using TCP port {port} as {service_description}");
+        println!("Using TCP port {port} as {service_description}");
         self.used_tcp_ports.insert(port);
         port
     }

@@ -7,6 +7,7 @@ use std::fs::File;
 use std::net::IpAddr;
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
+use std::process::Stdio;
 use std::{fs, process};
 
 use indoc::writedoc;
@@ -120,11 +121,11 @@ impl Routinator {
                 "--output",
                 "-",
             ])
+            .stdout(Stdio::piped())
             .spawn()
             .unwrap()
             .wait_with_output()
             .unwrap();
-
         output.stdout
     }
 }

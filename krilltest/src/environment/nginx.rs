@@ -8,6 +8,8 @@ use std::path::PathBuf;
 use std::{fs, process};
 
 use indoc::writedoc;
+use nix::sys::signal::{self, Signal};
+use nix::unistd::Pid;
 
 //------------ NginxServer ---------------------------------------------------
 
@@ -51,9 +53,17 @@ impl NginxServer {
         res
     }
 
-    pub fn re_start(&mut self) {
+    pub fn reconfigure(&mut self) {
         self.make_conf();
-        self.start();
+
+        if let Some(process) = &self.process {
+            eprintln!("Reconfiguring nginx");
+            signal::kill(Pid::from_raw(process.id() as i32), Signal::SIGHUP)
+                .unwrap();
+        } else {
+            eprintln!("Starting nginx");
+            self.start()
+        }
     }
 
     pub fn add_backend(
@@ -199,9 +209,6 @@ impl NginxServer {
 
     /// Starts or restarts nginx.
     fn start(&mut self) {
-        if let Some(mut child) = self.process.take() {
-            child.kill().unwrap();
-        }
         self.process = Some(
             process::Command::new(&self.nginx_bin)
                 .args([
