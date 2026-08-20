@@ -73,6 +73,7 @@ impl Routinator {
         let repository_dir = self.repo_dir().display().to_string();
         let rrdp_root_cert_path =
             self.rrdp_tls_cert_path.display().to_string();
+        let extra_tals_dir = self.extra_tals_dir().display().to_string();
 
         // Write the Routinator config file using the strings we just created.
         writedoc!(
@@ -80,10 +81,14 @@ impl Routinator {
             r#"
                 repository-dir = "{repository_dir}"
                 log = "stderr"
-                log-level = "info"
+                log-level = "trace"
                 rrdp-root-certs = ["{rrdp_root_cert_path}"]
                 allow-dubious-hosts = true
                 #disable-rsync = true
+                no-rir-tals = true
+                extra-tals-dir = "{extra_tals_dir}"
+                strict = true
+                log-repository-issues = true
             "#
         );
     }
@@ -107,11 +112,6 @@ impl Routinator {
                 // Tell Routinator where to find its config file.
                 "-c",
                 &self.config_path().display().to_string(),
-                // Don't use any of the default Trust Anchor Locators.
-                "--no-rir-tals",
-                // Use only the TAL of our Krill instance.
-                "--extra-tals-dir",
-                &self.extra_tals_dir().display().to_string(),
                 // Do a one time validation run.
                 "vrps",
                 // Output in JSON format.
@@ -120,6 +120,7 @@ impl Routinator {
                 // Output to standard output.
                 "--output",
                 "-",
+                "--complete",
             ])
             .stdout(Stdio::piped())
             .spawn()
