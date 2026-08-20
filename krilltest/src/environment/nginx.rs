@@ -30,7 +30,7 @@ pub struct NginxServer {
     /// Downstreams to proxy to.
     ///
     /// Maps root data dir and front end port numbers to backend URLs.
-    backends: HashMap<(String, u16), String>,
+    backends: HashMap<(PathBuf, u16), String>,
 }
 
 impl NginxServer {
@@ -68,20 +68,23 @@ impl NginxServer {
 
     pub fn add_backend(
         &mut self,
-        root_path: String,
+        root_path: PathBuf,
         front_end_port: u16,
         backend_url: String,
     ) {
         self.backends
             .insert((root_path, front_end_port), backend_url);
+        self.reconfigure();
     }
 
+    /// Panics if the backend is not known.
     pub fn remove_backend(
         &mut self,
-        root_path: String,
+        root_path: PathBuf,
         front_end_port: u16,
-    ) -> bool {
-        self.backends.remove(&(root_path, front_end_port)).is_none()
+    ) {
+        self.backends.remove(&(root_path, front_end_port)).unwrap();
+        self.reconfigure();
     }
 }
 
@@ -153,7 +156,7 @@ impl NginxServer {
 
         let mut server_blocks = String::new();
         for ((root, front_end_port), backend_url) in &self.backends {
-            // let root = self.root_path().display().to_string();
+            let root = root.display().to_string();
             let listen = match self.listen {
                 IpAddr::V4(addr) => format!("{addr}:{front_end_port}"),
                 IpAddr::V6(addr) => format!("{addr}:{front_end_port}"),

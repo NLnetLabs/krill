@@ -80,8 +80,13 @@ impl Environment {
     }
 
     /// Adds a Krill server.
-    pub async fn add_krill<T: Display>(&mut self, name: T) {
-        let name = format!("{name}");
+    ///
+    /// Starts a new instance of Krill, Configures nginx to proxy to it and
+    /// reloads nginx.
+    ///
+    /// Returns once the server is healthy.
+    pub async fn add_krill<T: ToString>(&mut self, name: T) {
+        let name = name.to_string();
         let listen_addr = self.listen.0;
         let public_port =
             self.acquire_port(format!("nginx public port for {name}"));
@@ -91,29 +96,41 @@ impl Environment {
             self.krill_bin.clone(),
             self.base_dir.join(name.clone()),
             (listen_addr, private_port),
-            format!("https://{listen_addr}:{public_port}/"),
+            (listen_addr, public_port),
             true,
         );
         let krillc = krill.make_client();
 
-        self.krill.insert(name.clone(), krill);
         self.nginx.add_backend(
-            format!(
-                "{}/data/repo/",
-                self.base_dir.join(name.clone()).display()
-            ),
+            krill.repo_dir(),
             public_port,
             format!("https://{listen_addr}:{private_port}/"),
         );
-        self.nginx.reconfigure();
 
-        while !krillc.health().await.is_ok() {
+        let mut tries_left = 100;
+        while tries_left > 0 && !krillc.health().await.is_ok() {
             println!(
                 "Waiting for Krill instance '{name}' to finish starting up..."
             );
             sleep(Duration::from_millis(100)).await;
+            tries_left -= 1;
         }
+
         println!("Krill instance '{name}' is ready");
+        self.krill.insert(name.clone(), krill);
+    }
+
+    /// Removes a Krill server.
+    ///
+    /// Will also remove its data directories and nginx proxy configuration
+    /// and reload nginx.
+    ///
+    /// Panics if no instance with the given name exists.
+    pub fn remove_krill(&mut self, name: &str) {
+        let krill = self.krill.remove(name).unwrap();
+        let public_port = krill.public_listen().1;
+        self.nginx.remove_backend(krill.repo_dir(), public_port);
+        krill.stop_and_cleanup();
     }
 
     /// Returns a reference to the specified Krill server.

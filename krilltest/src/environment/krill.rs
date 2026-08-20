@@ -5,7 +5,7 @@ use crate::utils::fmt::WriteOrPanic;
 
 use std::fs::{self, File};
 use std::net::IpAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process;
 
 use indoc::writedoc;
@@ -24,13 +24,13 @@ pub struct KrillServer {
     server_dir: PathBuf,
 
     /// The listen address for the server.
-    listen: (IpAddr, u16),
+    private_listen: (IpAddr, u16),
 
     /// The listen address for the nginx proxy in front of Krill.
     ///
     /// When Krill advertizes itself to the outside world, for example in a
     /// TAL file, it needs to mention this address, not its own address.
-    service_uri: String,
+    public_listen: (IpAddr, u16),
 
     /// Whether or not this Krill instance should act as a testbed.
     ///
@@ -46,15 +46,15 @@ impl KrillServer {
     pub fn new(
         krill_bin: PathBuf,
         server_dir: PathBuf,
-        listen: (IpAddr, u16),
-        service_uri: String,
+        private_listen: (IpAddr, u16),
+        public_listen: (IpAddr, u16),
         is_testbed: bool,
     ) -> Self {
         let mut res = Self {
             krill_bin,
             server_dir,
-            listen,
-            service_uri,
+            private_listen,
+            public_listen,
             is_testbed,
             process: None,
         };
@@ -68,36 +68,47 @@ impl KrillServer {
 /// # Paths and URLs
 impl KrillServer {
     /// Returns the path to the Krill config file.
-    fn config_path(&self) -> PathBuf {
+    pub fn config_path(&self) -> PathBuf {
         self.server_dir.join("krill.conf")
     }
 
-    // Returns the Krill TLS keys directory.
-    fn tls_keys_dir(&self) -> PathBuf {
+    /// Returns the Krill TLS keys directory.
+    pub fn tls_keys_dir(&self) -> PathBuf {
         self.server_dir.join("data/tls")
     }
 
-    // Returns the Krill repo directory.
-    fn repo_dir(&self) -> PathBuf {
+    /// Returns the Krill repo directory.
+    pub fn repo_dir(&self) -> PathBuf {
         self.server_dir.join("data/repo")
     }
 
-    // Returns the PID file path.
-    fn pid_file(&self) -> PathBuf {
+    /// Returns the PID file path.
+    pub fn pid_file(&self) -> PathBuf {
         self.server_dir.join("krill.pid")
     }
 
-    // Returns the UNIX socket path.
-    fn unix_socket(&self) -> PathBuf {
+    /// Returns the UNIX socket path.
+    pub fn unix_socket(&self) -> PathBuf {
         self.server_dir.join("krill.sock")
+    }
+
+    /// Returns the IP address and port on which Krill listens.
+    pub fn private_listen(&self) -> (IpAddr, u16) {
+        self.private_listen
+    }
+
+    /// Returns the public IP address and port on which Krill expects to be
+    /// reachable.
+    pub fn public_listen(&self) -> (IpAddr, u16) {
+        self.public_listen
     }
 
     /// Returns the base URL at which Krill can be contacted by clients.
     ///
     /// If Krill is fronted by a proxy like nginx this will point to the
     /// proxy rather than to Krill itself.
-    pub fn service_uri(&self) -> &str {
-        &self.service_uri
+    pub fn service_uri(&self) -> String {
+        format!("https://{}:{}/", self.public_listen.0, self.public_listen.1)
     }
 
     /// Returns the public URL at which the Trust Anchor Locator can be found.
@@ -116,6 +127,22 @@ impl KrillServer {
         )
         .unwrap()
     }
+
+    /// Stop the running Krill instance and cleanup any persisted state.
+    ///
+    /// Cleanup is not done as part of the Drop impl because on test failure
+    /// we may want to inspect the persisted data.
+    pub fn stop_and_cleanup(self) {
+        // We can't move server_dir out of self as struct fields must remain
+        // available to the Drop impl so clone it instead.
+        let server_dir = self.server_dir.clone();
+
+        // Stop any running Krill process by dropping the instance.
+        drop(self);
+
+        // Cleanup any persisted data.
+        fs::remove_dir_all(server_dir).unwrap();
+    }
 }
 
 /// # Setup
@@ -125,7 +152,7 @@ impl KrillServer {
         let mut conf = File::create(self.config_path()).unwrap();
 
         // Create string representations of configuration values.
-        let service_uri = &self.service_uri;
+        let service_uri = self.service_uri();
         let storage_uri =
             format!("memory://{}", hex::encode(rand::random::<[u8; 8]>()));
         // tls_keys_dir, repo_dir and pid_file must be set because we are
@@ -136,8 +163,8 @@ impl KrillServer {
         let repo_dir = self.repo_dir().display().to_string();
         let pid_file = self.pid_file().display().to_string();
         let unix_socket = self.unix_socket().display().to_string();
-        let addr = self.listen.0;
-        let port = self.listen.1;
+        let addr = self.private_listen.0;
+        let port = self.private_listen.1;
 
         let curr_user = nix::unistd::User::from_uid(nix::unistd::getuid())
             .unwrap()
@@ -179,9 +206,11 @@ impl KrillServer {
             // writing there is no rsync server in our test setup and RPs are
             // expected to use RRDP rather than rsync, i.e. these URIs have to
             // be specified but will not be used.
-            let rsync_jail = format!("rsync://{}/repo/", self.listen.0);
+            let rsync_jail =
+                format!("rsync://{}/repo/", self.private_listen.0);
             let rrdp_base_uri = format!("{}rrdp/", self.service_uri());
-            let ta_aia = format!("rsync://{}/ta/ta.cer", self.listen.0);
+            let ta_aia =
+                format!("rsync://{}/ta/ta.cer", self.private_listen.0);
             let ta_uri = format!("{}ta/ta.cer", self.service_uri());
 
             writedoc!(

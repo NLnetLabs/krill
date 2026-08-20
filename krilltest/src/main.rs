@@ -274,6 +274,12 @@ async fn functional_delegated_ca_import_plus_some_roas(
         ]
     );
 
+    //
+    // Cleanup
+    //
+    env.remove_krill("server2");
+    env.remove_krill("server1");
+
     Ok(Success)
 }
 
