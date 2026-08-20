@@ -44,7 +44,9 @@ macro_rules! store {
                 }
             }
 
-            pub fn open(&self, uri: &StorageUri) -> Result<Store, Error> {
+            pub fn open(
+                &self, uri: &StorageUri
+            ) -> Result<Store, StoreError> {
                 match &uri.0 {
                     $(
                         UriInner::$variant(inner) => {
@@ -71,9 +73,9 @@ macro_rules! store {
         }
 
         impl Store {
-            pub fn execute<F, T>(&mut self, op: F) -> Result<T, Error>
+            pub fn execute<F, T>(&mut self, op: F) -> Result<T, StoreError>
             where
-                F: for<'a> Fn(&mut Transaction<'a>) -> Result<T, Error>
+                F: for<'a> Fn(&mut Transaction<'a>) -> Result<T, StoreError>
             {
                 match &self.0 {
                     $(
@@ -126,8 +128,8 @@ macro_rules! store {
 
         impl<'a> Transaction<'a> {
             pub fn manipulate<S: ManipulationStatement>(
-                &mut self, params: S::Params
-            ) -> Result<u64, Error> {
+                &mut self, params: S::Params<'_>
+            ) -> Result<u64, StoreError> {
                 match &mut self.0 {
                     $(
                         TransactionInner::$variant(inner) => {
@@ -137,9 +139,9 @@ macro_rules! store {
                 }
             }
 
-            pub fn query<S: QueryStatement>(
-                &mut self, params: S::Params
-            ) -> Result<Vec<S::Row>, Error> {
+            pub fn query<'p, S: QueryStatement>(
+                &mut self, params: S::Params<'_>,
+            ) -> Result<Vec<S::Row>, StoreError> {
                 match &mut self.0 {
                     $(
                         TransactionInner::$variant(inner) => {
@@ -150,8 +152,8 @@ macro_rules! store {
             }
 
             pub fn query_one<S: QueryOneStatement>(
-                &mut self, params: S::Params
-            ) -> Result<S::Row, Error> {
+                &mut self, params: S::Params<'_>
+            ) -> Result<S::Row, StoreError> {
                 match &mut self.0 {
                     $(
                         TransactionInner::$variant(inner) => {
@@ -162,8 +164,8 @@ macro_rules! store {
             }
 
             pub fn query_opt<S: QueryOptStatement>(
-                &mut self, params: S::Params
-            ) -> Result<Option<S::Row>, Error> {
+                &mut self, params: S::Params<'_>
+            ) -> Result<Option<S::Row>, StoreError> {
                 match &mut self.0 {
                     $(
                         TransactionInner::$variant(inner) => {
@@ -175,10 +177,10 @@ macro_rules! store {
         }
 
 
-        //------------ Error -------------------------------------------------
+        //------------ StoreError --------------------------------------------
 
         #[derive(Debug)]
-        pub struct Error(ErrorInner);
+        pub struct StoreError(ErrorInner);
 
         #[derive(Debug)]
         enum ErrorInner {
@@ -189,20 +191,20 @@ macro_rules! store {
         }
 
         $(
-            impl From<super::$module::Error> for Error {
+            impl From<super::$module::Error> for StoreError {
                 fn from(src: super::$module::Error) -> Self {
                     Self(ErrorInner::$variant(src))
                 }
             }
         )*
 
-        impl From<StatementError> for Error {
+        impl From<StatementError> for StoreError {
             fn from(src: StatementError) -> Self {
                 Self(ErrorInner::Statement(src))
             }
         }
 
-        impl fmt::Display for Error {
+        impl fmt::Display for StoreError {
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 match &self.0 {
                     $(
@@ -213,7 +215,7 @@ macro_rules! store {
             }
         }
 
-        impl error::Error for Error { }
+        impl error::Error for StoreError { }
 
 
         //------------ ParseStorageUriError ----------------------------------

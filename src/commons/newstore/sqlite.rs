@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::path::PathBuf;
 use url::Url;
 use super::combined::{
-    Error as SuperError,
+    StoreError,
     Transaction as SuperTransaction
 };
 use super::statements::{
@@ -115,9 +115,9 @@ impl Store {
 
     pub fn execute<F, T>(
         &self, op: F
-    ) -> Result<T, SuperError>
+    ) -> Result<T, StoreError>
     where
-        F: for<'a> Fn(&mut SuperTransaction<'a>) -> Result<T, SuperError>
+        F: for<'a> Fn(&mut SuperTransaction<'a>) -> Result<T, StoreError>
     {
         let mut client = self.get_client()?;
         let res = client.execute(op);
@@ -161,9 +161,9 @@ impl Client {
         Ok(Client { connection })
     }
 
-    fn execute<F, T>(&mut self, op: F) -> Result<T, SuperError>
+    fn execute<F, T>(&mut self, op: F) -> Result<T, StoreError>
     where
-        F: for<'a> Fn(&mut SuperTransaction<'a>) -> Result<T, SuperError>
+        F: for<'a> Fn(&mut SuperTransaction<'a>) -> Result<T, StoreError>
     {
         let mut transaction = self.transaction()?.into();
         let res = op(&mut transaction)?;
@@ -191,8 +191,8 @@ pub struct Transaction<'a> {
 
 impl<'a> Transaction<'a> {
     pub fn manipulate<S: ManipulationStatement>(
-        &mut self, params: S::Params
-    ) -> Result<u64, SuperError> {
+        &mut self, params: S::Params<'_>
+    ) -> Result<u64, StoreError> {
         let mut statement = self.db.prepare_cached(S::SQLITE_QUERY)?;
         Ok(statement.execute(params).map(|res| {
             res.try_into().unwrap_or(u64::MAX)
@@ -200,8 +200,8 @@ impl<'a> Transaction<'a> {
     }
 
     pub fn query<S: QueryStatement>(
-        &mut self, params: S::Params
-    ) -> Result<Vec<S::Row>, SuperError> {
+        &mut self, params: S::Params<'_>
+    ) -> Result<Vec<S::Row>, StoreError> {
         let mut statement = self.db.prepare_cached(S::SQLITE_QUERY)?;
         statement.query_map(
             params,
@@ -219,15 +219,15 @@ impl<'a> Transaction<'a> {
     }
 
     pub fn query_one<S: QueryOneStatement>(
-        &mut self, params: S::Params
-    ) -> Result<S::Row, SuperError> {
+        &mut self, params: S::Params<'_>
+    ) -> Result<S::Row, StoreError> {
         let mut statement = self.db.prepare_cached(S::SQLITE_QUERY)?;
         Ok(statement.query_one(params, |row| Ok(S::sqlite_row(row)))??)
     }
 
     pub fn query_opt<S: QueryOptStatement>(
-        &mut self, params: S::Params
-    ) -> Result<Option<S::Row>, SuperError> {
+        &mut self, params: S::Params<'_>
+    ) -> Result<Option<S::Row>, StoreError> {
         let mut statement = self.db.prepare_cached(S::SQLITE_QUERY)?;
         match statement.query_one(params, |row| Ok(S::sqlite_row(row))) {
             Ok(Ok(some)) => Ok(Some(some)),

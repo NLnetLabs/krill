@@ -1,16 +1,14 @@
-#![allow(unused)]
-
 use std::{error, fmt, fs, io};
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 use url::Url;
 use super::combined::{
-    Error as SuperError,
+    StoreError,
     Transaction as SuperTransaction
 };
 use super::statements::{
-    ManipulationStatement, Params, QueryOneStatement, QueryOptStatement,
-    QueryStatement, Statement
+    ManipulationStatement, QueryOneStatement, QueryOptStatement,
+    QueryStatement,
 };
 
 
@@ -60,7 +58,7 @@ impl Uri {
 pub struct System(());
 
 impl System {
-    pub fn new(tokio: &tokio::runtime::Handle) -> Self {
+    pub fn new(_tokio: &tokio::runtime::Handle) -> Self {
         Self(())
     }
 
@@ -108,9 +106,9 @@ impl Store {
 
     pub fn execute<F, T>(
         &self, op: F
-    ) -> Result<T, SuperError>
+    ) -> Result<T, StoreError>
     where
-        F: for<'a> Fn(&mut SuperTransaction<'a>) -> Result<T, SuperError>
+        F: for<'a> Fn(&mut SuperTransaction<'a>) -> Result<T, StoreError>
     {
         op(&mut (Transaction::new(self).into()))
     }
@@ -128,26 +126,26 @@ impl<'a> Transaction<'a> {
     }
 
     pub fn manipulate<S: ManipulationStatement>(
-        &mut self, params: S::Params
-    ) -> Result<u64, SuperError> {
+        &mut self, params: S::Params<'_>
+    ) -> Result<u64, StoreError> {
         Ok(S::run_disk(params, &mut DiskStore(self.0))?)
     }
 
     pub fn query<S: QueryStatement>(
-        &mut self, params: S::Params
-    ) -> Result<Vec<S::Row>, SuperError> {
+        &mut self, params: S::Params<'_>
+    ) -> Result<Vec<S::Row>, StoreError> {
         Ok(S::run_disk(params, &mut DiskStore(self.0))?)
     }
 
     pub fn query_one<S: QueryOneStatement>(
-        &mut self, params: S::Params
-    ) -> Result<S::Row, SuperError> {
+        &mut self, params: S::Params<'_>
+    ) -> Result<S::Row, StoreError> {
         Ok(S::run_disk(params, &mut DiskStore(self.0))?)
     }
 
     pub fn query_opt<S: QueryOptStatement>(
-        &mut self, params: S::Params
-    ) -> Result<Option<S::Row>, SuperError> {
+        &mut self, params: S::Params<'_>
+    ) -> Result<Option<S::Row>, StoreError> {
         Ok(S::run_disk(params, &mut DiskStore(self.0))?)
     }
 }
@@ -156,6 +154,16 @@ impl<'a> Transaction<'a> {
 //------------ DiskStore -----------------------------------------------------
 
 pub struct DiskStore<'a>(&'a Store);
+
+impl<'a> DiskStore<'a> {
+    pub fn root(&self) -> &Path {
+        &self.0.root
+    }
+
+    pub fn tmp(&self) -> &Path {
+        &self.0.tmp
+    }
+}
 
 
 
@@ -171,11 +179,11 @@ pub enum Error {
 }
 
 impl Error {
-    fn io(context: impl Into<Cow<'static, str>>, err: io::Error) -> Self {
+    pub fn io(context: impl Into<Cow<'static, str>>, err: io::Error) -> Self {
         Error::Io { context: context.into(), err }
     }
 
-    fn other(info: impl Into<Box<dyn error::Error>>) -> Self {
+    pub fn other(info: impl Into<Box<dyn error::Error>>) -> Self {
         Error::Other(info.into())
     }
 }

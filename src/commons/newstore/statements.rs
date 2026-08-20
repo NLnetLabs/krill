@@ -1,8 +1,8 @@
 //! Traits for implementing statements on different backends.
 
 use std::{error, fmt};
-use std::path::PathBuf;
 use super::disk::{DiskStore, Error as DiskError};
+use super::combined::StoreError;
 
 
 //============ Statement Traits ==============================================
@@ -22,7 +22,7 @@ use super::disk::{DiskStore, Error as DiskError};
 /// For the file backend, it provides a way to convert the parameter list
 /// into a file system path.
 pub trait Statement: 'static {
-    type Params: Params;
+    type Params<'a>: Params<'a>;
 
     /// The SQL query string for the PostgreSQL backend.
     ///
@@ -33,12 +33,6 @@ pub trait Statement: 'static {
     ///
     /// Use the placeholders `?1`, `?2`, and so on for the parameters.
     const SQLITE_QUERY: &'static str;
-
-    /// Returns the path for the disk backend for this query.
-    ///
-    /// The returned path must be below `base_path`. Typically, you would
-    /// `push` path segments to `base_path` and then return it.
-    fn file_path(base_path: PathBuf) -> PathBuf;
 }
 
 
@@ -52,8 +46,8 @@ pub trait Statement: 'static {
 /// When executed on the file backend, the method [`file_execute`] will be
 /// run with the file path determined from the parameters.
 pub trait ManipulationStatement: Statement {
-    fn run_disk(
-        params: Self::Params, store: &mut DiskStore
+    fn run_disk<'a>(
+        params: Self::Params<'a>, store: &mut DiskStore
     ) -> Result<u64, DiskError>;
 }
 
@@ -83,8 +77,8 @@ pub trait QueryStatement: Statement {
         row: &rusqlite::Row
     ) -> Result<Option<Self::Row>, StatementError>;
 
-    fn run_disk(
-        params: Self::Params, store: &mut DiskStore
+    fn run_disk<'a>(
+        params: Self::Params<'a>, store: &mut DiskStore
     ) -> Result<Vec<Self::Row>, DiskError>;
 }
 
@@ -109,8 +103,8 @@ pub trait QueryOneStatement: Statement {
         row: &rusqlite::Row
     ) -> Result<Self::Row, StatementError>;
 
-    fn run_disk(
-        params: Self::Params, store: &mut DiskStore
+    fn run_disk<'a>(
+        params: Self::Params<'a>, store: &mut DiskStore
     ) -> Result<Self::Row, DiskError>;
 }
 
@@ -135,8 +129,8 @@ pub trait QueryOptStatement: Statement {
         row: &rusqlite::Row
     ) -> Result<Self::Row, StatementError>;
 
-    fn run_disk(
-        params: Self::Params, store: &mut DiskStore
+    fn run_disk<'a>(
+        params: Self::Params<'a>, store: &mut DiskStore
     ) -> Result<Option<Self::Row>, DiskError>;
 }
 
@@ -159,7 +153,7 @@ pub trait QueryOptStatement: Statement {
 pub(crate) trait Schema {
     async fn psql_init(
         transaction: &mut tokio_postgres::Transaction
-    ) -> Result<(), super::Error>;
+    ) -> Result<(), StoreError>;
 }
 
 
@@ -175,33 +169,35 @@ pub(crate) trait Schema {
 /// As long as you just stick to tuples of types supported by both
 /// [tokio_postgres] and [rusqlite], you don’t need to worry about this
 /// trait.
-pub trait Params: rusqlite::Params {
+pub trait Params<'a>: rusqlite::Params {
     /// The type for [tokio_postgres].
     ///
     /// We are using arrays of trait objects. Ideally we’d just provide the
     /// array length as a associated constant, but we are not allowed to use
     /// that in a return type definition, so we need to specify the actual
     /// type as an associated type.
-    type PsqlParams<'a>:
-        AsRef<[&'a (dyn tokio_postgres::types::ToSql + Sync)]>
-        where Self: 'a;
+    type PsqlParams<'p>:
+        AsRef<[&'p (dyn tokio_postgres::types::ToSql + Sync)]>
+        where Self: 'p;
 
     /// Returns the [tokio_postgres] parameters.
     fn as_psql(&self) -> Self::PsqlParams<'_>;
 }
 
-impl<A: ToSql, B: ToSql> Params for (A, B) {
-    type PsqlParams<'a> = [&'a (dyn tokio_postgres::types::ToSql + Sync); 2]
-        where A: 'a, B: 'a;
+impl<'a, A: ToSql + 'a, B: ToSql + 'a> Params<'a> for (A, B) {
+    type PsqlParams<'p> = [&'p (dyn tokio_postgres::types::ToSql + Sync); 2]
+        where A: 'p, B: 'p;
 
     fn as_psql(&self) -> Self::PsqlParams<'_> {
         [&self.0, &self.1]
     }
 }
 
-impl<A: ToSql, B: ToSql, C: ToSql> Params for (A, B, C) {
-    type PsqlParams<'a> = [&'a (dyn tokio_postgres::types::ToSql + Sync); 3]
-        where A: 'a, B: 'a, C: 'a;
+impl<'a, A, B, C> Params<'a> for (A, B, C)
+where A: ToSql + 'a, B: ToSql + 'a, C: ToSql + 'a
+{
+    type PsqlParams<'p> = [&'p (dyn tokio_postgres::types::ToSql + Sync); 3]
+        where A: 'p, B: 'p, C: 'p;
 
     fn as_psql(&self) -> Self::PsqlParams<'_> {
         [&self.0, &self.1, &self.2]

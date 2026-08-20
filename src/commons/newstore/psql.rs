@@ -8,7 +8,7 @@ use futures_util::TryStreamExt;
 use tokio::runtime;
 use url::Url;
 use super::combined::{
-    Error as SuperError,
+    StoreError,
     Transaction as SuperTransaction
 };
 use super::statements::{
@@ -107,9 +107,9 @@ impl Store {
 
     pub fn execute<F, T>(
         &self, op: F
-    ) -> Result<T, SuperError>
+    ) -> Result<T, StoreError>
     where
-        F: for<'a> Fn(&mut SuperTransaction<'a>) -> Result<T, SuperError>
+        F: for<'a> Fn(&mut SuperTransaction<'a>) -> Result<T, StoreError>
     {
         let mut client = self.get_client()?;
         let res = client.execute(op);
@@ -168,9 +168,9 @@ impl Client {
         self.client.is_closed()
     }
 
-    fn execute<F, T>(&mut self, op: F) -> Result<T, SuperError>
+    fn execute<F, T>(&mut self, op: F) -> Result<T, StoreError>
     where
-        F: for<'a> Fn(&mut SuperTransaction<'a>) -> Result<T, SuperError>
+        F: for<'a> Fn(&mut SuperTransaction<'a>) -> Result<T, StoreError>
     {
         let mut transaction = self.transaction()?.into();
         let res = op(&mut transaction)?;
@@ -203,8 +203,8 @@ pub struct Transaction<'a> {
 
 impl<'a> Transaction<'a> {
     pub fn manipulate<S: ManipulationStatement>(
-        &mut self, params: S::Params
-    ) -> Result<u64, SuperError> {
+        &mut self, params: S::Params<'_>
+    ) -> Result<u64, StoreError> {
         self.tokio.block_on(async {
             let statement = Self::get_statement::<S>(
                 &self.db, self.statements
@@ -216,8 +216,8 @@ impl<'a> Transaction<'a> {
     }
 
     pub fn query<S: QueryStatement>(
-        &mut self, params: S::Params
-    ) -> Result<Vec<S::Row>, SuperError> {
+        &mut self, params: S::Params<'_>
+    ) -> Result<Vec<S::Row>, StoreError> {
         self.tokio.block_on(async {
             let statement = Self::get_statement::<S>(
                 &self.db, self.statements
@@ -225,7 +225,7 @@ impl<'a> Transaction<'a> {
             self.db.query_raw(
                 statement, params.as_psql().as_ref().iter().copied()
             ).await?.map_err(
-                SuperError::from
+                StoreError::from
             ).try_filter_map(async move |row| {
                 Ok(S::psql_row(row)?)
             }).try_collect::<Vec<_>>().await
@@ -233,30 +233,30 @@ impl<'a> Transaction<'a> {
     }
 
     pub fn query_one<S: QueryOneStatement>(
-        &mut self, params: S::Params
-    ) -> Result<S::Row, SuperError> {
+        &mut self, params: S::Params<'_>
+    ) -> Result<S::Row, StoreError> {
         self.tokio.block_on(async {
             let statement = Self::get_statement::<S>(
                 &self.db, self.statements
             ).await?;
             self.db.query_one(
                 statement, params.as_psql().as_ref()
-            ).await.map_err(SuperError::from).and_then(|row| {
+            ).await.map_err(StoreError::from).and_then(|row| {
                 Ok(S::psql_row(row)?)
             })
         })
     }
 
     pub fn query_opt<S: QueryOptStatement>(
-        &mut self, params: S::Params
-    ) -> Result<Option<S::Row>, SuperError> {
+        &mut self, params: S::Params<'_>
+    ) -> Result<Option<S::Row>, StoreError> {
         self.tokio.block_on(async {
             let statement = Self::get_statement::<S>(
                 &self.db, self.statements
             ).await?;
             self.db.query_opt(
                 statement, params.as_psql().as_ref()
-            ).await.map_err(SuperError::from).and_then(|opt_row| {
+            ).await.map_err(StoreError::from).and_then(|opt_row| {
                 match opt_row {
                     Some(row) => Ok(Some(S::psql_row(row)?)),
                     None => Ok(None)
