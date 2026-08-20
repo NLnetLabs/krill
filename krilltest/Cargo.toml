@@ -13,7 +13,7 @@ clap       = { version = "*", features = ["cargo", "derive"]}
 hex        = "0.4.3"
 indoc      = "2.0.7"
 krill      = { path = ".." }
-nix        = { version = "*", features = ["signal"] }
+nix        = { version = "*", features = ["signal", "time"] }
 rand       = "0.10.2"
 rcgen      = "0.14"
 reqwest    = { version = "*", features = ["blocking"] }

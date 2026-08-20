@@ -11,7 +11,9 @@ use std::net::IpAddr;
 use std::path::Path;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::Mutex;
 use std::time::Duration;
+use std::time::SystemTime;
 
 use clap::Parser;
 use clap::crate_version;
@@ -24,6 +26,9 @@ use krill::api::roa::RoaConfigurationUpdates;
 use krill::api::status::Success;
 use krill::cli::client::KrillClient;
 use krill::commons::httpclient::Error;
+use nix::libc::time_t;
+use nix::sys::time::TimeSpec;
+use nix::time::ClockId;
 use rpki::ca::idexchange::CaHandle;
 use rpki::ca::provisioning::ResourceClassName;
 use rpki::repository::resources::ResourceSet;
@@ -35,6 +40,8 @@ use tempfile::TempDir;
 use tokio::time::sleep;
 
 const KRILL_TAL_NAME: &str = "Krill";
+
+static CLOCK_CHANGES_ALLOWED: Mutex<bool> = Mutex::new(false);
 
 //------------ main ----------------------------------------------------------
 
@@ -48,6 +55,11 @@ async fn main() {
             (tempdir.path().to_path_buf(), Some(tempdir))
         }
     };
+
+    if args.allow_system_clock_changes {
+        eprintln!("ALLOWING SYSTEM CLOCK CHANGES");
+        *CLOCK_CHANGES_ALLOWED.lock().unwrap() = true;
+    }
 
     // About TCP port allocation:
     //
@@ -71,9 +83,25 @@ async fn main() {
         (args.listen_addr, (args.tcp_port_min..=tcp_port_max)),
     );
 
+    set_clock(946684800);
+
     functional_delegated_ca_import_plus_some_roas(&mut env)
         .await
         .unwrap();
+}
+
+fn set_clock(seconds_since_epoch: time_t) {
+    if *CLOCK_CHANGES_ALLOWED.lock().unwrap() {
+        nix::time::clock_settime(
+            ClockId::CLOCK_REALTIME,
+            TimeSpec::new(seconds_since_epoch, 0),
+        )
+        .unwrap();
+        println!(
+            "NOTE: Changed system clock to {seconds_since_epoch}. System time after: {:?}",
+            SystemTime::now()
+        );
+    }
 }
 
 async fn functional_delegated_ca_import_plus_some_roas(
@@ -155,6 +183,8 @@ async fn functional_delegated_ca_import_plus_some_roas(
         )
         .await?;
 
+    set_clock(1724101695);
+
     eprintln!(">>>> Remove the child from the original parent.");
     server1
         .child_delete(&parent_1, &child.convert())
@@ -206,6 +236,8 @@ async fn functional_delegated_ca_import_plus_some_roas(
     //
     // End of test operations against Krill servers.
     //
+
+    set_clock(1787175275);
 
     // Fetch the Krill TAL and install it in the Routinator extra tals
     // directory.
@@ -477,4 +509,10 @@ struct Args {
     /// Default: No upper limit.
     #[arg(long)]
     tcp_port_max: Option<u16>,
+
+    /// Allow tests to change the system clock.
+    ///
+    /// WARNING: Do not do this on your own host, only inside a VM.
+    #[arg(long, default_value_t = false)]
+    allow_system_clock_changes: bool,
 }
