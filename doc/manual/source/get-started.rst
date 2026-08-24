@@ -148,9 +148,9 @@ use the UI:
 
     Copy the child request XML or download the file
 
-Your RIR or NIR will provide you with a parent response XML. You can use the
-CLI subcommand :ref:`krillc parents add<cmd_krillc_parents_add>` for this, or
-you can simply paste or upload it using the UI:
+Once your RIR or NIR has provided you with a parent response XML, use the
+CLI subcommand :ref:`krillc parents add<cmd_krillc_parents_add>` to give it to
+Krill, or you can simply paste or upload it using the UI:
 
 .. figure:: img/krill-ui-parent-response.png
     :align: center
