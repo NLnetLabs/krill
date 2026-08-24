@@ -184,6 +184,15 @@ pub trait Params<'a>: rusqlite::Params {
     fn as_psql(&self) -> Self::PsqlParams<'_>;
 }
 
+impl<'a, A: ToSql + 'a> Params<'a> for (A,) {
+    type PsqlParams<'p> = [&'p (dyn tokio_postgres::types::ToSql + Sync); 1]
+        where A: 'p;
+
+    fn as_psql(&self) -> Self::PsqlParams<'_> {
+        [&self.0]
+    }
+}
+
 impl<'a, A: ToSql + 'a, B: ToSql + 'a> Params<'a> for (A, B) {
     type PsqlParams<'p> = [&'p (dyn tokio_postgres::types::ToSql + Sync); 2]
         where A: 'p, B: 'p;
@@ -201,6 +210,30 @@ where A: ToSql + 'a, B: ToSql + 'a, C: ToSql + 'a
 
     fn as_psql(&self) -> Self::PsqlParams<'_> {
         [&self.0, &self.1, &self.2]
+    }
+}
+
+impl<'a, A, B, C, D> Params<'a> for (A, B, C, D)
+where A: ToSql + 'a, B: ToSql + 'a, C: ToSql + 'a, D: ToSql + 'a
+{
+    type PsqlParams<'p> = [&'p (dyn tokio_postgres::types::ToSql + Sync); 4]
+        where A: 'p, B: 'p, C: 'p, D: 'p;
+
+    fn as_psql(&self) -> Self::PsqlParams<'_> {
+        [&self.0, &self.1, &self.2, &self.3]
+    }
+}
+
+impl<'a, A, B, C, D, E> Params<'a> for (A, B, C, D, E)
+where
+    A: ToSql + 'a, B: ToSql + 'a, C: ToSql + 'a, D: ToSql + 'a,
+    E: ToSql + 'a,
+{
+    type PsqlParams<'p> = [&'p (dyn tokio_postgres::types::ToSql + Sync); 5]
+        where A: 'p, B: 'p, C: 'p, D: 'p, E: 'p;
+
+    fn as_psql(&self) -> Self::PsqlParams<'_> {
+        [&self.0, &self.1, &self.2, &self.3, &self.4]
     }
 }
 

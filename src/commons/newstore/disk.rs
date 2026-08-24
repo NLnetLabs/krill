@@ -1,6 +1,7 @@
 use std::{error, fmt, fs, io};
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
+use tempfile::NamedTempFile;
 use url::Url;
 use super::combined::{
     StoreError,
@@ -162,6 +163,48 @@ impl<'a> DiskStore<'a> {
 
     pub fn tmp(&self) -> &Path {
         &self.0.tmp
+    }
+
+    pub fn tempfile(&self) -> Result<NamedTempFile, Error> {
+        NamedTempFile::new_in(self.tmp()).map_err(|err| {
+            Error::io(
+                format!(
+                    "failed to create temporary file in {}",
+                    self.tmp().display()
+                ),
+                err
+            )
+        })
+    }
+
+    pub fn create_dirs(&self, path: Option<&Path>) -> Result<(), Error> {
+        if let Some(path) = path {
+            fs::create_dir_all(path).map_err(|err| {
+                Error::io(
+                    format!(
+                        "Failed to create directory '{}'", path.display()
+                    ),
+                    err
+                )
+            })?;
+        }
+        Ok(())
+    }
+
+    pub fn remove_empty_dirs(
+        &self, path: Option<&Path>
+    ) -> Result<(), Error> {
+        let Some(mut path) = path else { return Ok(()) };
+        if !path.starts_with(&self.0.root) {
+            return Ok(())
+        }
+        while fs::remove_dir(path).is_ok() {
+            path = match path.parent() {
+                Some(path) => path,
+                None => break,
+            }
+        }
+        Ok(())
     }
 }
 

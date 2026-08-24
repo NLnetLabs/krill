@@ -188,6 +188,7 @@ macro_rules! store {
                 $variant(super::$module::Error),
             )*
             Statement(StatementError),
+            Other(Box<dyn error::Error>),
         }
 
         $(
@@ -197,6 +198,12 @@ macro_rules! store {
                 }
             }
         )*
+
+        impl StoreError {
+            pub fn other(src: impl Into<Box<dyn error::Error>>) -> Self {
+                Self(ErrorInner::Other(src.into()))
+            }
+        }
 
         impl From<StatementError> for StoreError {
             fn from(src: StatementError) -> Self {
@@ -211,6 +218,7 @@ macro_rules! store {
                         ErrorInner::$variant(inner) => inner.fmt(f),
                     )*
                     ErrorInner::Statement(inner) => inner.fmt(f),
+                    ErrorInner::Other(inner) => inner.fmt(f),
                 }
             }
         }
