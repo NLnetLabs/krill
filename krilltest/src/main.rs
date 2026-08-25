@@ -10,6 +10,7 @@
 use krilltest::environment::Environment;
 
 use std::io::Read;
+use std::io::Write;
 use std::net::IpAddr;
 use std::path::Path;
 use std::path::PathBuf;
@@ -90,7 +91,17 @@ async fn main() {
 
     set_clock(946684800);
 
-    functional_delegated_ca_import_plus_some_roas(&mut env)
+    test_functional_delegated_ca_import_plus_some_roas(&mut env)
+        .await
+        .unwrap();
+
+    test_many_embedded_cas(&mut env, 1000).await.unwrap();
+
+    test_many_delegated_cas_in_one_krill_instance(&mut env, 1000)
+        .await
+        .unwrap();
+
+    test_many_delegated_cas_in_own_krill_instances(&mut env, 500)
         .await
         .unwrap();
 }
@@ -109,7 +120,7 @@ fn set_clock(seconds_since_epoch: time_t) {
     }
 }
 
-async fn functional_delegated_ca_import_plus_some_roas(
+async fn test_functional_delegated_ca_import_plus_some_roas(
     env: &mut Environment,
 ) -> Result<Success, Error> {
     // Define some CA names to work with.
@@ -287,6 +298,694 @@ async fn functional_delegated_ca_import_plus_some_roas(
 
     Ok(Success)
 }
+
+/// Create num_cas embeddded CAs in a single Krill instance.
+async fn test_many_embedded_cas(
+    env: &mut Environment,
+    num_cas: usize,
+) -> Result<Success, Error> {
+    // Define some CA names to work with.
+    let testbed = CaHandle::from_str("testbed").unwrap();
+
+    // Spawn a Krill server.
+    env.add_krill("krill").await;
+
+    // Determine the URI to use to connect a client to the server.
+    let krill_server_uri = env.krill("krill").server_api_uri();
+
+    //
+    // Start of test operations against the Krill servers.
+    //
+
+    // Why not use Rayon?
+    // ==================
+    // Rayon only supports running sync operations, not async operations.
+    //
+    // Why use threads rather than async tasks?
+    // ========================================
+    // KrillClient internally passes around an `impl IntoIterator` for all API
+    // paths, and it is `!Send` meaning it can't be used across an `.await`
+    // point when using a multi-threaded Tokio runtime.
+    let num_threads = std::thread::available_parallelism().unwrap().get() / 2;
+    let num_cas_per_thread = num_cas / num_threads;
+    let mut remaining = num_cas % num_threads;
+
+    println!(
+        "Distributing CA creation over {num_threads} threads with {num_cas_per_thread} per thread and one additional CA each for {remaining} of the threads."
+    );
+
+    let mut first = 0;
+    let mut thread_handles = vec![];
+    for _ in 0..num_threads {
+        // If there are more CAs to do than can be spread evenly over the
+        // available threads, give as many threads as possible one extra CA
+        // to do.
+        let mut last = first + num_cas_per_thread;
+        if remaining > 0 {
+            last += 1;
+            remaining -= 1;
+        }
+
+        let testbed = testbed.clone();
+        let krill_server_uri = krill_server_uri.clone();
+        let thread_handle = std::thread::spawn(move || {
+            // Use a single threaded runtime as then we can construct
+            // KrillClient once and use it across await points. We use threads
+            // to achieve concurrency instead of a multi-threaded async
+            // executor. See comment above about KrillClient for more info.
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(async {
+                    let krill =
+                        KrillClient::new(krill_server_uri, None).unwrap();
+                    for i in first..last {
+                        create_ca(testbed.clone(), &krill, i).await;
+                    }
+                    // Wait for the ROAs to be published
+                    eprintln!("Waiting for ROAs to be published...");
+                    for i in first..last {
+                        wait_for_roas(&krill, i).await;
+                    }
+                })
+        });
+
+        first = last;
+        thread_handles.push(thread_handle);
+    }
+
+    // Wait for threads to complete.
+    for handle in thread_handles {
+        handle.join().unwrap();
+    }
+
+    //
+    // End of test operations against Krill servers.
+    //
+
+    // Fetch the Krill TAL and install it in the Routinator extra tals
+    // directory.
+    let tls_cert = load_tls_cert(&env.nginx().tls_cert_path());
+    let tal_bytes =
+        fetch_url(env.krill("krill").tal_url(), tls_cert, 5).await;
+
+    // Configure Routinator to use the Krill TAL
+    env.routinator().install_tal(KRILL_TAL_NAME, &tal_bytes);
+
+    // Do a Routinator validation run and fetch the available VRPs.
+    //
+    // We expect something like this:
+    // {
+    //   "metadata": {
+    //     "generated": 1787123416,
+    //     "generatedTime": "2026-08-19T07:10:16Z"
+    //   },
+    //   "roas": [
+    //     { "asn": "AS64496", "prefix": "10.0.0.0/16", "maxLength": 16, "ta": "Krill" },
+    //     { "asn": "AS64497", "prefix": "10.0.0.0/16", "maxLength": 16, "ta": "Krill" },
+    //     { "asn": "AS64496", "prefix": "10.1.0.0/24", "maxLength": 24, "ta": "Krill" }
+    //   ]
+    // }
+    std::io::stdout()
+        .write_all(&env.routinator().vrps())
+        .unwrap();
+
+    // TODO
+    // assert_eq!(
+    //     report.roas,
+    //     [
+    //         route_resource_set_10_0_0_0_def_1.into(),
+    //         route_resource_set_10_0_0_0_def_2.into(),
+    //         route_resource_set_10_1_0_0_def_1.into(),
+    //     ]
+    // );
+
+    //
+    // Cleanup
+    //
+    env.remove_krill("krill");
+
+    Ok(Success)
+}
+
+async fn wait_for_roas(krill: &KrillClient, i: usize) {
+    let child = CaHandle::from_str(&format!("child{i}")).unwrap();
+    let major = i / 256;
+    let minor = i % 256;
+    let ipv4 = format!("{major}.{minor}.0.0/16");
+    // Define some ROAs to work with.
+    let route_resource_set_10_0_0_0_def_1 =
+        RoaConfiguration::from_str(&format!("{ipv4}-16 => 64496")).unwrap();
+    let route_resource_set_10_0_0_0_def_2 =
+        RoaConfiguration::from_str(&format!("{ipv4}-16 => 64497")).unwrap();
+    assert!(
+        wait_for_objects(
+            &krill,
+            &child,
+            &[
+                &route_resource_set_10_0_0_0_def_1,
+                &route_resource_set_10_0_0_0_def_2,
+            ]
+        )
+        .await
+        .unwrap()
+    );
+}
+
+async fn test_many_delegated_cas_in_own_krill_instances(
+    env: &mut Environment,
+    num_cas: usize,
+) -> Result<Success, Error> {
+    // Define some CA names to work with.
+    let testbed = CaHandle::from_str("testbed").unwrap();
+    let parent = CaHandle::from_str("parent").unwrap();
+
+    // Define some resource sets to work with.
+    let parent_res = ResourceSet::all();
+
+    // Spawn many Krill servers, one running as a parent that offers a
+    // publication service, like an RIR, and the rest as operator instance
+    // that will register with the parent and publish into it.
+    env.add_krill("rir").await;
+
+    // Connect a client to the RIR Krill server.
+    let rir_server_uri = {
+        let rir_krill = env.krill("rir").make_client();
+
+        add_ca_under_parent(&rir_krill, &testbed, &parent, &parent_res, None)
+            .await?;
+
+        // Determine the URI to use to connect a client to the server.
+        env.krill("rir").server_api_uri()
+    };
+
+    eprintln!("Waiting for Krill instances to start..");
+    let mut operator_server_uris = vec![];
+    for i in 0..num_cas {
+        let name = format!("operator{i}");
+        env.add_krill_ext(name.clone(), false).await;
+        let krill = env.krill(&name);
+        operator_server_uris.push(krill.server_api_uri());
+    }
+
+    eprintln!("Reconfigure nginx");
+    env.nginx_mut().reconfigure();
+
+    eprintln!("Wait until the Krill instances are healthy..");
+
+    for i in 0..num_cas {
+        let name = format!("operator{i}");
+        let krillc = env.krill(&name).make_client();
+        let mut tries_left = 100;
+        while tries_left > 0 && !krillc.health().await.is_ok() {
+            println!(
+                "Waiting for Krill instance '{name}' to finish starting up..."
+            );
+            sleep(Duration::from_millis(100)).await;
+            tries_left -= 1;
+        }
+    }
+
+    eprintln!("Krill instances are ready.");
+
+    //
+    // Start of test operations against the Krill servers.
+    //
+
+    let num_threads = std::thread::available_parallelism().unwrap().get() / 2;
+    let num_cas_per_thread = num_cas / num_threads;
+    let mut remaining = num_cas % num_threads;
+
+    println!(
+        "Distributing CA creation over {num_threads} threads with {num_cas_per_thread} per thread and one additional CA each for {remaining} of the threads."
+    );
+
+    let mut first = 0;
+    let mut thread_handles = vec![];
+    for _ in 0..num_threads {
+        // If there are more CAs to do than can be spread evenly over the
+        // available threads, give as many threads as possible one extra CA
+        // to do.
+        let mut last = first + num_cas_per_thread;
+        if remaining > 0 {
+            last += 1;
+            remaining -= 1;
+        }
+
+        let rir_server_uri = rir_server_uri.clone();
+        let operator_server_uris = operator_server_uris.clone();
+        let parent = parent.clone();
+        let thread_handle = std::thread::spawn(move || {
+            // Use a single threaded runtime as then we can construct
+            // KrillClient once and use it across await points. We use threads
+            // to achieve concurrency instead of a multi-threaded async
+            // executor. See comment above about KrillClient for more info.
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(async {
+                    let rir_krill =
+                        KrillClient::new(rir_server_uri, None).unwrap();
+
+                    eprintln!(">>>> Add parent under testbed in server 1.");
+                    for i in first..last {
+                        let major = i / 256;
+                        let minor = i % 256;
+                        let asn = format!("AS{i}");
+                        let ipv4 = format!("{major}.{minor}.0.0/16");
+                        let child_res = ResourceSet::from_strs(&asn, &ipv4, "").unwrap();
+                        let route_resource_set_10_0_0_0_def_1 =
+                            RoaConfiguration::from_str(&format!("{ipv4}-16 => 64496")).unwrap();
+                        let route_resource_set_10_0_0_0_def_2 =
+                            RoaConfiguration::from_str(&format!("{ipv4}-16 => 64497")).unwrap();
+
+                        let operator_server_uri = operator_server_uris[i].clone();
+                        let operator_krill =
+                            KrillClient::new(operator_server_uri, None).unwrap();
+
+                        eprintln!(">>>> Add child{i} in server 2");
+                        let child = CaHandle::from_str(&format!("child{i}")).unwrap();
+                        // krillc repo request
+                        operator_krill.ca_add(child.clone()).await.unwrap();
+                        eprintln!(">>>> Configure the server 2 child{i} to publish to server 1");
+                        let request = operator_krill.repo_request(&child).await.unwrap();
+                        // "supply it to your Publication Server". "Your publication server
+                        // provider will give you a repository response XML".
+                        let response = rir_krill.publishers_add(request).await.unwrap();
+                        // krillc repo configure
+                        let mut tries_left = 100;
+                        let mut last_res = None;
+                        while tries_left > 0 {
+                            let res = operator_krill.repo_update(&child, response.clone()).await;
+                            if res.is_ok() {
+                                break;
+                            }
+                            last_res = Some(res);
+                            tries_left -= 1;
+                            tokio::time::sleep(Duration::from_millis(100)).await;
+                        }
+                        if tries_left <= 0 {
+                            panic!("repo_update() failed: {}", last_res.unwrap().unwrap_err());
+                        }
+
+                        eprintln!(">>>> Configure a server 1 parent for our server 2 child{i}");
+                        // krillc parents request
+                        let child_request = operator_krill.child_request(&child).await.unwrap();
+                        // "present your CA's RFC 8183 Child Request XML file to you parent"
+                        // "Your RIR or NIR will provide you with a parent response XML"
+                        let id_cert = child_request.validate().unwrap();
+                        let response = rir_krill
+                            .child_add(&parent, child.convert(), child_res.clone(), id_cert)
+                            .await.unwrap();
+                        // Supply the parent response to the child CA
+                        operator_krill
+                            .parent_add(
+                                &child,
+                                ParentCaReq {
+                                    handle: parent.convert(),
+                                    response,
+                                },
+                            )
+                            .await.unwrap();
+
+                        assert!(
+                            wait_for_ca_resources(&operator_krill, &child, &child_res)
+                                .await.unwrap()
+                        );
+
+                        eprintln!(">>>> Add ROAs to child{i}");
+                        operator_krill
+                            .roas_update(
+                                &child,
+                                RoaConfigurationUpdates {
+                                    added: vec![
+                                        route_resource_set_10_0_0_0_def_1.clone(),
+                                        route_resource_set_10_0_0_0_def_2.clone(),
+                                    ],
+                                    removed: vec![],
+                                },
+                            )
+                            .await
+                            .unwrap();
+                    }
+                })
+        });
+
+        first = last;
+        thread_handles.push(thread_handle);
+    }
+
+    // Wait for threads to complete.
+    for handle in thread_handles {
+        handle.join().unwrap();
+    }
+
+    // Wait till the RIR publication server reports that it has all of the
+    // children as publishers.
+    let rir_krill = env.krill("rir").make_client();
+    let mut tries_left = 30;
+    while tries_left > 0 {
+        let publishers =
+            &rir_krill.pubserver_stats().await.unwrap().publishers;
+        let mut ok_count = 0;
+        for i in 0..num_cas {
+            let pub_handle =
+                CaHandle::from_str(&format!("child{i}")).unwrap();
+            let Some(p) = publishers.get(&pub_handle.convert()) else {
+                break;
+            };
+            if p.objects < 2 {
+                break;
+            }
+            ok_count += 1;
+        }
+
+        if ok_count == num_cas {
+            println!(
+                "All {num_cas} children have published at least 2 objects in the parent server"
+            );
+            // Fetch the Krill TAL and install it in the Routinator extra tals
+            // directory.
+            let tls_cert = load_tls_cert(&env.nginx().tls_cert_path());
+            let tal_bytes =
+                fetch_url(env.krill("rir").tal_url(), tls_cert, 5).await;
+
+            // Configure Routinator to use the Krill TAL
+            env.routinator().install_tal(KRILL_TAL_NAME, &tal_bytes);
+
+            // Do a Routinator validation run and fetch the available VRPs.
+            //
+            // We expect something like this:
+            // {
+            //   "metadata": {
+            //     "generated": 1787123416,
+            //     "generatedTime": "2026-08-19T07:10:16Z"
+            //   },
+            //   "roas": [
+            //     { "asn": "AS64496", "prefix": "10.0.0.0/16", "maxLength": 16, "ta": "Krill" },
+            //     { "asn": "AS64497", "prefix": "10.0.0.0/16", "maxLength": 16, "ta": "Krill" },
+            //     { "asn": "AS64496", "prefix": "10.1.0.0/24", "maxLength": 24, "ta": "Krill" }
+            //   ]
+            // }
+            std::io::stdout()
+                .write_all(&env.routinator().vrps())
+                .unwrap();
+            return Ok(Success);
+        }
+
+        eprintln!(
+            "{ok_count} / {num_cas} publishers ready, waiting for the rest.."
+        );
+        sleep(Duration::from_millis(100)).await;
+        tries_left -= 1;
+    }
+
+    Ok(Success)
+}
+
+async fn test_many_delegated_cas_in_one_krill_instance(
+    env: &mut Environment,
+    num_cas: usize,
+) -> Result<Success, Error> {
+    // Define some CA names to work with.
+    let testbed = CaHandle::from_str("testbed").unwrap();
+    let parent = CaHandle::from_str("parent").unwrap();
+
+    // Define some resource sets to work with.
+    let parent_res = ResourceSet::all();
+
+    // Spawn two Krill servers, one running as a parent that offers a
+    // publication service, like an RIR, and another as a placeholder for many
+    // operator instances each with their own, but instead we put all of those
+    // CAs in one child instance of Krill, all of which will be registered
+    // with the parent and publish into it.
+    env.add_krill("rir").await;
+    env.add_krill("operators").await;
+
+    // Connect clients to the Krill servers.
+    let rir_krill = env.krill("rir").make_client();
+
+    // Determine the URIs to use to connect clients to the servers.
+    let rir_server_uri = env.krill("rir").server_api_uri();
+    let operators_server_uri = env.krill("operators").server_api_uri();
+
+    //
+    // Start of test operations against the Krill servers.
+    //
+
+    // Add a parent CA to RIR testbed.
+    add_ca_under_parent(&rir_krill, &testbed, &parent, &parent_res, None)
+        .await?;
+
+    let num_threads = std::thread::available_parallelism().unwrap().get() / 2;
+    let num_cas_per_thread = num_cas / num_threads;
+    let mut remaining = num_cas % num_threads;
+
+    println!(
+        "Distributing CA creation over {num_threads} threads with {num_cas_per_thread} per thread and one additional CA each for {remaining} of the threads."
+    );
+
+    let mut first = 0;
+    let mut thread_handles = vec![];
+    for _ in 0..num_threads {
+        // If there are more CAs to do than can be spread evenly over the
+        // available threads, give as many threads as possible one extra CA
+        // to do.
+        let mut last = first + num_cas_per_thread;
+        if remaining > 0 {
+            last += 1;
+            remaining -= 1;
+        }
+
+        let rir_server_uri = rir_server_uri.clone();
+        let operators_server_uri = operators_server_uri.clone();
+        let parent = parent.clone();
+        let thread_handle = std::thread::spawn(move || {
+            // Use a single threaded runtime as then we can construct
+            // KrillClient once and use it across await points. We use threads
+            // to achieve concurrency instead of a multi-threaded async
+            // executor. See comment above about KrillClient for more info.
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(async {
+                    let rir_krill =
+                        KrillClient::new(rir_server_uri, None).unwrap();
+
+                    let operators_krill =
+                        KrillClient::new(operators_server_uri, None).unwrap();
+
+                    eprintln!(">>>> Add parent under testbed in server 1.");
+                    for i in first..last {
+                        let major = i / 256;
+                        let minor = i % 256;
+                        let asn = format!("AS{i}");
+                        let ipv4 = format!("{major}.{minor}.0.0/16");
+                        let child_res = ResourceSet::from_strs(&asn, &ipv4, "").unwrap();
+                        let route_resource_set_10_0_0_0_def_1 =
+                            RoaConfiguration::from_str(&format!("{ipv4}-16 => 64496")).unwrap();
+                        let route_resource_set_10_0_0_0_def_2 =
+                            RoaConfiguration::from_str(&format!("{ipv4}-16 => 64497")).unwrap();
+
+                        eprintln!(">>>> Add a child{i} in server 2");
+                        let child = CaHandle::from_str(&format!("child{i}")).unwrap();
+                        // krillc repo request
+                        operators_krill.ca_add(child.clone()).await.unwrap();
+                        eprintln!(">>>> Configure the server 2 child{i} to publish to server 1");
+                        let request = operators_krill.repo_request(&child).await.unwrap();
+                        // "supply it to your Publication Server". "Your publication server
+                        // provider will give you a repository response XML".
+                        let response = rir_krill.publishers_add(request).await.unwrap();
+                        // krillc repo configure
+                        let mut tries_left = 100;
+                        let mut last_res = None;
+                        while tries_left > 0 {
+                            let res = operators_krill.repo_update(&child, response.clone()).await;
+                            if res.is_ok() {
+                                break;
+                            }
+                            last_res = Some(res);
+                            tries_left -= 1;
+                            tokio::time::sleep(Duration::from_millis(100)).await;
+                        }
+                        if tries_left <= 0 {
+                            panic!("repo_update() failed: {}", last_res.unwrap().unwrap_err());
+                        }
+
+                        eprintln!(">>>> Configure a server 1 parent for our server 2 child{i}");
+                        // krillc parents request
+                        let child_request = operators_krill.child_request(&child).await.unwrap();
+                        // "present your CA's RFC 8183 Child Request XML file to you parent"
+                        // "Your RIR or NIR will provide you with a parent response XML"
+                        let id_cert = child_request.validate().unwrap();
+                        let response = rir_krill
+                            .child_add(&parent, child.convert(), child_res.clone(), id_cert)
+                            .await.unwrap();
+                        // Supply the parent response to the child CA
+                        operators_krill
+                            .parent_add(
+                                &child,
+                                ParentCaReq {
+                                    handle: parent.convert(),
+                                    response,
+                                },
+                            )
+                            .await.unwrap();
+
+                        assert!(
+                            wait_for_ca_resources(&operators_krill, &child, &child_res)
+                                .await.unwrap()
+                        );
+
+                        eprintln!(">>>> Add ROAs to child{i}");
+                        operators_krill
+                            .roas_update(
+                                &child,
+                                RoaConfigurationUpdates {
+                                    added: vec![
+                                        route_resource_set_10_0_0_0_def_1.clone(),
+                                        route_resource_set_10_0_0_0_def_2.clone(),
+                                    ],
+                                    removed: vec![],
+                                },
+                            )
+                            .await
+                            .unwrap();
+                    }
+                })
+        });
+
+        first = last;
+        thread_handles.push(thread_handle);
+    }
+
+    // Wait for threads to complete.
+    for handle in thread_handles {
+        handle.join().unwrap();
+    }
+
+    // Wait till the RIR publication server reports that it has all of the
+    // children as publishers.
+    let rir_krill = env.krill("rir").make_client();
+    let mut tries_left = 30;
+    while tries_left > 0 {
+        let publishers =
+            &rir_krill.pubserver_stats().await.unwrap().publishers;
+        let mut ok_count = 0;
+        for i in 0..num_cas {
+            let pub_handle =
+                CaHandle::from_str(&format!("child{i}")).unwrap();
+            let Some(p) = publishers.get(&pub_handle.convert()) else {
+                break;
+            };
+            if p.objects < 2 {
+                break;
+            }
+            ok_count += 1;
+        }
+
+        if ok_count == num_cas {
+            println!(
+                "All {num_cas} children have published at least 2 objects in the parent server"
+            );
+            // Fetch the Krill TAL and install it in the Routinator extra tals
+            // directory.
+            let tls_cert = load_tls_cert(&env.nginx().tls_cert_path());
+            let tal_bytes =
+                fetch_url(env.krill("rir").tal_url(), tls_cert, 5).await;
+
+            // Configure Routinator to use the Krill TAL
+            env.routinator().install_tal(KRILL_TAL_NAME, &tal_bytes);
+
+            // Do a Routinator validation run and fetch the available VRPs.
+            //
+            // We expect something like this:
+            // {
+            //   "metadata": {
+            //     "generated": 1787123416,
+            //     "generatedTime": "2026-08-19T07:10:16Z"
+            //   },
+            //   "roas": [
+            //     { "asn": "AS64496", "prefix": "10.0.0.0/16", "maxLength": 16, "ta": "Krill" },
+            //     { "asn": "AS64497", "prefix": "10.0.0.0/16", "maxLength": 16, "ta": "Krill" },
+            //     { "asn": "AS64496", "prefix": "10.1.0.0/24", "maxLength": 24, "ta": "Krill" }
+            //   ]
+            // }
+            std::io::stdout()
+                .write_all(&env.routinator().vrps())
+                .unwrap();
+            return Ok(Success);
+        }
+
+        eprintln!(
+            "{ok_count} / {num_cas} publishers ready, waiting for the rest.."
+        );
+        sleep(Duration::from_millis(100)).await;
+        tries_left -= 1;
+    }
+
+    Ok(Success)
+}
+
+async fn create_ca(testbed: CaHandle, krill: &KrillClient, i: usize) {
+    let child = CaHandle::from_str(&format!("child{i}")).unwrap();
+    let major = i / 256;
+    let minor = i % 256;
+    let asn = format!("AS{i}");
+    let ipv4 = format!("{major}.{minor}.0.0/16");
+    let child_res = ResourceSet::from_strs(&asn, &ipv4, "").unwrap();
+
+    eprintln!(">>>> Add child{i} under testbed.");
+    add_ca_under_parent(&krill, &testbed, &child, &child_res, None)
+        .await
+        .unwrap();
+
+    // eprintln!(">>>> Verify that the resources are received.");
+    // assert!(
+    //     wait_for_ca_resources(&krill, &child, &child_res)
+    //         .await
+    //         .unwrap()
+    // );
+
+    // Define some ROAs to work with.
+    let route_resource_set_10_0_0_0_def_1 =
+        RoaConfiguration::from_str(&format!("{ipv4}-16 => 64496")).unwrap();
+    let route_resource_set_10_0_0_0_def_2 =
+        RoaConfiguration::from_str(&format!("{ipv4}-16 => 64497")).unwrap();
+
+    eprintln!(">>>> Add ROAs to child{i}.");
+    krill
+        .roas_update(
+            &child,
+            RoaConfigurationUpdates {
+                added: vec![
+                    route_resource_set_10_0_0_0_def_1.clone(),
+                    route_resource_set_10_0_0_0_def_2.clone(),
+                ],
+                removed: vec![],
+            },
+        )
+        .await
+        .unwrap();
+
+    // assert!(
+    //     wait_for_objects(
+    //         &krill,
+    //         &child,
+    //         &[
+    //             &route_resource_set_10_0_0_0_def_1,
+    //             &route_resource_set_10_0_0_0_def_2,
+    //         ]
+    //     )
+    //     .await
+    //     .unwrap()
+    // );
+}
+
+//---- Helpers
 
 #[derive(Debug, Deserialize, PartialEq)]
 struct RoutinatorJsonVrpReport {
