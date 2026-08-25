@@ -87,25 +87,9 @@ impl Environment {
     /// Returns once the server is healthy.
     pub async fn add_krill<T: ToString>(&mut self, name: T) {
         let name = name.to_string();
-        let listen_addr = self.listen.0;
-        let public_port =
-            self.acquire_port(format!("nginx public port for {name}"));
-        let private_port =
-            self.acquire_port(format!("Krilll private port for {name}"));
-        let krill = KrillServer::new(
-            self.krill_bin.clone(),
-            self.base_dir.join(name.clone()),
-            (listen_addr, private_port),
-            (listen_addr, public_port),
-            true,
-        );
-        let krillc = krill.make_client();
-
-        self.nginx.add_backend(
-            krill.repo_dir(),
-            public_port,
-            format!("https://{listen_addr}:{private_port}/"),
-        );
+        self.add_krill_ext(&name, true).await;
+        self.nginx.reconfigure();
+        let krillc = self.krill(&name).make_client();
 
         let mut tries_left = 100;
         while tries_left > 0 && !krillc.health().await.is_ok() {
@@ -117,6 +101,37 @@ impl Environment {
         }
 
         println!("Krill instance '{name}' is ready");
+    }
+
+    /// Adds a Krill server.
+    ///
+    /// Starts a new instance of Krill.
+    ///
+    /// Does NOT configure nginx to proxy to it or wait for it to become
+    /// healthy.
+    pub async fn add_krill_ext<T: ToString>(
+        &mut self,
+        name: T,
+        is_testbed: bool,
+    ) {
+        let name = name.to_string();
+        let listen_addr = self.listen.0;
+        let public_port =
+            self.acquire_port(format!("nginx public port for {name}"));
+        let private_port =
+            self.acquire_port(format!("Krilll private port for {name}"));
+        let krill = KrillServer::new(
+            self.krill_bin.clone(),
+            self.base_dir.join(name.clone()),
+            (listen_addr, private_port),
+            (listen_addr, public_port),
+            is_testbed,
+        );
+        self.nginx.add_backend_ext(
+            krill.repo_dir(),
+            public_port,
+            format!("https://{listen_addr}:{private_port}/"),
+        );
         self.krill.insert(name.clone(), krill);
     }
 
