@@ -203,7 +203,9 @@ impl NginxServer {
         writedoc!(
             conf,
             r#"
-                events {{}}
+                events {{
+                    worker_connections 4096;
+                }}
                 daemon off;
                 pid {tmp}/pid;
                 # error_log set here occurs too late to prevent a warning
@@ -213,6 +215,10 @@ impl NginxServer {
                 # here if we want to control the level at which nginx logs.
                 # error_log /dev/stdout debug;
                 http {{
+                    proxy_connect_timeout 60;
+                    proxy_send_timeout 60;
+                    proxy_read_timeout 60;
+                    send_timeout 60;
                     proxy_temp_path {tmp};
                     fastcgi_temp_path {tmp};
                     uwsgi_temp_path {tmp};
