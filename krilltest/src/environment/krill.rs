@@ -111,21 +111,22 @@ impl KrillServer {
         format!("https://{}:{}/", self.public_listen.0, self.public_listen.1)
     }
 
+    /// Returns the URI to which a Krill API client can connect.
+    pub fn server_api_uri(&self) -> ServerUri {
+        ServerUri::try_from(format!(
+            "unix://{}",
+            self.unix_socket().display()
+        ))
+        .unwrap()
+    }
+
     /// Returns the public URL at which the Trust Anchor Locator can be found.
     pub fn tal_url(&self) -> String {
         format!("{}ta/ta.tal", self.service_uri())
     }
 
     pub fn make_client(&self) -> KrillClient {
-        KrillClient::new(
-            ServerUri::try_from(format!(
-                "unix://{}",
-                self.unix_socket().display()
-            ))
-            .unwrap(),
-            None,
-        )
-        .unwrap()
+        KrillClient::new(self.server_api_uri(), None).unwrap()
     }
 
     /// Stop the running Krill instance and cleanup any persisted state.
