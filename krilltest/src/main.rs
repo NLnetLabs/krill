@@ -371,15 +371,16 @@ async fn wait_for_ca_resources(
     resources: &ResourceSet,
 ) -> Result<bool, Error> {
     for _ in 0..100 {
-        let details = client.ca_details(ca).await?;
-        let mut res = ResourceSet::default();
-        for rc in details.resource_classes.values() {
-            if let Some(resources) = rc.keys.current_resources() {
-                res = res.union(resources);
+        if let Ok(details) = client.ca_details(ca).await {
+            let mut res = ResourceSet::default();
+            for rc in details.resource_classes.values() {
+                if let Some(resources) = rc.keys.current_resources() {
+                    res = res.union(resources);
+                }
             }
-        }
-        if res.contains(&resources) {
-            return Ok(true);
+            if res.contains(&resources) {
+                return Ok(true);
+            }
         }
         sleep(Duration::from_millis(100)).await;
     }
