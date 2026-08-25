@@ -223,6 +223,7 @@ impl NginxServer {
                     fastcgi_temp_path {tmp};
                     uwsgi_temp_path {tmp};
                     scgi_temp_path {tmp};
+                    # error_log /dev/stdout debug;
                     {server_blocks}
                 }}
             "#
