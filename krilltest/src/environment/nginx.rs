@@ -1,7 +1,7 @@
 //! Controlling an Nginx server.
 use crate::utils::fmt::WriteOrPanic;
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fs::File;
 use std::net::IpAddr;
 use std::path::PathBuf;
@@ -30,7 +30,7 @@ pub struct NginxServer {
     /// Downstreams to proxy to.
     ///
     /// Maps root data dir and front end port numbers to backend URLs.
-    backends: HashMap<(PathBuf, u16), String>,
+    backends: BTreeMap<(u16, PathBuf), String>,
 }
 
 impl NginxServer {
@@ -45,7 +45,7 @@ impl NginxServer {
             server_dir,
             listen,
             process: None,
-            backends: HashMap::new(),
+            backends: Default::default(),
         };
 
         fs::create_dir_all(res.tls_path()).unwrap();
@@ -66,15 +66,28 @@ impl NginxServer {
         }
     }
 
+    /// Adds a backend and reconfigures nginx.
     pub fn add_backend(
         &mut self,
         root_path: PathBuf,
         front_end_port: u16,
         backend_url: String,
     ) {
-        self.backends
-            .insert((root_path, front_end_port), backend_url);
+        self.add_backend_ext(root_path, front_end_port, backend_url);
         self.reconfigure();
+    }
+
+    /// Adds a backend.
+    ///
+    /// Does NOT reconfigure nginx.
+    pub fn add_backend_ext(
+        &mut self,
+        root_path: PathBuf,
+        front_end_port: u16,
+        backend_url: String,
+    ) {
+        self.backends
+            .insert((front_end_port, root_path), backend_url);
     }
 
     /// Panics if the backend is not known.
@@ -83,7 +96,7 @@ impl NginxServer {
         root_path: PathBuf,
         front_end_port: u16,
     ) {
-        self.backends.remove(&(root_path, front_end_port)).unwrap();
+        self.backends.remove(&(front_end_port, root_path)).unwrap();
         self.reconfigure();
     }
 }
@@ -155,7 +168,7 @@ impl NginxServer {
         let tmp = self.tmp_path().display().to_string();
 
         let mut server_blocks = String::new();
-        for ((root, front_end_port), backend_url) in &self.backends {
+        for ((front_end_port, root), backend_url) in &self.backends {
             let root = root.display().to_string();
             let listen = match self.listen {
                 IpAddr::V4(addr) => format!("{addr}:{front_end_port}"),
