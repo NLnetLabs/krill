@@ -228,6 +228,8 @@ impl NginxServer {
                 }}
             "#
         );
+
+        std::io::Write::flush(&mut conf).unwrap();
     }
 
     /// Starts or restarts nginx.
