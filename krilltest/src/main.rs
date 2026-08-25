@@ -4,6 +4,9 @@
 //! scenarios involve setting up one or more Krill instances, issue commands
 //! to them, and then verifying the results by checking the data set output
 //! by a Routinator validation run.
+
+// TODO: Prefix logging output by name of instance/service/binary producing
+// the log output, e.g. Krill server 1, Krill server 2, Routinator, etc.
 use krilltest::environment::Environment;
 
 use std::io::Read;
@@ -55,6 +58,8 @@ async fn main() {
             (tempdir.path().to_path_buf(), Some(tempdir))
         }
     };
+
+    // TODO: Allow specific tests to be selected, e.g. via --test?
 
     if args.allow_system_clock_changes {
         eprintln!("ALLOWING SYSTEM CLOCK CHANGES");
