@@ -29,11 +29,9 @@ public rsyncd and HTTPS web server available.
 
          -  Debian Trixie 13
          -  Debian Bookworm 12
-         -  Debian Bullseye 11
 
        Packages for the ``amd64``/``x86_64`` architecture are available for
-       all listed versions. In addition, we offer ``armhf`` architecture
-       packages for Debian/Raspbian Bullseye.
+       all listed versions. 
 
        First update the ``apt`` package index:
 
