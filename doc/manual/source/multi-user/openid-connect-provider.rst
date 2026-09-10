@@ -67,7 +67,7 @@ quite likely that it is either already in use by (potential) Krill
 operators or viable for them to adopt.
 
 Why not OAuth 2.0?
-"""""""""""""""""""
+""""""""""""""""""
 
 From https://oauth.net/articles/authentication/:
 
@@ -79,6 +79,23 @@ From https://oauth.net/articles/authentication/:
   they can accomplish user authentication. This turns out to be not only
   untrue, but also dangerous for service providers, developers, and end
   users.*
+
+How about LDAP and others?
+""""""""""""""""""""""""""
+
+Currently Krill does not offer direct LDAP integration. 
+
+There are several OpenID Connect implementations that allow you to 'bridge' 
+LDAP (and other authentication and authorization solutions that do not support
+OpenID Connect), such as `Keycloak <https://www.keycloak.org/docs/latest/server_admin/index.html#synchronizing-ldap-users-to-keycloak>`_, 
+`Authentik <https://docs.goauthentik.io/users-sources/sources/protocols/ldap/>`_,
+and `Pocket ID <https://pocket-id.org/docs/configuration/ldap>`_.
+
+Using one of these (or others), you can connect your LDAP to the solution and
+then connect the solution to Krill. This also works for other external systems
+that do not natively support OpenID Connect, such as Cloudflare Access, GitHub,
+and others.
+
 
 How does it work?
 -----------------
