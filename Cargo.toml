@@ -256,13 +256,6 @@ depends = "$auto, passwd, libssl3"
 [package.metadata.deb.variants.ubuntu-resolute]
 depends = "$auto, passwd, libssl3"
 
-# Cross compilation variants:
-# Note: we have to specifiy dependencies manually because we don't run cargo-deb
-# on the target platform and so it cannot determine the dependencies correctly
-# for us.
-[package.metadata.deb.variants.debian-bullseye-armv7-unknown-linux-gnueabihf]
-depends = "adduser, passwd, libc6 (>= 2.28), libssl1.1"
-
 # END DEBIAN PACKAGING
 # ------------------------------------------------------------------------------
 
