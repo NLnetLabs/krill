@@ -1,10 +1,11 @@
-#![allow(unused)] // XXX TODO
-
 use std::{error, fmt};
+use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use tokio::runtime;
+use url::Url;
 use super::statements::{
-    ManipulationStatement, Params, QueryOneStatement, QueryOptStatement,
-    QueryStatement, Statement, StatementError,
+    ManipulationStatement, QueryOneStatement, QueryOptStatement,
+    QueryStatement, Schema, StatementError,
 };
 
 
@@ -24,48 +25,171 @@ macro_rules! store {
             )*
         }
 
+        impl StorageUri {
+            pub fn memory() -> Self {
+                Self(UriInner::Sqlite(super::sqlite::Uri::memory()))
+            }
 
-        //------------ System ------------------------------------------------
+            pub fn disk(path: impl Into<PathBuf>) -> Self {
+                Self(UriInner::Disk(super::disk::Uri::new(path.into())))
+            }
+
+            pub fn data_dir(&self) -> Option<&Path> {
+                if let UriInner::Disk(inner) = &self.0 {
+                    Some(inner.path())
+                }
+                else {
+                    None
+                }
+            }
+        }
+
+        impl<'de> serde::Deserialize<'de> for StorageUri {
+            fn deserialize<D: serde::Deserializer<'de>>(
+                deserializer: D
+            ) -> Result<Self, D::Error> {
+                Self::from_str(&String::deserialize(deserializer)?).map_err(
+                    serde::de::Error::custom
+                )
+            }
+        }
+
+        impl FromStr for StorageUri {
+            type Err = ParseStorageUriError;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                match Url::parse(s) {
+                    Ok(url) => {
+                        $(
+                            if let Some(res) =
+                                super::$module::Uri::parse_uri(&url)?
+                            {
+                                return Ok(StorageUri(UriInner::$variant(res)))
+                            }
+                        )*
+
+                        Err(ParseStorageUriError(
+                            UriErrorInner::UnknownScheme(
+                                url.scheme().into()
+                            )
+                        ))
+                    }
+                    Err(_) => {
+                        super::disk::Uri::parse_str(s).map(|disk| {
+                            Self(UriInner::Disk(disk))
+                        }).map_err(|err| {
+                            ParseStorageUriError(UriErrorInner::Disk(err))
+                        })
+                    }
+                }
+            }
+        }
+
+        impl fmt::Display for StorageUri {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                match &self.0 {
+                    $(
+                        UriInner::$variant(inner) => inner.fmt(f),
+                    )*
+                }
+            }
+        }
+
+
+        //------------ StorageSystem -----------------------------------------
 
         /// System-wide information about the storage sub-system.
         #[derive(Debug)]
-        pub struct System {
+        pub struct StorageSystem {
+            /// The storage URI to be used by default.
+            default_uri: StorageUri,
+
             $(
-                $module: super::$module::System,
+                $module: Option<super::$module::System>,
             )*
         }
 
-        impl System {
-            pub fn new(tokio: &runtime::Handle) -> Self {
+        impl StorageSystem {
+            /// Creates a new storage system.
+            ///
+            /// The provided URI will be used as the default storage URI.
+            pub fn new(
+                default_uri: StorageUri,
+                tokio: &runtime::Handle,
+            ) -> Self {
                 Self {
+                    default_uri,
                     $(
-                        $module: super::$module::System::new(tokio),
+                        $module: Some(super::$module::System::new(tokio)),
                     )*
                 }
             }
 
+            /// Creates a storage system for test usage only.
+            ///
+            /// This will only provide the disk and SQLite backends.
+            ///
+            /// The default URI will be the memory store.
+            #[cfg(test)]
+            pub fn new_test() -> Self {
+                Self {
+                    default_uri: StorageUri::memory(),
+                    $(
+                        $module: super::$module::System::new_test(),
+                    )*
+                }
+            }
+
+            /// Creates a new disk storage system using the given path.
+            pub fn new_disk(
+                path: impl Into<PathBuf>,
+                tokio: &runtime::Handle,
+            ) -> Self {
+                Self::new(StorageUri::disk(path), tokio)
+            }
+
+            /// Opens the default store.
             pub fn open(
+                &self,
+            ) -> Result<Store, StoreError> {
+                self.open_uri(&self.default_uri)
+            }
+
+            /// Opens the store for the given storage URI.
+            pub fn open_uri(
                 &self, uri: &StorageUri
             ) -> Result<Store, StoreError> {
                 match &uri.0 {
                     $(
                         UriInner::$variant(inner) => {
-                            Ok(Store(StoreInner::$variant(
-                                self.$module.open(inner)?
-                            )))
+                            if let Some(system) = self.$module.as_ref() {
+                                Ok(Store(StoreInner::$variant(
+                                    system.open(inner)?
+                                )))
+                            }
+                            else {
+                                Err(StoreError::other(
+                                    "storage backend not available"
+                                ))
+                            }
                         }
                     )*
                 }
+            }
+
+            /// Returns the default URI of the storage system.
+            pub fn default_uri(&self) -> &StorageUri {
+                &self.default_uri
             }
         }
 
 
         //------------ Store -------------------------------------------------
 
-        #[derive(Debug)]
+        #[derive(Clone, Debug)]
         pub struct Store(StoreInner);
 
-        #[derive(Debug)]
+        #[derive(Clone, Debug)]
         enum StoreInner {
             $(
                 $variant(super::$module::Store),
@@ -73,9 +197,22 @@ macro_rules! store {
         }
 
         impl Store {
-            pub fn execute<F, T>(&mut self, op: F) -> Result<T, StoreError>
+            pub(crate) fn init<S: Schema>(
+                &mut self, schema: S
+            ) -> Result<(), StoreError> {
+                match &mut self.0 {
+                    $(
+                        StoreInner::$variant(inner) => {
+                            inner.init(schema)
+                        }
+                    )*
+                }
+            }
+
+            pub fn execute<F, T, E>(&self, op: F) -> Result<T, E>
             where
-                F: for<'a> Fn(&mut Transaction<'a>) -> Result<T, StoreError>
+                F: for<'a> Fn(&mut Transaction<'a>) -> Result<T, E>,
+                E: From<StoreError>,
             {
                 match &self.0 {
                     $(
@@ -188,7 +325,7 @@ macro_rules! store {
                 $variant(super::$module::Error),
             )*
             Statement(StatementError),
-            Other(Box<dyn error::Error>),
+            Other(Box<dyn error::Error + Send + Sync>),
         }
 
         $(
@@ -200,7 +337,9 @@ macro_rules! store {
         )*
 
         impl StoreError {
-            pub fn other(src: impl Into<Box<dyn error::Error>>) -> Self {
+            pub fn other(
+                src: impl Into<Box<dyn error::Error + Send + Sync>>
+            ) -> Self {
                 Self(ErrorInner::Other(src.into()))
             }
         }

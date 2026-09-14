@@ -9,7 +9,7 @@ use log::info;
 use rpki::ca::idexchange::MyHandle;
 use crate::commons::KrillResult;
 use crate::commons::eventsourcing::WalStore;
-use crate::commons::storage::{Ident, StorageSystem};
+use crate::commons::storage::{Ident, KeyValueStore, StorageSystem};
 use crate::constants::PUBSERVER_CONTENT_NS;
 use crate::server::pubd::content::RepositoryContent;
 use self::pre_0_13_0::OldRepositoryContent;
@@ -30,7 +30,9 @@ pub fn migrate_0_12_pubd_objects(
             old_store.get_latest(&repo_content_handle)?.as_ref().clone();
         let repo_content: RepositoryContent =
             old_repo_content.try_into()?;
-        let upgrade_store = storage.open_upgrade( PUBSERVER_CONTENT_NS)?;
+        let upgrade_store = KeyValueStore::new_upgrade(
+            storage.open()?, PUBSERVER_CONTENT_NS
+        )?;
         upgrade_store.store(
             Some(const { Ident::make("0") }),
             const { Ident::make("snapshot.json") },
@@ -47,7 +49,7 @@ pub fn migrate_0_12_pubd_objects(
 pub fn migrate_pre_0_12_pubd_objects(
     storage: &StorageSystem
 ) -> KrillResult<()> {
-    let old_store = storage.open(PUBSERVER_CONTENT_NS)?;
+    let old_store = KeyValueStore::new(storage.open()?, PUBSERVER_CONTENT_NS)?;
     if let Ok(Some(old_repo_content)) =
         old_store.get::<OldRepositoryContent>(
             None, const { Ident::make("0.json") }
@@ -56,7 +58,9 @@ pub fn migrate_pre_0_12_pubd_objects(
         info!("Found pre 0.12.0 RC2 publication server data. Migrating..");
         let repo_content: RepositoryContent = old_repo_content.try_into()?;
 
-        let upgrade_store = storage.open_upgrade(PUBSERVER_CONTENT_NS)?;
+        let upgrade_store = KeyValueStore::new_upgrade(
+            storage.open()?, PUBSERVER_CONTENT_NS
+        )?;
         upgrade_store.store(
             Some(const { Ident::make("0") }),
             const { Ident::make("snapshot.json") },

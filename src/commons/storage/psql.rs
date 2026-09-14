@@ -13,7 +13,7 @@ use super::combined::{
 };
 use super::statements::{
     ManipulationStatement, Params, QueryOneStatement, QueryOptStatement,
-    QueryStatement, Statement
+    QueryStatement, Schema, Statement
 };
 
 
@@ -63,6 +63,11 @@ impl System {
         }
     }
 
+    #[cfg(test)]
+    pub fn new_test() -> Option<Self> {
+        None
+    }
+
     pub fn open(&self, uri: &Uri) -> Result<Store, Error> {
         let mut stores = self.stores.lock().expect("poisoned lock");
 
@@ -105,11 +110,16 @@ impl Store {
         }))
     }
 
-    pub fn execute<F, T>(
-        &self, op: F
-    ) -> Result<T, StoreError>
+    pub(crate) fn init<S: Schema>(
+        &mut self, schema: S
+    ) -> Result<(), StoreError> {
+        self.get_client()?.init(schema)
+    }
+
+    pub fn execute<F, T, E>(&self, op: F) -> Result<T, E>
     where
-        F: for<'a> Fn(&mut SuperTransaction<'a>) -> Result<T, StoreError>
+        F: for<'a> Fn(&mut SuperTransaction<'a>) -> Result<T, E>,
+        E: From<StoreError>
     {
         let mut client = self.get_client()?;
         let res = client.execute(op);
@@ -117,7 +127,7 @@ impl Store {
         res
     }
 
-    fn get_client(&self) -> Result<Client, Error> {
+    fn get_client(&self) -> Result<Client, StoreError> {
         if let Some(client) = self.0.client_pool.lock().expect(
             "poisoned lock"
         ).pop() {
@@ -148,14 +158,14 @@ impl Client {
     fn new(
         config: &tokio_postgres::Config,
         tokio: runtime::Handle
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, StoreError> {
         let client = tokio.block_on(async {
             // TODO: TLS support? That would need configuration.
             let (client, connection) = config.connect(
                 tokio_postgres::NoTls
             ).await?;
             let _ = tokio::spawn(connection);
-            Ok(client)
+            Ok::<_, StoreError>(client)
         })?;
         Ok(Self {
             client,
@@ -168,14 +178,23 @@ impl Client {
         self.client.is_closed()
     }
 
-    fn execute<F, T>(&mut self, op: F) -> Result<T, StoreError>
+    fn init<S: Schema>(&mut self, schema: S) -> Result<(), StoreError> {
+        self.tokio.block_on(async {
+            schema.init_psql(&mut self.client.transaction().await?).await
+        })
+    }
+
+    fn execute<F, T, E>(&mut self, op: F) -> Result<T, E>
     where
-        F: for<'a> Fn(&mut SuperTransaction<'a>) -> Result<T, StoreError>
+        F: for<'a> Fn(&mut SuperTransaction<'a>) -> Result<T, E>,
+        E: From<StoreError>
     {
-        let mut transaction = self.transaction()?.into();
+        let mut transaction = self.transaction().map_err(
+            StoreError::from
+        )?.into();
         let res = op(&mut transaction)?;
         if let Ok(transaction) = Transaction::try_from(transaction) {
-            transaction.commit()?;
+            transaction.commit().map_err(StoreError::from)?;
         };
         Ok(res)
     }

@@ -1,17 +1,15 @@
-//! Persistent storage of data.
 
-pub use self::backends::{
-    StorageUri, ParseStorageUriError, Transaction, Error,
+pub use self::combined::{
+    StorageSystem, StorageUri, Store, StoreError, Transaction
 };
-pub use self::ident::{Ident, IdentBuilder, IdentError};
-pub use self::store::{
-    KeyValueStore, KeyValueError, OpenStoreError, StorageSystem,
-};
+pub use self::kv::{KeyValueError, KeyValueStore, KeyValueTransaction};
+pub use self::ident::Ident;
 
-use self::backends::{Backend, BackendSystem};
+pub mod combined;
+pub mod ident;
+pub mod kv;
+pub mod statements;
 
-mod backends;
-mod ident;
-mod store;
-mod test;
-
+pub mod disk;
+pub mod psql;
+pub mod sqlite;

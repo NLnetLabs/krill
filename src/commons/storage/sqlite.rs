@@ -9,7 +9,7 @@ use super::combined::{
 };
 use super::statements::{
     ManipulationStatement, QueryOneStatement, QueryOptStatement,
-    QueryStatement,
+    QueryStatement, Schema,
 };
 
 
@@ -25,6 +25,10 @@ enum UriInner {
 }
 
 impl Uri {
+    pub fn memory() -> Self {
+        Self(UriInner::Memory)
+    }
+
     pub fn parse_uri(uri: &Url) -> Result<Option<Self>, UriError> {
         if uri.scheme() == "memory" {
             if !uri.authority().is_empty() || !uri.path().is_empty() {
@@ -74,6 +78,13 @@ impl System {
         }
     }
 
+    #[cfg(test)]
+    pub fn new_test() -> Option<Self> {
+        Some(Self {
+            stores: Default::default()
+        })
+    }
+
     pub fn open(&self, uri: &Uri) -> Result<Store, Error> {
         let mut stores = self.stores.lock().expect("poisoned lock");
 
@@ -113,11 +124,16 @@ impl Store {
         ))
     }
 
-    pub fn execute<F, T>(
-        &self, op: F
-    ) -> Result<T, StoreError>
+    pub(crate) fn init<S: Schema>(
+        &mut self, schema: S
+    ) -> Result<(), StoreError> {
+        self.get_client()?.init(schema)
+    }
+
+    pub fn execute<F, T, E>(&self, op: F) -> Result<T, E>
     where
-        F: for<'a> Fn(&mut SuperTransaction<'a>) -> Result<T, StoreError>
+        F: for<'a> Fn(&mut SuperTransaction<'a>) -> Result<T, E>,
+        E: From<StoreError>,
     {
         let mut client = self.get_client()?;
         let res = client.execute(op);
@@ -125,7 +141,7 @@ impl Store {
         res
     }
 
-    fn get_client(&self) -> Result<Client, Error> {
+    fn get_client(&self) -> Result<Client, StoreError> {
         if let Some(client) = self.0.client_pool.lock().expect(
             "poisoned lock"
         ).pop() {
@@ -149,7 +165,7 @@ struct Client {
 }
 
 impl Client {
-    fn new(uri: &Uri) -> Result<Self, Error> {
+    fn new(uri: &Uri) -> Result<Self, StoreError> {
         let connection = match &uri.0 {
             UriInner::Path(path) => {
                 rusqlite::Connection::open(path)?
@@ -161,14 +177,21 @@ impl Client {
         Ok(Client { connection })
     }
 
-    fn execute<F, T>(&mut self, op: F) -> Result<T, StoreError>
+    fn init<S: Schema>(&mut self, schema: S) -> Result<(), StoreError> {
+        schema.init_sqlite(self.connection.transaction()?)
+    }
+
+    fn execute<F, T, E>(&mut self, op: F) -> Result<T, E>
     where
-        F: for<'a> Fn(&mut SuperTransaction<'a>) -> Result<T, StoreError>
+        F: for<'a> Fn(&mut SuperTransaction<'a>) -> Result<T, E>,
+        E: From<StoreError>,
     {
-        let mut transaction = self.transaction()?.into();
+        let mut transaction = self.transaction().map_err(
+            StoreError::from
+        )?.into();
         let res = op(&mut transaction)?;
         if let Ok(transaction) = Transaction::try_from(transaction) {
-            transaction.commit()?;
+            transaction.commit().map_err(StoreError::from)?;
         };
         Ok(res)
     }

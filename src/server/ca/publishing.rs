@@ -72,9 +72,8 @@ impl CaObjectsStore {
         storage: &StorageSystem,
         issuance_timing: IssuanceTimingConfig,
     ) -> KrillResult<Self> {
-        let store = storage.open(CA_OBJECTS_NS)?;
         Ok(CaObjectsStore {
-            store,
+            store: KeyValueStore::new(storage.open()?, CA_OBJECTS_NS)?,
             issuance_timing,
         })
     }
@@ -220,7 +219,7 @@ impl CaObjectsStore {
         //     distinguish the two cases. This ought to be changed once
         //     we got rid of backslashes.
         Ok(
-            self.store.keys(None, ".json")?.iter().filter_map(|k| {
+            self.store.list_keys(None)?.iter().filter_map(|k| {
                 let name = k.as_str().strip_suffix(".json")?;
                 CaHandle::from_str(name).ok()
             }).collect()
@@ -232,7 +231,7 @@ impl CaObjectsStore {
         let ca_key = Self::key(ca);
         self.store.execute(None, |kv| {
             if kv.has(None, &ca_key)? {
-                kv.delete(None, &ca_key)
+                kv.delete_key(None, &ca_key)
             } else {
                 Ok(())
             }

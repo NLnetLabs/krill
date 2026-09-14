@@ -36,7 +36,7 @@ where
 }
 
 pub fn mem_storage() -> StorageSystem {
-    StorageSystem::new_memory(Some(rand::random()))
+    StorageSystem::new_test()
 }
 
 pub fn rsync(s: &str) -> uri::Rsync {

@@ -13,8 +13,6 @@ pub mod test;
 pub mod util;
 pub mod version;
 
-pub mod newstore;
-
 //------------ Response Aliases ----------------------------------------------
 
 pub use self::error::Error;

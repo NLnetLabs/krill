@@ -9,7 +9,7 @@ use super::combined::{
 };
 use super::statements::{
     ManipulationStatement, QueryOneStatement, QueryOptStatement,
-    QueryStatement,
+    QueryStatement, Schema,
 };
 
 
@@ -27,6 +27,10 @@ pub struct Uri {
 }
 
 impl Uri {
+    pub fn new(path: PathBuf) -> Self {
+        Self { path }
+    }
+
     pub fn parse_uri(uri: &Url) -> Result<Option<Self>, UriError> {
         if uri.scheme() != "file" && uri.scheme() != "local" {
             return Ok(None)
@@ -52,6 +56,12 @@ impl Uri {
     }
 }
 
+impl fmt::Display for Uri {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "file://{}", self.path.display())
+    }
+}
+
 
 //------------ System --------------------------------------------------------
 
@@ -63,6 +73,11 @@ impl System {
         Self(())
     }
 
+    #[cfg(test)]
+    pub fn new_test() -> Option<Self> {
+        Some(Self(()))
+    }
+
     pub fn open(&self, uri: &Uri) -> Result<Store, Error> {
         Store::new(uri.path.clone())
     }
@@ -71,7 +86,7 @@ impl System {
 
 //------------ Store ---------------------------------------------------------
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Store {
     /// The root path for the store.
     ///
@@ -105,11 +120,16 @@ impl Store {
         Ok(Self { root, tmp })
     }
 
-    pub fn execute<F, T>(
-        &self, op: F
-    ) -> Result<T, StoreError>
+    pub(crate) fn init<S: Schema>(
+        &mut self, schema: S
+    ) -> Result<(), StoreError> {
+        Ok(schema.init_disk(&mut DiskStore(self))?)
+    }
+
+    pub fn execute<F, T, E>(&self, op: F) -> Result<T, E>
     where
-        F: for<'a> Fn(&mut SuperTransaction<'a>) -> Result<T, StoreError>
+        F: for<'a> Fn(&mut SuperTransaction<'a>) -> Result<T, E>,
+        E: From<StoreError>,
     {
         op(&mut (Transaction::new(self).into()))
     }
@@ -218,7 +238,7 @@ pub enum Error {
         context: Cow<'static, str>,
         err: io::Error,
     },
-    Other(Box<dyn error::Error>),
+    Other(Box<dyn error::Error + Send + Sync>),
 }
 
 impl Error {
@@ -226,7 +246,7 @@ impl Error {
         Error::Io { context: context.into(), err }
     }
 
-    pub fn other(info: impl Into<Box<dyn error::Error>>) -> Self {
+    pub fn other(info: impl Into<Box<dyn error::Error + Send + Sync>>) -> Self {
         Error::Other(info.into())
     }
 }

@@ -151,9 +151,17 @@ pub trait QueryOptStatement: Statement {
 /// an async trait method for the PostgreSQL backend.
 #[allow(dead_code)] // XXX TODO
 pub(crate) trait Schema {
-    async fn psql_init(
-        transaction: &mut tokio_postgres::Transaction
+    async fn init_psql(
+        self, transaction: &mut tokio_postgres::Transaction
     ) -> Result<(), StoreError>;
+
+    fn init_sqlite(
+        self, transaction: rusqlite::Transaction
+    ) -> Result<(), StoreError>;
+
+    fn init_disk(
+        self, store: &mut DiskStore
+    ) -> Result<(), DiskError>;
 }
 
 
@@ -258,10 +266,10 @@ impl<T: tokio_postgres::types::ToSql + rusqlite::types::ToSql + Sync> ToSql
 
 /// An error happened when processing a statement.
 #[derive(Debug)]
-pub struct StatementError(Box<dyn error::Error>);
+pub struct StatementError(Box<dyn error::Error + Send + Sync>);
 
 impl StatementError {
-    pub fn custom(src: impl Into<Box<dyn error::Error>>) -> Self {
+    pub fn custom(src: impl Into<Box<dyn error::Error + Send + Sync>>) -> Self {
         Self(src.into())
     }
 }

@@ -300,13 +300,18 @@ impl<A: Aggregate> GenericUpgradeAggregateStore<A> {
         mode: UpgradeMode,
         storage: &StorageSystem,
     ) -> UpgradeResult<AspaMigrationConfigs> {
-        let current_kv_store = storage.open(name_space)?;
+        let current_kv_store = KeyValueStore::new(
+            storage.open()?, name_space
+        )?;
 
-        if current_kv_store.scopes()?.is_empty() {
+        if current_kv_store.list_scopes()?.is_empty() {
             // nothing to do here
             Ok(AspaMigrationConfigs::default())
-        } else {
-            let new_kv_store = storage.open_upgrade(name_space)?;
+        }
+        else {
+            let new_kv_store = KeyValueStore::new_upgrade(
+                storage.open()?, name_space
+            )?;
             let new_agg_store = AggregateStore::<A>::create_upgrade_store(
                 storage,
                 name_space,

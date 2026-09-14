@@ -13,8 +13,8 @@ use super::combined::{
 use super::disk::{DiskStore, Error as DiskError};
 use super::ident::Ident;
 use super::statements::{
-    ManipulationStatement, QueryOptStatement, QueryStatement, Statement,
-    StatementError
+    ManipulationStatement, QueryOneStatement, QueryOptStatement,
+    QueryStatement, Schema, Statement, StatementError
 };
 
 
@@ -40,39 +40,332 @@ pub struct KeyValueStore {
 }
 
 impl KeyValueStore {
-    /// Creates a new key-value store atop the given low-level store.
-    pub fn new(store: Store, namespace: impl Into<Box<Ident>>) -> Self {
-        KeyValueStore {
+    /// Opens a key-value store atop the given store with the given namespace.
+    pub fn new(
+        store: Store, namespace: impl Into<Box<Ident>>
+    ) -> Result<Self, KeyValueError> {
+        Ok(Self {
             store,
             namespace: namespace.into()
-        }
+        })
+    }
+
+    /// Opens an upgrade key-value store.
+    ///
+    /// This is the same as [Self::new] but prefixes the namespace with
+    /// `"upgrade_"`.
+    pub fn new_upgrade(
+        store: Store, namespace: &Ident
+    ) -> Result<Self, KeyValueError> {
+        Self::new(
+            store,
+            Self::prefixed_namespace(
+                const { Ident::make("upgrade") }, namespace
+            )
+        )
+    }
+
+    pub fn init(&mut self) -> Result<(), KeyValueError> {
+        Ok(self.store.init(Init { namespace: &self.namespace })?)
     }
 
     pub fn execute<F, T>(
-        &mut self,
+        &self,
         scope: Option<&Ident>,
         op: F
     ) -> Result<T, KeyValueError>
     where
-        F: Fn(&mut Transaction) -> Result<T, StoreError>
+        F: Fn(&mut KeyValueTransaction) -> Result<T, KeyValueError>
     {
         Ok(self.store.execute(|tran| {
-            let mut tran = Transaction::new(tran, &self.namespace);
+            let mut tran = KeyValueTransaction::new(tran, &self.namespace);
             op(&mut tran)
         })?)
     }
 }
 
+impl KeyValueStore {
+    pub fn has(
+        &self, scope: Option<&Ident>, key: &Ident,
+    ) -> Result<bool, KeyValueError> {
+        self.execute(scope, |tran| {
+            tran.has(scope, key)
+        })
+    }
 
-//------------ Transaction ---------------------------------------------------
+    pub fn has_scope(
+        &self, scope: &Ident
+    ) -> Result<bool, KeyValueError> {
+        self.execute(None, |tran| {
+            tran.has_scope(scope)
+        })
+    }
+
+    pub fn list_keys(
+        &self, scope: Option<&Ident>,
+    ) -> Result<Vec<Box<Ident>>, KeyValueError> {
+        self.execute(scope, |tran| {
+            tran.list_keys(scope)
+        })
+    }
+
+    pub fn list_scopes(&self) -> Result<Vec<Box<Ident>>, KeyValueError> {
+        self.execute(None, |tran| {
+            tran.list_scopes()
+        })
+    }
+
+    pub fn get<T: DeserializeOwned + 'static>(
+        &self, scope: Option<&Ident>, key: &Ident
+    ) -> Result<Option<T>, KeyValueError> {
+        self.execute(scope, |tran| {
+            tran.get(scope, key)
+        })
+    }
+
+    pub fn store<T: Serialize>(
+        &self, scope: Option<&Ident>, key: &Ident, value: &T
+    ) -> Result<(), KeyValueError> {
+        self.execute(scope, |tran| {
+            tran.store(scope, key, value)
+        })
+    }
+
+    pub fn store_new<T: Serialize>(
+        &self, scope: Option<&Ident>, key: &Ident, value: &T
+    ) -> Result<(), KeyValueError> {
+        self.execute(scope, |tran| {
+            if tran.has(scope, key)? {
+                Err(KeyValueError::duplicate_key(scope, key))
+            }
+            else {
+                tran.store(scope, key, value)
+            }
+        })
+    }
+
+    pub fn delete_key(
+        &self, scope: Option<&Ident>, key: &Ident
+    ) -> Result<(), KeyValueError> {
+        self.execute(scope, |tran| {
+            tran.delete_key(scope, key)
+        })
+    }
+
+    pub fn delete_scope(
+        &self, scope: &Ident
+    ) -> Result<(), KeyValueError> {
+        self.execute(None, |tran| { tran.delete_scope(scope) })
+    }
+
+    pub fn clear(&self) -> Result<(), KeyValueError> {
+        self.execute(None, |tran| tran.clear())
+    }
+}
+
+
+// # Migration Support
+impl KeyValueStore {
+    fn prefixed_namespace(
+        namespace: &Ident,
+        prefix: &Ident,
+    ) -> Box<Ident> {
+        Ident::builder(prefix).push_ident(
+            const { Ident::make("_") }
+        ).push_ident(
+            namespace
+        ).finish()
+    }
+
+    pub fn is_empty(
+        store: &Store, namespace: &Ident
+    ) -> Result<bool, KeyValueError> {
+        store.execute(|tran| {
+            KeyValueTransaction::new(tran, namespace).is_empty()
+        })
+    }
+
+    pub fn is_upgrade_empty(
+        store: &Store, namespace: &Ident
+    ) -> Result<bool, KeyValueError> {
+        Self::is_empty(
+            store,
+            &Self::prefixed_namespace(
+                namespace, const { Ident::make("upgrade") }
+            )
+        )
+    }
+
+    /// Import all data from the given key-value store into this store.
+    ///
+    /// This copies data value by value with a separate transaction for each.
+    pub fn import(
+        &self,
+        other: &Self,
+    ) -> Result<(), KeyValueError> {
+        let mut scopes: Vec<_>
+            = other.list_scopes()?.into_iter().map(Some).collect();
+        scopes.push(None);
+
+        for scope in scopes {
+            for key in other.list_keys(scope.as_deref())? {
+                if let Some(value)
+                    = other.get::<Value>(scope.as_deref(), &key)?
+                {
+                    self.store(scope.as_deref(), &key, &value)?
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Archives the given namespace.
+    ///
+    /// The namespace is moved to a namespace prefixed with `"archive"`. If
+    /// such a namespace already exists, it is removed.
+    pub fn migrate_to_archive(
+        store: &Store, namespace: &Ident
+    ) -> Result<(), KeyValueError> {
+        let archive_ns = Self::prefixed_namespace(
+            namespace, const { Ident::make("archive") }
+        );
+
+        // Wipe any existing archive, before archiving this store.
+        // We don't want to keep too much old data. See issue: #1088.
+        Self::new(store.clone(), archive_ns.clone())?.clear()?;
+
+        Self::migrate(
+            &store, namespace, &archive_ns
+        )?;
+        Ok(())
+    }
+
+    /// Migrates an upgrade namespace to the normal namespace.
+    ///
+    /// This moves the namespace prefixed by `"upgrade"` to the namespace.
+    /// Fails if the given namespace is not empty.
+    pub fn migrate_to_current(
+        store: &Store, namespace: &Ident
+    ) -> Result<(), KeyValueError> {
+        if !Self::is_empty(store, namespace)? {
+            return Err(KeyValueError::Other(format!(
+                "Abort migrate upgraded store for {namespace} to current. \
+                The current store was not archived."
+            )))
+        }
+
+        let upgrade_ns = Self::prefixed_namespace(
+            namespace, const { Ident::make("upgrade") }
+        );
+        Self::migrate(store, &upgrade_ns, namespace)?;
+        Ok(())
+    }
+
+    fn migrate(
+        store: &Store, src_ns: &Ident, dst_ns: &Ident
+    ) -> Result<(), KeyValueError> {
+        struct Query;
+
+        impl Statement for Query {
+            type Params<'a> = (
+                &'a str, // src_ns
+                &'a str, // dst_ns
+            );
+
+            const PSQL_QUERY: &'static str = "\
+                ALTER TABLE $1 RENAME TO $2\
+            ";
+            const SQLITE_QUERY: &'static str = "\
+                ALTER TABLE ?1 RENAME TO ?2\
+            ";
+        }
+
+        impl ManipulationStatement for Query {
+            fn run_disk<'a>(
+                (src_ns, dst_ns): Self::Params<'a>,
+                store: &mut DiskStore
+            ) -> Result<u64, DiskError> {
+                let src_path = store.namespace_path(src_ns);
+                let dst_path = store.namespace_path(dst_ns);
+
+                fs::rename(&src_path, &dst_path).map_err(|err| {
+                    DiskError::io(
+                        format!(
+                            "cannot rename dir from {} to {}",
+                            src_path.display(),
+                            dst_path.display(),
+                        ),
+                        err
+                    )
+                })?;
+                Ok(1)
+            }
+        }
+
+
+        // TODO: Check for locks.
+
+        store.execute(|tran| {
+            tran.manipulate::<Query>((src_ns.as_str(), dst_ns.as_str()))
+        })?;
+        Ok(())
+    }
+}
+
+//------------ Init ----------------------------------------------------------
+
+struct Init<'a> {
+    namespace: &'a Ident
+}
+
+impl<'a> Schema for Init<'a> {
+    async fn init_psql<'t>(
+        self, transaction: &mut tokio_postgres::Transaction<'t>
+    ) -> Result<(), StoreError> {
+        // TODO: Check that the columns are present and of correct type.
+        Ok(())
+    }
+
+    fn init_sqlite(
+        self, transaction: rusqlite::Transaction
+    ) -> Result<(), StoreError> {
+        if transaction.table_exists(None, self.namespace.as_str())? {
+            // TODO: Check that the columns are present and of correct type.
+            Ok(())
+        }
+        else {
+            transaction.execute(
+                "CREATE TABLE ?1 ( \
+                   scope TEXT, \
+                   key TEXT NOT NULL, \
+                   value TEXT NOT NULL, \
+                   PRIMARY KEY(scope, key) \
+                )",
+                (self.namespace.as_str(),),
+            )?;
+            transaction.commit()?;
+            Ok(())
+        }
+    }
+
+    fn init_disk(
+        self, store: &mut DiskStore
+    ) -> Result<(), DiskError> {
+        Ok(())
+    }
+}
+
+
+//------------ KeyValueTransaction -------------------------------------------
 
 #[derive(Debug)]
-pub struct Transaction<'a, 't> {
+pub struct KeyValueTransaction<'a, 't> {
     tran: &'a mut StoreTransaction<'t>,
     namespace: &'a Ident,
 }
 
-impl<'a, 't> Transaction<'a, 't> {
+impl<'a, 't> KeyValueTransaction<'a, 't> {
     fn new(
         tran: &'a mut StoreTransaction<'t>,
         namespace: &'a Ident,
@@ -82,10 +375,63 @@ impl<'a, 't> Transaction<'a, 't> {
 }
 
 /// # Reading
-impl<'a, 't> Transaction<'a, 't> {
+impl<'a, 't> KeyValueTransaction<'a, 't> {
+    pub fn is_empty(&mut self) -> Result<bool, KeyValueError> {
+        struct Query;
+
+        impl Statement for Query {
+            type Params<'a> = (
+                &'a str, // namespace
+            );
+
+            const PSQL_QUERY: &'static str = "\
+                SELECT COUNT(*) FROM $1\
+            ";
+            const SQLITE_QUERY: &'static str = "\
+                SELECT COUNT(*) FROM $1\
+            ";
+        }
+
+        impl QueryOneStatement for Query {
+            type Row = bool;
+
+            fn psql_row(
+                row: tokio_postgres::Row
+            ) -> Result<Self::Row, StatementError> {
+                row.try_get::<_, i64>(
+                    0
+                ).map(|res| res == 0).map_err(StatementError::custom)
+            }
+
+            fn sqlite_row(
+                row: &rusqlite::Row
+            ) -> Result<Self::Row, StatementError> {
+                row.get::<_, i64>(
+                    0
+                ).map(|res| res == 0).map_err(StatementError::custom)
+            }
+
+            fn run_disk<'a>(
+                (namespace,): Self::Params<'a>,
+                store: &mut DiskStore,
+            ) -> Result<Self::Row, DiskError> {
+                let path = store.namespace_path(namespace);
+                Ok(
+                    path.read_dir().map(|mut d| {
+                        d.next().is_none()
+                    }).unwrap_or(true)
+                )
+            }
+        }
+
+        Ok(self.tran.query_one::<Query>((
+            self.namespace.as_str(),
+        ))?)
+    }
+
     pub fn has(
         &mut self, scope: Option<&Ident>, key: &Ident,
-    ) -> Result<bool, StoreError> {
+    ) -> Result<bool, KeyValueError> {
         struct Query;
 
         impl Statement for Query {
@@ -143,7 +489,9 @@ impl<'a, 't> Transaction<'a, 't> {
         ))?.is_some())
     }
 
-    pub fn has_scope(&mut self, scope: &Ident) -> Result<bool, StoreError> {
+    pub fn has_scope(
+        &mut self, scope: &Ident
+    ) -> Result<bool, KeyValueError> {
         struct Query;
 
         impl Statement for Query {
@@ -205,7 +553,7 @@ impl<'a, 't> Transaction<'a, 't> {
 
     pub fn get<T: DeserializeOwned + 'static>(
         &mut self, scope: Option<&Ident>, key: &Ident
-    ) -> Result<Option<T>, StoreError> {
+    ) -> Result<Option<T>, KeyValueError> {
         struct Query<T>(PhantomData<T>);
 
         impl<T: 'static> Statement for Query<T> {
@@ -306,7 +654,7 @@ impl<'a, 't> Transaction<'a, 't> {
 
     pub fn list_keys(
         &mut self, scope: Option<&Ident>,
-    ) -> Result<Vec<Box<Ident>>, StoreError> {
+    ) -> Result<Vec<Box<Ident>>, KeyValueError> {
         struct Query;
 
         impl Statement for Query {
@@ -417,7 +765,7 @@ impl<'a, 't> Transaction<'a, 't> {
         ))?)
     }
 
-    pub fn list_scopes(&mut self) -> Result<Vec<Box<Ident>>, StoreError> {
+    pub fn list_scopes(&mut self) -> Result<Vec<Box<Ident>>, KeyValueError> {
         struct Query;
 
         impl Statement for Query {
@@ -530,10 +878,10 @@ impl<'a, 't> Transaction<'a, 't> {
 }
 
 /// # Writing
-impl<'a, 't> Transaction<'a, 't> {
+impl<'a, 't> KeyValueTransaction<'a, 't> {
     pub fn store<T: Serialize>(
         &mut self, scope: Option<&Ident>, key: &Ident, value: &T
-    ) -> Result<(), StoreError> {
+    ) -> Result<(), KeyValueError> {
         struct Query;
 
         impl Statement for Query {
@@ -616,7 +964,7 @@ impl<'a, 't> Transaction<'a, 't> {
         &mut self,
         from_scope: Option<&Ident>, from_key: &Ident,
         to_scope: Option<&Ident>, to_key: &Ident,
-    ) -> Result<(), StoreError> {
+    ) -> Result<(), KeyValueError> {
         struct Query;
 
         impl Statement for Query {
@@ -682,7 +1030,7 @@ impl<'a, 't> Transaction<'a, 't> {
 
     pub fn move_scope(
         &mut self, from_scope: &Ident, to_scope: &Ident,
-    ) -> Result<(), StoreError> {
+    ) -> Result<(), KeyValueError> {
         struct Query;
 
         impl Statement for Query {
@@ -735,9 +1083,9 @@ impl<'a, 't> Transaction<'a, 't> {
         Ok(())
     }
 
-    pub fn delete(
+    pub fn delete_key(
         &mut self, scope: Option<&Ident>, key: &Ident
-    ) -> Result<(), StoreError> {
+    ) -> Result<(), KeyValueError> {
         struct Query;
 
         impl Statement for Query {
@@ -786,7 +1134,7 @@ impl<'a, 't> Transaction<'a, 't> {
 
     pub fn delete_scope(
         &mut self, scope: &Ident
-    ) -> Result<(), StoreError> {
+    ) -> Result<(), KeyValueError> {
         struct Query;
 
         impl Statement for Query {
@@ -833,7 +1181,7 @@ impl<'a, 't> Transaction<'a, 't> {
         Ok(())
     }
 
-    pub fn clear(&mut self) -> Result<(), StoreError> {
+    pub fn clear(&mut self) -> Result<(), KeyValueError> {
         struct Query;
 
         impl Statement for Query {

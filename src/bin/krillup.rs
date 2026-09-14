@@ -33,7 +33,16 @@ fn main() {
 
     match options.command {
         Command::Prepare(_prepare) => {
-            let storage = StorageSystem::new(config.storage_uri.clone());
+            let tokio = match tokio::runtime::Runtime::new() {
+                Ok(handle) => handle,
+                Err(err) => {
+                    eprintln!("Failed to create runtime: {err}");
+                    return;
+                }
+            };
+            let storage = StorageSystem::new(
+                config.storage_uri.clone(), tokio.handle()
+            );
             let properties_manager = match PropertiesManager::create(
                 &storage, config.use_history_cache,
             ) {
@@ -94,7 +103,14 @@ fn main() {
             }
         }
         Command::Migrate(cmd) => {
-            let storage = StorageSystem::new(cmd.target);
+            let tokio = match tokio::runtime::Runtime::new() {
+                Ok(handle) => handle,
+                Err(err) => {
+                    eprintln!("Failed to create runtime: {err}");
+                    return;
+                }
+            };
+            let storage = StorageSystem::new(cmd.target, tokio.handle());
 
             if let Err(e) = migrate(config, &storage) {
                 eprintln!("*** Error Migrating DATA ***");

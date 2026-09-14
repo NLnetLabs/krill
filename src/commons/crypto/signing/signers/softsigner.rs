@@ -27,7 +27,7 @@ use crate::{
             SignerHandle,
         },
         storage::{
-            Ident, KeyValueStore, StorageSystem, StorageUri, OpenStoreError,
+            Ident, KeyValueError, KeyValueStore, StorageSystem, StorageUri,
         },
     },
     constants::KEYS_NS,
@@ -74,7 +74,7 @@ impl OpenSslSigner {
         conf: &OpenSslSignerConfig,
         name: &str,
         mapper: Option<Arc<SignerMapper>>,
-    ) -> Result<Self, OpenStoreError> {
+    ) -> Result<Self, KeyValueError> {
         let keys_store = Self::init_keys_store(storage, conf)?;
 
         let s = OpenSslSigner {
@@ -141,11 +141,14 @@ impl OpenSslSigner {
     fn init_keys_store(
         storage: &StorageSystem,
         conf: &OpenSslSignerConfig,
-    ) -> Result<KeyValueStore, OpenStoreError> {
-        match &conf.keys_storage_uri {
-            Some(uri) => storage.open_uri(uri, KEYS_NS),
-            None => storage.open(KEYS_NS)
-        }
+    ) -> Result<KeyValueStore, KeyValueError> {
+        KeyValueStore::new(
+            match &conf.keys_storage_uri {
+                Some(uri) => storage.open_uri(uri)?,
+                None => storage.open()?
+            },
+            KEYS_NS
+        )
     }
 
     fn build_key(&self) -> Result<KeyIdentifier, SignerError> {
@@ -273,7 +276,7 @@ impl OpenSslSigner {
         &self,
         key_id: &KeyIdentifier,
     ) -> Result<(), KeyError<SignerError>> {
-        self.keys_store.drop_key(
+        self.keys_store.delete_key(
             None, &Ident::from_key_identifier(*key_id)
         ).map_err(|_| {
             KeyError::Signer(SignerError::KeyNotFound)
