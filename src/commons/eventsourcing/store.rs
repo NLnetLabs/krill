@@ -17,7 +17,7 @@ use crate::api::history::{
 };
 use crate::commons::error::KrillIoError;
 use crate::commons::storage::{
-    Ident, KeyValueError, KeyValueStore, OpenStoreError, StorageSystem,
+    Ident, KeyValueError, KeyValueStore, StorageSystem,
 };
 use super::agg::{Aggregate, Command, InitCommand, StoredCommand};
 
@@ -71,9 +71,10 @@ impl<A: Aggregate> AggregateStore<A> {
         storage: &StorageSystem,
         namespace: &Ident,
         use_history_cache: bool,
-    ) -> Result<Self, OpenStoreError> {
+    ) -> Result<Self, KeyValueError> {
         Ok(Self::create_from_kv(
-            storage.open(namespace)?, use_history_cache
+            KeyValueStore::new(storage.open()?, namespace)?,
+            use_history_cache
         ))
     }
 
@@ -85,9 +86,12 @@ impl<A: Aggregate> AggregateStore<A> {
         storage: &StorageSystem,
         namespace: &Ident,
         use_history_cache: bool,
-    ) -> Result<Self, OpenStoreError> {
+    ) -> Result<Self, KeyValueError> {
         Ok(Self::create_from_kv(
-            storage.open_upgrade(namespace)?, use_history_cache,
+            KeyValueStore::new_upgrade(
+                storage.open()?, namespace
+            )?,
+            use_history_cache,
         ))
     }
 
@@ -140,7 +144,7 @@ impl<A: Aggregate> AggregateStore<A> {
         // XXX This looks extremely inefficient.
         let mut res = vec![];
 
-        for scope in self.kv.scopes()? {
+        for scope in self.kv.list_scopes()? {
             if let Ok(handle) = MyHandle::from_str(&scope.to_string()) {
                 res.push(handle)
             }

@@ -52,7 +52,9 @@ async fn functional_old_data() {
     ).await;
 
     eprintln!(">>>> Configure the TA signer.");
-    let signer = TrustAnchorSignerManager::create(signer_config).unwrap();
+    let signer = TrustAnchorSignerManager::create(
+        signer_config, &tokio::runtime::Handle::current()
+    ).unwrap();
 
     // XXX Wait for Krill to process pending tasks.
     eprintln!(">>>> Wait a bit for Krill to catch up.");

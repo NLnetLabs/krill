@@ -52,8 +52,12 @@ impl CasMigration {
         storage: &StorageSystem,
     ) -> UpgradeResult<AspaMigrationConfigs> {
         Self {
-            current_kv_store: storage.open(CASERVER_NS)?,
-            new_kv_store: storage.open_upgrade(CASERVER_NS)?,
+            current_kv_store: KeyValueStore::new(
+                storage.open()?, CASERVER_NS
+            )?,
+            new_kv_store: KeyValueStore::new_upgrade(
+                storage.open()?, CASERVER_NS
+            )?,
             new_agg_store: AggregateStore::<CertAuth>::create_upgrade_store(
                 storage, CASERVER_NS, false,
             )?,
@@ -247,8 +251,10 @@ impl CaObjectsMigration {
     /// Creates a new migration from the configuration.
     fn create(storage: &StorageSystem) -> Result<Self, UpgradeError> {
         Ok(CaObjectsMigration {
-            current_store: storage.open(CA_OBJECTS_NS)?,
-            new_store: storage.open_upgrade(CA_OBJECTS_NS)?
+            current_store: KeyValueStore::new(storage.open()?, CA_OBJECTS_NS)?,
+            new_store: KeyValueStore::new_upgrade(
+                storage.open()?, CA_OBJECTS_NS
+            )?,
         })
     }
 
