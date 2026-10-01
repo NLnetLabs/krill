@@ -1,12 +1,16 @@
 use std::{error, fmt, fs, io};
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use tempfile::NamedTempFile;
 use url::Url;
 use super::combined::{
     StoreError,
     Transaction as SuperTransaction
 };
+use super::ident::Ident;
+use super::lock::MemoryScopeLocks;
 use super::statements::{
     ManipulationStatement, QueryOneStatement, QueryOptStatement,
     QueryStatement, Schema,
@@ -21,7 +25,7 @@ const TMP_FILE_DIR: &str = ".tmp";
 
 //------------ Uri -----------------------------------------------------------
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Uri {
     path: PathBuf,
 }
@@ -66,20 +70,35 @@ impl fmt::Display for Uri {
 //------------ System --------------------------------------------------------
 
 #[derive(Debug, Default)]
-pub struct System(());
+pub struct System {
+    locks: Mutex<HashMap<Uri, Arc<MemoryScopeLocks>>>,
+}
 
 impl System {
     pub fn new(_tokio: &tokio::runtime::Handle) -> Self {
-        Self(())
+        Self {
+            locks: Default::default(),
+        }
     }
 
     #[cfg(test)]
     pub fn new_test() -> Option<Self> {
-        Some(Self(()))
+        Some(Self {
+            locks: Default::default(),
+        })
     }
 
     pub fn open(&self, uri: &Uri) -> Result<Store, Error> {
-        Store::new(uri.path.clone())
+        let locks = self.get_locks(uri);
+        Store::new(uri.path.clone(), locks)
+    }
+
+    fn get_locks(&self, uri: &Uri) -> Arc<MemoryScopeLocks> {
+        let mut locks = self.locks.lock().expect("poisoned lock");
+        if let Some(locks) = locks.get(uri) {
+            return locks.clone();
+        }
+        locks.entry(uri.clone()).or_default().clone()
     }
 }
 
@@ -99,11 +118,14 @@ pub struct Store {
     /// This will be directly under the base directory and shared between
     /// namespaces.
     tmp: PathBuf,
+
+    locks: Arc<MemoryScopeLocks>,
 }
 
 impl Store {
     fn new(
         root: PathBuf,
+        locks: Arc<MemoryScopeLocks>,
     ) -> Result<Self, Error> {
         let tmp = root.join(TMP_FILE_DIR);
 
@@ -117,7 +139,7 @@ impl Store {
             )
         })?;
 
-        Ok(Self { root, tmp })
+        Ok(Self { root, tmp, locks })
     }
 
     pub(crate) fn init<S: Schema>(
@@ -131,6 +153,18 @@ impl Store {
         F: for<'a> Fn(&mut SuperTransaction<'a>) -> Result<T, E>,
         E: From<StoreError>,
     {
+        op(&mut (Transaction::new(self).into()))
+    }
+
+    pub fn execute_locked<F, T, E>(
+        &self, namespace: &Ident, scope: &Ident, op: F
+    ) -> Result<T, E>
+    where
+        F: for<'a> Fn(&mut SuperTransaction<'a>) -> Result<T, E>,
+        E: From<StoreError>,
+    {
+        let lock = self.locks.get(namespace, scope);
+        let _lock = lock.lock();
         op(&mut (Transaction::new(self).into()))
     }
 }

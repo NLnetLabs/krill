@@ -11,6 +11,7 @@ use super::combined::{
     StoreError,
     Transaction as SuperTransaction
 };
+use super::ident::Ident;
 use super::statements::{
     ManipulationStatement, Params, QueryOneStatement, QueryOptStatement,
     QueryStatement, Schema, Statement
@@ -142,6 +143,19 @@ impl Store {
     fn pool_client(&self, client: Client) {
         self.0.client_pool.lock().expect("poisoned lock").push(client);
     }
+
+    pub fn execute_locked<F, T, E>(
+        &self, namespace: &Ident, scope: &Ident, op: F
+    ) -> Result<T, E>
+    where
+        F: for<'a> Fn(&mut SuperTransaction<'a>) -> Result<T, E>,
+        E: From<StoreError>,
+    {
+        let mut client = self.get_client()?;
+        let res = client.execute_locked(namespace, scope, op);
+        self.pool_client(client);
+        res
+    }
 }
 
 
@@ -201,13 +215,51 @@ impl Client {
 
     fn transaction(&mut self) -> Result<Transaction<'_>, Error> {
         let transaction = self.tokio.block_on(async {
-            self.client.transaction().await
+            self.client.build_transaction()
+                .isolation_level(tokio_postgres::IsolationLevel::Serializable)
+                .start().await
         })?;
         Ok(Transaction {
             db: transaction,
             statements: &mut self.statements,
             tokio: &self.tokio,
         })
+    }
+
+    fn execute_locked<F, T, E>(
+        &mut self, namespace: &Ident, scope: &Ident, op: F
+    ) -> Result<T, E>
+    where
+        F: for<'a> Fn(&mut SuperTransaction<'a>) -> Result<T, E>,
+        E: From<StoreError>
+    {
+        let transaction = self.transaction().map_err(
+            StoreError::from
+        )?;
+
+        transaction.tokio.block_on(async {
+            transaction.db.execute(
+                "LOCK TABLE locks IN ROW EXCLUSIVE MODE",
+                &[]
+            ).await?;
+            transaction.db.execute(
+                "INSERT INTO locks (namespace, scope) VALUES ($1, $2)",
+                &[&namespace.as_str(), &scope.as_str()],
+            ).await
+        }).map_err(Into::into)?;
+
+        let mut transaction = transaction.into();
+        let res = op(&mut transaction)?;
+        if let Ok(transaction) = Transaction::try_from(transaction) {
+            transaction.tokio.block_on(async {
+                transaction.db.execute(
+                    "DELETE FROM locks WHERE namespace = $1 and scope = $2",
+                    &[&namespace.as_str(), &scope.as_str()],
+                ).await?;
+                transaction.db.commit().await
+            }).map_err(Into::into)?;
+        };
+        Ok(res)
     }
 }
 

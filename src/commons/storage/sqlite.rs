@@ -7,6 +7,8 @@ use super::combined::{
     StoreError,
     Transaction as SuperTransaction
 };
+use super::ident::Ident;
+use super::lock::MemoryScopeLocks;
 use super::statements::{
     ManipulationStatement, QueryOneStatement, QueryOptStatement,
     QueryStatement, Schema,
@@ -112,6 +114,8 @@ struct StoreInner {
     /// This simply keeps clients for the same database when we are done with
     /// them so we can reuse them later.
     client_pool: Mutex<Vec<Client>>,
+
+    locks: MemoryScopeLocks,
 }
 
 impl Store {
@@ -119,7 +123,8 @@ impl Store {
         Self(Arc::new(
             StoreInner {
                 uri,
-                client_pool: Default::default()
+                client_pool: Default::default(),
+                locks: Default::default(),
             }
         ))
     }
@@ -153,6 +158,18 @@ impl Store {
 
     fn pool_client(&self, client: Client) {
         self.0.client_pool.lock().expect("poisoned lock").push(client);
+    }
+
+    pub fn execute_locked<F, T, E>(
+        &self, namespace: &Ident, scope: &Ident, op: F
+    ) -> Result<T, E>
+    where
+        F: for<'a> Fn(&mut SuperTransaction<'a>) -> Result<T, E>,
+        E: From<StoreError>,
+    {
+        let lock = self.0.locks.get(namespace, scope);
+        let _lock = lock.lock();
+        self.execute(op)
     }
 }
 

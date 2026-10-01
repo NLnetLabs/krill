@@ -1,6 +1,4 @@
-#![allow(unused)]
-
-use std::{error, fmt, fs, io};
+use std::{fmt, fs, io};
 use std::fs::File;
 use std::marker::PhantomData;
 use std::path::PathBuf;
@@ -71,7 +69,7 @@ impl KeyValueStore {
 
     pub fn execute<F, T>(
         &self,
-        scope: Option<&Ident>,
+        _scope: Option<&Ident>,
         op: F
     ) -> Result<T, KeyValueError>
     where
@@ -324,6 +322,7 @@ impl<'a> Schema for Init<'a> {
         self, transaction: &mut tokio_postgres::Transaction<'t>
     ) -> Result<(), StoreError> {
         // TODO: Check that the columns are present and of correct type.
+        let _ = transaction;
         Ok(())
     }
 
@@ -352,6 +351,7 @@ impl<'a> Schema for Init<'a> {
     fn init_disk(
         self, store: &mut DiskStore
     ) -> Result<(), DiskError> {
+        let _ = store;
         Ok(())
     }
 }
@@ -454,13 +454,13 @@ impl<'a, 't> KeyValueTransaction<'a, 't> {
             type Row = ();
 
             fn psql_row(
-                row: tokio_postgres::Row
+                _row: tokio_postgres::Row
             ) -> Result<Self::Row, StatementError> {
                 Ok(())
             }
 
             fn sqlite_row(
-                row: &rusqlite::Row
+                _row: &rusqlite::Row
             ) -> Result<Self::Row, StatementError> {
                 Ok(())
             }
@@ -513,13 +513,13 @@ impl<'a, 't> KeyValueTransaction<'a, 't> {
             type Row = ();
 
             fn psql_row(
-                row: tokio_postgres::Row
+                _row: tokio_postgres::Row
             ) -> Result<Self::Row, StatementError> {
                 Ok(())
             }
 
             fn sqlite_row(
-                row: &rusqlite::Row
+                _row: &rusqlite::Row
             ) -> Result<Self::Row, StatementError> {
                 Ok(())
             }
@@ -1012,7 +1012,7 @@ impl<'a, 't> KeyValueTransaction<'a, 't> {
                         err
                     )
                 })?;
-                store.remove_empty_dirs(from_path.parent());
+                store.remove_empty_dirs(from_path.parent())?;
 
                 Ok(1)
             }
@@ -1068,7 +1068,7 @@ impl<'a, 't> KeyValueTransaction<'a, 't> {
                         err
                     )
                 })?;
-                store.remove_empty_dirs(Some(&from_path));
+                store.remove_empty_dirs(Some(&from_path))?;
 
                 Ok(1) // Not actually the correct result but we discard it
                       // anyway below.
@@ -1118,7 +1118,7 @@ impl<'a, 't> KeyValueTransaction<'a, 't> {
                         err
                     )
                 })?;
-                store.remove_empty_dirs(path.parent());
+                store.remove_empty_dirs(path.parent())?;
 
                 Ok(1)
             }
@@ -1167,7 +1167,7 @@ impl<'a, 't> KeyValueTransaction<'a, 't> {
                         err
                     )
                 })?;
-                store.remove_empty_dirs(path.parent());
+                store.remove_empty_dirs(path.parent())?;
 
                 Ok(1) // Not actually the correct result but we discard it
                       // anyway below.
@@ -1213,7 +1213,7 @@ impl<'a, 't> KeyValueTransaction<'a, 't> {
                         err
                     )
                 })?;
-                store.remove_empty_dirs(path.parent());
+                store.remove_empty_dirs(path.parent())?;
 
                 Ok(1) // Not actually the correct result but we discard it
                       // anyway below.

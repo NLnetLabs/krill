@@ -8,6 +8,7 @@ pub use self::ident::Ident;
 pub mod combined;
 pub mod ident;
 pub mod kv;
+pub mod lock;
 pub mod statements;
 
 pub mod disk;

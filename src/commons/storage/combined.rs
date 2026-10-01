@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use tokio::runtime;
 use url::Url;
+use super::ident::Ident;
 use super::statements::{
     ManipulationStatement, QueryOneStatement, QueryOptStatement,
     QueryStatement, Schema, StatementError,
@@ -218,6 +219,22 @@ macro_rules! store {
                     $(
                         StoreInner::$variant(inner) => {
                             inner.execute(op)
+                        }
+                    )*
+                }
+            }
+
+            pub fn execute_locked<F, T, E>(
+                &self, namespace: &Ident, scope: &Ident, op: F
+            ) -> Result<T, E>
+            where
+                F: for<'a> Fn(&mut Transaction<'a>) -> Result<T, E>,
+                E: From<StoreError>,
+            {
+                match &self.0 {
+                    $(
+                        StoreInner::$variant(inner) => {
+                            inner.execute_locked(namespace, scope, op)
                         }
                     )*
                 }
