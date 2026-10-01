@@ -69,16 +69,33 @@ impl KeyValueStore {
 
     pub fn execute<F, T>(
         &self,
-        _scope: Option<&Ident>,
+        scope: Option<&Ident>,
         op: F
     ) -> Result<T, KeyValueError>
     where
         F: Fn(&mut KeyValueTransaction) -> Result<T, KeyValueError>
     {
-        Ok(self.store.execute(|tran| {
-            let mut tran = KeyValueTransaction::new(tran, &self.namespace);
-            op(&mut tran)
-        })?)
+        match scope {
+            Some(scope) => {
+                Ok(self.store.execute_locked(
+                    &self.namespace, scope,
+                    |tran| {
+                        let mut tran = KeyValueTransaction::new(
+                            tran, &self.namespace
+                        );
+                        op(&mut tran)
+                    }
+                )?)
+            }
+            None => {
+                Ok(self.store.execute(|tran| {
+                    let mut tran = KeyValueTransaction::new(
+                        tran, &self.namespace
+                    );
+                    op(&mut tran)
+                })?)
+            }
+        }
     }
 }
 
