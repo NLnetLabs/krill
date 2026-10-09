@@ -8,7 +8,6 @@ image:
   - "ubuntu:jammy" # ubuntu/22.04
   - "ubuntu:noble" # ubuntu/24.04
   - "ubuntu:resolute" # ubuntu/26.04
-  - "debian:bullseye" # debian/11
   - "debian:bookworm" # debian/12
   - "debian:trixie" # debian/13
   - "almalinux:8" # compatible with EOL centos:8
@@ -38,15 +37,6 @@ include:
 
   - image: "almalinux:9"
     rpm_systemd_service_unit_file: "pkg/common/krill-ubuntu-focal.krill.service"
-
-  # package for the Raspberry Pi 4b as an ARMv7 cross compiled variant of the Debian Bullseye upon which
-  # Raspbian 11 is based.
-  - pkg: "krill"
-    image: "debian:bullseye"
-    target: "armv7-unknown-linux-gnueabihf"
-  - pkg: "krillup"
-    image: "debian:bullseye"
-    target: "armv7-unknown-linux-gnueabihf"
 
 # Exclude upgrade testing on Ubuntu Resolute as no prior released versions exist to upgrade from.
 exclude:
