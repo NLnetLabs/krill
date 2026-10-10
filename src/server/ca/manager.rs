@@ -1203,6 +1203,15 @@ impl CaManager {
 
             // The updated CA will now include the newly issued certificate.
             let child = ca.get_child(&child_handle)?;
+
+            // If the child has no resources, we probably don't want to issue
+            // a new certificate
+            if issue_req.limit().apply_to(&child.resources).is_ok_and(
+                |res| res.is_empty()
+            ) {
+                return Err(Error::custom("Child request yields no resources"));
+            }
+
             let my_rcn = child.parent_name_for_rcn(child_rcn);
 
             let response = ca.issuance_response(
