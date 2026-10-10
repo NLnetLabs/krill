@@ -121,8 +121,10 @@ pub struct TrustAnchorSignerManager {
 }
 
 impl TrustAnchorSignerManager {
-    pub fn create(config: Config) -> Result<Self, SignerClientError> {
-        let storage = StorageSystem::new(config.storage_uri.clone());
+    pub fn create(
+        config: Config, tokio: &tokio::runtime::Handle
+    ) -> Result<Self, SignerClientError> {
+        let storage = StorageSystem::new(config.storage_uri.clone(), tokio);
         let store = AggregateStore::create(
             &storage,
             const { Ident::make("signer") },

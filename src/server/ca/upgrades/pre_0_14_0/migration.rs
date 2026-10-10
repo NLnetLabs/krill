@@ -37,17 +37,16 @@ impl CasMigration {
         mode: UpgradeMode,
         storage: &StorageSystem,
     ) -> UpgradeResult<AspaMigrationConfigs> {
-        let current_kv_store = storage.open(CASERVER_NS)?;
-        let new_kv_store = storage.open_upgrade(CASERVER_NS)?;
-
-        let new_agg_store = AggregateStore::<CertAuth>::create_upgrade_store(
-            storage, CASERVER_NS, false
-        )?;
-
         CasMigration {
-            current_kv_store,
-            new_kv_store,
-            new_agg_store,
+            current_kv_store: KeyValueStore::new(
+                storage.open()?, CASERVER_NS
+            )?,
+            new_kv_store: KeyValueStore::new_upgrade(
+                storage.open()?, CASERVER_NS
+            )?,
+            new_agg_store: AggregateStore::<CertAuth>::create_upgrade_store(
+                storage, CASERVER_NS, false
+            )?,
         }
         .upgrade(mode)
     }

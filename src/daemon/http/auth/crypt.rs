@@ -26,7 +26,7 @@ use serde::{Deserialize, Serialize};
 use crate::commons::ext_serde;
 use crate::commons::KrillResult;
 use crate::commons::error::{ApiAuthError, Error};
-use crate::commons::storage::{Ident, StorageSystem};
+use crate::commons::storage::{Ident, KeyValueStore, StorageSystem};
 
 const CHACHA20_KEY_BIT_LEN: usize = 256;
 const CHACHA20_KEY_BYTE_LEN: usize = CHACHA20_KEY_BIT_LEN / 8;
@@ -163,7 +163,7 @@ pub(crate) fn decrypt(
 }
 
 pub(crate) fn crypt_init(storage: &StorageSystem) -> KrillResult<CryptState> {
-    let store = storage.open(CRYPT_STATE_NS)?;
+    let store = KeyValueStore::new(storage.open()?, CRYPT_STATE_NS)?;
 
     if let Some(state) = store.get(None, CRYPT_STATE_KEY)? {
         Ok(state)

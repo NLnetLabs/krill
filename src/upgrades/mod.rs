@@ -24,7 +24,7 @@ use crate::{
             WithStorableDetails,
         },
         storage::{
-            Ident, KeyValueError, KeyValueStore, OpenStoreError,
+            Ident, KeyValueError, KeyValueStore, StoreError,
             StorageSystem,
         },
         version::KrillVersion,
@@ -225,8 +225,8 @@ impl From<AggregateStoreError> for UpgradeError {
     }
 }
 
-impl From<OpenStoreError> for UpgradeError {
-    fn from(e: OpenStoreError) -> Self {
+impl From<StoreError> for UpgradeError {
+    fn from(e: StoreError) -> Self {
         UpgradeError::custom(e)
     }
 }
@@ -335,7 +335,7 @@ pub trait UpgradeAggregateStorePre0_14 {
 
     type OldInitEvent: fmt::Display + Eq + PartialEq + Storable + 'static;
     type OldEvent: fmt::Display + Eq + PartialEq + Storable + 'static;
-    type OldStorableDetails: WithStorableDetails;
+    type OldStorableDetails: WithStorableDetails + 'static;
 
     //--- Mandatory functions to implement
 
@@ -397,7 +397,7 @@ pub trait UpgradeAggregateStorePre0_14 {
 
         // Migrate the event sourced data for each scope and create new
         // snapshots
-        for scope in self.deployed_store().scopes()? {
+        for scope in self.deployed_store().list_scopes()? {
             // Getting the Handle should never fail, but if it does then we
             // should bail out asap.
             let handle =
@@ -609,7 +609,7 @@ pub trait UpgradeAggregateStorePre0_14 {
             }
             UpgradeMode::PrepareToFinalise => {
                 let mut aspa_configs = AspaMigrationConfigs::default();
-                for scope in self.deployed_store().scopes()? {
+                for scope in self.deployed_store().list_scopes()? {
                     // Getting the Handle should never fail, but if it does
                     // then we should bail out asap.
                     let ca = MyHandle::from_str(&scope.to_string()).map_err(
@@ -660,7 +660,7 @@ pub trait UpgradeAggregateStorePre0_14 {
             && existing_migration_version != code_version
         {
             warn!("Found prepared data for Krill version {existing_migration_version}, will remove it and start from scratch for {code_version}");
-            self.preparation_key_value_store().wipe()?;
+            self.preparation_key_value_store().clear()?;
         }
 
         self.preparation_key_value_store()
@@ -735,12 +735,12 @@ pub trait UpgradeAggregateStorePre0_14 {
     /// Clean up keys used for tracking migration progress
     fn clean_migration_help_files(&self) -> UpgradeResult<()> {
         self.preparation_key_value_store()
-            .drop_key(None, const { Ident::make("version") })
+            .delete_key(None, const { Ident::make("version") })
             .map_err(UpgradeError::KeyStoreError)?;
 
-        for scope in self.preparation_key_value_store().scopes()? {
+        for scope in self.preparation_key_value_store().list_scopes()? {
             self.preparation_key_value_store()
-                .drop_key(Some(&scope), DATA_UPGRADE_INFO_KEY)
+                .delete_key(Some(&scope), DATA_UPGRADE_INFO_KEY)
                 .map_err(UpgradeError::KeyStoreError)?;
         }
         Ok(())
@@ -752,9 +752,11 @@ pub trait UpgradeAggregateStorePre0_14 {
     fn command_keys(
         &self, scope: &Ident, from: u64,
     ) -> Result<Vec<Box<Ident>>, UpgradeError> {
-        let keys = self.deployed_store().keys(Some(scope), "command--")?;
+        let keys = self.deployed_store().list_keys(Some(scope))?;
         let mut cmd_keys: Vec<OldCommandKey> = vec![];
-        for key in keys {
+        for key in keys.into_iter().filter(|key| {
+            key.as_str().starts_with("command--")
+        }) {
             let cmd_key = OldCommandKey::from_str(key.as_str())
                 .map_err(|_| {
                     UpgradeError::Custom(format!(
@@ -771,7 +773,7 @@ pub trait UpgradeAggregateStorePre0_14 {
         }).collect())
     }
 
-    fn get<V: DeserializeOwned>(
+    fn get<V: DeserializeOwned + 'static>(
         &self, scope: &Ident, key: &Ident
     ) -> Result<V, UpgradeError> {
         self.deployed_store().get(Some(scope), key)?.ok_or_else(|| {
@@ -852,7 +854,9 @@ pub fn prepare_upgrade_data_migrations(
             // easily be migrated to the new setup in 0.13.0.
             // Well.. it could be done, if there would be a strong use
             // case to put in the effort, but there really isn't.
-            let ca_kv_store = storage.open(CASERVER_NS)?;
+            let ca_kv_store = KeyValueStore::new(
+                storage.open()?, CASERVER_NS
+            )?;
             if ca_kv_store.has_scope(const { Ident::make("ta") })? {
                 return Err(UpgradeError::OldTaMigration);
             }
@@ -1005,24 +1009,27 @@ pub fn finalise_data_migration(
         TA_SIGNER_SERVER_NS,
         TASK_QUEUE_NS,
     ] {
+        let store = storage.open()?;
+
         // Check if there is a non-empty upgrade store for this namespace
         // that would need to be migrated.
-        if !storage.is_upgrade_empty(ns)? {
-            if !storage.is_empty(ns)? {
+        if !KeyValueStore::is_upgrade_empty(&store, ns)? {
+            if !KeyValueStore::is_empty(&store, ns)? {
                 info!("Archiving old data for {ns}.");
-                storage.migrate_to_archive(ns)?;
+                KeyValueStore::migrate_to_archive(&store, ns)?;
             }
 
             info!("Migrate new data for {ns}.");
-            storage.migrate_to_current(ns)?;
-        } else {
+            KeyValueStore::migrate_to_current(&store, ns)?;
+        }
+        else {
             // No migration needed, but check if we have a current store
             // for this namespace that still includes a version file. If
             // so, remove it.
-            let current_store = storage.open(ns)?;
+            let current_store = KeyValueStore::new(store, ns)?;
             if current_store.has(None,  VERSION_KEY)? {
                 debug!("Removing excess version key in ns: {ns}");
-                current_store.drop_key(None, VERSION_KEY)?;
+                current_store.delete_key(None, VERSION_KEY)?;
             }
 
             // If we migrate from before 0.15.0, delete the .locks scope.
@@ -1059,15 +1066,14 @@ fn record_preexisting_openssl_keys_in_signer_mapper(
     storage: &StorageSystem,
     config: &Config,
 ) -> Result<(), UpgradeError> {
-    let signers_key_store = storage.open(SIGNERS_NS)?;
-    if signers_key_store.is_empty()? {
+    if KeyValueStore::is_empty(&storage.open()?, SIGNERS_NS)? {
         let mut num_recorded_keys = 0;
         // If the key value store for the "signers" namespace is empty, then
         // it was not yet initialised and we may need to import keys
         // from a previous krill installation (earlier version, or a custom
         // build that has the hsm feature disabled.)
 
-        let keys_key_store = storage.open(KEYS_NS)?;
+        let keys_key_store = KeyValueStore::new(storage.open()?, KEYS_NS)?;
         info!(
             "Mapping OpenSSL signer keys, using uri: {}",
             storage.default_uri()
@@ -1087,7 +1093,7 @@ fn record_preexisting_openssl_keys_in_signer_mapper(
 
         let mut openssl_signer_handle: Option<SignerHandle> = None;
 
-        for key in keys_key_store.keys(None, "")? {
+        for key in keys_key_store.list_keys(None)? {
             debug!("Found key: {key}");
             // Is it a key identifier?
             if let Ok(key_id) = KeyIdentifier::from_str(key.as_str()) {
@@ -1218,7 +1224,7 @@ fn upgrade_versions(
             PUBSERVER_NS,
             PUBSERVER_CONTENT_NS,
         ] {
-            let kv_store = storage.open(ns)?;
+            let kv_store = KeyValueStore::new(storage.open()?, *ns)?;
             if let Some(key_store_version) =
                 kv_store.get::<KrillVersion>(None, VERSION_KEY)?
             {
@@ -1295,14 +1301,16 @@ mod tests {
         config.log_level = LevelFilter::Trace;
         let _ = config.init_logging();
 
-        let source_url = StorageUri::disk(temp_dir.path().into());
+        let source_url = StorageUri::disk(temp_dir.path());
 
         for ns in namespaces {
             let namespace = Ident::from_str(ns).unwrap();
-            let source_store = mem_storage.open_uri(
-                &source_url, namespace
+            let source_store = KeyValueStore::new(
+                mem_storage.open_uri(&source_url).unwrap(), namespace
             ).unwrap();
-            let target_store = mem_storage.open(namespace).unwrap();
+            let target_store = KeyValueStore::new(
+                mem_storage.open().unwrap(), namespace
+            ).unwrap();
 
             target_store.import(&source_store).unwrap();
         }
@@ -1546,15 +1554,17 @@ mod tests {
             "test-resources/status_store/migration-0.9.5/";
         let temp_dir = tempdir().unwrap();
         copy_folder(source_dir_path_str, &temp_dir);
-        let source_dir_url = StorageUri::disk(temp_dir.path().into());
+        let source_dir_url = StorageUri::disk(temp_dir.path());
 
         let test_storage = test::mem_storage();
 
-        let source_store = test_storage.open_uri(
-            &source_dir_url, STATUS_NS
+        let source_store = KeyValueStore::new(
+            test_storage.open_uri(&source_dir_url).unwrap(), STATUS_NS
         ).unwrap();
 
-        let status_kv_store = test_storage.open(STATUS_NS).unwrap();
+        let status_kv_store = KeyValueStore::new(
+            test_storage.open().unwrap(), STATUS_NS
+        ).unwrap();
 
         // copy the source KV store (files) into the test KV store (in memory)
         status_kv_store.import(&source_store).unwrap();

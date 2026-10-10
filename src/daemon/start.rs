@@ -62,7 +62,15 @@ pub fn start_krill_daemon(
     write_pid_file_or_die(&config);
     test_data_dirs_or_die(&config);
 
-    let storage = StorageSystem::new(config.storage_uri.clone());
+    let tokio = tokio::runtime::Runtime::new().map_err(|err| {
+        KrillError::custom(
+            format!("Failed to create Tokio runtime: {err}")
+        )
+    })?;
+
+    let storage = StorageSystem::new(
+        config.storage_uri.clone(), tokio.handle(),
+    );
 
     // Set up the runtime properties manager, so that we can check
     // the version used for the current data in storage
@@ -111,12 +119,6 @@ pub fn start_krill_daemon(
     if !properties_manager.is_initialized() {
         properties_manager.init(KrillVersion::code_version())?;
     }
-
-    let tokio = tokio::runtime::Runtime::new().map_err(|err| {
-        KrillError::custom(
-            format!("Failed to create Tokio runtime: {err}")
-        )
-    })?;
 
     let mut krill = StartupManager::new(
         config, storage, tokio.handle().clone()

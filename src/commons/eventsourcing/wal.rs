@@ -11,7 +11,7 @@ use log::{error, warn, trace};
 use rpki::ca::idexchange::MyHandle;
 use serde::{Deserialize, Serialize};
 use crate::commons::storage::{
-    Ident, KeyValueError, KeyValueStore, OpenStoreError, StorageSystem,
+    Ident, KeyValueError, KeyValueStore, StorageSystem,
 };
 use super::store::Storable;
 
@@ -46,7 +46,7 @@ use super::store::Storable;
 /// Within Krill, write-ahead logging is currently used by the
 /// [`TaskQueue`][crate::server::mq::TaskQueue] and
 /// [`RepositoryContent`][crate::server::pubd::RepositoryContent].
-pub trait WalSupport: Storable {
+pub trait WalSupport: Storable + 'static {
     /// The type representing a command.
     type Command: WalCommand;
 
@@ -138,9 +138,9 @@ impl<T: WalSupport> WalStore<T> {
     pub fn create(
         storage: &StorageSystem,
         namespace: &Ident,
-    ) -> Result<Self, OpenStoreError> {
+    ) -> Result<Self, KeyValueError> {
         Ok(WalStore {
-            kv: storage.open(namespace)?,
+            kv: KeyValueStore::new(storage.open()?, namespace)?,
             cache: RwLock::new(HashMap::new()),
         })
     }
@@ -220,7 +220,7 @@ impl<T: WalSupport> WalStore<T> {
     pub fn list(&self) -> Result<Vec<MyHandle>, WalStoreError> {
         let mut res = vec![];
 
-        for scope in self.kv.scopes()? {
+        for scope in self.kv.list_scopes()? {
             if let Ok(handle) = MyHandle::from_str(&scope.to_string()) {
                 res.push(handle)
             }
@@ -410,7 +410,7 @@ impl<T: WalSupport> WalStore<T> {
                 // that we were not aware of.
                 for key in kv.list_keys(Some(&scope))? {
                     if key.as_str().starts_with("wal-") {
-                        kv.delete(Some(&scope), &key)?;
+                        kv.delete_key(Some(&scope), &key)?;
                     }
                 }
             }

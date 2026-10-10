@@ -3,8 +3,7 @@
 use std::{cmp, error, fmt};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use crate::commons::storage::{
-    Ident, KeyValueError, KeyValueStore, OpenStoreError, StorageSystem,
-    Transaction,
+    Ident, KeyValueError, KeyValueStore, KeyValueTransaction, StorageSystem,
 };
 
 //------------ Configuration -------------------------------------------------
@@ -53,9 +52,9 @@ impl Queue {
     pub fn create(
         storage: &StorageSystem,
         namespace: &Ident,
-    ) -> Result<Self, OpenStoreError> {
+    ) -> Result<Self, KeyValueError> {
         Ok(Queue {
-            store: storage.open(namespace)?,
+            store: KeyValueStore::new(storage.open()?, namespace)?,
         })
     }
 
@@ -111,7 +110,7 @@ impl Queue {
                 }
                 ScheduleMode::ReplaceExisting => {
                     if let Some((pending, _)) = pending_opt {
-                        store.delete(Self::pending_scope(), &pending)?;
+                        store.delete_key(Self::pending_scope(), &pending)?;
                     }
                     true
                 }
@@ -120,28 +119,28 @@ impl Queue {
                         timestamp = cmp::min(
                             timestamp, ts
                         );
-                        store.delete(Self::pending_scope(), &pending)?;
+                        store.delete_key(Self::pending_scope(), &pending)?;
                     }
                     true
                 }
                 ScheduleMode::FinishOrReplaceExisting => {
                     if let Some((running, _)) = running_opt {
-                        store.delete(Self::running_scope(), &running)?;
+                        store.delete_key(Self::running_scope(), &running)?;
                     }
                     if let Some((pending, _)) = pending_opt {
-                        store.delete(Self::pending_scope(), &pending)?;
+                        store.delete_key(Self::pending_scope(), &pending)?;
                     }
                     true
                 }
                 ScheduleMode::FinishOrReplaceExistingSoonest => {
                     if let Some((running, _)) = running_opt {
-                        store.delete(Self::running_scope(), &running)?;
+                        store.delete_key(Self::running_scope(), &running)?;
                     }
                     if let Some((pending, ts)) = pending_opt {
                         timestamp = cmp::min(
                             timestamp, ts
                         );
-                        store.delete(Self::pending_scope(), &pending)?;
+                        store.delete_key(Self::pending_scope(), &pending)?;
                     }
                     true
                 }
@@ -183,7 +182,7 @@ impl Queue {
         self.store.execute(Self::lock_scope(), |store| {
             // XXX This should be done in a single step.
             if store.has(Self::running_scope(), storage_key)? {
-                store.delete(Self::running_scope(), storage_key)?;
+                store.delete_key(Self::running_scope(), storage_key)?;
                 Ok(Ok(()))
             }
             else {
@@ -343,7 +342,10 @@ impl Queue {
     }
 
     fn get_storage_key_and_time(
-        &self, name: &Ident, store: &mut Transaction, scope: Option<&Ident>
+        &self,
+        name: &Ident,
+        store: &mut KeyValueTransaction,
+        scope: Option<&Ident>
     ) -> Option<(Box<Ident>, u128)> {
         store.list_keys(scope).ok()?.into_iter().find_map(|key| {
             let (ts, key_name) = Self::split_storage_key(&key)?;
@@ -455,7 +457,7 @@ mod tests {
     use super::*;
 
     fn storage_system() -> StorageSystem {
-        StorageSystem::new_memory(None)
+        StorageSystem::new_test()
     }
 
     fn queue_store(storage: &StorageSystem, ns: &str) -> Queue {
@@ -481,7 +483,7 @@ mod tests {
     fn queue_thread_workers() {
         let storage = storage_system();
         let queue = queue_store(&storage, "queue_thread_workers");
-        queue.store.wipe().unwrap();
+        queue.store.clear().unwrap();
 
         thread::scope(|s| {
             s.spawn(|| {
@@ -539,7 +541,7 @@ mod tests {
     fn test_reschedule_long_running() {
         let storage = storage_system();
         let queue = queue_store(&storage, "test_reschedule_long_running");
-        queue.store.wipe().unwrap();
+        queue.store.clear().unwrap();
 
         let name = const { Ident::make("job") };
         let value = Value::from("value");
@@ -575,7 +577,7 @@ mod tests {
     fn test_reschedule_finished_task() {
         let storage = storage_system();
         let queue = queue_store(&storage, "test_reschedule_finished_task");
-        queue.store.wipe().unwrap();
+        queue.store.clear().unwrap();
 
         let name = const { Ident::make("task") };
         let value = Value::from("value");
@@ -617,7 +619,7 @@ mod tests {
     fn test_schedule_with_existing_task() {
         let storage = storage_system();
         let queue = queue_store(&storage, "test_reschedule_finished_task");
-        queue.store.wipe().unwrap();
+        queue.store.clear().unwrap();
 
         let name = const { Ident::make("task") };
         let value_1 = Value::from("value_1");
