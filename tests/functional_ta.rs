@@ -50,7 +50,8 @@ async fn functional_ta() {
     let signer = TrustAnchorSignerManager::create(
         krill::tasigner::Config::parse_str(
             include_str!("../test-resources/ta/ta.conf")
-        ).unwrap()
+        ).unwrap(),
+        &tokio::runtime::Handle::current(),
     ).unwrap();
 
     eprintln!(">>>> Initialise the TA signer.");

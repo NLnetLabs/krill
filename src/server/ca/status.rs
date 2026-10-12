@@ -66,10 +66,10 @@ impl CaStatusStore {
         storage: &StorageSystem,
         namespace: &Ident,
     ) -> KrillResult<Self> {
-        let store = storage.open(namespace)?;
-        let cache = RwLock::new(HashMap::new());
-
-        let store = Self { store, cache };
+        let store = Self {
+            store: KeyValueStore::new(storage.open()?, namespace)?,
+            cache: RwLock::new(HashMap::new()),
+        };
         store.warm()?;
 
         Ok(store)
@@ -79,7 +79,7 @@ impl CaStatusStore {
     ///
     /// It supports the pre 0.9.5 format and silently convert it if needed.
     fn warm(&self) -> KrillResult<()> {
-        for scope in self.store.scopes()? {
+        for scope in self.store.list_scopes()? {
             if let Some(ca) = scope.to_handle() {
                 self.convert_pre_0_9_5_full_status_if_present(&ca)?;
                 self.load_full_status(&ca)?;
@@ -109,9 +109,7 @@ impl CaStatusStore {
 
         // Parents
         let mut parents = ParentStatuses::default();
-        for parent_key in self.store.keys(
-            Some(&scope), PARENTS_PREFIX.as_str()
-        )? {
+        for parent_key in self.store.list_keys(Some(&scope))? {
             // Try to parse the key to get a parent handle
             if let Some(parent) = parent_key.as_str()
                 .strip_prefix(PARENTS_PREFIX.as_str())
@@ -139,9 +137,7 @@ impl CaStatusStore {
 
         // Children
         let mut children = HashMap::new();
-        for child_key in self.store.keys(
-            Some(&scope), CHILDREN_PREFIX.as_str()
-        )? {
+        for child_key in self.store.list_keys(Some(&scope))? {
             // Try to parse the key to get a child handle
             if let Some(child) = child_key.as_str()
                 .strip_prefix(CHILDREN_PREFIX.as_str())
@@ -222,7 +218,7 @@ impl CaStatusStore {
                 )?;
             }
 
-            self.store.drop_key(Some(&scope), KEY)?;
+            self.store.delete_key(Some(&scope), KEY)?;
             info!("Done migrating pre 0.9.5 connection status file");
         }
         Ok(())
@@ -326,7 +322,7 @@ impl CaStatusStore {
 
             if parent_status.is_some() {
                 trace!("Parent status for {} was found", parent);
-                self.store.drop_key(
+                self.store.delete_key(
                     Some(&Self::scope(ca)), &Self::parent_status_key(parent)
                 )?;
             }
@@ -387,7 +383,7 @@ impl CaStatusStore {
 
             if child_status.is_some() {
                 trace!("Child status for {} was found", child);
-                self.store.drop_key(
+                self.store.delete_key(
                     Some(&Self::scope(ca)), &Self::child_status_key(child)
                 )?;
             }
@@ -405,7 +401,7 @@ impl CaStatusStore {
         self.cache.write().unwrap().remove(ca);
         // The status file needn't exist for a CA, hence do not fail if it
         // cannot be removed.
-        let _ = self.store.drop_scope(&Self::scope(ca));
+        let _ = self.store.delete_scope(&Self::scope(ca));
         Ok(())
     }
 

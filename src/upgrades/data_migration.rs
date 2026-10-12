@@ -14,7 +14,7 @@ use crate::{
         eventsourcing::{
             Aggregate, AggregateStore, WalStore, WalSupport,
         },
-        storage::{Ident, StorageSystem, StorageUri},
+        storage::{Ident, KeyValueStore, StorageSystem, StorageUri},
     },
     constants::{
         KEYS_NS, PROPERTIES_NS, PUBSERVER_CONTENT_NS,
@@ -140,9 +140,9 @@ fn check_openssl_keys(storage: &StorageSystem) -> UpgradeResult<()> {
     .map_err(|e| {
         UpgradeError::Custom(format!("Cannot create openssl signer: {e}"))
     })?;
-    let keys_key_store = storage.open(KEYS_NS)?;
+    let keys_key_store = KeyValueStore::new(storage.open()?, KEYS_NS)?;
 
-    for key in keys_key_store.keys(None, "")? {
+    for key in keys_key_store.list_keys(None)? {
         let key_id =
             KeyIdentifier::from_str(key.as_str()).map_err(|e| {
                 UpgradeError::Custom(format!(
@@ -211,11 +211,13 @@ fn copy_data_for_migration(
         Ident::make("ta_signer"),
     ];
     for namespace in NAMESPACES {
-        let source_kv_store = target_storage.open_uri(
-            source_storage, namespace
-        )?;
-        if !source_kv_store.is_empty()? {
-            let target_kv_store = target_storage.open(namespace)?;
+        let source_store = target_storage.open_uri(source_storage)?;
+        if !KeyValueStore::is_empty(&source_store, *namespace)? {
+            let source_kv_store = KeyValueStore::new(
+                source_store, *namespace)?;
+            let target_kv_store = KeyValueStore::new(
+                target_storage.open()?, *namespace
+            )?;
             target_kv_store.import(&source_kv_store)?;
         }
     }
