@@ -14,6 +14,7 @@ mod pubserver;
 pub mod repo;
 mod roas;
 mod server;
+mod test;
 
 
 //------------ Content -------------------------------------------------------
@@ -154,6 +155,10 @@ pub enum Command {
     /// Manually trigger refresh/republish/resync for all CAs
     #[command(subcommand)]
     Bulk(bulk::Command),
+
+    /// Complex commands for testing.
+    #[command(subcommand)]
+    Test(test::Command),
 }
 
 impl Command {
@@ -177,6 +182,7 @@ impl Command {
             Self::Aspas(cmd) => cmd.run(client).await,
             Self::Pubserver(cmd) => cmd.run(client).await,
             Self::Bulk(cmd) => cmd.run(client).await,
+            Self::Test(cmd) => cmd.run(client).await,
         }
     }
 }
