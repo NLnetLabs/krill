@@ -1,4 +1,14 @@
-The files created in this directory were created and can be used like so: (Tested on Fedora Linux 44)
+# PyKMIP test server.
+
+This directory contains configuration and data files for running the PyKMIP KMIP compatible software HSM tool.
+
+PyKMIP is needed by Krill tests that are by disabled by default because they require PyKMIP which is likely not available on developer machines.
+
+To prevent the tests running by default they are guarded by a `hsm-tests-kmip` Rust compile-time feature gate.
+
+## Running the tests.
+
+Tested on Fedora Linux 44.
 
 First, verify that the KMIP related tests can be built successfully:
 
@@ -55,7 +65,7 @@ $ grep Processing test-resources/pykmip/server.log
 ...
 ```
 
-### Re-generating the TLS certificates used by the test
+## Re-generating the TLS certificates used by the test
 
 If the TLS certificates expire, they can be regenerated like so:
 
