@@ -16,10 +16,9 @@ First, verify that the KMIP related tests can be built successfully:
 cargo build --tests --no-default-features --features hsm,hsm-tests-kmip
 ```
 
-Next, install and run PyKMIP inside a Python 3.11 (needed by PyKMIP) virtual environment:
+Next, install and run PyKMIP inside a Python 3.11 (needed by PyKMIP) virtual environment using [uv](https://docs.astral.sh/uv/getting-started/installation/):
 
 ```
-curl -LsSf https://astral.sh/uv/install.sh | sh
 uv venv --python 3.11
 source .venv/bin/activate
 cd test-resources/pykmip
