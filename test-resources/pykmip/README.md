@@ -2,7 +2,7 @@
 
 This directory contains configuration and data files for running the PyKMIP KMIP compatible software HSM tool.
 
-PyKMIP is needed by Krill tests that are by disabled by default because they require PyKMIP which is likely not available on developer machines.
+PyKMIP is needed by Krill tests that are by disabled by default because they require KMIP compatible HSM reachable at 127.0.0.1:5696 which is likely not available on developer machines.
 
 To prevent the tests running by default they are guarded by a `hsm-tests-kmip` Rust compile-time feature gate.
 
