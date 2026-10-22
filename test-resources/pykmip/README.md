@@ -27,7 +27,7 @@ uv pip install pykmip --constraint ./constraints.txt
 python ./run-server.py &
 ```
 
-Now test that the PyKMIP server can be connected to, at least as via TLS:
+Now test that the PyKMIP server can be connected to, at least via TLS:
 
 ```
 sleep 5s
