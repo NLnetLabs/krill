@@ -91,16 +91,22 @@ thiserror = { version = "1.0.69", optional = true }
 
 [features]
 default = ["multi-user", "hsm"]
-hsm = ["backoff", "kmip", "cryptoki", "r2d2", "secrecy"]
 multi-user = [
-    "cookie",
-    "openidconnect",
-    "rpassword",
-    "scrypt",
-    "unicode-normalization",
+    "dep:cookie",
+    "dep:openidconnect",
+    "dep:rpassword",
+    "dep:scrypt",
+    "dep:unicode-normalization",
     # Raise versions of indirect dependencies
     "dep:ecdsa",
     "dep:thiserror",
+]
+hsm = [
+    "dep:backoff",
+    "dep:kmip",
+    "dep:cryptoki",
+    "dep:r2d2",
+    "dep:secrecy",
 ]
 
 # Preview features - not ready for production use
