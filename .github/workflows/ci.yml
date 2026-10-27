@@ -315,7 +315,8 @@ jobs:
     - name: Enable annotations
       run: echo "::add-matcher::.github/workflows/rust-annotations.json"
 
-    - name: Launch PyKMIP
+    - name: Run PyKMIP
+      id: pykmip
       background: true
       working-directory: test-resources/pykmip
       run: python run-server.py
@@ -335,6 +336,9 @@ jobs:
       run: |
         ls -la
         cat server.log
+
+    - name: Stop PyKMIP
+      cancel: pykmip
 
   softhsm2-test:
     name: Test with SoftHSMv2
