@@ -62,7 +62,7 @@ r2d2            = { version = "0.8.10", optional = true }
 secrecy         = { version = "0.10.3", features = ["serde"], optional = true }
 
 # Dependencies used by the "multi-user" feature
-basic-cookies   = { version = "0.1", optional = true }
+cookie          = { version = "0.18.1", optional = true }
 openidconnect   = { version = "4.0.0", optional = true, default-features = false }
 rpassword       = { version = "7.4.0", optional = true }
 scrypt          = { version = "0.11", optional = true, default-features = false }
@@ -84,7 +84,7 @@ nix = { version = "0.31.1", features = ["user"] }
 default = ["multi-user", "hsm"]
 hsm = ["backoff", "kmip", "cryptoki", "r2d2", "secrecy"]
 multi-user = [
-    "basic-cookies",
+    "cookie",
     "openidconnect",
     "rpassword",
     "scrypt",
