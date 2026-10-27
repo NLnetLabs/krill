@@ -86,7 +86,7 @@ impl Response {
 
         if let Some(max_age) = self.max_age {
             builder = builder
-                .header("Cache-Control", &format!("max-age={max_age}"));
+                .header("Cache-Control", format!("max-age={max_age}"));
         }
 
         if self.status == StatusCode::UNAUTHORIZED {

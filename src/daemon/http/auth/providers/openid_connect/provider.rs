@@ -28,14 +28,14 @@
 //! [openid-connect-rpinitiated-1_0]: https://openid.net/specs/openid-connect-rpinitiated-1_0.html
 
 use std::{
-    ops::Deref, sync::Arc, time::Instant
+    collections::HashMap, ops::Deref, sync::Arc, time::Instant
 };
 
 use tokio::sync::{RwLock, RwLockReadGuard};
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as URL_BASE64_ENGINE;
 use base64::engine::Engine as _;
-use basic_cookies::Cookie;
+use cookie::Cookie;
 use hyper::header::{HeaderValue, SET_COOKIE};
 use log::{debug, error, info, log_enabled, trace, warn};
 use openidconnect::{
@@ -52,7 +52,7 @@ use openidconnect::{
 use rpki::uri;
 use serde::{Deserialize, Serialize};
 use tokio::runtime;
-use urlparse::{urlparse, GetQuery};
+use url::Url;
 
 use crate::daemon::http::dispatch::AUTH_CALLBACK_ENDPOINT;
 use crate::daemon::http::request::HyperRequest;
@@ -420,7 +420,7 @@ impl AuthProvider {
             // revocation endpoint URL.  This URL     MUST conform
             // to the rules given in [RFC6749], Section 3.1.  Clients
             //     MUST verify that the URL is an HTTPS URL.
-            if urlparse(rev_url).scheme != "https" {
+            if !Url::parse(rev_url).is_ok_and(|url| url.scheme() == "https") {
                 warn!("OpenID Connect: Ignoring insecure revocation_endpoint '{rev_url}'");
                 revocation_url = None;
             }
@@ -436,7 +436,7 @@ impl AuthProvider {
             // out at the OP. This URL MUST use the https scheme and MAY
             // contain port, path, and query     parameter
             // components.
-            if urlparse(rpinit_url).scheme != "https" {
+            if !Url::parse(rpinit_url).is_ok_and(|url| url.scheme() == "https") {
                 warn!(
                     "OpenID Connect: Ignoring insecure end_session_endpoint '{rpinit_url}'"
                 );
@@ -554,8 +554,8 @@ impl AuthProvider {
         Ok(format!(
             "{}?post_logout_redirect_uri={}&id_token_hint={}",
             provider_url,
-            url_encode(post_logout_redirect_url)?,
-            url_encode(id_token)?
+            url_encode(post_logout_redirect_url),
+            url_encode(id_token)
         ))
     }
 
@@ -768,50 +768,21 @@ impl AuthProvider {
         request: &HyperRequest,
         cookie_name: &str,
     ) -> Option<String> {
-        for cookie_hdr_val in
-            request.headers().get_all(hyper::http::header::COOKIE)
-        {
-            if let Ok(cookie_hdr_val_str) = cookie_hdr_val.to_str() {
-                // Use a helper crate to parse the cookie string as it's
-                // actually a bit of a pain as the string is semi-colon-with-
-                // optional-trailing-space separated, cookie names must be
-                // parsed according to token rules defined in RFC-2616 and
-                // cookie values must be parsed according to grammar defined
-                // in RFC-6265 (e.g. cookie values may be
-                // double quoted and can only contain a
-                // specified subset of US-ASCII characters).
-                // See:
-                //   https://tools.ietf.org/html/rfc6265#section-4.2.1
-                //   https://tools.ietf.org/html/rfc6265#section-4.1.1
-                //   https://tools.ietf.org/html/rfc2616#section-2.2 (for the
-                //   definition of 'token' used for cookie names)
-                match Cookie::parse(cookie_hdr_val_str) {
-                    Ok(parsed_cookies) => {
-                        trace!(
-                            "OpenID Connect: parsed cookies={:?}",
-                            parsed_cookies
-                        );
-                        // Even with the helper crate we have to do some
-                        // work... Why doesn't it
-                        // return a map???
-                        if let Some(found_cookie) = parsed_cookies
-                            .iter()
-                            .find(|cookie| cookie.get_name() == cookie_name)
-                        {
-                            return Some(
-                                found_cookie.get_value().to_string(),
-                            );
-                        }
-                    }
-                    Err(err) => {
+        request.headers().get_all(hyper::http::header::COOKIE)
+            .into_iter()
+            .filter_map(|value| 
+                value.to_str().ok()
+            )
+            .flat_map(|value| {
+                Cookie::split_parse(value)
+                    .filter_map(move |cookie| cookie.map_err(|err| {
                         error!(
-                            "Unable to parse HTTP cookie header value '{cookie_hdr_val_str}': {err}"
+                            "Unable to parse HTTP cookie header value '{value}': {err}"
                         );
-                    }
-                }
-            }
-        }
-        None
+                    }).ok())
+            })
+            .find(|cookie| cookie.name() == cookie_name)
+            .map(|cookie| cookie.value().into())
     }
 
     /// Log and convert the given error such that the detailed, possibly
@@ -833,13 +804,12 @@ impl AuthProvider {
 
     fn get_auth(&self, request: &HyperRequest) -> Option<Auth> {
         if
-            let Some(query) = urlparse(
-                request.uri().to_string()
-            ).get_parsed_query()
-            && let Some(code) = query.get_first_from_str("code")
+            let Some(query) = request.uri().query()
+            && let params = url::form_urlencoded::parse(query.as_bytes()).collect::<HashMap<_, _>>()
+            && let Some(code) = params.get("code")
         {
             trace!("OpenID Connect: Processing potential RFC-6749 section 4.1.2 redirected Authorization Response");
-            if let Some(state) = query.get_first_from_str("state") {
+            if let Some(state) = params.get("state") {
                 if let Some(nonce) =
                     self.extract_cookie(request, NONCE_COOKIE_NAME)
                 {
@@ -848,8 +818,8 @@ impl AuthProvider {
                     {
                         trace!("OpenID Connect: Detected RFC-6749 section 4.1.2 redirected Authorization Response");
                         return Some(Auth {
-                            code: Token::from(code),
-                            state,
+                            code: Token::from(&**code),
+                            state: (**state).into(),
                             nonce,
                             csrf_token_hash,
                         });
