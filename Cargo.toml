@@ -48,7 +48,7 @@ rustls-pemfile  = "2.2.0"
 serde           = { version = "1.0", features = ["derive", "rc"] }
 serde_json      = "1.0"
 tempfile        = "3.19.1"
-tokio           = { version = "1", features = [ "macros", "rt", "rt-multi-thread", "signal", "time" ] }
+tokio           = { version = "1.40", features = [ "macros", "rt", "rt-multi-thread", "signal", "time" ] }
 tokio-rustls    = { version = "0.26" }
 toml            = "0.9.5"
 url             = { version = "2.5.4", features = ["serde"] }
@@ -79,6 +79,17 @@ unicode-normalization = { version = "0.1", optional = true }
 syslog = "7.0.0"
 nix = { version = "0.31.1", features = ["user"] }
 
+[target.'cfg(none)'.dependencies]
+# openidconnect ^4.0.0 (4.0.0)
+# -> p256 ^0.13.2 (0.13.2)
+# -> ecdsa ^0.16 (0.16.0)
+# But p256 v0.13.2 actually requires ecdsa v0.16.2.
+ecdsa = { version = "0.16.2", optional = true }
+# openidconnect ^4.0.0 (4.0.0)
+# -> thiserror ^1 (1.0.0)
+# thiserror v1.x is old, force the highest version.
+thiserror = { version = "1.0.69", optional = true }
+
 [features]
 default = ["multi-user", "hsm"]
 hsm = ["backoff", "kmip", "cryptoki", "r2d2", "secrecy"]
@@ -88,6 +99,9 @@ multi-user = [
     "rpassword",
     "scrypt",
     "unicode-normalization",
+    # Raise versions of indirect dependencies
+    "dep:ecdsa",
+    "dep:thiserror",
 ]
 
 # Preview features - not ready for production use
