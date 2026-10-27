@@ -372,10 +372,10 @@ jobs:
 
     - name: Set up SoftHSMv2
       run: |
-        softhsm2-util --init-token --slot 0 --label \"My token 1\" --pin 1234 --so-pin 1234
+        sg softhsm -c "softhsm2-util --init-token --slot 0 --label \"My token 1\" --pin 1234 --so-pin 1234"
 
     - name: Test
-      run: cargo test --locked --all-targets --features hsm-tests-pkcs11 -- --test-threads=1
+      run: sg softhsm -c "cargo test --locked --all-targets --features hsm-tests-pkcs11 -- --test-threads=1"
 
     - name: Dump the SoftHSMv2 log
       if: always()
