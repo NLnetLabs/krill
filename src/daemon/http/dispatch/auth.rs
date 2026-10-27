@@ -121,9 +121,9 @@ mod multi_user {
 
         Ok(format!(
             "/ui/login?token={}&id={}&attributes={}",
-            url_encode(user.token())?,
-            url_encode(user.id())?,
-            url_encode(attributes)?,
+            url_encode(user.token().as_ref()),
+            url_encode(user.id()),
+            url_encode(&attributes),
         ))
     }
 }

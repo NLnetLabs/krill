@@ -28,7 +28,7 @@
 //! [openid-connect-rpinitiated-1_0]: https://openid.net/specs/openid-connect-rpinitiated-1_0.html
 
 use std::{
-    ops::Deref, sync::Arc, time::Instant
+    collections::HashMap, ops::Deref, sync::Arc, time::Instant
 };
 
 use tokio::sync::{RwLock, RwLockReadGuard};
@@ -52,7 +52,7 @@ use openidconnect::{
 use rpki::uri;
 use serde::{Deserialize, Serialize};
 use tokio::runtime;
-use urlparse::{urlparse, GetQuery};
+use url::Url;
 
 use crate::daemon::http::dispatch::AUTH_CALLBACK_ENDPOINT;
 use crate::daemon::http::request::HyperRequest;
@@ -420,7 +420,7 @@ impl AuthProvider {
             // revocation endpoint URL.  This URL     MUST conform
             // to the rules given in [RFC6749], Section 3.1.  Clients
             //     MUST verify that the URL is an HTTPS URL.
-            if urlparse(rev_url).scheme != "https" {
+            if !Url::parse(rev_url).is_ok_and(|url| url.scheme() == "https") {
                 warn!("OpenID Connect: Ignoring insecure revocation_endpoint '{rev_url}'");
                 revocation_url = None;
             }
@@ -436,7 +436,7 @@ impl AuthProvider {
             // out at the OP. This URL MUST use the https scheme and MAY
             // contain port, path, and query     parameter
             // components.
-            if urlparse(rpinit_url).scheme != "https" {
+            if !Url::parse(rpinit_url).is_ok_and(|url| url.scheme() == "https") {
                 warn!(
                     "OpenID Connect: Ignoring insecure end_session_endpoint '{rpinit_url}'"
                 );
@@ -554,8 +554,8 @@ impl AuthProvider {
         Ok(format!(
             "{}?post_logout_redirect_uri={}&id_token_hint={}",
             provider_url,
-            url_encode(post_logout_redirect_url)?,
-            url_encode(id_token)?
+            url_encode(post_logout_redirect_url),
+            url_encode(id_token)
         ))
     }
 
@@ -804,13 +804,12 @@ impl AuthProvider {
 
     fn get_auth(&self, request: &HyperRequest) -> Option<Auth> {
         if
-            let Some(query) = urlparse(
-                request.uri().to_string()
-            ).get_parsed_query()
-            && let Some(code) = query.get_first_from_str("code")
+            let Some(query) = request.uri().query()
+            && let params = url::form_urlencoded::parse(query.as_bytes()).collect::<HashMap<_, _>>()
+            && let Some(code) = params.get("code")
         {
             trace!("OpenID Connect: Processing potential RFC-6749 section 4.1.2 redirected Authorization Response");
-            if let Some(state) = query.get_first_from_str("state") {
+            if let Some(state) = params.get("state") {
                 if let Some(nonce) =
                     self.extract_cookie(request, NONCE_COOKIE_NAME)
                 {
@@ -819,8 +818,8 @@ impl AuthProvider {
                     {
                         trace!("OpenID Connect: Detected RFC-6749 section 4.1.2 redirected Authorization Response");
                         return Some(Auth {
-                            code: Token::from(code),
-                            state,
+                            code: Token::from(&**code),
+                            state: (**state).into(),
                             nonce,
                             csrf_token_hash,
                         });
