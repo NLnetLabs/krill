@@ -78,6 +78,10 @@ defaults:
   run:
     shell: bash
 
+env:
+  CARGO_BUILD_WARNINGS: "deny"
+  CARGO_BUILD_BUILD_DIR: "build"
+
 # Jobs
 # ----------------------------------------------------------------------------
 jobs:
@@ -91,9 +95,6 @@ jobs:
           - "--all-features"
     runs-on: ubuntu-latest
     env:
-      RUSTFLAGS: "-D warnings"
-      RUSTDOCFLAGS: "-D warnings"
-      CARGO_BUILD_BUILD_DIR: "build"
       CARGO_INCREMENTAL: 1 # We use a cached `build/`.
     steps:
 
@@ -122,9 +123,7 @@ jobs:
   check-minimal-versions:
     name: Check minimal versions
     runs-on: ubuntu-latest
-    env:
-      RUSTFLAGS: "-D warnings"
-      CARGO_BUILD_BUILD_DIR: "build"
+    # env:
       # CARGO_INCREMENTAL: 1 # No caching at the moment.
     steps:
 
@@ -161,8 +160,6 @@ jobs:
     name: Clippy
     runs-on: ubuntu-latest
     env:
-      RUSTFLAGS: "-D warnings"
-      CARGO_BUILD_BUILD_DIR: "build"
       CARGO_INCREMENTAL: 1 # We use a cached `build/`.
     steps:
 
@@ -222,8 +219,6 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     env:
-      RUSTFLAGS: "-D warnings"
-      CARGO_BUILD_BUILD_DIR: "build"
       CARGO_INCREMENTAL: 1 # We use a cached `build/`.
     steps:
 
@@ -257,9 +252,7 @@ jobs:
   openssl-test:
     name: Test with OpenSSL
     runs-on: ubuntu-latest
-    env:
-      RUSTFLAGS: "-D warnings"
-      CARGO_BUILD_BUILD_DIR: "build"
+    # env:
       # CARGO_INCREMENTAL: 1 # No local incremental builds.
     steps:
 
@@ -284,9 +277,7 @@ jobs:
   pykmip-test:
     name: Test with PyKMIP
     runs-on: ubuntu-latest
-    env:
-      RUSTFLAGS: "-D warnings"
-      CARGO_BUILD_BUILD_DIR: "build"
+    # env:
       # CARGO_INCREMENTAL: 1 # No local incremental builds.
     steps:
 
@@ -343,9 +334,7 @@ jobs:
   softhsm2-test:
     name: Test with SoftHSMv2
     runs-on: ubuntu-latest
-    env:
-      RUSTFLAGS: "-D warnings"
-      CARGO_BUILD_BUILD_DIR: "build"
+    # env:
       # CARGO_INCREMENTAL: 1 # No local incremental builds.
     steps:
 
