@@ -81,6 +81,8 @@ defaults:
 env:
   CARGO_BUILD_WARNINGS: "deny"
   CARGO_BUILD_BUILD_DIR: "build"
+  CARGO_PROFILE_dev_DEBUG: "line-tables-only"
+  CARGO_PROFILE_dev_PANIC: "abort"
 
 # Jobs
 # ----------------------------------------------------------------------------
