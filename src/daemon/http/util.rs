@@ -4,11 +4,7 @@
 //! for them.
 
 #[cfg(feature = "multi-user")]
-pub fn url_encode<S: AsRef<str>>(
-    s: S
-) -> Result<String, crate::commons::error::Error> {
-    urlparse::quote(s, b"").map_err(|err| {
-        crate::commons::error::Error::custom(err.to_string())
-    })
+pub fn url_encode(s: &str) -> String {
+    url::form_urlencoded::byte_serialize(s.as_bytes()).collect()
 }
 
