@@ -99,6 +99,10 @@ impl CryptState {
             nonce: NonceState::new()?,
         })
     }
+
+    fn key(&self) -> [u8; CHACHA20_KEY_BYTE_LEN] {
+        self.key
+    }
 }
 
 // Returns nonce + tag + cipher text, or an error.
@@ -167,8 +171,8 @@ pub(crate) fn decrypt(
 pub(crate) fn crypt_init(config: &Config) -> KrillResult<CryptState> {
     let store = config.key_value_store(CRYPT_STATE_NS)?;
 
-    if let Some(state) = store.get(None, CRYPT_STATE_KEY)? {
-        Ok(state)
+    if let Some(state) = store.get::<CryptState>(None, CRYPT_STATE_KEY)? {
+        Ok(CryptState::from_key_bytes(state.key())?)
     } else {
         let mut key_bytes = [0; CHACHA20_KEY_BYTE_LEN];
         openssl::rand::rand_bytes(&mut key_bytes).map_err(|err| {
