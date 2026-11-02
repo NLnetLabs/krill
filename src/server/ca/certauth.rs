@@ -1270,7 +1270,7 @@ impl CertAuth {
                 "Updating resource class name mapping for\
                  child '{}, but parent does not have any resource class \
                  called '{}', or at least not yet.",
-                 child_handle, &mapping.name_in_parent
+                 child_handle, mapping.name_in_parent
             );
         }
 
@@ -1871,7 +1871,7 @@ impl CertAuth {
 
             info!(
                 "Updating Entitlements for CA: {}, Removing RC: {}",
-                &self.handle, &rcn
+                self.handle, rcn
             );
 
             res.push(CertAuthEvent::ResourceClassRemoved {
@@ -2043,7 +2043,7 @@ impl CertAuth {
             )? {
                 info!(
                     "Started key roll for ca: {}, rc: {}, under parent: {}",
-                    &self.handle,
+                    self.handle,
                     rcn,
                     rc.parent_handle()
                 );
@@ -2068,7 +2068,7 @@ impl CertAuth {
             )? {
                 info!(
                     "Activated key for ca: {}, rc: {}, under parent: {}",
-                    &self.handle,
+                    self.handle,
                     rcn,
                     rc.parent_handle()
                 );
@@ -2092,7 +2092,7 @@ impl CertAuth {
 
         info!(
             "Finished key roll for ca: {}, rc: {}, under parent: {}",
-            &self.handle,
+            self.handle,
             rcn,
             my_rc.parent_handle()
         );

@@ -223,7 +223,7 @@ impl fmt::Display for RoaPayload {
 
 impl fmt::Debug for RoaPayload {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "RoaPayload({})", &self)
+        write!(f, "RoaPayload({})", self)
     }
 }
 
@@ -558,8 +558,8 @@ impl From<BgpAnalysisSuggestion> for RoaConfigurationUpdates {
 
         for announcement in suggestion.not_found
             .into_iter()
-            .chain(suggestion.invalid_asn.into_iter())
-            .chain(suggestion.invalid_length.into_iter())
+            .chain(suggestion.invalid_asn)
+            .chain(suggestion.invalid_length)
         {
             added.push(RoaConfiguration {
                 payload: announcement.into(),
@@ -793,7 +793,7 @@ impl fmt::Display for TypedPrefix {
 
 impl fmt::Debug for TypedPrefix {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", &self)
+        write!(f, "{}", self)
     }
 }
 
@@ -906,7 +906,7 @@ impl fmt::Display for Ipv4Prefix {
 
 impl fmt::Debug for Ipv4Prefix {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", &self)
+        write!(f, "{}", self)
     }
 }
 
@@ -1011,7 +1011,7 @@ impl fmt::Display for Ipv6Prefix {
 
 impl fmt::Debug for Ipv6Prefix {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", &self)
+        write!(f, "{}", self)
     }
 }
 
@@ -1080,7 +1080,7 @@ impl fmt::Display for AsNumber {
 
 impl fmt::Debug for AsNumber {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", &self)
+        write!(f, "{}", self)
     }
 }
 

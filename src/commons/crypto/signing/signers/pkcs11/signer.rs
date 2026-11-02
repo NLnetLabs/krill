@@ -938,8 +938,8 @@ impl Pkcs11Signer {
         if !matches!(algorithm, PublicKeyFormat::Rsa) {
             return Err(SignerError::Pkcs11Error(format!(
                 "Algorithm {:?} not supported while creating key",
-                &algorithm
-            )))?;
+                algorithm
+            )).into());
         }
 
         let mech = Mechanism::RsaPkcsKeyPairGen;
@@ -1135,7 +1135,7 @@ impl Pkcs11Signer {
             1 => Ok(results[0]),
             _ => Err(KeyError::Signer(SignerError::Pkcs11Error(format!(
                 "More than one {} found with id {}",
-                &human_key_class, cka_id_hex_str
+                human_key_class, cka_id_hex_str
             )))),
         }
     }
