@@ -39,7 +39,10 @@ const CLEARTEXT_PREFIX_LEN: usize =
 const UNUSED_AAD: [u8; 0] = [0; 0];
 
 const CRYPT_STATE_NS: &Ident = Ident::make("login_sessions");
-const CRYPT_STATE_KEY: &Ident = Ident::make("main_key");
+const CRYPT_STATE_KEY: &Ident = Ident::make("main_key_v2");
+
+// The location of the key that needed to be obsoleted due to CVE-2026-109140.
+const CRYPT_STATE_KEY_OBSOLETE: &Ident = Ident::make("main_key");
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct NonceState {
@@ -168,6 +171,10 @@ pub(crate) fn decrypt(
 
 pub(crate) fn crypt_init(storage: &StorageSystem) -> KrillResult<CryptState> {
     let store = storage.open(CRYPT_STATE_NS)?;
+
+    // Drop the old key if it exists. This key had to be obsoleted due to
+    // CVE-2026-109140.
+    let _ = store.drop_key(None, CRYPT_STATE_KEY_OBSOLETE);
 
     if let Some(state) = store.get::<CryptState>(None, CRYPT_STATE_KEY)? {
         Ok(CryptState::from_key_bytes(state.key())?)
