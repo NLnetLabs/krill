@@ -2384,8 +2384,30 @@ impl CaManager {
         if let Some(parent) = Self::local_parent(
             service_uri, &self.config.service_uri()
         ) {
-            let ca_handle = parent.into_converted();
             let user_agent = Some("local-child".to_string());
+
+            let ca_handle = parent.into_converted();
+            let child_handle = message.sender().convert();
+
+            if ca_handle.as_str() == TA_NAME {
+                let proxy = self.get_trust_anchor_proxy()?;
+                let child = proxy.get_child(&child_handle)?;
+                if child.id.public_key.key_identifier() != signing_key {
+                    return Err(Error::custom(
+                        "Child ID signing key did not match expected signing \
+                        key for proxy"
+                    ));
+                }
+            } else {
+                let ca = self.get_ca(&ca_handle)?;
+                let child = ca.get_child(&child_handle)?;
+                if child.id_cert.public_key.key_identifier() != signing_key {
+                    return Err(Error::custom(
+                        "Child ID signing key did not match expected signing \
+                        key"
+                    ));
+                }
+            }
 
             self.rfc6492_process_request(
                 &ca_handle,
