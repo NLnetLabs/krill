@@ -1,5 +1,33 @@
 # Change Log
 
+## 0.16.1 ‘No Small Wonder’
+
+Released 2026-11-02.
+
+Security fixes
+
+* Fixed an issue with nonce re-use in login token which would allow a user
+  to escalate their permissions. This is only an issue when multi-user
+  login is enabled. ([#1406])
+
+  This issue has been assigned CVE-2026-109140.
+* Fixed an issue that allowed users to manipulate CAs they are not
+  authorized for via bulk upload. ([#1409])
+
+  This issue has been assigned CVE-2026-109141.
+* Fixed a missing validation of the child handle in a local RFC 6492,
+  letting a CA operator act as any child of any CA on the same server
+  exchange. ([#1411])
+
+  This issue has been assigned CVE-2026-109142.
+* Updated bundled WebPKI root certificates. ([#1414])
+
+[#1406]: https://github.com/NLnetLabs/krill/pull/1406
+[#1409]: https://github.com/NLnetLabs/krill/pull/1409
+[#1411]: https://github.com/NLnetLabs/krill/pull/1411
+[#1414]: https://github.com/NLnetLabs/krill/pull/1414
+
+
 ## 0.16.0 ‘Früher war mehr Lametta’
 
 Released 2026-03-03.
