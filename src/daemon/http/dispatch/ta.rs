@@ -1,7 +1,7 @@
 //! `/api/v1/ta`
 
 use hyper::Method;
-use rpki::ca::idexchange::ChildHandle;
+use rpki::ca::idexchange::{ChildHandle, MyHandle};
 use crate::commons::error::Error;
 use crate::constants::ta_handle;
 use super::super::auth::Permission;
@@ -57,15 +57,17 @@ async fn proxy_children_index(
 ) -> Result<HttpResponse, DispatchError> {
     match *request.method() {
         Method::GET => {
+            let resource: MyHandle = ta_handle();
             let (request, _) = request.proceed_permitted(
-                Permission::CaAdmin, None
+                Permission::CaAdmin, Some(&resource)
             )?;
             request.empty()?;
             Err(Error::NotImplemented.into())
         }
         Method::POST => {
+            let resource: MyHandle = ta_handle();
             let (request, auth) = request.proceed_permitted(
-                Permission::CaAdmin, None
+                Permission::CaAdmin, Some(&resource)
             )?;
             let (server, child) = request.read_json().await?;
             Ok(HttpResponse::json(
@@ -99,15 +101,16 @@ fn proxy_children_child_index(
     request: Request<'_>,
     _child: ChildHandle,
 ) -> Result<HttpResponse, DispatchError> {
+    let resource: MyHandle = ta_handle();
     match *request.method() {
         Method::POST => {
-            request.proceed_permitted(Permission::CaAdmin, None)?;
+            request.proceed_permitted(Permission::CaAdmin, Some(&resource))?;
             // Ignore body for now.
             Err(Error::NotImplemented.into())
         }
         Method::DELETE => {
             let (request, _) = request.proceed_permitted(
-                Permission::CaAdmin, None
+                Permission::CaAdmin, Some(&resource)
             )?;
             request.empty()?;
             Err(Error::NotImplemented.into())
@@ -123,8 +126,9 @@ async fn proxy_children_child_response(
 ) -> Result<HttpResponse, DispatchError> {
     path.check_exhausted()?;
     request.check_get()?;
+    let resource: MyHandle = ta_handle();
     let (request, _) = request.proceed_permitted(
-        Permission::CaAdmin, None
+        Permission::CaAdmin, Some(&resource)
     )?;
     let server = request.empty()?;
     Ok(HttpResponse::json(
@@ -139,8 +143,9 @@ async fn proxy_children_child_response_xml(
 ) -> Result<HttpResponse, DispatchError> {
     path.check_exhausted()?;
     request.check_get()?;
+    let resource: MyHandle = ta_handle();
     let (request, _) = request.proceed_permitted(
-        Permission::CaAdmin, None
+        Permission::CaAdmin, Some(&resource)
     )?;
     let server = request.empty()?;
     Ok(HttpResponse::xml(
@@ -159,8 +164,9 @@ async fn proxy_init(
 ) -> Result<HttpResponse, DispatchError> {
     path.check_exhausted()?;
     request.check_post()?;
+    let resource: MyHandle = ta_handle();
     let (request, _) = request.proceed_permitted(
-        Permission::CaAdmin, None
+        Permission::CaAdmin, Some(&resource)
     )?;
     let server = request.empty()?;
     server.krill().ta_proxy_init().await?;
@@ -176,8 +182,9 @@ async fn proxy_id(
 ) -> Result<HttpResponse, DispatchError> {
     path.check_exhausted()?;
     request.check_get()?;
+    let resource: MyHandle = ta_handle();
     let (request, _) = request.proceed_permitted(
-        Permission::CaAdmin, None
+        Permission::CaAdmin, Some(&resource)
     )?;
     let server = request.empty()?;
     Ok(HttpResponse::json(
@@ -203,10 +210,11 @@ async fn proxy_repo(
 async fn proxy_repo_index(
     request: Request<'_>,
 ) -> Result<HttpResponse, DispatchError> {
+    let resource: MyHandle = ta_handle();
     match *request.method() {
         Method::GET => {
             let (request, _) = request.proceed_permitted(
-                Permission::CaAdmin, None
+                Permission::CaAdmin, Some(&resource)
             )?;
             let server = request.empty()?;
             Ok(HttpResponse::json(
@@ -215,7 +223,7 @@ async fn proxy_repo_index(
         }
         Method::POST => {
             let (request, auth) = request.proceed_permitted(
-                Permission::CaAdmin, None
+                Permission::CaAdmin, Some(&resource)
             )?;
             let (server, update) = request.read_bytes().await?;
             let update = super::cas::extract_repository_contact(
@@ -236,7 +244,8 @@ async fn proxy_repo_request(
 ) -> Result<HttpResponse, DispatchError> {
     path.check_exhausted()?;
     request.check_get()?;
-    let (request, _) = request.proceed_permitted(Permission::CaAdmin, None)?;
+    let resource: MyHandle = ta_handle();
+    let (request, _) = request.proceed_permitted(Permission::CaAdmin, Some(&resource))?;
     let server = request.empty()?;
     Ok(HttpResponse::json(
         &server.krill().ta_proxy_publisher_request().await?
@@ -249,7 +258,8 @@ async fn proxy_repo_request_xml(
 ) -> Result<HttpResponse, DispatchError> {
     path.check_exhausted()?;
     request.check_get()?;
-    let (request, _) = request.proceed_permitted(Permission::CaAdmin, None)?;
+    let resource: MyHandle = ta_handle();
+    let (request, _) = request.proceed_permitted(Permission::CaAdmin, Some(&resource))?;
     let server = request.empty()?;
     Ok(HttpResponse::xml(
         server.krill().ta_proxy_publisher_request().await?.to_xml_vec()
@@ -278,8 +288,9 @@ async fn proxy_signer_add(
 ) -> Result<HttpResponse, DispatchError> {
     path.check_exhausted()?;
     request.check_post()?;
+    let resource: MyHandle = ta_handle();
     let (request, auth) = request.proceed_permitted(
-        Permission::CaAdmin, None
+        Permission::CaAdmin, Some(&resource)
     )?;
     let (server, info) = request.read_json().await?;
     server.krill().ta_proxy_signer_add(info, auth.into_actor()).await?;
@@ -291,10 +302,11 @@ async fn proxy_signer_request(
     path: PathIter<'_>,
 ) -> Result<HttpResponse, DispatchError> {
     path.check_exhausted()?;
+    let resource: MyHandle = ta_handle();
     match *request.method() {
         Method::GET => {
             let (request, _) = request.proceed_permitted(
-                Permission::CaAdmin, None
+                Permission::CaAdmin, Some(&resource)
             )?;
             let server = request.empty()?;
             Ok(HttpResponse::json(
@@ -303,7 +315,7 @@ async fn proxy_signer_request(
         }
         Method::POST => {
             let (request, auth) = request.proceed_permitted(
-                Permission::CaAdmin, None
+                Permission::CaAdmin, Some(&resource)
             )?;
             let server = request.empty()?;
             Ok(HttpResponse::json(
@@ -322,8 +334,9 @@ async fn proxy_signer_response(
 ) -> Result<HttpResponse, DispatchError> {
     path.check_exhausted()?;
     request.check_post()?;
+    let resource: MyHandle = ta_handle();
     let (request, auth) = request.proceed_permitted(
-        Permission::CaAdmin, None
+        Permission::CaAdmin, Some(&resource)
     )?;
     let (server, response) = request.read_json().await?;
     server.krill().ta_proxy_signer_process_response(
@@ -338,8 +351,9 @@ async fn proxy_signer_update(
 ) -> Result<HttpResponse, DispatchError> {
     path.check_exhausted()?;
     request.check_post()?;
+    let resource: MyHandle = ta_handle();
     let (request, auth) = request.proceed_permitted(
-        Permission::CaAdmin, None
+        Permission::CaAdmin, Some(&resource)
     )?;
     let (server, info) = request.read_json().await?;
     server.krill().ta_proxy_signer_update(info, auth.into_actor()).await?;
