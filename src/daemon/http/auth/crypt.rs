@@ -14,6 +14,15 @@
 // the chance of nonce overlap between multiple instances of Krill in a
 // cluster.
 //
+// Previously, the sender unique part was stored and re-used across restarts.
+// However, because the counter part starts at 0 again after restart, this
+// lead to CVE-2026-109140. The work-around for now is to instead randomly
+// generate a new sender unique part with every restart. There is a risk that
+// a previously used number is used, but this chance is very low and,
+// importantly, it is not predecitable, so it makes it harder to exploit.
+//
+// Longer term, we should re-consider storing information in the token.
+//
 // For much more context see the discussion in Krill issue #382 [4].
 //
 // 1: https://soatok.blog/2020/07/12/comparison-of-symmetric-encryption-methods/#aes-gcm-vs-chacha20poly1305
@@ -40,8 +49,6 @@ const UNUSED_AAD: [u8; 0] = [0; 0];
 
 const CRYPT_STATE_NS: &Ident = Ident::make("login_sessions");
 const CRYPT_STATE_KEY: &Ident = Ident::make("main_key_v2");
-
-// The location of the key that needed to be obsoleted due to CVE-2026-109140.
 const CRYPT_STATE_KEY_OBSOLETE: &Ident = Ident::make("main_key");
 
 #[derive(Debug, Deserialize, Serialize)]
