@@ -11,3 +11,4 @@ tmp
 work
 examples/openid_connect_mock.rs
 /doc/manual/build/
+test-resources/pykmip/server.log
