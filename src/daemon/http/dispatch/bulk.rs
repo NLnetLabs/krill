@@ -1,6 +1,8 @@
 //! `/api/v1/bulk`
 
 use crate::api::ca::AllCertAuthIssues;
+use crate::api::import::Structure;
+use crate::commons::Error;
 use super::super::auth::Permission;
 use super::super::request::{PathIter, Request};
 use super::super::response::HttpResponse;
@@ -38,8 +40,17 @@ async fn cas_import(
 ) -> Result<HttpResponse, DispatchError> {
     path.check_exhausted()?;
     request.check_post()?;
-    let (request, _) = request.proceed_permitted(Permission::CaAdmin, None)?;
-    let (server, structure) = request.read_json().await?;
+    let (request, auth) = request.proceed_permitted(Permission::CaAdmin, None)?;
+    let (server, structure) = request.read_json::<Structure>().await?;
+    for ca in &structure.cas {
+        // Make sure we have permission for each and every CA
+        auth.check_permission(
+            Permission::CaAdmin, 
+            Some(&ca.handle)
+        ).map_err(|err| {
+            HttpResponse::response_from_error(Error::from(err))
+        })?;
+    }
     server.krill().cas_import(structure).await?;
     Ok(HttpResponse::ok())
 }
