@@ -846,7 +846,7 @@ impl CaManager {
         service_uri: &uri::Https,
         actor: &Actor,
     ) -> KrillResult<ParentResponse> {
-        info!("CA '{}' process add child request: {}", &ca, &req);
+        info!("CA '{}' process add child request: {}", ca, req);
         if ca.as_str() != TA_NAME {
             self.process_ca_command(ca.clone(), actor,
                 CertAuthCommandDetails::ChildAdd(

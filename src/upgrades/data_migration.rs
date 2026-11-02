@@ -46,8 +46,8 @@ pub fn migrate(mut config: Config, target_storage: Url) -> UpgradeResult<()> {
     info!("-----------------------------------------------------------");
     info!("STEP 1: Copy data");
     info!("");
-    info!("From: {}", &config.storage_uri);
-    info!("  To:   {}", &target_storage);
+    info!("From: {}", config.storage_uri);
+    info!("  To:   {}", target_storage);
     info!("-----------------------------------------------------------");
     info!("");
 

@@ -570,7 +570,7 @@ pub trait UpgradeAggregateStorePre0_14 {
             // Verify migration
             info!(
                 "Will verify the migration by rebuilding '{}' from migrated commands",
-                &scope
+                scope
             );
             let _latest = self.preparation_aggregate_store().save_snapshot(&handle).map_err(|e| {
                 UpgradeError::Custom(format!(
@@ -1556,7 +1556,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         copy_folder(source_dir_path_str, &temp_dir);
         let source_dir_url = Url::parse(
-            &format!("local://{}", &temp_dir.path().to_str().unwrap()))
+            &format!("local://{}", temp_dir.path().to_str().unwrap()))
                 .unwrap();
 
         let source_store =
