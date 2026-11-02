@@ -1554,6 +1554,7 @@ dependencies = [
  "url",
  "urlparse",
  "uuid",
+ "webpki-root-certs",
 ]
 
 [[package]]
