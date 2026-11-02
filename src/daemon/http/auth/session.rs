@@ -65,7 +65,7 @@ impl<S> ClientSession<S> {
                     trace!(
                         "Login session status check: user_id={}, \
                          status={:?}, max age={} secs, cur age={} secs",
-                        &self.user_id, &status, max_age_secs, cur_age_secs
+                        self.user_id, status, max_age_secs, cur_age_secs
                     );
 
                     return status;
@@ -166,7 +166,7 @@ impl<S> LoginSessionCache<S> {
             secrets
         };
 
-        debug!("Creating token for session: {:?}", &session);
+        debug!("Creating token for session: {:?}", session);
 
         let session_json_str =
             serde_json::to_string(&session).map_err(|err| {
@@ -231,7 +231,7 @@ impl<S> LoginSessionCache<S> {
     ) -> Result<ClientSession<S>, ApiAuthError>
     where S: Clone + DeserializeOwned {
         if let Some(session) = self.lookup_session(&token).await {
-            trace!("Session cache hit for session id {}", &session.user_id);
+            trace!("Session cache hit for session id {}", session.user_id);
             return Ok(session);
         }
         else {
@@ -262,7 +262,7 @@ impl<S> LoginSessionCache<S> {
 
         trace!(
             "Session cache miss, deserialized session id {}",
-            &session.user_id
+            session.user_id
         );
 
         if add_to_cache {

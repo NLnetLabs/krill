@@ -38,7 +38,7 @@ pub struct RtaContentRequest {
 
 impl fmt::Display for RtaContentRequest {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "resources: {}", &self.resources)?;
+        writeln!(f, "resources: {}", self.resources)?;
         writeln!(
             f,
             "validity, {}-{}",

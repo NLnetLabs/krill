@@ -74,7 +74,7 @@ mod multi_user {
         request.check_get()?;
         
         trace!(
-            "Authentication callback invoked: {:?}", &request.hyper()
+            "Authentication callback invoked: {:?}", request.hyper()
         );
         
         let (server, request) = request.proceed_raw();
@@ -121,9 +121,9 @@ mod multi_user {
 
         Ok(format!(
             "/ui/login?token={}&id={}&attributes={}",
-            &url_encode(user.token())?,
-            &url_encode(user.id())?,
-            &url_encode(attributes)?,
+            url_encode(user.token())?,
+            url_encode(user.id())?,
+            url_encode(attributes)?,
         ))
     }
 }

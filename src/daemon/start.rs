@@ -227,7 +227,7 @@ async fn single_unix_listener(
     let listener = match UnixListener::bind(&path) {
         Ok(listener) => listener,
         Err(err) => {
-            error!("Could not bind to {}: {}", &path.to_string_lossy(), err);
+            error!("Could not bind to {}: {}", path.to_string_lossy(), err);
             return;
         }
     };
