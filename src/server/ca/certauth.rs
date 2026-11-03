@@ -1312,6 +1312,12 @@ impl CertAuth {
         let my_rcn = child.parent_name_for_rcn(&child_rcn);
         let csr_info = CsrInfo::try_from(&csr)?;
 
+        if !self.should_recertify_child(
+            child, &my_rcn, &csr_info, &limit, config
+        )? {
+            return Ok(Vec::new())
+        }
+
         let mut res = Vec::new();
         self.append_child_certify(
             child_handle,
@@ -1324,6 +1330,45 @@ impl CertAuth {
             &mut res,
         )?;
         Ok(res)
+    }
+
+    /// Decides whether a CA certificate needs to be re-issued.
+    fn should_recertify_child(
+        &self,
+        child: &ChildDetails,
+        my_rcn: &ResourceClassName,
+        csr_info: &CsrInfo,
+        limit: &RequestResourceLimit,
+        config: &Config,
+    ) -> Result<bool, Error> {
+        // Get the current certficate.
+        let my_rc = self.resources.get(my_rcn).ok_or_else(|| {
+            Error::ResourceClassUnknown(my_rcn.clone())
+        })?;
+        let Some(my_cert) = my_rc.issued(&csr_info.key_id()) else {
+            return Ok(true)
+        };
+
+        // Check that SIAs and resources match.
+        if 
+            my_cert.csr_info != *csr_info 
+            || my_cert.resources != child.resources
+            || my_cert.limit != *limit
+        {
+            return Ok(true)
+        }
+
+        // Check that the certificate can still be re-used.
+        //
+        // This is based on the time provided via 
+        // `timing_child_certificate_reissue_weeks_before`
+        if my_cert.validity.not_after()
+            >= config.issuance_timing.new_child_cert_issuance_threshold()
+        {
+            return Ok(true)
+        }
+
+        Ok(false)
     }
 
     /// Appends the events that certify a child CA.
