@@ -14,6 +14,15 @@
 // the chance of nonce overlap between multiple instances of Krill in a
 // cluster.
 //
+// Previously, the sender unique part was stored and re-used across restarts.
+// However, because the counter part starts at 0 again after restart, this
+// lead to CVE-2026-109140. The work-around for now is to instead randomly
+// generate a new sender unique part with every restart. There is a risk that
+// a previously used number is used, but this chance is very low and,
+// importantly, it is not predecitable, so it makes it harder to exploit.
+//
+// Longer term, we should re-consider storing information in the token.
+//
 // For much more context see the discussion in Krill issue #382 [4].
 //
 // 1: https://soatok.blog/2020/07/12/comparison-of-symmetric-encryption-methods/#aes-gcm-vs-chacha20poly1305
@@ -39,7 +48,8 @@ const CLEARTEXT_PREFIX_LEN: usize =
 const UNUSED_AAD: [u8; 0] = [0; 0];
 
 const CRYPT_STATE_NS: &Ident = Ident::make("login_sessions");
-const CRYPT_STATE_KEY: &Ident = Ident::make("main_key");
+const CRYPT_STATE_KEY: &Ident = Ident::make("main_key_v2");
+const CRYPT_STATE_KEY_OBSOLETE: &Ident = Ident::make("main_key");
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct NonceState {
@@ -96,6 +106,10 @@ impl CryptState {
             key,
             nonce: NonceState::new()?,
         })
+    }
+
+    fn key(&self) -> [u8; CHACHA20_KEY_BYTE_LEN] {
+        self.key
     }
 }
 
@@ -165,8 +179,12 @@ pub(crate) fn decrypt(
 pub(crate) fn crypt_init(storage: &StorageSystem) -> KrillResult<CryptState> {
     let store = storage.open(CRYPT_STATE_NS)?;
 
-    if let Some(state) = store.get(None, CRYPT_STATE_KEY)? {
-        Ok(state)
+    // Drop the old key if it exists. This key had to be obsoleted due to
+    // CVE-2026-109140.
+    let _ = store.drop_key(None, CRYPT_STATE_KEY_OBSOLETE);
+
+    if let Some(state) = store.get::<CryptState>(None, CRYPT_STATE_KEY)? {
+        Ok(CryptState::from_key_bytes(state.key())?)
     } else {
         let mut key_bytes = [0; CHACHA20_KEY_BYTE_LEN];
         openssl::rand::rand_bytes(&mut key_bytes).map_err(|err| {
