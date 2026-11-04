@@ -1367,7 +1367,7 @@ impl CertAuth {
         // This is based on the time provided via 
         // `timing_child_certificate_reissue_weeks_before`
         if my_cert.validity.not_after()
-            >= config.issuance_timing.new_child_cert_issuance_threshold()
+            <= config.issuance_timing.new_child_cert_issuance_threshold()
         {
             return Ok(true)
         }
