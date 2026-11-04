@@ -17,10 +17,6 @@ OpenID Connect Users
 
 .. versionadded:: v0.9.0
 
-.. contents::
-  :local:
-  :depth: 2
-
 Introduction
 ------------
 
@@ -83,11 +79,11 @@ From https://oauth.net/articles/authentication/:
 How about LDAP and others?
 """"""""""""""""""""""""""
 
-Currently Krill does not offer direct LDAP integration. 
+Currently Krill does not offer direct LDAP integration.
 
-There are several OpenID Connect implementations that allow you to 'bridge' 
+There are several OpenID Connect implementations that allow you to 'bridge'
 LDAP (and other authentication and authorization solutions that do not support
-OpenID Connect), such as `Keycloak <https://www.keycloak.org/docs/latest/server_admin/index.html#synchronizing-ldap-users-to-keycloak>`_, 
+OpenID Connect), such as `Keycloak <https://www.keycloak.org/docs/latest/server_admin/index.html#synchronizing-ldap-users-to-keycloak>`_,
 `Authentik <https://docs.goauthentik.io/users-sources/sources/protocols/ldap/>`_,
 and `Pocket ID <https://pocket-id.org/docs/configuration/ldap>`_.
 
@@ -185,7 +181,7 @@ but require more effort to setup and maintain:
              the Krill logs show a successful login, you may need to increase
              the HTTP request and/or response header buffer sizes used by
              your proxy.
-             
+
              With NGINX this can be done by increasing settings such as
              `proxy_buffer_size <http://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_buffer_size>`_,
              `proxy_buffers <http://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_buffers>`_,
@@ -270,7 +266,7 @@ In short, to setup any OpenID Connect provider with Krill the following
 steps must be taken:
 
 1. **Decide on the settings to be configured**
-   
+
    Ensure you have the basic pieces of information that you need. For
    example:
 
@@ -308,11 +304,11 @@ steps must be taken:
    signing up to a cloud service, or arranging for support from your
    internal IT department to have changes made to your in-house provider
    on your behalf.
-   
+
    \
 
 3. **Register Krill with the provider**
-   
+
    You will need to supply the Krill redirect URLs: [2]_
 
      - https://yourdomain/auth/callback
@@ -332,13 +328,13 @@ steps must be taken:
       which case you can supply https://yourdomain/\*. However wildcard URLs
       are not advised as they could potentially be abused to redirect
       requests to other locations.
-   
+
    .. [3] A correct URL will either end in /.well-known/openid-configuration
       or should have that appended to it, e.g. the Google issuer URL is:
       https://accounts.google.com/.well-known/openid-configuration
 
 4. **Create users, groups and/or claims in the provider**
-   
+
    If all of your users will have admin rights in Krill you can ignore
    groups and claims and just create users.
 
@@ -363,7 +359,7 @@ steps must be taken:
    - How long are the tokens issued by the provider valid for? Can the
      provider issue refresh tokens? These properties affect how long a user
      can remain logged in to Krill.
-   
+
    - Ensure that the provider has a real TLS certificate, or for in-house
      certificates you will need a copy of the Certificate Authority root
      certificate so that you can configure Krill to trust it. If neither
@@ -389,7 +385,7 @@ steps must be taken:
 
    .. tip:: The ``krill-multi-user.conf`` file contains example configurations for
             providers that Krill has been tested with. If you installed krill using
-            a binary package, it can be found on github under the `defaults 
+            a binary package, it can be found on github under the `defaults
             directory <https://github.com/NLnetLabs/krill/tree/main/defaults>`_.
 
 Using Keycloak
@@ -400,10 +396,6 @@ In this section you will see how to setup
 as an OpenID Connect provider for Krill.
 
 The following steps are required to use OpenID Connect Users in your Krill setup.
-
-.. contents::
-  :local:
-  :depth: 1
 
 1. Decide on the settings to be configured.
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -429,10 +421,6 @@ provider which will be running at https://localhost:8443/.
 
 Let's walk through configuring the provider step by step:
 
-.. contents::
-  :local:
-  :depth: 1
-
 Download and run Keycloak
 +++++++++++++++++++++++++
 
@@ -451,7 +439,7 @@ Download and run Keycloak
              database which is convenient for demonstration and
              testing purposes but should not be used in a production
              setting.
-             
+
 .. note:: If IPv6 is enabled for Docker then Keycloak may fail to
           start with error ``failed to resolve interface private``.
           One way to work around this problem is to append the
@@ -587,7 +575,7 @@ Repeat the above adding the other users.
        Token response from the provider. If we didn't setup an email
        here we would need to define a claim mapping so that Krill could
        extract the `Username` value that we provide from some other
-       claim field. In the case of Keycloak that would be the 
+       claim field. In the case of Keycloak that would be the
        `preferred_username` field. We'll revisit this topic later.
 
 .. [7] This is a good example of where using an OpenID Connect provider
@@ -610,7 +598,7 @@ any existing ``auth_type`` line)
 .. parsed-literal::
 
    auth_type = "openid-connect"
-   
+
    [auth_openidconnect]
    issuer_url = "https://localhost:8443/auth/realms/krill"
    client_id = "krill"
@@ -652,10 +640,6 @@ what it does and how to use it.
 Rather than duplicate that documentation here, instead we will focus on
 a few of the more difficult features to use and problems to overcome.
 
-.. contents::
-  :local:
-  :depth: 1
-
 Understanding claims
 ~~~~~~~~~~~~~~~~~~~~
 
@@ -667,7 +651,7 @@ Krill must first extract this JSON data from the encoded, signed JWT
 data. The resulting claims look something like this:
 
   .. code-block:: json
-  
+
      {
        "iss": "http://server.example.com",
        "sub": "248289761001",
@@ -854,5 +838,3 @@ your browser to see the requests and responses being exchanged.
              information such as OAuth 2.0 Access Tokens and users profile
              data. Only enable trace level logging while investigating a
              problem. Normally it should be sufficient to use ``log_level = "warn"``.
-
-
