@@ -1317,7 +1317,6 @@ impl CertAuth {
         )? {
             return Ok(Vec::new())
         }
-        eprintln!("Should recertify child");
 
         let mut res = Vec::new();
         self.append_child_certify(
@@ -1346,12 +1345,10 @@ impl CertAuth {
         let my_rc = self.resources.get(my_rcn).ok_or_else(|| {
             Error::ResourceClassUnknown(my_rcn.clone())
         })?;
-        eprintln!("Recertify child stage 1");
         let Some(my_cert) = my_rc.issued(&csr_info.key_id()) else {
             return Ok(true)
         };
 
-        eprintln!("Recertify child stage 2");
         // Check that SIAs and resources match.
         if 
             my_cert.csr_info != *csr_info 
@@ -1360,7 +1357,6 @@ impl CertAuth {
         {
             return Ok(true)
         }
-        eprintln!("Recertify child stage 3");
 
         // Check that the certificate can still be re-used.
         //
@@ -1371,7 +1367,6 @@ impl CertAuth {
         {
             return Ok(true)
         }
-        eprintln!("Recertify child stage 4");
 
         Ok(false)
     }
