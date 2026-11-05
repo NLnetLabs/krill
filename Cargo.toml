@@ -33,7 +33,6 @@ hex             = "0.4"
 http-body-util  = "0.1"
 hyper           = { version = "1.6.0", features = ["server"] }
 hyper-util      = { version = "0.1", features = [ "server", "server-auto", "server-graceful" ] }
-intervaltree    = "0.2.7"
 lazy_static     = "1.5"
 libflate        = "2.1.0"
 log             = "0.4"
@@ -48,7 +47,7 @@ rustls-pemfile  = "2.2.0"
 serde           = { version = "1.0", features = ["derive", "rc"] }
 serde_json      = "1.0"
 tempfile        = "3.19.1"
-tokio           = { version = "1", features = [ "macros", "rt", "rt-multi-thread", "signal", "time" ] }
+tokio           = { version = "1.40", features = [ "macros", "rt", "rt-multi-thread", "signal", "time" ] }
 tokio-rustls    = { version = "0.26" }
 toml            = "0.9.5"
 url             = { version = "2.5.4", features = ["serde"] }
@@ -62,12 +61,11 @@ r2d2            = { version = "0.8.10", optional = true }
 secrecy         = { version = "0.10.3", features = ["serde"], optional = true }
 
 # Dependencies used by the "multi-user" feature
-basic-cookies   = { version = "0.1", optional = true }
+cookie          = { version = "0.18.1", optional = true }
 openidconnect   = { version = "4.0.0", optional = true, default-features = false }
 rpassword       = { version = "7.4.0", optional = true }
 scrypt          = { version = "0.11", optional = true, default-features = false }
 unicode-normalization = { version = "0.1", optional = true }
-urlparse        = { version = "0.7", optional = true }
 
 # Disable compiler optimizations for the pkcs11 crate because otherwise with a release build the
 # `pReserved = ptr::null_mut()` assignment done by `CK_C_INITIALIZE_ARGS::default()` appears to be optimized out. This
@@ -80,16 +78,35 @@ urlparse        = { version = "0.7", optional = true }
 syslog = "7.0.0"
 nix = { version = "0.31.1", features = ["user"] }
 
+[target.'cfg(none)'.dependencies]
+# openidconnect ^4.0.0 (4.0.0)
+# -> p256 ^0.13.2 (0.13.2)
+# -> ecdsa ^0.16 (0.16.0)
+# But p256 v0.13.2 actually requires ecdsa v0.16.2.
+ecdsa = { version = "0.16.2", optional = true }
+# openidconnect ^4.0.0 (4.0.0)
+# -> thiserror ^1 (1.0.0)
+# thiserror v1.x is old, force the highest version.
+thiserror = { version = "1.0.69", optional = true }
+
 [features]
 default = ["multi-user", "hsm"]
-hsm = ["backoff", "kmip", "cryptoki", "r2d2", "secrecy"]
 multi-user = [
-    "basic-cookies",
-    "openidconnect",
-    "rpassword",
-    "scrypt",
-    "unicode-normalization",
-    "urlparse",
+    "dep:cookie",
+    "dep:openidconnect",
+    "dep:rpassword",
+    "dep:scrypt",
+    "dep:unicode-normalization",
+    # Raise versions of indirect dependencies
+    "dep:ecdsa",
+    "dep:thiserror",
+]
+hsm = [
+    "dep:backoff",
+    "dep:kmip",
+    "dep:cryptoki",
+    "dep:r2d2",
+    "dep:secrecy",
 ]
 
 # Preview features - not ready for production use
@@ -102,7 +119,6 @@ hsm-tests-pkcs11 = ["hsm"]
 [dev-dependencies]
 tar       = "0.4"
 stderrlog = "0.6"
-urlparse  = "0.7"
 
 # Make sure that Krill crashes on panics, rather than losing threads and
 # limping on in a bad state.
