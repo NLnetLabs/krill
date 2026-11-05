@@ -46,7 +46,7 @@ impl KrillRuntime {
     ///
     /// The runtime and all the components will be configured using `config`.
     /// The `tokio` runtime handle will be used by the
-    /// [`exec_async`][Self::exec_async] method as the runtime to spawn
+    /// [`SlowKrillRuntime::exec_async()`] method as the runtime to spawn
     /// async tasks onto.
     pub fn new(
         config: Config,
