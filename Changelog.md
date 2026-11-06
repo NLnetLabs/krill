@@ -1,5 +1,21 @@
 # Change Log
 
+## 0.16.2 ‘Wait Until Your Mother Hears About This’
+
+Released 2026-11-06.
+
+Improvements
+
+* Don’t re-issue child certificates if none of the content has changed and
+  the current certificates is still valid for at least
+  `timing_child_certificate_reissue_weeks_before` more weeks.
+
+  This should fix dealing with children that are still running Krill
+  0.15.0 which keeps re-requesting certificates. ([#1416])
+
+[#1416]: https://github.com/NLnetLabs/krill/pull/1416
+
+
 ## 0.16.1 ‘No Small Wonder’
 
 Released 2026-11-02.
