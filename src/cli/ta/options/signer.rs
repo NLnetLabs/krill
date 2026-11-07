@@ -2,7 +2,6 @@
 
 use std::{error, fmt, fs, io};
 use std::str::FromStr;
-use std::sync::Arc;
 use rpki::uri;
 use crate::{api, constants};
 use crate::api::ta::{
@@ -43,7 +42,21 @@ pub struct Command {
 
 impl Command {
     pub fn run(self) -> Report {
-        self.command.run(&self.config.0)
+        let runtime = match tokio::runtime::Runtime::new() {
+            Ok(runtime) => runtime,
+            Err(err) => {
+                return Report::from_err(
+                    format!("Failed to create runtime: {err}")
+                );
+            }
+        };
+        let manager = match TrustAnchorSignerManager::create(
+            self.config.0.clone(), runtime.handle()
+        ) {
+            Ok(manager) => manager,
+            Err(err) => return Report::from_err(err),
+        };
+        self.command.run(&manager)
     }
 }
 
@@ -270,19 +283,15 @@ impl Exchanges {
 //------------ ConfigFile ----------------------------------------------------
 
 #[derive(Clone)]
-pub struct ConfigFile(Arc<TrustAnchorSignerManager>);
+pub struct ConfigFile(Config);
 
 impl FromStr for ConfigFile {
     type Err = ConfigFileError;
 
     fn from_str(path: &str) -> Result<Self, Self::Err> {
-        Config::parse(path).map_err(|err| {
-            ConfigFileError::Parse(path.into(), err)
-        }).and_then(|config| {
-            TrustAnchorSignerManager::create(config).map_err(
-                ConfigFileError::Create
-            )
-        }).map(|manager| Self(manager.into()))
+        Config::parse(path).map(ConfigFile).map_err(|err| {
+            ConfigFileError { path: path.into(), err }
+        })
     }
 }
 
@@ -308,21 +317,14 @@ impl FromStr for PrivateKeyFile {
 
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
-pub enum ConfigFileError {
-    Parse(String, ConfigError),
-    Create(SignerClientError),
+pub struct ConfigFileError {
+    path: String,
+    err: ConfigError,
 }
 
 impl fmt::Display for ConfigFileError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::Parse(path, err) => {
-                write!(
-                    f, "Failed to read config file '{path}': {err}"
-                )
-            }
-            Self::Create(err) => err.fmt(f)
-        }
+        write!(f, "Failed to read config file '{}': {}", self.path, self.err)
     }
 }
 

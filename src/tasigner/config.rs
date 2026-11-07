@@ -382,7 +382,7 @@ mod tests {
             let config_string =
                 include_str!("../../test-resources/ta/ta.conf");
             let config = Config::parse_str(config_string).unwrap();
-            let storage = StorageSystem::new(config.storage_uri.clone());
+            let storage = StorageSystem::new_test();
             config.signer(&storage).unwrap();
         })
     }
