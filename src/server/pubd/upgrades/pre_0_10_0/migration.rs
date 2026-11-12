@@ -34,18 +34,16 @@ impl PublicationServerRepositoryAccessMigration {
         storage: &StorageSystem,
         versions: &UpgradeVersions,
     ) -> UpgradeResult<()> {
-        let current_kv_store = storage.open(PUBSERVER_NS)?;
-        let new_kv_store = storage.open_upgrade(PUBSERVER_NS)?;
-        let new_agg_store = AggregateStore::create_upgrade_store(
-            storage,
-            PUBSERVER_NS,
-            false,
-        )?;
-
         let store_migration = PublicationServerRepositoryAccessMigration {
-            current_kv_store,
-            new_kv_store,
-            new_agg_store,
+            current_kv_store: KeyValueStore::new(
+                storage.open()?, PUBSERVER_NS
+            )?,
+            new_kv_store: KeyValueStore::new_upgrade(
+                storage.open()?, PUBSERVER_NS
+            )?,
+            new_agg_store: AggregateStore::create_upgrade_store(
+                storage, PUBSERVER_NS, false,
+            )?
         };
 
         if store_migration

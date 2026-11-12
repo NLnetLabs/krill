@@ -26,8 +26,7 @@ use crate::{
         crypto::SignerError,
         eventsourcing::{AggregateStoreError, WalStoreError},
         queue,
-        storage,
-        storage::KeyValueError,
+        storage::{KeyValueError, StoreError},
     },
     daemon::http::tls_keys,
     daemon::http::auth::Permission,
@@ -632,8 +631,8 @@ impl From<KeyValueError> for Error {
     }
 }
 
-impl From<storage::Error> for Error {
-    fn from(e: storage::Error) -> Self {
+impl From<StoreError> for Error {
+    fn from(e: StoreError) -> Self {
         Error::KeyValueError(KeyValueError::Inner(e))
     }
 }
