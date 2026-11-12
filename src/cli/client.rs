@@ -282,6 +282,10 @@ impl KrillClient {
 /// # High-level commands
 ///
 impl KrillClient {
+    pub async fn health(&self) -> Result<Success, Error> {
+        self.get_ok(once("health")).await
+    }
+
     pub async fn authorized(&self) -> Result<Success, Error> {
         self.get_ok(once("api/v1/authorized")).await
     }
