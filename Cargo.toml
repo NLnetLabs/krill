@@ -66,7 +66,6 @@ openidconnect   = { version = "4.0.0", optional = true, default-features = false
 rpassword       = { version = "7.4.0", optional = true }
 scrypt          = { version = "0.11", optional = true, default-features = false }
 unicode-normalization = { version = "0.1", optional = true }
-urlparse        = { version = "0.7", optional = true }
 
 # Disable compiler optimizations for the pkcs11 crate because otherwise with a release build the
 # `pReserved = ptr::null_mut()` assignment done by `CK_C_INITIALIZE_ARGS::default()` appears to be optimized out. This
@@ -88,7 +87,6 @@ multi-user = [
     "rpassword",
     "scrypt",
     "unicode-normalization",
-    "urlparse",
 ]
 
 # Preview features - not ready for production use
