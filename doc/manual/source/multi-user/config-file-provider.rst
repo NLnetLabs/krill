@@ -5,10 +5,6 @@ Config File Users
 
 .. versionadded:: v0.9.0
 
-.. contents::
-  :local:
-  :depth: 1
-
 Introduction
 ------------
 

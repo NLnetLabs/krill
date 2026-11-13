@@ -27,9 +27,10 @@
 //! [openid-connect-discovery-1_0]: https://openid.net/specs/openid-connect-discovery-1_0.html
 //! [openid-connect-rpinitiated-1_0]: https://openid.net/specs/openid-connect-rpinitiated-1_0.html
 
-use std::{
-    collections::HashMap, ops::Deref, sync::Arc, time::Instant
-};
+use std::collections::HashMap;
+use std::ops::Deref;
+use std::sync::Arc;
+use std::time::Instant;
 
 use tokio::sync::{RwLock, RwLockReadGuard};
 
@@ -421,7 +422,10 @@ impl AuthProvider {
             // to the rules given in [RFC6749], Section 3.1.  Clients
             //     MUST verify that the URL is an HTTPS URL.
             if !Url::parse(rev_url).is_ok_and(|url| url.scheme() == "https") {
-                warn!("OpenID Connect: Ignoring insecure revocation_endpoint '{rev_url}'");
+                warn!(
+                    "OpenID Connect: Ignoring insecure \
+                     revocation_endpoint '{rev_url}'"
+                );
                 revocation_url = None;
             }
         }
@@ -436,9 +440,12 @@ impl AuthProvider {
             // out at the OP. This URL MUST use the https scheme and MAY
             // contain port, path, and query     parameter
             // components.
-            if !Url::parse(rpinit_url).is_ok_and(|url| url.scheme() == "https") {
+            if !Url::parse(rpinit_url).is_ok_and(|url| {
+                url.scheme() == "https"
+            }) {
                 warn!(
-                    "OpenID Connect: Ignoring insecure end_session_endpoint '{rpinit_url}'"
+                    "OpenID Connect: Ignoring insecure \
+                    end_session_endpoint '{rpinit_url}'"
                 );
                 rp_initiated_logout_url = None;
             }
@@ -805,7 +812,9 @@ impl AuthProvider {
     fn get_auth(&self, request: &HyperRequest) -> Option<Auth> {
         if
             let Some(query) = request.uri().query()
-            && let params = url::form_urlencoded::parse(query.as_bytes()).collect::<HashMap<_, _>>()
+            && let params = url::form_urlencoded::parse(
+                query.as_bytes()
+            ).collect::<HashMap<_, _>>()
             && let Some(code) = params.get("code")
         {
             trace!("OpenID Connect: Processing potential RFC-6749 section 4.1.2 redirected Authorization Response");

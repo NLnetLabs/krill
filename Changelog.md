@@ -31,6 +31,54 @@ Other changes
 [krill-ui 0.10.0]: https://github.com/NLnetLabs/krill-ui/releases/tag/v0.10.0
 
 
+## 0.16.2 ‘Wait Until Your Mother Hears About This’
+
+Released 2026-11-06.
+
+Improvements
+
+* Don’t re-issue child certificates if none of the content has changed and
+  the current certificates is still valid for at least
+  `timing_child_certificate_reissue_weeks_before` more weeks.
+
+  This should fix dealing with children that are still running Krill
+  0.15.0 which keeps re-requesting certificates. ([#1416], [#1418])
+
+[#1416]: https://github.com/NLnetLabs/krill/pull/1416
+[#1418]: https://github.com/NLnetLabs/krill/pull/1418
+
+
+## 0.16.1 ‘No Small Wonder’
+
+Released 2026-11-02.
+
+Security fixes
+
+* Fixed an issue with nonce re-use in login token which would allow a user
+  to escalate their permissions. This is only an issue when multi-user
+  login is enabled. ([#1406], [#1408])
+
+  This issue has been assigned CVE-2026-109140.
+* Fixed an issue that allowed users to manipulate CAs they are not
+  authorized for via bulk upload. ([#1409], [#1410])
+
+  This issue has been assigned CVE-2026-109141.
+* Fixed a missing validation of the child handle in a local RFC 6492,
+  letting a CA operator act as any child of any CA on the same server
+  exchange. ([#1411], [#1412])
+
+  This issue has been assigned CVE-2026-109142.
+* Updated bundled WebPKI root certificates. ([#1414])
+
+[#1406]: https://github.com/NLnetLabs/krill/pull/1406
+[#1408]: https://github.com/NLnetLabs/krill/pull/1408
+[#1409]: https://github.com/NLnetLabs/krill/pull/1409
+[#1410]: https://github.com/NLnetLabs/krill/pull/1410
+[#1411]: https://github.com/NLnetLabs/krill/pull/1411
+[#1412]: https://github.com/NLnetLabs/krill/pull/1412
+[#1414]: https://github.com/NLnetLabs/krill/pull/1414
+
+
 ## 0.16.0 ‘Früher war mehr Lametta’
 
 Released 2026-03-03.
