@@ -35,7 +35,7 @@ use tokio::sync::{RwLock, RwLockReadGuard};
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as URL_BASE64_ENGINE;
 use base64::engine::Engine as _;
-use basic_cookies::Cookie;
+use cookie::Cookie;
 use hyper::header::{HeaderValue, SET_COOKIE};
 use log::{debug, error, info, log_enabled, trace, warn};
 use openidconnect::{
@@ -768,50 +768,21 @@ impl AuthProvider {
         request: &HyperRequest,
         cookie_name: &str,
     ) -> Option<String> {
-        for cookie_hdr_val in
-            request.headers().get_all(hyper::http::header::COOKIE)
-        {
-            if let Ok(cookie_hdr_val_str) = cookie_hdr_val.to_str() {
-                // Use a helper crate to parse the cookie string as it's
-                // actually a bit of a pain as the string is semi-colon-with-
-                // optional-trailing-space separated, cookie names must be
-                // parsed according to token rules defined in RFC-2616 and
-                // cookie values must be parsed according to grammar defined
-                // in RFC-6265 (e.g. cookie values may be
-                // double quoted and can only contain a
-                // specified subset of US-ASCII characters).
-                // See:
-                //   https://tools.ietf.org/html/rfc6265#section-4.2.1
-                //   https://tools.ietf.org/html/rfc6265#section-4.1.1
-                //   https://tools.ietf.org/html/rfc2616#section-2.2 (for the
-                //   definition of 'token' used for cookie names)
-                match Cookie::parse(cookie_hdr_val_str) {
-                    Ok(parsed_cookies) => {
-                        trace!(
-                            "OpenID Connect: parsed cookies={:?}",
-                            parsed_cookies
-                        );
-                        // Even with the helper crate we have to do some
-                        // work... Why doesn't it
-                        // return a map???
-                        if let Some(found_cookie) = parsed_cookies
-                            .iter()
-                            .find(|cookie| cookie.get_name() == cookie_name)
-                        {
-                            return Some(
-                                found_cookie.get_value().to_string(),
-                            );
-                        }
-                    }
-                    Err(err) => {
+        request.headers().get_all(hyper::http::header::COOKIE)
+            .into_iter()
+            .filter_map(|value| 
+                value.to_str().ok()
+            )
+            .flat_map(|value| {
+                Cookie::split_parse(value)
+                    .filter_map(move |cookie| cookie.map_err(|err| {
                         error!(
-                            "Unable to parse HTTP cookie header value '{cookie_hdr_val_str}': {err}"
+                            "Unable to parse HTTP cookie header value '{value}': {err}"
                         );
-                    }
-                }
-            }
-        }
-        None
+                    }).ok())
+            })
+            .find(|cookie| cookie.name() == cookie_name)
+            .map(|cookie| cookie.value().into())
     }
 
     /// Log and convert the given error such that the detailed, possibly
