@@ -1430,6 +1430,7 @@ dependencies = [
  "clap",
  "cookie",
  "cryptoki",
+ "ecdsa",
  "fd-lock",
  "fern",
  "futures-util",
@@ -1461,12 +1462,12 @@ dependencies = [
  "syslog",
  "tar",
  "tempfile",
+ "thiserror 1.0.69",
  "tokio",
  "tokio-rustls",
  "toml",
  "unicode-normalization",
  "url",
- "urlparse",
  "uuid",
 ]
 
@@ -3241,12 +3242,6 @@ dependencies = [
  "serde",
  "serde_derive",
 ]
-
-[[package]]
-name = "urlparse"
-version = "0.7.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "110352d4e9076c67839003c7788d8604e24dcded13e0b375af3efaa8cf468517"
 
 [[package]]
 name = "utf8_iter"
