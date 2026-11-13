@@ -269,8 +269,7 @@ impl KrillClient {
     fn load_root_cert(
         path_str: &str
     ) -> Result<reqwest::Certificate, Error> {
-        let path = PathBuf::from_str(path_str)
-            .map_err(|e| Error::request_build_https_cert(path_str, e))?;
+        let path = PathBuf::from_str(path_str).unwrap_or_else(|e| match e {});
         let file = file::read(&path)
             .map_err(|e| Error::request_build_https_cert(path_str, e))?;
         reqwest::Certificate::from_pem(file.as_ref())
