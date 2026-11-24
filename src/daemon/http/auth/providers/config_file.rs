@@ -193,7 +193,6 @@ impl AuthProvider {
             PW_HASH_LOG_N,
             PW_HASH_R,
             PW_HASH_P,
-            scrypt::Params::RECOMMENDED_LEN,
         )
         .unwrap();
         let weak_salt = format!("krill-lagosta-{username}");

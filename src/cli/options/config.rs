@@ -68,7 +68,6 @@ impl User {
                 constants::PW_HASH_LOG_N,
                 constants::PW_HASH_R,
                 constants::PW_HASH_P,
-                scrypt::Params::RECOMMENDED_LEN,
             ).unwrap();
 
             // Hash twice with two different salts: first with a salt
