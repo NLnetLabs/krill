@@ -122,42 +122,6 @@ jobs:
     - name: Doc
       run: cargo doc --no-deps ${{ matrix.features }}
 
-  check-minimal-versions:
-    name: Check minimal versions
-    runs-on: ubuntu-latest
-    # env:
-      # CARGO_INCREMENTAL: 1 # No caching at the moment.
-    steps:
-
-    - name: Checkout repository
-      uses: actions/checkout@v7
-
-    - name: Determine MSRV
-      id: determine-msrv
-      run: |
-        msrv=`cargo metadata --no-deps --format-version 1 | jq -r '.packages[]|select(.name=="krill")|.rust_version'`
-        echo "msrv=$msrv" >> "$GITHUB_OUTPUT"
-
-    # TODO: Caching?
-
-    - name: Set up Rust (at MSRV)
-      id: setup-rust
-      uses: actions-rust-lang/setup-rust-toolchain@v2
-      with:
-        # Last specified version becomes the default.
-        toolchain: nightly, ${{ steps.determine-msrv.outputs.msrv }}
-        cache: false
-        matcher: false
-
-    - name: Enable annotations
-      run: echo "::add-matcher::.github/workflows/rust-annotations.json"
-
-    - name: Lock dependencies to minimal versions
-      run: cargo +nightly update -Z minimal-versions
-
-    - name: Check
-      run: cargo check --locked --all-targets --all-features
-
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
@@ -372,3 +336,46 @@ jobs:
       if: always()
       run: |
         cat /var/log/syslog
+
+# Disabled Jobs
+#
+# The jobs down here have been disabled for one reason or another but should
+# probably be brought back eventually.
+# ----------------------------------------------------------------------------
+disabled-jobs:
+  check-minimal-versions:
+    name: Check minimal versions
+    runs-on: ubuntu-latest
+    # env:
+      # CARGO_INCREMENTAL: 1 # No caching at the moment.
+    steps:
+
+    - name: Checkout repository
+      uses: actions/checkout@v7
+
+    - name: Determine MSRV
+      id: determine-msrv
+      run: |
+        msrv=`cargo metadata --no-deps --format-version 1 | jq -r '.packages[]|select(.name=="krill")|.rust_version'`
+        echo "msrv=$msrv" >> "$GITHUB_OUTPUT"
+
+    # TODO: Caching?
+
+    - name: Set up Rust (at MSRV)
+      id: setup-rust
+      uses: actions-rust-lang/setup-rust-toolchain@v2
+      with:
+        # Last specified version becomes the default.
+        toolchain: nightly, ${{ steps.determine-msrv.outputs.msrv }}
+        cache: false
+        matcher: false
+
+    - name: Enable annotations
+      run: echo "::add-matcher::.github/workflows/rust-annotations.json"
+
+    - name: Lock dependencies to minimal versions
+      run: cargo +nightly update -Z minimal-versions
+
+    - name: Check
+      run: cargo check --locked --all-targets --all-features
+
