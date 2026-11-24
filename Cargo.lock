@@ -1618,7 +1618,6 @@ dependencies = [
  "hyper",
  "hyper-util",
  "kmip-protocol",
- "lazy_static",
  "libflate",
  "log",
  "nix",
