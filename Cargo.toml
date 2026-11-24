@@ -42,14 +42,14 @@ pin-project-lite = "0.2.16"
 rand            = "0.10"
 regex           = { version = "1.11.1", default-features = false, features = [ "std" ] }
 reqwest         = { version = "0.13.2", features = ["json"] }
-rpki            = { version = "0.19.2", features = ["ca", "compat", "rrdp"] }
+rpki            = { version = "0.20.1", features = ["ca", "compat", "rrdp"] }
 rustls-pemfile  = "2.2.0"
 serde           = { version = "1.0", features = ["derive", "rc"] }
 serde_json      = "1.0"
 tempfile        = "3.19.1"
 tokio           = { version = "1.40", features = [ "macros", "rt", "rt-multi-thread", "signal", "time" ] }
 tokio-rustls    = { version = "0.26" }
-toml            = "0.9.5"
+toml            = "1.2.2"
 url             = { version = "2.5.4", features = ["serde"] }
 uuid            = { version = "1.16", features = ["serde", "v4"] }
 
@@ -76,14 +76,14 @@ unicode-normalization = { version = "0.1", optional = true }
 
 [target.'cfg(unix)'.dependencies]
 syslog = "7.0.0"
-nix = { version = "0.31.1", features = ["user"] }
+nix = { version = "0.32.0", features = ["user"] }
 
 [target.'cfg(none)'.dependencies]
 # openidconnect ^4.0.0 (4.0.0)
 # -> p256 ^0.13.2 (0.13.2)
 # -> ecdsa ^0.16 (0.16.0)
 # But p256 v0.13.2 actually requires ecdsa v0.16.2.
-ecdsa = { version = "0.16.2", optional = true }
+ecdsa = { version = "0.17.0", optional = true }
 # openidconnect ^4.0.0 (4.0.0)
 # -> thiserror ^1 (1.0.0)
 # thiserror v1.x is old, force the highest version.
