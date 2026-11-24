@@ -7,11 +7,12 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, RwLock};
-use log::{error, trace};
+use log::{error, trace, warn};
 use rpki::ca::idexchange::MyHandle;
 use rpki::repository::x509::Time;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
+use serde_json::Value as JsonValue;
 use crate::api::history::{
     CommandHistory, CommandHistoryCriteria, CommandHistoryRecord
 };
@@ -19,6 +20,7 @@ use crate::commons::error::KrillIoError;
 use crate::commons::storage::{
     Ident, KeyValueError, KeyValueStore, OpenStoreError, StorageSystem,
 };
+use crate::commons::version::KrillVersion;
 use super::agg::{Aggregate, Command, InitCommand, StoredCommand};
 
 
@@ -536,6 +538,84 @@ impl<'a, A: Aggregate<Context<'a> = ()>> AggregateStore<A> {
 }
 
 
+//--- Command Archive
+
+impl<A: Aggregate> AggregateStore<A> {
+    /// Archives the commands for this aggregate.
+    pub fn archive_commands(
+        &self, handle: &MyHandle, limit: usize,
+    ) -> Result<(), AggregateStoreError> {
+        let scope = Self::scope_for_agg(handle);
+        self.kv.execute(Some(&scope), |kv| {
+            let Some(snapshot) = kv.get::<A>(
+                Some(&scope), Self::key_for_snapshot()
+            )? else {
+                warn!("Nothing to archive for {handle}: no snapshot found.");
+                return Ok(Ok(()))
+            };
+            let version = snapshot.version();
+
+            // Collect the list of commands we are going to archive.
+            let commands = kv.list_keys(Some(&scope))?;
+            let mut commands: Vec<_> = commands.into_iter().filter_map(|key| {
+                let count = key.as_str().strip_prefix(
+                    "command-"
+                )?.strip_suffix(".json")?;
+                let Ok(count) = u64::from_str(count) else {
+                    return None;
+                };
+                if count > version {
+                    return None;
+                }
+                Some((key, count))
+            }).collect();
+            if commands.is_empty() {
+                warn!("Nothing to archive for {handle}: no commands found.");
+                return Ok(Ok(()))
+            }
+            commands.sort_by_key(|cmd| cmd.1);
+
+            for chunk in commands.chunks(limit) {
+                // Create the archive and add all the commands.
+                let mut archive = AggregateArchive {
+                    start: chunk.first().map(|item| item.1).unwrap_or(0),
+                    end: chunk.first().map(|item| item.1).unwrap_or(0),
+                    krill_version: KrillVersion::code_version(),
+                    handle: handle.clone(),
+                    commands: Vec::new(),
+                };
+
+                for (key, version) in chunk {
+                    let command = kv.get::<StoredCommand<A>>(Some(&scope), key)?;
+                    let command = match serde_json::to_value(command) {
+                        Ok(command) => command,
+                        Err(_) => {
+                            return Ok(Err(AggregateStoreError::CommandCorrupt(
+                                handle.clone(), *version
+                            )))
+                        }
+                    };
+                    archive.commands.push(command);
+                }
+
+                // Store the archive.
+                kv.store(
+                    Some(&scope), &Self::key_for_archive(archive.start),
+                    &archive
+                )?;
+
+                // Delete all the commands.
+                for (key, _) in chunk {
+                    kv.delete(Some(&scope), key)?;
+                }
+            }
+
+            Ok(Ok(()))
+        })?
+    }
+}
+
+
 //--- Command History
 
 impl<A: Aggregate> AggregateStore<A> {
@@ -656,6 +736,39 @@ impl<A: Aggregate> AggregateStore<A> {
             const { Ident::make("json") }
         )
     }
+
+    /// Returns the key for the archive starting at the given version.
+    fn key_for_archive(version: u64) -> Box<Ident> {
+        Ident::builder(
+            const { Ident::make("archive-") }
+        ).push_u64(
+            version
+        ).finish_with_extension(
+            const { Ident::make("json") }
+        )
+    }
+}
+
+
+//------------ AggregateArchive ----------------------------------------------
+
+/// The content of an aggregate archive.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct AggregateArchive {
+    /// The version of the first command in this archive.
+    start: u64,
+
+    /// The version of the last command in this archive.
+    end: u64,
+
+    /// The version of Krill that crated the archive.
+    krill_version: KrillVersion,
+
+    /// The handle of the aggregate.
+    handle: MyHandle,
+
+    /// The commands in the archive.
+    commands: Vec<JsonValue>,
 }
 
 

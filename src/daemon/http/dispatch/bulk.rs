@@ -1,6 +1,6 @@
 //! `/api/v1/bulk`
 
-use crate::api::ca::AllCertAuthIssues;
+use crate::api::ca::{AllCertAuthIssues, ArchiveCaCommands};
 use crate::api::import::Structure;
 use crate::commons::Error;
 use super::super::auth::Permission;
@@ -30,6 +30,7 @@ async fn cas(
         Some("publish") => cas_publish(request, path).await,
         Some("force_publish") => cas_force_publish(request, path).await,
         Some("suspend") => cas_suspend(request, path).await,
+        Some("archive") => cas_archive(request, path).await,
         _ => Ok(HttpResponse::not_found())
     }
 }
@@ -145,6 +146,18 @@ async fn cas_suspend(
     let (request, _) = request.proceed_permitted(Permission::CaAdmin, None)?;
     let server = request.empty()?;
     server.krill().cas_schedule_suspend_all().await?;
+    Ok(HttpResponse::ok())
+}
+
+async fn cas_archive(
+    request: Request<'_>,
+    path: PathIter<'_>,
+) -> Result<HttpResponse, DispatchError> {
+    path.check_exhausted()?;
+    request.check_post()?;
+    let (request, _) = request.proceed_permitted(Permission::CaAdmin, None)?;
+    let (server, args) = request.read_json::<ArchiveCaCommands>().await?;
+    server.krill().cas_archive_all(args.limit).await?;
     Ok(HttpResponse::ok())
 }
 

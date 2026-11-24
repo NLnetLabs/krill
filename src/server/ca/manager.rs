@@ -739,6 +739,28 @@ impl CaManager {
 
 /// # CA History
 impl CaManager {
+    /// Schedule all CAs to have their commands archived.
+    pub fn schedule_archive_commands_all(
+        &self, limit: usize, krill: &KrillRuntime
+    ) -> KrillResult<()> {
+        for ca_handle in self.ca_handles()? {
+            krill.tasks().schedule(
+                Task::ArchiveCaCommands { ca_handle, limit },
+                now(),
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Archives the commands of a single CA.
+    pub fn archive_ca_commands(
+        &self,
+        handle: CaHandle,
+        limit: usize,
+    ) -> KrillResult<()> {
+        Ok(self.ca_store.archive_commands(&handle, limit)?)
+    }
+
     /// Returns the history for a CA.
     pub fn ca_history(
         &self,
