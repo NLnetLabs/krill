@@ -16,7 +16,7 @@ use rpki::{
         provisioning::{ResourceClassEntitlements, SigningCert},
     },
     crypto::KeyIdentifier,
-    repository::x509::Time,
+    repository::{cert::Cert, x509::Time},
 };
 use serde::{Deserialize, Serialize};
 
@@ -36,7 +36,8 @@ use crate::api::ca::IdCertInfo;
 use crate::api::ta::{
     Nonce, ProvisioningRequest, ProvisioningResponse, TaCertDetails, 
     TrustAnchorChild, TrustAnchorChildRequests, TrustAnchorObjects, 
-    ApiTrustAnchorSignedRequest, TrustAnchorSignedResponse,
+    ApiTrustAnchorSignedRequest, TrustAnchorSignedReissue,
+    TrustAnchorSignedResponse,
     TrustAnchorSignerInfo, TrustAnchorSignerRequest,
 };
 use crate::constants::ta_resource_class_name;
@@ -175,6 +176,9 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
             TrustAnchorProxyEvent::SignerUpdated(signer) => {
                 self.signer = Some(signer)
             }
+            TrustAnchorProxyEvent::TaCertificateReissued(details) => {
+                self.signer.as_mut().unwrap().ta_cert_details = details;
+            }
             TrustAnchorProxyEvent::SignerRequestMade(nonce) => {
                 self.open_signer_request = Some(nonce)
             }
@@ -278,8 +282,11 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
             TrustAnchorProxyCommandDetails::AddSigner(signer) => {
                 self.process_add_signer(signer)
             }
-            TrustAnchorProxyCommandDetails::UpdateSigner(signer) => {
-                self.process_update_signer(signer)
+            TrustAnchorProxyCommandDetails::UpdateSigner(_) => {
+                Err(Error::custom("TA certificate reissue must be signed"))
+            }
+            TrustAnchorProxyCommandDetails::Reissue(reissue) => {
+                self.process_reissue(reissue)
             }
             TrustAnchorProxyCommandDetails::MakeSignerRequest => {
                 self.process_make_signer_request()
@@ -351,22 +358,49 @@ impl TrustAnchorProxy {
         }
     }
 
-    fn process_update_signer(
+    fn process_reissue(
         &self,
-        signer: TrustAnchorSignerInfo,
+        signed: TrustAnchorSignedReissue,
     ) -> KrillResult<Vec<TrustAnchorProxyEvent>> {
-        if
-            let Some(s) = &self.signer
-            &&  s.ta_cert_details.cert.key_identifier() == 
-                signer.ta_cert_details.cert.key_identifier() 
-        {
-            // It is not possible to add a signer that has a different
-            // public key
-            return Ok(vec![
-                TrustAnchorProxyEvent::SignerUpdated(signer)
-            ]);
+        if self.has_open_request() {
+            return Err(Error::TaProxyHasRequest);
         }
-        Err(Error::TaProxyHasDifferentSigner)
+
+        let signer = self.signer.as_ref().ok_or(Error::TaProxyHasNoSigner)?;
+        let reissue = signed.validate(&signer.id)?;
+        if reissue.proxy_key != self.id.public_key {
+            return Err(Error::custom(
+                "TA certificate reissue is for a different proxy",
+            ));
+        }
+
+        let current = &signer.ta_cert_details.cert;
+        let current_hash = current.base64.to_hash();
+        if reissue.previous_certificate != current_hash {
+            return Err(Error::custom(
+                "TA certificate reissue does not match the current certificate",
+            ));
+        }
+        if reissue.certificate.to_hash() == current_hash {
+            return Err(Error::custom(
+                "TA certificate reissue must change the certificate",
+            ));
+        }
+
+        let current = current.to_cert().map_err(Error::custom)?;
+        let next = Cert::decode(reissue.certificate.to_bytes().as_ref())
+            .map_err(Error::custom)?;
+        if current.subject_public_key_info() != next.subject_public_key_info() {
+            return Err(Error::TaProxyHasDifferentSigner);
+        }
+
+        next.inspect_ta(false).map_err(Error::custom)?;
+        next.verify_ta_ref(false).map_err(Error::custom)?;
+
+        let details = TaCertDetails::new(
+            next, reissue.tal_https, reissue.tal_rsync,
+        )?;
+        Ok(vec![TrustAnchorProxyEvent::TaCertificateReissued(details)])
     }
 
     fn process_make_signer_request(
@@ -866,7 +900,9 @@ pub enum TrustAnchorProxyEvent {
 
     // Proxy -> Signer interactions
     SignerAdded(TrustAnchorSignerInfo),
+    // Historical unsigned updates are retained for event replay.
     SignerUpdated(TrustAnchorSignerInfo),
+    TaCertificateReissued(TaCertDetails),
     SignerRequestMade(Nonce),
     SignerResponseReceived(TrustAnchorSignedResponse),
 
@@ -905,6 +941,9 @@ impl fmt::Display for TrustAnchorProxyEvent {
                     "Updated signer with ID certificate hash: {}",
                     signer.id.hash
                 )
+            }
+            TrustAnchorProxyEvent::TaCertificateReissued(details) => {
+                write!(f, "Reissued TA certificate '{}'", details.cert.hash)
             }
             TrustAnchorProxyEvent::SignerRequestMade(nonce) => {
                 write!(f, "Created signer request with nonce '{nonce}'")
@@ -977,15 +1016,15 @@ impl TrustAnchorProxyCommand {
         )
     }
 
-    pub fn update_signer(
+    pub fn reissue(
         id: &CaHandle,
-        signer: TrustAnchorSignerInfo,
+        reissue: TrustAnchorSignedReissue,
         actor: &Actor,
     ) -> Self {
         TrustAnchorProxyCommand::new(
             id.clone(),
             None,
-            TrustAnchorProxyCommandDetails::UpdateSigner(signer),
+            TrustAnchorProxyCommandDetails::Reissue(reissue),
             actor,
         )
     }
@@ -1072,7 +1111,9 @@ pub enum TrustAnchorProxyCommandDetails {
 
     // Proxy -> Signer interactions
     AddSigner(TrustAnchorSignerInfo),
+    // Retained for reading historical commands.
     UpdateSigner(TrustAnchorSignerInfo),
+    Reissue(TrustAnchorSignedReissue),
     MakeSignerRequest,
     ProcessSignerResponse(TrustAnchorSignedResponse),
 
@@ -1112,6 +1153,9 @@ impl fmt::Display for TrustAnchorProxyCommandDetails {
                     "Update signer with id certificate hash: {}",
                     signer.id.hash
                 )
+            }
+            TrustAnchorProxyCommandDetails::Reissue(_) => {
+                write!(f, "Apply signed TA certificate reissue")
             }
             TrustAnchorProxyCommandDetails::MakeSignerRequest => {
                 write!(f, "Create new publish request for signer")
@@ -1186,6 +1230,12 @@ impl eventsourcing::WithStorableDetails for TrustAnchorProxyCommandDetails {
                     self,
                 )
                 .id_cert_hash(&signer.id.hash)
+            }
+            TrustAnchorProxyCommandDetails::Reissue(_) => {
+                crate::api::history::CommandSummary::new(
+                    "cmd-ta-proxy-signer-update",
+                    self,
+                )
             }
             TrustAnchorProxyCommandDetails::MakeSignerRequest => {
                 crate::api::history::CommandSummary::new(
@@ -1469,17 +1519,69 @@ mod tests {
             let ta_objects = proxy.get_trust_anchor_objects().unwrap();
             assert_eq!(ta_objects.revision().number(), 55);
 
-            // We still need to test some higher order functions:
-            // - add child
-            // - let the child request a certificate
-            // - let the child perform a key rollover
-            // - let the TA publish
-            //
-            // This is hard to test at this level. So, will test this as part
-            // of the higher order functional tests found under
-            // /tests. I.e. we will start a full krill server with
-            // testbed support, which will use the TrustAnchorProxy and
-            // Signer.
+            let signer_id = ta_signer.get_signer_info().id;
+            let previous_certificate =
+                proxy.get_ta_details().unwrap().cert.to_bytes();
+            let reissue_cmd = TrustAnchorSignerCommand::make_reissue_command(
+                &signer_handle,
+                proxy.repository().unwrap().repo_info.clone(),
+                tal_https,
+                test::rsync("rsync://example.krill.cloud/reissued/ta.cer"),
+                &actor,
+            );
+            let ta_signer = ta_signer_store.command_with_context(
+                reissue_cmd, signer_context,
+            ).unwrap();
+            let signed = ta_signer.sign_reissue(
+                &previous_certificate, timing, &signer,
+            ).unwrap();
+
+            let mut details = signed.validate(&signer_id).unwrap();
+            let other_key = signer.create_key().unwrap();
+            let wrongly_signed = TrustAnchorSignedReissue::sign(
+                &details, other_key, timing.signed_message_validity_days,
+                &signer,
+            ).unwrap();
+            assert!(proxy.process_reissue(wrongly_signed).is_err());
+
+            details.proxy_key = signer.get_key_info(&other_key).unwrap();
+            let wrong_proxy = TrustAnchorSignedReissue::sign(
+                &details, signer_id.public_key.key_identifier(),
+                timing.signed_message_validity_days, &signer,
+            ).unwrap();
+            assert!(proxy.process_reissue(wrong_proxy).is_err());
+
+            // The signed payload permits TAL locations and derives all
+            // key and certificate metadata at the proxy.
+            details.proxy_key = proxy.id().public_key.clone();
+            let mut payload = serde_json::to_value(&details).unwrap();
+            payload["encoded_ski"] = serde_json::json!("unexpected TAL key");
+            let cms = signer.create_ta_signed_message(
+                serde_json::to_vec(&payload).unwrap().into(),
+                timing.signed_message_validity_days,
+                &signer_id.public_key.key_identifier(),
+            ).unwrap();
+            let unexpected_tal_key = serde_json::from_value(serde_json::json!({
+                "signed": crate::api::ta::TrustAnchorSignedMessage::from(cms),
+            })).unwrap();
+            assert!(proxy.process_reissue(unexpected_tal_key).is_err());
+
+            let version = proxy.get_trust_anchor_objects().unwrap().revision();
+            let command = TrustAnchorProxyCommand::reissue(
+                &proxy_handle, signed, &actor,
+            );
+            let proxy = ta_proxy_store.command_with_context(
+                command, proxy_context,
+            ).unwrap();
+            assert_eq!(proxy.signer.as_ref().unwrap().id, signer_id);
+            assert_eq!(
+                proxy.get_trust_anchor_objects().unwrap().revision(), version,
+            );
+            let expected = ta_signer.get_signer_info().ta_cert_details;
+            let actual = proxy.get_ta_details().unwrap();
+            assert_eq!(actual.cert.to_bytes(), expected.cert.to_bytes());
+            assert_eq!(actual.cert.resources, expected.cert.resources);
+            assert_eq!(actual.tal, expected.tal);
 
         })
     }

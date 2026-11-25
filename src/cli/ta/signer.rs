@@ -8,7 +8,7 @@ use crate::tasigner;
 use crate::api::status::Success;
 use crate::api::ca::IdCertInfo;
 use crate::api::ta::{
-    TrustAnchorSignedRequest, TrustAnchorSignedResponse,
+    TrustAnchorSignedReissue, TrustAnchorSignedRequest, TrustAnchorSignedResponse,
     TrustAnchorSignerInfo,
 };
 use crate::commons::crypto::KrillSigner;
@@ -190,6 +190,14 @@ impl TrustAnchorSignerManager {
         self.store.command_with_context(cmd, self.context())?;
 
         Ok(Success)
+    }
+
+    pub fn show_reissue(
+        &self, previous_certificate: &[u8],
+    ) -> Result<TrustAnchorSignedReissue, SignerClientError> {
+        Ok(self.get_signer()?.sign_reissue(
+            previous_certificate, self.config.ta_timing, &self.signer,
+        )?)
     }
 
     pub fn show(&self) -> Result<TrustAnchorSignerInfo, SignerClientError> {

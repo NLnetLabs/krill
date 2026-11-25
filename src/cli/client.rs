@@ -25,7 +25,8 @@ use crate::api::admin::Token;
 use crate::api::pubd::RepoStats;
 use crate::api::status::Success;
 use crate::api::ta::{
-    ApiTrustAnchorSignedRequest, TrustAnchorSignedResponse,
+    ApiTrustAnchorSignedRequest, TrustAnchorSignedReissue,
+    TrustAnchorSignedResponse,
     TrustAnchorSignerInfo,
 };
 use crate::commons::file;
@@ -942,9 +943,9 @@ impl KrillClient {
     }
 
     pub async fn ta_proxy_signer_update(
-        &self, info: TrustAnchorSignerInfo
+        &self, reissue: TrustAnchorSignedReissue
     ) -> Result<Success, Error> {
-        self.post_json(once("api/v1/ta/proxy/signer/update"), info).await
+        self.post_json(once("api/v1/ta/proxy/signer/update"), reissue).await
     }
 
     pub async fn ta_proxy_signer_make_request(

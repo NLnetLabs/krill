@@ -68,16 +68,15 @@ Manage the Trust Anchor Proxy
             Path to the the Trust Anchor Signer info file (as 'signer show')
         
         .. subcmd:: update
-        
-        Update signer association
-        
-        
+
+        Apply a signed TA certificate reissue
+
         *OPTIONS*
-        
+
             .. option:: -i <INFO>, --info=<INFO>
 
-            Path to the the Trust Anchor Signer info file (as 'signer show')
-        
+            Path to the signed JSON from 'signer show-reissue'
+
         .. subcmd:: make-request
         
         Make a NEW request for the signer (fails if a request exists)
@@ -212,6 +211,16 @@ Manage the Trust Anchor Signer
 
         The HTTPS URI used for the TAL
     
+    .. subcmd:: show-reissue
+
+    Export a signed TA certificate reissue for the proxy
+
+    *OPTIONS*
+
+        .. option:: --previous-certificate=<PATH>
+
+        Path to the DER TA certificate currently served by the proxy
+
     .. subcmd:: show
     
     Show the signer info

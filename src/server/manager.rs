@@ -1156,13 +1156,13 @@ impl KrillManager {
         }).await
     }
 
-    /// Updates the trust anchor signer connected to a trust anchor proxy.
+    /// Applies a signed TA certificate reissue.
     pub async fn ta_proxy_signer_update(
-        &self, info: api::ta::TrustAnchorSignerInfo, actor: Actor,
+        &self, reissue: api::ta::TrustAnchorSignedReissue, actor: Actor,
     ) -> Result<(), RunError> {
         self.run(move |runtime| {
             Ok(runtime.ca_manager().ta_proxy_signer_update(
-                info, &actor, runtime
+                reissue, &actor, runtime
             )?)
         }).await
     }

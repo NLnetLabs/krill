@@ -1,12 +1,14 @@
 //! Managing the Trust Anchor Proxy.
 
 use std::{error, fmt, fs, io};
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 use rpki::uri;
 use crate::{api, constants};
 use crate::api::ta::{
-    ApiTrustAnchorSignedRequest, TrustAnchorSignedResponse,
+    ApiTrustAnchorSignedRequest, TrustAnchorSignedReissue,
+    TrustAnchorSignedResponse,
     TrustAnchorSignerInfo,
 };
 use crate::cli::options::args::JsonFile;
@@ -58,6 +60,9 @@ pub enum Subcommand {
     /// Reissue the TA certificate
     Reissue(Reissue),
 
+    /// Export a signed TA certificate reissue for the proxy
+    ShowReissue(ShowReissue),
+
     /// Show the signer info
     Show(Show),
 
@@ -77,6 +82,7 @@ impl Subcommand {
         match self {
             Self::Init(cmd) => cmd.run(manager).into(),
             Self::Reissue(cmd) => cmd.run(manager).into(),
+            Self::ShowReissue(cmd) => cmd.run(manager).into(),
             Self::Show(cmd) => cmd.run(manager).into(),
             Self::Process(cmd) => cmd.run(manager).into(),
             Self::Last(cmd) => cmd.run(manager).into(),
@@ -185,6 +191,30 @@ impl Reissue {
                 tal_rsync: self.tal_rsync,
             }
         )
+    }
+}
+
+
+//------------ ShowReissue ---------------------------------------------------
+
+#[derive(clap::Args)]
+pub struct ShowReissue {
+    /// Path to the DER TA certificate currently served by the proxy.
+    #[arg(long, value_name = "path")]
+    previous_certificate: PathBuf,
+}
+
+impl ShowReissue {
+    pub fn run(
+        self, manager: &TrustAnchorSignerManager,
+    ) -> Result<TrustAnchorSignedReissue, SignerClientError> {
+        let certificate = fs::read(&self.previous_certificate).map_err(|err| {
+            SignerClientError::Other(format!(
+                "Cannot read TA certificate '{}': {err}",
+                self.previous_certificate.display(),
+            ))
+        })?;
+        manager.show_reissue(&certificate)
     }
 }
 

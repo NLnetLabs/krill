@@ -12,7 +12,7 @@ use rpki::repository::resources::{
 use crate::{api, constants};
 use crate::api::ta::{
     ApiTrustAnchorSignedRequest, TrustAnchorSignerInfo,
-    TrustAnchorSignedResponse,
+    TrustAnchorSignedReissue, TrustAnchorSignedResponse,
 };
 use crate::cli::client::KrillClient;
 use crate::cli::options::GeneralOptions;
@@ -197,7 +197,7 @@ pub enum Signer {
     /// Initialise signer association
     Init(SignerInit),
 
-    /// Update signer association
+    /// Apply a signed TA certificate reissue
     Update(SignerUpdate),
 
     /// Make a NEW request for the signer (fails if a request exists)
@@ -254,9 +254,18 @@ impl fmt::Display for TasiMsg {
 
 #[derive(clap::Args)]
 pub struct SignerUpdate {
-    /// Path to the the Trust Anchor Signer info file (as 'signer show')
+    /// Path to the signed reissue JSON from 'signer show-reissue'.
     #[arg(long, short, value_name="path")]
-    info: JsonFile<TrustAnchorSignerInfo, TasiMsg>,
+    info: JsonFile<TrustAnchorSignedReissue, ReissueMsg>,
+}
+
+#[derive(Clone, Copy, Default, Debug)]
+struct ReissueMsg;
+
+impl fmt::Display for ReissueMsg {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("signed TA reissue")
+    }
 }
 
 impl SignerUpdate {

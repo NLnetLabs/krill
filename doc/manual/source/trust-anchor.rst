@@ -539,32 +539,47 @@ Upload the Signer Response
 Reissuing TA Certificates
 -------------------------
 
-Reissue the signer. This takes the same arguments as init. Any changes to
-ta_timing are also reflected here:
+Complete any pending proxy/signer exchange before applying the reissue.
+Download the current DER certificate from the proxy and copy it to the
+offline signer:
 
 .. code-block:: bash
 
-  krillta signer -c ta.conf reissue --proxy-id proxy-id.json \ 
-                                    --proxy-repository-contact proxy-request.json \
-                                    --tal-rsync rsync://abcd.example.org/ta/ta.tal \ 
-                                    ...
+  curl --fail --output ./ta-current.cer https://krill.example.net/ta/ta.cer
 
-
-Get the TA Signer 'info' JSON file and save it:
+Reissue the certificate on the signer. The signer keeps the existing
+TA key and uses any updated ``ta_timing`` settings:
 
 .. code-block:: bash
 
-  krillta signer -f json show > ./signer-info.json
+  krillta signer -c ta.conf reissue --proxy-id ./proxy-id.json \
+                                    --proxy-repository-contact ./proxy-repo.json \
+                                    --tal-https https://krill.example.net/ta/ta.cer \
+                                    --tal-rsync rsync://krill.example.net/ta/ta.cer
 
-
-Then 'update' the signer associated with the TA Proxy:
+Export the signed reissue for the proxy's current certificate:
 
 .. code-block:: bash
 
-  krillta proxy signer update --info ./signer-info.json
+  krillta signer -c ta.conf --format json show-reissue \
+    --previous-certificate ./ta-current.cer > ./ta-reissue.json
 
-At this point you should see that both /ta/ta.tal and /ta/ta.cer are updated.
+Copy the signed file to the proxy and apply it:
 
+.. code-block:: bash
+
+  krillta proxy signer update --info ./ta-reissue.json
+
+Check that ``/ta/ta.tal`` and ``/ta/ta.cer`` now serve the updated TAL
+and certificate. Copy the reissued certificate to any separate HTTPS and
+rsync locations listed in the TAL.
+
+The signed file is valid for ``ta_timing.signed_message_validity_days``
+and applies only to the intended proxy while it serves the certificate
+whose digest is in the file. If it expires while the proxy still serves
+that certificate, run ``show-reissue`` again using the same previous certificate.
+Use a version of ``krillta`` that supports ``show-reissue`` when updating the
+proxy.
 
 Auditing
 ^^^^^^^^

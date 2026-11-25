@@ -45,7 +45,7 @@ use crate::api::rta::{
 };
 use crate::api::ta::{
     ApiTrustAnchorSignedRequest, ProvisioningRequest,
-    TrustAnchorSignedResponse, TrustAnchorSignerInfo,
+    TrustAnchorSignedReissue, TrustAnchorSignedResponse, TrustAnchorSignerInfo,
 };
 use crate::commons::httpclient;
 use crate::commons::KrillResult;
@@ -436,17 +436,15 @@ impl CaManager {
         Ok(())
     }
 
-    /// Updates the associated signer to the proxy.
-    ///
-    /// Errors if there is no proxy or the proxy has no or a different signer
+    /// Applies a signed TA certificate reissue to the proxy.
     pub fn ta_proxy_signer_update(
         &self,
-        info: TrustAnchorSignerInfo,
+        reissue: TrustAnchorSignedReissue,
         actor: &Actor,
         krill: &KrillRuntime,
     ) -> KrillResult<()> {            
         self.send_ta_proxy_command(
-            TrustAnchorProxyCommand::update_signer(&ta_handle(), info, actor),
+            TrustAnchorProxyCommand::reissue(&ta_handle(), reissue, actor),
             krill
         )?;
         Ok(())

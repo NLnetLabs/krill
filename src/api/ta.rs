@@ -11,12 +11,13 @@ use chrono::TimeDelta;
 use rpki::{
     ca::{
         idexchange::{ChildHandle, RecipientHandle, SenderHandle},
-        provisioning,
+        provisioning::{self, RequestResourceLimit},
         publication::Base64,
         sigmsg::SignedMessage,
     },
     crypto::{KeyIdentifier, PublicKey},
-    repository::{resources::ResourceSet, x509::Time},
+    repository::{cert::Cert, resources::ResourceSet, x509::Time},
+    rrdp::Hash,
     uri,
 };
 use serde::{Deserialize, Serialize};
@@ -283,6 +284,26 @@ pub struct TaCertDetails {
 }
 
 
+impl TaCertDetails {
+    /// Builds the stored certificate and TAL from the same certificate.
+    pub(crate) fn new(
+        cert: Cert,
+        tal_https: Vec<uri::Https>,
+        tal_rsync: uri::Rsync,
+    ) -> KrillResult<Self> {
+        let tal = TrustAnchorLocator::new(
+            tal_https, tal_rsync.clone(), cert.subject_public_key_info(),
+        );
+        let resources = ResourceSet::try_from(&cert).map_err(Error::custom)?;
+        let cert = ReceivedCert::create(
+            cert, tal_rsync, resources, RequestResourceLimit::default(),
+        ).map_err(Error::custom)?;
+
+        Ok(Self { cert, tal })
+    }
+}
+
+
 //------------ TrustAnchorLocator --------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -472,6 +493,56 @@ impl From<SignedMessage> for TrustAnchorSignedMessage {
         let message =
             Base64::from_content(&signed_msg.to_captured().into_bytes());
         TrustAnchorSignedMessage { message }
+    }
+}
+
+
+//------------ TrustAnchorSignedReissue ------------------------------------
+
+/// An offline signer's authorization to replace the proxy's TA certificate
+/// and TAL. Only the payload authenticated by the CMS signature is used.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct TrustAnchorSignedReissue {
+    signed: TrustAnchorSignedMessage,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct TrustAnchorReissue {
+    pub proxy_key: PublicKey,
+    pub previous_certificate: Hash,
+    pub certificate: Base64,
+    pub tal_https: Vec<uri::Https>,
+    pub tal_rsync: uri::Rsync,
+}
+
+impl TrustAnchorSignedReissue {
+    pub(crate) fn sign(
+        reissue: &TrustAnchorReissue,
+        signing_key: KeyIdentifier,
+        validity_days: i64,
+        signer: &KrillSigner,
+    ) -> KrillResult<Self> {
+        let data = serde_json::to_vec(reissue).map_err(Error::JsonError)?;
+        let signed = signer.create_ta_signed_message(
+            data.into(), validity_days, &signing_key,
+        ).map_err(Error::signer)?;
+        Ok(Self { signed: signed.into() })
+    }
+
+    pub(crate) fn validate(
+        &self, issuer: &IdCertInfo,
+    ) -> KrillResult<TrustAnchorReissue> {
+        let signed = self.signed.validate(&issuer.public_key)?;
+        serde_json::from_slice(&signed.content().to_bytes())
+            .map_err(Error::JsonError)
+    }
+}
+
+impl fmt::Display for TrustAnchorSignedReissue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Signed TA reissue. Use JSON output for the proxy.")
     }
 }
 

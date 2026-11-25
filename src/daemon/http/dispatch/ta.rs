@@ -355,8 +355,8 @@ async fn proxy_signer_update(
     let (request, auth) = request.proceed_permitted(
         Permission::CaAdmin, Some(&resource)
     )?;
-    let (server, info) = request.read_json().await?;
-    server.krill().ta_proxy_signer_update(info, auth.into_actor()).await?;
+    let (server, reissue) = request.read_json().await?;
+    server.krill().ta_proxy_signer_update(reissue, auth.into_actor()).await?;
     Ok(HttpResponse::ok())
 }
 

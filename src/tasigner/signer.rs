@@ -14,7 +14,7 @@ use rpki::{
     ca::{
         idexchange::{CaHandle, ChildHandle, RepoInfo},
         provisioning::{
-            self, IssuanceResponse, RequestResourceLimit, RevocationResponse,
+            self, IssuanceResponse, RevocationResponse,
         },
     },
     crypto::KeyIdentifier,
@@ -38,11 +38,12 @@ use crate::{
         KrillResult,
     },
 };
-use crate::api::ca::{IdCertInfo, ObjectName, ReceivedCert};
+use crate::api::ca::{IdCertInfo, ObjectName};
 use crate::api::ta::{
     Nonce, ProvisioningRequest, ProvisioningResponse, TaCertDetails,
-    TrustAnchorLocator, TrustAnchorObjects, TrustAnchorProxySignerExchange,
-    TrustAnchorSignedRequest, TrustAnchorSignerInfo,
+    TrustAnchorObjects, TrustAnchorProxySignerExchange,
+    TrustAnchorReissue, TrustAnchorSignedReissue, TrustAnchorSignedRequest,
+    TrustAnchorSignerInfo,
     TrustAnchorSignerResponse,
 };
 use crate::constants::ta_resource_class_name;
@@ -209,6 +210,35 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
 }
 
 impl TrustAnchorSigner {
+    /// Exports a reissue for the certificate currently served by the proxy.
+    pub fn sign_reissue(
+        &self,
+        previous_certificate: &[u8],
+        timing: TaTimingConfig,
+        signer: &KrillSigner,
+    ) -> KrillResult<TrustAnchorSignedReissue> {
+        let previous_certificate =
+            rpki::rrdp::Hash::from_data(previous_certificate);
+        if previous_certificate == self.ta_cert_details.cert.base64.to_hash() {
+            return Err(Error::custom(
+                "The proxy already has this TA certificate",
+            ));
+        }
+
+        TrustAnchorSignedReissue::sign(
+            &TrustAnchorReissue {
+                proxy_key: self.proxy_id.public_key.clone(),
+                previous_certificate,
+                certificate: self.ta_cert_details.cert.base64.clone(),
+                tal_https: self.ta_cert_details.tal.uris().clone(),
+                tal_rsync: self.ta_cert_details.tal.rsync_uri().clone(),
+            },
+            self.id.public_key.key_identifier(),
+            timing.signed_message_validity_days,
+            signer,
+        )
+    }
+
     pub fn get_signer_info(&self) -> TrustAnchorSignerInfo {
         TrustAnchorSignerInfo {
             id: self.id.clone(),
@@ -278,21 +308,7 @@ impl TrustAnchorSigner {
             signer.sign_cert(cert, &key)?
         };
 
-        let tal = TrustAnchorLocator::new(
-            tal_https,
-            tal_rsync.clone(),
-            cert.subject_public_key_info(),
-        );
-
-        let rcvd_cert = ReceivedCert::create(
-            cert,
-            tal_rsync,
-            resources,
-            RequestResourceLimit::default(),
-        )
-        .map_err(Error::custom)?;
-
-        Ok(TaCertDetails { cert: rcvd_cert, tal })
+        TaCertDetails::new(cert, tal_https, tal_rsync)
     }
     
     fn update_ta_cert_details(
@@ -347,21 +363,7 @@ impl TrustAnchorSigner {
             signer.sign_cert(cert, &key)?
         };
 
-        let tal = TrustAnchorLocator::new(
-            tal_https,
-            tal_rsync.clone(),
-            cert.subject_public_key_info(),
-        );
-
-        let rcvd_cert = ReceivedCert::create(
-            cert,
-            tal_rsync,
-            resources,
-            RequestResourceLimit::default(),
-        )
-        .map_err(Error::custom)?;
-
-        Ok(TaCertDetails { cert: rcvd_cert, tal })
+        TaCertDetails::new(cert, tal_https, tal_rsync)
     }
 
     /// Process a request.
