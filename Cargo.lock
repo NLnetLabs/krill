@@ -1718,7 +1718,7 @@ dependencies = [
  "regex",
  "reqwest",
  "rpassword",
- "rpki 0.20.1",
+ "rpki",
  "rustls-pemfile",
  "scrypt",
  "secrecy",
@@ -1750,7 +1750,7 @@ dependencies = [
  "rand 0.10.4",
  "rcgen",
  "reqwest",
- "rpki 0.19.3",
+ "rpki",
  "serde",
  "serde_json",
  "serde_with",
@@ -2670,19 +2670,6 @@ dependencies = [
  "libc",
  "rtoolbox",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "rpki"
-version = "0.19.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9157a0b503ef5d3821bae79d2d4f44e1f5655eacdcc1b67623dd4403cd9ee302"
-dependencies = [
- "base64 0.22.1",
- "bytes",
- "chrono",
- "log",
- "uuid",
 ]
 
 [[package]]
