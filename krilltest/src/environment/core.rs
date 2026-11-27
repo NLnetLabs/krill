@@ -123,7 +123,7 @@ impl Environment {
         let public_port =
             self.acquire_port(format!("nginx public port for {name}"));
         let private_port =
-            self.acquire_port(format!("Krilll private port for {name}"));
+            self.acquire_port(format!("Krill private port for {name}"));
         let krill = KrillServer::new(
             name.clone(),
             self.krill_bin.clone(),
