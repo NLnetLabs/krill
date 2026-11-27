@@ -89,7 +89,7 @@ Repository Setup
 
 .. Note:: If you are a member of NIC.BR, ARIN or APNIC, then you're in luck. These
     organisations provide an RPKI Publication Server as a service to their
-    members, so you can configure your Krill CA publish there.
+    members, so you can configure your Krill CA to publish there.
 
     If you need to run your own Publication Server then please have a look
     :ref:`here<doc_krill_publication_server>` to see how you can use Krill
@@ -148,9 +148,9 @@ use the UI:
 
     Copy the child request XML or download the file
 
-Your RIR or NIR will provide you with a parent response XML. You can use the
-CLI subcommand :ref:`krillc parents add<cmd_krillc_parents_add>` for this, or
-you can simply paste or upload it using the UI:
+Once your RIR or NIR has provided you with a parent response XML, use the
+CLI subcommand :ref:`krillc parents add<cmd_krillc_parents_add>` to give it to
+Krill, or you can simply paste or upload it using the UI:
 
 .. figure:: img/krill-ui-parent-response.png
     :align: center

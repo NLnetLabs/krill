@@ -272,7 +272,7 @@ pub async fn post_binary_with_full_ua(
 
     let mut headers = HeaderMap::new();
 
-    let ua_string = concat!("krill/{}", crate_version!());
+    let ua_string = concat!("krill/", crate_version!());
     let user_agent_value = HeaderValue::from_str(ua_string)
         .map_err(|e| Error::request_build(uri, e))?;
     let content_type_value = HeaderValue::from_str(content_type)
@@ -326,8 +326,7 @@ pub async fn delete(uri: &str, token: Option<&Token>) -> Result<(), Error> {
 
 #[allow(clippy::result_large_err)]
 fn load_root_cert(path_str: &str) -> Result<reqwest::Certificate, Error> {
-    let path = PathBuf::from_str(path_str)
-        .map_err(|e| Error::request_build_https_cert(path_str, e))?;
+    let path = PathBuf::from_str(path_str).unwrap_or_else(|e| match e {});
     let file = file::read(&path)
         .map_err(|e| Error::request_build_https_cert(path_str, e))?;
     reqwest::Certificate::from_pem(file.as_ref())

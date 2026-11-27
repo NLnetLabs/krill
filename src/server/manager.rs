@@ -266,7 +266,7 @@ impl KrillManager {
         rx.await?
     }
 
-    /// Runs a sync closure which may be block for a long time.
+    /// Runs a sync closure which may block for a long time.
     ///
     /// This is identical to [`run`][Self::run] but runs the closure on the
     /// slow thread pool.

@@ -8,7 +8,6 @@ image:
   - "ubuntu:jammy" # ubuntu/22.04
   - "ubuntu:noble" # ubuntu/24.04
   - "ubuntu:resolute" # ubuntu/26.04
-  - "debian:bullseye" # debian/11
   - "debian:bookworm" # debian/12
   - "debian:trixie" # debian/13
   - "almalinux:8" # compatible with EOL centos:8
@@ -41,18 +40,3 @@ include:
   - image: "almalinux:10"
     rpm_systemd_service_unit_file: "pkg/common/krill-ubuntu-focal.krill.service"
     rpm_rpmlint_check_filters: 
-
-  - image: "debian:bullseye"
-    deb_extra_lintian_args: "--suppress-tags systemd-service-file-outside-lib"
-
-  # package for the Raspberry Pi 4b as an ARMv7 cross compiled variant of the Debian Bullseye upon which
-  # Raspbian 11 is based.
-  - pkg: "krill"
-    image: "debian:bullseye"
-    target: "armv7-unknown-linux-gnueabihf"
-    deb_extra_lintian_args: "--suppress-tags systemd-service-file-outside-lib"
-  - pkg: "krillup"
-    image: "debian:bullseye"
-    target: "armv7-unknown-linux-gnueabihf"
-    deb_extra_lintian_args: "--suppress-tags systemd-service-file-outside-lib"
-

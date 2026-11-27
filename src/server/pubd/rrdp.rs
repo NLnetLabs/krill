@@ -35,10 +35,10 @@ use crate::config::RrdpUpdatesConfig;
 const VERSION: &str = "1";
 const NS: &str = "http://www.ripe.net/rpki/rrdp";
 
-const SNAPSHOT: Name = Name::unqualified(b"snapshot");
-const DELTA: Name = Name::unqualified(b"delta");
-const PUBLISH: Name = Name::unqualified(b"publish");
-const WITHDRAW: Name = Name::unqualified(b"withdraw");
+const SNAPSHOT: Name = Name::unqualified("snapshot");
+const DELTA: Name = Name::unqualified("delta");
+const PUBLISH: Name = Name::unqualified("publish");
+const WITHDRAW: Name = Name::unqualified("withdraw");
 
 
 //------------ RrdpServer ----------------------------------------------------
@@ -565,7 +565,7 @@ impl RrdpServer {
             // We would expect the existing deltas to be empty as well in this
             // case. But in any case, wiping them will ensure we
             // generate a new sane NotificationFile
-            deltas_from_old_notification = vec![];
+            deltas_from_old_notification.clear();
         }
 
         // Write new delta files and add their DeltaInfo to the list to

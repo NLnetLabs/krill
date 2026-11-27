@@ -18,13 +18,6 @@ import os
 
 import toml
 import datetime
-import sphinx_rtd_theme
-import requests
-try:
-    import versionwarning
-    versionbanner = True
-except ModuleNotFoundError:
-    versionbanner = False
 
 # -- Project information -----------------------------------------------------
 
@@ -35,18 +28,6 @@ author = 'NLnet Labs'
 
 semver = toml.load('../../../Cargo.toml')
 
-try:
-    response_versions = requests.get(
-        f"https://readthedocs.org/api/v2/version/?project__slug=krill&active=true",
-        timeout=2,
-    ).json()
-    versions = [
-        (version["slug"], f"/{version['project']['language']}/{version['slug']}/")
-        for version in response_versions["results"]
-    ]
-except Exception:
-    versions = []
-
 # The short X.Y version
 version = semver.get('package').get('version')
 rustversion = semver.get('package').get('rust-version')
@@ -56,14 +37,6 @@ rst_epilog = f"""
 
 # The full version, including alpha/beta/rc tags
 release = version
-
-# -- Version Warning Banner configuration ------------------------------------
-if versionbanner:
-    versionwarning_messages = {
-        'latest': 'You are reading the <code class="docutils literal notranslate"><span class="pre">latest</span></code> (unstable) version of this documentation, which may describe features which are not available in the <a href="/en/stable/">stable version</a>.',
-    }
-    versionwarning_banner_title = 'Note'
-    versionwarning_body_selector = 'div[itemprop="articleBody"]'
 
 # -- Sphinx Tabs configuration -----------------------------------------------
 
@@ -86,10 +59,7 @@ extensions = [
     'sphinx.ext.intersphinx',
     'sphinx.ext.autosectionlabel',
     'notfound.extension',
-    'sphinx_rtd_theme'
 ]
-if versionbanner:
-    extensions.append('versionwarning.extension')
 
 intersphinx_mapping = {
     'rtrtr': ('https://rtrtr.docs.nlnetlabs.nl/en/stable/', None),
@@ -123,7 +93,7 @@ language = "en"
 exclude_patterns = []
 
 # The name of the Pygments (syntax highlighting) style to use.
-pygments_style = 'sphinx'
+pygments_style = None
 
 
 # -- Options for HTML output -------------------------------------------------
@@ -131,20 +101,85 @@ pygments_style = 'sphinx'
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = 'sphinx_rtd_theme'
-html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
-html_logo = 'resources/Krill_Logo_White.svg'
-html_favicon = 'resources/favicon.ico'
-html_theme_options = {
-    'logo_only': True,
-    'display_version': True,
-}
+html_theme = 'furo'
+html_title = 'Documentation for Krill by NLnet Labs'
+html_css_files = ['css/nlnetlabs.css']
 
 # Theme options are theme-specific and customize the look and feel of a theme
 # further.  For a list of options available for each theme, see the
 # documentation.
 #
-# html_theme_options = {}
+# Keep the edit link pointed at the version being built on Read the Docs.
+html_theme_options = {
+    'source_repository': 'https://github.com/NLnetLabs/krill/',
+    'source_branch': os.environ.get('READTHEDOCS_GIT_IDENTIFIER', 'main'),
+    'source_directory': 'doc/manual/source/',
+    'light_logo': 'images/krill-logo-light.svg',
+    'dark_logo': 'images/krill-logo-dark.svg',
+    'light_css_variables': {
+        'font-stack': '"NLnet Labs Montserrat", system-ui, sans-serif',
+        'font-stack--headings': '"NLnet Labs Mackinac", Georgia, serif',
+        'color-sidebar-link-text--top-level': 'var(--color-foreground-primary)',
+        'color-sidebar-link-text': 'var(--color-foreground-secondary)',
+        'color-link-underline': 'var(--color-brand-content)',
+        'color-link-underline--visited': 'var(--color-brand-content)',
+        'color-brand-visited': 'var(--color-brand-content)',
+        'color-api-name': 'var(--color-brand-content)',
+        'color-api-pre-name': 'var(--color-brand-content)',
+        'color-sidebar-item-background--hover': 'var(--color-background-hover)',
+        'color-foreground-primary': '#231f20',
+        'color-foreground-secondary': '#625c5b',
+        'color-foreground-muted': '#625c5b',
+        'color-background-primary': '#ffffff',
+        'color-background-secondary': '#f8f5f3',
+        'color-background-hover': '#f1ebe7',
+        'color-background-border': '#d8d0ca',
+        'color-brand-primary': '#a83f0c',
+        'color-brand-content': '#a83f0c',
+    },
+    'dark_css_variables': {
+        'font-stack': '"NLnet Labs Montserrat", system-ui, sans-serif',
+        'font-stack--headings': '"NLnet Labs Mackinac", Georgia, serif',
+        'color-sidebar-link-text--top-level': 'var(--color-foreground-primary)',
+        'color-sidebar-link-text': 'var(--color-foreground-secondary)',
+        'color-link-underline': 'var(--color-brand-content)',
+        'color-link-underline--visited': 'var(--color-brand-content)',
+        'color-brand-visited': 'var(--color-brand-content)',
+        'color-api-name': 'var(--color-brand-content)',
+        'color-api-pre-name': 'var(--color-brand-content)',
+        'color-sidebar-item-background--hover': 'var(--color-background-hover)',
+        'color-foreground-primary': '#faf7f4',
+        'color-foreground-secondary': '#c5bdb7',
+        'color-foreground-muted': '#c5bdb7',
+        'color-background-primary': '#231f20',
+        'color-background-secondary': '#2d292a',
+        'color-background-hover': '#383334',
+        'color-background-border': '#655b56',
+        'color-brand-primary': '#ff9b64',
+        'color-brand-content': '#ff9b64',
+    },
+}
+
+# Admonition colours: information, attention and warnings.
+# Keep Furo's layout and icons; only override its colour variables.
+for mode, information, attention, warning in (
+    ('light', ('#625c5b', '#f1ebe7'), ('#a83f0c', '#feecdf'), ('#a83232', '#fbe9e7')),
+    ('dark', ('#c5bdb7', '#383334'), ('#ff9b64', '#42312a'), ('#ffabab', '#482c30')),
+):
+    colours = html_theme_options[f'{mode}_css_variables']
+    colours['color-admonition-background'] = 'var(--color-background-primary)'
+    colours['color-admonition-title'] = information[0]
+    colours['color-admonition-title-background'] = information[1]
+    for kinds, (accent, background) in (
+        (('note', 'seealso', 'hint', 'tip', 'admonition-todo'), information),
+        (('attention', 'important', 'caution'), attention),
+        (('warning', 'danger', 'error'), warning),
+    ):
+        for kind in kinds:
+            colours[f'color-admonition-title--{kind}'] = accent
+            colours[f'color-admonition-title-background--{kind}'] = background
+
+html_favicon = 'resources/favicon.ico'
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
@@ -163,34 +198,6 @@ html_static_path = ['resources']
 
 # Set canonical URL from the Read the Docs Domain
 html_baseurl = os.environ.get("READTHEDOCS_CANONICAL_URL", "")
-scheme = "https"
-
-html_context = {
-        'html_theme': html_theme,
-        'current_version': version,
-        'version_slug': version,
-
-        'PRODUCTION_DOMAIN': "readthedocs.org",
-        'versions': versions,
-        # "downloads": downloads,
-        # "subprojects": subprojects,
-
-        'slug': "krill",
-        'rtd_language': language,
-        'canonical_url': html_baseurl,
-
-        'conf_py_path': "/doc/manual/source/",
-
-        'github_user': "NLnetLabs",
-        'github_repo': "krill",
-        'github_version': os.environ.get("READTHEDOCS_GIT_IDENTIFIER", "main"),
-        'display_github': True,
-        'READTHEDOCS': True,
-        'using_theme': False,
-        'new_theme': True,
-        'source_suffix': ".rst",
-        'docsearch_disabled': False,
-    }
 
 # -- Options for HTMLHelp output ---------------------------------------------
 
@@ -306,6 +313,3 @@ def setup(app):
                         objname='module sub-command',
                         indextemplate='pair: %s; module sub-command',
                         parse_node=parse_cmd_args_node)
-    app.add_css_file('css/dark.css')
-    app.add_css_file('css/light.css')
-

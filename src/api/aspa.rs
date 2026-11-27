@@ -154,15 +154,12 @@ impl fmt::Display for AspaDefinition {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // example: 65000 => 65001, 65002, 65003
         write!(f, "{} => ", self.customer)?;
-        if self.providers.is_empty() {
-            write!(f, "<none>")?;
-        } else {
-            for i in 0..self.providers.len() {
-                if i > 0 {
-                    write!(f, ", ")?;
-                }
-                write!(f, "{}", self.providers[i])?;
-            }
+        let Some((head, tail)) = self.providers.split_first() else {
+            return write!(f, "<none>");
+        };
+        write!(f, "{head}")?;
+        for provider in tail {
+            write!(f, ", {provider}")?;
         }
         Ok(())
     }

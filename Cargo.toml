@@ -31,38 +31,35 @@ exclude = [
 ]
 
 [dependencies]
-arc-swap        = "1.7.1"
-base64          = "0.22.1"
+arc-swap        = "1.9.5"
+base64          = "0.23.1"
 bytes           = "1"
-chrono          = { version = "0.4.39", features = ["serde"] }
-clap            = { version = "4.5.37", features = ["cargo", "derive", "env",  "wrap_help"]}
+chrono          = { version = "0.4.45", features = ["serde"] }
+clap            = { version = "4.6.9", features = ["cargo", "derive", "env",  "wrap_help"]}
 fd-lock         = "4.0.4"
 fern            = { version = "0.7.1", features = ["syslog-7"] }
 futures-util    = "0.3"
 hex             = "0.4"
 http-body-util  = "0.1"
-hyper           = { version = "1.6.0", features = ["server"] }
+hyper           = { version = "1.13.0", features = ["server"] }
 hyper-util      = { version = "0.1", features = [ "server", "server-auto", "server-graceful" ] }
-intervaltree    = "0.2.7"
-lazy_static     = "1.5"
-libflate        = "2.1.0"
+libflate        = "2.3.2"
 log             = "0.4"
 openssl         = { version = "0.10", features = ["v110"] }
-percent-encoding = "2.3.1"
-pin-project-lite = "0.2.16"
+percent-encoding = "2.3.2"
+pin-project-lite = "0.2.18"
 rand            = "0.10"
-regex           = { version = "1.11.1", default-features = false, features = [ "std" ] }
-reqwest         = { version = "0.13.2", features = ["json"] }
-rpki            = { version = "0.19.2", features = ["ca", "compat", "rrdp"] }
+reqwest         = { version = "0.13.5", features = ["json"] }
+rpki            = { version = "0.20.1", features = ["ca", "compat", "rrdp"] }
 rustls-pemfile  = "2.2.0"
 serde           = { version = "1.0", features = ["derive", "rc"] }
 serde_json      = "1.0"
-tempfile        = "3.19.1"
-tokio           = { version = "1", features = [ "macros", "rt", "rt-multi-thread", "signal", "time" ] }
+tempfile        = "3.27.0"
+tokio           = { version = "1.54", features = [ "macros", "rt", "rt-multi-thread", "signal", "time" ] }
 tokio-rustls    = { version = "0.26" }
-toml            = "0.9.5"
-url             = { version = "2.5.4", features = ["serde"] }
-uuid            = { version = "1.16", features = ["serde", "v4"] }
+toml            = "1.2.2"
+url             = { version = "2.5.9", features = ["serde"] }
+uuid            = { version = "1.26", features = ["serde", "v4"] }
 
 # Dependencies used by the "hsm" feature
 backoff         = { version = "0.4.0", optional = true }
@@ -72,12 +69,12 @@ r2d2            = { version = "0.8.10", optional = true }
 secrecy         = { version = "0.10.3", features = ["serde"], optional = true }
 
 # Dependencies used by the "multi-user" feature
-basic-cookies   = { version = "0.1", optional = true }
-openidconnect   = { version = "4.0.0", optional = true, default-features = false }
-rpassword       = { version = "7.4.0", optional = true }
-scrypt          = { version = "0.11", optional = true, default-features = false }
+cookie          = { version = "0.18.3", optional = true }
+openidconnect   = { version = "4.1.0", optional = true, default-features = false }
+regex           = { version = "1.13.2", default-features = false, features = [ "std" ], optional = true }
+rpassword       = { version = "7.5.5", optional = true }
+scrypt          = { version = "0.12", optional = true, default-features = false }
 unicode-normalization = { version = "0.1", optional = true }
-urlparse        = { version = "0.7", optional = true }
 
 # Disable compiler optimizations for the pkcs11 crate because otherwise with a release build the
 # `pReserved = ptr::null_mut()` assignment done by `CK_C_INITIALIZE_ARGS::default()` appears to be optimized out. This
@@ -88,18 +85,38 @@ urlparse        = { version = "0.7", optional = true }
 
 [target.'cfg(unix)'.dependencies]
 syslog = "7.0.0"
-nix = { version = "0.31.1", features = ["user"] }
+nix = { version = "0.32.0", features = ["user"] }
+
+[target.'cfg(none)'.dependencies]
+# openidconnect ^4.0.0 (4.0.0)
+# -> p256 ^0.13.2 (0.13.2)
+# -> ecdsa ^0.16 (0.16.0)
+# But p256 v0.13.2 actually requires ecdsa v0.16.2.
+ecdsa = { version = "0.17.0", optional = true }
+# openidconnect ^4.0.0 (4.0.0)
+# -> thiserror ^1 (1.0.0)
+# thiserror v1.x is old, force the highest version.
+thiserror = { version = "2.0.21", optional = true }
 
 [features]
 default = ["multi-user", "hsm"]
-hsm = ["backoff", "kmip", "cryptoki", "r2d2", "secrecy"]
 multi-user = [
-    "basic-cookies",
-    "openidconnect",
-    "rpassword",
-    "scrypt",
-    "unicode-normalization",
-    "urlparse",
+    "dep:cookie",
+    "dep:openidconnect",
+    "dep:rpassword",
+    "dep:scrypt",
+    "dep:unicode-normalization",
+    # Raise versions of indirect dependencies
+    "dep:ecdsa",
+    "dep:regex",
+    "dep:thiserror",
+]
+hsm = [
+    "dep:backoff",
+    "dep:kmip",
+    "dep:cryptoki",
+    "dep:r2d2",
+    "dep:secrecy",
 ]
 
 # Preview features - not ready for production use
@@ -112,7 +129,6 @@ hsm-tests-pkcs11 = ["hsm"]
 [dev-dependencies]
 tar       = "0.4"
 stderrlog = "0.6"
-urlparse  = "0.7"
 
 # Make sure that Krill crashes on panics, rather than losing threads and
 # limping on in a bad state.
@@ -265,13 +281,6 @@ depends = "$auto, passwd, libssl3"
 
 [package.metadata.deb.variants.ubuntu-resolute]
 depends = "$auto, passwd, libssl3"
-
-# Cross compilation variants:
-# Note: we have to specifiy dependencies manually because we don't run cargo-deb
-# on the target platform and so it cannot determine the dependencies correctly
-# for us.
-[package.metadata.deb.variants.debian-bullseye-armv7-unknown-linux-gnueabihf]
-depends = "adduser, passwd, libc6 (>= 2.28), libssl1.1"
 
 # END DEBIAN PACKAGING
 # ------------------------------------------------------------------------------
