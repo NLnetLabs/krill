@@ -10,7 +10,6 @@
 use krilltest::environment::Environment;
 
 use std::io::Read;
-use std::io::Write;
 use std::net::IpAddr;
 use std::path::Path;
 use std::path::PathBuf;
@@ -36,10 +35,6 @@ use nix::time::ClockId;
 use rpki::ca::idexchange::CaHandle;
 use rpki::ca::provisioning::ResourceClassName;
 use rpki::repository::resources::ResourceSet;
-use rpki::resources::Asn;
-use rpki::resources::Prefix;
-use serde::Deserialize;
-use serde_with::{DisplayFromStr, serde_as};
 use tempfile::TempDir;
 use tokio::time::sleep;
 
@@ -278,8 +273,7 @@ async fn test_functional_delegated_ca_import_plus_some_roas(
     //     { "asn": "AS64496", "prefix": "10.1.0.0/24", "maxLength": 24, "ta": "Krill" }
     //   ]
     // }
-    let report: RoutinatorJsonVrpReport =
-        serde_json::from_slice(&env.routinator().vrps()).unwrap();
+    let report = env.routinator().vrps();
 
     assert_eq!(
         report.roas,
@@ -407,9 +401,7 @@ async fn test_many_embedded_cas(
     //     { "asn": "AS64496", "prefix": "10.1.0.0/24", "maxLength": 24, "ta": "Krill" }
     //   ]
     // }
-    std::io::stdout()
-        .write_all(&env.routinator().vrps())
-        .unwrap();
+    dbg!(env.routinator().vrps());
 
     // TODO
     // assert_eq!(
@@ -689,9 +681,7 @@ async fn test_many_delegated_cas_in_own_krill_instances(
             //     { "asn": "AS64496", "prefix": "10.1.0.0/24", "maxLength": 24, "ta": "Krill" }
             //   ]
             // }
-            std::io::stdout()
-                .write_all(&env.routinator().vrps())
-                .unwrap();
+            dbg!(env.routinator().vrps());
             return Ok(Success);
         }
 
@@ -914,9 +904,7 @@ async fn test_many_delegated_cas_in_one_krill_instance(
             //     { "asn": "AS64496", "prefix": "10.1.0.0/24", "maxLength": 24, "ta": "Krill" }
             //   ]
             // }
-            std::io::stdout()
-                .write_all(&env.routinator().vrps())
-                .unwrap();
+            dbg!(env.routinator().vrps());
             return Ok(Success);
         }
 
@@ -986,39 +974,6 @@ async fn create_ca(testbed: CaHandle, krill: &KrillClient, i: usize) {
 }
 
 //---- Helpers
-
-#[derive(Debug, Deserialize, PartialEq)]
-struct RoutinatorJsonVrpReport {
-    roas: Vec<RoutinatorJsonVrpReportRoa>,
-}
-
-#[serde_as]
-#[derive(Debug, Deserialize, PartialEq)]
-struct RoutinatorJsonVrpReportRoa {
-    #[serde_as(as = "DisplayFromStr")]
-    asn: Asn,
-    prefix: Prefix,
-    #[serde(rename = "maxLength")]
-    max_length: u8,
-    ta: String,
-}
-
-/// Convert with the assumption that the expected TAL is our Krill TAL.
-impl From<RoaConfiguration> for RoutinatorJsonVrpReportRoa {
-    fn from(config: RoaConfiguration) -> Self {
-        let payload = config.payload.into_explicit_max_length();
-        Self {
-            asn: payload.asn.into(),
-            prefix: Prefix::new(
-                payload.prefix.ip_addr(),
-                payload.prefix.addr_len(),
-            )
-            .unwrap(),
-            max_length: payload.max_length.unwrap(),
-            ta: KRILL_TAL_NAME.into(),
-        }
-    }
-}
 
 async fn add_ca_under_parent(
     client: &KrillClient,

@@ -11,6 +11,10 @@ use std::process::Stdio;
 use std::{fs, process};
 
 use indoc::writedoc;
+use krill::api::roa::RoaConfiguration;
+use rpki::resources::{Asn, Prefix};
+use serde::Deserialize;
+use serde_with::{DisplayFromStr, serde_as};
 
 //------------ Routinator ----------------------------------------------------
 
@@ -104,9 +108,7 @@ impl Routinator {
     }
 
     /// Update the local repository, validate the ROAs and return the VRPs.
-    ///
-    /// TODO: Deserialize the JSON into Rust data types.
-    pub fn vrps(&self) -> Vec<u8> {
+    pub fn vrps(&self) -> RoutinatorJsonVrpReport {
         println!(
             "Attempting to start Routinator using binary '{}'",
             self.routinator_bin.display()
@@ -131,6 +133,47 @@ impl Routinator {
             .unwrap()
             .wait_with_output()
             .unwrap();
-        output.stdout
+
+        serde_json::from_slice(&output.stdout)
+            .map_err(|err| {
+                format!(
+                    "Failed to parse the JSON VRP report: {err}\nJSON:\n{}",
+                    String::from_utf8_lossy(&output.stdout)
+                )
+            })
+            .unwrap()
+    }
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+pub struct RoutinatorJsonVrpReport {
+    pub roas: Vec<RoutinatorJsonVrpReportRoa>,
+}
+
+#[serde_as]
+#[derive(Debug, Deserialize, PartialEq)]
+pub struct RoutinatorJsonVrpReportRoa {
+    #[serde_as(as = "DisplayFromStr")]
+    pub asn: Asn,
+    pub prefix: Prefix,
+    #[serde(rename = "maxLength")]
+    pub max_length: u8,
+    // ta: String,
+}
+
+/// Convert with the assumption that the expected TAL is our Krill TAL.
+impl From<RoaConfiguration> for RoutinatorJsonVrpReportRoa {
+    fn from(config: RoaConfiguration) -> Self {
+        let payload = config.payload.into_explicit_max_length();
+        Self {
+            asn: payload.asn.into(),
+            prefix: Prefix::new(
+                payload.prefix.ip_addr(),
+                payload.prefix.addr_len(),
+            )
+            .unwrap(),
+            max_length: payload.max_length.unwrap(),
+            // ta: KRILL_TAL_NAME.into(),
+        }
     }
 }
