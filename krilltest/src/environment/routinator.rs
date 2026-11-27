@@ -13,7 +13,7 @@ use std::{fs, process};
 use indoc::writedoc;
 use krill::api::roa::RoaConfiguration;
 use rpki::resources::{Asn, Prefix};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_with::{DisplayFromStr, serde_as};
 
 //------------ Routinator ----------------------------------------------------
@@ -145,13 +145,13 @@ impl Routinator {
     }
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct RoutinatorJsonVrpReport {
     pub roas: Vec<RoutinatorJsonVrpReportRoa>,
 }
 
 #[serde_as]
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct RoutinatorJsonVrpReportRoa {
     #[serde_as(as = "DisplayFromStr")]
     pub asn: Asn,

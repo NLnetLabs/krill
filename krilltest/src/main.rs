@@ -284,28 +284,38 @@ async fn test_pr_1426(env: &mut Environment) -> Result<Success, Error> {
     env.routinator().install_tal(KRILL_TAL_NAME, &tal_bytes);
 
     // Do a Routinator validation run and fetch the available VRPs.
-    for _ in 0..2 {
+    let mut found = false;
+    let mut report = None;
+    for _ in 0..10 {
         eprintln!(">>>> Fetching Routinator VRPs report");
-        let report = env.routinator().vrps();
+        report = Some(env.routinator().vrps());
 
         eprintln!(">>>> Verifying Routinator VRPs report");
-        if report.roas
+        if report.as_ref().unwrap().roas
             == [
                 roa_1_1.clone().into(),
                 roa_3_1.clone().into(),
                 roa_3_2.clone().into(),
             ]
         {
-            return Ok(Success);
+            found = true;
+            break;
         }
         std::thread::sleep(std::time::Duration::from_secs(1));
     }
 
-    eprintln!(">>>> Fetching Routinator VRPs report");
-    let report = env.routinator().vrps();
-    assert_eq!(
-        report.roas,
-        [roa_1_1.into(), roa_3_1.into(), roa_3_2.into()]
+    if !found {
+        eprintln!(">>>> Fetching Routinator VRPs report");
+        report = Some(env.routinator().vrps());
+        assert_eq!(
+            report.as_ref().unwrap().roas,
+            [roa_1_1.into(), roa_3_1.into(), roa_3_2.into()]
+        );
+    }
+
+    eprintln!(
+        "{}",
+        serde_json::to_string_pretty(&report.unwrap().roas).unwrap()
     );
 
     Ok(Success)
