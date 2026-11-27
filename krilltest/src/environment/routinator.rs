@@ -17,7 +17,7 @@ use indoc::writedoc;
 /// A Routinator installation for validating data.
 pub struct Routinator {
     /// Location of the routinator binary.
-    routinator: PathBuf,
+    routinator_bin: PathBuf,
 
     /// The directory where Routinator will keep its stuff.
     base_dir: PathBuf,
@@ -36,7 +36,7 @@ impl Routinator {
         rrdp_tls_cert_path: PathBuf,
     ) -> Self {
         let mut res = Self {
-            routinator: routinator_bin,
+            routinator_bin,
             base_dir,
             rrdp_tls_cert_path,
         };
@@ -107,7 +107,7 @@ impl Routinator {
     ///
     /// TODO: Deserialize the JSON into Rust data types.
     pub fn vrps(&self) -> Vec<u8> {
-        let output = process::Command::new(&self.routinator)
+        let output = process::Command::new(&self.routinator_bin)
             .args([
                 // Tell Routinator where to find its config file.
                 "-c",
