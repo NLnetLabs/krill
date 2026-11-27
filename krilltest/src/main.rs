@@ -154,6 +154,7 @@ async fn test_pr_1426(env: &mut Environment) -> Result<Success, Error> {
     let some_rcn = ResourceClassName::from("some_rcn");
 
     // Setup Krill 1
+    eprintln!(">>>> Setup Krill 1");
     let ca_1 = CaHandle::from_str("ca_1").unwrap();
     let ca_1_1 = CaHandle::from_str("ca_1_1").unwrap();
     let ca_1_res = ResourceSet::all();
@@ -189,6 +190,7 @@ async fn test_pr_1426(env: &mut Environment) -> Result<Success, Error> {
     assert!(wait_for_objects(&krillc_1, &ca_1_1, &[&roa_1_1]).await?);
 
     // Setup Krill 2
+    eprintln!(">>>> Setup Krill 2");
     env.add_krill_with_proxy("krill2", false).await;
     let krill_2 = env.krill("krill2");
     let krillc_2 = krill_2.make_client();
@@ -207,6 +209,7 @@ async fn test_pr_1426(env: &mut Environment) -> Result<Success, Error> {
         .unwrap();
 
     // Setup Krill 3
+    eprintln!(">>>> Setup Krill 3");
     env.add_krill_with_proxy("krill3", false).await;
     let krill_3 = env.krill("krill3");
     let krillc_3 = krill_3.make_client();
@@ -220,6 +223,7 @@ async fn test_pr_1426(env: &mut Environment) -> Result<Success, Error> {
         RoaConfiguration::from_str("10.2.31.0/24-24 => 64431").unwrap();
     let roa_3_2 =
         RoaConfiguration::from_str("10.2.32.0/24-24 => 64432").unwrap();
+    eprintln!(">>>> Register CA 3.1 under CA 2");
     add_ca_under_remote_parent(
         &krillc_3,
         &krillc_2,
@@ -229,6 +233,7 @@ async fn test_pr_1426(env: &mut Environment) -> Result<Success, Error> {
     )
     .await
     .unwrap();
+    eprintln!(">>>> Update ROA 3.1 objects");
     krillc_3
         .roas_update(
             &ca_3_1,
@@ -239,7 +244,11 @@ async fn test_pr_1426(env: &mut Environment) -> Result<Success, Error> {
         )
         .await
         .unwrap();
-    assert!(wait_for_objects(&krillc_3, &ca_3_1, &[&roa_3_1]).await?);
+    eprintln!(">>>> Wait for CA 3.1 ROA objects");
+    assert!(
+        wait_for_objects2(&krillc_3, &krillc_2, &ca_3_1, &[&roa_3_1]).await?
+    );
+    eprintln!(">>>> Register CA 3.2 under CA 2");
     add_ca_under_remote_parent(
         &krillc_3,
         &krillc_2,
@@ -249,6 +258,7 @@ async fn test_pr_1426(env: &mut Environment) -> Result<Success, Error> {
     )
     .await
     .unwrap();
+    eprintln!(">>>> Update ROA 3.2 objects");
     krillc_3
         .roas_update(
             &ca_3_2,
@@ -259,7 +269,10 @@ async fn test_pr_1426(env: &mut Environment) -> Result<Success, Error> {
         )
         .await
         .unwrap();
-    assert!(wait_for_objects(&krillc_3, &ca_3_2, &[&roa_3_2]).await?);
+    eprintln!(">>>> Wait for CA 3.2 ROA objects");
+    assert!(
+        wait_for_objects2(&krillc_3, &krillc_2, &ca_3_2, &[&roa_3_2]).await?
+    );
 
     // Fetch the Krill TAL and install it in the Routinator extra tals
     // directory.
@@ -271,31 +284,29 @@ async fn test_pr_1426(env: &mut Environment) -> Result<Success, Error> {
     env.routinator().install_tal(KRILL_TAL_NAME, &tal_bytes);
 
     // Do a Routinator validation run and fetch the available VRPs.
-    //
-    // We expect something like this:
-    // {
-    //   "metadata": {
-    //     "generated": 1787123416,
-    //     "generatedTime": "2026-08-19T07:10:16Z"
-    //   },
-    //   "roas": [
-    //     { "asn": "AS64496", "prefix": "10.0.0.0/16", "maxLength": 16, "ta": "Krill" },
-    //     { "asn": "AS64497", "prefix": "10.0.0.0/16", "maxLength": 16, "ta": "Krill" },
-    //     { "asn": "AS64496", "prefix": "10.1.0.0/24", "maxLength": 24, "ta": "Krill" }
-    //   ]
-    // }
+    for _ in 0..2 {
+        eprintln!(">>>> Fetching Routinator VRPs report");
+        let report = env.routinator().vrps();
+
+        eprintln!(">>>> Verifying Routinator VRPs report");
+        if report.roas
+            == [
+                roa_1_1.clone().into(),
+                roa_3_1.clone().into(),
+                roa_3_2.clone().into(),
+            ]
+        {
+            return Ok(Success);
+        }
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    }
+
     eprintln!(">>>> Fetching Routinator VRPs report");
     let report = env.routinator().vrps();
-
-    // eprintln!(">>>> Verifying Routinator VRPs report");
-    // assert_eq!(
-    //     report.roas,
-    //     [
-    //         route_resource_set_10_0_0_0_def_1.into(),
-    //         route_resource_set_10_0_0_0_def_2.into(),
-    //         route_resource_set_10_1_0_0_def_1.into(),
-    //     ]
-    // );
+    assert_eq!(
+        report.roas,
+        [roa_1_1.into(), roa_3_1.into(), roa_3_2.into()]
+    );
 
     Ok(Success)
 }
@@ -1339,6 +1350,63 @@ async fn wait_for_objects(
     }
 
     let details = client.publisher_details(&ca.convert()).await.unwrap();
+
+    eprintln!("Published files didn’t match for {ca}");
+    eprintln!("Found:");
+    for file in &details.current_files {
+        eprintln!("  {}", file.uri);
+    }
+    eprintln!("Expected:");
+    for file in &files {
+        eprintln!("  {file}");
+    }
+
+    Ok(false)
+}
+
+async fn wait_for_objects2(
+    client: &KrillClient,
+    client2: &KrillClient,
+    ca: &CaHandle,
+    roas: &[&RoaConfiguration],
+) -> Result<bool, Error> {
+    let mut files = vec![];
+    let ca_key_info = client
+        .ca_details(ca)
+        .await
+        .unwrap()
+        .resource_classes
+        .get(&ResourceClassName::from(0))
+        .unwrap()
+        .keys
+        .current_key()
+        .unwrap()
+        .clone();
+    files.push(ca_key_info.incoming_cert.mft_name().to_string());
+    files.push(ca_key_info.incoming_cert.crl_name().to_string());
+    for roa in roas {
+        files.push(ObjectName::from(roa.payload).to_string());
+    }
+
+    for _ in 0..100 {
+        let details = client2.publisher_details(&ca.convert()).await?;
+        if details.current_files.len() == files.len() {
+            let current_files: Vec<_> =
+                details.current_files.iter().map(|p| &p.uri).collect();
+            let mut all_matched = true;
+            for o in &files {
+                if !current_files.iter().any(|uri| uri.ends_with(o)) {
+                    all_matched = false;
+                }
+            }
+            if all_matched {
+                return Ok(true);
+            }
+        }
+        sleep(Duration::from_millis(100)).await;
+    }
+
+    let details = client2.publisher_details(&ca.convert()).await.unwrap();
 
     eprintln!("Published files didn’t match for {ca}");
     eprintln!("Found:");
