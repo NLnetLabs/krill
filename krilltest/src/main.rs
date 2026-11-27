@@ -162,8 +162,8 @@ async fn test_pr_1426(env: &mut Environment) -> Result<Success, Error> {
         Ipv4Blocks::all(),
         Ipv6Blocks::all(),
     );
-    // let roa_1_1 =
-    //     RoaConfiguration::from_str("10.1.1.0/24-24 => 64911").unwrap();
+    let roa_1_1 =
+        RoaConfiguration::from_str("10.1.1.0/24-24 => 64911").unwrap();
     env.add_krill_with_proxy("krill1", true).await;
     let krillc_1 = env.krill("krill1").make_client();
     add_ca_under_embedded_parent(&krillc_1, &testbed, &ca_1, &ca_1_res, None)
@@ -176,6 +176,17 @@ async fn test_pr_1426(env: &mut Environment) -> Result<Success, Error> {
         Some(&some_rcn),
     )
     .await?;
+    krillc_1
+        .roas_update(
+            &ca_1_1,
+            RoaConfigurationUpdates {
+                added: vec![roa_1_1.clone()],
+                removed: vec![],
+            },
+        )
+        .await
+        .unwrap();
+    assert!(wait_for_objects(&krillc_1, &ca_1_1, &[&roa_1_1]).await?);
 
     // Setup Krill 2
     env.add_krill_with_proxy("krill2", false).await;
@@ -205,10 +216,10 @@ async fn test_pr_1426(env: &mut Environment) -> Result<Success, Error> {
         ResourceSet::from_strs("AS30100", "10.2.31.0/24", "").unwrap();
     let ca_3_2_res =
         ResourceSet::from_strs("AS30200", "10.2.32.0/24", "").unwrap();
-    // let roa_3_1 =
-    //     RoaConfiguration::from_str("10.3.1.0/24-24 => 64431").unwrap();
-    // let roa_3_2 =
-    //     RoaConfiguration::from_str("10.3.2.0/24-24 => 64432").unwrap();
+    let roa_3_1 =
+        RoaConfiguration::from_str("10.2.31.0/24-24 => 64431").unwrap();
+    let roa_3_2 =
+        RoaConfiguration::from_str("10.2.32.0/24-24 => 64432").unwrap();
     add_ca_under_remote_parent(
         &krillc_3,
         &krillc_2,
@@ -218,6 +229,17 @@ async fn test_pr_1426(env: &mut Environment) -> Result<Success, Error> {
     )
     .await
     .unwrap();
+    krillc_3
+        .roas_update(
+            &ca_3_1,
+            RoaConfigurationUpdates {
+                added: vec![roa_3_1.clone()],
+                removed: vec![],
+            },
+        )
+        .await
+        .unwrap();
+    assert!(wait_for_objects(&krillc_3, &ca_3_1, &[&roa_3_1]).await?);
     add_ca_under_remote_parent(
         &krillc_3,
         &krillc_2,
@@ -227,6 +249,53 @@ async fn test_pr_1426(env: &mut Environment) -> Result<Success, Error> {
     )
     .await
     .unwrap();
+    krillc_3
+        .roas_update(
+            &ca_3_2,
+            RoaConfigurationUpdates {
+                added: vec![roa_3_2.clone()],
+                removed: vec![],
+            },
+        )
+        .await
+        .unwrap();
+    assert!(wait_for_objects(&krillc_3, &ca_3_2, &[&roa_3_2]).await?);
+
+    // Fetch the Krill TAL and install it in the Routinator extra tals
+    // directory.
+    let tls_cert = load_tls_cert(&env.nginx().tls_cert_path());
+    let tal_bytes =
+        fetch_url(env.krill("krill1").tal_url(), tls_cert, 5).await;
+
+    // Configure Routinator to use the Krill TAL
+    env.routinator().install_tal(KRILL_TAL_NAME, &tal_bytes);
+
+    // Do a Routinator validation run and fetch the available VRPs.
+    //
+    // We expect something like this:
+    // {
+    //   "metadata": {
+    //     "generated": 1787123416,
+    //     "generatedTime": "2026-08-19T07:10:16Z"
+    //   },
+    //   "roas": [
+    //     { "asn": "AS64496", "prefix": "10.0.0.0/16", "maxLength": 16, "ta": "Krill" },
+    //     { "asn": "AS64497", "prefix": "10.0.0.0/16", "maxLength": 16, "ta": "Krill" },
+    //     { "asn": "AS64496", "prefix": "10.1.0.0/24", "maxLength": 24, "ta": "Krill" }
+    //   ]
+    // }
+    eprintln!(">>>> Fetching Routinator VRPs report");
+    let report = env.routinator().vrps();
+
+    // eprintln!(">>>> Verifying Routinator VRPs report");
+    // assert_eq!(
+    //     report.roas,
+    //     [
+    //         route_resource_set_10_0_0_0_def_1.into(),
+    //         route_resource_set_10_0_0_0_def_2.into(),
+    //         route_resource_set_10_1_0_0_def_1.into(),
+    //     ]
+    // );
 
     Ok(Success)
 }
