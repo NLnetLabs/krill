@@ -84,6 +84,11 @@ pub enum Task {
 
     RrdpUpdateIfNeeded,
 
+    ArchiveCaCommands {
+        ca_handle: CaHandle,
+        limit: usize,
+    },
+
     // The following tasks are deprecated. They may, however, still be in the
     // task queue and currently the scheduler panics on unknown tasks, so we
     // need to keep it for now and just not do anything.
@@ -214,6 +219,13 @@ impl Task {
                     const { Ident::make("refresh_bgp_announcements_info") }
                 )
             }
+            Task::ArchiveCaCommands { ca_handle, .. } => {
+                Cow::Owned(
+                    Ident::builder(
+                        const { Ident::make("archive_ca_commands_") }
+                    ).push_handle(ca_handle).finish()
+                )
+            }
         }
     }
 }
@@ -265,6 +277,12 @@ impl fmt::Display for Task {
             Task::SweepLoginCache => write!(f, "sweep up expired logins"),
             Task::RefreshAnnouncementsInfo => {
                 write!(f, "refresh BGP announcements info")
+            }
+            Task::ArchiveCaCommands { ca_handle, .. } => {
+                write!(
+                    f,
+                    "archive commands for CA '{ca_handle}'"
+                )
             }
         }
     }

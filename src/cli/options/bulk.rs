@@ -19,6 +19,9 @@ pub enum Command {
 
     /// Force all CAs to sync with their repo server
     Sync(SyncRepo),
+
+    /// Archive commands for all CAs
+    Archive(Archive),
 }
 
 impl Command {
@@ -27,6 +30,7 @@ impl Command {
             Self::Refresh(cmd) => cmd.run(client).await.into(),
             Self::Publish(cmd) => cmd.run(client).await.into(),
             Self::Sync(cmd) => cmd.run(client).await.into(),
+            Self::Archive(cmd) => cmd.run(client).await.into(),
         }
     }
 }
@@ -73,4 +77,23 @@ impl SyncRepo {
     }
 }
 
+
+//------------ Archive -------------------------------------------------------
+
+#[derive(clap::Parser)]
+pub struct Archive {
+    /// The maximum number of commands per archive file.
+    #[arg(long, short)]
+    pub limit: usize,
+}
+
+impl Archive {
+    pub async fn run(
+        self, client: &KrillClient
+    ) -> Result<api::status::Success, httpclient::Error> {
+        client.bulk_archive_cas(
+            api::ca::ArchiveCaCommands { limit: self.limit }
+        ).await
+    }
+}
 

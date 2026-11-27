@@ -399,6 +399,16 @@ impl KrillManager {
             Ok(cas_import(structure, runtime)?)
         }).await
     }
+
+    pub async fn cas_archive_all(
+        &self, limit: usize
+    ) -> Result<(), RunError> {
+        self.run(move |runtime| {
+            Ok(runtime.ca_manager().schedule_archive_commands_all(
+                limit, runtime,
+            )?)
+        }).await
+    }
 }
 
 

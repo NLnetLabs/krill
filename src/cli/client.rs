@@ -311,6 +311,12 @@ impl KrillClient {
         self.post_empty(once("api/v1/bulk/cas/force_publish")).await
     }
 
+    pub async fn bulk_archive_cas(
+        &self, args: api::ca::ArchiveCaCommands
+    ) -> Result<Success, Error> {
+        self.post_json(once("api/v1/bulk/cas/archive"), args).await
+    }
+
     pub async fn bulk_suspend(&self) -> Result<Success, Error> {
         self.post_empty(once("api/v1/bulk/cas/suspend")).await
     }

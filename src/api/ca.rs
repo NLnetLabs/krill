@@ -2167,6 +2167,16 @@ impl fmt::Display for RtaPrepResponse {
 }
 
 
+//----------- ArchiveCaCommands ----------------------------------------------
+
+/// Options for archiving CA commands
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ArchiveCaCommands {
+    /// The maximum number of commands per archive.
+    pub limit: usize,
+}
+
+
 //============ Error Types ===================================================
 
 //------------ InvalidCert ---------------------------------------------------

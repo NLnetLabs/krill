@@ -190,6 +190,10 @@ fn process_task(
             // Don’t do anything. These are deprecated.
             Ok(TaskResult::Done)
         }
+
+        Task::ArchiveCaCommands { ca_handle, limit } => {
+            archive_ca_commands(krill, ca_handle, limit)
+        }
     }
 }
 
@@ -708,5 +712,18 @@ fn unexpected_key(
         debug!("Dropping task for surplus key for removed CA {ca_handle}");
         Ok(TaskResult::Done)
     }
+}
+
+fn archive_ca_commands(
+    krill: &SlowKrillRuntime,
+    ca_handle: CaHandle,
+    limit: usize,
+) -> Result<TaskResult, FatalError> {
+    if krill.ca_manager().has_ca(&ca_handle).map_err(FatalError)? {
+        krill.ca_manager().archive_ca_commands(
+            ca_handle, limit,
+        ).map_err(FatalError)?;
+    }
+    Ok(TaskResult::Done)
 }
 
