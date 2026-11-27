@@ -1,10 +1,12 @@
 //! Controlling an Nginx server.
+use crate::environment::prefix_process_output;
 use crate::utils::fmt::WriteOrPanic;
 
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::net::IpAddr;
 use std::path::PathBuf;
+use std::process::Stdio;
 use std::{fs, process};
 
 use indoc::writedoc;
@@ -238,19 +240,23 @@ impl NginxServer {
             "Attempting to start nginx using binary '{}'",
             self.nginx_bin.display()
         );
-        self.process = Some(
-            process::Command::new(&self.nginx_bin)
-                .args([
-                    // Tell nginx where to find its config file.
-                    "-c",
-                    &self.config_path().display().to_string(),
-                    // Pass -e to suppress a warning about not being able to
-                    // write to /var/log/.
-                    "-e",
-                    "/dev/stdout",
-                ])
-                .spawn()
-                .unwrap(),
-        );
+        let mut process = process::Command::new(&self.nginx_bin)
+            .args([
+                // Tell nginx where to find its config file.
+                "-c",
+                &self.config_path().display().to_string(),
+                // Pass -e to suppress a warning about not being able to
+                // write to /var/log/.
+                "-e",
+                "/dev/stdout",
+            ])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+
+        prefix_process_output("nginx", &mut process);
+
+        self.process = Some(process);
     }
 }

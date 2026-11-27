@@ -125,6 +125,7 @@ impl Environment {
         let private_port =
             self.acquire_port(format!("Krilll private port for {name}"));
         let krill = KrillServer::new(
+            name.clone(),
             self.krill_bin.clone(),
             self.base_dir.join(name.clone()),
             (listen_addr, private_port),
@@ -136,7 +137,7 @@ impl Environment {
             public_port,
             format!("https://{listen_addr}:{private_port}/"),
         );
-        self.krill.insert(name.clone(), krill);
+        self.krill.insert(name, krill);
     }
 
     /// Removes a Krill server.

@@ -1,12 +1,14 @@
 //! Controlling Krill server instances.
 #![allow(unused)]
 
+use crate::environment::prefix_process_output;
 use crate::utils::fmt::WriteOrPanic;
 
 use std::fs::{self, File};
+use std::io::{BufRead, BufReader};
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
-use std::process;
+use std::process::{self, Stdio};
 
 use indoc::writedoc;
 use krill::cli::client::{KrillClient, ServerUri};
@@ -43,7 +45,8 @@ pub struct KrillServer {
 
 impl KrillServer {
     /// Creates and configures a new Krill server.
-    pub fn new(
+    pub fn new<T: ToString>(
+        name: T,
         krill_bin: PathBuf,
         server_dir: PathBuf,
         private_listen: (IpAddr, u16),
@@ -60,7 +63,7 @@ impl KrillServer {
         };
         fs::create_dir_all(&res.server_dir).unwrap();
         res.make_conf();
-        res.start();
+        res.start(name.to_string());
         res
     }
 }
@@ -240,7 +243,7 @@ impl KrillServer {
     }
 
     /// Starts or restarts Krill.
-    fn start(&mut self) {
+    fn start(&mut self, name: String) {
         if let Some(mut child) = self.process.take() {
             child.kill().unwrap();
         }
@@ -248,18 +251,22 @@ impl KrillServer {
             "Attempting to start Krill using binary '{}'",
             self.krill_bin.display()
         );
-        self.process = Some(
-            process::Command::new(&self.krill_bin)
-                .args([
-                    // Tell Krill where to find its config file.
-                    "-c",
-                    &self.config_path().display().to_string(),
-                ])
-                // Enable test mode to avoid error "Invalid CSR received: MUST use hostnames in URIs for certificate requests"
-                .env("KRILL_TEST", "1")
-                .spawn()
-                .unwrap(),
-        );
+        let mut process = process::Command::new(&self.krill_bin)
+            .args([
+                // Tell Krill where to find its config file.
+                "-c",
+                &self.config_path().display().to_string(),
+            ])
+            // Enable test mode to avoid error "Invalid CSR received: MUST use hostnames in URIs for certificate requests"
+            .env("KRILL_TEST", "1")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+
+        prefix_process_output(name, &mut process);
+
+        self.process = Some(process);
     }
 }
 
