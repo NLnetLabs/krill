@@ -8,6 +8,7 @@
 // TODO: Prefix logging output by name of instance/service/binary producing
 // the log output, e.g. Krill server 1, Krill server 2, Routinator, etc.
 use krilltest::environment::Environment;
+use rpki::repository::resources::{AsBlocks, Ipv4Blocks, Ipv6Blocks};
 
 use std::io::Read;
 use std::net::IpAddr;
@@ -156,8 +157,11 @@ async fn test_pr_1426(env: &mut Environment) -> Result<Success, Error> {
     let ca_1 = CaHandle::from_str("ca_1").unwrap();
     let ca_1_1 = CaHandle::from_str("ca_1_1").unwrap();
     let ca_1_res = ResourceSet::all();
-    let ca_1_1_res =
-        ResourceSet::from_strs("AS10100", "10.0.0.0/8", "").unwrap();
+    let ca_1_1_res = ResourceSet::new(
+        AsBlocks::all(),
+        Ipv4Blocks::all(),
+        Ipv6Blocks::all(),
+    );
     // let roa_1_1 =
     //     RoaConfiguration::from_str("10.1.1.0/24-24 => 64911").unwrap();
     env.add_krill_with_proxy("krill1", true).await;
@@ -182,8 +186,11 @@ async fn test_pr_1426(env: &mut Environment) -> Result<Success, Error> {
         .await
         .unwrap();
     let ca_2 = CaHandle::from_str("ca_2").unwrap();
-    let ca_2_res =
-        ResourceSet::from_strs("AS20000", "10.2.0.0/16", "").unwrap();
+    let ca_2_res = ResourceSet::new(
+        AsBlocks::all(),
+        Ipv4Blocks::from_str("10.2.0.0/16").unwrap(),
+        Ipv6Blocks::empty(),
+    );
     add_ca_under_remote_parent(&krillc_2, &krillc_1, &ca_1, &ca_2, &ca_2_res)
         .await
         .unwrap();
@@ -195,9 +202,9 @@ async fn test_pr_1426(env: &mut Environment) -> Result<Success, Error> {
     let ca_3_1 = CaHandle::from_str("ca_3_1").unwrap();
     let ca_3_2 = CaHandle::from_str("ca_3_2").unwrap();
     let ca_3_1_res =
-        ResourceSet::from_strs("AS30100", "10.3.1.0/24", "").unwrap();
+        ResourceSet::from_strs("AS30100", "10.2.31.0/24", "").unwrap();
     let ca_3_2_res =
-        ResourceSet::from_strs("AS30200", "10.3.2.0/24", "").unwrap();
+        ResourceSet::from_strs("AS30200", "10.2.32.0/24", "").unwrap();
     // let roa_3_1 =
     //     RoaConfiguration::from_str("10.3.1.0/24-24 => 64431").unwrap();
     // let roa_3_2 =
