@@ -107,6 +107,10 @@ impl Routinator {
     ///
     /// TODO: Deserialize the JSON into Rust data types.
     pub fn vrps(&self) -> Vec<u8> {
+        println!(
+            "Attempting to start Routinator using binary '{}'",
+            self.routinator_bin.display()
+        );
         let output = process::Command::new(&self.routinator_bin)
             .args([
                 // Tell Routinator where to find its config file.

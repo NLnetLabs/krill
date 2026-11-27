@@ -234,6 +234,10 @@ impl NginxServer {
 
     /// Starts or restarts nginx.
     fn start(&mut self) {
+        println!(
+            "Attempting to start nginx using binary '{}'",
+            self.nginx_bin.display()
+        );
         self.process = Some(
             process::Command::new(&self.nginx_bin)
                 .args([

@@ -232,6 +232,10 @@ impl KrillServer {
         if let Some(mut child) = self.process.take() {
             child.kill().unwrap();
         }
+        println!(
+            "Attempting to start Krill using binary '{}'",
+            self.krill_bin.display()
+        );
         self.process = Some(
             process::Command::new(&self.krill_bin)
                 .args([
