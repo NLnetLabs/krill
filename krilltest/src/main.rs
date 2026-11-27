@@ -192,10 +192,6 @@ async fn test_pr_1426(env: &mut Environment) -> Result<Success, Error> {
     env.add_krill_with_proxy("krill3", false).await;
     let krill_3 = env.krill("krill3");
     let krillc_3 = krill_3.make_client();
-    krillc_3
-        .pubserver_init(krill_3.rrdp_base_uri(), krill_3.rsync_uri())
-        .await
-        .unwrap();
     let ca_3_1 = CaHandle::from_str("ca_3_1").unwrap();
     let ca_3_2 = CaHandle::from_str("ca_3_2").unwrap();
     let ca_3_1_res =
