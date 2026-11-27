@@ -88,7 +88,7 @@ impl Routinator {
                 no-rir-tals = true
                 extra-tals-dir = "{extra_tals_dir}"
                 strict = true
-                log-repository-issues = true
+                repository-log = "stderr"
             "#
         );
     }
