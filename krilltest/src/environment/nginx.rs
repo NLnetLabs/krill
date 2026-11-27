@@ -181,7 +181,7 @@ impl NginxServer {
                         listen {listen} ssl default_server;
                         root {root};
                         server_name _;
-                        access_log /dev/stdout;
+                        access_log /dev/stdout combinedwithport;
                         ssl_certificate {ssl_certificate};
                         ssl_certificate_key {ssl_certificate_key};
                         client_body_temp_path {tmp};
@@ -226,6 +226,7 @@ impl NginxServer {
                     uwsgi_temp_path {tmp};
                     scgi_temp_path {tmp};
                     # error_log /dev/stdout debug;
+                    log_format combinedwithport '$remote_addr - $remote_user [$time_local] ' '"$request" $status $body_bytes_sent ' '"$http_referer" "$http_user_agent"' ' port=$server_port';
                     {server_blocks}
                 }}
             "#
