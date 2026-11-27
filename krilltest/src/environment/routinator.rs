@@ -81,7 +81,7 @@ impl Routinator {
             r#"
                 repository-dir = "{repository_dir}"
                 log = "stderr"
-                log-level = "trace"
+                log-level = "info"
                 rrdp-root-certs = ["{rrdp_root_cert_path}"]
                 allow-dubious-hosts = true
                 #disable-rsync = true
