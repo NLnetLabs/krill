@@ -11,7 +11,7 @@ use std::process;
 use indoc::writedoc;
 use krill::cli::client::{KrillClient, ServerUri};
 use nix::libc::FAN_RESPONSE_INFO_AUDIT_RULE;
-use rpki::uri::{Https, Rsync};
+use rpki::uri::{self, Https, Rsync};
 
 //------------ KrillServer ---------------------------------------------------
 
@@ -120,6 +120,19 @@ impl KrillServer {
         .unwrap()
     }
 
+    pub fn rsync_uri(&self) -> uri::Rsync {
+        uri::Rsync::from_string(format!(
+            "rsync://{}/repo/",
+            self.private_listen.0
+        ))
+        .unwrap()
+    }
+
+    pub fn rrdp_base_uri(&self) -> uri::Https {
+        uri::Https::from_string(format!("{}rrdp/", self.service_uri()))
+            .unwrap()
+    }
+
     /// Returns the public URL at which the Trust Anchor Locator can be found.
     pub fn tal_url(&self) -> String {
         format!("{}ta/ta.tal", self.service_uri())
@@ -207,9 +220,8 @@ impl KrillServer {
             // writing there is no rsync server in our test setup and RPs are
             // expected to use RRDP rather than rsync, i.e. these URIs have to
             // be specified but will not be used.
-            let rsync_jail =
-                format!("rsync://{}/repo/", self.private_listen.0);
-            let rrdp_base_uri = format!("{}rrdp/", self.service_uri());
+            let rsync_jail = self.rsync_uri();
+            let rrdp_base_uri = self.rrdp_base_uri();
             let ta_aia =
                 format!("rsync://{}/ta/ta.cer", self.private_listen.0);
             let ta_uri = format!("{}ta/ta.cer", self.service_uri());

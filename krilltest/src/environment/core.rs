@@ -85,9 +85,13 @@ impl Environment {
     /// reloads nginx.
     ///
     /// Returns once the server is healthy.
-    pub async fn add_krill<T: ToString>(&mut self, name: T) {
+    pub async fn add_krill_with_proxy<T: ToString>(
+        &mut self,
+        name: T,
+        is_testbed: bool,
+    ) {
         let name = name.to_string();
-        self.add_krill_ext(&name, true).await;
+        self.add_krill(&name, is_testbed).await;
         self.nginx.reconfigure();
         let krillc = self.krill(&name).make_client();
 
@@ -109,7 +113,7 @@ impl Environment {
     ///
     /// Does NOT configure nginx to proxy to it or wait for it to become
     /// healthy.
-    pub async fn add_krill_ext<T: ToString>(
+    pub async fn add_krill<T: ToString>(
         &mut self,
         name: T,
         is_testbed: bool,

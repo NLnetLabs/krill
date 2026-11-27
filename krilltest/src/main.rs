@@ -84,21 +84,23 @@ async fn main() {
         (args.listen_addr, (args.tcp_port_min..=tcp_port_max)),
     );
 
-    set_clock(946684800);
+    // set_clock(946684800);
 
-    test_functional_delegated_ca_import_plus_some_roas(&mut env)
-        .await
-        .unwrap();
+    // test_functional_delegated_ca_import_plus_some_roas(&mut env)
+    //     .await
+    //     .unwrap();
 
-    test_many_embedded_cas(&mut env, 1000).await.unwrap();
+    // test_many_embedded_cas(&mut env, 1000).await.unwrap();
 
-    test_many_delegated_cas_in_one_krill_instance(&mut env, 1000)
-        .await
-        .unwrap();
+    // test_many_delegated_cas_in_one_krill_instance(&mut env, 1000)
+    //     .await
+    //     .unwrap();
 
-    test_many_delegated_cas_in_own_krill_instances(&mut env, 500)
-        .await
-        .unwrap();
+    // test_many_delegated_cas_in_own_krill_instances(&mut env, 500)
+    //     .await
+    //     .unwrap();
+
+    test_pr_1426(&mut env).await.unwrap();
 }
 
 fn set_clock(seconds_since_epoch: time_t) {
@@ -113,6 +115,117 @@ fn set_clock(seconds_since_epoch: time_t) {
             SystemTime::now()
         );
     }
+}
+
+async fn test_pr_1426(env: &mut Environment) -> Result<Success, Error> {
+    // Krill 1:  +-------------------+ +----------+
+    //           |         TA        | |          |
+    //           |          |        | |          |
+    //           |       Test Bed    | |          |
+    //           |          |        | |   pubd   |
+    //           |        CA 1       | |          |
+    //           |         / \       | |          |
+    //           |        / CA 1.1   | |          |
+    //           |       /  ROA/ASPA | |          |
+    //           +------/-----|------+ +----^-----+
+    //                 /      |             |
+    //                /       +-------------+
+    //               /
+    // Krill 2:  +--/---------------+ +----------+
+    //           | CA 2             | |   pubd   |
+    //           +-|---\------------+ +---^--^---+
+    //             |    \                 |  |
+    // Krill 3:  +-|-----\----------+     |  |
+    //           | CA    CA         |     |  |
+    //           | 3.1   3.2        |     |  |
+    //           | ROA/  ROA/       |     |  |
+    //           | ASPA  ASPA       |     |  |
+    //           +-|------|---------+     |  |
+    //             |      |               |  |
+    //             +------|---------------+  |
+    //                    +------------------+
+    //
+    // "So for starters, add a ROA or to each CA that I have marked with
+    // “ROA/ASPA”. Then initially just do one months time jumps and see that
+    // everything is still being published."
+
+    let testbed = CaHandle::from_str("testbed").unwrap();
+    let some_rcn = ResourceClassName::from("some_rcn");
+
+    // Setup Krill 1
+    let ca_1 = CaHandle::from_str("ca_1").unwrap();
+    let ca_1_1 = CaHandle::from_str("ca_1_1").unwrap();
+    let ca_1_res = ResourceSet::all();
+    let ca_1_1_res =
+        ResourceSet::from_strs("AS10100", "10.0.0.0/8", "").unwrap();
+    // let roa_1_1 =
+    //     RoaConfiguration::from_str("10.1.1.0/24-24 => 64911").unwrap();
+    env.add_krill_with_proxy("krill1", true).await;
+    let krillc_1 = env.krill("krill1").make_client();
+    add_ca_under_embedded_parent(&krillc_1, &testbed, &ca_1, &ca_1_res, None)
+        .await?;
+    add_ca_under_embedded_parent(
+        &krillc_1,
+        &ca_1,
+        &ca_1_1,
+        &ca_1_1_res,
+        Some(&some_rcn),
+    )
+    .await?;
+
+    // Setup Krill 2
+    env.add_krill_with_proxy("krill2", false).await;
+    let krill_2 = env.krill("krill2");
+    let krillc_2 = krill_2.make_client();
+    krillc_2
+        .pubserver_init(krill_2.rrdp_base_uri(), krill_2.rsync_uri())
+        .await
+        .unwrap();
+    let ca_2 = CaHandle::from_str("ca_2").unwrap();
+    let ca_2_res =
+        ResourceSet::from_strs("AS20000", "10.2.0.0/16", "").unwrap();
+    add_ca_under_remote_parent(&krillc_2, &krillc_1, &ca_1, &ca_2, &ca_2_res)
+        .await
+        .unwrap();
+
+    // Setup Krill 3
+    env.add_krill_with_proxy("krill3", false).await;
+    let krill_3 = env.krill("krill3");
+    let krillc_3 = krill_3.make_client();
+    krillc_3
+        .pubserver_init(krill_3.rrdp_base_uri(), krill_3.rsync_uri())
+        .await
+        .unwrap();
+    let ca_3_1 = CaHandle::from_str("ca_3_1").unwrap();
+    let ca_3_2 = CaHandle::from_str("ca_3_2").unwrap();
+    let ca_3_1_res =
+        ResourceSet::from_strs("AS30100", "10.3.1.0/24", "").unwrap();
+    let ca_3_2_res =
+        ResourceSet::from_strs("AS30200", "10.3.2.0/24", "").unwrap();
+    // let roa_3_1 =
+    //     RoaConfiguration::from_str("10.3.1.0/24-24 => 64431").unwrap();
+    // let roa_3_2 =
+    //     RoaConfiguration::from_str("10.3.2.0/24-24 => 64432").unwrap();
+    add_ca_under_remote_parent(
+        &krillc_3,
+        &krillc_2,
+        &ca_2,
+        &ca_3_1,
+        &ca_3_1_res,
+    )
+    .await
+    .unwrap();
+    add_ca_under_remote_parent(
+        &krillc_3,
+        &krillc_2,
+        &ca_2,
+        &ca_3_2,
+        &ca_3_2_res,
+    )
+    .await
+    .unwrap();
+
+    Ok(Success)
 }
 
 async fn test_functional_delegated_ca_import_plus_some_roas(
@@ -147,8 +260,8 @@ async fn test_functional_delegated_ca_import_plus_some_roas(
     .unwrap();
 
     // Spawn two Krill servers.
-    env.add_krill("server1").await;
-    env.add_krill("server2").await;
+    env.add_krill_with_proxy("server1", true).await;
+    env.add_krill_with_proxy("server2", true).await;
 
     // Connect clients to the servers.
     let server1 = env.krill("server1").make_client();
@@ -159,11 +272,17 @@ async fn test_functional_delegated_ca_import_plus_some_roas(
     //
 
     eprintln!(">>>> Add parent_1 under testbed in server 1.");
-    add_ca_under_parent(&server1, &testbed, &parent_1, &parent_res, None)
-        .await?;
+    add_ca_under_embedded_parent(
+        &server1,
+        &testbed,
+        &parent_1,
+        &parent_res,
+        None,
+    )
+    .await?;
 
     eprintln!(">>>> Add child under parent_1 in server 1.");
-    add_ca_under_parent(
+    add_ca_under_embedded_parent(
         &server1,
         &parent_1,
         &child,
@@ -176,8 +295,14 @@ async fn test_functional_delegated_ca_import_plus_some_roas(
     let exported = server1.child_export(&parent_1, &child.convert()).await?;
 
     eprintln!(">>>> Add parent_2 under testbed in server 2.");
-    add_ca_under_parent(&server2, &testbed, &parent_2, &parent_res, None)
-        .await?;
+    add_ca_under_embedded_parent(
+        &server2,
+        &testbed,
+        &parent_2,
+        &parent_res,
+        None,
+    )
+    .await?;
 
     eprintln!(">>>> Import child under parent_2 in server 2.");
     server2.child_import(&parent_2, exported).await?;
@@ -273,8 +398,10 @@ async fn test_functional_delegated_ca_import_plus_some_roas(
     //     { "asn": "AS64496", "prefix": "10.1.0.0/24", "maxLength": 24, "ta": "Krill" }
     //   ]
     // }
+    eprintln!(">>>> Fetching Routinator VRPs report");
     let report = env.routinator().vrps();
 
+    eprintln!(">>>> Verifying Routinator VRPs report");
     assert_eq!(
         report.roas,
         [
@@ -287,6 +414,7 @@ async fn test_functional_delegated_ca_import_plus_some_roas(
     //
     // Cleanup
     //
+    eprintln!(">>>> Cleaning up");
     env.remove_krill("server2");
     env.remove_krill("server1");
 
@@ -302,7 +430,7 @@ async fn test_many_embedded_cas(
     let testbed = CaHandle::from_str("testbed").unwrap();
 
     // Spawn a Krill server.
-    env.add_krill("krill").await;
+    env.add_krill_with_proxy("krill", true).await;
 
     // Determine the URI to use to connect a client to the server.
     let krill_server_uri = env.krill("krill").server_api_uri();
@@ -459,14 +587,20 @@ async fn test_many_delegated_cas_in_own_krill_instances(
     // Spawn many Krill servers, one running as a parent that offers a
     // publication service, like an RIR, and the rest as operator instance
     // that will register with the parent and publish into it.
-    env.add_krill("rir").await;
+    env.add_krill_with_proxy("rir", true).await;
 
     // Connect a client to the RIR Krill server.
     let rir_server_uri = {
         let rir_krill = env.krill("rir").make_client();
 
-        add_ca_under_parent(&rir_krill, &testbed, &parent, &parent_res, None)
-            .await?;
+        add_ca_under_embedded_parent(
+            &rir_krill,
+            &testbed,
+            &parent,
+            &parent_res,
+            None,
+        )
+        .await?;
 
         // Determine the URI to use to connect a client to the server.
         env.krill("rir").server_api_uri()
@@ -476,7 +610,7 @@ async fn test_many_delegated_cas_in_own_krill_instances(
     let mut operator_server_uris = vec![];
     for i in 0..num_cas {
         let name = format!("operator{i}");
-        env.add_krill_ext(name.clone(), false).await;
+        env.add_krill(name.clone(), false).await;
         let krill = env.krill(&name);
         operator_server_uris.push(krill.server_api_uri());
     }
@@ -711,8 +845,8 @@ async fn test_many_delegated_cas_in_one_krill_instance(
     // operator instances each with their own, but instead we put all of those
     // CAs in one child instance of Krill, all of which will be registered
     // with the parent and publish into it.
-    env.add_krill("rir").await;
-    env.add_krill("operators").await;
+    env.add_krill_with_proxy("rir", true).await;
+    env.add_krill_with_proxy("operators", true).await;
 
     // Connect clients to the Krill servers.
     let rir_krill = env.krill("rir").make_client();
@@ -726,8 +860,14 @@ async fn test_many_delegated_cas_in_one_krill_instance(
     //
 
     // Add a parent CA to RIR testbed.
-    add_ca_under_parent(&rir_krill, &testbed, &parent, &parent_res, None)
-        .await?;
+    add_ca_under_embedded_parent(
+        &rir_krill,
+        &testbed,
+        &parent,
+        &parent_res,
+        None,
+    )
+    .await?;
 
     let num_threads = std::thread::available_parallelism().unwrap().get() / 2;
     let num_cas_per_thread = num_cas / num_threads;
@@ -927,7 +1067,7 @@ async fn create_ca(testbed: CaHandle, krill: &KrillClient, i: usize) {
     let child_res = ResourceSet::from_strs(&asn, &ipv4, "").unwrap();
 
     eprintln!(">>>> Add child{i} under testbed.");
-    add_ca_under_parent(&krill, &testbed, &child, &child_res, None)
+    add_ca_under_embedded_parent(&krill, &testbed, &child, &child_res, None)
         .await
         .unwrap();
 
@@ -975,7 +1115,7 @@ async fn create_ca(testbed: CaHandle, krill: &KrillClient, i: usize) {
 
 //---- Helpers
 
-async fn add_ca_under_parent(
+async fn add_ca_under_embedded_parent(
     client: &KrillClient,
     parent: &CaHandle,
     child: &CaHandle,
@@ -1017,6 +1157,50 @@ async fn add_ca_under_parent(
         .await?;
 
     wait_for_ca_resources(client, child, child_res).await
+}
+
+async fn add_ca_under_remote_parent(
+    ca_client: &KrillClient,
+    parent_client: &KrillClient,
+    parent: &CaHandle,
+    child: &CaHandle,
+    child_res: &ResourceSet,
+    // child_rcn:Option<&ResourceClassName>,
+) -> Result<bool, Error> {
+    ca_client.ca_add(child.clone()).await?;
+    let request = ca_client.repo_request(child).await?;
+    let response = parent_client.publishers_add(request).await?;
+    ca_client.repo_update(child, response).await?;
+    let child_request = ca_client.child_request(child).await?;
+    let id_cert = child_request.validate().unwrap();
+    let response = parent_client
+        .child_add(&parent, child.convert(), child_res.clone(), id_cert)
+        .await?;
+    // if let Some(rcn) = child_rcn {
+    //     client
+    //         .child_update(
+    //             &parent.convert(),
+    //             &child.convert(),
+    //             UpdateChildRequest::resource_class_name_mapping(
+    //                 ResourceClassNameMapping {
+    //                     name_in_parent: ResourceClassName::from(0),
+    //                     name_for_child: rcn.clone(),
+    //                 },
+    //             ),
+    //         )
+    //         .await?;
+    // }
+    ca_client
+        .parent_add(
+            child,
+            ParentCaReq {
+                handle: parent.convert(),
+                response,
+            },
+        )
+        .await?;
+
+    wait_for_ca_resources(ca_client, child, child_res).await
 }
 
 async fn wait_for_ca_resources(
